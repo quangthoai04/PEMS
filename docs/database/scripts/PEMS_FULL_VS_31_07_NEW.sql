@@ -392,6 +392,10 @@ DROP TRIGGER IF EXISTS `trg_visit_requests_decision_validate_bu`;
 DROP TRIGGER IF EXISTS `trg_visit_requests_primary_contact_guard_bi`;
 DROP TRIGGER IF EXISTS `trg_visit_requests_primary_contact_guard_bu`;
 DROP TRIGGER IF EXISTS `trg_users_protect_active_primary_contact_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_op_contact_guard_bi`;
+DROP TRIGGER IF EXISTS `trg_visit_campuses_op_contact_guard_bu`;
+DROP TRIGGER IF EXISTS `trg_visit_requests_contact_gate_guard_bu`;
+DROP TRIGGER IF EXISTS `trg_users_protect_operational_contact_bu`;
 DROP TRIGGER IF EXISTS `trg_visit_request_identity_changes_user_guard_bi`;
 DROP TRIGGER IF EXISTS `trg_visit_request_identity_changes_user_guard_bu`;
 
@@ -1040,8 +1044,7 @@ CREATE TABLE visit_requests (
   request_code VARCHAR(50) NOT NULL,
   submission_id CHAR(36) NULL COMMENT 'UUID idempotency cho một submit intent',
   business_fingerprint CHAR(64) NULL COMMENT 'SHA-256 fingerprint V2 của core visit identity; non-unique để cho phép gửi lại hợp lệ',
-  visitor_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản ĐẦU MỐI CHÍNH / người quản lý yêu cầu (primary contact owner), luôn role VISITOR. NULL khi contact B chưa xác nhận (primary_contact_access_status=PENDING_CONFIRMATION). Là owner cho cancel khi contact đã ACTIVE; KHÔNG còn là actor duy nhất được sửa form — xem registrant_user_id.',
-  registrant_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản NGƯỜI ĐĂNG KÝ (submitter). KHÔNG còn read-only: là CO-EDITOR cùng đầu mối chính cho form edit/resubmit/safe-edit/amendment (backend PR-4+ enforce theo lifecycle). Được cancel theo ngoại lệ 3A khi initial contact còn PENDING_CONFIRMATION (trigger đã enforce). Có thể là VISITOR hoặc STAFF/STAFF LEADER.',
+  registrant_user_id BIGINT UNSIGNED NULL COMMENT 'Tài khoản NGƯỜI ĐĂNG KÝ (submitter) — chủ sở hữu DUY NHẤT ở cấp request: xem toàn bộ campus, sửa phần request-level, đổi đầu mối, hủy toàn request theo rule. Có thể là VISITOR, STAFF hoặc STAFF LEADER; role người tạo KHÔNG bypass cổng xác nhận đầu mối. Quyền vận hành từng campus thuộc visit_request_campuses.operational_contact_user_id.',
   partner_id BIGINT UNSIGNED NULL,
   created_source ENUM('VISITOR_SUBMITTED','STAFF_CREATED') NOT NULL DEFAULT 'VISITOR_SUBMITTED',
 
@@ -1063,23 +1066,18 @@ CREATE TABLE visit_requests (
   visit_scope ENUM('SINGLE_CAMPUS','MULTI_CAMPUS') NOT NULL DEFAULT 'SINGLE_CAMPUS'
     COMMENT 'SINGLE_CAMPUS/MULTI_CAMPUS mô tả số campus được chọn; từng campus instance được route độc lập.',
 
-  -- PRIMARY CONTACT (đầu mối chính quản lý yêu cầu) snapshot at REQUEST level — the email
-  -- used to link/claim the VISITOR account. This is NOT the per-campus operational contact;
-  -- each campus keeps its own operational contact in visit_instance_form_details.operational_contact_*.
-  contact_person_full_name VARCHAR(150) NOT NULL COMMENT 'Đầu mối chính (primary contact) cấp request, không phải operational contact của campus',
-  contact_person_organization VARCHAR(255) NOT NULL,
-  contact_person_phone VARCHAR(50) NOT NULL,
-  contact_person_email VARCHAR(150) NOT NULL COMMENT 'Email đầu mối chính; dùng để link/claim tài khoản VISITOR (xem visitor_user_id + primary_contact_access_status)',
+  -- There is NO request-level contact. Each campus carries its own operational contact
+  -- snapshot in visit_instance_form_details.operational_contact_* and its own confirmed
+  -- account link in visit_request_campuses.operational_contact_user_id.
 
-  -- Primary-contact claim state (per-campus form v2, §16.4). Backfilled ACTIVE where
-  -- visitor_user_id IS NOT NULL. New v2 requests whose contact B differs from the
-  -- registrant stay PENDING_CONFIRMATION until B accepts the invitation.
-  primary_contact_access_status ENUM('PENDING_CONFIRMATION','ACTIVE') NOT NULL DEFAULT 'PENDING_CONFIRMATION'
-    COMMENT 'PENDING_CONFIRMATION=contact B has not claimed the request; ACTIVE=contact owner confirmed',
-  primary_contact_verified_at DATETIME NULL
-    COMMENT 'When the primary contact claim/transfer was applied (Vietnam wall-clock)',
+  -- Global confirmation gate revision. Bumped in the SAME transaction that opens the gate
+  -- (last operational contact confirmed) and every time the gate closes again (a confirmed
+  -- contact is replaced before any campus decision). Used as the approval-notification
+  -- dedupe key APPROVAL_READY:{requestId}:{visitInstanceId}:{gateRevision}.
+  contact_gate_revision INT UNSIGNED NOT NULL DEFAULT 0
+    COMMENT 'Số hiệu lần mở cổng xác nhận đầu mối; dùng làm dedupe key cho notification duyệt',
 
-  status ENUM('PENDING_APPROVAL','PARTIALLY_APPROVED','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PENDING_APPROVAL' COMMENT 'Aggregate request status derived from campus instance decisions; visit progress is derived from visit_request_campuses.status',
+  status ENUM('PENDING_CONTACT_CONFIRMATION','PENDING_APPROVAL','PARTIALLY_APPROVED','APPROVED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PENDING_CONTACT_CONFIRMATION' COMMENT 'Aggregate request status. PENDING_CONTACT_CONFIRMATION=còn campus chưa có đầu mối xác nhận (Staff Leader chưa thấy đơn); các trạng thái sau derive từ quyết định từng campus.',
   submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   email_verified_at DATETIME NULL,
 
@@ -1092,7 +1090,7 @@ CREATE TABLE visit_requests (
 
   cancelled_by BIGINT UNSIGNED NULL COMMENT 'Visitor hủy toàn bộ request/delegation',
   cancelled_at DATETIME NULL COMMENT 'Thời điểm visitor hủy toàn bộ request/delegation',
-  cancellation_reason TEXT NULL COMMENT 'Lý do hủy toàn bộ request/delegation. Người hủy = đầu mối chính (visitor_user_id) khi contact ACTIVE, HOẶC người đăng ký (registrant_user_id, role VISITOR/STAFF) theo ngoại lệ 3A khi initial contact còn PENDING_CONFIRMATION. Trigger trg_visit_requests_cancel_validate_bu enforce cả hai nhánh + guard 24h/started-campus.',
+  cancellation_reason TEXT NULL COMMENT 'Lý do hủy toàn bộ request/delegation. Người hủy = người đăng ký (registrant_user_id). Trigger trg_visit_requests_cancel_validate_bu enforce actor + guard 24h/started-campus.',
 
   row_version INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Optimistic concurrency token',
 
@@ -1107,7 +1105,6 @@ CREATE TABLE visit_requests (
   -- business_fingerprint: NORMAL index only — a UNIQUE index would permanently block
   -- legitimate re-submissions after 15 minutes or after reject/cancel. Do NOT make it unique.
   KEY idx_visit_requests_fingerprint_time_status (business_fingerprint, submitted_at, status),
-  KEY idx_visit_requests_visitor (visitor_user_id),
   KEY idx_visit_requests_registrant_user (registrant_user_id, submitted_at),
   KEY idx_visit_requests_partner (partner_id),
   KEY idx_visit_requests_status_submitted (status, submitted_at),
@@ -1115,26 +1112,19 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_scope_status (visit_scope, status),
   KEY idx_visit_requests_scope_status_submitted (visit_scope, status, submitted_at),
   KEY idx_visit_requests_created_source (created_source),
-  KEY idx_visit_requests_contact_access (primary_contact_access_status),
   KEY idx_visit_requests_mixed_details (has_mixed_campus_details, status, submitted_at),
-  KEY idx_visit_requests_contact_email (contact_person_email),
+  KEY idx_visit_requests_gate (status, contact_gate_revision),
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_requests_resubmission (resubmission_count, last_resubmitted_at),
   KEY idx_visit_requests_last_resubmitted_by (last_resubmitted_by, last_resubmitted_at),
-  -- Parent FULLTEXT covers request code / registrant / primary-contact identity only.
-  -- Delegation/purpose/content/operational-contact search is exclusively per campus
-  -- through visit_instance_form_details.ft_vifd_search.
-  FULLTEXT KEY ft_visit_requests_frontend_search (request_code, registrant_full_name, registrant_organization, registrant_email, contact_person_full_name, contact_person_organization, contact_person_email),
+  -- Parent FULLTEXT covers request code / registrant identity only. Delegation/purpose/
+  -- content/operational-contact search is exclusively per campus through
+  -- visit_instance_form_details.ft_vifd_search.
+  FULLTEXT KEY ft_visit_requests_frontend_search (request_code, registrant_full_name, registrant_organization, registrant_email),
 
   CHECK (TRIM(registrant_job_title) <> ''),
   CHECK (TRIM(registrant_phone) <> ''),
   CHECK (TRIM(registrant_nationality) <> ''),
-  CHECK (TRIM(contact_person_full_name) <> ''),
-  CHECK (TRIM(contact_person_phone) <> ''),
-  CHECK (TRIM(contact_person_email) <> ''),
-  CONSTRAINT fk_visit_requests_visitor
-    FOREIGN KEY (visitor_user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_visit_requests_registrant_user
     FOREIGN KEY (registrant_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -1147,7 +1137,7 @@ CREATE TABLE visit_requests (
   CONSTRAINT fk_visit_requests_last_resubmitted_by
     FOREIGN KEY (last_resubmitted_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='V2-only request parent: registrant snapshot, primary-contact snapshot/ownership, scope, aggregate status, idempotency and lifecycle metadata. All active form content is per campus in visit_instance_form_details.';
+COMMENT='V2-only request parent: registrant snapshot, scope, aggregate status, cổng xác nhận đầu mối, idempotency và lifecycle metadata. KHÔNG có đầu mối cấp request — mọi form content và đầu mối vận hành nằm per campus.';
 
 CREATE TABLE visit_request_campuses (
   visit_instance_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1157,16 +1147,26 @@ CREATE TABLE visit_request_campuses (
   planned_end_at DATETIME NOT NULL COMMENT 'Ngày giờ kết thúc dự kiến tại campus',
 
   status ENUM(
+    'WAITING_CONTACT_CONFIRMATION',
     'WAITING_REQUEST_APPROVAL',
-    'ASSIGNED',
     'BEFORE_VISIT',
     'DURING_VISIT',
     'AFTER_VISIT',
     'CLOSED',
     'CANCELLED',
     'REJECTED'
-  ) NOT NULL DEFAULT 'WAITING_REQUEST_APPROVAL'
-    COMMENT 'WAITING_REQUEST_APPROVAL=chờ Staff Leader campus xử lý; ASSIGNED=đã duyệt và đã có host chính thức; REJECTED=Staff Leader campus từ chối tiếp nhận.',
+  ) NOT NULL DEFAULT 'WAITING_CONTACT_CONFIRMATION'
+    COMMENT 'WAITING_CONTACT_CONFIRMATION=đầu mối vận hành campus chưa xác nhận; WAITING_REQUEST_APPROVAL=đã có đầu mối, chờ Staff Leader campus xử lý; BEFORE_VISIT=đã duyệt VÀ đã gán host trong cùng transaction (không còn ASSIGNED); REJECTED=Staff Leader campus từ chối tiếp nhận.',
+
+  -- Đầu mối VẬN HÀNH của campus này, sau khi đã xác nhận. NULL = chưa xác nhận.
+  -- KHÔNG UNIQUE: một người có thể phụ trách nhiều campus (kể cả trong cùng request).
+  -- RESTRICT cả hai chiều: một đầu mối đang giữ campus không được xóa/đổi khóa âm thầm.
+  operational_contact_user_id BIGINT UNSIGNED NULL
+    COMMENT 'Tài khoản đầu mối vận hành đã xác nhận cho ĐÚNG campus này. NULL khi chưa xác nhận (status=WAITING_CONTACT_CONFIRMATION). Tự khớp registrant thì set ngay lúc submit, không gửi email.',
+  operational_contact_confirmed_at DATETIME NULL
+    COMMENT 'Thời điểm đầu mối vận hành được liên kết (giờ VN)',
+  operational_contact_confirmation_source ENUM('REGISTRANT_SELF_MATCH','EMAIL_CONFIRMATION','TRANSFER') NULL
+    COMMENT 'REGISTRANT_SELF_MATCH=email trùng registrant đã xác thực, auto-link không gửi mail; EMAIL_CONFIRMATION=accept qua link; TRANSFER=chuyển đầu mối sau khi đã có quyết định campus',
 
   coordinator_user_id BIGINT UNSIGNED NULL
     COMMENT 'Staff Leader điều phối campus instance; được route theo campus ngay sau khi submit.',
@@ -1222,6 +1222,10 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_instances_cancel_actor (cancellation_actor_type, cancelled_at),
   KEY idx_visit_instances_visibility_campus_request (campus_id, visit_request_id, status, current_host_user_id),
+  -- Own-scope lookup của đầu mối vận hành (plan §4.2).
+  KEY idx_visit_instances_op_contact (operational_contact_user_id, visit_instance_id),
+  -- Hàng chờ Staff Leader theo campus (plan §4.2).
+  KEY idx_visit_instances_leader_queue (campus_id, status, visit_request_id),
 
   CHECK (planned_end_at > planned_start_at),
   -- Minimum visit duration 30 minutes (per-campus form v2, §4.5). The end>start
@@ -1235,6 +1239,9 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_campus
     FOREIGN KEY (campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_instances_operational_contact
+    FOREIGN KEY (operational_contact_user_id) REFERENCES users(user_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_visit_instances_coordinator
     FOREIGN KEY (coordinator_user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -1256,7 +1263,7 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_cancelled_by
     FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Mỗi campus trong request có một instance riêng. Staff Leader campus xử lý approve/reject độc lập; approve bắt buộc gán host ngay; không còn WAITING_HOST_ASSIGNMENT và không hỗ trợ transfer host.';
+COMMENT='Mỗi campus trong request có một instance riêng, mang đầu mối vận hành + quyết định riêng. Staff Leader campus xử lý approve/reject độc lập và CHỈ sau khi mọi đầu mối của request đã xác nhận; approve bắt buộc gán host ngay trong cùng transaction (WAITING_REQUEST_APPROVAL -> BEFORE_VISIT).';
 
 CREATE TABLE visit_guest_members (
   guest_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1436,17 +1443,16 @@ CREATE TABLE visit_instance_form_details (
   visit_type_other VARCHAR(255) NULL,
   purpose TEXT NOT NULL COMMENT 'Mục đích tại campus này',
   working_content TEXT NULL COMMENT 'Nội dung làm việc tại campus này',
-  operational_contact_full_name VARCHAR(150) NOT NULL COMMENT 'Đầu mối làm việc tại cơ sở (snapshot vận hành, KHÔNG cấp quyền đăng nhập)',
+  operational_contact_full_name VARCHAR(150) NOT NULL COMMENT 'Tên đầu mối làm việc tại cơ sở (snapshot). Tên trùng KHÔNG phải bằng chứng cùng người.',
   operational_contact_organization VARCHAR(255) NULL
     COMMENT 'Optional; blank normalized to NULL by the create/edit service (ck rejects empty string)',
-  operational_contact_phone VARCHAR(50) NOT NULL,
-  operational_contact_email VARCHAR(150) NULL
-    COMMENT 'Optional; blank normalized to NULL by the create/edit service (ck rejects empty string)',
+  operational_contact_phone VARCHAR(50) NOT NULL COMMENT 'SĐT đầu mối (snapshot). SĐT trùng KHÔNG phải bằng chứng cùng người.',
+  operational_contact_email VARCHAR(150) NOT NULL
+    COMMENT 'BẮT BUỘC. Normalize tại application boundary; là email duy nhất dùng để bind lời mời xác nhận đầu mối cho campus này. Danh tính runtime đọc từ visit_request_campuses.operational_contact_user_id, KHÔNG từ email này.',
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN',
   transportation_note TEXT NULL,
   media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
   media_consent_note TEXT NULL,
-  note_to_fptu TEXT NULL,
   form_revision INT UNSIGNED NOT NULL DEFAULT 1,
   approval_revision INT UNSIGNED NOT NULL DEFAULT 1,
   row_version INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1469,8 +1475,7 @@ CREATE TABLE visit_instance_form_details (
   CONSTRAINT ck_vifd_op_contact_org CHECK (
     operational_contact_organization IS NULL OR TRIM(operational_contact_organization) <> ''),
   CONSTRAINT ck_vifd_op_contact_phone CHECK (TRIM(operational_contact_phone) <> ''),
-  CONSTRAINT ck_vifd_op_contact_email CHECK (
-    operational_contact_email IS NULL OR TRIM(operational_contact_email) <> ''),
+  CONSTRAINT ck_vifd_op_contact_email CHECK (TRIM(operational_contact_email) <> ''),
   CONSTRAINT fk_vifd_instance
     FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses (visit_instance_id)
     ON UPDATE CASCADE ON DELETE CASCADE
@@ -1500,12 +1505,16 @@ CREATE TABLE visit_instance_guest_members (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Bảng nối khách/đội hỗ trợ theo campus instance. Composite FK chống cross-request link; copy-on-write khi campus dùng chung member cũ được sửa.';
 
--- Primary-contact INITIAL_CLAIM / TRANSFER state machine (NOT a token store).
+-- Operational-contact INITIAL_CONFIRMATION / TRANSFER state machine, scoped to ONE campus
+-- instance (NOT a token store — the single-use hashed token lives in email_action_tokens).
 CREATE TABLE visit_request_identity_changes (
   identity_change_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   visit_request_id BIGINT UNSIGNED NOT NULL,
-  change_kind ENUM('INITIAL_CLAIM','TRANSFER') NOT NULL,
-  target_relation ENUM('PRIMARY_CONTACT') NOT NULL DEFAULT 'PRIMARY_CONTACT',
+  visit_instance_id BIGINT UNSIGNED NOT NULL
+    COMMENT 'Campus mà lời mời này thuộc về. Một email phụ trách N campus vẫn có N row riêng.',
+  change_kind ENUM('INITIAL_CONFIRMATION','TRANSFER') NOT NULL,
+  token_version INT UNSIGNED NOT NULL DEFAULT 1
+    COMMENT 'Tăng mỗi lần resend. Dùng trong dedupe key OP_CONTACT_CONFIRM:{id}:{tokenVersion} và để supersede token cũ.',
   confirmation_method ENUM('GOOGLE_SSO','OTP_FALLBACK') NOT NULL DEFAULT 'GOOGLE_SSO',
   old_user_id BIGINT UNSIGNED NULL,
   new_user_id BIGINT UNSIGNED NULL,
@@ -1528,19 +1537,24 @@ CREATE TABLE visit_request_identity_changes (
   resend_count INT UNSIGNED NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  -- Mỗi campus chỉ được có ĐÚNG MỘT identity change PENDING tại một thời điểm.
   pending_guard VARCHAR(80) GENERATED ALWAYS AS (
-    CASE WHEN status = 'PENDING' THEN CONCAT(visit_request_id, ':', target_relation) ELSE NULL END
+    CASE WHEN status = 'PENDING' THEN CONCAT('I:', visit_instance_id) ELSE NULL END
   ) VIRTUAL,
   PRIMARY KEY (identity_change_id),
   UNIQUE KEY uq_identity_change_pending (pending_guard),
-  KEY idx_identity_change_request_relation_status (visit_request_id, target_relation, status),
+  KEY idx_identity_change_instance_status (visit_instance_id, status),
+  KEY idx_identity_change_request_status (visit_request_id, status),
   KEY idx_identity_change_status_expires (status, expires_at),
   KEY idx_identity_change_retention (status, retention_until),
   KEY idx_identity_change_new_email (new_email_normalized),
   -- "TRANSFER requires old_user_id" enforced by trg_identity_changes_transfer_bi/bu
   -- (a CHECK on old_user_id is rejected by MySQL 8.0 error 3823 — FK action column).
-  CONSTRAINT fk_identity_change_request
-    FOREIGN KEY (visit_request_id) REFERENCES visit_requests (visit_request_id)
+  -- Composite FK: lời mời luôn trỏ tới ĐÚNG campus của ĐÚNG request; payload sibling campus
+  -- không thể tạo được row hợp lệ.
+  CONSTRAINT fk_identity_change_instance
+    FOREIGN KEY (visit_request_id, visit_instance_id)
+    REFERENCES visit_request_campuses (visit_request_id, visit_instance_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_identity_change_old_user
     FOREIGN KEY (old_user_id) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -1549,13 +1563,14 @@ CREATE TABLE visit_request_identity_changes (
   CONSTRAINT fk_identity_change_requested_by
     FOREIGN KEY (requested_by) REFERENCES users (user_id) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Trạng thái hiện tại của claim/transfer đầu mối chính. visitor_user_id chỉ được swap trong transaction chuyển sang APPLIED.';
+COMMENT='Trạng thái xác nhận/chuyển đầu mối vận hành THEO TỪNG CAMPUS. visit_request_campuses.operational_contact_user_id chỉ được set trong đúng transaction chuyển row này sang APPLIED.';
 
--- Append-only identity-change transition log.
+-- Append-only identity-change transition log (theo campus).
 CREATE TABLE visit_request_identity_change_events (
   identity_change_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   identity_change_id BIGINT UNSIGNED NOT NULL,
   visit_request_id BIGINT UNSIGNED NOT NULL,
+  visit_instance_id BIGINT UNSIGNED NOT NULL COMMENT 'Campus của sự kiện; audit luôn truy được về đúng cơ sở',
   event_type VARCHAR(80) NOT NULL,
   from_status VARCHAR(30) NULL,
   to_status VARCHAR(30) NULL,
@@ -1567,6 +1582,7 @@ CREATE TABLE visit_request_identity_change_events (
   PRIMARY KEY (identity_change_event_id),
   KEY idx_ice_change (identity_change_id, created_at),
   KEY idx_ice_request (visit_request_id, created_at),
+  KEY idx_ice_instance (visit_instance_id, created_at),
   KEY idx_ice_correlation (correlation_id),
   CONSTRAINT fk_ice_change
     FOREIGN KEY (identity_change_id) REFERENCES visit_request_identity_changes (identity_change_id)
@@ -4404,8 +4420,9 @@ BEGIN
   DECLARE v_cancel_window_violation_count INT DEFAULT 0;
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
-    -- Visitor được hủy request tổng khi còn PENDING_APPROVAL hoặc khi đã APPROVED nhưng chưa campus nào bắt đầu.
-    IF OLD.status NOT IN ('APPROVED', 'PARTIALLY_APPROVED', 'PENDING_APPROVAL') THEN
+    -- Người đăng ký hủy được khi đơn còn đang chờ xác nhận đầu mối, còn chờ duyệt, hoặc đã
+    -- duyệt nhưng chưa campus nào bắt đầu.
+    IF OLD.status NOT IN ('APPROVED', 'PARTIALLY_APPROVED', 'PENDING_APPROVAL', 'PENDING_CONTACT_CONFIRMATION') THEN
       SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Only pending or approved request/delegation can be cancelled';
     END IF;
@@ -4425,31 +4442,19 @@ BEGIN
     JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.cancelled_by;
 
-    -- Actor relation (cancel exception 3A, per-campus form v2 §16.7/§19.6). Discriminate
-    -- on the contact access state, with NULL-safe comparisons throughout:
-    --   ACTIVE               -> only the exact contact owner (visitor_user_id), VISITOR.
-    --   PENDING_CONFIRMATION -> the registrant (exception 3A) or, if already set, the
-    --                           contact owner; role must be in the VISITOR/STAFF create
-    --                           group. HO/ADMIN/DEPARTMENT/STUDENT never gain cancel via role.
-    IF NEW.primary_contact_access_status = 'ACTIVE' THEN
-      IF NEW.visitor_user_id IS NULL OR NEW.cancelled_by <> NEW.visitor_user_id THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'Only the contact owner (visitor_user_id) can cancel this request';
-      END IF;
-      IF v_cancel_role_code <> 'VISITOR' THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'Contact owner cancelling the request must be a VISITOR';
-      END IF;
-    ELSE
-      IF (NEW.registrant_user_id IS NULL OR NEW.cancelled_by <> NEW.registrant_user_id)
-         AND (NEW.visitor_user_id IS NULL OR NEW.cancelled_by <> NEW.visitor_user_id) THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'Only the registrant (while initial contact is pending) or the contact owner can cancel this request';
-      END IF;
-      IF v_cancel_role_code NOT IN ('VISITOR','STAFF') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'Registrant-exception cancel is limited to VISITOR/STAFF create-group accounts';
-      END IF;
+    -- Hủy TOÀN REQUEST là quyền của NGƯỜI ĐĂNG KÝ, và chỉ người đó. Không còn đầu mối
+    -- cấp request để tranh chấp quyền này; đầu mối vận hành chỉ thao tác trên đúng campus
+    -- của mình. NULL-safe throughout.
+    IF NEW.registrant_user_id IS NULL OR NEW.cancelled_by <> NEW.registrant_user_id THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only the registrant can cancel the whole request';
+    END IF;
+
+    -- Người đăng ký có thể là VISITOR, STAFF hoặc STAFF LEADER (role tạo đơn hợp lệ).
+    -- HO/ADMIN/DEPARTMENT/STUDENT không bao giờ có quyền này qua role.
+    IF v_cancel_role_code NOT IN ('VISITOR','STAFF') THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Request cancel is limited to VISITOR/STAFF create-group accounts';
     END IF;
 
     -- Visitor self-service cancellation must be at least 24 hours before every active campus schedule.
@@ -4491,6 +4496,11 @@ BEGIN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'TRANSFER identity change requires old_user_id (the current owner)';
   END IF;
+  -- INITIAL_CONFIRMATION là lời mời đầu tiên của campus: chưa có chủ sở hữu nào để chuyển giao.
+  IF NEW.change_kind = 'INITIAL_CONFIRMATION' AND NEW.old_user_id IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'INITIAL_CONFIRMATION identity change must not carry old_user_id';
+  END IF;
 END$$
 
 CREATE TRIGGER trg_identity_changes_transfer_bu
@@ -4500,6 +4510,11 @@ BEGIN
   IF NEW.change_kind = 'TRANSFER' AND NEW.old_user_id IS NULL THEN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'TRANSFER identity change requires old_user_id (the current owner)';
+  END IF;
+  -- INITIAL_CONFIRMATION là lời mời đầu tiên của campus: chưa có chủ sở hữu nào để chuyển giao.
+  IF NEW.change_kind = 'INITIAL_CONFIRMATION' AND NEW.old_user_id IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'INITIAL_CONFIRMATION identity change must not carry old_user_id';
   END IF;
 END$$
 
@@ -4954,32 +4969,32 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
 
 
 
-INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  ('ACTIVE', 1001, 'VR-SC-HN-0001', 8, 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'PENDING_APPROVAL', '2026-06-23 08:00:00', '2026-06-23 08:03:12', NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
-  ('ACTIVE', 1002, 'VR-SC-HN-0002', 21, 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'SINGLE_CAMPUS', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'REJECTED', '2026-06-10 08:30:00', '2026-06-10 08:34:00', NULL, NULL, NULL, 1, '2026-06-10 08:30:00', 21, '2026-06-10 15:20:00', 3),
-  ('ACTIVE', 1003, 'VR-SC-HN-0003', 20, 1, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'SeoulTech School of Computing', 'Associate Professor', '+821055512345', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Lee Joon Ho', 'SeoulTech School of Computing', '+821055512345', 'lee.joonho@seoultech.example', 'APPROVED', '2026-06-12 09:00:00', '2026-06-12 09:04:00', NULL, NULL, NULL, 2, '2026-06-12 09:00:00', 20, '2026-06-12 16:30:00', 3),
-  ('ACTIVE', 1004, 'VR-SC-HN-0004', 22, 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'SINGLE_CAMPUS', 'Emily Smith', 'Singapore Green Mobility Council', '+6591234567', 'emily.smith@greentech.example', 'APPROVED', '2026-06-13 09:00:00', '2026-06-13 09:03:00', NULL, NULL, NULL, 3, '2026-06-13 09:00:00', 22, '2026-06-18 10:00:00', 4),
-  ('ACTIVE', 1005, 'VR-SC-HN-0005', 23, 5, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'SINGLE_CAMPUS', 'Maya Rodriguez', 'Iberia Mobility Forum', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'APPROVED', '2026-06-14 09:00:00', '2026-06-14 09:02:00', NULL, NULL, NULL, 4, '2026-06-14 09:00:00', 23, '2026-06-23 09:30:00', 4),
-  ('ACTIVE', 1006, 'VR-SC-HN-0006', 8, 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'APPROVED', '2026-06-05 08:45:00', '2026-06-05 08:48:00', NULL, NULL, NULL, 5, '2026-06-05 08:45:00', 8, '2026-06-16 10:00:00', 4),
-  ('ACTIVE', 1007, 'VR-SC-HN-0007', 24, 6, 'VISITOR_SUBMITTED', 'Carlos Mendes', 'Porto Applied AI Hub', 'Research Partnership Lead', '+351211234567', 'carlos.mendes@porto-ai.example', 'Bồ Đào Nha', 'SINGLE_CAMPUS', 'Carlos Mendes', 'Porto Applied AI Hub', '+351211234567', 'carlos.mendes@porto-ai.example', 'APPROVED', '2026-05-20 08:00:00', '2026-05-20 08:03:00', NULL, NULL, NULL, 6, '2026-05-20 08:00:00', 24, '2026-06-01 17:30:00', 4),
-  ('ACTIVE', 1008, 'VR-SC-HN-0008', 8, 2, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'CANCELLED', '2026-06-01 09:00:00', '2026-06-01 09:03:00', 8, '2026-06-02 08:00:00', 'Visitor tự hủy trên hệ thống vì lịch bay từ Seoul bị dời sang tuần khác.', 7, '2026-06-01 09:00:00', 8, '2026-06-02 08:00:00', 8),
-  ('ACTIVE', 1009, 'VR-SC-HN-0009', 21, 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'SINGLE_CAMPUS', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'APPROVED', '2026-06-02 09:00:00', '2026-06-02 09:05:00', NULL, NULL, NULL, 3, '2026-06-02 09:00:00', 21, '2026-06-03 09:30:00', 4),
-  ('ACTIVE', 2001, 'VR-MC-HN-HCM-0001', 22, 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'MULTI_CAMPUS', 'Emily Smith', 'Singapore Green Mobility Council', '+6591234567', 'emily.smith@greentech.example', 'PENDING_APPROVAL', '2026-06-23 09:00:00', '2026-06-23 09:04:00', NULL, NULL, NULL, 0, '2026-06-23 09:00:00', 22, NULL, NULL),
-  ('ACTIVE', 2002, 'VR-MC-HN-DN-0002', 23, 5, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'MULTI_CAMPUS', 'Maya Rodriguez', 'Iberia Mobility Forum', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'REJECTED', '2026-06-08 10:00:00', '2026-06-08 10:05:00', NULL, NULL, NULL, 1, '2026-06-08 10:00:00', 23, '2026-06-09 09:30:00', 2),
-  ('ACTIVE', 2003, 'VR-MC-HN-HCM-0003', 8, 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'PENDING_APPROVAL', '2026-06-15 09:00:00', '2026-06-15 09:03:00', NULL, NULL, NULL, 2, '2026-06-15 09:00:00', 8, '2026-06-16 10:00:00', 2),
-  ('ACTIVE', 2004, 'VR-MC-HN-DN-0004', 20, 1, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'SeoulTech School of Computing', 'Associate Professor', '+821055512345', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'MULTI_CAMPUS', 'Lee Joon Ho', 'SeoulTech School of Computing', '+821055512345', 'lee.joonho@seoultech.example', 'APPROVED', '2026-06-11 09:00:00', '2026-06-11 09:05:00', NULL, NULL, NULL, 3, '2026-06-11 09:00:00', 20, '2026-06-12 16:00:00', 2),
-  ('ACTIVE', 2005, 'VR-MC-HN-HCM-0005', 22, 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'MULTI_CAMPUS', 'Emily Smith', 'Singapore Green Mobility Council', '+6591234567', 'emily.smith@greentech.example', 'APPROVED', '2026-06-05 09:00:00', '2026-06-05 09:03:00', NULL, NULL, NULL, 4, '2026-06-05 09:00:00', 22, '2026-06-20 09:00:00', 4),
-  ('ACTIVE', 2006, 'VR-MC-HN-CT-0006', 23, 6, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'MULTI_CAMPUS', 'Maya Rodriguez', 'Iberia Mobility Forum', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'APPROVED', '2026-06-03 09:00:00', '2026-06-03 09:03:00', NULL, NULL, NULL, 5, '2026-06-03 09:00:00', 23, '2026-06-23 08:30:00', 4),
-  ('ACTIVE', 2007, 'VR-MC-HN-QN-0007', 24, 4, 'VISITOR_SUBMITTED', 'Carlos Mendes', 'Porto Applied AI Hub', 'Research Partnership Lead', '+351211234567', 'carlos.mendes@porto-ai.example', 'Bồ Đào Nha', 'MULTI_CAMPUS', 'Carlos Mendes', 'Porto Applied AI Hub', '+351211234567', 'carlos.mendes@porto-ai.example', 'APPROVED', '2026-05-25 09:00:00', '2026-05-25 09:03:00', NULL, NULL, NULL, 6, '2026-05-25 09:00:00', 24, '2026-06-12 16:00:00', 4),
-  ('ACTIVE', 2008, 'VR-MC-HN-HCM-DN-0008', 8, 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'APPROVED', '2026-05-10 09:00:00', '2026-05-10 09:03:00', NULL, NULL, NULL, 7, '2026-05-10 09:00:00', 8, '2026-05-25 17:00:00', 4),
-  ('ACTIVE', 2009, 'VR-MC-HN-HCM-0009', 21, 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'MULTI_CAMPUS', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'APPROVED', '2026-06-01 09:00:00', '2026-06-01 09:02:00', NULL, NULL, NULL, 5, '2026-06-01 09:00:00', 21, '2026-06-06 09:00:00', 4),
-  ('ACTIVE', 2010, 'VR-MC-HN-HCM-0010', 8, 3, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'CANCELLED', '2026-06-04 09:00:00', '2026-06-04 09:03:00', 8, '2026-06-06 08:00:00', 'Visitor tự hủy toàn bộ request liên cơ sở vì đoàn công tác cấp trường chuyển sang họp trực tuyến.', 8, '2026-06-04 09:00:00', 8, '2026-06-06 08:00:00', 8);
+INSERT INTO visit_requests (visit_request_id, registrant_user_id, request_code, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (1001, 8, 'VR-SC-HN-0001', 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-06-23 08:00:00', '2026-06-23 08:03:12', NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
+  (1002, 21, 'VR-SC-HN-0002', 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'SINGLE_CAMPUS', 'REJECTED', '2026-06-10 08:30:00', '2026-06-10 08:34:00', NULL, NULL, NULL, 1, '2026-06-10 08:30:00', 21, '2026-06-10 15:20:00', 3),
+  (1003, 20, 'VR-SC-HN-0003', 1, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'SeoulTech School of Computing', 'Associate Professor', '+821055512345', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-06-12 09:00:00', '2026-06-12 09:04:00', NULL, NULL, NULL, 2, '2026-06-12 09:00:00', 20, '2026-06-12 16:30:00', 3),
+  (1004, 22, 'VR-SC-HN-0004', 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'SINGLE_CAMPUS', 'APPROVED', '2026-06-13 09:00:00', '2026-06-13 09:03:00', NULL, NULL, NULL, 3, '2026-06-13 09:00:00', 22, '2026-06-18 10:00:00', 4),
+  (1005, 23, 'VR-SC-HN-0005', 5, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'SINGLE_CAMPUS', 'APPROVED', '2026-06-14 09:00:00', '2026-06-14 09:02:00', NULL, NULL, NULL, 4, '2026-06-14 09:00:00', 23, '2026-06-23 09:30:00', 4),
+  (1006, 8, 'VR-SC-HN-0006', 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-06-05 08:45:00', '2026-06-05 08:48:00', NULL, NULL, NULL, 5, '2026-06-05 08:45:00', 8, '2026-06-16 10:00:00', 4),
+  (1007, 24, 'VR-SC-HN-0007', 6, 'VISITOR_SUBMITTED', 'Carlos Mendes', 'Porto Applied AI Hub', 'Research Partnership Lead', '+351211234567', 'carlos.mendes@porto-ai.example', 'Bồ Đào Nha', 'SINGLE_CAMPUS', 'APPROVED', '2026-05-20 08:00:00', '2026-05-20 08:03:00', NULL, NULL, NULL, 6, '2026-05-20 08:00:00', 24, '2026-06-01 17:30:00', 4),
+  (1008, 8, 'VR-SC-HN-0008', 2, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'CANCELLED', '2026-06-01 09:00:00', '2026-06-01 09:03:00', 8, '2026-06-02 08:00:00', 'Visitor tự hủy trên hệ thống vì lịch bay từ Seoul bị dời sang tuần khác.', 7, '2026-06-01 09:00:00', 8, '2026-06-02 08:00:00', 8),
+  (1009, 21, 'VR-SC-HN-0009', 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'SINGLE_CAMPUS', 'APPROVED', '2026-06-02 09:00:00', '2026-06-02 09:05:00', NULL, NULL, NULL, 3, '2026-06-02 09:00:00', 21, '2026-06-03 09:30:00', 4),
+  (2001, 22, 'VR-MC-HN-HCM-0001', 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-06-23 09:00:00', '2026-06-23 09:04:00', NULL, NULL, NULL, 0, '2026-06-23 09:00:00', 22, NULL, NULL),
+  (2002, 23, 'VR-MC-HN-DN-0002', 5, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'MULTI_CAMPUS', 'REJECTED', '2026-06-08 10:00:00', '2026-06-08 10:05:00', NULL, NULL, NULL, 1, '2026-06-08 10:00:00', 23, '2026-06-09 09:30:00', 2),
+  (2003, 8, 'VR-MC-HN-HCM-0003', 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-06-15 09:00:00', '2026-06-15 09:03:00', NULL, NULL, NULL, 2, '2026-06-15 09:00:00', 8, '2026-06-16 10:00:00', 2),
+  (2004, 20, 'VR-MC-HN-DN-0004', 1, 'VISITOR_SUBMITTED', 'Lee Joon Ho', 'SeoulTech School of Computing', 'Associate Professor', '+821055512345', 'lee.joonho@seoultech.example', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-06-11 09:00:00', '2026-06-11 09:05:00', NULL, NULL, NULL, 3, '2026-06-11 09:00:00', 20, '2026-06-12 16:00:00', 2),
+  (2005, 22, 'VR-MC-HN-HCM-0005', 3, 'VISITOR_SUBMITTED', 'Emily Smith', 'Singapore Green Mobility Council', 'Policy Liaison', '+6591234567', 'emily.smith@greentech.example', 'Singapore', 'MULTI_CAMPUS', 'APPROVED', '2026-06-05 09:00:00', '2026-06-05 09:03:00', NULL, NULL, NULL, 4, '2026-06-05 09:00:00', 22, '2026-06-20 09:00:00', 4),
+  (2006, 23, 'VR-MC-HN-CT-0006', 6, 'VISITOR_SUBMITTED', 'Maya Rodriguez', 'Iberia Mobility Forum', 'Program Curator', '+34911222333', 'maya.rodriguez@iberia-mobility.example', 'Tây Ban Nha', 'MULTI_CAMPUS', 'APPROVED', '2026-06-03 09:00:00', '2026-06-03 09:03:00', NULL, NULL, NULL, 5, '2026-06-03 09:00:00', 23, '2026-06-23 08:30:00', 4),
+  (2007, 24, 'VR-MC-HN-QN-0007', 4, 'VISITOR_SUBMITTED', 'Carlos Mendes', 'Porto Applied AI Hub', 'Research Partnership Lead', '+351211234567', 'carlos.mendes@porto-ai.example', 'Bồ Đào Nha', 'MULTI_CAMPUS', 'APPROVED', '2026-05-25 09:00:00', '2026-05-25 09:03:00', NULL, NULL, NULL, 6, '2026-05-25 09:00:00', 24, '2026-06-12 16:00:00', 4),
+  (2008, 8, 'VR-MC-HN-HCM-DN-0008', 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-05-10 09:00:00', '2026-05-10 09:03:00', NULL, NULL, NULL, 7, '2026-05-10 09:00:00', 8, '2026-05-25 17:00:00', 4),
+  (2009, 21, 'VR-MC-HN-HCM-0009', 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'MULTI_CAMPUS', 'APPROVED', '2026-06-01 09:00:00', '2026-06-01 09:02:00', NULL, NULL, NULL, 5, '2026-06-01 09:00:00', 21, '2026-06-06 09:00:00', 4),
+  (2010, 8, 'VR-MC-HN-HCM-0010', 3, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-06-04 09:00:00', '2026-06-04 09:03:00', 8, '2026-06-06 08:00:00', 'Visitor tự hủy toàn bộ request liên cơ sở vì đoàn công tác cấp trường chuyển sang họp trực tuyến.', 8, '2026-06-04 09:00:00', 8, '2026-06-06 08:00:00', 8);
 
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (3001, 1001, 1, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
   (3002, 1002, 1, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-06-10 15:20:00', 'STAFF_LEADER', 'Từ chối do thời gian chuẩn bị thiết bị robot quá ngắn và phòng lab đã có lịch thi cuối kỳ. [Migrated to campus-level rejection for HN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-10 08:30:00', 21, '2026-06-10 15:20:00', 3),
-  (3003, 1003, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 4, 3, '2026-06-12 16:45:00', 3, '2026-06-12 16:45:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-12 09:00:00', 20, '2026-06-12 16:45:00', 3),
+  (3003, 1003, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 4, 3, '2026-06-12 16:45:00', 3, '2026-06-12 16:45:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-12 09:00:00', 20, '2026-06-12 16:45:00', 3),
   (3004, 1004, 1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 4, 3, '2026-06-13 14:15:00', 3, '2026-06-13 14:15:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-06-13 09:00:00', 22, '2026-06-18 10:00:00', 4),
   (3005, 1005, 1, (CURRENT_TIMESTAMP - INTERVAL 60 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 180 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 4, 3, '2026-06-14 15:30:00', 3, '2026-06-14 15:30:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-06-14 09:00:00', 23, '2026-06-23 09:30:00', 4),
   (3006, 1006, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 14 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 4, 3, '2026-06-05 14:45:00', 3, '2026-06-05 14:45:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-06-05 08:45:00', 8, '2026-06-16 10:00:00', 4),
@@ -4992,8 +5007,8 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (3104, 2002, 3, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 11, '2026-06-09 09:30:00', 'STAFF_LEADER', 'Từ chối do trùng lịch sự kiện cấp campus ở cả Hà Nội và Đà Nẵng; đề nghị đoàn chọn tuần khác. [Migrated to campus-level rejection for DN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-08 10:00:00', 23, '2026-06-09 09:30:00', 2),
   (3105, 2003, 1, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'WAITING_REQUEST_APPROVAL', 3, 2, '2026-06-16 10:05:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-15 09:00:00', 8, '2026-06-16 10:05:00', 2),
   (3106, 2003, 2, CURRENT_DATE + INTERVAL 28 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 28 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'WAITING_REQUEST_APPROVAL', 9, 2, '2026-06-16 10:06:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-06-15 09:00:00', 8, '2026-06-16 10:06:00', 2),
-  (3107, 2004, 1, CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'ASSIGNED', 3, 2, '2026-06-12 09:05:00', 4, 3, '2026-06-12 16:20:00', 3, '2026-06-12 16:20:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-06-11 09:00:00', 20, '2026-06-12 16:20:00', 3),
-  (3108, 2004, 3, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'ASSIGNED', 11, 2, '2026-06-12 09:06:00', 12, 11, '2026-06-12 16:25:00', 11, '2026-06-12 16:25:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-06-11 09:00:00', 20, '2026-06-12 16:25:00', 11),
+  (3107, 2004, 1, CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'BEFORE_VISIT', 3, 2, '2026-06-12 09:05:00', 4, 3, '2026-06-12 16:20:00', 3, '2026-06-12 16:20:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-06-11 09:00:00', 20, '2026-06-12 16:20:00', 3),
+  (3108, 2004, 3, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'BEFORE_VISIT', 11, 2, '2026-06-12 09:06:00', 12, 11, '2026-06-12 16:25:00', 11, '2026-06-12 16:25:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-06-11 09:00:00', 20, '2026-06-12 16:25:00', 11),
   (3109, 2005, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'BEFORE_VISIT', 3, 2, '2026-06-05 16:05:00', 4, 3, '2026-06-06 09:00:00', 3, '2026-06-06 09:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-06-05 09:00:00', 22, '2026-06-20 09:00:00', 4),
   (3110, 2005, 2, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'BEFORE_VISIT', 9, 2, '2026-06-05 16:06:00', 10, 9, '2026-06-06 09:30:00', 9, '2026-06-06 09:30:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-06-05 09:00:00', 22, '2026-06-20 09:10:00', 10),
   (3111, 2006, 1, (CURRENT_TIMESTAMP - INTERVAL 15 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 60 MINUTE), 'DURING_VISIT', 3, 2, '2026-06-04 09:05:00', 4, 3, '2026-06-04 10:00:00', 3, '2026-06-04 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-06-03 09:00:00', 23, '2026-06-23 08:30:00', 4),
@@ -5027,7 +5042,6 @@ INSERT INTO visit_instance_form_details (
   transportation_note,
   media_consent_status,
   media_consent_note,
-  note_to_fptu,
   form_revision,
   approval_revision,
   row_version,
@@ -5041,20 +5055,19 @@ SELECT
   sf.visit_type_other,
   sf.purpose,
   sf.working_content,
-  vr.contact_person_full_name,
-  NULLIF(TRIM(vr.contact_person_organization), ''),
-  vr.contact_person_phone,
-  NULLIF(TRIM(vr.contact_person_email), ''),
+  vr.registrant_full_name,
+  NULLIF(TRIM(vr.registrant_organization), ''),
+  vr.registrant_phone,
+  vr.registrant_email,
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
   sf.media_consent_note,
-  sf.note_to_fptu,
   1,
   1,
   0,
   vrc.created_at,
-  COALESCE(vr.created_by, vr.visitor_user_id)
+  COALESCE(vr.created_by, vr.registrant_user_id)
 FROM visit_request_campuses vrc
 JOIN visit_requests vr
   ON vr.visit_request_id = vrc.visit_request_id
@@ -5069,8 +5082,7 @@ JOIN (
     'EN' AS working_language,
     'Khách tự túc phương tiện. Xe riêng của đoàn, đến cổng chính Hòa Lạc.' AS transportation_note,
     'AGREED' AS media_consent_status,
-    'Đồng ý sử dụng hình ảnh cho bản tin nội bộ và public news nếu được duyệt.' AS media_consent_note,
-    'Cần hướng dẫn tuyến đường từ trung tâm Hà Nội đến Hòa Lạc.' AS note_to_fptu
+    'Đồng ý sử dụng hình ảnh cho bản tin nội bộ và public news nếu được duyệt.' AS media_consent_note
     UNION ALL SELECT
     1002,
     'Kyoto robotics showcase request',
@@ -5081,8 +5093,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu hỗ trợ xe điện nội khu nếu có.',
     'DECLINED',
-    NULL,
-    'Đoàn có lịch trình gấp, chỉ có thể tham quan trong 90 phút.'
+    NULL
     UNION ALL SELECT
     1003,
     'SeoulTech AI curriculum briefing',
@@ -5093,8 +5104,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự di chuyển bằng xe 16 chỗ.',
     'AGREED',
-    'Chỉ sử dụng ảnh nhóm sau khi đoàn xác nhận.',
-    'Ưu tiên lịch buổi sáng vì đoàn bay về trong ngày.'
+    'Chỉ sử dụng ảnh nhóm sau khi đoàn xác nhận.'
     UNION ALL SELECT
     1004,
     'Green campus preparation visit',
@@ -5105,8 +5115,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ xe điện nội khu cho 6 khách.',
     'AGREED',
-    'Đồng ý ảnh hoạt động ngoài trời.',
-    'Cần chuẩn bị nước uống vì đoàn có khách lớn tuổi.'
+    'Đồng ý ảnh hoạt động ngoài trời.'
     UNION ALL SELECT
     1005,
     'Iberia Mobility Forum campus day',
@@ -5117,8 +5126,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn có xe thuê riêng, FPTU hỗ trợ điều phối bãi đỗ.',
     'AGREED',
-    'Đồng ý dùng hình ảnh cho recap sau sự kiện.',
-    'Cần chuẩn bị khu vực check-in trước 08:45.'
+    'Đồng ý dùng hình ảnh cho recap sau sự kiện.'
     UNION ALL SELECT
     1006,
     'SeoulTech AI lab follow-up discussion',
@@ -5129,8 +5137,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Taxi từ khách sạn đến campus.',
     'DECLINED',
-    NULL,
-    'Đề nghị gửi biên bản sau buổi họp trong vòng 2 ngày.'
+    NULL
     UNION ALL SELECT
     1007,
     'Porto AI Hub closed delegation',
@@ -5141,8 +5148,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU bố trí xe từ khách sạn và trả đoàn tại sân bay.',
     'AGREED',
-    'Đồng ý public ảnh ký kết sau khi kiểm duyệt.',
-    'Cần lưu hồ sơ để báo cáo tháng 6.'
+    'Đồng ý public ảnh ký kết sau khi kiểm duyệt.'
     UNION ALL SELECT
     1008,
     'Self-cancelled seminar visit',
@@ -5153,8 +5159,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Xe riêng của đoàn.',
     'DECLINED',
-    NULL,
-    'Visitor báo lịch bay thay đổi trước giai đoạn chuẩn bị.'
+    NULL
     UNION ALL SELECT
     1009,
     'Host-cancelled campus instance by external confirmation',
@@ -5165,8 +5170,7 @@ JOIN (
     'EN',
     NULL,
     'DECLINED',
-    NULL,
-    'Host lưu rõ kênh xác nhận trong cancellation_reason của campus instance.'
+    NULL
     UNION ALL SELECT
     2001,
     'Multi-campus green mobility assessment',
@@ -5177,8 +5181,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần hỗ trợ shuttle nội khu tại từng campus.',
     'AGREED',
-    'Cho phép ảnh khuôn viên và phương tiện xanh.',
-    'Đề nghị lịch trình hai campus cách nhau ít nhất 2 ngày.'
+    'Cho phép ảnh khuôn viên và phương tiện xanh.'
     UNION ALL SELECT
     2002,
     'Rejected cross-campus mobility forum',
@@ -5189,8 +5192,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn tự thuê xe giữa các địa điểm.',
     'AGREED',
-    'Đồng ý ảnh nội bộ nếu được tổ chức.',
-    'Cần phản hồi sớm để đoàn điều chỉnh vé máy bay.'
+    'Đồng ý ảnh nội bộ nếu được tổ chức.'
     UNION ALL SELECT
     2003,
     'Campus-level pending Staff Leader approval tour',
@@ -5201,8 +5203,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự đặt xe theo từng thành phố.',
     'AGREED',
-    'Cho phép dùng ảnh tour nếu không chụp tài liệu nội bộ.',
-    'Staff Leader xử lý xong, HN và HCM đang chờ Staff Leader từng campus approve và gán host.'
+    'Cho phép dùng ảnh tour nếu không chụp tài liệu nội bộ.'
     UNION ALL SELECT
     2004,
     'Assigned cross-campus AI curriculum roadshow',
@@ -5213,8 +5214,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ phòng workshop và xe nội khu.',
     'AGREED',
-    'Ảnh workshop được dùng cho recap nếu host duyệt.',
-    NULL
+    'Ảnh workshop được dùng cho recap nếu host duyệt.'
     UNION ALL SELECT
     2005,
     'Before-visit mobility preparation',
@@ -5225,8 +5225,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu xe điện tại HN và shuttle tại HCM.',
     'AGREED',
-    'Chỉ chụp ảnh khuôn viên, không chụp biển số xe cá nhân.',
-    NULL
+    'Chỉ chụp ảnh khuôn viên, không chụp biển số xe cá nhân.'
     UNION ALL SELECT
     2006,
     'During-visit sustainability exchange',
@@ -5237,8 +5236,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn sử dụng xe thuê riêng, cần hỗ trợ check-in nhanh.',
     'AGREED',
-    'Cho phép ảnh hoạt động sinh viên.',
-    NULL
+    'Cho phép ảnh hoạt động sinh viên.'
     UNION ALL SELECT
     2007,
     'After-visit hospitality and AI follow-up',
@@ -5249,8 +5247,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Tự di chuyển bằng taxi/xe công tác địa phương.',
     'DECLINED',
-    NULL,
-    'Cần gửi bản tổng hợp action items bằng tiếng Anh.'
+    NULL
     UNION ALL SELECT
     2008,
     'Closed three-campus partnership tour',
@@ -5261,8 +5258,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ điều phối xe nội khu tại từng campus.',
     'AGREED',
-    'Ảnh ký kết được duyệt cho public news.',
-    NULL
+    'Ảnh ký kết được duyệt cho public news.'
     UNION ALL SELECT
     2009,
     'Partial-cancel robotics route',
@@ -5273,8 +5269,7 @@ JOIN (
     'EN',
     NULL,
     'DECLINED',
-    NULL,
-    'Cần giữ lịch HCM dù HN không còn tiếp.'
+    NULL
     UNION ALL SELECT
     2010,
     'Visitor-cancelled cross-campus mobility visit',
@@ -5285,8 +5280,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU dự kiến hỗ trợ shuttle tại HN và HCM.',
     'AGREED',
-    'Đồng ý ảnh nếu chuyến thăm diễn ra.',
-    'Visitor tự hủy toàn bộ request sau khi Staff Leader từng campus đã xử lý.'
+    'Đồng ý ảnh nếu chuyến thăm diễn ra.'
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -5643,7 +5637,7 @@ INSERT INTO audit_log_changes (audit_log_change_id, audit_log_id, field_name, ol
   (4, 2, 'decision_actor_role', NULL, 'HO', '2026-06-16 10:00:00'),
   (5, 3, 'current_host_user_id', NULL, '4', '2026-06-12 16:45:00'),
   (6, 4, 'status', 'APPROVED', 'CANCELLED', '2026-06-02 08:00:00'),
-  (7, 5, 'campus_status', 'ASSIGNED', 'CANCELLED', '2026-06-03 09:30:00'),
+  (7, 5, 'campus_status', 'BEFORE_VISIT', 'CANCELLED', '2026-06-03 09:30:00'),
   (8, 6, 'campus_status', 'AFTER_VISIT', 'CLOSED', '2026-06-01 17:30:00'),
   (9, 7, 'news.status', 'PENDING_REVIEW', 'PUBLISHED', '2026-06-01 16:30:00');
 
@@ -5669,7 +5663,7 @@ INSERT INTO audit_log_changes (audit_log_change_id, audit_log_id, field_name, ol
 -- - Staff HN sees assigned/linked host instances through current_host_user_id/participants.
 -- - Department HN sees assigned logistics/department support rows.
 -- - Student sees invited/assigned student participant rows.
--- - Visitor sees own requests through visitor_user_id = 8.
+-- - Visitor sees own requests through registrant_user_id = 8.
 -- - Admin visit view must return zero rows.
 -- =====================================================================
 
@@ -5913,103 +5907,103 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
 -- C. Visit/delegation wide coverage: single, multi, all request/instance statuses
 -- ---------------------------------------------------------------------
 
-INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  ('ACTIVE', 3001, 'VR2-SC-3001', 8, 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', '+84901003001', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 0, '2026-07-01 08:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3002, 'VR2-SC-3002', 8, 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003002', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', '+84901003002', 'visitor@example.com', 'REJECTED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 1, '2026-07-02 09:00:00', 8, '2026-07-02 15:20:00', 3),
-  ('ACTIVE', 3003, 'VR2-SC-3003', 8, 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003003', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'University of Technology Sydney Student Exchange', '+84901003003', 'visitor@example.com', 'APPROVED', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 2, '2026-07-03 10:00:00', 8, '2026-07-03 16:20:00', 3),
-  ('ACTIVE', 3004, 'VR2-SC-3004', 8, 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003004', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Nordic Green Campus Alliance', '+84901003004', 'visitor@example.com', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 3, '2026-07-04 11:00:00', 8, '2026-07-04 17:20:00', 3),
-  ('ACTIVE', 3005, 'VR2-SC-3005', 8, 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003005', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Paris Digital Arts Institute', '+84901003005', 'visitor@example.com', 'APPROVED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', NULL, NULL, NULL, 4, '2026-07-05 12:00:00', 8, '2026-07-05 14:20:00', 3),
-  ('ACTIVE', 3006, 'VR2-SC-3006', 8, 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003006', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Gulf Innovation Fund for Education', '+84901003006', 'visitor@example.com', 'APPROVED', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 5, '2026-07-06 13:00:00', 8, '2026-07-06 15:20:00', 3),
-  ('ACTIVE', 3007, 'VR2-SC-3007', 8, 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003007', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Seattle EdTech Studio', '+84901003007', 'visitor@example.com', 'APPROVED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 6, '2026-07-07 14:00:00', 8, '2026-07-07 16:20:00', 3),
-  ('ACTIVE', 3008, 'VR2-SC-3008', 8, 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003008', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Lagos Tech Bridge Initiative', '+84901003008', 'visitor@example.com', 'APPROVED', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 7, '2026-07-08 15:00:00', 8, '2026-07-08 17:20:00', 3),
-  ('ACTIVE', 3009, 'VR2-SC-3009', 8, 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003009', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'External Visitor Main', 'Andes University Exchange Office', '+84901003009', 'visitor@example.com', 'CANCELLED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', 8, '2026-07-10 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-09 08:00:00', 8, '2026-07-09 14:20:00', 3),
-  ('ACTIVE', 3010, 'VR2-SC-3010', 202, 110, 'VISITOR_SUBMITTED', 'Sofia Bianchi', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003010', 'sofia.bianchi@polimi.example', 'Ý', 'SINGLE_CAMPUS', 'Sofia Bianchi', 'Singapore Applied AI Consortium', '+84901003010', 'sofia.bianchi@polimi.example', 'PENDING_APPROVAL', '2026-07-10 09:00:00', '2026-07-10 09:03:00', NULL, NULL, NULL, 0, '2026-07-10 09:00:00', 202, NULL, NULL),
-  ('ACTIVE', 3011, 'VR2-SC-3011', 203, 101, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003011', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'Nguyen Kelly', 'Indian Institute of Technology Delhi International Office', '+84901003011', 'kelly.nguyen@uts.example', 'REJECTED', '2026-07-11 10:00:00', '2026-07-11 10:03:00', NULL, NULL, NULL, 1, '2026-07-11 10:00:00', 203, '2026-07-11 16:20:00', 9),
-  ('ACTIVE', 3012, 'VR2-SC-3012', 204, 102, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003012', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Politecnico di Milano Mobility Lab', '+84901003012', 'noah.jensen@nordic-green.example', 'APPROVED', '2026-07-12 11:00:00', '2026-07-12 11:03:00', NULL, NULL, NULL, 2, '2026-07-12 11:00:00', 204, '2026-07-12 17:20:00', 9),
-  ('ACTIVE', 3013, 'VR2-SC-3013', 204, 103, 'VISITOR_SUBMITTED', 'Noah Jensen', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003013', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'University of Technology Sydney Student Exchange', '+84901003013', 'noah.jensen@nordic-green.example', 'APPROVED', '2026-07-13 12:00:00', '2026-07-13 12:03:00', NULL, NULL, NULL, 3, '2026-07-13 12:00:00', 204, '2026-07-13 14:20:00', 9),
-  ('ACTIVE', 3014, 'VR2-SC-3014', 204, 104, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003014', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Nordic Green Campus Alliance', '+84901003014', 'noah.jensen@nordic-green.example', 'APPROVED', '2026-07-14 13:00:00', '2026-07-14 13:03:00', NULL, NULL, NULL, 4, '2026-07-14 13:00:00', 204, '2026-07-14 15:20:00', 9),
-  ('ACTIVE', 3015, 'VR2-SC-3015', 204, 105, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003015', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Paris Digital Arts Institute', '+84901003015', 'noah.jensen@nordic-green.example', 'APPROVED', '2026-07-15 14:00:00', '2026-07-15 14:03:00', NULL, NULL, NULL, 5, '2026-07-15 14:00:00', 204, '2026-07-15 16:20:00', 9),
-  ('ACTIVE', 3016, 'VR2-SC-3016', 204, 106, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003016', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Gulf Innovation Fund for Education', '+84901003016', 'noah.jensen@nordic-green.example', 'APPROVED', '2026-07-16 15:00:00', '2026-07-16 15:03:00', NULL, NULL, NULL, 6, '2026-07-16 15:00:00', 204, '2026-07-16 17:20:00', 9),
-  ('ACTIVE', 3017, 'VR2-SC-3017', 205, 107, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003017', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Seattle EdTech Studio', '+84901003017', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-17 08:00:00', '2026-07-17 08:03:00', NULL, NULL, NULL, 7, '2026-07-17 08:00:00', 205, '2026-07-17 14:20:00', 9),
-  ('ACTIVE', 3018, 'VR2-SC-3018', 206, 108, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003018', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', '+84901003018', 'omar.almansouri@gulf-innovation.example', 'CANCELLED', '2026-07-18 09:00:00', '2026-07-18 09:03:00', 206, '2026-07-19 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-18 09:00:00', 206, '2026-07-18 15:20:00', 9),
-  ('ACTIVE', 3019, 'VR2-SC-3019', 203, 109, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003019', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'Nguyen Kelly', 'Andes University Exchange Office', '+84901003019', 'kelly.nguyen@uts.example', 'PENDING_APPROVAL', '2026-07-19 10:00:00', '2026-07-19 10:03:00', NULL, NULL, NULL, 0, '2026-07-19 10:00:00', 203, NULL, NULL),
-  ('ACTIVE', 3020, 'VR2-SC-3020', 204, 110, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003020', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Singapore Applied AI Consortium', '+84901003020', 'noah.jensen@nordic-green.example', 'REJECTED', '2026-07-20 11:00:00', '2026-07-20 11:03:00', NULL, NULL, NULL, 1, '2026-07-20 11:00:00', 204, '2026-07-20 17:20:00', 11),
-  ('ACTIVE', 3021, 'VR2-SC-3021', 205, 101, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003021', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', '+84901003021', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-01 12:00:00', '2026-07-01 12:03:00', NULL, NULL, NULL, 2, '2026-07-01 12:00:00', 205, '2026-07-01 14:20:00', 11),
-  ('ACTIVE', 3022, 'VR2-SC-3022', 205, 102, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003022', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Politecnico di Milano Mobility Lab', '+84901003022', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-02 13:00:00', '2026-07-02 13:03:00', NULL, NULL, NULL, 3, '2026-07-02 13:00:00', 205, '2026-07-02 15:20:00', 11),
-  ('ACTIVE', 3023, 'VR2-SC-3023', 205, 103, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003023', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'University of Technology Sydney Student Exchange', '+84901003023', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-03 14:00:00', '2026-07-03 14:03:00', NULL, NULL, NULL, 4, '2026-07-03 14:00:00', 205, '2026-07-03 16:20:00', 11),
-  ('ACTIVE', 3024, 'VR2-SC-3024', 205, 104, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003024', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Nordic Green Campus Alliance', '+84901003024', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-04 15:00:00', '2026-07-04 15:03:00', NULL, NULL, NULL, 5, '2026-07-04 15:00:00', 205, '2026-07-04 17:20:00', 11),
-  ('ACTIVE', 3025, 'VR2-SC-3025', 205, 105, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003025', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Paris Digital Arts Institute', '+84901003025', 'amelie.dubois@paris-digital.example', 'APPROVED', '2026-07-05 08:00:00', '2026-07-05 08:03:00', NULL, NULL, NULL, 6, '2026-07-05 08:00:00', 205, '2026-07-05 14:20:00', 11),
-  ('ACTIVE', 3026, 'VR2-SC-3026', 206, 106, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003026', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', '+84901003026', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-06 09:00:00', '2026-07-06 09:03:00', NULL, NULL, NULL, 7, '2026-07-06 09:00:00', 206, '2026-07-06 15:20:00', 11),
-  ('ACTIVE', 3027, 'VR2-SC-3027', 207, 107, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003027', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Seattle EdTech Studio', '+84901003027', 'linh.tran@seattle-edtech.example', 'CANCELLED', '2026-07-07 10:00:00', '2026-07-07 10:03:00', 207, '2026-07-08 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-07 10:00:00', 207, '2026-07-07 16:20:00', 11),
-  ('ACTIVE', 3028, 'VR2-SC-3028', 204, 108, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003028', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'Noah Jensen', 'Lagos Tech Bridge Initiative', '+84901003028', 'noah.jensen@nordic-green.example', 'PENDING_APPROVAL', '2026-07-08 11:00:00', '2026-07-08 11:03:00', NULL, NULL, NULL, 0, '2026-07-08 11:00:00', 204, NULL, NULL),
-  ('ACTIVE', 3029, 'VR2-SC-3029', 205, 109, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003029', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Andes University Exchange Office', '+84901003029', 'amelie.dubois@paris-digital.example', 'REJECTED', '2026-07-09 12:00:00', '2026-07-09 12:03:00', NULL, NULL, NULL, 1, '2026-07-09 12:00:00', 205, '2026-07-09 14:20:00', 13),
-  ('ACTIVE', 3030, 'VR2-SC-3030', 206, 110, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003030', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Singapore Applied AI Consortium', '+84901003030', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-10 13:00:00', '2026-07-10 13:03:00', NULL, NULL, NULL, 2, '2026-07-10 13:00:00', 206, '2026-07-10 15:20:00', 13),
-  ('ACTIVE', 3031, 'VR2-SC-3031', 206, 101, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003031', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Indian Institute of Technology Delhi International Office', '+84901003031', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-11 14:00:00', '2026-07-11 14:03:00', NULL, NULL, NULL, 3, '2026-07-11 14:00:00', 206, '2026-07-11 16:20:00', 13),
-  ('ACTIVE', 3032, 'VR2-SC-3032', 206, 102, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003032', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', '+84901003032', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-12 15:00:00', '2026-07-12 15:03:00', NULL, NULL, NULL, 4, '2026-07-12 15:00:00', 206, '2026-07-12 17:20:00', 13),
-  ('ACTIVE', 3033, 'VR2-SC-3033', 206, 103, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003033', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'University of Technology Sydney Student Exchange', '+84901003033', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-13 08:00:00', '2026-07-13 08:03:00', NULL, NULL, NULL, 5, '2026-07-13 08:00:00', 206, '2026-07-13 14:20:00', 13),
-  ('ACTIVE', 3034, 'VR2-SC-3034', 206, 104, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003034', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Nordic Green Campus Alliance', '+84901003034', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-14 09:00:00', '2026-07-14 09:03:00', NULL, NULL, NULL, 6, '2026-07-14 09:00:00', 206, '2026-07-14 15:20:00', 13),
-  ('ACTIVE', 3035, 'VR2-SC-3035', 207, 105, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003035', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Paris Digital Arts Institute', '+84901003035', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-15 10:00:00', '2026-07-15 10:03:00', NULL, NULL, NULL, 7, '2026-07-15 10:00:00', 207, '2026-07-15 16:20:00', 13),
-  ('ACTIVE', 3036, 'VR2-SC-3036', 208, 106, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003036', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'Grace Okafor', 'Gulf Innovation Fund for Education', '+84901003036', 'grace.okafor@lagos-tech.example', 'CANCELLED', '2026-07-16 11:00:00', '2026-07-16 11:03:00', 208, '2026-07-17 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-16 11:00:00', 208, '2026-07-16 17:20:00', 13),
-  ('ACTIVE', 3037, 'VR2-SC-3037', 205, 107, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003037', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'Amelie Dubois', 'Seattle EdTech Studio', '+84901003037', 'amelie.dubois@paris-digital.example', 'PENDING_APPROVAL', '2026-07-17 12:00:00', '2026-07-17 12:03:00', NULL, NULL, NULL, 0, '2026-07-17 12:00:00', 205, NULL, NULL),
-  ('ACTIVE', 3038, 'VR2-SC-3038', 206, 108, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003038', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', '+84901003038', 'omar.almansouri@gulf-innovation.example', 'REJECTED', '2026-07-18 13:00:00', '2026-07-18 13:03:00', NULL, NULL, NULL, 1, '2026-07-18 13:00:00', 206, '2026-07-18 15:20:00', 15),
-  ('ACTIVE', 3039, 'VR2-SC-3039', 207, 109, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003039', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Andes University Exchange Office', '+84901003039', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-19 14:00:00', '2026-07-19 14:03:00', NULL, NULL, NULL, 2, '2026-07-19 14:00:00', 207, '2026-07-19 16:20:00', 15),
-  ('ACTIVE', 3040, 'VR2-SC-3040', 207, 110, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003040', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Singapore Applied AI Consortium', '+84901003040', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-20 15:00:00', '2026-07-20 15:03:00', NULL, NULL, NULL, 3, '2026-07-20 15:00:00', 207, '2026-07-20 17:20:00', 15),
-  ('ACTIVE', 3041, 'VR2-SC-3041', 207, 101, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003041', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', '+84901003041', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 4, '2026-07-01 08:00:00', 207, '2026-07-01 14:20:00', 15),
-  ('ACTIVE', 3042, 'VR2-SC-3042', 207, 102, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003042', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Politecnico di Milano Mobility Lab', '+84901003042', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 5, '2026-07-02 09:00:00', 207, '2026-07-02 15:20:00', 15),
-  ('ACTIVE', 3043, 'VR2-SC-3043', 207, 103, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003043', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', '+84901003043', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 6, '2026-07-03 10:00:00', 207, '2026-07-03 16:20:00', 15),
-  ('ACTIVE', 3044, 'VR2-SC-3044', 208, 104, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003044', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'Grace Okafor', 'Nordic Green Campus Alliance', '+84901003044', 'grace.okafor@lagos-tech.example', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 7, '2026-07-04 11:00:00', 208, '2026-07-04 17:20:00', 15),
-  ('ACTIVE', 3045, 'VR2-SC-3045', 209, 105, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003045', 'mateo.alvarez@andes-exchange.example', 'Chile', 'SINGLE_CAMPUS', 'Mateo Alvarez', 'Paris Digital Arts Institute', '+84901003045', 'mateo.alvarez@andes-exchange.example', 'CANCELLED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', 209, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-05 12:00:00', 209, '2026-07-05 14:20:00', 15),
-  ('ACTIVE', 3046, 'VR2-SC-3046', 206, 106, 'STAFF_CREATED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003046', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', '+84901003046', 'omar.almansouri@gulf-innovation.example', 'APPROVED', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 0, '2026-07-06 13:00:00', 206, '2026-07-06 15:20:00', 3),
-  ('ACTIVE', 3047, 'VR2-SC-3047', 207, 107, 'STAFF_CREATED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003047', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'Linh Tran Seattle', 'Seattle EdTech Studio', '+84901003047', 'linh.tran@seattle-edtech.example', 'APPROVED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 1, '2026-07-07 14:00:00', 207, '2026-07-07 16:20:00', 9),
-  ('ACTIVE', 3048, 'VR2-SC-3048', 208, 108, 'STAFF_CREATED', 'Grace Okafor', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003048', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'Grace Okafor', 'Lagos Tech Bridge Initiative', '+84901003048', 'grace.okafor@lagos-tech.example', 'APPROVED', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 2, '2026-07-08 15:00:00', 208, '2026-07-08 17:20:00', 11),
-  ('ACTIVE', 3049, 'VR2-SC-3049', 209, 109, 'STAFF_CREATED', 'Mateo Alvarez', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003049', 'mateo.alvarez@andes-exchange.example', 'Chile', 'SINGLE_CAMPUS', 'Mateo Alvarez', 'Andes University Exchange Office', '+84901003049', 'mateo.alvarez@andes-exchange.example', 'APPROVED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', NULL, NULL, NULL, 3, '2026-07-09 08:00:00', 209, '2026-07-09 14:20:00', 13),
-  ('ACTIVE', 3050, 'VR2-SC-3050', 210, 110, 'STAFF_CREATED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003050', 'priya.raman@singapore-ai.example', 'Singapore', 'SINGLE_CAMPUS', 'Priya Raman', 'Singapore Applied AI Consortium', '+84901003050', 'priya.raman@singapore-ai.example', 'APPROVED', '2026-07-10 09:00:00', '2026-07-10 09:03:00', NULL, NULL, NULL, 4, '2026-07-10 09:00:00', 210, '2026-07-10 15:20:00', 15),
-  ('ACTIVE', 3051, 'VR2-MC-3051', 8, 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003051', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', '+84901003051', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-11 10:00:00', '2026-07-11 10:03:00', NULL, NULL, NULL, 5, '2026-07-11 10:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3052, 'VR2-MC-3052', 8, 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003052', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', '+84901003052', 'visitor@example.com', 'REJECTED', '2026-07-12 11:00:00', '2026-07-12 11:03:00', NULL, NULL, NULL, 6, '2026-07-12 11:00:00', 8, '2026-07-12 17:20:00', 2),
-  ('ACTIVE', 3053, 'VR2-MC-3053', 8, 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003053', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'University of Technology Sydney Student Exchange', '+84901003053', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-13 12:00:00', '2026-07-13 12:03:00', NULL, NULL, NULL, 7, '2026-07-13 12:00:00', 8, '2026-07-13 14:20:00', 2),
-  ('ACTIVE', 3054, 'VR2-MC-3054', 8, 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003054', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Nordic Green Campus Alliance', '+84901003054', 'visitor@example.com', 'APPROVED', '2026-07-14 13:00:00', '2026-07-14 13:03:00', NULL, NULL, NULL, 8, '2026-07-14 13:00:00', 8, '2026-07-14 15:20:00', 2),
-  ('ACTIVE', 3055, 'VR2-MC-3055', 8, 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003055', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Paris Digital Arts Institute', '+84901003055', 'visitor@example.com', 'CANCELLED', '2026-07-15 14:00:00', '2026-07-15 14:03:00', 8, '2026-07-16 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 0, '2026-07-15 14:00:00', 8, '2026-07-15 16:20:00', 2),
-  ('ACTIVE', 3056, 'VR2-MC-3056', 8, 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003056', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Gulf Innovation Fund for Education', '+84901003056', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-16 15:00:00', '2026-07-16 15:03:00', NULL, NULL, NULL, 1, '2026-07-16 15:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3057, 'VR2-MC-3057', 8, 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003057', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Seattle EdTech Studio', '+84901003057', 'visitor@example.com', 'REJECTED', '2026-07-17 08:00:00', '2026-07-17 08:03:00', NULL, NULL, NULL, 2, '2026-07-17 08:00:00', 8, '2026-07-17 14:20:00', 2),
-  ('ACTIVE', 3058, 'VR2-MC-3058', 8, 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003058', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Lagos Tech Bridge Initiative', '+84901003058', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-18 09:00:00', '2026-07-18 09:03:00', NULL, NULL, NULL, 3, '2026-07-18 09:00:00', 8, '2026-07-18 15:20:00', 2),
-  ('ACTIVE', 3059, 'VR2-MC-3059', 8, 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003059', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Andes University Exchange Office', '+84901003059', 'visitor@example.com', 'APPROVED', '2026-07-19 10:00:00', '2026-07-19 10:03:00', NULL, NULL, NULL, 4, '2026-07-19 10:00:00', 8, '2026-07-19 16:20:00', 2),
-  ('ACTIVE', 3060, 'VR2-MC-3060', 8, 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003060', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Singapore Applied AI Consortium', '+84901003060', 'visitor@example.com', 'CANCELLED', '2026-07-20 11:00:00', '2026-07-20 11:03:00', 8, '2026-07-21 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 5, '2026-07-20 11:00:00', 8, '2026-07-20 17:20:00', 2),
-  ('ACTIVE', 3061, 'VR2-MC-3061', 8, 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003061', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', '+84901003061', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-01 12:00:00', '2026-07-01 12:03:00', NULL, NULL, NULL, 6, '2026-07-01 12:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3062, 'VR2-MC-3062', 8, 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003062', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', '+84901003062', 'visitor@example.com', 'REJECTED', '2026-07-02 13:00:00', '2026-07-02 13:03:00', NULL, NULL, NULL, 7, '2026-07-02 13:00:00', 8, '2026-07-02 15:20:00', 2),
-  ('ACTIVE', 3063, 'VR2-MC-3063', 8, 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003063', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'University of Technology Sydney Student Exchange', '+84901003063', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-03 14:00:00', '2026-07-03 14:03:00', NULL, NULL, NULL, 8, '2026-07-03 14:00:00', 8, '2026-07-03 16:20:00', 2),
-  ('ACTIVE', 3064, 'VR2-MC-3064', 8, 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003064', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Nordic Green Campus Alliance', '+84901003064', 'visitor@example.com', 'APPROVED', '2026-07-04 15:00:00', '2026-07-04 15:03:00', NULL, NULL, NULL, 0, '2026-07-04 15:00:00', 8, '2026-07-04 17:20:00', 2),
-  ('ACTIVE', 3065, 'VR2-MC-3065', 8, 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003065', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Paris Digital Arts Institute', '+84901003065', 'visitor@example.com', 'CANCELLED', '2026-07-05 08:00:00', '2026-07-05 08:03:00', 8, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 1, '2026-07-05 08:00:00', 8, '2026-07-05 14:20:00', 2),
-  ('ACTIVE', 3066, 'VR2-MC-3066', 8, 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003066', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Gulf Innovation Fund for Education', '+84901003066', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-06 09:00:00', '2026-07-06 09:03:00', NULL, NULL, NULL, 2, '2026-07-06 09:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3067, 'VR2-MC-3067', 8, 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003067', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Seattle EdTech Studio', '+84901003067', 'visitor@example.com', 'REJECTED', '2026-07-07 10:00:00', '2026-07-07 10:03:00', NULL, NULL, NULL, 3, '2026-07-07 10:00:00', 8, '2026-07-07 16:20:00', 2),
-  ('ACTIVE', 3068, 'VR2-MC-3068', 8, 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003068', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Lagos Tech Bridge Initiative', '+84901003068', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-08 11:00:00', '2026-07-08 11:03:00', NULL, NULL, NULL, 4, '2026-07-08 11:00:00', 8, '2026-07-08 17:20:00', 2),
-  ('ACTIVE', 3069, 'VR2-MC-3069', 8, 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003069', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Andes University Exchange Office', '+84901003069', 'visitor@example.com', 'APPROVED', '2026-07-09 12:00:00', '2026-07-09 12:03:00', NULL, NULL, NULL, 5, '2026-07-09 12:00:00', 8, '2026-07-09 14:20:00', 2),
-  ('ACTIVE', 3070, 'VR2-MC-3070', 8, 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003070', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Singapore Applied AI Consortium', '+84901003070', 'visitor@example.com', 'CANCELLED', '2026-07-10 13:00:00', '2026-07-10 13:03:00', 8, '2026-07-11 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 6, '2026-07-10 13:00:00', 8, '2026-07-10 15:20:00', 2),
-  ('ACTIVE', 3071, 'VR2-MC-3071', 205, 101, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003071', 'amelie.dubois@paris-digital.example', 'Pháp', 'MULTI_CAMPUS', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', '+84901003071', 'amelie.dubois@paris-digital.example', 'PENDING_APPROVAL', '2026-07-11 14:00:00', '2026-07-11 14:03:00', NULL, NULL, NULL, 7, '2026-07-11 14:00:00', 205, NULL, NULL),
-  ('ACTIVE', 3072, 'VR2-MC-3072', 206, 102, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003072', 'omar.almansouri@gulf-innovation.example', 'UAE', 'MULTI_CAMPUS', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', '+84901003072', 'omar.almansouri@gulf-innovation.example', 'REJECTED', '2026-07-12 15:00:00', '2026-07-12 15:03:00', NULL, NULL, NULL, 8, '2026-07-12 15:00:00', 206, '2026-07-12 17:20:00', 2),
-  ('ACTIVE', 3073, 'VR2-MC-3073', 207, 103, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003073', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', '+84901003073', 'linh.tran@seattle-edtech.example', 'PENDING_APPROVAL', '2026-07-13 08:00:00', '2026-07-13 08:03:00', NULL, NULL, NULL, 0, '2026-07-13 08:00:00', 207, '2026-07-13 14:20:00', 2),
-  ('ACTIVE', 3074, 'VR2-MC-3074', 208, 104, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003074', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'Grace Okafor', 'Nordic Green Campus Alliance', '+84901003074', 'grace.okafor@lagos-tech.example', 'APPROVED', '2026-07-14 09:00:00', '2026-07-14 09:03:00', NULL, NULL, NULL, 1, '2026-07-14 09:00:00', 208, '2026-07-14 15:20:00', 2),
-  ('ACTIVE', 3075, 'VR2-MC-3075', 209, 105, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003075', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'Mateo Alvarez', 'Paris Digital Arts Institute', '+84901003075', 'mateo.alvarez@andes-exchange.example', 'CANCELLED', '2026-07-15 10:00:00', '2026-07-15 10:03:00', 209, '2026-07-16 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 2, '2026-07-15 10:00:00', 209, '2026-07-15 16:20:00', 2),
-  ('ACTIVE', 3076, 'VR2-MC-3076', 206, 106, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003076', 'omar.almansouri@gulf-innovation.example', 'UAE', 'MULTI_CAMPUS', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', '+84901003076', 'omar.almansouri@gulf-innovation.example', 'PENDING_APPROVAL', '2026-07-16 11:00:00', '2026-07-16 11:03:00', NULL, NULL, NULL, 3, '2026-07-16 11:00:00', 206, NULL, NULL),
-  ('ACTIVE', 3077, 'VR2-MC-3077', 207, 107, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003077', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'Linh Tran Seattle', 'Seattle EdTech Studio', '+84901003077', 'linh.tran@seattle-edtech.example', 'REJECTED', '2026-07-17 12:00:00', '2026-07-17 12:03:00', NULL, NULL, NULL, 4, '2026-07-17 12:00:00', 207, '2026-07-17 14:20:00', 2),
-  ('ACTIVE', 3078, 'VR2-MC-3078', 208, 108, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003078', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'Grace Okafor', 'Lagos Tech Bridge Initiative', '+84901003078', 'grace.okafor@lagos-tech.example', 'PENDING_APPROVAL', '2026-07-18 13:00:00', '2026-07-18 13:03:00', NULL, NULL, NULL, 5, '2026-07-18 13:00:00', 208, '2026-07-18 15:20:00', 2),
-  ('ACTIVE', 3079, 'VR2-MC-3079', 209, 109, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003079', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'Mateo Alvarez', 'Andes University Exchange Office', '+84901003079', 'mateo.alvarez@andes-exchange.example', 'APPROVED', '2026-07-19 14:00:00', '2026-07-19 14:03:00', NULL, NULL, NULL, 6, '2026-07-19 14:00:00', 209, '2026-07-19 16:20:00', 2),
-  ('ACTIVE', 3080, 'VR2-MC-3080', 210, 110, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003080', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'Priya Raman', 'Singapore Applied AI Consortium', '+84901003080', 'priya.raman@singapore-ai.example', 'CANCELLED', '2026-07-20 15:00:00', '2026-07-20 15:03:00', 210, '2026-07-21 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 7, '2026-07-20 15:00:00', 210, '2026-07-20 17:20:00', 2),
-  ('ACTIVE', 3081, 'VR2-MC-3081', 207, 101, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003081', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', '+84901003081', 'linh.tran@seattle-edtech.example', 'PENDING_APPROVAL', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 8, '2026-07-01 08:00:00', 207, NULL, NULL),
-  ('ACTIVE', 3082, 'VR2-MC-3082', 208, 102, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003082', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'Grace Okafor', 'Politecnico di Milano Mobility Lab', '+84901003082', 'grace.okafor@lagos-tech.example', 'REJECTED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 0, '2026-07-02 09:00:00', 208, '2026-07-02 15:20:00', 2),
-  ('ACTIVE', 3083, 'VR2-MC-3083', 209, 103, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003083', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'Mateo Alvarez', 'University of Technology Sydney Student Exchange', '+84901003083', 'mateo.alvarez@andes-exchange.example', 'PENDING_APPROVAL', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 1, '2026-07-03 10:00:00', 209, '2026-07-03 16:20:00', 2),
-  ('ACTIVE', 3084, 'VR2-MC-3084', 210, 104, 'VISITOR_SUBMITTED', 'Priya Raman', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003084', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'Priya Raman', 'Nordic Green Campus Alliance', '+84901003084', 'priya.raman@singapore-ai.example', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 2, '2026-07-04 11:00:00', 210, '2026-07-04 17:20:00', 2),
-  ('ACTIVE', 3085, 'VR2-MC-3085', 211, 105, 'VISITOR_SUBMITTED', 'Hiroshi Nakamura', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003085', 'hiroshi.nakamura@osaka-design.example', 'Nhật Bản', 'MULTI_CAMPUS', 'Hiroshi Nakamura', 'Paris Digital Arts Institute', '+84901003085', 'hiroshi.nakamura@osaka-design.example', 'CANCELLED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', 211, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 3, '2026-07-05 12:00:00', 211, '2026-07-05 14:20:00', 2),
-  ('ACTIVE', 3086, 'VR2-MC-3086', 8, 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003086', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Gulf Innovation Fund for Education', '+84901003086', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 4, '2026-07-06 13:00:00', 8, NULL, NULL),
-  ('ACTIVE', 3087, 'VR2-MC-3087', 8, 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003087', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Seattle EdTech Studio', '+84901003087', 'visitor@example.com', 'REJECTED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 5, '2026-07-07 14:00:00', 8, '2026-07-07 16:20:00', 2),
-  ('ACTIVE', 3088, 'VR2-MC-3088', 8, 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003088', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Lagos Tech Bridge Initiative', '+84901003088', 'visitor@example.com', 'PENDING_APPROVAL', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 6, '2026-07-08 15:00:00', 8, '2026-07-08 17:20:00', 2),
-  ('ACTIVE', 3089, 'VR2-MC-3089', 8, 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003089', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Andes University Exchange Office', '+84901003089', 'visitor@example.com', 'APPROVED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', NULL, NULL, NULL, 7, '2026-07-09 08:00:00', 8, '2026-07-09 14:20:00', 2),
-  ('ACTIVE', 3090, 'VR2-MC-3090', 8, 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003090', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'Singapore Applied AI Consortium', '+84901003090', 'visitor@example.com', 'CANCELLED', '2026-07-10 09:00:00', '2026-07-10 09:03:00', 8, '2026-07-11 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-10 09:00:00', 8, '2026-07-10 15:20:00', 2);
+INSERT INTO visit_requests (visit_request_id, registrant_user_id, request_code, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (3001, 8, 'VR2-SC-3001', 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 0, '2026-07-01 08:00:00', 8, NULL, NULL),
+  (3002, 8, 'VR2-SC-3002', 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003002', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'REJECTED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 1, '2026-07-02 09:00:00', 8, '2026-07-02 15:20:00', 3),
+  (3003, 8, 'VR2-SC-3003', 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003003', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 2, '2026-07-03 10:00:00', 8, '2026-07-03 16:20:00', 3),
+  (3004, 8, 'VR2-SC-3004', 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003004', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 3, '2026-07-04 11:00:00', 8, '2026-07-04 17:20:00', 3),
+  (3005, 8, 'VR2-SC-3005', 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003005', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', NULL, NULL, NULL, 4, '2026-07-05 12:00:00', 8, '2026-07-05 14:20:00', 3),
+  (3006, 8, 'VR2-SC-3006', 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003006', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 5, '2026-07-06 13:00:00', 8, '2026-07-06 15:20:00', 3),
+  (3007, 8, 'VR2-SC-3007', 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003007', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 6, '2026-07-07 14:00:00', 8, '2026-07-07 16:20:00', 3),
+  (3008, 8, 'VR2-SC-3008', 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003008', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 7, '2026-07-08 15:00:00', 8, '2026-07-08 17:20:00', 3),
+  (3009, 8, 'VR2-SC-3009', 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003009', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'CANCELLED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', 8, '2026-07-10 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-09 08:00:00', 8, '2026-07-09 14:20:00', 3),
+  (3010, 202, 'VR2-SC-3010', 110, 'VISITOR_SUBMITTED', 'Sofia Bianchi', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003010', 'sofia.bianchi@polimi.example', 'Ý', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-07-10 09:00:00', '2026-07-10 09:03:00', NULL, NULL, NULL, 0, '2026-07-10 09:00:00', 202, NULL, NULL),
+  (3011, 203, 'VR2-SC-3011', 101, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003011', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'REJECTED', '2026-07-11 10:00:00', '2026-07-11 10:03:00', NULL, NULL, NULL, 1, '2026-07-11 10:00:00', 203, '2026-07-11 16:20:00', 9),
+  (3012, 204, 'VR2-SC-3012', 102, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003012', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-12 11:00:00', '2026-07-12 11:03:00', NULL, NULL, NULL, 2, '2026-07-12 11:00:00', 204, '2026-07-12 17:20:00', 9),
+  (3013, 204, 'VR2-SC-3013', 103, 'VISITOR_SUBMITTED', 'Noah Jensen', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003013', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-13 12:00:00', '2026-07-13 12:03:00', NULL, NULL, NULL, 3, '2026-07-13 12:00:00', 204, '2026-07-13 14:20:00', 9),
+  (3014, 204, 'VR2-SC-3014', 104, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003014', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-14 13:00:00', '2026-07-14 13:03:00', NULL, NULL, NULL, 4, '2026-07-14 13:00:00', 204, '2026-07-14 15:20:00', 9),
+  (3015, 204, 'VR2-SC-3015', 105, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003015', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-15 14:00:00', '2026-07-15 14:03:00', NULL, NULL, NULL, 5, '2026-07-15 14:00:00', 204, '2026-07-15 16:20:00', 9),
+  (3016, 204, 'VR2-SC-3016', 106, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003016', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-16 15:00:00', '2026-07-16 15:03:00', NULL, NULL, NULL, 6, '2026-07-16 15:00:00', 204, '2026-07-16 17:20:00', 9),
+  (3017, 205, 'VR2-SC-3017', 107, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003017', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-17 08:00:00', '2026-07-17 08:03:00', NULL, NULL, NULL, 7, '2026-07-17 08:00:00', 205, '2026-07-17 14:20:00', 9),
+  (3018, 206, 'VR2-SC-3018', 108, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003018', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'CANCELLED', '2026-07-18 09:00:00', '2026-07-18 09:03:00', 206, '2026-07-19 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-18 09:00:00', 206, '2026-07-18 15:20:00', 9),
+  (3019, 203, 'VR2-SC-3019', 109, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003019', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-07-19 10:00:00', '2026-07-19 10:03:00', NULL, NULL, NULL, 0, '2026-07-19 10:00:00', 203, NULL, NULL),
+  (3020, 204, 'VR2-SC-3020', 110, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003020', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'REJECTED', '2026-07-20 11:00:00', '2026-07-20 11:03:00', NULL, NULL, NULL, 1, '2026-07-20 11:00:00', 204, '2026-07-20 17:20:00', 11),
+  (3021, 205, 'VR2-SC-3021', 101, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003021', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-01 12:00:00', '2026-07-01 12:03:00', NULL, NULL, NULL, 2, '2026-07-01 12:00:00', 205, '2026-07-01 14:20:00', 11),
+  (3022, 205, 'VR2-SC-3022', 102, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003022', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-02 13:00:00', '2026-07-02 13:03:00', NULL, NULL, NULL, 3, '2026-07-02 13:00:00', 205, '2026-07-02 15:20:00', 11),
+  (3023, 205, 'VR2-SC-3023', 103, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003023', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-03 14:00:00', '2026-07-03 14:03:00', NULL, NULL, NULL, 4, '2026-07-03 14:00:00', 205, '2026-07-03 16:20:00', 11),
+  (3024, 205, 'VR2-SC-3024', 104, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003024', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-04 15:00:00', '2026-07-04 15:03:00', NULL, NULL, NULL, 5, '2026-07-04 15:00:00', 205, '2026-07-04 17:20:00', 11),
+  (3025, 205, 'VR2-SC-3025', 105, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003025', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-05 08:00:00', '2026-07-05 08:03:00', NULL, NULL, NULL, 6, '2026-07-05 08:00:00', 205, '2026-07-05 14:20:00', 11),
+  (3026, 206, 'VR2-SC-3026', 106, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003026', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-06 09:00:00', '2026-07-06 09:03:00', NULL, NULL, NULL, 7, '2026-07-06 09:00:00', 206, '2026-07-06 15:20:00', 11),
+  (3027, 207, 'VR2-SC-3027', 107, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003027', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'CANCELLED', '2026-07-07 10:00:00', '2026-07-07 10:03:00', 207, '2026-07-08 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-07 10:00:00', 207, '2026-07-07 16:20:00', 11),
+  (3028, 204, 'VR2-SC-3028', 108, 'VISITOR_SUBMITTED', 'Noah Jensen', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003028', 'noah.jensen@nordic-green.example', 'Đan Mạch', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-07-08 11:00:00', '2026-07-08 11:03:00', NULL, NULL, NULL, 0, '2026-07-08 11:00:00', 204, NULL, NULL),
+  (3029, 205, 'VR2-SC-3029', 109, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003029', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'REJECTED', '2026-07-09 12:00:00', '2026-07-09 12:03:00', NULL, NULL, NULL, 1, '2026-07-09 12:00:00', 205, '2026-07-09 14:20:00', 13),
+  (3030, 206, 'VR2-SC-3030', 110, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003030', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-10 13:00:00', '2026-07-10 13:03:00', NULL, NULL, NULL, 2, '2026-07-10 13:00:00', 206, '2026-07-10 15:20:00', 13),
+  (3031, 206, 'VR2-SC-3031', 101, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003031', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-11 14:00:00', '2026-07-11 14:03:00', NULL, NULL, NULL, 3, '2026-07-11 14:00:00', 206, '2026-07-11 16:20:00', 13),
+  (3032, 206, 'VR2-SC-3032', 102, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003032', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-12 15:00:00', '2026-07-12 15:03:00', NULL, NULL, NULL, 4, '2026-07-12 15:00:00', 206, '2026-07-12 17:20:00', 13),
+  (3033, 206, 'VR2-SC-3033', 103, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003033', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-13 08:00:00', '2026-07-13 08:03:00', NULL, NULL, NULL, 5, '2026-07-13 08:00:00', 206, '2026-07-13 14:20:00', 13),
+  (3034, 206, 'VR2-SC-3034', 104, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003034', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-14 09:00:00', '2026-07-14 09:03:00', NULL, NULL, NULL, 6, '2026-07-14 09:00:00', 206, '2026-07-14 15:20:00', 13),
+  (3035, 207, 'VR2-SC-3035', 105, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003035', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-15 10:00:00', '2026-07-15 10:03:00', NULL, NULL, NULL, 7, '2026-07-15 10:00:00', 207, '2026-07-15 16:20:00', 13),
+  (3036, 208, 'VR2-SC-3036', 106, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003036', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'CANCELLED', '2026-07-16 11:00:00', '2026-07-16 11:03:00', 208, '2026-07-17 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-16 11:00:00', 208, '2026-07-16 17:20:00', 13),
+  (3037, 205, 'VR2-SC-3037', 107, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003037', 'amelie.dubois@paris-digital.example', 'Pháp', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-07-17 12:00:00', '2026-07-17 12:03:00', NULL, NULL, NULL, 0, '2026-07-17 12:00:00', 205, NULL, NULL),
+  (3038, 206, 'VR2-SC-3038', 108, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003038', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'REJECTED', '2026-07-18 13:00:00', '2026-07-18 13:03:00', NULL, NULL, NULL, 1, '2026-07-18 13:00:00', 206, '2026-07-18 15:20:00', 15),
+  (3039, 207, 'VR2-SC-3039', 109, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003039', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-19 14:00:00', '2026-07-19 14:03:00', NULL, NULL, NULL, 2, '2026-07-19 14:00:00', 207, '2026-07-19 16:20:00', 15),
+  (3040, 207, 'VR2-SC-3040', 110, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003040', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-20 15:00:00', '2026-07-20 15:03:00', NULL, NULL, NULL, 3, '2026-07-20 15:00:00', 207, '2026-07-20 17:20:00', 15),
+  (3041, 207, 'VR2-SC-3041', 101, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003041', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 4, '2026-07-01 08:00:00', 207, '2026-07-01 14:20:00', 15),
+  (3042, 207, 'VR2-SC-3042', 102, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003042', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 5, '2026-07-02 09:00:00', 207, '2026-07-02 15:20:00', 15),
+  (3043, 207, 'VR2-SC-3043', 103, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003043', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 6, '2026-07-03 10:00:00', 207, '2026-07-03 16:20:00', 15),
+  (3044, 208, 'VR2-SC-3044', 104, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003044', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 7, '2026-07-04 11:00:00', 208, '2026-07-04 17:20:00', 15),
+  (3045, 209, 'VR2-SC-3045', 105, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003045', 'mateo.alvarez@andes-exchange.example', 'Chile', 'SINGLE_CAMPUS', 'CANCELLED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', 209, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-05 12:00:00', 209, '2026-07-05 14:20:00', 15),
+  (3046, 206, 'VR2-SC-3046', 106, 'STAFF_CREATED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003046', 'omar.almansouri@gulf-innovation.example', 'UAE', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 0, '2026-07-06 13:00:00', 206, '2026-07-06 15:20:00', 3),
+  (3047, 207, 'VR2-SC-3047', 107, 'STAFF_CREATED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003047', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 1, '2026-07-07 14:00:00', 207, '2026-07-07 16:20:00', 9),
+  (3048, 208, 'VR2-SC-3048', 108, 'STAFF_CREATED', 'Grace Okafor', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003048', 'grace.okafor@lagos-tech.example', 'Nigeria', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 2, '2026-07-08 15:00:00', 208, '2026-07-08 17:20:00', 11),
+  (3049, 209, 'VR2-SC-3049', 109, 'STAFF_CREATED', 'Mateo Alvarez', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003049', 'mateo.alvarez@andes-exchange.example', 'Chile', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', NULL, NULL, NULL, 3, '2026-07-09 08:00:00', 209, '2026-07-09 14:20:00', 13),
+  (3050, 210, 'VR2-SC-3050', 110, 'STAFF_CREATED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003050', 'priya.raman@singapore-ai.example', 'Singapore', 'SINGLE_CAMPUS', 'APPROVED', '2026-07-10 09:00:00', '2026-07-10 09:03:00', NULL, NULL, NULL, 4, '2026-07-10 09:00:00', 210, '2026-07-10 15:20:00', 15),
+  (3051, 8, 'VR2-MC-3051', 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003051', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-11 10:00:00', '2026-07-11 10:03:00', NULL, NULL, NULL, 5, '2026-07-11 10:00:00', 8, NULL, NULL),
+  (3052, 8, 'VR2-MC-3052', 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003052', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'REJECTED', '2026-07-12 11:00:00', '2026-07-12 11:03:00', NULL, NULL, NULL, 6, '2026-07-12 11:00:00', 8, '2026-07-12 17:20:00', 2),
+  (3053, 8, 'VR2-MC-3053', 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003053', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-13 12:00:00', '2026-07-13 12:03:00', NULL, NULL, NULL, 7, '2026-07-13 12:00:00', 8, '2026-07-13 14:20:00', 2),
+  (3054, 8, 'VR2-MC-3054', 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003054', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-07-14 13:00:00', '2026-07-14 13:03:00', NULL, NULL, NULL, 8, '2026-07-14 13:00:00', 8, '2026-07-14 15:20:00', 2),
+  (3055, 8, 'VR2-MC-3055', 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003055', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-15 14:00:00', '2026-07-15 14:03:00', 8, '2026-07-16 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 0, '2026-07-15 14:00:00', 8, '2026-07-15 16:20:00', 2),
+  (3056, 8, 'VR2-MC-3056', 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003056', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-16 15:00:00', '2026-07-16 15:03:00', NULL, NULL, NULL, 1, '2026-07-16 15:00:00', 8, NULL, NULL),
+  (3057, 8, 'VR2-MC-3057', 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003057', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'REJECTED', '2026-07-17 08:00:00', '2026-07-17 08:03:00', NULL, NULL, NULL, 2, '2026-07-17 08:00:00', 8, '2026-07-17 14:20:00', 2),
+  (3058, 8, 'VR2-MC-3058', 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003058', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-18 09:00:00', '2026-07-18 09:03:00', NULL, NULL, NULL, 3, '2026-07-18 09:00:00', 8, '2026-07-18 15:20:00', 2),
+  (3059, 8, 'VR2-MC-3059', 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003059', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-07-19 10:00:00', '2026-07-19 10:03:00', NULL, NULL, NULL, 4, '2026-07-19 10:00:00', 8, '2026-07-19 16:20:00', 2),
+  (3060, 8, 'VR2-MC-3060', 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003060', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-20 11:00:00', '2026-07-20 11:03:00', 8, '2026-07-21 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 5, '2026-07-20 11:00:00', 8, '2026-07-20 17:20:00', 2),
+  (3061, 8, 'VR2-MC-3061', 101, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003061', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-01 12:00:00', '2026-07-01 12:03:00', NULL, NULL, NULL, 6, '2026-07-01 12:00:00', 8, NULL, NULL),
+  (3062, 8, 'VR2-MC-3062', 102, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003062', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'REJECTED', '2026-07-02 13:00:00', '2026-07-02 13:03:00', NULL, NULL, NULL, 7, '2026-07-02 13:00:00', 8, '2026-07-02 15:20:00', 2),
+  (3063, 8, 'VR2-MC-3063', 103, 'VISITOR_SUBMITTED', 'External Visitor Main', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003063', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-03 14:00:00', '2026-07-03 14:03:00', NULL, NULL, NULL, 8, '2026-07-03 14:00:00', 8, '2026-07-03 16:20:00', 2),
+  (3064, 8, 'VR2-MC-3064', 104, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003064', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-07-04 15:00:00', '2026-07-04 15:03:00', NULL, NULL, NULL, 0, '2026-07-04 15:00:00', 8, '2026-07-04 17:20:00', 2),
+  (3065, 8, 'VR2-MC-3065', 105, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003065', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-05 08:00:00', '2026-07-05 08:03:00', 8, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 1, '2026-07-05 08:00:00', 8, '2026-07-05 14:20:00', 2),
+  (3066, 8, 'VR2-MC-3066', 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003066', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-06 09:00:00', '2026-07-06 09:03:00', NULL, NULL, NULL, 2, '2026-07-06 09:00:00', 8, NULL, NULL),
+  (3067, 8, 'VR2-MC-3067', 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003067', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'REJECTED', '2026-07-07 10:00:00', '2026-07-07 10:03:00', NULL, NULL, NULL, 3, '2026-07-07 10:00:00', 8, '2026-07-07 16:20:00', 2),
+  (3068, 8, 'VR2-MC-3068', 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003068', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-08 11:00:00', '2026-07-08 11:03:00', NULL, NULL, NULL, 4, '2026-07-08 11:00:00', 8, '2026-07-08 17:20:00', 2),
+  (3069, 8, 'VR2-MC-3069', 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003069', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-07-09 12:00:00', '2026-07-09 12:03:00', NULL, NULL, NULL, 5, '2026-07-09 12:00:00', 8, '2026-07-09 14:20:00', 2),
+  (3070, 8, 'VR2-MC-3070', 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003070', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-10 13:00:00', '2026-07-10 13:03:00', 8, '2026-07-11 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 6, '2026-07-10 13:00:00', 8, '2026-07-10 15:20:00', 2),
+  (3071, 205, 'VR2-MC-3071', 101, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003071', 'amelie.dubois@paris-digital.example', 'Pháp', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-11 14:00:00', '2026-07-11 14:03:00', NULL, NULL, NULL, 7, '2026-07-11 14:00:00', 205, NULL, NULL),
+  (3072, 206, 'VR2-MC-3072', 102, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003072', 'omar.almansouri@gulf-innovation.example', 'UAE', 'MULTI_CAMPUS', 'REJECTED', '2026-07-12 15:00:00', '2026-07-12 15:03:00', NULL, NULL, NULL, 8, '2026-07-12 15:00:00', 206, '2026-07-12 17:20:00', 2),
+  (3073, 207, 'VR2-MC-3073', 103, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003073', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-13 08:00:00', '2026-07-13 08:03:00', NULL, NULL, NULL, 0, '2026-07-13 08:00:00', 207, '2026-07-13 14:20:00', 2),
+  (3074, 208, 'VR2-MC-3074', 104, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003074', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'APPROVED', '2026-07-14 09:00:00', '2026-07-14 09:03:00', NULL, NULL, NULL, 1, '2026-07-14 09:00:00', 208, '2026-07-14 15:20:00', 2),
+  (3075, 209, 'VR2-MC-3075', 105, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003075', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-15 10:00:00', '2026-07-15 10:03:00', 209, '2026-07-16 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 2, '2026-07-15 10:00:00', 209, '2026-07-15 16:20:00', 2),
+  (3076, 206, 'VR2-MC-3076', 106, 'VISITOR_SUBMITTED', 'Omar Al Mansouri', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003076', 'omar.almansouri@gulf-innovation.example', 'UAE', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-16 11:00:00', '2026-07-16 11:03:00', NULL, NULL, NULL, 3, '2026-07-16 11:00:00', 206, NULL, NULL),
+  (3077, 207, 'VR2-MC-3077', 107, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003077', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'REJECTED', '2026-07-17 12:00:00', '2026-07-17 12:03:00', NULL, NULL, NULL, 4, '2026-07-17 12:00:00', 207, '2026-07-17 14:20:00', 2),
+  (3078, 208, 'VR2-MC-3078', 108, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003078', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-18 13:00:00', '2026-07-18 13:03:00', NULL, NULL, NULL, 5, '2026-07-18 13:00:00', 208, '2026-07-18 15:20:00', 2),
+  (3079, 209, 'VR2-MC-3079', 109, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003079', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'APPROVED', '2026-07-19 14:00:00', '2026-07-19 14:03:00', NULL, NULL, NULL, 6, '2026-07-19 14:00:00', 209, '2026-07-19 16:20:00', 2),
+  (3080, 210, 'VR2-MC-3080', 110, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003080', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-20 15:00:00', '2026-07-20 15:03:00', 210, '2026-07-21 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 7, '2026-07-20 15:00:00', 210, '2026-07-20 17:20:00', 2),
+  (3081, 207, 'VR2-MC-3081', 101, 'VISITOR_SUBMITTED', 'Linh Tran Seattle', 'Indian Institute of Technology Delhi International Office', 'Delegation Coordinator', '+84900003081', 'linh.tran@seattle-edtech.example', 'Hoa Kỳ', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-01 08:00:00', '2026-07-01 08:03:00', NULL, NULL, NULL, 8, '2026-07-01 08:00:00', 207, NULL, NULL),
+  (3082, 208, 'VR2-MC-3082', 102, 'VISITOR_SUBMITTED', 'Grace Okafor', 'Politecnico di Milano Mobility Lab', 'Delegation Coordinator', '+84900003082', 'grace.okafor@lagos-tech.example', 'Nigeria', 'MULTI_CAMPUS', 'REJECTED', '2026-07-02 09:00:00', '2026-07-02 09:03:00', NULL, NULL, NULL, 0, '2026-07-02 09:00:00', 208, '2026-07-02 15:20:00', 2),
+  (3083, 209, 'VR2-MC-3083', 103, 'VISITOR_SUBMITTED', 'Mateo Alvarez', 'University of Technology Sydney Student Exchange', 'Delegation Coordinator', '+84900003083', 'mateo.alvarez@andes-exchange.example', 'Chile', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-03 10:00:00', '2026-07-03 10:03:00', NULL, NULL, NULL, 1, '2026-07-03 10:00:00', 209, '2026-07-03 16:20:00', 2),
+  (3084, 210, 'VR2-MC-3084', 104, 'VISITOR_SUBMITTED', 'Priya Raman', 'Nordic Green Campus Alliance', 'Delegation Coordinator', '+84900003084', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'APPROVED', '2026-07-04 11:00:00', '2026-07-04 11:03:00', NULL, NULL, NULL, 2, '2026-07-04 11:00:00', 210, '2026-07-04 17:20:00', 2),
+  (3085, 211, 'VR2-MC-3085', 105, 'VISITOR_SUBMITTED', 'Hiroshi Nakamura', 'Paris Digital Arts Institute', 'Delegation Coordinator', '+84900003085', 'hiroshi.nakamura@osaka-design.example', 'Nhật Bản', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-05 12:00:00', '2026-07-05 12:03:00', 211, '2026-07-06 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 3, '2026-07-05 12:00:00', 211, '2026-07-05 14:20:00', 2),
+  (3086, 8, 'VR2-MC-3086', 106, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Gulf Innovation Fund for Education', 'Delegation Coordinator', '+84900003086', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-06 13:00:00', '2026-07-06 13:03:00', NULL, NULL, NULL, 4, '2026-07-06 13:00:00', 8, NULL, NULL),
+  (3087, 8, 'VR2-MC-3087', 107, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Seattle EdTech Studio', 'Delegation Coordinator', '+84900003087', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'REJECTED', '2026-07-07 14:00:00', '2026-07-07 14:03:00', NULL, NULL, NULL, 5, '2026-07-07 14:00:00', 8, '2026-07-07 16:20:00', 2),
+  (3088, 8, 'VR2-MC-3088', 108, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Lagos Tech Bridge Initiative', 'Delegation Coordinator', '+84900003088', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', '2026-07-08 15:00:00', '2026-07-08 15:03:00', NULL, NULL, NULL, 6, '2026-07-08 15:00:00', 8, '2026-07-08 17:20:00', 2),
+  (3089, 8, 'VR2-MC-3089', 109, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Andes University Exchange Office', 'Delegation Coordinator', '+84900003089', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'APPROVED', '2026-07-09 08:00:00', '2026-07-09 08:03:00', NULL, NULL, NULL, 7, '2026-07-09 08:00:00', 8, '2026-07-09 14:20:00', 2),
+  (3090, 8, 'VR2-MC-3090', 110, 'VISITOR_SUBMITTED', 'External Visitor Main', 'Singapore Applied AI Consortium', 'Delegation Coordinator', '+84900003090', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', '2026-07-10 09:00:00', '2026-07-10 09:03:00', 8, '2026-07-11 09:10:00', 'Visitor tự hủy toàn bộ request sau khi đã được duyệt vì lịch đoàn thay đổi; đây là case kiểm thử main request CANCELLED.', 8, '2026-07-10 09:00:00', 8, '2026-07-10 15:20:00', 2);
 
 
 INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_note, closed_by, closed_at, close_note, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (5001, 3001, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-01 08:30:00', 8, NULL, NULL),
   (5002, 3002, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-07-02 15:20:00', 'STAFF_LEADER', 'Staff Leader từ chối vì lịch tiếp đón hoặc điều kiện chuẩn bị không phù hợp. [Migrated to campus-level rejection for HN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-02 08:30:00', 8, NULL, NULL),
-  (5003, 3003, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 4, 3, '2026-07-04 10:00:00', 3, '2026-07-04 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-03 08:30:00', 8, NULL, NULL),
+  (5003, 3003, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 4, 3, '2026-07-04 10:00:00', 3, '2026-07-04 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-03 08:30:00', 8, NULL, NULL),
   (5004, 3004, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 101, 3, '2026-07-05 10:00:00', 3, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-04 08:30:00', 8, NULL, NULL),
   (5005, 3005, 1, (CURRENT_TIMESTAMP - INTERVAL 120 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 300 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 4, 3, '2026-07-06 10:00:00', 3, '2026-07-06 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-05 08:30:00', 8, NULL, NULL),
   (5006, 3006, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 14 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 101, 3, '2026-07-07 10:00:00', 3, '2026-07-07 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-06 08:30:00', 8, NULL, NULL),
@@ -6018,7 +6012,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5009, 3009, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 8, '2026-07-11 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 3, '2026-08-09 08:30:00', 8, NULL, NULL),
   (5010, 3010, 2, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-10 08:30:00', 202, NULL, NULL),
   (5011, 3011, 2, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 9, '2026-07-11 16:20:00', 'STAFF_LEADER', 'Staff Leader từ chối vì lịch tiếp đón hoặc điều kiện chuẩn bị không phù hợp. [Migrated to campus-level rejection for HCM.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-11 08:30:00', 203, NULL, NULL),
-  (5012, 3012, 2, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 103, 9, '2026-07-13 10:00:00', 9, '2026-07-13 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-12 08:30:00', 204, NULL, NULL),
+  (5012, 3012, 2, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 103, 9, '2026-07-13 10:00:00', 9, '2026-07-13 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-12 08:30:00', 204, NULL, NULL),
   (5013, 3013, 2, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 10, 9, '2026-07-14 10:00:00', 9, '2026-07-14 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-13 08:30:00', 204, NULL, NULL),
   (5014, 3014, 2, (CURRENT_TIMESTAMP - INTERVAL 45 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 120 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 103, 9, '2026-07-15 10:00:00', 9, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-14 08:30:00', 204, NULL, NULL),
   (5015, 3015, 2, CURRENT_DATE - INTERVAL 1 DAY + INTERVAL 15 HOUR, (CURRENT_DATE - INTERVAL 1 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 10, 9, '2026-07-16 10:00:00', 9, '2026-07-16 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-15 08:30:00', 204, NULL, NULL),
@@ -6027,7 +6021,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5018, 3018, 2, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'CANCELLED', NULL, NULL, NULL, 10, 9, '2026-07-19 10:00:00', 9, '2026-07-19 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 10, '2026-07-20 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 2, '2026-08-18 08:30:00', 206, NULL, NULL),
   (5019, 3019, 3, CURRENT_DATE + INTERVAL 29 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 29 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-19 08:30:00', 203, NULL, NULL),
   (5020, 3020, 3, CURRENT_DATE + INTERVAL 30 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 30 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 11, '2026-07-20 17:20:00', 'STAFF_LEADER', 'Staff Leader từ chối vì lịch tiếp đón hoặc điều kiện chuẩn bị không phù hợp. [Migrated to campus-level rejection for DN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-20 08:30:00', 204, NULL, NULL),
-  (5021, 3021, 3, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 12, 11, '2026-07-02 10:00:00', 11, '2026-07-02 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-21 08:30:00', 205, NULL, NULL),
+  (5021, 3021, 3, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 12, 11, '2026-07-02 10:00:00', 11, '2026-07-02 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-21 08:30:00', 205, NULL, NULL),
   (5022, 3022, 3, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 105, 11, '2026-07-03 10:00:00', 11, '2026-07-03 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-22 08:30:00', 205, NULL, NULL),
   (5023, 3023, 3, (CURRENT_TIMESTAMP - INTERVAL 120 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 300 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 12, 11, '2026-07-04 10:00:00', 11, '2026-07-04 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-01 08:30:00', 205, NULL, NULL),
   (5024, 3024, 3, CURRENT_DATE - INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE - INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 105, 11, '2026-07-05 10:00:00', 11, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-02 08:30:00', 205, NULL, NULL),
@@ -6036,7 +6030,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5027, 3027, 3, CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 207, '2026-07-09 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 1, '2026-08-05 08:30:00', 207, NULL, NULL),
   (5028, 3028, 4, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-06 08:30:00', 204, NULL, NULL),
   (5029, 3029, 4, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 13, '2026-07-09 14:20:00', 'STAFF_LEADER', 'Staff Leader từ chối vì lịch tiếp đón hoặc điều kiện chuẩn bị không phù hợp. [Migrated to campus-level rejection for CT.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-07 08:30:00', 205, NULL, NULL),
-  (5030, 3030, 4, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 107, 13, '2026-07-11 10:00:00', 13, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-08 08:30:00', 206, NULL, NULL),
+  (5030, 3030, 4, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 107, 13, '2026-07-11 10:00:00', 13, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-08 08:30:00', 206, NULL, NULL),
   (5031, 3031, 4, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 14, 13, '2026-07-12 10:00:00', 13, '2026-07-12 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-09 08:30:00', 206, NULL, NULL),
   (5032, 3032, 4, (CURRENT_TIMESTAMP - INTERVAL 45 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 120 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 107, 13, '2026-07-13 10:00:00', 13, '2026-07-13 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-10 08:30:00', 206, NULL, NULL),
   (5033, 3033, 4, CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 4 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 14, 13, '2026-07-14 10:00:00', 13, '2026-07-14 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-11 08:30:00', 206, NULL, NULL),
@@ -6045,25 +6039,25 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5036, 3036, 4, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'CANCELLED', NULL, NULL, NULL, 14, 13, '2026-07-17 10:00:00', 13, '2026-07-17 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 14, '2026-07-18 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 0, '2026-08-14 08:30:00', 208, NULL, NULL),
   (5037, 3037, 5, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-15 08:30:00', 205, NULL, NULL),
   (5038, 3038, 5, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 15, '2026-07-18 15:20:00', 'STAFF_LEADER', 'Staff Leader từ chối vì lịch tiếp đón hoặc điều kiện chuẩn bị không phù hợp. [Migrated to campus-level rejection for QN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-16 08:30:00', 206, NULL, NULL),
-  (5039, 3039, 5, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 16, 15, '2026-07-20 10:00:00', 15, '2026-07-20 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-17 08:30:00', 207, NULL, NULL),
+  (5039, 3039, 5, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 16, 15, '2026-07-20 10:00:00', 15, '2026-07-20 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-17 08:30:00', 207, NULL, NULL),
   (5040, 3040, 5, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 109, 15, '2026-07-21 10:00:00', 15, '2026-07-21 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-18 08:30:00', 207, NULL, NULL),
   (5041, 3041, 5, (CURRENT_TIMESTAMP - INTERVAL 120 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 300 MINUTE), 'DURING_VISIT', NULL, NULL, NULL, 16, 15, '2026-07-02 10:00:00', 15, '2026-07-02 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-19 08:30:00', 207, NULL, NULL),
   (5042, 3042, 5, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'AFTER_VISIT', NULL, NULL, NULL, 109, 15, '2026-07-03 10:00:00', 15, '2026-07-03 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-20 08:30:00', 207, NULL, NULL),
   (5043, 3043, 5, CURRENT_DATE - INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE - INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'CLOSED', NULL, NULL, NULL, 16, 15, '2026-07-04 10:00:00', 15, '2026-07-04 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', 16, '2026-08-22 17:30:00', 'Campus instance đã hoàn tất minutes, feedback và báo cáo dịch vụ.', NULL, NULL, NULL, NULL, NULL, 2, '2026-08-21 08:30:00', 207, NULL, NULL),
   (5044, 3044, 5, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'CANCELLED', NULL, NULL, NULL, 16, 15, '2026-07-05 10:00:00', 15, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 16, '2026-07-06 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 3, '2026-08-22 08:30:00', 208, NULL, NULL),
   (5045, 3045, 5, CURRENT_DATE + INTERVAL 23 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 23 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 209, '2026-07-07 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-01 08:30:00', 209, NULL, NULL),
-  (5046, 3046, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 101, 3, '2026-07-07 10:00:00', 3, '2026-07-07 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-02 08:30:00', 206, NULL, NULL),
-  (5047, 3047, 2, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 10, 9, '2026-07-08 10:00:00', 9, '2026-07-08 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-03 08:30:00', 207, NULL, NULL),
-  (5048, 3048, 3, CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 105, 11, '2026-07-09 10:00:00', 11, '2026-07-09 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-04 08:30:00', 208, NULL, NULL),
-  (5049, 3049, 4, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 14, 13, '2026-07-10 10:00:00', 13, '2026-07-10 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-05 08:30:00', 209, NULL, NULL),
-  (5050, 3050, 5, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'ASSIGNED', NULL, NULL, NULL, 109, 15, '2026-07-11 10:00:00', 15, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-06 08:30:00', 210, NULL, NULL),
+  (5046, 3046, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 101, 3, '2026-07-07 10:00:00', 3, '2026-07-07 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-02 08:30:00', 206, NULL, NULL),
+  (5047, 3047, 2, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 10, 9, '2026-07-08 10:00:00', 9, '2026-07-08 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-03 08:30:00', 207, NULL, NULL),
+  (5048, 3048, 3, CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 5 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 105, 11, '2026-07-09 10:00:00', 11, '2026-07-09 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-04 08:30:00', 208, NULL, NULL),
+  (5049, 3049, 4, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 14, 13, '2026-07-10 10:00:00', 13, '2026-07-10 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-05 08:30:00', 209, NULL, NULL),
+  (5050, 3050, 5, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'BEFORE_VISIT', NULL, NULL, NULL, 109, 15, '2026-07-11 10:00:00', 15, '2026-07-11 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, '2026-08-06 08:30:00', 210, NULL, NULL),
   (5051, 3051, 1, CURRENT_DATE + INTERVAL 35 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 35 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-07 08:30:00', 8, NULL, NULL),
   (5052, 3051, 2, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'WAITING_REQUEST_APPROVAL', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, '2026-08-08 09:30:00', 8, NULL, NULL),
   (5053, 3052, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-07-12 17:20:00', 'STAFF_LEADER', 'Staff Leader từ chối request liên cơ sở do xung đột lịch giữa các campus. [Migrated to campus-level rejection for HN.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-08 08:30:00', 8, NULL, NULL),
   (5054, 3052, 2, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'REJECTED', NULL, NULL, NULL, NULL, NULL, NULL, 9, '2026-07-12 17:20:00', 'STAFF_LEADER', 'Staff Leader từ chối request liên cơ sở do xung đột lịch giữa các campus. [Migrated to campus-level rejection for HCM.]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, '2026-08-09 09:30:00', 8, NULL, NULL),
   (5055, 3053, 1, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'WAITING_REQUEST_APPROVAL', 3, 2, '2026-07-13 14:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-09 08:30:00', 8, NULL, NULL),
   (5056, 3053, 2, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'WAITING_REQUEST_APPROVAL', 9, 2, '2026-07-13 14:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-10 09:30:00', 8, NULL, NULL),
-  (5057, 3054, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'ASSIGNED', 3, 2, '2026-07-14 15:20:00', 101, 3, '2026-07-15 10:00:00', 3, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-10 08:30:00', 8, NULL, NULL),
+  (5057, 3054, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'BEFORE_VISIT', 3, 2, '2026-07-14 15:20:00', 101, 3, '2026-07-15 10:00:00', 3, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-10 08:30:00', 8, NULL, NULL),
   (5058, 3054, 2, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'BEFORE_VISIT', 9, 2, '2026-07-14 15:20:00', 103, 9, '2026-07-15 10:00:00', 9, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-11 09:30:00', 8, NULL, NULL),
   (5059, 3055, 1, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 3, 2, '2026-07-15 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 8, '2026-07-17 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-11 08:30:00', 8, NULL, NULL),
   (5060, 3055, 2, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'CANCELLED', 9, 2, '2026-07-15 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 8, '2026-07-17 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-12 09:30:00', 8, NULL, NULL),
@@ -6108,7 +6102,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5099, 3073, 4, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'WAITING_REQUEST_APPROVAL', 13, 2, '2026-07-13 14:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-09 10:30:00', 207, NULL, NULL),
   (5100, 3074, 2, CURRENT_DATE - INTERVAL 29 DAY + INTERVAL 10 HOUR, (CURRENT_DATE - INTERVAL 29 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'CLOSED', 9, 2, '2026-07-14 15:20:00', 103, 9, '2026-07-15 10:00:00', 9, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', 103, '2026-08-09 17:30:00', 'Campus instance đã hoàn tất minutes, feedback và báo cáo dịch vụ.', NULL, NULL, NULL, NULL, NULL, 3, '2026-08-08 08:30:00', 208, NULL, NULL),
   (5101, 3074, 3, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'CANCELLED', 11, 2, '2026-07-14 15:20:00', 12, 11, '2026-07-15 10:00:00', 11, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 12, '2026-07-16 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 3, '2026-08-09 09:30:00', 208, NULL, NULL),
-  (5102, 3074, 4, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'ASSIGNED', 13, 2, '2026-07-14 15:20:00', 107, 13, '2026-07-15 10:00:00', 13, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-10 10:30:00', 208, NULL, NULL),
+  (5102, 3074, 4, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'BEFORE_VISIT', 13, 2, '2026-07-14 15:20:00', 107, 13, '2026-07-15 10:00:00', 13, '2026-07-15 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-10 10:30:00', 208, NULL, NULL),
   (5103, 3075, 2, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'CANCELLED', 9, 2, '2026-07-15 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 209, '2026-07-17 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-09 08:30:00', 209, NULL, NULL),
   (5104, 3075, 3, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'CANCELLED', 11, 2, '2026-07-15 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 209, '2026-07-17 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-10 09:30:00', 209, NULL, NULL),
   (5105, 3075, 4, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'CANCELLED', 13, 2, '2026-07-15 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 209, '2026-07-17 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-11 10:30:00', 209, NULL, NULL),
@@ -6122,7 +6116,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5113, 3078, 4, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', 13, 2, '2026-07-18 15:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-13 09:30:00', 208, NULL, NULL),
   (5114, 3078, 5, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'WAITING_REQUEST_APPROVAL', 15, 2, '2026-07-18 15:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-14 10:30:00', 208, NULL, NULL),
   (5115, 3079, 2, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 9, 2, '2026-07-19 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 209, '2026-07-21 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 3, '2026-08-13 08:30:00', 209, NULL, NULL),
-  (5116, 3079, 4, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'ASSIGNED', 13, 2, '2026-07-19 16:20:00', 14, 13, '2026-07-20 10:00:00', 13, '2026-07-20 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-14 09:30:00', 209, NULL, NULL),
+  (5116, 3079, 4, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 10 HOUR + INTERVAL 210 MINUTE), 'BEFORE_VISIT', 13, 2, '2026-07-19 16:20:00', 14, 13, '2026-07-20 10:00:00', 13, '2026-07-20 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-14 09:30:00', 209, NULL, NULL),
   (5117, 3079, 5, CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 1 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'BEFORE_VISIT', 15, 2, '2026-07-19 16:20:00', 16, 15, '2026-07-20 10:00:00', 15, '2026-07-20 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-15 10:30:00', 209, NULL, NULL),
   (5118, 3080, 2, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 14 HOUR + INTERVAL 300 MINUTE), 'CANCELLED', 9, 2, '2026-07-20 17:20:00', 10, 9, '2026-07-21 10:00:00', 9, '2026-07-21 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 10, '2026-07-22 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 4, '2026-08-14 08:30:00', 210, NULL, NULL),
   (5119, 3080, 4, CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'CANCELLED', 13, 2, '2026-07-20 17:20:00', 14, 13, '2026-07-21 10:00:00', 13, '2026-07-21 10:00:00', 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 14, '2026-07-22 11:15:00', 'HOST', 'EXTERNAL_CONFIRMATION', 'Host hủy thay khách sau xác nhận qua email, có ghi rõ thời điểm và người xác nhận.', 4, '2026-08-15 09:30:00', 210, NULL, NULL),
@@ -6136,7 +6130,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (5127, 3083, 3, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 15 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 15 HOUR + INTERVAL 360 MINUTE), 'WAITING_REQUEST_APPROVAL', 11, 2, '2026-07-03 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-17 08:30:00', 209, NULL, NULL),
   (5128, 3083, 4, CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 8 HOUR + INTERVAL 30 MINUTE + INTERVAL 90 MINUTE), 'WAITING_REQUEST_APPROVAL', 13, 2, '2026-07-03 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-18 09:30:00', 209, NULL, NULL),
   (5129, 3083, 5, CURRENT_DATE + INTERVAL 26 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 26 DAY + INTERVAL 9 HOUR + INTERVAL 120 MINUTE), 'WAITING_REQUEST_APPROVAL', 15, 2, '2026-07-03 16:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 2, '2026-08-19 10:30:00', 209, NULL, NULL),
-  (5130, 3084, 3, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'ASSIGNED', 11, 2, '2026-07-04 17:20:00', 105, 11, '2026-07-05 10:00:00', 11, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-18 08:30:00', 210, NULL, NULL),
+  (5130, 3084, 3, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 150 MINUTE), 'BEFORE_VISIT', 11, 2, '2026-07-04 17:20:00', 105, 11, '2026-07-05 10:00:00', 11, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-18 08:30:00', 210, NULL, NULL),
   (5131, 3084, 4, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'BEFORE_VISIT', 13, 2, '2026-07-04 17:20:00', 107, 13, '2026-07-05 10:00:00', 13, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-19 09:30:00', 210, NULL, NULL),
   (5132, 3084, 5, (CURRENT_TIMESTAMP - INTERVAL 15 MINUTE), (CURRENT_TIMESTAMP + INTERVAL 60 MINUTE), 'DURING_VISIT', 15, 2, '2026-07-04 17:20:00', 109, 15, '2026-07-05 10:00:00', 15, '2026-07-05 10:00:00', 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, '2026-08-20 10:30:00', 210, NULL, NULL),
   (5133, 3085, 3, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 240 MINUTE), 'CANCELLED', 11, 2, '2026-07-05 14:20:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 211, '2026-07-07 11:15:00', 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy campus instance trước giai đoạn DURING_VISIT.', 4, '2026-08-19 08:30:00', 211, NULL, NULL),
@@ -6187,7 +6181,6 @@ INSERT INTO visit_instance_form_details (
   transportation_note,
   media_consent_status,
   media_consent_note,
-  note_to_fptu,
   form_revision,
   approval_revision,
   row_version,
@@ -6201,20 +6194,19 @@ SELECT
   sf.visit_type_other,
   sf.purpose,
   sf.working_content,
-  vr.contact_person_full_name,
-  NULLIF(TRIM(vr.contact_person_organization), ''),
-  vr.contact_person_phone,
-  NULLIF(TRIM(vr.contact_person_email), ''),
+  vr.registrant_full_name,
+  NULLIF(TRIM(vr.registrant_organization), ''),
+  vr.registrant_phone,
+  vr.registrant_email,
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
   sf.media_consent_note,
-  sf.note_to_fptu,
   1,
   1,
   0,
   vrc.created_at,
-  COALESCE(vr.created_by, vr.visitor_user_id)
+  COALESCE(vr.created_by, vr.registrant_user_id)
 FROM visit_request_campuses vrc
 JOIN visit_requests vr
   ON vr.visit_request_id = vrc.visit_request_id
@@ -6229,8 +6221,7 @@ JOIN (
     'VI' AS working_language,
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.' AS transportation_note,
     'DECLINED' AS media_consent_status,
-    NULL AS media_consent_note,
-    'Seed coverage: single pending approval campus 1' AS note_to_fptu
+    NULL AS media_consent_note
     UNION ALL SELECT
     3002,
     'Green campus energy walk — single rejected by Staff Leader campus 1',
@@ -6241,8 +6232,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single rejected by Staff Leader campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3003,
     'Robotics classroom demonstration — single approved instance ASSIGNED campus 1',
@@ -6253,8 +6243,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance ASSIGNED campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3004,
     'International credit transfer workshop — single approved instance BEFORE_VISIT campus 1',
@@ -6265,8 +6254,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance BEFORE_VISIT campus 1'
+    NULL
     UNION ALL SELECT
     3005,
     'Student entrepreneurship roundtable — single approved instance DURING_VISIT campus 1',
@@ -6277,8 +6265,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance DURING_VISIT campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3006,
     'Hospitality and tourism showcase — single approved instance AFTER_VISIT campus 1',
@@ -6289,8 +6276,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance AFTER_VISIT campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3007,
     'Mekong community engagement visit — single approved instance CLOSED campus 1',
@@ -6301,8 +6287,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance CLOSED campus 1'
+    NULL
     UNION ALL SELECT
     3008,
     'Digital art learning studio tour — single campus instance cancelled after approval by host/visitor campus 1',
@@ -6313,8 +6298,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3009,
     'Industry advisory board meeting — single whole request cancelled by visitor campus 1',
@@ -6325,8 +6309,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single whole request cancelled by visitor campus 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3010,
     'Research collaboration signing day — single pending approval campus 2',
@@ -6337,8 +6320,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single pending approval campus 2'
+    NULL
     UNION ALL SELECT
     3011,
     'Service learning mobility forum — single rejected by Staff Leader campus 2',
@@ -6349,8 +6331,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single rejected by Staff Leader campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3012,
     'Smart library operations briefing — single approved instance ASSIGNED campus 2',
@@ -6361,8 +6342,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance ASSIGNED campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3013,
     'Campus safety and visitor service review — single approved instance BEFORE_VISIT campus 2',
@@ -6373,8 +6353,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance BEFORE_VISIT campus 2'
+    NULL
     UNION ALL SELECT
     3014,
     'Innovation hub partnership sprint — single approved instance DURING_VISIT campus 2',
@@ -6385,8 +6364,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance DURING_VISIT campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3015,
     'Bilingual student buddy observation — single approved instance AFTER_VISIT campus 2',
@@ -6397,8 +6375,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance AFTER_VISIT campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3016,
     'Sustainable facilities protocol visit — single approved instance CLOSED campus 2',
@@ -6409,8 +6386,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance CLOSED campus 2'
+    NULL
     UNION ALL SELECT
     3017,
     'Edtech product validation session — single campus instance cancelled after approval by host/visitor campus 2',
@@ -6421,8 +6397,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3018,
     'Outdoor campus tour with accessibility focus — single whole request cancelled by visitor campus 2',
@@ -6433,8 +6408,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single whole request cancelled by visitor campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3019,
     'Career services exchange meeting — single pending approval campus 3',
@@ -6445,8 +6419,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single pending approval campus 3'
+    NULL
     UNION ALL SELECT
     3020,
     'Archive and documentation handover review — single rejected by Staff Leader campus 3',
@@ -6457,8 +6430,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single rejected by Staff Leader campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3021,
     'AI curriculum benchmarking delegation — single approved instance ASSIGNED campus 3',
@@ -6469,8 +6441,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance ASSIGNED campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3022,
     'Green campus energy walk — single approved instance BEFORE_VISIT campus 3',
@@ -6481,8 +6452,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance BEFORE_VISIT campus 3'
+    NULL
     UNION ALL SELECT
     3023,
     'Robotics classroom demonstration — single approved instance DURING_VISIT campus 3',
@@ -6493,8 +6463,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance DURING_VISIT campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3024,
     'International credit transfer workshop — single approved instance AFTER_VISIT campus 3',
@@ -6505,8 +6474,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance AFTER_VISIT campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3025,
     'Student entrepreneurship roundtable — single approved instance CLOSED campus 3',
@@ -6517,8 +6485,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance CLOSED campus 3'
+    NULL
     UNION ALL SELECT
     3026,
     'Hospitality and tourism showcase — single campus instance cancelled after approval by host/visitor campus 3',
@@ -6529,8 +6496,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3027,
     'Mekong community engagement visit — single whole request cancelled by visitor campus 3',
@@ -6541,8 +6507,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single whole request cancelled by visitor campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3028,
     'Digital art learning studio tour — single pending approval campus 4',
@@ -6553,8 +6518,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single pending approval campus 4'
+    NULL
     UNION ALL SELECT
     3029,
     'Industry advisory board meeting — single rejected by Staff Leader campus 4',
@@ -6565,8 +6529,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single rejected by Staff Leader campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3030,
     'Research collaboration signing day — single approved instance ASSIGNED campus 4',
@@ -6577,8 +6540,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance ASSIGNED campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3031,
     'Service learning mobility forum — single approved instance BEFORE_VISIT campus 4',
@@ -6589,8 +6551,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance BEFORE_VISIT campus 4'
+    NULL
     UNION ALL SELECT
     3032,
     'Smart library operations briefing — single approved instance DURING_VISIT campus 4',
@@ -6601,8 +6562,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance DURING_VISIT campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3033,
     'Campus safety and visitor service review — single approved instance AFTER_VISIT campus 4',
@@ -6613,8 +6573,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance AFTER_VISIT campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3034,
     'Innovation hub partnership sprint — single approved instance CLOSED campus 4',
@@ -6625,8 +6584,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance CLOSED campus 4'
+    NULL
     UNION ALL SELECT
     3035,
     'Bilingual student buddy observation — single campus instance cancelled after approval by host/visitor campus 4',
@@ -6637,8 +6595,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3036,
     'Sustainable facilities protocol visit — single whole request cancelled by visitor campus 4',
@@ -6649,8 +6606,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single whole request cancelled by visitor campus 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3037,
     'Edtech product validation session — single pending approval campus 5',
@@ -6661,8 +6617,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single pending approval campus 5'
+    NULL
     UNION ALL SELECT
     3038,
     'Outdoor campus tour with accessibility focus — single rejected by Staff Leader campus 5',
@@ -6673,8 +6628,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single rejected by Staff Leader campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3039,
     'Career services exchange meeting — single approved instance ASSIGNED campus 5',
@@ -6685,8 +6639,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance ASSIGNED campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3040,
     'Archive and documentation handover review — single approved instance BEFORE_VISIT campus 5',
@@ -6697,8 +6650,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance BEFORE_VISIT campus 5'
+    NULL
     UNION ALL SELECT
     3041,
     'AI curriculum benchmarking delegation — single approved instance DURING_VISIT campus 5',
@@ -6709,8 +6661,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance DURING_VISIT campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3042,
     'Green campus energy walk — single approved instance AFTER_VISIT campus 5',
@@ -6721,8 +6672,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single approved instance AFTER_VISIT campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3043,
     'Robotics classroom demonstration — single approved instance CLOSED campus 5',
@@ -6733,8 +6683,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: single approved instance CLOSED campus 5'
+    NULL
     UNION ALL SELECT
     3044,
     'International credit transfer workshop — single campus instance cancelled after approval by host/visitor campus 5',
@@ -6745,8 +6694,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single campus instance cancelled after approval by host/visitor campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3045,
     'Student entrepreneurship roundtable — single whole request cancelled by visitor campus 5',
@@ -6757,8 +6705,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: single whole request cancelled by visitor campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3046,
     'Hospitality and tourism showcase — staff-created internal delegation campus 1',
@@ -6769,8 +6716,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: staff-created internal delegation campus 1'
+    NULL
     UNION ALL SELECT
     3047,
     'Mekong community engagement visit — staff-created internal delegation campus 2',
@@ -6781,8 +6727,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: staff-created internal delegation campus 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3048,
     'Digital art learning studio tour — staff-created internal delegation campus 3',
@@ -6793,8 +6738,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: staff-created internal delegation campus 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3049,
     'Industry advisory board meeting — staff-created internal delegation campus 4',
@@ -6805,8 +6749,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: staff-created internal delegation campus 4'
+    NULL
     UNION ALL SELECT
     3050,
     'Research collaboration signing day — staff-created internal delegation campus 5',
@@ -6817,8 +6760,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: staff-created internal delegation campus 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3051,
     'Service learning mobility forum — multi pending campus-level approval set 1',
@@ -6829,8 +6771,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3052,
     'Smart library operations briefing — multi rejected by HO set 1',
@@ -6841,8 +6782,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi rejected by HO set 1'
+    NULL
     UNION ALL SELECT
     3053,
     'Campus safety and visitor service review — multi approved waiting host assignment set 1',
@@ -6853,8 +6793,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi approved waiting host assignment set 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3054,
     'Innovation hub partnership sprint — multi mixed operational statuses set 1',
@@ -6865,8 +6804,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 1'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3055,
     'Bilingual student buddy observation — multi whole request cancelled by visitor set 1',
@@ -6877,8 +6815,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi whole request cancelled by visitor set 1'
+    NULL
     UNION ALL SELECT
     3056,
     'Sustainable facilities protocol visit — multi pending campus-level approval set 2',
@@ -6889,8 +6826,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3057,
     'Edtech product validation session — multi rejected by HO set 2',
@@ -6901,8 +6837,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi rejected by HO set 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3058,
     'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 2',
@@ -6913,8 +6848,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi approved waiting host assignment set 2'
+    NULL
     UNION ALL SELECT
     3059,
     'Career services exchange meeting — multi mixed operational statuses set 2',
@@ -6925,8 +6859,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3060,
     'Archive and documentation handover review — multi whole request cancelled by visitor set 2',
@@ -6937,8 +6870,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi whole request cancelled by visitor set 2'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3061,
     'AI curriculum benchmarking delegation — multi pending campus-level approval set 3',
@@ -6949,8 +6881,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi pending campus-level approval set 3'
+    NULL
     UNION ALL SELECT
     3062,
     'Green campus energy walk — multi rejected by HO set 3',
@@ -6961,8 +6892,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi rejected by HO set 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3063,
     'Robotics classroom demonstration — multi approved waiting host assignment set 3',
@@ -6973,8 +6903,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi approved waiting host assignment set 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3064,
     'International credit transfer workshop — multi mixed operational statuses set 3',
@@ -6985,8 +6914,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi mixed operational statuses set 3'
+    NULL
     UNION ALL SELECT
     3065,
     'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 3',
@@ -6997,8 +6925,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi whole request cancelled by visitor set 3'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3066,
     'Hospitality and tourism showcase — multi pending campus-level approval set 4',
@@ -7009,8 +6936,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3067,
     'Mekong community engagement visit — multi rejected by HO set 4',
@@ -7021,8 +6947,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi rejected by HO set 4'
+    NULL
     UNION ALL SELECT
     3068,
     'Digital art learning studio tour — multi approved waiting host assignment set 4',
@@ -7033,8 +6958,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi approved waiting host assignment set 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3069,
     'Industry advisory board meeting — multi mixed operational statuses set 4',
@@ -7045,8 +6969,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 4'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3070,
     'Research collaboration signing day — multi whole request cancelled by visitor set 4',
@@ -7057,8 +6980,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi whole request cancelled by visitor set 4'
+    NULL
     UNION ALL SELECT
     3071,
     'Service learning mobility forum — multi pending campus-level approval set 5',
@@ -7069,8 +6991,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3072,
     'Smart library operations briefing — multi rejected by HO set 5',
@@ -7081,8 +7002,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi rejected by HO set 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3073,
     'Campus safety and visitor service review — multi approved waiting host assignment set 5',
@@ -7093,8 +7013,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi approved waiting host assignment set 5'
+    NULL
     UNION ALL SELECT
     3074,
     'Innovation hub partnership sprint — multi mixed operational statuses set 5',
@@ -7105,8 +7024,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3075,
     'Bilingual student buddy observation — multi whole request cancelled by visitor set 5',
@@ -7117,8 +7035,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi whole request cancelled by visitor set 5'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3076,
     'Sustainable facilities protocol visit — multi pending campus-level approval set 6',
@@ -7129,8 +7046,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi pending campus-level approval set 6'
+    NULL
     UNION ALL SELECT
     3077,
     'Edtech product validation session — multi rejected by HO set 6',
@@ -7141,8 +7057,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi rejected by HO set 6'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3078,
     'Outdoor campus tour with accessibility focus — multi approved waiting host assignment set 6',
@@ -7153,8 +7068,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi approved waiting host assignment set 6'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3079,
     'Career services exchange meeting — multi mixed operational statuses set 6',
@@ -7165,8 +7079,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi mixed operational statuses set 6'
+    NULL
     UNION ALL SELECT
     3080,
     'Archive and documentation handover review — multi whole request cancelled by visitor set 6',
@@ -7177,8 +7090,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi whole request cancelled by visitor set 6'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3081,
     'AI curriculum benchmarking delegation — multi pending campus-level approval set 7',
@@ -7189,8 +7101,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 7'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3082,
     'Green campus energy walk — multi rejected by HO set 7',
@@ -7201,8 +7112,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi rejected by HO set 7'
+    NULL
     UNION ALL SELECT
     3083,
     'Robotics classroom demonstration — multi approved waiting host assignment set 7',
@@ -7213,8 +7123,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi approved waiting host assignment set 7'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3084,
     'International credit transfer workshop — multi mixed operational statuses set 7',
@@ -7225,8 +7134,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 7'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3085,
     'Student entrepreneurship roundtable — multi whole request cancelled by visitor set 7',
@@ -7237,8 +7145,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi whole request cancelled by visitor set 7'
+    NULL
     UNION ALL SELECT
     3086,
     'Hospitality and tourism showcase — multi pending campus-level approval set 8',
@@ -7249,8 +7156,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi pending campus-level approval set 8'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3087,
     'Mekong community engagement visit — multi rejected by HO set 8',
@@ -7261,8 +7167,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi rejected by HO set 8'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3088,
     'Digital art learning studio tour — multi approved waiting host assignment set 8',
@@ -7273,8 +7178,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'DECLINED',
-    NULL,
-    'Seed coverage: multi approved waiting host assignment set 8'
+    NULL
     UNION ALL SELECT
     3089,
     'Industry advisory board meeting — multi mixed operational statuses set 8',
@@ -7285,8 +7189,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi mixed operational statuses set 8'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3090,
     'Research collaboration signing day — multi whole request cancelled by visitor set 8',
@@ -7297,8 +7200,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.',
-    'Seed coverage: multi whole request cancelled by visitor set 8'
+    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -9383,15 +9285,15 @@ INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type,
 -- for HCM/DN/CT/QN Staff Leader, Staff, Department and Student accounts.
 -- =====================================================================
 
-INSERT INTO visit_requests (primary_contact_access_status, visit_request_id, request_code, visitor_user_id, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  ('ACTIVE', 9001, 'VR7-SC-HCM-VISITOR-CANCEL-01', 202, 3, 'VISITOR_SUBMITTED', 'Sofia Bianchi', 'Politecnico di Milano Mobility Lab', 'International Partnership Officer', '+390210000202', 'sofia.bianchi@polimi.example', 'Ý', 'SINGLE_CAMPUS', 'Sofia Bianchi', 'Politecnico di Milano Mobility Lab', '+390210000202', 'sofia.bianchi@polimi.example', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'Visitor tự hủy trên portal vì đoàn đổi lịch bay và không còn đủ thời gian ở TP.HCM.', 5, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 202),
-  ('ACTIVE', 9002, 'VR7-SC-DN-VISITOR-CANCEL-02', 203, 2, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'University of Technology Sydney Student Exchange', 'Exchange Program Manager', '+61410000203', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'Nguyen Kelly', 'University of Technology Sydney Student Exchange', '+61410000203', 'kelly.nguyen@uts.example', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 1 HOUR - INTERVAL 57 MINUTE, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 'Visitor tự hủy do trưởng đoàn không thể bay sang Việt Nam theo kế hoạch.', 6, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 2 HOUR, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 203),
-  ('ACTIVE', 9003, 'VR7-SC-CT-VISITOR-CANCEL-03', 210, 6, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Research Liaison', '+6590000210', 'priya.raman@singapore-ai.example', 'Singapore', 'SINGLE_CAMPUS', 'Priya Raman', 'Singapore Applied AI Consortium', '+6590000210', 'priya.raman@singapore-ai.example', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 57 MINUTE, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 'Visitor tự hủy vì hội thảo chuyển sang hình thức trực tuyến.', 4, CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 1 HOUR, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 210),
-  ('ACTIVE', 9004, 'VR7-SC-QN-VISITOR-CANCEL-04', 212, 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'SINGLE_CAMPUS', 'Fatima Zahra', 'Casablanca Tech Bridge', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 3 HOUR, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 2 HOUR - INTERVAL 57 MINUTE, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 'Visitor tự hủy vì đối tác đổi thời gian khảo sát sang học kỳ sau.', 3, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 3 HOUR, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 212),
-  ('ACTIVE', 9005, 'VR7-MC-HN-HCM-DN-VISITOR-CANCEL-05', 205, 5, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Paris Digital Arts Institute', 'Digital Learning Curator', '+33144000205', 'amelie.dubois@paris-digital.example', 'Pháp', 'MULTI_CAMPUS', 'Amelie Dubois', 'Paris Digital Arts Institute', '+33144000205', 'amelie.dubois@paris-digital.example', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'Visitor tự hủy toàn bộ tour vì ngân sách di chuyển liên cơ sở bị cắt.', 7, CURRENT_TIMESTAMP - INTERVAL 11 DAY, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 205),
-  ('ACTIVE', 9006, 'VR7-MC-HCM-DN-CT-PARTIAL-VISITOR-CANCEL-06', 210, 3, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Research Liaison', '+6590000210', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'Priya Raman', 'Singapore Applied AI Consortium', '+6590000210', 'priya.raman@singapore-ai.example', 'APPROVED', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 210, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, 2),
-  ('ACTIVE', 9007, 'VR7-MC-CT-QN-PARTIAL-VISITOR-CANCEL-07', 212, 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'MULTI_CAMPUS', 'Fatima Zahra', 'Casablanca Tech Bridge', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 2, CURRENT_TIMESTAMP - INTERVAL 6 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 2),
-  ('ACTIVE', 9008, 'VR7-MC-HN-DN-VISITOR-CANCEL-08', 8, 1, 'VISITOR_SUBMITTED', 'External Visitor Main', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'External Visitor Main', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'Visitor tự hủy toàn bộ request vì đối tác đổi đoàn sang lịch tháng sau.', 8, CURRENT_TIMESTAMP - INTERVAL 14 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8);
+INSERT INTO visit_requests (visit_request_id, registrant_user_id, request_code, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (9001, 202, 'VR7-SC-HCM-VISITOR-CANCEL-01', 3, 'VISITOR_SUBMITTED', 'Sofia Bianchi', 'Politecnico di Milano Mobility Lab', 'International Partnership Officer', '+390210000202', 'sofia.bianchi@polimi.example', 'Ý', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 'Visitor tự hủy trên portal vì đoàn đổi lịch bay và không còn đủ thời gian ở TP.HCM.', 5, CURRENT_TIMESTAMP - INTERVAL 8 DAY, 202, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR, 202),
+  (9002, 203, 'VR7-SC-DN-VISITOR-CANCEL-02', 2, 'VISITOR_SUBMITTED', 'Nguyen Kelly', 'University of Technology Sydney Student Exchange', 'Exchange Program Manager', '+61410000203', 'kelly.nguyen@uts.example', 'Úc', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 2 HOUR, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 1 HOUR - INTERVAL 57 MINUTE, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 'Visitor tự hủy do trưởng đoàn không thể bay sang Việt Nam theo kế hoạch.', 6, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 2 HOUR, 203, CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR, 203),
+  (9003, 210, 'VR7-SC-CT-VISITOR-CANCEL-03', 6, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Research Liaison', '+6590000210', 'priya.raman@singapore-ai.example', 'Singapore', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 1 HOUR, CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 57 MINUTE, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 'Visitor tự hủy vì hội thảo chuyển sang hình thức trực tuyến.', 4, CURRENT_TIMESTAMP - INTERVAL 9 DAY - INTERVAL 1 HOUR, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR, 210),
+  (9004, 212, 'VR7-SC-QN-VISITOR-CANCEL-04', 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 3 HOUR, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 2 HOUR - INTERVAL 57 MINUTE, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 'Visitor tự hủy vì đối tác đổi thời gian khảo sát sang học kỳ sau.', 3, CURRENT_TIMESTAMP - INTERVAL 7 DAY - INTERVAL 3 HOUR, 212, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR, 212),
+  (9005, 205, 'VR7-MC-HN-HCM-DN-VISITOR-CANCEL-05', 5, 'VISITOR_SUBMITTED', 'Amelie Dubois', 'Paris Digital Arts Institute', 'Digital Learning Curator', '+33144000205', 'amelie.dubois@paris-digital.example', 'Pháp', 'MULTI_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'Visitor tự hủy toàn bộ tour vì ngân sách di chuyển liên cơ sở bị cắt.', 7, CURRENT_TIMESTAMP - INTERVAL 11 DAY, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 205),
+  (9006, 210, 'VR7-MC-HCM-DN-CT-PARTIAL-VISITOR-CANCEL-06', 3, 'VISITOR_SUBMITTED', 'Priya Raman', 'Singapore Applied AI Consortium', 'Research Liaison', '+6590000210', 'priya.raman@singapore-ai.example', 'Singapore', 'MULTI_CAMPUS', 'APPROVED', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 210, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, 2),
+  (9007, 212, 'VR7-MC-CT-QN-PARTIAL-VISITOR-CANCEL-07', 4, 'VISITOR_SUBMITTED', 'Fatima Zahra', 'Casablanca Tech Bridge', 'Program Director', '+21260000212', 'fatima.zahra@casablanca-tech.example', 'Morocco', 'MULTI_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, NULL, NULL, NULL, 2, CURRENT_TIMESTAMP - INTERVAL 6 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 2),
+  (9008, 8, 'VR7-MC-HN-DN-VISITOR-CANCEL-08', 1, 'VISITOR_SUBMITTED', 'External Visitor Main', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY - INTERVAL 23 HOUR - INTERVAL 57 MINUTE, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 'Visitor tự hủy toàn bộ request vì đối tác đổi đoàn sang lịch tháng sau.', 8, CURRENT_TIMESTAMP - INTERVAL 14 DAY, 8, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR, 8);
 
 
 -- NOTE: canonical per-campus form details for this coverage batch are inserted
@@ -9407,7 +9309,7 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (9906, 9005, 2, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR + INTERVAL 15 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 9, 2, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 5 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ multi-campus; HCM mới ở bước coordinator, chưa có host.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 205, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 205),
   (9907, 9005, 3, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 10 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 10 HOUR + INTERVAL 180 MINUTE), 'CANCELLED', 11, 2, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 5 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 205, CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor tự hủy toàn bộ multi-campus; DN mới ở bước coordinator, chưa có host.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 205, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 205),
   (9908, 9006, 2, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR + INTERVAL 150 MINUTE), 'CANCELLED', 9, 2, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 3 HOUR, 10, 9, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 22 HOUR, 9, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 22 HOUR, 'STAFF_LEADER', 'Seed migration: campus had been approved and assigned before cancellation.', NULL, NULL, NULL, 210, CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor chỉ tự hủy chặng HCM; các campus DN/CT trong cùng request vẫn vận hành.', 4, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 210, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 210),
-  (9909, 9006, 3, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 14 HOUR + INTERVAL 150 MINUTE), 'ASSIGNED', 11, 2, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 3 HOUR, 12, 11, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 12, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 11),
+  (9909, 9006, 3, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 14 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 14 HOUR + INTERVAL 150 MINUTE), 'BEFORE_VISIT', 11, 2, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 3 HOUR, 12, 11, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 11, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 20 HOUR, 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 3, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 12, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 11),
   (9910, 9006, 4, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 10 HOUR + INTERVAL 30 MINUTE + INTERVAL 180 MINUTE), 'BEFORE_VISIT', 13, 2, CURRENT_TIMESTAMP - INTERVAL 11 DAY - INTERVAL 3 HOUR, 14, 13, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 18 HOUR, 13, CURRENT_TIMESTAMP - INTERVAL 10 DAY - INTERVAL 18 HOUR, 'STAFF_LEADER', 'Seed migration: Staff Leader approved and assigned host in one step.', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 4, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 14, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 13),
   (9911, 9007, 4, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 8 HOUR + INTERVAL 45 MINUTE, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 8 HOUR + INTERVAL 45 MINUTE + INTERVAL 180 MINUTE), 'WAITING_REQUEST_APPROVAL', 13, 2, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 7 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 13, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 2),
   (9912, 9007, 5, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 13 HOUR + INTERVAL 30 MINUTE + INTERVAL 180 MINUTE), 'CANCELLED', 15, 2, CURRENT_TIMESTAMP - INTERVAL 5 DAY - INTERVAL 7 HOUR, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR, 'VISITOR', 'SELF_SERVICE', 'Visitor chỉ hủy chặng QN; CT vẫn chờ Staff Leader approve và gán host.', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, 212, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 212),
@@ -9433,7 +9335,6 @@ INSERT INTO visit_instance_form_details (
   transportation_note,
   media_consent_status,
   media_consent_note,
-  note_to_fptu,
   form_revision,
   approval_revision,
   row_version,
@@ -9447,20 +9348,19 @@ SELECT
   sf.visit_type_other,
   sf.purpose,
   sf.working_content,
-  vr.contact_person_full_name,
-  NULLIF(TRIM(vr.contact_person_organization), ''),
-  vr.contact_person_phone,
-  NULLIF(TRIM(vr.contact_person_email), ''),
+  vr.registrant_full_name,
+  NULLIF(TRIM(vr.registrant_organization), ''),
+  vr.registrant_phone,
+  vr.registrant_email,
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
   sf.media_consent_note,
-  sf.note_to_fptu,
   1,
   1,
   0,
   vrc.created_at,
-  COALESCE(vr.created_by, vr.visitor_user_id)
+  COALESCE(vr.created_by, vr.registrant_user_id)
 FROM visit_request_campuses vrc
 JOIN visit_requests vr
   ON vr.visit_request_id = vrc.visit_request_id
@@ -9475,8 +9375,7 @@ JOIN (
     'EN' AS working_language,
     'Khách tự túc phương tiện. Đoàn tự bố trí xe từ trung tâm TP.HCM đến campus.' AS transportation_note,
     'AGREED' AS media_consent_status,
-    'Chỉ đồng ý dùng ảnh nhóm nếu chuyến đi diễn ra.' AS media_consent_note,
-    'Case v7: visitor tự hủy toàn bộ request single-campus HCM sau khi Staff Leader đã duyệt.' AS note_to_fptu
+    'Chỉ đồng ý dùng ảnh nhóm nếu chuyến đi diễn ra.' AS media_consent_note
     UNION ALL SELECT
     9002,
     'UTS robotics classroom visit cancelled by visitor at DN',
@@ -9487,8 +9386,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị campus hỗ trợ xe điện nội khu và bảng welcome.',
     'DECLINED',
-    NULL,
-    'Case v7: có host/participant/logistics nhưng visitor tự hủy trước chuyến.'
+    NULL
     UNION ALL SELECT
     9003,
     'Singapore AI curriculum visit cancelled by visitor at CT',
@@ -9499,8 +9397,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn dự kiến kết hợp xe thuê và boat tour nội vùng.',
     'AGREED',
-    'Đồng ý ảnh recap nội bộ nếu có sự kiện.',
-    'Case v7: visitor hủy đơn sau khi đã có lịch chuẩn bị tại CT.'
+    'Đồng ý ảnh recap nội bộ nếu có sự kiện.'
     UNION ALL SELECT
     9004,
     'Casablanca hospitality pathway cancelled by visitor at QN',
@@ -9511,8 +9408,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự đặt shuttle từ sân bay Phù Cát.',
     'DECLINED',
-    NULL,
-    'Case v7: visitor hủy sau duyệt nhưng trước khi có host chính thức.'
+    NULL
     UNION ALL SELECT
     9005,
     'Paris digital arts multi-campus tour cancelled by visitor',
@@ -9523,8 +9419,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ điều phối di chuyển giữa các campus nếu lịch được chốt.',
     'AGREED',
-    'Đồng ý dùng ảnh đoàn trong bản tin hợp tác nếu chuyến diễn ra.',
-    'Case v7: visitor tự hủy toàn bộ multi-campus sau khi campus được xử lý, trước host assignment.'
+    'Đồng ý dùng ảnh đoàn trong bản tin hợp tác nếu chuyến diễn ra.'
     UNION ALL SELECT
     9006,
     'Singapore AI consortium partial campus cancellation',
@@ -9535,8 +9430,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn dùng xe thuê riêng, chỉ đổi lịch bay tại chặng HCM.',
     'AGREED',
-    'Cho phép ảnh nội bộ tại các campus còn tiếp tục.',
-    'Case v7: visitor tự hủy một campus instance, request tổng vẫn APPROVED.'
+    'Cho phép ảnh nội bộ tại các campus còn tiếp tục.'
     UNION ALL SELECT
     9007,
     'Casablanca coastal program partial cancellation',
@@ -9547,8 +9441,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự sắp xếp vé bay và xe shuttle giữa hai thành phố.',
     'DECLINED',
-    NULL,
-    'Case v7: partial visitor cancel với một campus còn WAITING_REQUEST_APPROVAL.'
+    NULL
     UNION ALL SELECT
     9008,
     'SeoulTech two-campus AI lab cancellation by visitor',
@@ -9559,8 +9452,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ bảng welcome và xe nội khu tại từng campus.',
     'AGREED',
-    'Cho phép ảnh workshop nếu sự kiện diễn ra.',
-    'Case v7: visitor@example.com tự hủy toàn bộ multi-campus sau khi các campus đã có host.'
+    'Cho phép ảnh workshop nếu sự kiện diễn ra.'
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -9719,19 +9611,19 @@ INSERT INTO audit_logs (audit_log_id, actor_user_id, campus_id, action, entity_t
 
 INSERT INTO audit_log_changes (audit_log_change_id, audit_log_id, field_name, old_value_text, new_value_text, created_at) VALUES
   (99401, 99001, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
-  (99402, 99001, 'visit_request_campuses.status', 'ASSIGNED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
+  (99402, 99001, 'visit_request_campuses.status', 'BEFORE_VISIT', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 4 HOUR),
   (99403, 99002, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR),
-  (99404, 99002, 'visit_request_campuses.status', 'ASSIGNED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR),
+  (99404, 99002, 'visit_request_campuses.status', 'BEFORE_VISIT', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 3 DAY - INTERVAL 2 HOUR),
   (99405, 99003, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR),
   (99406, 99003, 'visit_request_campuses.status', 'BEFORE_VISIT', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 6 HOUR),
   (99407, 99004, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR),
   (99408, 99004, 'visit_request_campuses.status', 'WAITING_REQUEST_APPROVAL', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 1 HOUR),
   (99409, 99005, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR),
   (99410, 99005, 'visit_request_campuses.status', 'WAITING_REQUEST_APPROVAL', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 4 DAY - INTERVAL 2 HOUR),
-  (99411, 99006, 'visit_request_campuses.status', 'ASSIGNED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
+  (99411, 99006, 'visit_request_campuses.status', 'BEFORE_VISIT', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 5 HOUR),
   (99412, 99007, 'visit_request_campuses.status', 'WAITING_REQUEST_APPROVAL', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 1 DAY - INTERVAL 4 HOUR),
   (99413, 99008, 'visit_requests.status', 'APPROVED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR),
-  (99414, 99008, 'visit_request_campuses.status', 'ASSIGNED', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR);
+  (99414, 99008, 'visit_request_campuses.status', 'BEFORE_VISIT', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY - INTERVAL 8 HOUR);
 
 
 -- =====================================================================
@@ -10228,12 +10120,12 @@ JOIN (
 ) cx ON cx.visit_request_id = vr.visit_request_id
 SET
   vr.status = 'CANCELLED',
-  vr.cancelled_by = vr.visitor_user_id,
+  vr.cancelled_by = vr.registrant_user_id,
   vr.cancelled_at = COALESCE(cx.campus_cancelled_at, CURRENT_TIMESTAMP),
   vr.cancellation_reason = 'Request single-campus được chuyển CANCELLED vì campus duy nhất đã bị hủy; xem cancellation_reason của campus instance để biết actor/source chi tiết.',
   vr.row_version = vr.row_version + 1,
   vr.updated_at = COALESCE(cx.campus_cancelled_at, CURRENT_TIMESTAMP),
-  vr.updated_by = vr.visitor_user_id
+  vr.updated_by = vr.registrant_user_id
 WHERE vr.visit_scope = 'SINGLE_CAMPUS'
   AND vr.status = 'APPROVED';
 
@@ -10410,7 +10302,7 @@ FROM visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 WHERE visitor.email = 'visitor@example.com'
   AND vrc.status = 'CLOSED'
   AND vrc.current_host_user_id IS NOT NULL
@@ -10456,7 +10348,7 @@ JOIN visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 JOIN campuses c
     ON c.campus_id = vrc.campus_id
 WHERE visitor.email = 'visitor@example.com'
@@ -10504,7 +10396,7 @@ JOIN visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 JOIN campuses c
     ON c.campus_id = vrc.campus_id
 WHERE visitor.email = 'visitor@example.com'
@@ -10545,7 +10437,7 @@ JOIN visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 WHERE visitor.email = 'visitor@example.com'
   AND nt.language_code = 'vi'
   AND nt.slug = CONCAT('visitor-closed-visit-', vrc.visit_instance_id)
@@ -10598,7 +10490,7 @@ FROM visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 JOIN users host
     ON host.user_id = vrc.current_host_user_id
 WHERE visitor.email = 'visitor@example.com'
@@ -10635,7 +10527,7 @@ JOIN visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 JOIN (
     SELECT 'HOST_PREPARATION' AS criterion_code, 'Chuẩn bị và điều phối' AS criterion_label, 5 AS rating, 1 AS display_order
     UNION ALL
@@ -11031,7 +10923,7 @@ FROM visit_request_campuses vrc
 JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 JOIN visit_instance_form_details seed_detail ON seed_detail.visit_instance_id = vrc.visit_instance_id
 JOIN users visitor
-    ON visitor.user_id = vr.visitor_user_id
+    ON visitor.user_id = vr.registrant_user_id
 LEFT JOIN news n
     ON n.visit_instance_id = vrc.visit_instance_id
    AND n.status = 'PUBLISHED'
@@ -11206,26 +11098,6 @@ SET
     WHEN 9005 THEN 'Campus HN đang tiếp đoàn, campus HCM chuẩn bị phiên sau; logistics và minutes được theo dõi riêng từng instance.'
     WHEN 9006 THEN 'Host đã chốt minutes, thu feedback, xuất bản news và lưu file ảnh chuyến thăm qua Drive metadata.'
     ELSE d.working_content END,
-  d.note_to_fptu = CASE vrc.visit_request_id
-    WHEN 1001 THEN 'Đoàn cần bản đồ vào campus và số điện thoại host trực trong ngày.'
-    WHEN 1002 THEN 'Nếu không có phòng lab phù hợp, mong FPTU đề xuất ngày khác thay vì tiếp nhận gấp.'
-    WHEN 1003 THEN 'Ưu tiên phòng họp yên tĩnh để trao đổi syllabus chi tiết.'
-    WHEN 3001 THEN 'Cần gửi trước danh sách giảng viên tham dự và tài liệu mô tả chương trình AI hiện hành.'
-    WHEN 3002 THEN 'Đoàn có hai thành viên lớn tuổi, ưu tiên route ít đi bộ và có nước uống tại mỗi điểm dừng.'
-    WHEN 3003 THEN 'Cần kiểm tra nguồn điện, Wi-Fi và khu vực an toàn trước khi demo robot.'
-    WHEN 3004 THEN 'Cần đại diện đào tạo có quyền xác nhận quy trình credit transfer.'
-    WHEN 3005 THEN 'Đề nghị mời 8–10 sinh viên có sản phẩm media hoặc startup tham gia roundtable.'
-    WHEN 3006 THEN 'Không chụp ảnh tài liệu tài trợ; chỉ ghi nhận biên bản làm việc nội bộ.'
-    WHEN 3007 THEN 'Có thể dùng ảnh public nếu không xuất hiện dữ liệu màn hình sinh viên.'
-    WHEN 3008 THEN 'Cần chuẩn bị khu vực pitching nhỏ và bảng tên cho mentor.'
-    WHEN 3009 THEN 'Mỗi campus cần một agenda riêng, tránh copy cùng nội dung cho cả hành trình.'
-    WHEN 9001 THEN 'Visitor đề nghị giữ liên hệ để đăng ký lại sau khi visa được cấp.'
-    WHEN 9002 THEN 'Partner muốn nhận email xác nhận đã hủy để báo lại board.'
-    WHEN 9003 THEN 'HO yêu cầu submit lại bản chi tiết hơn, không chỉ chọn campus theo danh sách.'
-    WHEN 9004 THEN 'Sau khi gán host, cần gửi email logistics summary cho từng campus.'
-    WHEN 9005 THEN 'Host cần cập nhật tiến độ ngay sau từng phiên để campus sau chuẩn bị kịp.'
-    WHEN 9006 THEN 'Dữ liệu dùng kiểm thử public news, feedback và close delegation.'
-    ELSE d.note_to_fptu END,
   d.updated_at = NULL
 WHERE vrc.visit_request_id IN (1001,1002,1003,3001,3002,3003,3004,3005,3006,3007,3008,3009,9001,9002,9003,9004,9005,9006);
 
@@ -11239,7 +11111,6 @@ JOIN campuses c ON c.campus_id = vrc.campus_id
 SET vrc.preparation_note = CASE vrc.status
     WHEN 'WAITING_REQUEST_APPROVAL' THEN CONCAT('Chưa chuẩn bị onsite tại ', c.campus_code, '. Staff Leader ', c.campus_code, ' sẽ đánh giá request và chọn host ngay nếu duyệt: ', LEFT(seed_detail.delegation_name, 120), '.')
     WHEN 'REJECTED' THEN CONCAT('Campus ', c.campus_code, ' đã từ chối tiếp nhận request; không chuẩn bị onsite, chỉ lưu lý do từ chối và thông tin follow-up.')
-    WHEN 'ASSIGNED' THEN CONCAT('Host đã được gán tại ', c.campus_code, '; cần gửi briefing cho người tham gia, kiểm tra bảng tên, nước uống và route theo mục tiêu: ', LEFT(seed_detail.purpose, 120), '.')
     WHEN 'BEFORE_VISIT' THEN CONCAT('Checklist trước visit tại ', c.campus_code, ': xác nhận khách, mở phòng họp, chuẩn bị màn hình, in agenda và test link trình chiếu.')
     WHEN 'DURING_VISIT' THEN CONCAT('Đang tiếp đoàn tại ', c.campus_code, '; host cần cập nhật attendance, ghi minutes và chụp tối thiểu một ảnh nếu media consent cho phép.')
     WHEN 'AFTER_VISIT' THEN CONCAT('Sau visit tại ', c.campus_code, ': rà soát action item, thu feedback, chuẩn bị news hoặc xác nhận không cần news trước khi đóng hồ sơ.')
@@ -11555,7 +11426,7 @@ SELECT 'seed_placeholder_terms_remaining' AS check_name,
        SUM(issue_count) AS issue_count
 FROM (
   SELECT COUNT(*) AS issue_count FROM partners WHERE description LIKE '%kịch bản seed coverage%' OR review_note LIKE '%kịch bản seed coverage%'
-  UNION ALL SELECT COUNT(*) FROM visit_instance_form_details WHERE purpose LIKE '%Seed coverage:%' OR note_to_fptu LIKE '%Seed coverage:%'
+  UNION ALL SELECT COUNT(*) FROM visit_instance_form_details WHERE purpose LIKE '%Seed coverage:%'
   UNION ALL SELECT COUNT(*) FROM visit_agendas WHERE title IN ('Arrival and reception briefing','Working session and campus walkthrough')
   UNION ALL SELECT COUNT(*) FROM visit_logistics_items WHERE description LIKE '%Seed coverage:%'
   UNION ALL SELECT COUNT(*) FROM news_content_sections WHERE section_body_html LIKE '%data:image%'
@@ -11624,7 +11495,7 @@ START TRANSACTION;
 -- These instances are chosen because the base seed has no visit_participants rows on them.
 UPDATE visit_request_campuses
 SET status = CASE visit_instance_id
-    WHEN 5055 THEN 'ASSIGNED'
+    WHEN 5055 THEN 'BEFORE_VISIT'
     WHEN 5065 THEN 'BEFORE_VISIT'
     WHEN 5075 THEN 'DURING_VISIT'
     WHEN 5085 THEN 'AFTER_VISIT'
@@ -11752,19 +11623,6 @@ SET vr.registrant_user_id = registrant.user_id,
     vr.created_source = 'STAFF_CREATED',
     vr.created_by = registrant.user_id,
     sf.created_by = registrant.user_id,
-    vr.primary_contact_access_status = 'ACTIVE',
-    vr.primary_contact_verified_at = CASE vr.visit_request_id
-      WHEN 3046 THEN '2026-07-06 13:08:00'
-      WHEN 3047 THEN '2026-07-07 14:08:00'
-      WHEN 3048 THEN '2026-07-08 15:08:00'
-      WHEN 3049 THEN '2026-07-09 08:08:00'
-      WHEN 3050 THEN '2026-07-10 09:08:00'
-    END,
-    sf.note_to_fptu = CONCAT(
-      COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Internal request seed.'),
-      '\nRelation coverage: registered by ', registrant.email,
-      '; verified VISITOR primary contact = ', vr.contact_person_email, '.'
-    ),
     sf.updated_at = NULL
 WHERE vr.visit_request_id IN (3046, 3047, 3048, 3049, 3050)
   AND registrant.status = 'ACTIVE';
@@ -11864,191 +11722,9 @@ SET responsible_user_id = 9,
     created_by = 9
 WHERE visit_instance_id = 5047;
 
--- 5) Seed the completed INITIAL_CLAIM history for A != B internal requests.
---    The request registrant is STAFF/STAFF LEADER; the confirmed owner is VISITOR.
-DELETE FROM visit_request_identity_change_events
-WHERE identity_change_id BETWEEN 99401 AND 99405;
-DELETE FROM visit_request_identity_changes
-WHERE identity_change_id BETWEEN 99401 AND 99405;
-
-INSERT INTO visit_request_identity_changes
-  (identity_change_id, visit_request_id, change_kind, target_relation,
-   confirmation_method, old_user_id, new_user_id, old_email_normalized,
-   new_email_normalized, new_email_masked, pending_snapshot_json, status,
-   expected_request_row_version, requested_by, requested_at, expires_at,
-   applied_at, declined_at, cancelled_at, superseded_at, retention_until,
-   redacted_at, reason, resend_count, created_at, updated_at)
-VALUES
-  (99401, 3046, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 206, NULL,
-   'omar.almansouri@gulf-innovation.example', 'o***@gulf-innovation.example',
-   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',4,'primaryContactUserId',206),
-   'APPLIED', 0, 4, '2026-07-06 13:03:30', '2026-07-09 13:03:30',
-   '2026-07-06 13:08:00', NULL, NULL, NULL, '2026-10-04 13:08:00', NULL,
-   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
-   '2026-07-06 13:03:30', '2026-07-06 13:08:00'),
-  (99402, 3047, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 207, NULL,
-   'linh.tran@seattle-edtech.example', 'l***@seattle-edtech.example',
-   JSON_OBJECT('seedCase','STAFF_LEADER_REGISTRANT_VISITOR_CONTACT','registrantUserId',9,'primaryContactUserId',207),
-   'APPLIED', 1, 9, '2026-07-07 14:03:30', '2026-07-10 14:03:30',
-   '2026-07-07 14:08:00', NULL, NULL, NULL, '2026-10-05 14:08:00', NULL,
-   'Seed: verified Visitor accepted INITIAL_CLAIM from Staff Leader registrant.', 0,
-   '2026-07-07 14:03:30', '2026-07-07 14:08:00'),
-  (99403, 3048, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 208, NULL,
-   'grace.okafor@lagos-tech.example', 'g***@lagos-tech.example',
-   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',12,'primaryContactUserId',208),
-   'APPLIED', 2, 12, '2026-07-08 15:03:30', '2026-07-11 15:03:30',
-   '2026-07-08 15:08:00', NULL, NULL, NULL, '2026-10-06 15:08:00', NULL,
-   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
-   '2026-07-08 15:03:30', '2026-07-08 15:08:00'),
-  (99404, 3049, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 209, NULL,
-   'mateo.alvarez@andes-exchange.example', 'm***@andes-exchange.example',
-   JSON_OBJECT('seedCase','STAFF_LEADER_REGISTRANT_VISITOR_CONTACT','registrantUserId',13,'primaryContactUserId',209),
-   'APPLIED', 3, 13, '2026-07-09 08:03:30', '2026-07-12 08:03:30',
-   '2026-07-09 08:08:00', NULL, NULL, NULL, '2026-10-07 08:08:00', NULL,
-   'Seed: verified Visitor accepted INITIAL_CLAIM from Staff Leader registrant.', 0,
-   '2026-07-09 08:03:30', '2026-07-09 08:08:00'),
-  (99405, 3050, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 210, NULL,
-   'priya.raman@singapore-ai.example', 'p***@singapore-ai.example',
-   JSON_OBJECT('seedCase','STAFF_REGISTRANT_VISITOR_CONTACT','registrantUserId',16,'primaryContactUserId',210),
-   'APPLIED', 4, 16, '2026-07-10 09:03:30', '2026-07-13 09:03:30',
-   '2026-07-10 09:08:00', NULL, NULL, NULL, '2026-10-08 09:08:00', NULL,
-   'Seed: verified Visitor accepted INITIAL_CLAIM from IC Staff registrant.', 0,
-   '2026-07-10 09:03:30', '2026-07-10 09:08:00');
-
-INSERT INTO visit_request_identity_change_events
-  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
-   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
-VALUES
-  (99401, 99401, 3046, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 4, 'o***@gulf-innovation.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3046', '2026-07-06 13:03:30'),
-  (99402, 99401, 3046, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 206, 'o***@gulf-innovation.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3046', '2026-07-06 13:08:00'),
-  (99403, 99402, 3047, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 9, 'l***@seattle-edtech.example', 'Staff Leader registrant requested primary-contact confirmation.', 'seed-rel-3047', '2026-07-07 14:03:30'),
-  (99404, 99402, 3047, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 207, 'l***@seattle-edtech.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3047', '2026-07-07 14:08:00'),
-  (99405, 99403, 3048, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 12, 'g***@lagos-tech.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3048', '2026-07-08 15:03:30'),
-  (99406, 99403, 3048, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 208, 'g***@lagos-tech.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3048', '2026-07-08 15:08:00'),
-  (99407, 99404, 3049, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 13, 'm***@andes-exchange.example', 'Staff Leader registrant requested primary-contact confirmation.', 'seed-rel-3049', '2026-07-09 08:03:30'),
-  (99408, 99404, 3049, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 209, 'm***@andes-exchange.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3049', '2026-07-09 08:08:00'),
-  (99409, 99405, 3050, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 16, 'p***@singapore-ai.example', 'Staff registrant requested primary-contact confirmation.', 'seed-rel-3050', '2026-07-10 09:03:30'),
-  (99410, 99405, 3050, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 210, 'p***@singapore-ai.example', 'Verified Visitor accepted the primary-contact relation.', 'seed-rel-3050', '2026-07-10 09:08:00');
-
--- ---------------------------------------------------------------------
--- CONTACT/VISITOR ROLE GUARD SEED ALIGNMENT
--- Request-level primary contact and per-campus operational contact are distinct:
---   * visit_requests.visitor_user_id = login-capable ACTIVE VISITOR owner only;
---   * visit_instance_form_details.operational_contact_* = campus work snapshot only.
--- ---------------------------------------------------------------------
-
--- Dedicated inactive VISITOR account used only by the rollback-safe negative tests.
--- It is intentionally not linked to any request.
-INSERT INTO users
-  (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role,
-   primary_campus_id, department_id, gender, avatar_url, student_code, fe_id,
-   status, email_verified_at, failed_login_count, locked_until, created_via,
-   first_login_at, last_login_at, created_at, created_by, updated_at, updated_by)
-VALUES
-  (99680, 'Inactive Visitor Guard Test', 'inactive.visitor.guard@example.test', '+84996000080',
-   'Test', NULL, 6, NULL, NULL, NULL, 'OTHER', NULL, NULL, NULL,
-   'INACTIVE', '2026-07-11 08:00:00', 0, NULL, 'VISITOR_FORM',
-   NULL, NULL, '2026-07-11 08:00:00', NULL, NULL, NULL);
-
--- Seed case 8.2: Visitor A (user 8) registered while Visitor B (user 21) is the
--- confirmed primary contact. The original request aggregate/campus/detail/member/
--- revision/audit rows are preserved; only the canonical request relation is aligned.
-UPDATE visit_requests vr
-JOIN users registrant ON registrant.user_id = 8
-JOIN visit_request_campuses seed_vrc
-  ON seed_vrc.visit_request_id = vr.visit_request_id
-JOIN visit_instance_form_details sf
-  ON sf.visit_instance_id = seed_vrc.visit_instance_id
-SET vr.registrant_user_id = registrant.user_id,
-    vr.registrant_full_name = registrant.full_name,
-    vr.registrant_organization = 'SeoulTech Global Engagement Center',
-    vr.registrant_job_title = 'Director of Global Programs',
-    vr.registrant_phone = registrant.phone,
-    vr.registrant_email = registrant.email,
-    vr.registrant_nationality = COALESCE(registrant.nationality, 'Hàn Quốc'),
-    vr.created_source = 'VISITOR_SUBMITTED',
-    vr.created_by = registrant.user_id,
-    sf.created_by = registrant.user_id,
-    vr.visitor_user_id = 21,
-    vr.primary_contact_access_status = 'ACTIVE',
-    vr.primary_contact_verified_at = '2026-06-10 08:34:00',
-    sf.note_to_fptu = CONCAT(
-      COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Visitor-submitted relation seed.'),
-      '
-Contact guard coverage: Visitor A user_id=8 registered; Visitor B user_id=21 is the confirmed primary contact.'
-    ),
-    sf.updated_at = NULL
-WHERE vr.visit_request_id = 1002;
-
-DELETE FROM visit_request_identity_change_events
-WHERE identity_change_id = 99601;
-DELETE FROM visit_request_identity_changes
-WHERE identity_change_id = 99601;
-
-INSERT INTO visit_request_identity_changes
-  (identity_change_id, visit_request_id, change_kind, target_relation,
-   confirmation_method, old_user_id, new_user_id, old_email_normalized,
-   new_email_normalized, new_email_masked, pending_snapshot_json, status,
-   expected_request_row_version, requested_by, requested_at, expires_at,
-   applied_at, declined_at, cancelled_at, superseded_at, retention_until,
-   redacted_at, reason, resend_count, created_at, updated_at)
-VALUES
-  (99601, 1002, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO', NULL, 21, NULL,
-   'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
-   JSON_OBJECT('seedCase','VISITOR_A_REGISTRANT_VISITOR_B_CONTACT','registrantUserId',8,'primaryContactUserId',21),
-   'APPLIED', 1, 8, '2026-06-10 08:30:00', '2026-06-13 08:30:00',
-   '2026-06-10 08:34:00', NULL, NULL, NULL, '2026-09-08 08:34:00', NULL,
-   'Seed: Visitor B accepted INITIAL_CLAIM requested by Visitor A.', 0,
-   '2026-06-10 08:30:00', '2026-06-10 08:34:00');
-
-INSERT INTO visit_request_identity_change_events
-  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
-   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
-VALUES
-  (99601, 99601, 1002, 'INITIAL_CLAIM_REQUESTED', NULL, 'PENDING', 8,
-   'a***@kyoto-global.example', 'Visitor A requested Visitor B as primary contact.',
-   'seed-contact-guard-1002', '2026-06-10 08:30:00'),
-  (99602, 99601, 1002, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', 21,
-   'a***@kyoto-global.example', 'Visitor B accepted and became the ACTIVE request owner.',
-   'seed-contact-guard-1002', '2026-06-10 08:34:00');
-
--- Seed cases 8.5 and 8.6: internal registrants with unclaimed contacts.
--- Approval may proceed per campus, but no account relation is granted before claim APPLIED.
-UPDATE visit_requests vr
-JOIN visit_request_campuses seed_vrc
-  ON seed_vrc.visit_request_id = vr.visit_request_id
-JOIN visit_instance_form_details sf
-  ON sf.visit_instance_id = seed_vrc.visit_instance_id
-SET vr.visitor_user_id = NULL,
-    vr.primary_contact_access_status = 'PENDING_CONFIRMATION',
-    vr.primary_contact_verified_at = NULL,
-    sf.note_to_fptu = CONCAT(
-      COALESCE(NULLIF(TRIM(sf.note_to_fptu), ''), 'Internal request seed.'),
-      '
-Contact guard coverage: INITIAL_CLAIM is still PENDING; visitor_user_id intentionally remains NULL.'
-    ),
-    sf.updated_at = NULL
-WHERE vr.visit_request_id IN (3048, 3049);
-
-UPDATE visit_request_identity_changes
-SET new_user_id = NULL,
-    status = 'PENDING',
-    applied_at = NULL,
-    retention_until = NULL,
-    reason = CASE identity_change_id
-      WHEN 99403 THEN 'Seed: IC Staff registrant invited an external primary contact; claim is still pending.'
-      WHEN 99404 THEN 'Seed: Staff Leader registrant invited an external primary contact; claim is still pending.'
-      ELSE reason
-    END,
-    updated_at = CASE identity_change_id
-      WHEN 99403 THEN '2026-07-08 15:03:30'
-      WHEN 99404 THEN '2026-07-09 08:03:30'
-      ELSE updated_at
-    END
-WHERE identity_change_id IN (99403, 99404);
-
-DELETE FROM visit_request_identity_change_events
-WHERE identity_change_event_id IN (99406, 99408);
+-- 5) Legacy request-level INITIAL_CLAIM scenario seed removed by the hard cutover.
+--    Contact confirmation is per campus now; the replacement scenario matrix
+--    (plan §4.4) is seeded in the OPERATIONAL CONTACT SCENARIO MATRIX block below.
 
 COMMIT;
 
@@ -12061,14 +11737,16 @@ UPDATE visit_requests vr
 JOIN (
   SELECT visit_request_id,
          COUNT(*) AS total_count,
-         SUM(CASE WHEN status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN 1 ELSE 0 END) AS approved_count,
-         SUM(CASE WHEN status = 'WAITING_REQUEST_APPROVAL' THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN 1 ELSE 0 END) AS approved_count,
+         SUM(CASE WHEN status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL') THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN status <> 'CANCELLED' AND operational_contact_user_id IS NULL THEN 1 ELSE 0 END) AS unconfirmed_count,
          SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count
   FROM visit_request_campuses
   GROUP BY visit_request_id
 ) s ON s.visit_request_id = vr.visit_request_id
 SET vr.status = CASE
   WHEN vr.status = 'CANCELLED' THEN 'CANCELLED'
+  WHEN s.unconfirmed_count > 0 THEN 'PENDING_CONTACT_CONFIRMATION'
   WHEN s.rejected_count = s.total_count THEN 'REJECTED'
   WHEN s.approved_count > 0 AND (s.pending_count > 0 OR s.rejected_count > 0) THEN 'PARTIALLY_APPROVED'
   WHEN s.approved_count > 0 AND s.pending_count = 0 THEN 'APPROVED'
@@ -12103,7 +11781,7 @@ INSERT INTO visit_instance_guest_members (
   visit_request_id, visit_instance_id, guest_member_id, display_order, created_at, created_by)
 SELECT
   m.visit_request_id, vrc.visit_instance_id, m.guest_member_id, m.display_order,
-  vrc.created_at, COALESCE(m.created_by, vr.created_by, vr.visitor_user_id)
+  vrc.created_at, COALESCE(m.created_by, vr.created_by, vr.registrant_user_id)
 FROM visit_guest_members m
 JOIN visit_request_campuses vrc ON vrc.visit_request_id = m.visit_request_id
 JOIN visit_requests vr ON vr.visit_request_id = m.visit_request_id
@@ -12132,10 +11810,7 @@ WHERE vr.registrant_user_id IS NULL
 -- 4) Existing seeded contact owners are already verified accounts, therefore the
 --    primary-contact relation is ACTIVE. A real A != B create remains PENDING and
 --    is handled by visit_request_identity_changes at runtime.
-UPDATE visit_requests
-SET primary_contact_access_status = 'ACTIVE',
-    primary_contact_verified_at = COALESCE(primary_contact_verified_at, email_verified_at, submitted_at)
-WHERE visitor_user_id IS NOT NULL;
+-- (removed) request-level contact verification state no longer exists.
 
 -- 5) Produce representative genuine mixed-campus V2 rows. Only non-compatibility
 --    campuses are changed, so the legacy projection remains the smallest-campus
@@ -12169,7 +11844,7 @@ SET d.delegation_name = LEFT(CONCAT(d.delegation_name, ' — ', c.campus_code), 
       COALESCE(NULLIF(TRIM(d.transportation_note), ''), 'Di chuyển theo kế hoạch của đoàn.'),
       '\nHướng dẫn riêng cho ', c.name, ': ', COALESCE(c.address, c.city, c.name), '.'
     ),
-    d.updated_by = COALESCE(d.created_by, vr.created_by, vr.visitor_user_id)
+    d.updated_by = COALESCE(d.created_by, vr.created_by, vr.registrant_user_id)
 WHERE vr.visit_scope = 'MULTI_CAMPUS'
   AND vr.visit_request_id IN (2001, 2004, 3059, 3064, 3074, 3084, 3089, 9006)
   AND vrc.campus_id <> compatibility.compatibility_campus_id;
@@ -12195,7 +11870,6 @@ JOIN (
         OR NOT (d.transportation_note <=> base_d.transportation_note)
         OR NOT (d.media_consent_status <=> base_d.media_consent_status)
         OR NOT (d.media_consent_note <=> base_d.media_consent_note)
-        OR NOT (d.note_to_fptu <=> base_d.note_to_fptu)
         OR COALESCE(member_sig.member_signature, SHA2('', 256))
            <> COALESCE(base_member_sig.member_signature, SHA2('', 256))
       THEN 1 ELSE 0 END
@@ -12282,10 +11956,9 @@ SELECT
     'workingLanguage', d.working_language,
     'transportationNote', d.transportation_note,
     'mediaConsentStatus', d.media_consent_status,
-    'mediaConsentNote', d.media_consent_note,
-    'noteToFptu', d.note_to_fptu
+    'mediaConsentNote', d.media_consent_note
   ),
-  COALESCE(d.created_by, vr.registrant_user_id, vr.visitor_user_id),
+  COALESCE(d.created_by, vr.registrant_user_id),
   COALESCE(d.created_at, vr.created_at, vr.submitted_at),
   'Fresh-create Per-Campus Form V2 baseline'
 FROM visit_instance_form_details d
@@ -12319,16 +11992,10 @@ SELECT
       'nationality', vr.registrant_nationality
     ),
     'primaryContact', JSON_OBJECT(
-      'userId', vr.visitor_user_id,
-      'fullName', vr.contact_person_full_name,
-      'organization', vr.contact_person_organization,
-      'phone', vr.contact_person_phone,
-      'email', vr.contact_person_email,
-      'accessStatus', vr.primary_contact_access_status,
-      'verifiedAt', vr.primary_contact_verified_at
+      'note', 'Đầu mối vận hành nằm ở từng campus, không còn ở cấp request.'
     )
   ),
-  COALESCE(vr.created_by, vr.registrant_user_id, vr.visitor_user_id),
+  COALESCE(vr.created_by, vr.registrant_user_id),
   COALESCE(vr.created_at, vr.submitted_at),
   'Fresh-create Per-Campus Form V2 request baseline'
 FROM visit_requests vr
@@ -12383,10 +12050,16 @@ LEFT JOIN visit_request_revision_history h
  AND h.request_revision = 1
 WHERE h.request_revision_history_id IS NULL;
 
-SELECT 'v2_primary_contact_state_mismatch' AS check_name, COUNT(*) AS issue_count
+SELECT 'v2_contact_gate_state_mismatch' AS check_name, COUNT(*) AS issue_count
 FROM visit_requests
-WHERE (primary_contact_access_status = 'ACTIVE' AND visitor_user_id IS NULL)
-   OR (primary_contact_access_status = 'PENDING_CONFIRMATION' AND visitor_user_id IS NOT NULL);
+WHERE (status <> 'PENDING_CONTACT_CONFIRMATION' AND EXISTS (
+         SELECT 1 FROM visit_request_campuses c
+         WHERE c.visit_request_id = visit_requests.visit_request_id
+           AND c.status <> 'CANCELLED' AND c.operational_contact_user_id IS NULL))
+   OR (status = 'PENDING_CONTACT_CONFIRMATION' AND NOT EXISTS (
+         SELECT 1 FROM visit_request_campuses c
+         WHERE c.visit_request_id = visit_requests.visit_request_id
+           AND c.status <> 'CANCELLED' AND c.operational_contact_user_id IS NULL));
 
 SELECT 'v2_scope_instance_count_mismatch' AS check_name, COUNT(*) AS issue_count
 FROM visit_requests vr
@@ -12403,6 +12076,49 @@ SELECT 'representative_mixed_v2_requests' AS check_name, COUNT(*) AS mixed_reque
 FROM visit_requests
 WHERE has_mixed_campus_details = 1;
 
+-- =====================================================================
+-- OPERATIONAL CONTACT NORMALISATION (runs BEFORE the campus guards exist)
+--
+-- Legacy seed carried contact ownership at request level. Every seeded campus is now a
+-- REGISTRANT_SELF_MATCH: the form snapshot already repeats the registrant identity (the
+-- INSERT..SELECT blocks above source operational_contact_* from registrant_*), so linking
+-- operational_contact_user_id to registrant_user_id is what that data actually means —
+-- plan §1.5 auto-link, no invitation, no email.
+--
+-- Campuses that are still WAITING_CONTACT_CONFIRMATION, or CANCELLED, are left alone.
+-- =====================================================================
+UPDATE visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN users u ON u.user_id = vr.registrant_user_id
+SET vrc.operational_contact_user_id = vr.registrant_user_id,
+    vrc.operational_contact_confirmed_at = COALESCE(vrc.created_at, vr.submitted_at),
+    vrc.operational_contact_confirmation_source = 'REGISTRANT_SELF_MATCH'
+WHERE vrc.status NOT IN ('WAITING_CONTACT_CONFIRMATION','CANCELLED')
+  AND vrc.operational_contact_user_id IS NULL
+  AND u.status = 'ACTIVE';
+
+-- A cancelled campus keeps whatever it had; if it never had one, inherit the registrant so
+-- history reads consistently. No guard applies to CANCELLED, this is for readability only.
+UPDATE visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+JOIN users u ON u.user_id = vr.registrant_user_id
+SET vrc.operational_contact_user_id = vr.registrant_user_id,
+    vrc.operational_contact_confirmed_at = COALESCE(vrc.created_at, vr.submitted_at),
+    vrc.operational_contact_confirmation_source = 'REGISTRANT_SELF_MATCH'
+WHERE vrc.status = 'CANCELLED'
+  AND vrc.operational_contact_user_id IS NULL
+  AND u.status = 'ACTIVE';
+
+-- Re-derive the aggregate now that every campus has a contact: nothing should be left
+-- behind the gate unless a campus really is unconfirmed.
+UPDATE visit_requests vr
+SET vr.status = 'PENDING_APPROVAL'
+WHERE vr.status = 'PENDING_CONTACT_CONFIRMATION'
+  AND NOT EXISTS (
+    SELECT 1 FROM visit_request_campuses c
+    WHERE c.visit_request_id = vr.visit_request_id
+      AND c.status <> 'CANCELLED' AND c.operational_contact_user_id IS NULL);
+
 -- Create campus instance validation/aggregate triggers AFTER all seed and
 -- enrichment UPDATEs. If these triggers are created before seed updates that
 -- join visit_request_campuses with visit_requests, MySQL raises Error 1442.
@@ -12410,187 +12126,198 @@ WHERE has_mixed_campus_details = 1;
 DELIMITER $$
 
 -- =====================================================================
--- REQUEST-LEVEL PRIMARY CONTACT ACTIVE VISITOR GUARDS
--- These triggers are intentionally created after seed normalization so the full
--- fresh-create import can repair legacy rows first, then finish fail-closed.
+-- PER-CAMPUS OPERATIONAL CONTACT GUARDS + GLOBAL CONFIRMATION GATE
+-- Created after seed normalization so the fresh-create import can settle rows
+-- first, then finish fail-closed.
 --
--- Three lookup rules are shared by the four visitor-id guards below, and each of
--- them is load-bearing:
---   * v_user_status is VARCHAR(30), not (20). users.status is an ENUM whose longest
---     member, PENDING_EMAIL_CONFIRMATION, is 26 characters; a VARCHAR(20) target made
---     the SELECT ... INTO raise 22001 "Data too long" from inside the trigger. The
---     operation was still rejected, but with a storage error instead of the stable
---     business code, so a real and reachable account state produced an unreadable failure.
---   * roles is LEFT JOINed. With an inner join, a user whose role row cannot be read
---     collapses COUNT(*) to 0 and is reported as PRIMARY_CONTACT_USER_NOT_FOUND — untrue,
---     and it hides the actual problem. The count now answers only "does this user exist",
---     and <> 1 covers both absence and anything else abnormal.
---   * Comparisons use <=> (NULL-safe). `NULL <> 'VISITOR'` evaluates to UNKNOWN, which IF
---     treats as false, so an unreadable role or status would have slipped straight through.
+-- Ba quy tắc tra cứu dùng chung cho các guard dưới đây, mỗi cái đều load-bearing:
+--   * v_user_status là VARCHAR(30), KHÔNG phải (20). users.status là ENUM có thành viên
+--     dài nhất PENDING_EMAIL_CONFIRMATION (26 ký tự); target VARCHAR(20) làm
+--     SELECT ... INTO ném 22001 "Data too long" từ trong trigger — vẫn chặn, nhưng bằng
+--     lỗi lưu trữ thay vì mã nghiệp vụ ổn định.
+--   * roles được LEFT JOIN. Inner join làm user có role row không đọc được bị COUNT(*)=0
+--     và báo nhầm là "user không tồn tại".
+--   * So sánh dùng <=> (NULL-safe). `NULL <> 'X'` cho UNKNOWN, IF coi là false — role/status
+--     không đọc được sẽ lọt thẳng qua.
+--
+-- KHÁC mô hình cũ ở hai điểm nghiệp vụ:
+--   1. Đầu mối vận hành KHÔNG bị ép role VISITOR. Tài khoản nội bộ (STAFF/STAFF LEADER)
+--      được phép làm đầu mối của một campus — nhưng luôn phải qua xác nhận email.
+--   2. Guard cổng xác nhận là fail-closed: request không thể rời
+--      PENDING_CONTACT_CONFIRMATION khi còn campus active thiếu operational_contact_user_id,
+--      và campus không thể được quyết định khi request cha còn ở trạng thái đó.
 -- =====================================================================
-CREATE TRIGGER trg_visit_requests_primary_contact_guard_bi
-BEFORE INSERT ON visit_requests
+
+-- Đầu mối vận hành đã liên kết phải là tài khoản tồn tại và ACTIVE.
+CREATE TRIGGER trg_visit_campuses_op_contact_guard_bi
+BEFORE INSERT ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
-  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
   DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
-  IF NEW.visitor_user_id IS NOT NULL THEN
-    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
-      INTO v_user_count, v_role_code, v_user_status
+  IF NEW.operational_contact_user_id IS NOT NULL THEN
+    SELECT COUNT(*), MAX(u.status)
+      INTO v_user_count, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.visitor_user_id;
+    WHERE u.user_id = NEW.operational_contact_user_id;
 
     IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
-    END IF;
-
-    IF NOT (v_role_code <=> 'VISITOR') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_USER_NOT_FOUND';
     END IF;
 
     IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_ACCOUNT_INACTIVE';
     END IF;
   END IF;
 
-  IF NEW.primary_contact_access_status = 'ACTIVE'
-     AND NEW.visitor_user_id IS NULL THEN
+  -- Trạng thái campus và sự có mặt của đầu mối phải khớp nhau.
+  IF NEW.status = 'WAITING_CONTACT_CONFIRMATION'
+     AND NEW.operational_contact_user_id IS NOT NULL THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER';
+      SET MESSAGE_TEXT = 'WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT';
   END IF;
 
-  IF NEW.primary_contact_access_status = 'PENDING_CONFIRMATION'
-     AND NEW.visitor_user_id IS NOT NULL THEN
+  IF NEW.status NOT IN ('WAITING_CONTACT_CONFIRMATION','CANCELLED')
+     AND NEW.operational_contact_user_id IS NULL THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER';
+      SET MESSAGE_TEXT = 'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT';
   END IF;
 END$$
 
-CREATE TRIGGER trg_visit_requests_primary_contact_guard_bu
+CREATE TRIGGER trg_visit_campuses_op_contact_guard_bu
+BEFORE UPDATE ON visit_request_campuses
+FOR EACH ROW
+BEGIN
+  DECLARE v_user_count INT DEFAULT 0;
+  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_request_status VARCHAR(40) DEFAULT NULL;
+
+  IF NEW.operational_contact_user_id IS NOT NULL
+     AND NOT (NEW.operational_contact_user_id <=> OLD.operational_contact_user_id) THEN
+    SELECT COUNT(*), MAX(u.status)
+      INTO v_user_count, v_user_status
+    FROM users u
+    WHERE u.user_id = NEW.operational_contact_user_id;
+
+    IF v_user_count <> 1 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_USER_NOT_FOUND';
+    END IF;
+
+    IF NOT (v_user_status <=> 'ACTIVE') THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_ACCOUNT_INACTIVE';
+    END IF;
+  END IF;
+
+  IF NEW.status = 'WAITING_CONTACT_CONFIRMATION'
+     AND NEW.operational_contact_user_id IS NOT NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT';
+  END IF;
+
+  IF NEW.status NOT IN ('WAITING_CONTACT_CONFIRMATION','CANCELLED')
+     AND NEW.operational_contact_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT';
+  END IF;
+
+  -- ── Cổng xác nhận toàn cục ────────────────────────────────────────────────
+  -- Không campus nào được QUYẾT ĐỊNH (approve -> BEFORE_VISIT, hoặc reject) khi request
+  -- cha còn đang chờ xác nhận đầu mối. Fail-closed ở tầng DB; backend vẫn phải validate
+  -- đầy đủ — trigger không thay thế authorization.
+  IF OLD.status = 'WAITING_REQUEST_APPROVAL'
+     AND NEW.status IN ('BEFORE_VISIT','REJECTED') THEN
+    SELECT status INTO v_request_status
+    FROM visit_requests
+    WHERE visit_request_id = NEW.visit_request_id;
+
+    IF v_request_status <=> 'PENDING_CONTACT_CONFIRMATION' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'CONTACT_CONFIRMATION_REQUIRED';
+    END IF;
+  END IF;
+END$$
+
+-- Request không được rời PENDING_CONTACT_CONFIRMATION khi còn campus active thiếu đầu mối.
+-- Đây là guard fail-closed của plan §4.2; aggregate trigger phía dưới tính đúng giá trị,
+-- guard này chặn mọi đường ghi khác (seed sai, sửa tay, backend lỗi).
+CREATE TRIGGER trg_visit_requests_contact_gate_guard_bu
 BEFORE UPDATE ON visit_requests
 FOR EACH ROW
 FOLLOWS trg_visit_requests_cancel_validate_bu
 BEGIN
-  DECLARE v_user_count INT DEFAULT 0;
-  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_unconfirmed_count INT DEFAULT 0;
 
-  IF NEW.visitor_user_id IS NOT NULL THEN
-    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
-      INTO v_user_count, v_role_code, v_user_status
-    FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
-    WHERE u.user_id = NEW.visitor_user_id;
+  IF OLD.status = 'PENDING_CONTACT_CONFIRMATION'
+     AND NEW.status NOT IN ('PENDING_CONTACT_CONFIRMATION','CANCELLED') THEN
+    SELECT COUNT(*) INTO v_unconfirmed_count
+    FROM visit_request_campuses vrc
+    WHERE vrc.visit_request_id = NEW.visit_request_id
+      AND vrc.status <> 'CANCELLED'
+      AND vrc.operational_contact_user_id IS NULL;
 
-    IF v_user_count <> 1 THEN
+    IF v_unconfirmed_count > 0 THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
+        SET MESSAGE_TEXT = 'CONTACT_CONFIRMATION_REQUIRED';
     END IF;
-
-    IF NOT (v_role_code <=> 'VISITOR') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
-    END IF;
-
-    IF NOT (v_user_status <=> 'ACTIVE') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
-    END IF;
-  END IF;
-
-  IF NEW.primary_contact_access_status = 'ACTIVE'
-     AND NEW.visitor_user_id IS NULL THEN
-    SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER';
-  END IF;
-
-  IF NEW.primary_contact_access_status = 'PENDING_CONFIRMATION'
-     AND NEW.visitor_user_id IS NOT NULL THEN
-    SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER';
   END IF;
 END$$
 
--- A currently linked ACTIVE primary contact cannot be silently converted into an
--- internal account or deactivated. Cancelled requests are excluded by decision.
-CREATE TRIGGER trg_users_protect_active_primary_contact_bu
+-- Một người đang là đầu mối vận hành của campus còn sống không được vô hiệu hóa âm thầm.
+-- Khác guard cũ: KHÔNG ép giữ role VISITOR — đầu mối có thể là tài khoản nội bộ, và việc
+-- đổi role của họ không làm mất quyền trên campus (quyền đọc từ operational_contact_user_id).
+CREATE TRIGGER trg_users_protect_operational_contact_bu
 BEFORE UPDATE ON users
 FOR EACH ROW
 FOLLOWS trg_users_validate_bu
 BEGIN
-  DECLARE v_new_role_code VARCHAR(30) DEFAULT NULL;
-  DECLARE v_new_role_count INT DEFAULT 0;
-  DECLARE v_linked_request_count INT DEFAULT 0;
+  DECLARE v_linked_instance_count INT DEFAULT 0;
 
-  IF NOT (NEW.role_id <=> OLD.role_id)
-     OR NOT (NEW.status <=> OLD.status) THEN
-    -- COUNT alongside the code so "no such role" is distinguishable from "role named VISITOR".
-    -- A bare SELECT ... INTO over zero rows leaves the variable NULL, and `NULL <> 'VISITOR'`
-    -- evaluates to UNKNOWN, which an IF treats as false — the change would have slipped through.
-    SELECT COUNT(*), MAX(role_code)
-      INTO v_new_role_count, v_new_role_code
-    FROM roles
-    WHERE role_id = NEW.role_id;
-
+  IF NOT (NEW.status <=> OLD.status) AND NOT (NEW.status <=> 'ACTIVE') THEN
     SELECT COUNT(*)
-      INTO v_linked_request_count
-    FROM visit_requests vr
-    WHERE vr.visitor_user_id = OLD.user_id
-      AND vr.primary_contact_access_status = 'ACTIVE'
+      INTO v_linked_instance_count
+    FROM visit_request_campuses vrc
+    JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+    WHERE vrc.operational_contact_user_id = OLD.user_id
+      AND vrc.status NOT IN ('CANCELLED','REJECTED','CLOSED')
       AND vr.status <> 'CANCELLED';
 
-    IF v_linked_request_count > 0 THEN
-      -- Fail closed: only a role that reads back as exactly one row named VISITOR is accepted.
-      IF v_new_role_count <> 1 OR NOT (v_new_role_code <=> 'VISITOR') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE';
-      END IF;
-
-      IF NOT (NEW.status <=> 'ACTIVE') THEN
-        SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED';
-      END IF;
+    IF v_linked_instance_count > 0 THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED';
     END IF;
   END IF;
 END$$
 
--- Identity claims/transfers may remain PENDING without an account. As soon as a
--- new_user_id is assigned (including APPLIED), it must be an ACTIVE VISITOR.
+-- Identity change có thể PENDING mà chưa có account. Khi new_user_id đã được gán
+-- (kể cả APPLIED) thì nó phải là tài khoản tồn tại và ACTIVE — KHÔNG ép role VISITOR:
+-- plan §1.7 cho phép tài khoản nội bộ làm đầu mối, miễn là đã xác nhận đúng campus.
 CREATE TRIGGER trg_visit_request_identity_changes_user_guard_bi
 BEFORE INSERT ON visit_request_identity_changes
 FOR EACH ROW
 FOLLOWS trg_identity_changes_transfer_bi
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
-  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
   DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
-    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
-      INTO v_user_count, v_role_code, v_user_status
+    SELECT COUNT(*), MAX(u.status)
+      INTO v_user_count, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
     IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
-    END IF;
-
-    IF NOT (v_role_code <=> 'VISITOR') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_USER_NOT_FOUND';
     END IF;
 
     IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_ACCOUNT_INACTIVE';
     END IF;
   END IF;
 END$$
@@ -12601,29 +12328,22 @@ FOR EACH ROW
 FOLLOWS trg_identity_changes_transfer_bu
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
-  DECLARE v_role_code VARCHAR(30) DEFAULT NULL;
   DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.new_user_id IS NOT NULL THEN
-    SELECT COUNT(*), MAX(r.role_code), MAX(u.status)
-      INTO v_user_count, v_role_code, v_user_status
+    SELECT COUNT(*), MAX(u.status)
+      INTO v_user_count, v_user_status
     FROM users u
-    LEFT JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.new_user_id;
 
     IF v_user_count <> 1 THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_NOT_FOUND';
-    END IF;
-
-    IF NOT (v_role_code <=> 'VISITOR') THEN
-      SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_USER_NOT_FOUND';
     END IF;
 
     IF NOT (v_user_status <=> 'ACTIVE') THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE';
+        SET MESSAGE_TEXT = 'OPERATIONAL_CONTACT_ACCOUNT_INACTIVE';
     END IF;
   END IF;
 END$$
@@ -12632,17 +12352,17 @@ CREATE TRIGGER trg_visit_campuses_cancel_validate_bu
 BEFORE UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
-  DECLARE v_request_status VARCHAR(30);
-  DECLARE v_contact_owner_id BIGINT UNSIGNED;
+  DECLARE v_request_status VARCHAR(40);
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
-    SELECT status, visitor_user_id INTO v_request_status, v_contact_owner_id
+    SELECT status INTO v_request_status
     FROM visit_requests
     WHERE visit_request_id = NEW.visit_request_id;
 
     -- Campus-level cancel sau APPROVED chỉ áp dụng cho campus chưa bắt đầu.
-    -- Riêng WAITING_REQUEST_APPROVAL chỉ được chuyển CANCELLED khi request tổng đã bị Visitor hủy ở trạng thái PENDING_APPROVAL.
-    IF OLD.status = 'WAITING_REQUEST_APPROVAL' THEN
+    -- Campus chưa có quyết định (đang chờ xác nhận đầu mối HOẶC chờ Staff Leader duyệt) chỉ
+    -- được chuyển CANCELLED như hệ quả của việc hủy toàn request.
+    IF OLD.status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL') THEN
       IF v_request_status <> 'CANCELLED' THEN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'Pending campus instance can be cancelled only as a consequence of cancelling the pending main request';
@@ -12750,11 +12470,11 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot create active campus instance under a cancelled request';
   END IF;
 
-  IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
+  IF NEW.status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL') THEN
     IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL
        OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL
        OR NEW.decision_source IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL must not have host or decision data';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Campus instance before a decision must not have host or decision data';
     END IF;
   END IF;
 
@@ -12768,7 +12488,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+  IF NEW.status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
@@ -12778,7 +12498,7 @@ BEGIN
   END IF;
 
   -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
-  -- ASSIGNED/BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  -- BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
   IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     SELECT COUNT(*) INTO v_agenda_count
     FROM visit_agendas va
@@ -12901,7 +12621,7 @@ BEGIN
   IF OLD.current_host_user_id IS NOT NULL
      AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
      AND NEW.current_host_user_id IS NOT NULL
-     AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
+     AND OLD.status = 'BEFORE_VISIT'
      AND NEW.status = OLD.status
      AND NEW.host_assigned_by IS NOT NULL
      AND NEW.host_assigned_at IS NOT NULL THEN
@@ -12922,11 +12642,11 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.status = 'WAITING_REQUEST_APPROVAL' THEN
+  IF NEW.status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL') THEN
     IF NEW.current_host_user_id IS NOT NULL OR NEW.host_assigned_by IS NOT NULL OR NEW.host_assigned_at IS NOT NULL
        OR NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL OR NEW.decision_actor_role IS NOT NULL
        OR NEW.decision_source IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'WAITING_REQUEST_APPROVAL must not have host or decision data';
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Campus instance before a decision must not have host or decision data';
     END IF;
   END IF;
 
@@ -12943,7 +12663,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+  IF NEW.status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
@@ -12953,7 +12673,7 @@ BEGIN
   END IF;
 
   -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
-  -- ASSIGNED/BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  -- BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
   IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     SELECT COUNT(*) INTO v_agenda_count
     FROM visit_agendas va
@@ -13046,12 +12766,20 @@ CREATE TRIGGER trg_visit_campuses_aggregate_ai
 AFTER INSERT ON visit_request_campuses
 FOR EACH ROW
 BEGIN
+  -- Aggregate theo plan §2.2, BỎ QUA campus đã CANCELLED trong mọi mẫu số.
+  -- 'ASSIGNED' không còn tồn tại: approve chuyển thẳng sang BEFORE_VISIT trong cùng transaction.
+  -- Nhánh đầu tiên là CỔNG XÁC NHẬN: còn campus active thiếu đầu mối -> toàn request đứng ở
+  -- PENDING_CONTACT_CONFIRMATION và không Staff Leader nào thấy đơn.
   UPDATE visit_requests vr
   JOIN (
     SELECT visit_request_id,
-           COUNT(*) AS total_count,
-           SUM(CASE WHEN status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN 1 ELSE 0 END) AS approved_count,
-           SUM(CASE WHEN status = 'WAITING_REQUEST_APPROVAL' THEN 1 ELSE 0 END) AS pending_count,
+           SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS active_count,
+           SUM(CASE WHEN status <> 'CANCELLED' AND operational_contact_user_id IS NULL
+                    THEN 1 ELSE 0 END) AS unconfirmed_count,
+           SUM(CASE WHEN status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
+                    THEN 1 ELSE 0 END) AS approved_count,
+           SUM(CASE WHEN status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
+                    THEN 1 ELSE 0 END) AS pending_count,
            SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count
     FROM visit_request_campuses
     WHERE visit_request_id = NEW.visit_request_id
@@ -13059,8 +12787,9 @@ BEGIN
   ) s ON s.visit_request_id = vr.visit_request_id
   SET vr.status = CASE
     WHEN vr.status = 'CANCELLED' THEN 'CANCELLED'
-    WHEN s.rejected_count = s.total_count THEN 'REJECTED'
-    WHEN s.approved_count > 0 AND (s.pending_count > 0 OR s.rejected_count > 0) THEN 'PARTIALLY_APPROVED'
+    WHEN s.unconfirmed_count > 0 THEN 'PENDING_CONTACT_CONFIRMATION'
+    WHEN s.active_count > 0 AND s.rejected_count = s.active_count THEN 'REJECTED'
+    WHEN s.approved_count > 0 AND s.pending_count > 0 THEN 'PARTIALLY_APPROVED'
     WHEN s.approved_count > 0 AND s.pending_count = 0 THEN 'APPROVED'
     WHEN s.approved_count = 0 AND s.pending_count > 0 THEN 'PENDING_APPROVAL'
     ELSE vr.status
@@ -13073,12 +12802,20 @@ CREATE TRIGGER trg_visit_campuses_aggregate_au
 AFTER UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
+  -- Aggregate theo plan §2.2, BỎ QUA campus đã CANCELLED trong mọi mẫu số.
+  -- 'ASSIGNED' không còn tồn tại: approve chuyển thẳng sang BEFORE_VISIT trong cùng transaction.
+  -- Nhánh đầu tiên là CỔNG XÁC NHẬN: còn campus active thiếu đầu mối -> toàn request đứng ở
+  -- PENDING_CONTACT_CONFIRMATION và không Staff Leader nào thấy đơn.
   UPDATE visit_requests vr
   JOIN (
     SELECT visit_request_id,
-           COUNT(*) AS total_count,
-           SUM(CASE WHEN status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN 1 ELSE 0 END) AS approved_count,
-           SUM(CASE WHEN status = 'WAITING_REQUEST_APPROVAL' THEN 1 ELSE 0 END) AS pending_count,
+           SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS active_count,
+           SUM(CASE WHEN status <> 'CANCELLED' AND operational_contact_user_id IS NULL
+                    THEN 1 ELSE 0 END) AS unconfirmed_count,
+           SUM(CASE WHEN status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
+                    THEN 1 ELSE 0 END) AS approved_count,
+           SUM(CASE WHEN status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
+                    THEN 1 ELSE 0 END) AS pending_count,
            SUM(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END) AS rejected_count
     FROM visit_request_campuses
     WHERE visit_request_id = NEW.visit_request_id
@@ -13086,8 +12823,9 @@ BEGIN
   ) s ON s.visit_request_id = vr.visit_request_id
   SET vr.status = CASE
     WHEN vr.status = 'CANCELLED' THEN 'CANCELLED'
-    WHEN s.rejected_count = s.total_count THEN 'REJECTED'
-    WHEN s.approved_count > 0 AND (s.pending_count > 0 OR s.rejected_count > 0) THEN 'PARTIALLY_APPROVED'
+    WHEN s.unconfirmed_count > 0 THEN 'PENDING_CONTACT_CONFIRMATION'
+    WHEN s.active_count > 0 AND s.rejected_count = s.active_count THEN 'REJECTED'
+    WHEN s.approved_count > 0 AND s.pending_count > 0 THEN 'PARTIALLY_APPROVED'
     WHEN s.approved_count > 0 AND s.pending_count = 0 THEN 'APPROVED'
     WHEN s.approved_count = 0 AND s.pending_count > 0 THEN 'PENDING_APPROVAL'
     ELSE vr.status
@@ -13164,13 +12902,11 @@ SELECT 'missing_visitor_registrant_coverage' AS check_name,
          WHERE r.role_code = 'VISITOR'
        ) THEN 0 ELSE 1 END AS issue_count;
 
-SELECT 'missing_visitor_primary_contact_coverage' AS check_name,
+SELECT 'missing_confirmed_operational_contact_coverage' AS check_name,
        CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users u ON u.user_id = vr.visitor_user_id
-         JOIN roles r ON r.role_id = u.role_id
-         WHERE r.role_code = 'VISITOR'
-           AND vr.primary_contact_access_status = 'ACTIVE'
+         SELECT 1 FROM visit_request_campuses vrc
+         JOIN users u ON u.user_id = vrc.operational_contact_user_id
+         WHERE u.status = 'ACTIVE'
        ) THEN 0 ELSE 1 END AS issue_count;
 
 SELECT 'missing_staff_registrant_coverage' AS check_name,
@@ -13258,12 +12994,11 @@ WHERE r.role_code = 'STAFF'
   AND vp.is_host = FALSE
   AND u.primary_campus_id = vrc.campus_id;
 
-SELECT 'invalid_primary_contact_non_visitor_role' AS check_name,
+SELECT 'invalid_operational_contact_inactive_account' AS check_name,
        COUNT(*) AS issue_count
-FROM visit_requests vr
-JOIN users u ON u.user_id = vr.visitor_user_id
-JOIN roles r ON r.role_id = u.role_id
-WHERE r.role_code <> 'VISITOR';
+FROM visit_request_campuses vrc
+JOIN users u ON u.user_id = vrc.operational_contact_user_id
+WHERE u.status <> 'ACTIVE';
 
 SELECT 'invalid_ic_support_role_or_campus' AS check_name,
        COUNT(*) AS issue_count
@@ -13290,19 +13025,17 @@ WHERE vr.created_source = 'STAFF_CREATED'
     AND vr.created_by = vr.registrant_user_id
   );
 
-SELECT 'staff_created_missing_applied_initial_claim_history' AS check_name,
+-- Đầu mối vận hành khác registrant BẮT BUỘC có lịch sử xác nhận APPLIED cho đúng campus.
+SELECT 'operational_contact_missing_applied_confirmation' AS check_name,
        COUNT(*) AS issue_count
-FROM visit_requests vr
-JOIN users registrant ON registrant.user_id = vr.registrant_user_id
-JOIN roles rr ON rr.role_id = registrant.role_id
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
 LEFT JOIN visit_request_identity_changes ic
-  ON ic.visit_request_id = vr.visit_request_id
- AND ic.change_kind = 'INITIAL_CLAIM'
+  ON ic.visit_instance_id = vrc.visit_instance_id
  AND ic.status = 'APPLIED'
- AND ic.new_user_id = vr.visitor_user_id
-WHERE vr.created_source = 'STAFF_CREATED'
-  AND rr.role_code = 'STAFF'
-  AND vr.registrant_user_id <> vr.visitor_user_id
+ AND ic.new_user_id = vrc.operational_contact_user_id
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND vrc.operational_contact_user_id <> COALESCE(vr.registrant_user_id, 0)
   AND ic.identity_change_id IS NULL;
 
 -- Final DB-level check after all appended coverage rows: operational campus instances must have agenda.
@@ -13348,16 +13081,28 @@ BEGIN
   DECLARE v_message VARCHAR(1000) DEFAULT NULL;
   DECLARE v_raised BOOLEAN DEFAULT FALSE;
   DECLARE v_condition_ok INT DEFAULT 0;
-  DECLARE v_cancelled_req BIGINT UNSIGNED DEFAULT NULL;
+  DECLARE v_open_instance BIGINT UNSIGNED DEFAULT NULL;
+  DECLARE v_open_request BIGINT UNSIGNED DEFAULT NULL;
+  DECLARE v_registrant BIGINT UNSIGNED DEFAULT NULL;
 
   -- Every handler below reads GET DIAGNOSTICS *before* setting any flag. MySQL clears the
-  -- diagnostics area on the first successful statement inside the handler, so the older
-  -- `SET v_raised = TRUE;` first ordering left RETURNED_SQLSTATE and MESSAGE_TEXT NULL. The
-  -- comparison `v_sqlstate = '45000'` then evaluated to UNKNOWN and every negative case was
-  -- scored FAIL and printed as "Operation unexpectedly succeeded" — while the triggers had in
-  -- fact rejected all fourteen. Do not reorder these two statements.
+  -- diagnostics area on the first successful statement inside the handler, so a
+  -- `SET v_raised = TRUE;` first ordering leaves RETURNED_SQLSTATE and MESSAGE_TEXT NULL.
+  -- The comparison `v_sqlstate = '45000'` then evaluates to UNKNOWN and every negative case
+  -- is scored FAIL while the triggers had in fact rejected all of them. Do not reorder.
 
-  -- NEG-01: INSERT request with ADMIN as visitor_user_id
+  -- A campus instance that is past confirmation, under a live request, plus its registrant.
+  SELECT vrc.visit_instance_id, vrc.visit_request_id, vr.registrant_user_id
+    INTO v_open_instance, v_open_request, v_registrant
+  FROM visit_request_campuses vrc
+  JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+  WHERE vrc.status = 'WAITING_REQUEST_APPROVAL'
+    AND vrc.operational_contact_user_id IS NOT NULL
+    AND vr.status <> 'CANCELLED'
+  ORDER BY vrc.visit_instance_id
+  LIMIT 1;
+
+  -- NEG-01: a campus past confirmation may not drop its operational contact
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13366,19 +13111,21 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (99790, 'VR-GUARD-TEMP-99790', 1, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
+    UPDATE visit_request_campuses SET operational_contact_user_id = NULL
+    WHERE visit_instance_id = v_open_instance;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-01', 'INSERT request with ADMIN as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-01', 'Clear operational contact on a campus past confirmation', '45000',
+     'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT', 'PASS', 'FAIL'));
 
-  -- NEG-02: Assign HO as visitor_user_id
+  -- NEG-02: a campus still WAITING_CONTACT_CONFIRMATION may not carry a contact
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13387,18 +13134,21 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 2, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+    UPDATE visit_request_campuses SET status = 'WAITING_CONTACT_CONFIRMATION'
+    WHERE visit_instance_id = v_open_instance;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-02', 'Assign HO as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-02', 'Move a confirmed campus back to WAITING_CONTACT_CONFIRMATION', '45000',
+     'WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT', 'PASS', 'FAIL'));
 
-  -- NEG-03: Assign STAFF + LEADER as visitor_user_id
+  -- NEG-03: operational contact must reference a real user
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13407,18 +13157,20 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 3, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+    UPDATE visit_request_campuses SET operational_contact_user_id = 99999999
+    WHERE visit_instance_id = v_open_instance;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-03', 'Assign STAFF + LEADER as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-03', 'Point operational contact at a non-existent user', 'ANY',
+     'REJECTED_BY_FK_OR_TRIGGER',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised, 'PASS', 'FAIL'));
 
-  -- NEG-04: Assign STAFF + STAFF as visitor_user_id
+  -- NEG-04: a linked, ACTIVE operational contact cannot be deactivated
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13427,18 +13179,22 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 4, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+    UPDATE users SET status = 'INACTIVE'
+    WHERE user_id = (SELECT operational_contact_user_id FROM visit_request_campuses
+                     WHERE visit_instance_id = v_open_instance);
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-04', 'Assign STAFF + STAFF as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-04', 'Deactivate an account still holding a live campus', '45000',
+     'LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED', 'PASS', 'FAIL'));
 
-  -- NEG-05: Assign DEPARTMENT + LEADER as visitor_user_id
+  -- NEG-05: the global confirmation gate blocks approval while a sibling is unconfirmed
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13447,18 +13203,26 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 5, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+    -- force the parent back behind the gate, then try to decide the campus
+    UPDATE visit_requests SET status = 'PENDING_CONTACT_CONFIRMATION'
+    WHERE visit_request_id = v_open_request;
+    UPDATE visit_request_campuses
+    SET status = 'REJECTED', decided_by = 3, decided_at = NOW(),
+        decision_actor_role = 'STAFF_LEADER', decision_note = 'guard probe'
+    WHERE visit_instance_id = v_open_instance;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-05', 'Assign DEPARTMENT + LEADER as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-05', 'Decide a campus while the request is behind the confirmation gate', '45000',
+     'CONTACT_CONFIRMATION_REQUIRED',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'CONTACT_CONFIRMATION_REQUIRED', 'PASS', 'FAIL'));
 
-  -- NEG-06: Assign DEPARTMENT + STAFF as visitor_user_id
+  -- NEG-06: a request cannot leave the gate while a campus is still unconfirmed
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13467,18 +13231,26 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 6, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
+    UPDATE visit_request_campuses
+    SET status = 'WAITING_CONTACT_CONFIRMATION', operational_contact_user_id = NULL
+    WHERE visit_instance_id = v_open_instance;
+    UPDATE visit_requests SET status = 'PENDING_CONTACT_CONFIRMATION'
+    WHERE visit_request_id = v_open_request;
+    UPDATE visit_requests SET status = 'PENDING_APPROVAL'
+    WHERE visit_request_id = v_open_request;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('NEGATIVE', 'NEG-06', 'Assign DEPARTMENT + STAFF as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
+    ('NEGATIVE', 'NEG-06', 'Open the gate while a campus still has no operational contact', '45000',
+     'CONTACT_CONFIRMATION_REQUIRED',
      COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'CONTACT_CONFIRMATION_REQUIRED', 'PASS', 'FAIL'));
 
-  -- NEG-07: Assign STUDENT as visitor_user_id
+  -- NEG-07: only the registrant may cancel the whole request
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
   START TRANSACTION;
   BEGIN
@@ -13487,398 +13259,137 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET visitor_user_id = 7, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-07', 'Assign STUDENT as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
-
-  -- NEG-08: Assign INACTIVE VISITOR as visitor_user_id
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 99680, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-08', 'Assign INACTIVE VISITOR as visitor_user_id', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
-
-  -- NEG-09: Set ACTIVE primary contact with visitor_user_id NULL
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-09', 'Set ACTIVE primary contact with visitor_user_id NULL', '45000', 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER', 'PASS', 'FAIL'));
-
-  -- NEG-10: Set PENDING_CONFIRMATION while visitor_user_id is already assigned
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 8, primary_contact_access_status = 'PENDING_CONFIRMATION' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-10', 'Set PENDING_CONFIRMATION while visitor_user_id is already assigned', '45000', 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER', 'PASS', 'FAIL'));
-
-  -- NEG-11: Change linked primary-contact role from VISITOR to STAFF
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE users SET role_id = 3, sub_role = 'STAFF', primary_campus_id = 1, department_id = 1 WHERE user_id = 8;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-11', 'Change linked primary-contact role from VISITOR to STAFF', '45000', 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE', 'PASS', 'FAIL'));
-
-  -- NEG-12: Deactivate VISITOR linked to an active primary-contact relation
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE users SET status = 'INACTIVE' WHERE user_id = 8;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-12', 'Deactivate VISITOR linked to an active primary-contact relation', '45000', 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED', 'PASS', 'FAIL'));
-
-  -- NEG-13: Insert APPLIED identity change with internal STAFF new_user_id
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO visit_request_identity_changes
-      (identity_change_id, visit_request_id, change_kind, target_relation,
-       confirmation_method, old_user_id, new_user_id, old_email_normalized,
-       new_email_normalized, new_email_masked, pending_snapshot_json, status,
-       expected_request_row_version, requested_by, requested_at, expires_at,
-       applied_at, reason, resend_count, created_at, updated_at)
-     VALUES
-      (99720, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 4,
-       'visitor@example.com', 'staff.hn@fpt.edu.vn', 's***@fpt.edu.vn',
-       JSON_OBJECT('seedCase','NEGATIVE_INTERNAL_IDENTITY_CHANGE'), 'APPLIED',
-       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
-       '2026-07-12 08:05:00', 'Rollback-safe negative test.', 0,
-       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-13', 'Insert APPLIED identity change with internal STAFF new_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
-
-  -- NEG-14: Update pending identity change to internal STAFF new_user_id
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_request_identity_changes SET new_user_id = 4, status = 'APPLIED', applied_at = '2026-07-12 08:05:00' WHERE identity_change_id = 99403;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-14', 'Update pending identity change to internal STAFF new_user_id', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
-
-  -- NEG-15: a user_id that does not exist at all. The guard must answer before the foreign
-  -- key does, so the caller gets the business code rather than a generic constraint error.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 99999999, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-15', 'Assign a non-existent user_id as visitor_user_id', '45000', 'PRIMARY_CONTACT_USER_NOT_FOUND',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_NOT_FOUND', 'PASS', 'FAIL'));
-
-  -- NEG-16: a VISITOR whose account has not confirmed its email yet. This is the account state
-  -- every new account starts in, so it is reachable in production — and it is 26 characters
-  -- long, which is what used to make the guard raise 22001 "Data too long" instead of a code.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99791, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.visitor@example.test', 'x', 'Guard Pending Visitor', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    UPDATE visit_requests SET visitor_user_id = 99791, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-16', 'Assign a PENDING_EMAIL_CONFIRMATION VISITOR as visitor_user_id', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
-
-  -- NEG-17: the dedicated UPDATE path — only visitor_user_id is written, primary_contact_access_status
-  -- is left untouched. A guard keyed on the access status alone would let this through.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = 4 WHERE visit_request_id = 1001;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-17', 'Update visitor_user_id alone to a STAFF account', '45000', 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR', 'PASS', 'FAIL'));
-
-  -- NEG-18: the same unconfirmed-account state, reached through the identity-change guard.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99792, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.pending.transfer@example.test', 'x', 'Guard Pending Transfer', 'PENDING_EMAIL_CONFIRMATION', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    INSERT INTO visit_request_identity_changes
-      (identity_change_id, visit_request_id, change_kind, target_relation,
-       confirmation_method, old_user_id, new_user_id, old_email_normalized,
-       new_email_normalized, new_email_masked, pending_snapshot_json, status,
-       expected_request_row_version, requested_by, requested_at, expires_at,
-       applied_at, reason, resend_count, created_at, updated_at)
-     VALUES
-      (99721, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 99792,
-       'visitor@example.com', 'guard.pending.transfer@example.test', 'g***@example.test',
-       JSON_OBJECT('seedCase','NEGATIVE_UNCONFIRMED_IDENTITY_TARGET'), 'APPLIED',
-       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
-       '2026-07-12 08:05:00', 'Rollback-safe negative test.', 0,
-       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('NEGATIVE', 'NEG-18', 'Identity change targeting a PENDING_EMAIL_CONFIRMATION VISITOR', '45000', 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE',
-     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
-     IF(v_raised AND v_sqlstate = '45000' AND v_message = 'PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE', 'PASS', 'FAIL'));
-
-  -- POS-01: INSERT request with ACTIVE VISITOR primary contact
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    INSERT INTO visit_requests (visit_request_id, request_code, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (99790, 'VR-GUARD-TEMP-99790', 8, 8, NULL, 'VISITOR_SUBMITTED', 0, 'Guard Test Registrant', 'Guard Test Organization', 'Guard Tester', '+84997000000', 'visitor@example.com', 'Test', 'SINGLE_CAMPUS', 'Guard Test Contact', 'Guard Test Organization', '+84997000001', 'guard.contact@example.test', 'ACTIVE', '2026-07-12 08:00:00', 'PENDING_APPROVAL', '2026-07-12 08:00:00', '2026-07-12 08:00:00', 0, '2026-07-12 08:00:00', 8, NULL, NULL);
-    IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests WHERE visit_request_id = 99790 AND visitor_user_id = 8 AND primary_contact_access_status = 'ACTIVE';
-    END IF;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('POSITIVE', 'POS-01', 'INSERT request with ACTIVE VISITOR primary contact', 'NONE', 'ACCEPTED',
-     COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
-     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
-
-  -- POS-02: PENDING_CONFIRMATION with visitor_user_id NULL
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    UPDATE visit_requests SET visitor_user_id = NULL, primary_contact_access_status = 'PENDING_CONFIRMATION', primary_contact_verified_at = NULL WHERE visit_request_id = 3048;
-    IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests WHERE visit_request_id = 3048 AND visitor_user_id IS NULL AND primary_contact_access_status = 'PENDING_CONFIRMATION';
-    END IF;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('POSITIVE', 'POS-02', 'PENDING_CONFIRMATION with visitor_user_id NULL', 'NONE', 'ACCEPTED',
-     COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
-     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
-
-  -- POS-03: TRANSFER PENDING keeps the old ACTIVE VISITOR owner
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
-    INSERT INTO visit_request_identity_changes
-      (identity_change_id, visit_request_id, change_kind, target_relation,
-       confirmation_method, old_user_id, new_user_id, old_email_normalized,
-       new_email_normalized, new_email_masked, pending_snapshot_json, status,
-       expected_request_row_version, requested_by, requested_at, expires_at,
-       reason, resend_count, created_at, updated_at)
-    VALUES
-      (99710, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, NULL,
-       'visitor@example.com', 'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
-       JSON_OBJECT('seedCase','POSITIVE_TRANSFER_PENDING'), 'PENDING',
-       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
-       'Rollback-safe positive transfer pending test.', 0,
-       '2026-07-12 08:00:00', NULL);
-    IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 AND (SELECT visitor_user_id FROM visit_requests WHERE visit_request_id = 1001) = 8 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_request_identity_changes WHERE identity_change_id = 99710 AND status = 'PENDING' AND new_user_id IS NULL;
-    END IF;
-  END;
-  ROLLBACK;
-  INSERT INTO pems_contact_guard_test_results
-    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
-     actual_sqlstate, actual_message, result)
-  VALUES
-    ('POSITIVE', 'POS-03', 'TRANSFER PENDING keeps the old ACTIVE VISITOR owner', 'NONE', 'ACCEPTED',
-     COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
-     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
-
-  -- POS-04: TRANSFER APPLIED switches owner to a new ACTIVE VISITOR
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
-  START TRANSACTION;
-  BEGIN
-    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
-    BEGIN
-      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
-      SET v_raised = TRUE;
-    END;
-    DELETE FROM visit_request_identity_changes WHERE visit_request_id = 1001 AND status = 'PENDING';
-    INSERT INTO visit_request_identity_changes
-      (identity_change_id, visit_request_id, change_kind, target_relation,
-       confirmation_method, old_user_id, new_user_id, old_email_normalized,
-       new_email_normalized, new_email_masked, pending_snapshot_json, status,
-       expected_request_row_version, requested_by, requested_at, expires_at,
-       applied_at, reason, resend_count, created_at, updated_at)
-    VALUES
-      (99711, 1001, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', 8, 21,
-       'visitor@example.com', 'aoi.tanaka@kyoto-global.example', 'a***@kyoto-global.example',
-       JSON_OBJECT('seedCase','POSITIVE_TRANSFER_APPLIED'), 'APPLIED',
-       0, 8, '2026-07-12 08:00:00', '2026-07-13 08:00:00',
-       '2026-07-12 08:05:00', 'Rollback-safe positive transfer applied test.', 0,
-       '2026-07-12 08:00:00', '2026-07-12 08:05:00');
     UPDATE visit_requests
-    SET visitor_user_id = 21,
-        primary_contact_access_status = 'ACTIVE',
-        primary_contact_verified_at = '2026-07-12 08:05:00'
-    WHERE visit_request_id = 1001;
-    IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 AND (SELECT visitor_user_id FROM visit_requests WHERE visit_request_id = 1001) = 21 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_request_identity_changes WHERE identity_change_id = 99711 AND status = 'APPLIED' AND new_user_id = 21;
-    END IF;
+    SET status = 'CANCELLED', cancelled_by = 2, cancelled_at = NOW(),
+        cancellation_reason = 'guard probe: HO must never cancel'
+    WHERE visit_request_id = v_open_request;
   END;
   ROLLBACK;
   INSERT INTO pems_contact_guard_test_results
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('POSITIVE', 'POS-04', 'TRANSFER APPLIED switches owner to a new ACTIVE VISITOR', 'NONE', 'ACCEPTED',
-     COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
-     IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
+    ('NEGATIVE', 'NEG-07', 'Cancel the whole request as a non-registrant (HO)', '45000',
+     'Only the registrant can cancel the whole request',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'Only the registrant can cancel the whole request', 'PASS', 'FAIL'));
 
-  -- POS-05: Staff registrant uses a different ACTIVE VISITOR contact
+  -- NEG-08: an identity change must belong to a campus of its own request
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO visit_request_identity_changes
+      (visit_request_id, visit_instance_id, change_kind, confirmation_method,
+       new_email_normalized, new_email_masked, status, expected_request_row_version,
+       requested_by, expires_at)
+    VALUES
+      (v_open_request,
+       (SELECT MAX(visit_instance_id) + 1000 FROM visit_request_campuses),
+       'INITIAL_CONFIRMATION', 'GOOGLE_SSO', 'cross@example.com', 'c***@example.com',
+       'PENDING', 0, v_registrant, NOW() + INTERVAL 3 DAY);
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-08', 'Identity change pointing at a foreign campus instance', 'ANY',
+     'REJECTED_BY_COMPOSITE_FK',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised, 'PASS', 'FAIL'));
+
+  -- NEG-09: only one PENDING identity change per campus
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO visit_request_identity_changes
+      (visit_request_id, visit_instance_id, change_kind, confirmation_method,
+       new_email_normalized, new_email_masked, status, expected_request_row_version,
+       requested_by, expires_at)
+    VALUES
+      (v_open_request, v_open_instance, 'INITIAL_CONFIRMATION', 'GOOGLE_SSO',
+       'first@example.com', 'f***@example.com', 'PENDING', 0, v_registrant, NOW() + INTERVAL 3 DAY),
+      (v_open_request, v_open_instance, 'INITIAL_CONFIRMATION', 'GOOGLE_SSO',
+       'second@example.com', 's***@example.com', 'PENDING', 0, v_registrant, NOW() + INTERVAL 3 DAY);
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-09', 'Two PENDING identity changes on one campus', 'ANY',
+     'REJECTED_BY_PENDING_GUARD',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised, 'PASS', 'FAIL'));
+
+  -- NEG-10: INITIAL_CONFIRMATION must not carry an old owner
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO visit_request_identity_changes
+      (visit_request_id, visit_instance_id, change_kind, confirmation_method, old_user_id,
+       new_email_normalized, new_email_masked, status, expected_request_row_version,
+       requested_by, expires_at)
+    VALUES
+      (v_open_request, v_open_instance, 'INITIAL_CONFIRMATION', 'GOOGLE_SSO', v_registrant,
+       'third@example.com', 't***@example.com', 'PENDING', 0, v_registrant, NOW() + INTERVAL 3 DAY);
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-10', 'INITIAL_CONFIRMATION carrying old_user_id', '45000',
+     'INITIAL_CONFIRMATION identity change must not carry old_user_id',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'INITIAL_CONFIRMATION identity change must not carry old_user_id', 'PASS', 'FAIL'));
+
+  -- NEG-11: TRANSFER requires the current owner
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE;
+  START TRANSACTION;
+  BEGIN
+    DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
+    BEGIN
+      GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
+      SET v_raised = TRUE;
+    END;
+    INSERT INTO visit_request_identity_changes
+      (visit_request_id, visit_instance_id, change_kind, confirmation_method,
+       new_email_normalized, new_email_masked, status, expected_request_row_version,
+       requested_by, expires_at)
+    VALUES
+      (v_open_request, v_open_instance, 'TRANSFER', 'GOOGLE_SSO',
+       'fourth@example.com', 'f***@example.com', 'PENDING', 0, v_registrant, NOW() + INTERVAL 3 DAY);
+  END;
+  ROLLBACK;
+  INSERT INTO pems_contact_guard_test_results
+    (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
+     actual_sqlstate, actual_message, result)
+  VALUES
+    ('NEGATIVE', 'NEG-11', 'TRANSFER without old_user_id', '45000',
+     'TRANSFER identity change requires old_user_id (the current owner)',
+     COALESCE(v_sqlstate, 'NO_ERROR'), COALESCE(v_message, 'Operation unexpectedly succeeded'),
+     IF(v_raised AND v_sqlstate = '45000'
+        AND v_message = 'TRANSFER identity change requires old_user_id (the current owner)', 'PASS', 'FAIL'));
+
+  -- POS-01: an internal (STAFF) account may be an operational contact — plan §1.7
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
@@ -13887,9 +13398,17 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3046;
+    UPDATE visit_request_campuses
+    SET operational_contact_user_id = (
+          SELECT u.user_id FROM users u JOIN roles r ON r.role_id = u.role_id
+          WHERE r.role_code = 'STAFF' AND u.status = 'ACTIVE' ORDER BY u.user_id LIMIT 1)
+    WHERE visit_instance_id = v_open_instance;
     IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests vr JOIN users ru ON ru.user_id = vr.registrant_user_id JOIN roles rr ON rr.role_id = ru.role_id JOIN users cu ON cu.user_id = vr.visitor_user_id JOIN roles cr ON cr.role_id = cu.role_id WHERE vr.visit_request_id = 3046 AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF' AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE' AND vr.registrant_user_id <> vr.visitor_user_id;
+      SELECT COUNT(*) INTO v_condition_ok
+      FROM visit_request_campuses vrc
+      JOIN users u ON u.user_id = vrc.operational_contact_user_id
+      JOIN roles r ON r.role_id = u.role_id
+      WHERE vrc.visit_instance_id = v_open_instance AND r.role_code = 'STAFF';
     END IF;
   END;
   ROLLBACK;
@@ -13897,12 +13416,13 @@ BEGIN
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('POSITIVE', 'POS-05', 'Staff registrant uses a different ACTIVE VISITOR contact', 'NONE', 'ACCEPTED',
+    ('POSITIVE', 'POS-01', 'Internal STAFF account as operational contact', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'),
+        IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
 
-  -- POS-06: Staff Leader registrant uses a different ACTIVE VISITOR contact
+  -- POS-02: one account may hold several campuses at once (no UNIQUE on the column)
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
@@ -13911,9 +13431,15 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_requests SET updated_at = updated_at WHERE visit_request_id = 3047;
+    -- Only campuses still awaiting a decision: moving an operational campus would trip the
+    -- unrelated agenda guard and score this probe FAIL for the wrong reason.
+    UPDATE visit_request_campuses
+    SET operational_contact_user_id = v_registrant
+    WHERE status = 'WAITING_REQUEST_APPROVAL'
+      AND operational_contact_user_id IS NOT NULL;
     IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_requests vr JOIN users ru ON ru.user_id = vr.registrant_user_id JOIN roles rr ON rr.role_id = ru.role_id JOIN users cu ON cu.user_id = vr.visitor_user_id JOIN roles cr ON cr.role_id = cu.role_id WHERE vr.visit_request_id = 3047 AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER' AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE' AND vr.registrant_user_id <> vr.visitor_user_id;
+      SELECT IF(COUNT(*) > 1, 1, 0) INTO v_condition_ok
+      FROM visit_request_campuses WHERE operational_contact_user_id = v_registrant;
     END IF;
   END;
   ROLLBACK;
@@ -13921,12 +13447,13 @@ BEGIN
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('POSITIVE', 'POS-06', 'Staff Leader registrant uses a different ACTIVE VISITOR contact', 'NONE', 'ACCEPTED',
+    ('POSITIVE', 'POS-02', 'One account holding many campuses', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'),
+        IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
 
-  -- POS-07: Operational contact may reuse a Staff email as a snapshot
+  -- POS-03: the registrant may cancel their own request
   SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
@@ -13935,9 +13462,19 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    UPDATE visit_instance_form_details SET operational_contact_email = 'staff.hn@fpt.edu.vn' WHERE visit_instance_id = 5046;
+    -- push every campus of this request outside the 24h window first
+    UPDATE visit_request_campuses
+    SET planned_start_at = NOW() + INTERVAL 30 DAY,
+        planned_end_at = NOW() + INTERVAL 30 DAY + INTERVAL 2 HOUR
+    WHERE visit_request_id = v_open_request;
+    UPDATE visit_requests
+    SET status = 'CANCELLED', cancelled_by = v_registrant, cancelled_at = NOW(),
+        cancellation_reason = 'guard probe: registrant self-service cancel'
+    WHERE visit_request_id = v_open_request;
     IF NOT v_raised THEN
-      SELECT CASE WHEN COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok FROM visit_instance_form_details d JOIN users u ON LOWER(u.email) = LOWER(d.operational_contact_email) JOIN roles r ON r.role_id = u.role_id WHERE d.visit_instance_id = 5046 AND r.role_code = 'STAFF';
+      SELECT COUNT(*) INTO v_condition_ok
+      FROM visit_requests
+      WHERE visit_request_id = v_open_request AND status = 'CANCELLED';
     END IF;
   END;
   ROLLBACK;
@@ -13945,16 +13482,14 @@ BEGIN
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('POSITIVE', 'POS-07', 'Operational contact may reuse a Staff email as a snapshot', 'NONE', 'ACCEPTED',
+    ('POSITIVE', 'POS-03', 'Registrant cancels their own request', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'),
+        IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
 
-  -- POS-08: a VISITOR whose only ACTIVE primary-contact link is on a CANCELLED request may still
-  -- be deactivated. This is the documented exclusion, and the guard must not over-block it. The
-  -- post-condition also asserts the fixture really was linked to a cancelled request, so the test
-  -- fails loudly rather than passing on an empty setup.
-  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0; SET v_cancelled_req = NULL;
+  -- POS-04: a PENDING identity change may exist without any account yet
+  SET v_sqlstate = NULL; SET v_message = NULL; SET v_raised = FALSE; SET v_condition_ok = 0;
   START TRANSACTION;
   BEGIN
     DECLARE CONTINUE HANDLER FOR SQLEXCEPTION
@@ -13962,15 +13497,19 @@ BEGIN
       GET DIAGNOSTICS CONDITION 1 v_sqlstate = RETURNED_SQLSTATE, v_message = MESSAGE_TEXT;
       SET v_raised = TRUE;
     END;
-    SELECT MIN(visit_request_id) INTO v_cancelled_req FROM visit_requests WHERE status = 'CANCELLED' AND primary_contact_access_status = 'ACTIVE';
-    INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status, primary_campus_id, department_id, created_at, updated_at)
-    VALUES (99793, (SELECT role_id FROM roles WHERE role_code = 'VISITOR'), NULL, 'guard.cancelled.owner@example.test', 'x', 'Guard Cancelled Owner', 'ACTIVE', NULL, NULL, '2026-07-12 08:00:00', NULL);
-    UPDATE visit_requests SET visitor_user_id = 99793 WHERE visit_request_id = v_cancelled_req;
-    UPDATE users SET status = 'INACTIVE' WHERE user_id = 99793;
+    INSERT INTO visit_request_identity_changes
+      (visit_request_id, visit_instance_id, change_kind, confirmation_method,
+       new_email_normalized, new_email_masked, status, expected_request_row_version,
+       requested_by, expires_at)
+    VALUES
+      (v_open_request, v_open_instance, 'INITIAL_CONFIRMATION', 'GOOGLE_SSO',
+       'nobody.yet@example.com', 'n***@example.com', 'PENDING', 0, v_registrant,
+       NOW() + INTERVAL 3 DAY);
     IF NOT v_raised THEN
-      SELECT CASE WHEN v_cancelled_req IS NOT NULL AND COUNT(*) = 1 THEN 1 ELSE 0 END INTO v_condition_ok
-      FROM users u JOIN visit_requests vr ON vr.visitor_user_id = u.user_id
-      WHERE u.user_id = 99793 AND u.status = 'INACTIVE' AND vr.status = 'CANCELLED';
+      SELECT COUNT(*) INTO v_condition_ok
+      FROM visit_request_identity_changes
+      WHERE visit_instance_id = v_open_instance AND status = 'PENDING'
+        AND new_user_id IS NULL;
     END IF;
   END;
   ROLLBACK;
@@ -13978,9 +13517,10 @@ BEGIN
     (test_type, test_case, operation_summary, expected_sqlstate, expected_message,
      actual_sqlstate, actual_message, result)
   VALUES
-    ('POSITIVE', 'POS-08', 'Deactivate a VISITOR linked only to a CANCELLED request', 'NONE', 'ACCEPTED',
+    ('POSITIVE', 'POS-04', 'PENDING invitation with no account behind it yet', 'NONE', 'ACCEPTED',
      COALESCE(v_sqlstate, 'NONE'),
-     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'), IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
+     IF(v_raised, COALESCE(v_message, 'Unexpected SQL exception'),
+        IF(v_condition_ok = 1, 'ACCEPTED', 'Post-condition failed')),
      IF(NOT v_raised AND v_condition_ok = 1, 'PASS', 'FAIL'));
 
 END$$
@@ -14009,181 +13549,128 @@ WHERE test_type = 'POSITIVE' AND result <> 'PASS';
 -- Every issue_count must be 0 and every row-returning invalid query must return 0 rows.
 -- =====================================================================
 
--- 12.1 No primary contact has a wrong role/status/access state. Expected: 0 rows.
+-- 12.1 Đầu mối vận hành đã liên kết phải là tài khoản ACTIVE. Expected: 0 rows.
+--      KHÔNG kiểm tra role: tài khoản nội bộ được phép làm đầu mối (plan §1.7).
+SELECT
+    vrc.visit_instance_id,
+    vrc.visit_request_id,
+    vrc.status AS campus_status,
+    vrc.operational_contact_user_id,
+    u.email,
+    u.status AS user_status
+FROM visit_request_campuses vrc
+JOIN users u
+  ON u.user_id = vrc.operational_contact_user_id
+WHERE u.status <> 'ACTIVE';
+
+-- 12.2 Campus đã qua bước xác nhận mà thiếu đầu mối. Expected issue_count: 0.
+SELECT COUNT(*) AS issue_count
+FROM visit_request_campuses
+WHERE status NOT IN ('WAITING_CONTACT_CONFIRMATION','CANCELLED')
+  AND operational_contact_user_id IS NULL;
+
+-- 12.3 Campus còn chờ xác nhận nhưng đã có đầu mối. Expected issue_count: 0.
+SELECT COUNT(*) AS issue_count
+FROM visit_request_campuses
+WHERE status = 'WAITING_CONTACT_CONFIRMATION'
+  AND operational_contact_user_id IS NOT NULL;
+
+-- 12.4 Cổng xác nhận toàn cục: request rời PENDING_CONTACT_CONFIRMATION khi còn campus
+--      active thiếu đầu mối. Expected: 0 rows.
 SELECT
     vr.visit_request_id,
     vr.request_code,
-    vr.visitor_user_id,
-    u.email,
-    r.role_code,
-    u.status,
-    vr.primary_contact_access_status
+    vr.status AS request_status,
+    COUNT(vrc.visit_instance_id) AS unconfirmed_campus_count
 FROM visit_requests vr
-JOIN users u
-  ON u.user_id = vr.visitor_user_id
-JOIN roles r
-  ON r.role_id = u.role_id
-WHERE r.role_code <> 'VISITOR'
-   OR u.status <> 'ACTIVE'
-   OR vr.primary_contact_access_status <> 'ACTIVE';
+JOIN visit_request_campuses vrc
+  ON vrc.visit_request_id = vr.visit_request_id
+WHERE vr.status NOT IN ('PENDING_CONTACT_CONFIRMATION','CANCELLED')
+  AND vrc.status <> 'CANCELLED'
+  AND vrc.operational_contact_user_id IS NULL
+GROUP BY vr.visit_request_id, vr.request_code, vr.status;
 
--- 12.2 ACTIVE without visitor_user_id. Expected issue_count: 0.
+-- 12.5 Chiều ngược lại: request đứng ở PENDING_CONTACT_CONFIRMATION dù mọi campus đã có
+--      đầu mối. Expected issue_count: 0.
 SELECT COUNT(*) AS issue_count
-FROM visit_requests
-WHERE primary_contact_access_status = 'ACTIVE'
-  AND visitor_user_id IS NULL;
-
--- 12.3 PENDING with visitor_user_id already assigned. Expected issue_count: 0.
-SELECT COUNT(*) AS issue_count
-FROM visit_requests
-WHERE primary_contact_access_status = 'PENDING_CONFIRMATION'
-  AND visitor_user_id IS NOT NULL;
-
--- 12.4 Internal registrants must still use a VISITOR primary contact. Expected: 0 rows.
-SELECT
-    vr.request_code,
-    rr.role_code AS registrant_role,
-    cr.role_code AS contact_role
 FROM visit_requests vr
-JOIN users registrant
-  ON registrant.user_id = vr.registrant_user_id
-JOIN roles rr
-  ON rr.role_id = registrant.role_id
-JOIN users contact_user
-  ON contact_user.user_id = vr.visitor_user_id
-JOIN roles cr
-  ON cr.role_id = contact_user.role_id
-WHERE rr.role_code IN ('STAFF', 'DEPARTMENT', 'HO', 'ADMIN', 'STUDENT')
-  AND cr.role_code <> 'VISITOR';
+WHERE vr.status = 'PENDING_CONTACT_CONFIRMATION'
+  AND NOT EXISTS (
+    SELECT 1 FROM visit_request_campuses vrc
+    WHERE vrc.visit_request_id = vr.visit_request_id
+      AND vrc.status <> 'CANCELLED'
+      AND vrc.operational_contact_user_id IS NULL
+  );
 
--- 12.5 APPLIED identity changes must target an ACTIVE VISITOR. Expected: 0 rows.
+-- 12.6 Identity change APPLIED phải trỏ tới tài khoản ACTIVE. Expected: 0 rows.
 SELECT
     ic.identity_change_id,
     ic.visit_request_id,
+    ic.visit_instance_id,
     ic.change_kind,
     ic.status,
     ic.new_user_id,
-    r.role_code,
     u.status AS user_status
 FROM visit_request_identity_changes ic
 JOIN users u
   ON u.user_id = ic.new_user_id
-JOIN roles r
-  ON r.role_id = u.role_id
 WHERE ic.status = 'APPLIED'
-  AND (
-      r.role_code <> 'VISITOR'
-      OR u.status <> 'ACTIVE'
+  AND u.status <> 'ACTIVE';
+
+-- 12.7 Identity change phải thuộc đúng campus của đúng request. Expected: 0 rows.
+SELECT ic.identity_change_id, ic.visit_request_id, ic.visit_instance_id
+FROM visit_request_identity_changes ic
+LEFT JOIN visit_request_campuses vrc
+  ON vrc.visit_instance_id = ic.visit_instance_id
+ AND vrc.visit_request_id  = ic.visit_request_id
+WHERE vrc.visit_instance_id IS NULL;
+
+-- 12.8 Mỗi campus tối đa một identity change PENDING. Expected issue_count: 0.
+SELECT COUNT(*) AS issue_count FROM (
+  SELECT visit_instance_id
+  FROM visit_request_identity_changes
+  WHERE status = 'PENDING'
+  GROUP BY visit_instance_id
+  HAVING COUNT(*) > 1
+) dup;
+
+-- 12.9 ASSIGNED đã bị loại khỏi vòng đời campus. Expected issue_count: 0.
+SELECT 'campus_status_enum_still_has_assigned' AS check_name,
+       CASE WHEN LOCATE('''ASSIGNED''', column_type) > 0 THEN 1 ELSE 0 END AS issue_count
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'visit_request_campuses'
+  AND column_name = 'status';
+
+-- 12.10 Các cột mô hình đầu mối cấp request phải biến mất hoàn toàn. Expected issue_count: 0.
+SELECT 'request_level_contact_columns_remaining' AS check_name,
+       COUNT(*) AS issue_count
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'visit_requests'
+  AND column_name IN (
+    'visitor_user_id',
+    'contact_person_full_name', 'contact_person_organization',
+    'contact_person_phone', 'contact_person_email',
+    'primary_contact_access_status', 'primary_contact_verified_at'
   );
 
--- Required seed case coverage. Expected issue_count: 0 for each row.
-SELECT 'case_8_1_visitor_same_registrant_and_contact' AS check_name,
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users u ON u.user_id = vr.registrant_user_id
-         JOIN roles r ON r.role_id = u.role_id
-         WHERE vr.request_code = 'VR-SC-HN-0001'
-           AND vr.registrant_user_id = vr.visitor_user_id
-           AND vr.primary_contact_access_status = 'ACTIVE'
-           AND r.role_code = 'VISITOR' AND u.status = 'ACTIVE'
-       ) THEN 0 ELSE 1 END AS issue_count
-UNION ALL
-SELECT 'case_8_2_visitor_a_registrant_visitor_b_contact',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users ru ON ru.user_id = vr.registrant_user_id
-         JOIN roles rr ON rr.role_id = ru.role_id
-         JOIN users cu ON cu.user_id = vr.visitor_user_id
-         JOIN roles cr ON cr.role_id = cu.role_id
-         WHERE vr.request_code = 'VR-SC-HN-0002'
-           AND vr.registrant_user_id <> vr.visitor_user_id
-           AND vr.primary_contact_access_status = 'ACTIVE'
-           AND rr.role_code = 'VISITOR' AND ru.status = 'ACTIVE'
-           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
-       ) THEN 0 ELSE 1 END
-UNION ALL
-SELECT 'case_8_3_staff_registrant_visitor_contact',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users ru ON ru.user_id = vr.registrant_user_id
-         JOIN roles rr ON rr.role_id = ru.role_id
-         JOIN users cu ON cu.user_id = vr.visitor_user_id
-         JOIN roles cr ON cr.role_id = cu.role_id
-         WHERE vr.visit_request_id = 3046
-           AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF'
-           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
-           AND vr.primary_contact_access_status = 'ACTIVE'
-       ) THEN 0 ELSE 1 END
-UNION ALL
-SELECT 'case_8_4_staff_leader_registrant_visitor_contact',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users ru ON ru.user_id = vr.registrant_user_id
-         JOIN roles rr ON rr.role_id = ru.role_id
-         JOIN users cu ON cu.user_id = vr.visitor_user_id
-         JOIN roles cr ON cr.role_id = cu.role_id
-         WHERE vr.visit_request_id = 3047
-           AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER'
-           AND cr.role_code = 'VISITOR' AND cu.status = 'ACTIVE'
-           AND vr.primary_contact_access_status = 'ACTIVE'
-       ) THEN 0 ELSE 1 END
-UNION ALL
-SELECT 'case_8_5_staff_registrant_pending_claim',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users ru ON ru.user_id = vr.registrant_user_id
-         JOIN roles rr ON rr.role_id = ru.role_id
-         JOIN visit_request_identity_changes ic ON ic.visit_request_id = vr.visit_request_id
-         WHERE vr.visit_request_id = 3048
-           AND rr.role_code = 'STAFF' AND ru.sub_role = 'STAFF'
-           AND vr.visitor_user_id IS NULL
-           AND vr.primary_contact_access_status = 'PENDING_CONFIRMATION'
-           AND ic.change_kind = 'INITIAL_CLAIM' AND ic.status = 'PENDING'
-           AND ic.new_user_id IS NULL
-       ) THEN 0 ELSE 1 END
-UNION ALL
-SELECT 'case_8_6_staff_leader_registrant_pending_claim',
-       CASE WHEN EXISTS (
-         SELECT 1 FROM visit_requests vr
-         JOIN users ru ON ru.user_id = vr.registrant_user_id
-         JOIN roles rr ON rr.role_id = ru.role_id
-         JOIN visit_request_identity_changes ic ON ic.visit_request_id = vr.visit_request_id
-         WHERE vr.visit_request_id = 3049
-           AND rr.role_code = 'STAFF' AND ru.sub_role = 'LEADER'
-           AND vr.visitor_user_id IS NULL
-           AND vr.primary_contact_access_status = 'PENDING_CONFIRMATION'
-           AND ic.change_kind = 'INITIAL_CLAIM' AND ic.status = 'PENDING'
-           AND ic.new_user_id IS NULL
-       ) THEN 0 ELSE 1 END;
-
-SELECT 'operational_contact_staff_email_is_snapshot_only' AS check_name,
-       CASE WHEN EXISTS (
-         SELECT 1
-         FROM visit_instance_form_details d
-         JOIN visit_request_campuses vic
-           ON vic.visit_instance_id = d.visit_instance_id
-         JOIN users u
-           ON LOWER(u.email) = LOWER(d.operational_contact_email)
-         JOIN roles r
-           ON r.role_id = u.role_id
-         WHERE d.visit_instance_id = 5046
-           AND r.role_code = 'STAFF'
-           AND NOT EXISTS (
-             SELECT 1
-             FROM visit_requests vr
-             WHERE vr.visit_request_id = vic.visit_request_id
-               AND vr.visitor_user_id = u.user_id
-           )
-       ) THEN 0 ELSE 1 END AS issue_count;
+-- 12.11 note_to_fptu đã bị xóa. Expected issue_count: 0.
+SELECT 'note_to_fptu_column_remaining' AS check_name,
+       COUNT(*) AS issue_count
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND column_name = 'note_to_fptu';
 
 SELECT 'required_contact_guard_triggers_present' AS check_name,
-       5 - COUNT(*) AS issue_count
+       6 - COUNT(*) AS issue_count
 FROM information_schema.triggers
 WHERE trigger_schema = DATABASE()
   AND trigger_name IN (
-    'trg_visit_requests_primary_contact_guard_bi',
-    'trg_visit_requests_primary_contact_guard_bu',
-    'trg_users_protect_active_primary_contact_bu',
+    'trg_visit_campuses_op_contact_guard_bi',
+    'trg_visit_campuses_op_contact_guard_bu',
+    'trg_visit_requests_contact_gate_guard_bu',
+    'trg_users_protect_operational_contact_bu',
     'trg_visit_request_identity_changes_user_guard_bi',
     'trg_visit_request_identity_changes_user_guard_bu'
   );
@@ -14945,7 +14432,11 @@ BEGIN
     AND column_name IN (
       'delegation_name','visit_type','visit_type_other','purpose','working_content',
       'working_language','transportation_note','media_consent_status',
-      'media_consent_note','note_to_fptu'
+      'media_consent_note','note_to_fptu',
+      -- hard cutover: mô hình đầu mối cấp request
+      'visitor_user_id','contact_person_full_name','contact_person_organization',
+      'contact_person_phone','contact_person_email',
+      'primary_contact_access_status','primary_contact_verified_at'
     );
   IF v_issue_count <> 0 THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_LEGACY_COLUMNS_PRESENT';
@@ -15001,12 +14492,19 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_MEMBER_LINK_GAPS';
   END IF;
 
+  -- Cổng xác nhận đầu mối phải nhất quán hai chiều.
   SELECT COUNT(*) INTO v_issue_count
-  FROM visit_requests
-  WHERE (primary_contact_access_status = 'ACTIVE' AND visitor_user_id IS NULL)
-     OR (primary_contact_access_status = 'PENDING_CONFIRMATION' AND visitor_user_id IS NOT NULL);
+  FROM visit_requests vr
+  WHERE (vr.status <> 'PENDING_CONTACT_CONFIRMATION' AND vr.status <> 'CANCELLED' AND EXISTS (
+          SELECT 1 FROM visit_request_campuses c
+          WHERE c.visit_request_id = vr.visit_request_id
+            AND c.status <> 'CANCELLED' AND c.operational_contact_user_id IS NULL))
+     OR (vr.status = 'PENDING_CONTACT_CONFIRMATION' AND NOT EXISTS (
+          SELECT 1 FROM visit_request_campuses c
+          WHERE c.visit_request_id = vr.visit_request_id
+            AND c.status <> 'CANCELLED' AND c.operational_contact_user_id IS NULL));
   IF v_issue_count <> 0 THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_CONTACT_STATE_MISMATCH';
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PURE_V2_REFUSED_CONTACT_GATE_MISMATCH';
   END IF;
 
   SELECT COUNT(*) INTO v_issue_count
@@ -15030,7 +14528,10 @@ WHERE table_schema = DATABASE()
   AND column_name IN (
     'delegation_name','visit_type','visit_type_other','purpose','working_content',
     'working_language','transportation_note','media_consent_status',
-    'media_consent_note','note_to_fptu'
+    'media_consent_note','note_to_fptu',
+    'visitor_user_id','contact_person_full_name','contact_person_organization',
+    'contact_person_phone','contact_person_email',
+    'primary_contact_access_status','primary_contact_verified_at'
   );
 
 SELECT 'pure_v2_requests_without_campus' AS check_name, COUNT(*) AS issue_count
@@ -15294,103 +14795,103 @@ SET @u_staff_dn    := (SELECT user_id FROM users WHERE LOWER(email)='staff.dn@fp
 
 
 -- D. Curated request ownership / registration journeys
-INSERT INTO visit_requests (visit_request_id, request_code, submission_id, business_fingerprint, visitor_user_id, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, contact_person_full_name, contact_person_organization, contact_person_phone, contact_person_email, primary_contact_access_status, primary_contact_verified_at, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (41001, 'CURATED-HN-SL-PENDING', NULL, SHA2('CURATED-HN-SL-PENDING',256), @u_visitor_main, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (41002, 'CURATED-HN-SL-HOST-ASSIGNED', NULL, SHA2('CURATED-HN-SL-HOST-ASSIGNED',256), @u_nvt, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 4 DAY, CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
-  (41003, 'CURATED-HN-SL-HOST-BEFORE', NULL, SHA2('CURATED-HN-SL-HOST-BEFORE',256), @u_visitor_main, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
-  (41004, 'CURATED-HN-SL-HOST-DURING', NULL, SHA2('CURATED-HN-SL-HOST-DURING',256), @u_nvt, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 6 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
-  (41005, 'CURATED-HN-SL-HOST-AFTER', NULL, SHA2('CURATED-HN-SL-HOST-AFTER',256), @u_visitor_main, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 7 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
-  (41006, 'CURATED-HN-SL-HOST-CLOSED', NULL, SHA2('CURATED-HN-SL-HOST-CLOSED',256), @u_nvt, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
-  (41007, 'CURATED-HN-SL-REJECTED', NULL, SHA2('CURATED-HN-SL-REJECTED',256), @u_visitor_main, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 9 DAY, CURRENT_TIMESTAMP - INTERVAL 9 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
-  (41008, 'CURATED-HN-SL-CANCELLED', NULL, SHA2('CURATED-HN-SL-CANCELLED',256), @u_visitor_main, @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 10 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đầu mối chính xác nhận hủy vì trưởng đoàn phải tham dự cuộc họp đột xuất tại địa phương.', 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_visitor_main),
-  (41009, 'CURATED-HN-SL-MULTI-PARTIAL', NULL, SHA2('CURATED-HN-SL-MULTI-PARTIAL',256), @u_nvt, @u_sl_hn, NULL, 'STAFF_CREATED', 1, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'MULTI_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (41010, 'CURATED-HN-SL-INVITED', NULL, SHA2('CURATED-HN-SL-INVITED',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
-  (41011, 'CURATED-HN-SL-ACCEPTED', NULL, SHA2('CURATED-HN-SL-ACCEPTED',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (41012, 'CURATED-HN-SL-DECLINED', NULL, SHA2('CURATED-HN-SL-DECLINED',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 14 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
-  (41013, 'CURATED-HN-STAFF-PENDING', NULL, SHA2('CURATED-HN-STAFF-PENDING',256), @u_nvt, @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 15 DAY, CURRENT_TIMESTAMP - INTERVAL 15 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
-  (41014, 'CURATED-HN-STAFF-SELF-ASSIGNED', NULL, SHA2('CURATED-HN-STAFF-SELF-ASSIGNED',256), @u_visitor_main, @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 16 DAY, CURRENT_TIMESTAMP - INTERVAL 16 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
-  (41015, 'CURATED-HN-STAFF-SELF-CLOSED', NULL, SHA2('CURATED-HN-STAFF-SELF-CLOSED',256), @u_nvt, @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 17 DAY, CURRENT_TIMESTAMP - INTERVAL 17 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
-  (41016, 'CURATED-HN-STAFF-REJECTED', NULL, SHA2('CURATED-HN-STAFF-REJECTED',256), @u_visitor_main, @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 18 DAY, CURRENT_TIMESTAMP - INTERVAL 18 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
-  (41017, 'CURATED-HN-STAFF-CANCELLED', NULL, SHA2('CURATED-HN-STAFF-CANCELLED',256), @u_nvt, @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_nvt),
-  (41018, 'CURATED-HN-VISITOR-PENDING', NULL, SHA2('CURATED-HN-VISITOR-PENDING',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
-  (41019, 'CURATED-HN-VISITOR-MULTI-PARTIAL', NULL, SHA2('CURATED-HN-VISITOR-MULTI-PARTIAL',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 1, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 4 DAY, CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (41020, 'CURATED-HN-VISITOR-REJECTED', NULL, SHA2('CURATED-HN-VISITOR-REJECTED',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
-  (41021, 'CURATED-HN-VISITOR-CANCELLED', NULL, SHA2('CURATED-HN-VISITOR-CANCELLED',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Hãng bay thay đổi hành trình khiến đoàn không thể đến Hà Nội trong khung thời gian đã đăng ký.', 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_visitor_main),
-  (41022, 'CURATED-HN-VISITOR-CLOSED', NULL, SHA2('CURATED-HN-VISITOR-CLOSED',256), @u_visitor_main, @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'Kim Min Jae', 'SeoulTech Global Engagement Center', '+821012340001', 'visitor@example.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 7 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
-  (41023, 'CURATED-HN-NVT-PENDING', NULL, SHA2('CURATED-HN-NVT-PENDING',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
-  (41024, 'CURATED-HN-NVT-BEFORE', NULL, SHA2('CURATED-HN-NVT-BEFORE',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 9 DAY, CURRENT_TIMESTAMP - INTERVAL 9 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
-  (41025, 'CURATED-HN-NVT-REJECTED', NULL, SHA2('CURATED-HN-NVT-REJECTED',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 10 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
-  (41026, 'CURATED-HN-NVT-CANCELLED', NULL, SHA2('CURATED-HN-NVT-CANCELLED',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đối tác dời toàn bộ chương trình sang quý sau để bổ sung ngân sách và chuyên gia tham gia.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_nvt),
-  (41027, 'CURATED-HN-NVT-CLOSED', NULL, SHA2('CURATED-HN-NVT-CLOSED',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
-  (41028, 'CURATED-HN-NVT-MULTI-APPROVED', NULL, SHA2('CURATED-HN-NVT-MULTI-APPROVED',256), @u_nvt, @u_nvt, NULL, 'VISITOR_SUBMITTED', 1, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'MULTI_CAMPUS', 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', '0988123456', 'nvtcanhwork@gmail.com', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 30 DAY, 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+INSERT INTO visit_requests (visit_request_id, request_code, submission_id, business_fingerprint, registrant_user_id, partner_id, created_source, has_mixed_campus_details, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (41001, 'CURATED-HN-SL-PENDING', NULL, SHA2('CURATED-HN-SL-PENDING',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
+  (41002, 'CURATED-HN-SL-HOST-ASSIGNED', NULL, SHA2('CURATED-HN-SL-HOST-ASSIGNED',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 4 DAY, CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
+  (41003, 'CURATED-HN-SL-HOST-BEFORE', NULL, SHA2('CURATED-HN-SL-HOST-BEFORE',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
+  (41004, 'CURATED-HN-SL-HOST-DURING', NULL, SHA2('CURATED-HN-SL-HOST-DURING',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 6 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
+  (41005, 'CURATED-HN-SL-HOST-AFTER', NULL, SHA2('CURATED-HN-SL-HOST-AFTER',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 7 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
+  (41006, 'CURATED-HN-SL-HOST-CLOSED', NULL, SHA2('CURATED-HN-SL-HOST-CLOSED',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
+  (41007, 'CURATED-HN-SL-REJECTED', NULL, SHA2('CURATED-HN-SL-REJECTED',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 9 DAY, CURRENT_TIMESTAMP - INTERVAL 9 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
+  (41008, 'CURATED-HN-SL-CANCELLED', NULL, SHA2('CURATED-HN-SL-CANCELLED',256), @u_sl_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 10 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đầu mối chính xác nhận hủy vì trưởng đoàn phải tham dự cuộc họp đột xuất tại địa phương.', 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_visitor_main),
+  (41009, 'CURATED-HN-SL-MULTI-PARTIAL', NULL, SHA2('CURATED-HN-SL-MULTI-PARTIAL',256), @u_sl_hn, NULL, 'STAFF_CREATED', 1, 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'MULTI_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (41010, 'CURATED-HN-SL-INVITED', NULL, SHA2('CURATED-HN-SL-INVITED',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
+  (41011, 'CURATED-HN-SL-ACCEPTED', NULL, SHA2('CURATED-HN-SL-ACCEPTED',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (41012, 'CURATED-HN-SL-DECLINED', NULL, SHA2('CURATED-HN-SL-DECLINED',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 14 DAY, CURRENT_TIMESTAMP - INTERVAL 14 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
+  (41013, 'CURATED-HN-STAFF-PENDING', NULL, SHA2('CURATED-HN-STAFF-PENDING',256), @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 15 DAY, CURRENT_TIMESTAMP - INTERVAL 15 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
+  (41014, 'CURATED-HN-STAFF-SELF-ASSIGNED', NULL, SHA2('CURATED-HN-STAFF-SELF-ASSIGNED',256), @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 16 DAY, CURRENT_TIMESTAMP - INTERVAL 16 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
+  (41015, 'CURATED-HN-STAFF-SELF-CLOSED', NULL, SHA2('CURATED-HN-STAFF-SELF-CLOSED',256), @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 17 DAY, CURRENT_TIMESTAMP - INTERVAL 17 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
+  (41016, 'CURATED-HN-STAFF-REJECTED', NULL, SHA2('CURATED-HN-STAFF-REJECTED',256), @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 18 DAY, CURRENT_TIMESTAMP - INTERVAL 18 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
+  (41017, 'CURATED-HN-STAFF-CANCELLED', NULL, SHA2('CURATED-HN-STAFF-CANCELLED',256), @u_staff_hn, NULL, 'STAFF_CREATED', 0, 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'Việt Nam', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_nvt),
+  (41018, 'CURATED-HN-VISITOR-PENDING', NULL, SHA2('CURATED-HN-VISITOR-PENDING',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
+  (41019, 'CURATED-HN-VISITOR-MULTI-PARTIAL', NULL, SHA2('CURATED-HN-VISITOR-MULTI-PARTIAL',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 1, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 4 DAY, CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (41020, 'CURATED-HN-VISITOR-REJECTED', NULL, SHA2('CURATED-HN-VISITOR-REJECTED',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 5 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
+  (41021, 'CURATED-HN-VISITOR-CANCELLED', NULL, SHA2('CURATED-HN-VISITOR-CANCELLED',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 6 DAY, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Hãng bay thay đổi hành trình khiến đoàn không thể đến Hà Nội trong khung thời gian đã đăng ký.', 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_visitor_main),
+  (41022, 'CURATED-HN-VISITOR-CLOSED', NULL, SHA2('CURATED-HN-VISITOR-CLOSED',256), @u_visitor_main, NULL, 'VISITOR_SUBMITTED', 0, 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs', '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 7 DAY, CURRENT_TIMESTAMP - INTERVAL 7 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
+  (41023, 'CURATED-HN-NVT-PENDING', NULL, SHA2('CURATED-HN-NVT-PENDING',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 8 DAY, CURRENT_TIMESTAMP - INTERVAL 8 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
+  (41024, 'CURATED-HN-NVT-BEFORE', NULL, SHA2('CURATED-HN-NVT-BEFORE',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 9 DAY, CURRENT_TIMESTAMP - INTERVAL 9 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
+  (41025, 'CURATED-HN-NVT-REJECTED', NULL, SHA2('CURATED-HN-NVT-REJECTED',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 10 DAY, CURRENT_TIMESTAMP - INTERVAL 10 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
+  (41026, 'CURATED-HN-NVT-CANCELLED', NULL, SHA2('CURATED-HN-NVT-CANCELLED',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'CANCELLED', CURRENT_TIMESTAMP - INTERVAL 11 DAY, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'Đối tác dời toàn bộ chương trình sang quý sau để bổ sung ngân sách và chuyên gia tham gia.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_nvt),
+  (41027, 'CURATED-HN-NVT-CLOSED', NULL, SHA2('CURATED-HN-NVT-CLOSED',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 0, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 12 DAY, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
+  (41028, 'CURATED-HN-NVT-MULTI-APPROVED', NULL, SHA2('CURATED-HN-NVT-MULTI-APPROVED',256), @u_nvt, NULL, 'VISITOR_SUBMITTED', 1, 'Nguyễn Văn T. Cảnh', 'Asia Education Partnership Network', 'Điều phối viên chương trình', '0988123456', 'nvtcanhwork@gmail.com', 'Việt Nam', 'MULTI_CAMPUS', 'PENDING_APPROVAL', CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
 
 -- E. Per-campus decisions, host assignments and lifecycle states
-INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_source, decision_note, closed_by, closed_at, close_note, news_not_required, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, preparation_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (42001, 41001, 1, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (42002, 41002, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho British Council Digital Skills Roundtable; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho British Council Digital Skills Roundtable: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
-  (42003, 41003, 1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Osaka AI Laboratories Academic Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Osaka AI Laboratories Academic Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
-  (42004, 41004, 1, CURRENT_DATE + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Korea Foundation Culture Exchange Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
-  (42005, 41005, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Aalto University Service Design Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
-  (42006, 41006, 1, CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho University of Queensland Partnership Review; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
-  (42007, 41007, 1, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus không đủ nguồn lực tiếp đón do lịch đề xuất trùng tuần thi và hồ sơ chưa có danh sách đại biểu chính thức.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
-  (42008, 41008, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận hủy vì trưởng đoàn phải tham dự cuộc họp đột xuất tại địa phương.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
-  (42009, 41009, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Erasmus Applied Learning Consortium; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Erasmus Applied Learning Consortium: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42010, 41009, 2, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42011, 41010, 1, CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Semiconductor Education Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech Semiconductor Education Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
-  (42012, 41011, 1, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Taiwan Smart Campus Working Group; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42013, 41012, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Jeju Tourism Technology Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Jeju Tourism Technology Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
-  (42014, 41013, 1, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
-  (42015, 41014, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Temasek Polytechnic Learning Innovation Workshop và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Temasek Polytechnic Learning Innovation Workshop: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
-  (42016, 41015, 1, CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Porto Data Partnership Delegation và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
-  (42017, 41016, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Mục tiêu chuyến thăm chưa đủ rõ và lịch đề xuất trùng kỳ kiểm tra năng lực đầu vào của campus.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
-  (42018, 41017, 1, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
-  (42019, 41018, 1, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
-  (42020, 41019, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech AI Education Multi-Campus Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech AI Education Multi-Campus Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42021, 41019, 3, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_dn, @u_sl_dn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42022, 41020, 1, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Quy mô đoàn vượt sức chứa của khu tham quan trong ngày đề xuất; vui lòng chia nhóm hoặc chọn lịch khác.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
-  (42023, 41021, 1, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Hãng bay thay đổi hành trình khiến đoàn không thể đến Hà Nội trong khung thời gian đã đăng ký.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
-  (42024, 41022, 1, CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Robotics Collaboration Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
-  (42025, 41023, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
-  (42026, 41024, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Tokyo Metropolitan Smart Campus Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Tokyo Metropolitan Smart Campus Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
-  (42027, 41025, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Hồ sơ thiếu xác nhận danh sách khách quốc tế và yêu cầu an ninh bắt buộc cho chương trình đông người.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
-  (42028, 41026, 1, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 12 HOUR), 'CANCELLED', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đối tác dời toàn bộ chương trình sang quý sau để bổ sung ngân sách và chuyên gia tham gia.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
-  (42029, 41027, 1, CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho National Chengchi University Partnership Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
-  (42030, 41028, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42031, 41028, 2, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 12 HOUR), 'ASSIGNED', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus TP.HCM cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus TP.HCM.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status, operational_contact_user_id, operational_contact_confirmed_at, operational_contact_confirmation_source, coordinator_user_id, coordinator_assigned_by, coordinator_assigned_at, current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, decision_actor_role, decision_source, decision_note, closed_by, closed_at, close_note, news_not_required, cancelled_by, cancelled_at, cancellation_actor_type, cancellation_source, cancellation_reason, preparation_note, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (42001, 41001, 1, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
+  (42002, 41002, 1, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho British Council Digital Skills Roundtable; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho British Council Digital Skills Roundtable: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
+  (42003, 41003, 1, CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Osaka AI Laboratories Academic Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Osaka AI Laboratories Academic Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
+  (42004, 41004, 1, CURRENT_DATE + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Korea Foundation Culture Exchange Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
+  (42005, 41005, 1, CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 2 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Aalto University Service Design Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
+  (42006, 41006, 1, CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 16 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho University of Queensland Partnership Review; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
+  (42007, 41007, 1, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Campus không đủ nguồn lực tiếp đón do lịch đề xuất trùng tuần thi và hồ sơ chưa có danh sách đại biểu chính thức.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
+  (42008, 41008, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'CANCELLED', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận hủy vì trưởng đoàn phải tham dự cuộc họp đột xuất tại địa phương.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
+  (42009, 41009, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Erasmus Applied Learning Consortium; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Erasmus Applied Learning Consortium: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42010, 41009, 2, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_sl_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42011, 41010, 1, CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 4 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Semiconductor Education Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech Semiconductor Education Visit: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
+  (42012, 41011, 1, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Taiwan Smart Campus Working Group; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42013, 41012, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Jeju Tourism Technology Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Jeju Tourism Technology Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
+  (42014, 41013, 1, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
+  (42015, 41014, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Temasek Polytechnic Learning Innovation Workshop và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Temasek Polytechnic Learning Innovation Workshop: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
+  (42016, 41015, 1, CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Porto Data Partnership Delegation và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
+  (42017, 41016, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Mục tiêu chuyến thăm chưa đủ rõ và lịch đề xuất trùng kỳ kiểm tra năng lực đầu vào của campus.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
+  (42018, 41017, 1, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 12 HOUR), 'CANCELLED', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
+  (42019, 41018, 1, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
+  (42020, 41019, 1, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech AI Education Multi-Campus Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho SeoulTech AI Education Multi-Campus Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42021, 41019, 3, CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 14 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_dn, @u_sl_dn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42022, 41020, 1, CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 6 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Quy mô đoàn vượt sức chứa của khu tham quan trong ngày đề xuất; vui lòng chia nhóm hoặc chọn lịch khác.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
+  (42023, 41021, 1, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 12 HOUR), 'CANCELLED', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Hãng bay thay đổi hành trình khiến đoàn không thể đến Hà Nội trong khung thời gian đã đăng ký.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
+  (42024, 41022, 1, CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 20 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho SeoulTech Robotics Collaboration Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
+  (42025, 41023, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
+  (42026, 41024, 1, CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 2 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Tokyo Metropolitan Smart Campus Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Tokyo Metropolitan Smart Campus Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
+  (42027, 41025, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Hồ sơ thiếu xác nhận danh sách khách quốc tế và yêu cầu an ninh bắt buộc cho chương trình đông người.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
+  (42028, 41026, 1, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 12 HOUR), 'CANCELLED', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đối tác dời toàn bộ chương trình sang quý sau để bổ sung ngân sách và chuyên gia tham gia.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
+  (42029, 41027, 1, CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho National Chengchi University Partnership Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
+  (42030, 41028, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42031, 41028, 2, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus TP.HCM cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus TP.HCM.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
 
 -- F. Full per-campus form snapshots with distinct business content
-INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, media_consent_note, note_to_fptu, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (42001, 'Helsinki Education Governance Delegation', 'MEETING', NULL, 'Trao đổi mô hình quản trị dữ liệu học vụ và cơ chế phối hợp giữa trường với cơ quan quản lý giáo dục.', 'Phiên làm việc tập trung vào governance framework, phân quyền truy cập dữ liệu, quy trình phê duyệt báo cáo và kế hoạch thử nghiệm chung trong học kỳ mùa thu.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Helsinki Education Governance Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Helsinki Education Governance Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Helsinki Education Governance Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (42002, 'British Council Digital Skills Roundtable', 'MEETING', NULL, 'Chuẩn bị chương trình kỹ năng số cho sinh viên và cơ chế đồng tổ chức hoạt động tại campus Hà Nội.', 'Hai bên thống nhất phạm vi workshop, tiêu chí lựa chọn giảng viên, phương án truyền thông và mốc rà soát nội dung trước ngày tổ chức.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho British Council Digital Skills Roundtable: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'British Council Digital Skills Roundtable chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho British Council Digital Skills Roundtable: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
-  (42003, 'Osaka AI Laboratories Academic Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát phòng lab trí tuệ nhân tạo và thảo luận cơ hội đồng hướng dẫn đồ án sinh viên.', 'Đoàn tham quan AI Lab, gặp nhóm giảng viên phụ trách computer vision và rà soát đề cương ba đề tài có thể triển khai trong năm học tới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Osaka AI Laboratories Academic Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Osaka AI Laboratories Academic Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Osaka AI Laboratories Academic Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
-  (42004, 'Korea Foundation Culture Exchange Mission', 'EXCHANGE', NULL, 'Tổ chức phiên giao lưu văn hóa Hàn Quốc - Việt Nam và trao đổi kế hoạch học kỳ trải nghiệm.', 'Chương trình gồm giới thiệu campus, đối thoại sinh viên, trình diễn văn hóa và phiên làm việc riêng về chương trình mobility ngắn hạn.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Korea Foundation Culture Exchange Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Korea Foundation Culture Exchange Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Korea Foundation Culture Exchange Mission: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
-  (42005, 'Aalto University Service Design Delegation', 'WORKSHOP', NULL, 'Thực hành service design cho trải nghiệm sinh viên quốc tế tại campus.', 'Workshop hoàn thành bản đồ hành trình sinh viên, xác định điểm nghẽn trong onboarding và thống nhất nhóm phụ trách thử nghiệm hai cải tiến ưu tiên.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Aalto University Service Design Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Aalto University Service Design Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Aalto University Service Design Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
-  (42006, 'University of Queensland Partnership Review', 'MEETING', NULL, 'Đánh giá kết quả hợp tác năm học trước và thống nhất ba ưu tiên cho giai đoạn tiếp theo.', 'Biên bản ghi nhận kết quả trao đổi sinh viên, kế hoạch nghiên cứu chung và đầu mối phụ trách chương trình đào tạo ngắn hạn. Hồ sơ đã hoàn tất hậu kiểm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho University of Queensland Partnership Review: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của University of Queensland Partnership Review không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho University of Queensland Partnership Review: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
-  (42007, 'Warsaw Exchange Planning Team', 'MEETING', NULL, 'Đề xuất phiên làm việc gấp về trao đổi học kỳ mùa đông.', 'Đề nghị ban đầu thiếu danh sách thành viên chính thức và trùng lịch thi cuối kỳ của campus Hà Nội nên chưa thể tiếp nhận ở mốc thời gian đề xuất.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Warsaw Exchange Planning Team vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Warsaw Exchange Planning Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Warsaw Exchange Planning Team: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
-  (42008, 'Thai Nguyen Innovation Network Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Tham quan mô hình không gian đổi mới và kết nối nhóm khởi nghiệp sinh viên.', 'Đoàn chủ động hủy do lịch công tác của trưởng đoàn thay đổi; hai bên thống nhất sẽ gửi lại đề nghị vào tháng sau.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Thai Nguyen Innovation Network Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Thai Nguyen Innovation Network Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Thai Nguyen Innovation Network Courtesy Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
-  (42009, 'Erasmus Applied Learning Consortium', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Erasmus Applied Learning Consortium không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Erasmus Applied Learning Consortium: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42010, 'Erasmus Applied Learning Consortium - TP.HCM', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Erasmus Applied Learning Consortium chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus TP.HCM cho Erasmus Applied Learning Consortium: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42011, 'SeoulTech Semiconductor Education Visit', 'MEETING', NULL, 'Trao đổi cấu trúc chương trình bán dẫn và nhu cầu phát triển phòng lab thực hành.', 'Đoàn làm việc với IC và nhóm đào tạo về học phần nền tảng, thiết bị mô phỏng và cơ chế mời chuyên gia doanh nghiệp tham gia giảng dạy.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Semiconductor Education Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Semiconductor Education Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho SeoulTech Semiconductor Education Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
-  (42012, 'Taiwan Smart Campus Working Group', 'WORKSHOP', NULL, 'Chia sẻ kinh nghiệm vận hành smart campus và thiết kế dashboard tiêu thụ năng lượng.', 'Nhóm đã hoàn thành workshop về cảm biến, dữ liệu thời gian thực và bộ chỉ số giám sát vận hành; đang tổng hợp đầu việc sau chuyến thăm.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Taiwan Smart Campus Working Group: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Taiwan Smart Campus Working Group không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Taiwan Smart Campus Working Group: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42013, 'Jeju Tourism Technology Delegation', 'CAMPUS_TOUR', NULL, 'Tìm hiểu chương trình công nghệ du lịch và trải nghiệm không gian đào tạo thực hành.', 'Đoàn dự kiến tham quan campus, gặp giảng viên chuyên ngành và thảo luận một học phần trải nghiệm chung về dữ liệu du lịch.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho Jeju Tourism Technology Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Jeju Tourism Technology Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Jeju Tourism Technology Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
-  (42014, 'Daegu Global Seminar Organizing Team', 'WORKSHOP', NULL, 'Chuẩn bị seminar về kỹ năng nghề nghiệp quốc tế cho sinh viên khối công nghệ.', 'Hồ sơ đang chờ Staff Leader rà soát lịch, thành phần diễn giả và phương án sử dụng hội trường trước khi phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Daegu Global Seminar Organizing Team: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Daegu Global Seminar Organizing Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Daegu Global Seminar Organizing Team: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
-  (42015, 'Temasek Polytechnic Learning Innovation Workshop', 'WORKSHOP', NULL, 'Trao đổi cách tổ chức studio học tập và đánh giá dự án liên ngành.', 'Staff Hà Nội tạo đơn nội bộ và tự nhận làm host trong cùng transaction; agenda gồm phiên giới thiệu studio và thảo luận rubric đánh giá.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Temasek Polytechnic Learning Innovation Workshop: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Temasek Polytechnic Learning Innovation Workshop không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Temasek Polytechnic Learning Innovation Workshop: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
-  (42016, 'Porto Data Partnership Delegation', 'MEETING', NULL, 'Tổng kết thử nghiệm chia sẻ dữ liệu nghiên cứu và thảo luận nguyên tắc quản trị bộ dữ liệu chung.', 'Chuyến thăm đã đóng sau khi hoàn thành biên bản, hạng mục phòng họp, thiết bị trình chiếu và danh sách hành động hậu kỳ.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Porto Data Partnership Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Porto Data Partnership Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Porto Data Partnership Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
-  (42017, 'Pacific Language Center Observation Visit', 'CAMPUS_TOUR', NULL, 'Quan sát lớp tiếng Anh và tìm hiểu mô hình kiểm tra năng lực đầu vào.', 'Yêu cầu chưa nêu rõ mục tiêu hợp tác, thành phần đoàn thay đổi liên tục và thời gian đề xuất trùng kỳ kiểm tra nên bị từ chối.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Pacific Language Center Observation Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Pacific Language Center Observation Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Pacific Language Center Observation Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
-  (42018, 'Ritsumeikan APU Student Mobility Briefing', 'MEETING', NULL, 'Trao đổi thủ tục mobility và hỗ trợ sinh viên trước kỳ trao đổi.', 'Đầu mối chính hủy vì lịch đoàn chuyển sang hình thức trực tuyến; Staff vẫn nhìn thấy lịch sử ở tab đơn đã đăng ký.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Ritsumeikan APU Student Mobility Briefing vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của Ritsumeikan APU Student Mobility Briefing không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Ritsumeikan APU Student Mobility Briefing: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
-  (42019, 'SeoulTech Summer School Planning Visit', 'MEETING', NULL, 'Thảo luận lịch trình summer school và tiêu chí tuyển chọn sinh viên tham gia.', 'Visitor đã xác minh email và gửi đơn; campus Hà Nội đang kiểm tra lịch phòng, giảng viên tham gia và phương án di chuyển nội bộ.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Summer School Planning Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Summer School Planning Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho SeoulTech Summer School Planning Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
-  (42020, 'SeoulTech AI Education Multi-Campus Mission', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech AI Education Multi-Campus Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho SeoulTech AI Education Multi-Campus Mission: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42021, 'SeoulTech AI Education Multi-Campus Mission - Đà Nẵng', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng. Phần làm việc tại Đà Nẵng ưu tiên chương trình kỹ thuật và trải nghiệm môi trường học tập.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff Đà Nẵng', 'FPT University - IC Đà Nẵng', '0901000012', 'staff.dn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Đà Nẵng; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech AI Education Multi-Campus Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Đà Nẵng cho SeoulTech AI Education Multi-Campus Mission: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42022, 'Busan Design Council Campus Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát không gian thiết kế và đề xuất cuộc thi sáng tạo liên trường.', 'Đơn bị từ chối vì danh sách 48 khách vượt khả năng bố trí tại thời điểm đề xuất và chưa có phương án chia nhóm tham quan.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho Busan Design Council Campus Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Busan Design Council Campus Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Busan Design Council Campus Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
-  (42023, 'SeoulTech August Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Thăm campus và gặp gỡ sinh viên đã tham gia chương trình trao đổi.', 'Visitor tự hủy trước thời hạn vì chuyến bay quốc tế bị điều chỉnh; lý do được ghi rõ để kiểm thử lịch sử hủy đơn.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho SeoulTech August Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'SeoulTech August Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho SeoulTech August Courtesy Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
-  (42024, 'SeoulTech Robotics Collaboration Delegation', 'WORKSHOP', NULL, 'Tổ chức workshop robot di động và xác định đề tài nghiên cứu chung cho sinh viên.', 'Chuyến thăm đã hoàn tất, biên bản và thiết bị được bàn giao đầy đủ; Visitor đã gửi feedback tổng thể sau khi hồ sơ đóng.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Robotics Collaboration Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech Robotics Collaboration Delegation không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho SeoulTech Robotics Collaboration Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
-  (42025, 'Vietnam–Japan Startup Network Delegation', 'MEETING', NULL, 'Kết nối startup sinh viên với cố vấn Nhật Bản và khảo sát không gian ươm tạo.', 'Đơn mới đã xác minh email, đang chờ Staff Leader Hà Nội kiểm tra thành phần mentor và lịch sử dụng khu innovation hub.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Vietnam–Japan Startup Network Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Vietnam–Japan Startup Network Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Vietnam–Japan Startup Network Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
-  (42026, 'Tokyo Metropolitan Smart Campus Delegation', 'CAMPUS_TOUR', NULL, 'Khảo sát hạ tầng thông minh, khu học tập số và quy trình vận hành sự kiện.', 'Host đang hoàn thiện biển đón, xác nhận điểm tập kết xe và phân công sinh viên hỗ trợ theo từng chặng tham quan.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Tokyo Metropolitan Smart Campus Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Tokyo Metropolitan Smart Campus Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Tokyo Metropolitan Smart Campus Delegation: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
-  (42027, 'ASEAN Youth Forum Study Visit', 'EXCHANGE', NULL, 'Tổ chức đối thoại thanh niên ASEAN và tham quan campus trong một buổi chiều.', 'Đơn chưa cung cấp xác nhận số lượng khách quốc tế, yêu cầu an ninh và thông tin trưởng đoàn nên campus chưa thể phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho ASEAN Youth Forum Study Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của ASEAN Youth Forum Study Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho ASEAN Youth Forum Study Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
-  (42028, 'Kyoto Creative Lab Campus Exchange', 'WORKSHOP', NULL, 'Tổ chức workshop thiết kế sáng tạo với sinh viên ngành multimedia.', 'Người đăng ký tự hủy vì đoàn đổi thời gian sang quý sau; dữ liệu vẫn giữ để kiểm thử danh sách đơn đã hủy của Visitor.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Kyoto Creative Lab Campus Exchange vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Kyoto Creative Lab Campus Exchange chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho Kyoto Creative Lab Campus Exchange: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
-  (42029, 'National Chengchi University Partnership Visit', 'SIGNING_CEREMONY', NULL, 'Rà soát nội dung hợp tác và tổ chức phiên ký biên bản ghi nhớ cấp đơn vị.', 'Hồ sơ đã đóng sau lễ ký, biên bản và danh sách đầu việc được xác nhận; Staff Leader Hà Nội là host chính của chuyến thăm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho National Chengchi University Partnership Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'National Chengchi University Partnership Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus Hà Nội cho National Chengchi University Partnership Visit: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
-  (42030, 'Asia-Pacific Academic Alliance Mission', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Asia-Pacific Academic Alliance Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 'Ghi chú campus Hà Nội cho Asia-Pacific Academic Alliance Mission: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42031, 'Asia-Pacific Academic Alliance Mission - TP.HCM', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Asia-Pacific Academic Alliance Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 'Ghi chú campus TP.HCM cho Asia-Pacific Academic Alliance Mission: nội dung được lưu thành snapshot độc lập để phục vụ đúng luồng xử lý của campus này.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, media_consent_note, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (42001, 'Helsinki Education Governance Delegation', 'MEETING', NULL, 'Trao đổi mô hình quản trị dữ liệu học vụ và cơ chế phối hợp giữa trường với cơ quan quản lý giáo dục.', 'Phiên làm việc tập trung vào governance framework, phân quyền truy cập dữ liệu, quy trình phê duyệt báo cáo và kế hoạch thử nghiệm chung trong học kỳ mùa thu.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Helsinki Education Governance Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Helsinki Education Governance Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
+  (42002, 'British Council Digital Skills Roundtable', 'MEETING', NULL, 'Chuẩn bị chương trình kỹ năng số cho sinh viên và cơ chế đồng tổ chức hoạt động tại campus Hà Nội.', 'Hai bên thống nhất phạm vi workshop, tiêu chí lựa chọn giảng viên, phương án truyền thông và mốc rà soát nội dung trước ngày tổ chức.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho British Council Digital Skills Roundtable: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'British Council Digital Skills Roundtable chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
+  (42003, 'Osaka AI Laboratories Academic Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát phòng lab trí tuệ nhân tạo và thảo luận cơ hội đồng hướng dẫn đồ án sinh viên.', 'Đoàn tham quan AI Lab, gặp nhóm giảng viên phụ trách computer vision và rà soát đề cương ba đề tài có thể triển khai trong năm học tới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Osaka AI Laboratories Academic Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Osaka AI Laboratories Academic Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
+  (42004, 'Korea Foundation Culture Exchange Mission', 'EXCHANGE', NULL, 'Tổ chức phiên giao lưu văn hóa Hàn Quốc - Việt Nam và trao đổi kế hoạch học kỳ trải nghiệm.', 'Chương trình gồm giới thiệu campus, đối thoại sinh viên, trình diễn văn hóa và phiên làm việc riêng về chương trình mobility ngắn hạn.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Korea Foundation Culture Exchange Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Korea Foundation Culture Exchange Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
+  (42005, 'Aalto University Service Design Delegation', 'WORKSHOP', NULL, 'Thực hành service design cho trải nghiệm sinh viên quốc tế tại campus.', 'Workshop hoàn thành bản đồ hành trình sinh viên, xác định điểm nghẽn trong onboarding và thống nhất nhóm phụ trách thử nghiệm hai cải tiến ưu tiên.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Aalto University Service Design Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Aalto University Service Design Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
+  (42006, 'University of Queensland Partnership Review', 'MEETING', NULL, 'Đánh giá kết quả hợp tác năm học trước và thống nhất ba ưu tiên cho giai đoạn tiếp theo.', 'Biên bản ghi nhận kết quả trao đổi sinh viên, kế hoạch nghiên cứu chung và đầu mối phụ trách chương trình đào tạo ngắn hạn. Hồ sơ đã hoàn tất hậu kiểm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho University of Queensland Partnership Review: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của University of Queensland Partnership Review không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
+  (42007, 'Warsaw Exchange Planning Team', 'MEETING', NULL, 'Đề xuất phiên làm việc gấp về trao đổi học kỳ mùa đông.', 'Đề nghị ban đầu thiếu danh sách thành viên chính thức và trùng lịch thi cuối kỳ của campus Hà Nội nên chưa thể tiếp nhận ở mốc thời gian đề xuất.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Warsaw Exchange Planning Team vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Warsaw Exchange Planning Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
+  (42008, 'Thai Nguyen Innovation Network Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Tham quan mô hình không gian đổi mới và kết nối nhóm khởi nghiệp sinh viên.', 'Đoàn chủ động hủy do lịch công tác của trưởng đoàn thay đổi; hai bên thống nhất sẽ gửi lại đề nghị vào tháng sau.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Thai Nguyen Innovation Network Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Thai Nguyen Innovation Network Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
+  (42009, 'Erasmus Applied Learning Consortium', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Erasmus Applied Learning Consortium không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42010, 'Erasmus Applied Learning Consortium - TP.HCM', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Erasmus Applied Learning Consortium chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42011, 'SeoulTech Semiconductor Education Visit', 'MEETING', NULL, 'Trao đổi cấu trúc chương trình bán dẫn và nhu cầu phát triển phòng lab thực hành.', 'Đoàn làm việc với IC và nhóm đào tạo về học phần nền tảng, thiết bị mô phỏng và cơ chế mời chuyên gia doanh nghiệp tham gia giảng dạy.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Semiconductor Education Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Semiconductor Education Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
+  (42012, 'Taiwan Smart Campus Working Group', 'WORKSHOP', NULL, 'Chia sẻ kinh nghiệm vận hành smart campus và thiết kế dashboard tiêu thụ năng lượng.', 'Nhóm đã hoàn thành workshop về cảm biến, dữ liệu thời gian thực và bộ chỉ số giám sát vận hành; đang tổng hợp đầu việc sau chuyến thăm.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Taiwan Smart Campus Working Group: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Taiwan Smart Campus Working Group không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42013, 'Jeju Tourism Technology Delegation', 'CAMPUS_TOUR', NULL, 'Tìm hiểu chương trình công nghệ du lịch và trải nghiệm không gian đào tạo thực hành.', 'Đoàn dự kiến tham quan campus, gặp giảng viên chuyên ngành và thảo luận một học phần trải nghiệm chung về dữ liệu du lịch.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho Jeju Tourism Technology Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Jeju Tourism Technology Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
+  (42014, 'Daegu Global Seminar Organizing Team', 'WORKSHOP', NULL, 'Chuẩn bị seminar về kỹ năng nghề nghiệp quốc tế cho sinh viên khối công nghệ.', 'Hồ sơ đang chờ Staff Leader rà soát lịch, thành phần diễn giả và phương án sử dụng hội trường trước khi phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Daegu Global Seminar Organizing Team: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Daegu Global Seminar Organizing Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
+  (42015, 'Temasek Polytechnic Learning Innovation Workshop', 'WORKSHOP', NULL, 'Trao đổi cách tổ chức studio học tập và đánh giá dự án liên ngành.', 'Staff Hà Nội tạo đơn nội bộ và tự nhận làm host trong cùng transaction; agenda gồm phiên giới thiệu studio và thảo luận rubric đánh giá.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Temasek Polytechnic Learning Innovation Workshop: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Temasek Polytechnic Learning Innovation Workshop không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
+  (42016, 'Porto Data Partnership Delegation', 'MEETING', NULL, 'Tổng kết thử nghiệm chia sẻ dữ liệu nghiên cứu và thảo luận nguyên tắc quản trị bộ dữ liệu chung.', 'Chuyến thăm đã đóng sau khi hoàn thành biên bản, hạng mục phòng họp, thiết bị trình chiếu và danh sách hành động hậu kỳ.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Porto Data Partnership Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Porto Data Partnership Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
+  (42017, 'Pacific Language Center Observation Visit', 'CAMPUS_TOUR', NULL, 'Quan sát lớp tiếng Anh và tìm hiểu mô hình kiểm tra năng lực đầu vào.', 'Yêu cầu chưa nêu rõ mục tiêu hợp tác, thành phần đoàn thay đổi liên tục và thời gian đề xuất trùng kỳ kiểm tra nên bị từ chối.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Pacific Language Center Observation Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Pacific Language Center Observation Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
+  (42018, 'Ritsumeikan APU Student Mobility Briefing', 'MEETING', NULL, 'Trao đổi thủ tục mobility và hỗ trợ sinh viên trước kỳ trao đổi.', 'Đầu mối chính hủy vì lịch đoàn chuyển sang hình thức trực tuyến; Staff vẫn nhìn thấy lịch sử ở tab đơn đã đăng ký.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Ritsumeikan APU Student Mobility Briefing vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của Ritsumeikan APU Student Mobility Briefing không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
+  (42019, 'SeoulTech Summer School Planning Visit', 'MEETING', NULL, 'Thảo luận lịch trình summer school và tiêu chí tuyển chọn sinh viên tham gia.', 'Visitor đã xác minh email và gửi đơn; campus Hà Nội đang kiểm tra lịch phòng, giảng viên tham gia và phương án di chuyển nội bộ.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Summer School Planning Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Summer School Planning Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
+  (42020, 'SeoulTech AI Education Multi-Campus Mission', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech AI Education Multi-Campus Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42021, 'SeoulTech AI Education Multi-Campus Mission - Đà Nẵng', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng. Phần làm việc tại Đà Nẵng ưu tiên chương trình kỹ thuật và trải nghiệm môi trường học tập.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff Đà Nẵng', 'FPT University - IC Đà Nẵng', '0901000012', 'staff.dn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Đà Nẵng; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech AI Education Multi-Campus Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42022, 'Busan Design Council Campus Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát không gian thiết kế và đề xuất cuộc thi sáng tạo liên trường.', 'Đơn bị từ chối vì danh sách 48 khách vượt khả năng bố trí tại thời điểm đề xuất và chưa có phương án chia nhóm tham quan.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho Busan Design Council Campus Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Busan Design Council Campus Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
+  (42023, 'SeoulTech August Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Thăm campus và gặp gỡ sinh viên đã tham gia chương trình trao đổi.', 'Visitor tự hủy trước thời hạn vì chuyến bay quốc tế bị điều chỉnh; lý do được ghi rõ để kiểm thử lịch sử hủy đơn.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho SeoulTech August Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'SeoulTech August Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
+  (42024, 'SeoulTech Robotics Collaboration Delegation', 'WORKSHOP', NULL, 'Tổ chức workshop robot di động và xác định đề tài nghiên cứu chung cho sinh viên.', 'Chuyến thăm đã hoàn tất, biên bản và thiết bị được bàn giao đầy đủ; Visitor đã gửi feedback tổng thể sau khi hồ sơ đóng.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Robotics Collaboration Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech Robotics Collaboration Delegation không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
+  (42025, 'Vietnam–Japan Startup Network Delegation', 'MEETING', NULL, 'Kết nối startup sinh viên với cố vấn Nhật Bản và khảo sát không gian ươm tạo.', 'Đơn mới đã xác minh email, đang chờ Staff Leader Hà Nội kiểm tra thành phần mentor và lịch sử dụng khu innovation hub.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Vietnam–Japan Startup Network Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Vietnam–Japan Startup Network Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
+  (42026, 'Tokyo Metropolitan Smart Campus Delegation', 'CAMPUS_TOUR', NULL, 'Khảo sát hạ tầng thông minh, khu học tập số và quy trình vận hành sự kiện.', 'Host đang hoàn thiện biển đón, xác nhận điểm tập kết xe và phân công sinh viên hỗ trợ theo từng chặng tham quan.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Tokyo Metropolitan Smart Campus Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Tokyo Metropolitan Smart Campus Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
+  (42027, 'ASEAN Youth Forum Study Visit', 'EXCHANGE', NULL, 'Tổ chức đối thoại thanh niên ASEAN và tham quan campus trong một buổi chiều.', 'Đơn chưa cung cấp xác nhận số lượng khách quốc tế, yêu cầu an ninh và thông tin trưởng đoàn nên campus chưa thể phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho ASEAN Youth Forum Study Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của ASEAN Youth Forum Study Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
+  (42028, 'Kyoto Creative Lab Campus Exchange', 'WORKSHOP', NULL, 'Tổ chức workshop thiết kế sáng tạo với sinh viên ngành multimedia.', 'Người đăng ký tự hủy vì đoàn đổi thời gian sang quý sau; dữ liệu vẫn giữ để kiểm thử danh sách đơn đã hủy của Visitor.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Kyoto Creative Lab Campus Exchange vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Kyoto Creative Lab Campus Exchange chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
+  (42029, 'National Chengchi University Partnership Visit', 'SIGNING_CEREMONY', NULL, 'Rà soát nội dung hợp tác và tổ chức phiên ký biên bản ghi nhớ cấp đơn vị.', 'Hồ sơ đã đóng sau lễ ký, biên bản và danh sách đầu việc được xác nhận; Staff Leader Hà Nội là host chính của chuyến thăm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho National Chengchi University Partnership Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'National Chengchi University Partnership Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
+  (42030, 'Asia-Pacific Academic Alliance Mission', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Asia-Pacific Academic Alliance Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42031, 'Asia-Pacific Academic Alliance Mission - TP.HCM', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Asia-Pacific Academic Alliance Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
 
 -- G. Realistic guest and external-support rosters
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
@@ -16023,87 +15524,351 @@ DELETE FROM minutes WHERE minutes_id BETWEEN 49001 AND 49020;
 DELETE FROM visit_logistics_items WHERE logistics_item_id BETWEEN 48004 AND 48008;
 DELETE FROM files WHERE file_id BETWEEN 61001 AND 61050;
 
--- R1. Primary-contact stories: one pending initial claim, one applied initial
--- claim and one pending transfer while the current ACTIVE owner remains in place.
-UPDATE visit_requests
-SET visitor_user_id = NULL,
-    contact_person_full_name = 'Laura Bennett',
-    contact_person_organization = 'Northbridge Institute of Education',
-    contact_person_phone = '+442079460812',
-    contact_person_email = 'laura.bennett@northbridge-edu.example',
-    primary_contact_access_status = 'PENDING_CONFIRMATION',
-    primary_contact_verified_at = NULL,
-    updated_at = CURRENT_TIMESTAMP - INTERVAL 2 DAY,
-    updated_by = @u_sl_hn
-WHERE visit_request_id = 41001;
+-- ---------------------------------------------------------------------------
+-- R1. OPERATIONAL CONTACT SCENARIO MATRIX (plan §4.4)
+--
+-- Eleven named, business-readable cases for the per-campus confirmation gate. They use a
+-- dedicated id range (requests 47001+, instances 47101+, identity changes 67001+) so they
+-- never collide with the curated demo journeys above.
+--
+-- Guards are already live at this point in the script, so every row here must be legal on
+-- arrival: a campus may only hold NULL operational_contact_user_id while it is
+-- WAITING_CONTACT_CONFIRMATION, and a request may only leave PENDING_CONTACT_CONFIRMATION
+-- once no active campus is unconfirmed. Insert order is therefore request -> campus ->
+-- detail, and the request status is written to match the campuses it will get.
+-- ---------------------------------------------------------------------------
 
-UPDATE visit_request_revision_history
-SET snapshot_json = JSON_OBJECT(
-      'requestCode','CURATED-HN-SL-PENDING',
-      'registrantEmail','staff.leader.hn@fpt.edu.vn',
-      'primaryContactEmail','laura.bennett@northbridge-edu.example',
-      'primaryContactAccessStatus','PENDING_CONFIRMATION',
-      'visitScope','SINGLE_CAMPUS'
-    ),
-    reason = 'Baseline request có registrant nội bộ và đầu mối chính khác người đăng ký; đầu mối đang chờ xác nhận quyền quản lý yêu cầu.'
-WHERE request_revision_history_id = 46201
-  AND visit_request_id = 41001;
+SET @op_visitor := @u_visitor_main;          -- registrant for the visitor-submitted cases
+SET @op_external := @u_nvt;                  -- a real account used as an external contact
+SET @op_now := CURRENT_TIMESTAMP;
 
-INSERT INTO visit_request_identity_changes
-  (identity_change_id, visit_request_id, change_kind, target_relation, confirmation_method,
-   old_user_id, new_user_id, old_email_normalized, new_email_normalized, new_email_masked,
-   pending_snapshot_json, status, expected_request_row_version, requested_by, requested_at,
-   expires_at, applied_at, declined_at, cancelled_at, superseded_at, retention_until,
-   redacted_at, reason, resend_count, created_at, updated_at)
+DELETE FROM visit_request_identity_change_events WHERE identity_change_id BETWEEN 67001 AND 67099;
+DELETE FROM visit_request_identity_changes      WHERE identity_change_id BETWEEN 67001 AND 67099;
+DELETE FROM visit_instance_form_details         WHERE visit_instance_id  BETWEEN 47101 AND 47199;
+DELETE FROM visit_request_campuses              WHERE visit_instance_id  BETWEEN 47101 AND 47199;
+DELETE FROM visit_requests                      WHERE visit_request_id   BETWEEN 47001 AND 47099;
+
+-- Parent requests. Status reflects the end state each case is meant to demonstrate.
+INSERT INTO visit_requests
+  (visit_request_id, request_code, registrant_user_id, created_source, has_mixed_campus_details,
+   registrant_full_name, registrant_organization, registrant_job_title, registrant_phone,
+   registrant_email, registrant_nationality, visit_scope, contact_gate_revision, status,
+   submitted_at, email_verified_at, row_version, created_at, created_by)
 VALUES
-  (67001, 41001, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
-   NULL, NULL, NULL, 'laura.bennett@northbridge-edu.example', 'l***@northbridge-edu.example',
-   JSON_OBJECT('contactFullName','Laura Bennett','requestCode','CURATED-HN-SL-PENDING',
-               'delegationName','Helsinki Education Governance Delegation'),
-   'PENDING', 0, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY,
-   CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, NULL, NULL,
-   CURRENT_TIMESTAMP + INTERVAL 91 DAY, NULL,
-   'Mời đầu mối do người đăng ký nội bộ cung cấp xác nhận quyền quản lý đơn.', 1,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (67002, 41002, 'INITIAL_CLAIM', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
-   NULL, @u_nvt, NULL, 'nvtcanhwork@gmail.com', 'n***@gmail.com',
-   JSON_OBJECT('contactFullName','Nguyễn Văn T. Cảnh','requestCode','CURATED-HN-SL-HOST-ASSIGNED',
-               'delegationName','British Council Digital Skills Roundtable'),
-   'APPLIED', 0, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 5 DAY,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY,
-   NULL, NULL, NULL, CURRENT_TIMESTAMP + INTERVAL 87 DAY, NULL,
-   'Đầu mối đã đăng nhập Google và nhận quyền quản lý yêu cầu.', 0,
-   CURRENT_TIMESTAMP - INTERVAL 5 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
-  (67003, 41003, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO',
-   @u_visitor_main, NULL, 'visitor@example.com', 'operations@osaka-ai.example',
-   'o***@osaka-ai.example',
-   JSON_OBJECT('currentContactName','Kim Min Jae','newContactEmail','operations@osaka-ai.example',
-               'requestCode','CURATED-HN-SL-HOST-BEFORE'),
-   'PENDING', 0, @u_visitor_main, CURRENT_TIMESTAMP - INTERVAL 1 DAY,
-   CURRENT_TIMESTAMP + INTERVAL 1 DAY, NULL, NULL, NULL, NULL,
-   CURRENT_TIMESTAMP + INTERVAL 91 DAY, NULL,
-   'Đầu mối hiện tại bàn giao quyền quản lý cho điều phối viên vận hành của đoàn.', 0,
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL);
+  (47001, 'OPC-01-SELF-SINGLE', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 1, 'PENDING_APPROVAL',
+   @op_now - INTERVAL 9 DAY, @op_now - INTERVAL 9 DAY, 0, @op_now - INTERVAL 9 DAY, @op_visitor),
+  (47002, 'OPC-02-SELF-MULTI', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'PENDING_APPROVAL',
+   @op_now - INTERVAL 9 DAY, @op_now - INTERVAL 9 DAY, 0, @op_now - INTERVAL 9 DAY, @op_visitor),
+  (47003, 'OPC-03-MIXED-PENDING', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 0,
+   'PENDING_CONTACT_CONFIRMATION',
+   @op_now - INTERVAL 2 DAY, @op_now - INTERVAL 2 DAY, 0, @op_now - INTERVAL 2 DAY, @op_visitor),
+  (47004, 'OPC-04-ALL-CONFIRMED', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'PENDING_APPROVAL',
+   @op_now - INTERVAL 8 DAY, @op_now - INTERVAL 8 DAY, 0, @op_now - INTERVAL 8 DAY, @op_visitor),
+  (47005, 'OPC-05-PARTIAL', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'PARTIALLY_APPROVED',
+   @op_now - INTERVAL 12 DAY, @op_now - INTERVAL 12 DAY, 0, @op_now - INTERVAL 12 DAY, @op_visitor),
+  (47006, 'OPC-06-APPROVED-MIXED', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'APPROVED',
+   @op_now - INTERVAL 14 DAY, @op_now - INTERVAL 14 DAY, 0, @op_now - INTERVAL 14 DAY, @op_visitor),
+  (47007, 'OPC-07-ALL-REJECTED', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'REJECTED',
+   @op_now - INTERVAL 16 DAY, @op_now - INTERVAL 16 DAY, 0, @op_now - INTERVAL 16 DAY, @op_visitor),
+  (47008, 'OPC-08-LEADER-REGISTRANT-GATED', @u_sl_hn, 'STAFF_CREATED', 0,
+   'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế',
+   '0901000003', 'staff.leader.hn@fpt.edu.vn', 'Việt Nam', 'MULTI_CAMPUS', 0,
+   'PENDING_CONTACT_CONFIRMATION',
+   @op_now - INTERVAL 1 DAY, @op_now - INTERVAL 1 DAY, 0, @op_now - INTERVAL 1 DAY, @u_sl_hn),
+  (47009, 'OPC-09-ONE-CONTACT-MANY-CAMPUS', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'PENDING_APPROVAL',
+   @op_now - INTERVAL 6 DAY, @op_now - INTERVAL 6 DAY, 0, @op_now - INTERVAL 6 DAY, @op_visitor),
+  (47010, 'OPC-10-INVITATION-LIFECYCLE', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'SINGLE_CAMPUS', 0,
+   'PENDING_CONTACT_CONFIRMATION',
+   @op_now - INTERVAL 5 DAY, @op_now - INTERVAL 5 DAY, 0, @op_now - INTERVAL 5 DAY, @op_visitor),
+  (47011, 'OPC-11-HO-MONITOR-ONLY', @op_visitor, 'VISITOR_SUBMITTED', 0,
+   'Kim Min Jae', 'SeoulTech Global Engagement Center', 'Director of Global Programs',
+   '+821012340001', 'visitor@example.com', 'Hàn Quốc', 'MULTI_CAMPUS', 1, 'PARTIALLY_APPROVED',
+   @op_now - INTERVAL 11 DAY, @op_now - INTERVAL 11 DAY, 0, @op_now - INTERVAL 11 DAY, @op_visitor);
+
+-- Campus instances. NULL contact only where the campus is WAITING_CONTACT_CONFIRMATION.
+INSERT INTO visit_request_campuses
+  (visit_instance_id, visit_request_id, campus_id, planned_start_at, planned_end_at, status,
+   operational_contact_user_id, operational_contact_confirmed_at, operational_contact_confirmation_source,
+   coordinator_user_id, current_host_user_id, host_assigned_by, host_assigned_at,
+   decided_by, decided_at, decision_actor_role, decision_source, decision_note,
+   row_version, created_at, created_by)
+VALUES
+  -- 01 single campus, contact == registrant: auto-linked at submit, no invitation
+  (47101, 47001, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 9 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 9 DAY, @op_visitor),
+
+  -- 02 multi campus, every contact == registrant: both queues open at once
+  (47102, 47002, 1, CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 21 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 9 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 9 DAY, @op_visitor),
+  (47103, 47002, 2, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 9 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hcm, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 9 DAY, @op_visitor),
+
+  -- 03 mixed: HN self-matched, HCM still waiting -> NO Staff Leader may see either campus
+  (47104, 47003, 1, CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 25 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 2 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 2 DAY, @op_visitor),
+  (47105, 47003, 2, CURRENT_DATE + INTERVAL 26 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 26 DAY + INTERVAL 11 HOUR, 'WAITING_CONTACT_CONFIRMATION',
+   NULL, NULL, NULL,
+   @u_sl_hcm, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 2 DAY, @op_visitor),
+
+  -- 04 every contact confirmed (one external accepted by email) -> both queues open
+  (47106, 47004, 1, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 8 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 8 DAY, @op_visitor),
+  (47107, 47004, 3, CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 14 HOUR,
+   CURRENT_DATE + INTERVAL 19 DAY + INTERVAL 16 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_external, @op_now - INTERVAL 7 DAY, 'EMAIL_CONFIRMATION',
+   @u_sl_dn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 8 DAY, @op_visitor),
+
+  -- 05 one approved + one still pending -> PARTIALLY_APPROVED
+  (47108, 47005, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   @op_visitor, @op_now - INTERVAL 12 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 10 DAY,
+   @u_sl_hn, @op_now - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HN tiếp nhận đoàn; host đã được phân công cùng lúc với quyết định duyệt.',
+   0, @op_now - INTERVAL 12 DAY, @op_visitor),
+  (47109, 47005, 2, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 12 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hcm, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 12 DAY, @op_visitor),
+
+  -- 06 approved + rejected, nothing pending -> aggregate APPROVED
+  (47110, 47006, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   @op_visitor, @op_now - INTERVAL 14 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 12 DAY,
+   @u_sl_hn, @op_now - INTERVAL 12 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HN xác nhận tiếp nhận đoàn.', 0, @op_now - INTERVAL 14 DAY, @op_visitor),
+  (47111, 47006, 2, CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 11 DAY + INTERVAL 11 HOUR, 'REJECTED',
+   @op_visitor, @op_now - INTERVAL 14 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hcm, NULL, NULL, NULL,
+   @u_sl_hcm, @op_now - INTERVAL 12 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HCM không bố trí được lịch trong khung thời gian đoàn đề nghị.',
+   0, @op_now - INTERVAL 14 DAY, @op_visitor),
+
+  -- 07 every campus rejected -> aggregate REJECTED
+  (47112, 47007, 1, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 11 HOUR, 'REJECTED',
+   @op_visitor, @op_now - INTERVAL 16 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL,
+   @u_sl_hn, @op_now - INTERVAL 15 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HN trùng lịch sự kiện lớn, không tiếp nhận được đoàn.',
+   0, @op_now - INTERVAL 16 DAY, @op_visitor),
+  (47113, 47007, 2, CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 9 DAY + INTERVAL 11 HOUR, 'REJECTED',
+   @op_visitor, @op_now - INTERVAL 16 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hcm, NULL, NULL, NULL,
+   @u_sl_hcm, @op_now - INTERVAL 15 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HCM không đáp ứng được yêu cầu nội dung làm việc của đoàn.',
+   0, @op_now - INTERVAL 16 DAY, @op_visitor),
+
+  -- 08 the registrant IS the HN Staff Leader, yet the HCM contact is still unconfirmed:
+  --    the gate is global, so this leader must NOT see their own campus in the queue.
+  (47114, 47008, 1, CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 17 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @u_sl_hn, @op_now - INTERVAL 1 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 1 DAY, @u_sl_hn),
+  (47115, 47008, 2, CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 18 DAY + INTERVAL 11 HOUR, 'WAITING_CONTACT_CONFIRMATION',
+   NULL, NULL, NULL,
+   @u_sl_hcm, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 1 DAY, @u_sl_hn),
+
+  -- 09 one account is the operational contact of three campuses at once
+  (47116, 47009, 1, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_external, @op_now - INTERVAL 5 DAY, 'EMAIL_CONFIRMATION',
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 6 DAY, @op_visitor),
+  (47117, 47009, 2, CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 14 HOUR,
+   CURRENT_DATE + INTERVAL 15 DAY + INTERVAL 16 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_external, @op_now - INTERVAL 5 DAY, 'EMAIL_CONFIRMATION',
+   @u_sl_hcm, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 6 DAY, @op_visitor),
+  (47118, 47009, 3, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 11 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_external, @op_now - INTERVAL 5 DAY, 'EMAIL_CONFIRMATION',
+   @u_sl_dn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 6 DAY, @op_visitor),
+
+  -- 10 invitation lifecycle: expired + superseded + a live resent token on one campus
+  (47119, 47010, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 11 HOUR, 'WAITING_CONTACT_CONFIRMATION',
+   NULL, NULL, NULL,
+   @u_sl_hn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 5 DAY, @op_visitor),
+
+  -- 11 HO monitor-only: a live mixed-status request HO can read but never mutate
+  (47120, 47011, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR,
+   CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   @op_visitor, @op_now - INTERVAL 11 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 9 DAY,
+   @u_sl_hn, @op_now - INTERVAL 9 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
+   'Campus HN tiếp nhận đoàn.', 0, @op_now - INTERVAL 11 DAY, @op_visitor),
+  (47121, 47011, 3, CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 14 HOUR,
+   CURRENT_DATE + INTERVAL 8 DAY + INTERVAL 16 HOUR, 'WAITING_REQUEST_APPROVAL',
+   @op_visitor, @op_now - INTERVAL 11 DAY, 'REGISTRANT_SELF_MATCH',
+   @u_sl_dn, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @op_now - INTERVAL 11 DAY, @op_visitor);
+
+-- Per-campus form snapshots. operational_contact_email is what the invitation binds to;
+-- for a self-match it is the registrant's own verified address.
+INSERT INTO visit_instance_form_details
+  (visit_instance_id, delegation_name, visit_type, purpose, working_content,
+   operational_contact_full_name, operational_contact_organization, operational_contact_phone,
+   operational_contact_email, working_language, media_consent_status,
+   form_revision, approval_revision, row_version, created_at, created_by)
+SELECT
+  vrc.visit_instance_id,
+  CONCAT('Operational contact scenario ', vr.request_code),
+  'MEETING',
+  'Bộ dữ liệu kiểm thử cổng xác nhận đầu mối vận hành theo từng cơ sở.',
+  'Mỗi cơ sở có đầu mối riêng; Staff Leader chỉ thấy đơn sau khi mọi đầu mối đã xác nhận.',
+  CASE
+    WHEN vrc.operational_contact_user_id IS NULL THEN 'Đầu mối chưa xác nhận'
+    ELSE COALESCE(oc.full_name, 'Đầu mối vận hành')
+  END,
+  'SeoulTech Global Engagement Center',
+  '+821012340001',
+  CASE
+    WHEN vrc.operational_contact_user_id IS NULL
+      THEN CONCAT('pending.contact.', vrc.visit_instance_id, '@northbridge-edu.example')
+    ELSE oc.email
+  END,
+  'EN', 'AGREED', 1, 1, 0, vrc.created_at, vr.registrant_user_id
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+LEFT JOIN users oc ON oc.user_id = vrc.operational_contact_user_id
+WHERE vrc.visit_instance_id BETWEEN 47101 AND 47199;
+
+-- Invitation state machine, per campus.
+INSERT INTO visit_request_identity_changes
+  (identity_change_id, visit_request_id, visit_instance_id, change_kind, token_version,
+   confirmation_method, old_user_id, new_user_id, new_email_normalized, new_email_masked,
+   status, expected_request_row_version, requested_by, requested_at, expires_at, applied_at,
+   superseded_at, reason, resend_count, created_at)
+VALUES
+  -- 03: HCM contact invited, still waiting
+  (67001, 47003, 47105, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, NULL,
+   'pending.contact.47105@northbridge-edu.example', 'p***@northbridge-edu.example',
+   'PENDING', 0, @op_visitor, @op_now - INTERVAL 2 DAY, @op_now + INTERVAL 70 HOUR, NULL, NULL,
+   'Mời đầu mối vận hành cơ sở HCM xác nhận.', 0, @op_now - INTERVAL 2 DAY),
+
+  -- 04: the DN contact accepted by email
+  (67002, 47004, 47107, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, @op_external,
+   'nvtcanhwork@gmail.com', 'n***@gmail.com',
+   'APPLIED', 0, @op_visitor, @op_now - INTERVAL 8 DAY, @op_now - INTERVAL 5 DAY,
+   @op_now - INTERVAL 7 DAY, NULL,
+   'Đầu mối cơ sở Đà Nẵng đã xác nhận bằng tài khoản Google đúng email được mời.', 0,
+   @op_now - INTERVAL 8 DAY),
+
+  -- 08: the sibling HCM contact keeping a Staff-Leader-registered request behind the gate
+  (67003, 47008, 47115, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, NULL,
+   'pending.contact.47115@northbridge-edu.example', 'p***@northbridge-edu.example',
+   'PENDING', 0, @u_sl_hn, @op_now - INTERVAL 1 DAY, @op_now + INTERVAL 71 HOUR, NULL, NULL,
+   'Mời đầu mối cơ sở HCM; người đăng ký là Staff Leader HN nhưng vẫn bị chặn bởi cổng chung.', 0,
+   @op_now - INTERVAL 1 DAY),
+
+  -- 09: the same account confirmed three campuses — one identity row per campus
+  (67004, 47009, 47116, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, @op_external,
+   'nvtcanhwork@gmail.com', 'n***@gmail.com', 'APPLIED', 0, @op_visitor,
+   @op_now - INTERVAL 6 DAY, @op_now - INTERVAL 3 DAY, @op_now - INTERVAL 5 DAY, NULL,
+   'Cùng một người phụ trách nhiều cơ sở: xác nhận riêng cho cơ sở HN.', 0, @op_now - INTERVAL 6 DAY),
+  (67005, 47009, 47117, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, @op_external,
+   'nvtcanhwork@gmail.com', 'n***@gmail.com', 'APPLIED', 0, @op_visitor,
+   @op_now - INTERVAL 6 DAY, @op_now - INTERVAL 3 DAY, @op_now - INTERVAL 5 DAY, NULL,
+   'Cùng một người phụ trách nhiều cơ sở: xác nhận riêng cho cơ sở HCM.', 0, @op_now - INTERVAL 6 DAY),
+  (67006, 47009, 47118, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, @op_external,
+   'nvtcanhwork@gmail.com', 'n***@gmail.com', 'APPLIED', 0, @op_visitor,
+   @op_now - INTERVAL 6 DAY, @op_now - INTERVAL 3 DAY, @op_now - INTERVAL 5 DAY, NULL,
+   'Cùng một người phụ trách nhiều cơ sở: xác nhận riêng cho cơ sở Đà Nẵng.', 0, @op_now - INTERVAL 6 DAY),
+
+  -- 10: expired, then superseded by a resend, then a live token — all on one campus.
+  --     Only the last one is PENDING, which is what the per-campus pending guard allows.
+  (67007, 47010, 47119, 'INITIAL_CONFIRMATION', 1, 'GOOGLE_SSO', NULL, NULL,
+   'pending.contact.47119@northbridge-edu.example', 'p***@northbridge-edu.example',
+   'EXPIRED', 0, @op_visitor, @op_now - INTERVAL 5 DAY, @op_now - INTERVAL 2 DAY, NULL, NULL,
+   'Lời mời đầu tiên hết hạn sau 72 giờ mà đầu mối không xác nhận.', 0, @op_now - INTERVAL 5 DAY),
+  (67008, 47010, 47119, 'INITIAL_CONFIRMATION', 2, 'GOOGLE_SSO', NULL, NULL,
+   'pending.contact.47119@northbridge-edu.example', 'p***@northbridge-edu.example',
+   'SUPERSEDED', 0, @op_visitor, @op_now - INTERVAL 2 DAY, @op_now + INTERVAL 22 HOUR, NULL,
+   @op_now - INTERVAL 1 DAY,
+   'Gửi lại lần 1; bị thay thế bởi lần gửi mới nên token cũ chết ngay trong cùng transaction.', 1,
+   @op_now - INTERVAL 2 DAY),
+  (67009, 47010, 47119, 'INITIAL_CONFIRMATION', 3, 'GOOGLE_SSO', NULL, NULL,
+   'pending.contact.47119@northbridge-edu.example', 'p***@northbridge-edu.example',
+   'PENDING', 0, @op_visitor, @op_now - INTERVAL 1 DAY, @op_now + INTERVAL 47 HOUR, NULL, NULL,
+   'Gửi lại lần 2; đây là lời mời còn hiệu lực duy nhất của cơ sở này.', 2,
+   @op_now - INTERVAL 1 DAY);
 
 INSERT INTO visit_request_identity_change_events
-  (identity_change_event_id, identity_change_id, visit_request_id, event_type,
-   from_status, to_status, actor_user_id, email_masked, reason, correlation_id, created_at)
+  (identity_change_id, visit_request_id, visit_instance_id, event_type, from_status, to_status,
+   actor_user_id, email_masked, reason, correlation_id, created_at)
 VALUES
-  (67101, 67001, 41001, 'INITIAL_CLAIM_CREATED', NULL, 'PENDING', @u_sl_hn,
-   'l***@northbridge-edu.example', 'Tạo lời mời đầu mối ban đầu.', 'seed-claim-67001',
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY),
-  (67102, 67001, 41001, 'INVITATION_RESENT', 'PENDING', 'PENDING', @u_sl_hn,
-   'l***@northbridge-edu.example', 'Gửi lại sau khi đầu mối báo chưa nhận được thư lần đầu.', 'seed-claim-67001-resend',
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (67103, 67002, 41002, 'INITIAL_CLAIM_CREATED', NULL, 'PENDING', @u_sl_hn,
-   'n***@gmail.com', 'Tạo lời mời đầu mối ban đầu.', 'seed-claim-67002',
-   CURRENT_TIMESTAMP - INTERVAL 5 DAY),
-  (67104, 67002, 41002, 'INITIAL_CLAIM_APPLIED', 'PENDING', 'APPLIED', @u_nvt,
-   'n***@gmail.com', 'Đầu mối xác nhận bằng Google SSO.', 'seed-claim-67002-apply',
-   CURRENT_TIMESTAMP - INTERVAL 3 DAY),
-  (67105, 67003, 41003, 'TRANSFER_CREATED', NULL, 'PENDING', @u_visitor_main,
-   'o***@osaka-ai.example', 'Khởi tạo bàn giao quyền đầu mối.', 'seed-transfer-67003',
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY);
+  (67001, 47003, 47105, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @op_visitor,
+   'p***@northbridge-edu.example', 'Tạo lời mời xác nhận đầu mối cơ sở HCM.', 'opc-03', @op_now - INTERVAL 2 DAY),
+  (67002, 47004, 47107, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @op_visitor,
+   'n***@gmail.com', 'Tạo lời mời xác nhận đầu mối cơ sở Đà Nẵng.', 'opc-04', @op_now - INTERVAL 8 DAY),
+  (67002, 47004, 47107, 'OPERATIONAL_CONTACT_CONFIRMED', 'PENDING', 'APPLIED', @op_external,
+   'n***@gmail.com', 'Đầu mối xác nhận đúng email được mời.', 'opc-04', @op_now - INTERVAL 7 DAY),
+  (67003, 47008, 47115, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @u_sl_hn,
+   'p***@northbridge-edu.example', 'Người đăng ký nội bộ mời đầu mối cơ sở HCM.', 'opc-08', @op_now - INTERVAL 1 DAY),
+  (67007, 47010, 47119, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @op_visitor,
+   'p***@northbridge-edu.example', 'Lời mời lần đầu.', 'opc-10', @op_now - INTERVAL 5 DAY),
+  (67007, 47010, 47119, 'OPERATIONAL_CONTACT_EXPIRED', 'PENDING', 'EXPIRED', NULL,
+   'p***@northbridge-edu.example', 'Hết hạn 72 giờ.', 'opc-10', @op_now - INTERVAL 2 DAY),
+  (67008, 47010, 47119, 'OPERATIONAL_CONTACT_SUPERSEDED', 'PENDING', 'SUPERSEDED', @op_visitor,
+   'p***@northbridge-edu.example', 'Bị thay thế bởi lần gửi lại mới hơn.', 'opc-10', @op_now - INTERVAL 1 DAY),
+  (67009, 47010, 47119, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @op_visitor,
+   'p***@northbridge-edu.example', 'Lời mời còn hiệu lực.', 'opc-10', @op_now - INTERVAL 1 DAY);
+
+-- Scenario coverage assertions. Every issue_count must be 0.
+SELECT 'opc_scenario_request_count' AS check_name, 11 - COUNT(*) AS issue_count
+FROM visit_requests WHERE visit_request_id BETWEEN 47001 AND 47099;
+
+-- Năm trạng thái aggregate mà bộ kịch bản này phải phủ: PENDING_CONTACT_CONFIRMATION,
+-- PENDING_APPROVAL, PARTIALLY_APPROVED, APPROVED, REJECTED. CANCELLED không thuộc §4.4.
+SELECT 'opc_scenario_aggregate_states' AS check_name,
+       5 - COUNT(DISTINCT status) AS issue_count
+FROM visit_requests WHERE visit_request_id BETWEEN 47001 AND 47099;
+
+SELECT 'opc_scenario_one_contact_many_campuses' AS check_name,
+       CASE WHEN (SELECT COUNT(*) FROM visit_request_campuses
+                  WHERE visit_request_id = 47009
+                    AND operational_contact_user_id = @op_external) = 3
+            THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'opc_scenario_gate_blocks_leader_registrant' AS check_name,
+       CASE WHEN (SELECT status FROM visit_requests WHERE visit_request_id = 47008)
+                 = 'PENDING_CONTACT_CONFIRMATION'
+            THEN 0 ELSE 1 END AS issue_count;
+
+SELECT 'opc_scenario_invitation_lifecycle' AS check_name,
+       3 - COUNT(DISTINCT status) AS issue_count
+FROM visit_request_identity_changes WHERE visit_instance_id = 47119;
 
 -- R2. Correct Department participant relationships to match the code:
 -- Host invites the Department Leader; that leader assigns Department Staff.
@@ -16787,12 +16552,11 @@ SELECT 'hanoi_feedback_cases' AS metric, COUNT(*) AS value
 FROM feedbacks f JOIN visit_request_campuses vrc ON vrc.visit_instance_id=f.visit_instance_id
 WHERE vrc.campus_id=1 AND f.feedback_id BETWEEN 47001 AND 47050;
 
-SELECT 'invalid_primary_contact_not_visitor' AS check_name, COUNT(*) AS issue_count
-FROM visit_requests vr
-JOIN users u ON u.user_id=vr.visitor_user_id
-JOIN roles r ON r.role_id=u.role_id
-WHERE vr.visit_request_id BETWEEN 41001 AND 41028
-  AND (r.role_code<>'VISITOR' OR u.status<>'ACTIVE' OR vr.primary_contact_access_status<>'ACTIVE');
+SELECT 'invalid_operational_contact_not_active' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN users u ON u.user_id=vrc.operational_contact_user_id
+WHERE vrc.visit_request_id BETWEEN 41001 AND 41028
+  AND u.status<>'ACTIVE';
 
 SELECT 'invalid_hanoi_host_relation' AS check_name, COUNT(*) AS issue_count
 FROM visit_request_campuses vrc
@@ -17038,22 +16802,22 @@ WHERE et.template_code IN (
       AND d.created_at<=se.created_at
   );
 
-SELECT 'invalid_17_pending_confirmation_without_claim' AS check_name, COUNT(*) AS issue_count
-FROM visit_requests vr
-WHERE vr.visit_request_id BETWEEN 41001 AND 41028
-  AND vr.primary_contact_access_status='PENDING_CONFIRMATION'
+-- Campus chưa có đầu mối BẮT BUỘC có lời mời PENDING của đúng campus đó.
+SELECT 'invalid_17_unconfirmed_campus_without_invitation' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+WHERE vrc.status='WAITING_CONTACT_CONFIRMATION'
   AND NOT EXISTS (
     SELECT 1 FROM visit_request_identity_changes ic
-    WHERE ic.visit_request_id=vr.visit_request_id
-      AND ic.change_kind='INITIAL_CLAIM' AND ic.status='PENDING'
+    WHERE ic.visit_instance_id=vrc.visit_instance_id
+      AND ic.status='PENDING'
   );
 
-SELECT 'invalid_18_pending_claim_has_visitor' AS check_name, COUNT(*) AS issue_count
+-- Lời mời còn PENDING thì campus tương ứng KHÔNG được đã có đầu mối.
+SELECT 'invalid_18_pending_invitation_on_confirmed_campus' AS check_name, COUNT(*) AS issue_count
 FROM visit_request_identity_changes ic
-JOIN visit_requests vr ON vr.visit_request_id=ic.visit_request_id
-WHERE ic.identity_change_id BETWEEN 67001 AND 67003
-  AND ic.change_kind='INITIAL_CLAIM' AND ic.status='PENDING'
-  AND vr.visitor_user_id IS NOT NULL;
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id=ic.visit_instance_id
+WHERE ic.status='PENDING'
+  AND vrc.operational_contact_user_id IS NOT NULL;
 
 SELECT 'invalid_19_notification_only_seeded_as_email' AS check_name, COUNT(*) AS issue_count
 FROM sent_emails se
@@ -17162,8 +16926,7 @@ SET SQL_SAFE_UPDATES = @pems_old_safe_updates;
 
 -- Make phone numbers optional for visit requests
 ALTER TABLE visit_requests
-    MODIFY COLUMN registrant_phone VARCHAR(50) NULL,
-    MODIFY COLUMN contact_person_phone VARCHAR(50) NULL;
+    MODIFY COLUMN registrant_phone VARCHAR(50) NULL;
 
 ALTER TABLE visit_instance_form_details
     MODIFY COLUMN operational_contact_phone VARCHAR(50) NULL;
