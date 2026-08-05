@@ -164,6 +164,39 @@ describe('validateContent', () => {
     },
   );
 
+  /**
+   * A run of spaces is an ERROR, so the save button goes dead on it (V4 §7.4).
+   *
+   * The screen disables "Lưu thay đổi" on any issue of this severity and never calls the save API, so
+   * severity is the whole of the blocking behaviour here — and the backend answers the identical code,
+   * which is what makes a save attempted around this screen come back the same way.
+   */
+  it('refuses a run of spaces, per field and per language', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận tài khoản',
+      bodyVi: '<p>Chào {{fullName}}, vai trò {{roleName}} tại {{campusName}} — {{expiresInHours}} giờ.</p>',
+      subjectEn: 'Account confirmed',
+      bodyEn: '<p>Role&nbsp;&nbsp;&nbsp;{{roleName}} at {{campusName}} — {{expiresInHours}}h, {{fullName}}.</p>',
+    }));
+
+    const spacing = issues.filter(i => i.code === TEMPLATE_ERROR_CODES.spaceRunUnsupported);
+
+    expect(spacing).toHaveLength(1);
+    expect(spacing[0].field).toBe('bodyEn');       // names the tab that is actually holding the save
+    expect(spacing[0].severity).toBe('ERROR');
+    expect(spacing[0].messageVi).toContain('căn lề, thụt lề hoặc bảng');
+  });
+
+  it('says nothing about the indentation in formatted markup', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}</p>\n    <table>\n      <tr><td>{{roleName}}</td></tr>\n'
+        + '      <tr><td>{{campusName}}</td></tr>\n    </table>\n    <p>{{expiresInHours}} giờ</p>',
+    }));
+
+    expect(issues).toEqual([]);
+  });
+
   it('addresses each issue to the field that carries it', () => {
     const issues = validateContent(accountContract, content({
       subjectVi: 'Xin chào {{ghostA}}',

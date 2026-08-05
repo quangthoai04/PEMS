@@ -45,7 +45,9 @@ import {
 import {
   type EmailEditorCapabilities, type EmailEditorMode, capabilitiesFor,
 } from '../utils/emailEditorCapabilities';
-import { SPACE_RUN_WARNING, hasSpaceRun, sanitizePastedFragment } from '../utils/emailEditorPaste';
+import {
+  SPACE_RUN_WARNING, hasSpaceRun, htmlHasSpaceRun, sanitizePastedFragment,
+} from '../utils/emailEditorPaste';
 import { fromEditorHtml, toEditorHtml } from '../utils/emailEditorSystemNodes';
 import { countSystemActionNodes } from '../utils/systemActionNode';
 import {
@@ -473,8 +475,12 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
    *
    * Warned, not rewritten. Deleting characters out from under someone mid-sentence is worse than the
    * problem — and `&nbsp;` would be worse still, since it "works" in the composer and then refuses to
-   * wrap on a phone. The canonicalizer already collapses runs before the HTML is compared or sent, so
-   * nothing depends on the author acting on this.
+   * wrap on a phone.
+   *
+   * The warning is not the enforcement. Saving a template and asking for the final preview are both
+   * refused while a run is present, in the screen and again on the server, because a warning that can be
+   * scrolled past is a warning that ships. What this does is tell the author at the moment they make the
+   * run, rather than at the moment they press the button.
    */
   const handleChange = useCallback((html: string) => {
     const canonical = fromEditor(html);
@@ -482,11 +488,9 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     // Once per editing session, not once per keystroke: a warning that reappears on every space after
     // the third is noise, and the sender has already been told.
     if (typeof document !== 'undefined' && onNotice) {
-      const probe = document.createElement('div');
-      probe.innerHTML = html;
-      const text = probe.textContent ?? '';
-
-      if (hasSpaceRun(text)) {
+      // Asked of the DOCUMENT, not of its flattened text: `textContent` joins the end of one paragraph
+      // to the start of the next, so formatted markup reports runs that were never in one place.
+      if (htmlHasSpaceRun(html)) {
         if (!warnedSpaceRun.current) {
           warnedSpaceRun.current = true;
           onNotice(SPACE_RUN_WARNING);

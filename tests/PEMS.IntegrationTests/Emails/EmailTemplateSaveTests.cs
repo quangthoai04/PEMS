@@ -220,6 +220,56 @@ public sealed class EmailTemplateSaveTests : IDisposable
         Assert.Equal(before.BodyVi, after.BodyVi);
     }
 
+    /// <summary>
+    /// A run of spaces is refused at save, and nothing is written (V4 §7.4).
+    ///
+    /// <para>
+    /// The editor already says so as the operator types, but a notice can be scrolled past and this is
+    /// the copy of the rule that decides. Stored content that lines a column up with spaces is worse
+    /// than a one-off mistake: it goes out to every future recipient of that template, holding its width
+    /// in the composer and refusing to wrap on a phone.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_run_of_spaces_is_refused_at_save()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+
+        var before = await LoadAsync(db, OrdinaryTemplate);
+
+        var ex = await Assert.ThrowsAsync<EmailTemplateContentException>(
+            () => EmailTemplateHandlers.Update(db).Handle(
+                Save(before, bodyVi: before.BodyVi + "<p>Cột A&nbsp;&nbsp;&nbsp;Cột B</p>"),
+                CancellationToken.None));
+
+        var issue = Assert.Single(ex.Issues, i => i.Code == EmailErrorCodes.TemplateSpaceRunUnsupported);
+        Assert.Equal("bodyVi", issue.Field);      // names the language, so the other tab is not searched
+
+        var after = await LoadAsync(db, OrdinaryTemplate);
+        Assert.Equal(before.Revision, after.Revision);
+        Assert.Equal(before.BodyVi, after.BodyVi);
+    }
+
+    /// <summary>
+    /// …and the shipped content saves untouched. A validation added to content that already exists has
+    /// exactly one catastrophic failure mode: the operator opens a template and cannot save it.
+    /// </summary>
+    [Fact]
+    public async Task The_stored_content_of_a_shipped_template_still_saves()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+
+        var before = await LoadAsync(db, OrdinaryTemplate);
+
+        var response = await EmailTemplateHandlers.Update(db).Handle(
+            Save(before, bodyVi: before.BodyVi, bodyEn: before.BodyEn),
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+    }
+
     /// <summary>…and the same placeholder saves cleanly on a template whose capability permits it.</summary>
     [Fact]
     public async Task A_sender_variable_saves_on_a_capable_template()

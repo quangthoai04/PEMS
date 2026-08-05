@@ -27,11 +27,19 @@ const ASSEMBLED = '<div>MAU-EMAIL-DAY-DU<p>NOI-DUNG-SOAN</p><span>NUT-BAM</span>
 const FINAL = '<div>KET-QUA-CUOI<span>NUT-BAM</span></div>';
 
 /** The modal with the parent state it is controlled by, so an edit actually reaches it. */
-function Harness({ onSend = vi.fn() }: { onSend?: (p: EmailPreviewSendPayload) => void }) {
+function Harness({
+  onSend = vi.fn(), body: initialBody = EDITABLE,
+}: { onSend?: (p: EmailPreviewSendPayload) => void; body?: string }) {
   const [subject, setSubject] = useState('Chủ đề');
-  const [body, setBody] = useState(EDITABLE);
+  const [body, setBody] = useState(initialBody);
 
   return (
+    <>
+    {/* Stands in for the author repairing the text: the parent owns `body`, so this is the same data
+        path an edit in the editor travels. */}
+    <button type="button" onClick={() => setBody(`<p>Cột A Cột B</p>${SYSTEM_ACTION_NODE}`)}>
+      sua-noi-dung
+    </button>
     <EmailPreviewModal
       open
       loading={false}
@@ -55,6 +63,7 @@ function Harness({ onSend = vi.fn() }: { onSend?: (p: EmailPreviewSendPayload) =
       onRestore={vi.fn()}
       onSend={onSend}
     />
+    </>
   );
 }
 
@@ -276,5 +285,75 @@ describe('EmailPreviewModal — what stays put across the stages', () => {
     fireEvent.click(screen.getByRole('button', { name: /Xem trước kết quả/ }));
     await screen.findByTestId('final-preview-body');
     present();
+  });
+});
+
+/**
+ * A run of spaces stops the message here (V4 §7.4).
+ *
+ * <b>Why blocking and not warning.</b> The notice the editor raises can be scrolled past, and the next
+ * press mints a signed final-preview token over a body that holds its width in the composer and refuses
+ * to wrap on a phone. The server refuses it too — this is the copy of the rule that saves the sender a
+ * round trip, not the copy that enforces it.
+ */
+describe('EmailPreviewModal — spacing blocks the way forward', () => {
+  beforeEach(() => {
+    vi.mocked(delegationsApi.buildFinalEmailPreview).mockReset();
+    vi.mocked(delegationsApi.buildFinalEmailPreview).mockResolvedValue({
+      subject: 'Chủ đề',
+      finalPreviewHtml: FINAL,
+      finalPreviewToken: 'tok-final',
+      expiresAt: '2026-08-05T12:00:00+07:00',
+    } as any);
+  });
+
+  const WITH_RUN = `<p>Cột A&nbsp;&nbsp;&nbsp;Cột B</p>${SYSTEM_ACTION_NODE}`;
+
+  it('refuses the final preview while a run is present', async () => {
+    render(<Harness body={WITH_RUN} />);
+    await enterEdit();
+
+    const button = screen.getByRole('button', { name: /Xem trước kết quả/ });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(button);
+    expect(delegationsApi.buildFinalEmailPreview).not.toHaveBeenCalled();
+  });
+
+  it('says why, next to the button that will not move', async () => {
+    render(<Harness body={WITH_RUN} />);
+    await enterEdit();
+
+    expect((await screen.findByTestId('space-run-block')).textContent)
+      .toContain('căn lề, thụt lề hoặc bảng');
+  });
+
+  /** Clean content is unaffected — the block must not become a permanent obstacle. */
+  it('lets an ordinary message through', async () => {
+    render(<Harness />);
+    await enterEdit();
+
+    expect(screen.queryByTestId('space-run-block')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Xem trước kết quả/ }));
+    await waitFor(() => expect(delegationsApi.buildFinalEmailPreview).toHaveBeenCalled());
+  });
+
+  /**
+   * And it clears once the author repairs it — the same document, edited, stops being blocked. A block
+   * that outlives its cause is worse than none: the sender fixes the text, the button stays dead, and
+   * the next thing they try is a different route to the same send.
+   */
+  it('clears when the run is removed', async () => {
+    render(<Harness body={WITH_RUN} />);
+    await enterEdit();
+    expect((screen.getByRole('button', { name: /Xem trước kết quả/ }) as HTMLButtonElement).disabled)
+      .toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'sua-noi-dung' }));
+
+    await waitFor(() => expect(screen.queryByTestId('space-run-block')).toBeNull());
+    expect((screen.getByRole('button', { name: /Xem trước kết quả/ }) as HTMLButtonElement).disabled)
+      .toBe(false);
   });
 });

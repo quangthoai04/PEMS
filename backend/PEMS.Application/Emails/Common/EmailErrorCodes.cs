@@ -72,6 +72,12 @@ public static class EmailErrorCodes
     /// </summary>
     public const string AuthoredTableUnsupported = "EMAIL_AUTHORED_TABLE_UNSUPPORTED";
 
+    /// <summary>
+    /// The body lines something up with a run of spaces. Refused rather than collapsed: rewriting it
+    /// would deliver a message different from the one the sender approved. See <see cref="EmailSpaceRuns"/>.
+    /// </summary>
+    public const string AuthoredSpaceRunUnsupported = "EMAIL_AUTHORED_CONSECUTIVE_SPACES_NOT_ALLOWED";
+
     // ── Action-block integrity ───────────────────────────────────────────────
 
     /// <summary>
@@ -229,6 +235,9 @@ public static class EmailErrorCodes
 
     /// <summary>A template body carries a table an email cannot render — see <see cref="EmailTableRules"/>.</summary>
     public const string TemplateTableUnsupported = "EMAIL_TEMPLATE_TABLE_UNSUPPORTED";
+
+    /// <summary>Template content lines something up with a run of spaces — see <see cref="EmailSpaceRuns"/>.</summary>
+    public const string TemplateSpaceRunUnsupported = "EMAIL_TEMPLATE_CONSECUTIVE_SPACES_NOT_ALLOWED";
 
     /// <summary>The edit removed a variable this template cannot send a usable message without.</summary>
     public const string TemplateRequiredVariableMissing = "EMAIL_TEMPLATE_REQUIRED_VARIABLE_MISSING";

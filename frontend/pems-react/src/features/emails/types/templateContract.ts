@@ -10,6 +10,7 @@
  *
  * Everything below is fetched per template code. `GET /email-templates/contract/{code}`.
  */
+import { SPACE_RUN_WARNING, htmlHasSpaceRun } from '../utils/emailEditorPaste';
 
 /** Stable codes from `EmailErrorCodes`. Matched on the code, never on the Vietnamese message text. */
 export const TEMPLATE_ERROR_CODES = {
@@ -30,6 +31,15 @@ export const TEMPLATE_ERROR_CODES = {
    * credential and does not name a person.
    */
   senderVariableNotAllowed: 'EMAIL_TEMPLATE_SENDER_VARIABLE_NOT_ALLOWED',
+  /**
+   * The field lines something up with a run of spaces (V4 §7.4).
+   *
+   * Blocking rather than advisory: HTML collapses runs of plain spaces, so the column arrives ragged,
+   * and the editor's own `&nbsp;` spelling is the worse outcome — it holds its width in the composer and
+   * then refuses to wrap on a phone. The same code comes back from the server, so a save attempted
+   * around this screen is answered identically.
+   */
+  spaceRunUnsupported: 'EMAIL_TEMPLATE_CONSECUTIVE_SPACES_NOT_ALLOWED',
   templateNotFound: 'EMAIL_TEMPLATE_NOT_FOUND',
   catalogFixed: 'EMAIL_TEMPLATE_CATALOG_FIXED',
   fieldImmutable: 'EMAIL_TEMPLATE_FIELD_IMMUTABLE',
@@ -433,6 +443,21 @@ export function validateContent(
           severity: 'ERROR',
         });
       }
+    }
+
+    // Spacing is judged per field, so an operator with a clean Vietnamese tab is told that the English
+    // one is what is holding the save. A subject counts too: it is one line of visible text, and a run
+    // in it survives into the recipient's list view and into the stored history exactly as typed.
+    if (htmlHasSpaceRun(content[field] ?? '')) {
+      issues.push({
+        field,
+        code: TEMPLATE_ERROR_CODES.spaceRunUnsupported,
+        variableName: null,
+        messageVi: SPACE_RUN_WARNING,
+        messageEn: 'The content has runs of consecutive spaces, which make the email render incorrectly '
+          + 'on phones. Use alignment, indentation or a table instead.',
+        severity: 'ERROR',
+      });
     }
   }
 

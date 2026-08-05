@@ -39,6 +39,7 @@ import {
 import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
+import { SPACE_RUN_WARNING, htmlHasSpaceRun } from '../../emails/utils/emailEditorPaste';
 import { hasSystemActionNode, renderSystemActionNode } from '../../emails/utils/systemActionNode';
 import { delegationsApi } from '../api/delegationsApi';
 import type {
@@ -142,6 +143,16 @@ export function EmailPreviewModal({
   const [finalising, setFinalising] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
   const inlineMapRef = useRef<Map<string, { fileId: number; contentId: string }>>(new Map());
+
+  /**
+   * A run of spaces blocks the way forward (V4 §7.4).
+   *
+   * The editor already says so as it happens, but a notice is something a person can scroll past — and
+   * the next press mints a final-preview token over a body that arrives un-wrappable on a phone. Refused
+   * here at the button, and again on the server, where a request that never opened this screen meets the
+   * same answer.
+   */
+  const bodyHasSpaceRun = useMemo(() => htmlHasSpaceRun(body ?? ''), [body]);
 
   // Reset everything whenever the modal (re)opens — it stays mounted between opens, and a stage or a
   // token left over from the previous recipient is the one piece of state that must never survive.
@@ -510,6 +521,15 @@ export function EmailPreviewModal({
                 </div>
               )}
 
+              {stage === 'EDIT' && bodyHasSpaceRun && (
+                <p
+                  data-testid="space-run-block"
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                >
+                  {SPACE_RUN_WARNING}
+                </p>
+              )}
+
               <p className="text-[11px] italic text-gray-400">
                 {stage === 'EDIT'
                   ? 'Email chưa được gửi. Bấm “Xem trước kết quả” để đối chiếu nội dung cuối cùng.'
@@ -546,7 +566,7 @@ export function EmailPreviewModal({
               <button
                 type="button"
                 onClick={() => { void handleBuildFinalPreview(); }}
-                disabled={loading || busy || uploading || !!error}
+                disabled={loading || busy || uploading || !!error || bodyHasSpaceRun}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-5 py-2 text-sm font-bold text-white outline-none hover:bg-[#013565] disabled:opacity-50"
               >
                 {finalising ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}

@@ -201,6 +201,16 @@ public static class EmailTemplateContentValidator
             }
         }
 
+        // Spacing applies to BOTH: a subject is one line of visible text, and a run of spaces in it
+        // survives into the recipient's list view and into the stored history exactly as typed. Reported
+        // per field so an operator with a clean Vietnamese tab is told the English one is the problem.
+        foreach (var (vi, en) in EmailSpaceRuns.Problems(content))
+        {
+            issues.Add(new EmailTemplateIssue(
+                field, EmailErrorCodes.TemplateSpaceRunUnsupported, null,
+                vi, en, EmailTemplateIssueSeverity.Error));
+        }
+
         foreach (var malformed in FindMalformed(normalized))
         {
             issues.Add(new EmailTemplateIssue(

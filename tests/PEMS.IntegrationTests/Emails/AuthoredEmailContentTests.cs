@@ -254,6 +254,48 @@ public sealed class AuthoredEmailContentTests : IDisposable
         Assert.Equal(EmailErrorCodes.TemplateSensitiveInSubject, ex.ErrorCode);
     }
 
+    /// <summary>
+    /// A run of spaces is refused where the author's content is constructed (V4 §7.4).
+    ///
+    /// <para>
+    /// This is the choke point every path goes through — the final-preview build, the approved send, and
+    /// a request posted straight at the API by something that never opened the composer. Which is the
+    /// point: the screen's own check is an affordance, and a rule that lives only in the browser is a
+    /// rule about the browser.
+    /// </para>
+    /// <para>
+    /// Refused rather than collapsed. Rewriting it would deliver a message different from the one the
+    /// sender read and approved, and the whole three-stage flow exists so those two are the same thing.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("<p>Cột A   Cột B</p>")]
+    [InlineData("<p>Cột A&nbsp;&nbsp;&nbsp;Cột B</p>")]
+    [InlineData("<p>Cột A&#160;&#160;&#160;Cột B</p>")]
+    [InlineData("<table><tr><td>A&nbsp;&nbsp;&nbsp;B</td></tr></table>")]
+    public void An_authored_body_may_not_lay_things_out_with_spaces(string authoredBody)
+    {
+        var ex = Assert.Throws<ValidationException>(() => Authored(body: authoredBody));
+        Assert.Equal(EmailErrorCodes.AuthoredSpaceRunUnsupported, ex.ErrorCode);
+    }
+
+    /// <summary>
+    /// …and ordinary content still goes through, including the formatted markup the editor produces.
+    /// A rule that refuses the indentation between two block elements would refuse every real message.
+    /// </summary>
+    [Fact]
+    public void Formatted_markup_is_not_mistaken_for_a_layout_attempt()
+    {
+        var authored = Authored(body:
+            "<p>Kính gửi anh Bình,</p>\n"
+            + "  <table style=\"border-collapse:collapse\">\n"
+            + "    <tr><td style=\"padding:8px 12px\">Đoàn</td><td>Kyoto</td></tr>\n"
+            + "  </table>\n"
+            + "<p>Trân trọng.</p>");
+
+        Assert.Contains("Kính gửi anh Bình", authored.BodyHtml);
+    }
+
     [Fact]
     public void An_authored_subject_may_not_interpolate_the_action_block()
     {
