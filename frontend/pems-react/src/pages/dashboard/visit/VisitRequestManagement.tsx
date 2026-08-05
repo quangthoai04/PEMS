@@ -15,8 +15,8 @@ import React, { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
-  FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
-  PencilLine, MailOpen, RefreshCw, FileX, FileMinus, UserCog, History, Bell,
+  FileText, Info, ClipboardList, Star, CheckCircle2,
+  PencilLine, RefreshCw, FileX, FileMinus, UserCog, History, Bell,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -935,6 +935,20 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
   };
 
+  /**
+   * Click anywhere on the row/card (outside a button) — the action column used to reserve two
+   * whole slots ("Xem form", "Mở quy trình") for what is really just navigation, not a mutation.
+   * Same priority handleProcess/openRequestForm already used for those two icons: the process/
+   * reception view when there is one, the submitted form otherwise. Both stay reachable from the
+   * ⋯ menu too, for whichever one this pick did NOT choose.
+   */
+  const handleRowClick = (row: Row) => {
+    const actions = row.allowedActions || [];
+    const can = (a: AllowedAction) => actions.includes(a);
+    if (canOpenProcess(row)) { handleProcess(row); return; }
+    if (row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) { openRequestForm(row); return; }
+  };
+
   // ── Pre-approval review modal → reuse the existing approve/reject flows ──
   // Campus-independent approval: chỉ Staff Leader của campus xử lý. Duyệt LUÔN mở modal chọn
   // host ("Duyệt & gán host"); từ chối là per campus instance với lý do bắt buộc.
@@ -1296,6 +1310,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       });
     }
 
+    // Explicit access to the submitted form — the row click already opens whichever of
+    // form/process is more relevant, this is the "I specifically want the other one" escape hatch.
+    if (row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) {
+      items.push({
+        key: 'view-form',
+        label: 'Xem form đăng ký tham quan',
+        icon: <ClipboardList className="h-4 w-4" />,
+        onSelect: () => openRequestForm(row),
+      });
+    }
+
     // Read-only explanations of how a row ended.
     if (row.requestStatus === 'REJECTED' && !!row.decisionNote) {
       items.push({
@@ -1391,36 +1416,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   : null;
 
     return (
-      <div className="mx-auto flex w-[184px] items-center justify-center gap-2">
-        {/* Xem form / xem chi tiết — always first, always in the same place. */}
-        {row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM')) ? (
-          <ActionIconButton title="Xem form đăng ký tham quan" tone="blue" label="Xem form" icon={<ClipboardList className="h-5 w-5" />} onClick={(e) => { e.stopPropagation(); openRequestForm(row); }} />
-        ) : (
-          <span className="h-9 w-9" aria-hidden="true" />
-        )}
-
-        {/* Mở quy trình / theo dõi. */}
-        {canOpenProcess(row) ? (
-          <ActionIconButton
-            title={getProcessActionTitle(row)}
-            label="Mở quy trình"
-            tone={can('OPEN_CONTRIBUTION') || can('OPEN_PROCESS_SUMMARY') ? 'orange' : 'blue'}
-            icon={
-              can('OPEN_CONTRIBUTION')
-                ? <PencilLine className="h-5 w-5" />
-                : can('OPEN_PROCESS_SUMMARY')
-                  ? <FileText className="h-5 w-5" />
-                  : can('VIEW_RECEPTION_DETAIL')
-                    ? <Eye className="h-5 w-5" />
-                    : (rowTab(row) === 'attending' && !can('OPEN_HOST_PROCESS'))
-                      ? <MailOpen className="h-5 w-5" />
-                      : <ArrowRightCircle className="h-5 w-5" />
-            }
-            onClick={(e) => { e.stopPropagation(); handleProcess(row); }}
-          />
-        ) : (
-          <span className="h-9 w-9" aria-hidden="true" />
-        )}
+      <div className="mx-auto flex w-[88px] items-center justify-center gap-2">
+        {/* "Xem form" and "Mở quy trình" no longer live here — they were pure navigation, not a
+            mutation, so clicking anywhere on the row/card now does the same thing (handleRowClick,
+            same priority). Both stay reachable from the ⋯ menu for whichever one that did not pick. */}
 
         {/* The one next action, if there is one. */}
         {primary ? (
@@ -2069,7 +2068,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               const isExpanded = expandedRequestId === row.visitRequestId;
               return (
                 <Fragment key={row.id}>
-                  <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
+                  <div
+                    className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 cursor-pointer ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}
+                    onClick={() => handleRowClick(row)}
+                    title={canOpenProcess(row) ? getProcessActionTitle(row) : 'Xem form đăng ký tham quan'}
+                  >
                     <div className="py-3 px-3 flex flex-col items-center justify-center gap-0.5 text-center font-bold text-[#004c91] text-sm">
                       {row.changeSummary?.hasUnreadChanges && (
                         <span
@@ -2142,7 +2145,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             const isExpanded = expandedRequestId === row.visitRequestId;
             return (
               <Fragment key={row.id}>
-                <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}>
+                <div
+                  className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors cursor-pointer ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}
+                  onClick={() => handleRowClick(row)}
+                >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug flex items-center gap-1.5">

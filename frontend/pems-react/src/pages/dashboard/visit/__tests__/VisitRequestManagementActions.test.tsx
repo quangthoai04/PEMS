@@ -353,14 +353,15 @@ describe('multi-campus handover lives on the campus, never on the summary row', 
 });
 
 // ── §15.15 mobile affordances carry words, not only icons ────────────────────────────────────────
+// "Xem form" and "Mở quy trình" no longer live in the action column as their own icons — the
+// row/card itself is the click target now (handleRowClick), so this only has to prove the escape
+// hatch is still text-labeled, not that a hidden icon exists.
 
 describe('mobile', () => {
-  it('gives the row actions text labels as well as icons', async () => {
+  it('keeps "Xem form đăng ký tham quan" reachable as a text-labeled ⋯ menu item', async () => {
     renderList([instanceRow()]);
     await waitFor(() => desktop().getByText('Đang chuẩn bị'));
-    // Rendered for the mobile breakpoint (hidden at lg by CSS, present in the DOM either way) —
-    // an icon with no word is a guess on a phone.
-    expect(mobile().getAllByText('Xem form').length).toBeGreaterThan(0);
-    expect(mobile().getAllByText('Mở quy trình').length).toBeGreaterThan(0);
+    const panel = await openRowMenu('row-menu-mobile-5001');
+    expect(within(panel).getByText('Xem form đăng ký tham quan')).toBeInTheDocument();
   });
 });
