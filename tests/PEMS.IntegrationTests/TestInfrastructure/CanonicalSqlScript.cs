@@ -427,8 +427,15 @@ public static class CanonicalSqlScript
     /// <c>email_contact_policies</c> seed is marked deprecated in place (the table is deliberately NOT
     /// dropped — that is a separate, separately-approved task). Verified against a real MySQL 8.0.46 by
     /// a fresh import and by the upgrade patch, which reach byte-identical <c>email_templates</c> rows.
+    ///
+    /// Bumped again on 2026-08-05 for the §16 content rewrite: all 31 templates have new
+    /// <c>subject_vi</c>, <c>body_vi</c>, <c>subject_en</c> and <c>body_en</c>, and nothing else. No
+    /// schema change, no new row, no changed <c>variables_text</c> — the summary tables, action panels,
+    /// security notes and sender cards are built from variables every one of those templates already
+    /// declared. This is also what closes the declared-but-unused sender variables: the thirteen bodies
+    /// that declared the <c>{{sender*}}</c> group without printing it now carry the sender card.
     public const string ExpectedSha256 =
-        "3948112ea01a18ab3ad46024b52f1455e4bfd7882edc26c09ea71187d465009e";
+        "a60e00ebeacae17bedb7482d111428772c89b2637e4ca0d53193cb09180719b8";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

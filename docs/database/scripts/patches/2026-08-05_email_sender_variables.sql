@@ -25,6 +25,17 @@
 --   separate, separately-approved task, and a patch that removes a table cannot
 --   be rolled back by re-running anything.
 --
+--   It also does not deliver the §16 CONTENT REWRITE (2026-08-05). Every one of
+--   the 31 templates was given a new subject and body that day — one structure
+--   across the catalogue: greeting, summary table, facts, action area, security
+--   note, sender card, footer. Section 1 below swaps a placeholder inside prose
+--   an operator may have edited and leaves the rest of their wording alone,
+--   which is the right behaviour for a migration and the wrong mechanism for a
+--   rewrite. The new content reaches a deployed database through the catalogue
+--   sync (email_template_cc_bcc_sync/02_sync_templates.sql), or through a fresh
+--   import of the canonical seed. Running this patch and stopping there leaves
+--   the deployment on the old wording, correctly and on purpose.
+--
 -- IDEMPOTENT: every statement is guarded. Running it twice changes nothing the
 -- second time. Safe on a fresh import of PEMS_FULL_VS_31_07_NEW.sql (which
 -- already ships the new content — every guard simply matches nothing).

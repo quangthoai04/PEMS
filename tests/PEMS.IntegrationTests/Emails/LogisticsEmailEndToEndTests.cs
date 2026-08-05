@@ -201,7 +201,9 @@ public sealed class LogisticsEmailEndToEndTests : IDisposable
             // any more: the sender is written into the template body as ordinary variables, so the
             // heading is literal template text and the values are substituted like any other. That is
             // the whole point of the change — the person sending can edit this text before it goes.
-            Assert.Contains("NGƯỜI GỬI", body);
+            // "Thông tin người gửi" since the §16 rewrite — the sender card's heading, in sentence case
+            // like every other heading in the message rather than shouted in capitals.
+            Assert.Contains("Thông tin người gửi", body);
             Assert.DoesNotContain("Thông tin liên hệ", body);
             Assert.DoesNotContain(encoded("Thông tin liên hệ"), body);
             // …and the sender's details really did resolve, rather than rendering as a blank card. The

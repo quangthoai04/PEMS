@@ -127,8 +127,17 @@ public sealed class EmailPreviewSampleModeTests : IDisposable
                 failures.Add($"{code}: inline event handler");
 
             // An OTP-carrying template must show the fixed fake, never a generated one.
+            //
+            // Scanned with the inline styles removed, because a six-digit run is also what a hex colour
+            // looks like: `#334155` — the body text colour every template uses since the §16 rewrite —
+            // matched this and reported both OTP templates as leaking a code. The check is about what the
+            // RECIPIENT reads, and a code is never rendered from inside a style attribute, so dropping
+            // those before scanning removes the false positive without weakening the assertion on any
+            // text a person can actually see.
+            var visible = Regex.Replace(response.BodyHtml, "style=\"[^\"]*\"", string.Empty);
+
             if (EmailTemplateContracts.For(code)!.SensitiveVariables.Contains("otpCode")
-                && Regex.IsMatch(response.BodyHtml, @"\b(?!000000)\d{6}\b"))
+                && Regex.IsMatch(visible, @"\b(?!000000)\d{6}\b"))
             {
                 failures.Add($"{code}: a six-digit value that is not the fixed sample");
             }
