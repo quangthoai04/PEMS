@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.VisitPhotos.Commands.RemoveVisitPhoto;
 using PEMS.Application.Delegations.VisitPhotos.Commands.UploadVisitInstancePhotos;
@@ -21,7 +22,10 @@ namespace PEMS.Api.Controllers
     /// Authorization lives in the handlers: every call re-checks the ACTIVE-Student +
     /// ACCEPTED-participant scope against the DB (anti-IDOR); the controller only maps transport.
     /// </summary>
+    /// Authentication is now declared here too: relying on the handler alone meant any new
+    /// action shipped anonymous by default.
     [ApiController]
+    [Authorize]
     [Route("api/visit-photos")]
     public class VisitPhotosController : ControllerBase
     {

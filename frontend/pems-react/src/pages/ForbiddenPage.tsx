@@ -2,10 +2,20 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../shared/hooks/useAuth';
+import { getDefaultDashboardRoute } from '../shared/auth/dashboardRouteAccess';
 
 export function ForbiddenPage() {
   const navigate = useNavigate();
   const { t } = useTranslation(['errors']);
+  const { effectiveRole } = useAuth();
+
+  // The button used to go to a hard-coded /dashboard. For a Visitor or Student that is a
+  // route they don't land on, so "go back" bounced them straight into another redirect.
+  // The policy table names a default per role, so this always resolves to a page the
+  // current role can actually open.
+  const destination = getDefaultDashboardRoute(effectiveRole);
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#fafafa] px-4">
       <div className="text-center max-w-md">
@@ -19,7 +29,7 @@ export function ForbiddenPage() {
         </p>
         <div className="flex items-center justify-center gap-3">
           <button
-            onClick={() => navigate('/dashboard', { replace: true })}
+            onClick={() => navigate(destination, { replace: true })}
             className="px-5 py-2.5 bg-[#004c91] hover:bg-[#003a6f] text-white rounded-xl font-bold text-sm"
           >
             {t('errors:403.backToDashboard', 'Về trang quản trị')}

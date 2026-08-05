@@ -9,6 +9,7 @@ import type {
 } from '../../features/authentication/types/authentication.types';
 import { authStorage, AUTH_EXPIRED_EVENT } from './authStorage';
 import { hasRole } from './permissionChecker';
+import { resolveEffectiveRole, type EffectiveRole } from './resolveEffectiveRole';
 import { markDeliberateLogout } from '../api/httpClient';
 
 interface AuthContextValue {
@@ -18,6 +19,20 @@ interface AuthContextValue {
   selectedCampusId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * True once auth bootstrap has settled, so guards know whether `user` being null
+   * means "signed out" or merely "profile still loading". Route guards must not
+   * decide anything before this flips — otherwise a hard refresh briefly renders as
+   * unauthenticated and bounces the user off the page they asked for.
+   */
+  isReady: boolean;
+
+  /**
+   * The single role value the UI is allowed to make decisions from, derived from the
+   * profile the backend returned. `null` means the account's (roleCode, subRole) pair
+   * is not a valid workspace — callers must route to /invalid-account, never guess.
+   */
+  effectiveRole: EffectiveRole | null;
 
   login: (email: string, password: string) => Promise<AuthUser>;
   loginWithGoogle: (idToken: string) => Promise<AuthUser>;
@@ -27,8 +42,15 @@ interface AuthContextValue {
   /** Patch the current user in place (e.g. after an avatar upload) and persist to storage. */
   updateUser: (patch: Partial<AuthUser>) => void;
 
-
+  /**
+   * Raw `roleCode` check. Does NOT see sub_role, so it cannot tell a Staff Leader from a
+   * Staff, or a Department Lead from Department staff. Kept for legacy display code only —
+   * use `hasEffectiveRole` for anything that decides access.
+   */
   hasRole: (roles: string[]) => boolean;
+
+  /** Role check on the resolved effective role. This is what authorization should use. */
+  hasEffectiveRole: (roles: EffectiveRole[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -40,6 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loginPortal, setLoginPortal] = useState<LoginPortal | null>(() => authStorage.getLoginPortal());
   const [selectedCampusId, setSelectedCampusId] = useState<string | null>(() => authStorage.getSelectedCampusId());
   const [isLoading, setIsLoading] = useState<boolean>(() => !!authStorage.getAccessToken());
+  // Separate from isLoading: bootstrap runs once, and until it has finished the stored
+  // user is unverified. Guards wait on this so a refresh doesn't flash a redirect.
+  const [isReady, setIsReady] = useState<boolean>(() => !authStorage.getAccessToken());
 
   const applySession = useCallback((nextUser: AuthUser) => {
     authStorage.setUser(nextUser);
@@ -61,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function bootstrap() {
       if (!authStorage.getAccessToken()) {
         setIsLoading(false);
+        setIsReady(true);
         return;
       }
       try {
@@ -69,7 +95,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         if (!cancelled) clearSession();
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+          setIsReady(true);
+        }
       }
     }
 
@@ -173,6 +202,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  // Derived from the context user (which bootstrap re-fetches from the backend), never
+  // from localStorage. Editing `currentUser` in devtools therefore cannot change what the
+  // UI thinks the role is.
+  const effectiveRole = useMemo(() => resolveEffectiveRole(user), [user]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -181,6 +215,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectedCampusId,
       isAuthenticated: !!user,
       isLoading,
+      isReady,
+      effectiveRole,
       login,
       loginWithGoogle,
       logout,
@@ -189,8 +225,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateUser,
 
       hasRole: (roles) => hasRole(user?.roleCode, roles),
+      hasEffectiveRole: (roles) => !!effectiveRole && roles.includes(effectiveRole),
     }),
-    [user, loginPortal, selectedCampusId, isLoading, login, loginWithGoogle, logout, refreshProfile, changePassword, updateUser],
+    [user, loginPortal, selectedCampusId, isLoading, isReady, effectiveRole, login, loginWithGoogle, logout, refreshProfile, changePassword, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

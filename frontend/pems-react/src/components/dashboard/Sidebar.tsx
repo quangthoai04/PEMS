@@ -39,11 +39,45 @@ import {
   Camera,
   ListChecks,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { useAuthenticatedImage } from "../../shared/hooks/useAuthenticatedImage";
+import {
+  getVisibleSidebarItems,
+  type DashboardRouteKey,
+} from "../../shared/auth/dashboardRouteAccess";
+
+/**
+ * Icon per menu entry. Kept here rather than in dashboardRouteAccess.ts so the policy
+ * module stays free of JSX and can be unit-tested as plain data.
+ */
+const ROUTE_ICONS: Partial<Record<DashboardRouteKey, LucideIcon>> = {
+  DASHBOARD_HOME: Home,
+  ACCOUNT_LIST: UserCog,
+  ADMIN_SESSIONS: KeyRound,
+  ADMIN_SECURITY: Shield,
+  API_MANAGEMENT: Cpu,
+  ADMIN_AUDIT_LOGS: ScrollText,
+  NEWS_LIST: Newspaper,
+  EMAIL_LIST: Mail,
+  PARTNER_LIST: Users,
+  DEPARTMENT_LIST: Building2,
+  MY_DEPARTMENT: Building2,
+  CAMPUS_LIST: MapPin,
+  VISIT_LIST: Briefcase,
+  VISIT_PHOTOS: Camera,
+  POST_VISIT_TASKS: ListChecks,
+  DOCUMENTS: FileText,
+  GALLERY: Image,
+  GALLERY_LOCATIONS: MapPin,
+  MINUTES: ClipboardList,
+  FEEDBACK: MessageSquare,
+  REPORTS: BarChart2,
+  FAQ_LIST: HelpCircle,
+};
 
 
 interface SidebarProps {
@@ -60,30 +94,28 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
   // Mobile drawer luôn hiển thị đầy đủ, chỉ desktop mới thu gọn.
   const collapsed = isCollapsed && !isMobileOpen;
   const navigate = useNavigate();
-  const { logout, user: authUser } = useAuth();
+  const { logout, user: authUser, effectiveRole } = useAuth();
 
-  // Get user from localStorage (name / campus / role display — unchanged).
-  const userStr = localStorage.getItem("currentUser");
-  const user = userStr
-    ? JSON.parse(userStr)
-    : {
-      name: "Khách",
-      campus: "Không rõ",
-      role: "GUEST",
-    };
+  // Menu comes from the same policy table the route guards use, so "menu hidden" and
+  // "URL typed by hand" can never disagree. It used to be a second, hand-maintained role
+  // matrix built from localStorage's `currentUser` — which drifted from App.tsx and could
+  // be rewritten from devtools.
+  const menuItems = getVisibleSidebarItems(effectiveRole);
+
+  // Display-only profile fields, read from AuthContext instead of localStorage.
+  // These never gate anything — authorization uses `effectiveRole` above.
+  // displayRole intentionally shows the raw roleCode (STAFF, DEPARTMENT, ...) rather than the
+  // effective role (STAFF_LEADER, DEPARTMENT_LEAD, ...): it is the label users already know,
+  // and this card is cosmetic. Changing it would alter the UI for Staff Leader and Department
+  // Lead without any security benefit.
+  const displayName = authUser?.fullName ?? "Khách";
+  const displayCampus = authUser?.campusName ?? authUser?.campusCode ?? "Không rõ";
+  const displayRole = authUser?.roleCode ?? "GUEST";
 
   // Avatar comes from the shared AuthContext so it updates reactively right after an upload.
   // It lives behind an authenticated endpoint, so fetch it as a blob; fall back to the default.
   const fetchedAvatar = useAuthenticatedImage(authUser?.avatarUrl ?? null);
   const avatarSrc = fetchedAvatar ?? avatarImg;
-
-
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
-  const roleForSidebar = user?.role?.toUpperCase() || 'GUEST';
-  const isDeptLeader = roleForSidebar === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
-  // isDeptStaff: DEPARTMENT + không phải LEADER (bao gồm subRole null/undefined)
-  const isDeptStaff = roleForSidebar === 'DEPARTMENT' && !isDeptLeader;
-  const isRealAdmin = roleForSidebar === 'ADMIN';
 
 
   const handleLogout = async () => {
@@ -174,140 +206,32 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
         </div>
 
 
-        {/* Navigation */}
+        {/* Navigation.
+            One list for every role. Which entries appear is decided by
+            getVisibleSidebarItems(effectiveRole), i.e. the same policy table the route
+            guards read — so a visible item always leads somewhere the user can enter, and
+            a hidden item is a 403 if typed into the address bar.
+            ADMIN sees only the System Administration entries for exactly that reason: the
+            policy grants ADMIN no business route, so no business entry can render here. */}
         <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
-          {/* ── System Administration Console: ADMIN chỉ thấy 6 mục quản trị hệ thống,
-              toàn bộ menu nghiệp vụ (tiếp khách, đối tác, tin tức, FAQ...) bị ẩn. ── */}
-          {isRealAdmin ? (
-            <>
-              <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
-                <Home className="w-5 h-5 flex-shrink-0" />
-                <span>Dashboard</span>
+          {menuItems.map((item) => {
+            const Icon = ROUTE_ICONS[item.key];
+            return (
+              <NavLink
+                key={item.key}
+                to={item.path}
+                // `end` keeps the Dashboard entry from staying highlighted on every
+                // /dashboard/* child route.
+                end={item.path === "/dashboard"}
+                className={navItemClass}
+                onClick={handleLinkClick}
+                title={collapsed ? item.sidebarLabel : undefined}
+              >
+                {Icon ? <Icon className="w-5 h-5 flex-shrink-0" /> : null}
+                <span>{item.sidebarLabel}</span>
               </NavLink>
-              <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
-                <UserCog className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý tài khoản</span>
-              </NavLink>
-              <NavLink to="/dashboard/admin/sessions" className={navItemClass} onClick={handleLinkClick}>
-                <KeyRound className="w-5 h-5 flex-shrink-0" />
-                <span>Phiên đăng nhập</span>
-              </NavLink>
-              <NavLink to="/dashboard/admin/security" className={navItemClass} onClick={handleLinkClick}>
-                <Shield className="w-5 h-5 flex-shrink-0" />
-                <span>Bảo mật</span>
-              </NavLink>
-              <NavLink to="/dashboard/apis" className={navItemClass} onClick={handleLinkClick}>
-                <Cpu className="w-5 h-5 flex-shrink-0" />
-                <span>Quản lý API</span>
-              </NavLink>
-              <NavLink to="/dashboard/admin/audit-logs" className={navItemClass} onClick={handleLinkClick}>
-                <ScrollText className="w-5 h-5 flex-shrink-0" />
-                <span>Nhật ký kiểm toán</span>
-              </NavLink>
-            </>
-          ) : (
-            <>
-              {roleForSidebar !== 'VISITOR' && roleForSidebar !== 'STUDENT' && (
-                <NavLink to="/dashboard" end className={navItemClass} onClick={handleLinkClick}>
-                  <Home className="w-5 h-5 flex-shrink-0" />
-                  <span>Dashboard</span>
-                </NavLink>
-              )}
-              {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
-                <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
-                  <Newspaper className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý tin tức</span>
-                </NavLink>
-              )}
-              {(["HO", "STAFF", "DEPARTMENT"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
-                <NavLink to="/dashboard/email" className={navItemClass} onClick={handleLinkClick}>
-                  <Mail className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý email</span>
-                </NavLink>
-              )}
-              {["STAFF", "ADMIN", "HO"].includes(
-                roleForSidebar,
-              ) && !isRealAdmin && (
-                  <NavLink to="/dashboard/partners" className={navItemClass} onClick={handleLinkClick}>
-                    <Users className="w-5 h-5 flex-shrink-0" />
-                    <span>Quản lý đối tác</span>
-                  </NavLink>
-                )}
-              {/* Department Leader goes to /dashboard/my-department, which carries no department id:
-                  the old link built a URL from a locally-stored departmentId and fell back to '1',
-                  which both hard-coded a department and invited tampering with the id. */}
-              {(((["ADMIN", "DEPARTMENT"].includes(roleForSidebar) && !isRealAdmin) || isStaffLeader) && !isDeptStaff) && (
-                <NavLink to={isDeptLeader ? "/dashboard/my-department" : roleForSidebar === "DEPARTMENT" ? `/dashboard/departments/${user?.departmentId || '1'}` : "/dashboard/departments"} className={navItemClass} end={roleForSidebar !== "DEPARTMENT" || isDeptLeader} onClick={handleLinkClick}>
-                  <Building2 className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý phòng ban</span>
-                </NavLink>
-              )}
-              {(roleForSidebar === "HO" || isStaffLeader) && (
-                <NavLink to="/dashboard/accounts" className={navItemClass} onClick={handleLinkClick}>
-                  <UserCog className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý tài khoản</span>
-                </NavLink>
-              )}
-              {roleForSidebar === "HO" && (
-                <NavLink to="/dashboard/campus" className={navItemClass} onClick={handleLinkClick}>
-                  <MapPin className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý campus</span>
-                </NavLink>
-              )}
-              {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
-                <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
-                  <Briefcase className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý tiếp khách</span>
-                </NavLink>
-              )}
-              {(["STUDENT", "STAFF", "HO"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
-                <NavLink to="/dashboard/visit-photos" className={navItemClass} onClick={handleLinkClick}>
-                  <Camera className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý ảnh đoàn khách</span>
-                </NavLink>
-              )}
-              {(["HO", "STAFF"].includes(roleForSidebar)) && (
-                <>
-                  <NavLink to="/dashboard/documents" className={navItemClass} onClick={handleLinkClick}>
-                    <FileText className="w-5 h-5 flex-shrink-0" />
-                    <span>Quản lý tài liệu</span>
-                  </NavLink>
-                  {(roleForSidebar !== 'HO' && isStaffLeader) && (
-                    <NavLink to="/dashboard/gallery" className={navItemClass} onClick={handleLinkClick}>
-                      <Image className="w-5 h-5 flex-shrink-0" />
-                      <span>Quản lý Gallery</span>
-                    </NavLink>
-                  )}
-                  <NavLink to="/dashboard/minutes" className={navItemClass} onClick={handleLinkClick}>
-                    <ClipboardList className="w-5 h-5 flex-shrink-0" />
-                    <span>Quản lý biên bản</span>
-                  </NavLink>
-                  <NavLink to="/dashboard/feedback" className={navItemClass} onClick={handleLinkClick}>
-                    <MessageSquare className="w-5 h-5 flex-shrink-0" />
-                    <span>Quản lý feedback</span>
-                  </NavLink>
-                </>
-              )}
-              {(["STAFF", "DEPARTMENT", "STUDENT"].includes(roleForSidebar)) && (
-                <NavLink to="/dashboard/post-visit-tasks" className={navItemClass} onClick={handleLinkClick}>
-                  <ListChecks className="w-5 h-5 flex-shrink-0" />
-                  <span>Việc sau tiếp khách</span>
-                </NavLink>
-              )}
-              {(roleForSidebar === "HO" || isStaffLeader || isDeptLeader || isDeptStaff) && (
-                <NavLink to="/dashboard/reports" className={navItemClass} onClick={handleLinkClick}>
-                  <BarChart2 className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý báo cáo</span>
-                </NavLink>
-              )}
-              {["HO"].includes(roleForSidebar) && !isStaffLeader && (
-                <NavLink to="/dashboard/faq" className={navItemClass} onClick={handleLinkClick}>
-                  <HelpCircle className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý FAQ</span>
-                </NavLink>
-              )}
-            </>
-          )}
+            );
+          })}
         </nav>
 
 
@@ -316,7 +240,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
           <div
             className={`bg-white border text-left border-[#d2e5f5] hover:bg-[#e6eff7] rounded-2xl cursor-pointer hover:shadow-md transition-all relative z-10 ${collapsed ? "p-2" : "p-4"}`}
             onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
-            title={collapsed ? `${user.name} (${user.role})` : undefined}
+            title={collapsed ? `${displayName} (${displayRole})` : undefined}
           >
             <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
               <div className={`${collapsed ? "w-10 h-10" : "w-14 h-14"} rounded-full overflow-hidden border-2 border-gray-100 bg-gray-50 flex-shrink-0 flex items-center justify-center`}>
@@ -331,15 +255,15 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 <>
                   <div className="flex-1 min-w-0">
                     <p className="text-[17px] font-bold text-[#004c91] truncate tracking-tight">
-                      {user.name}
+                      {displayName}
                     </p>
                     <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
                       <School className="w-3.5 h-3.5 flex-shrink-0" />
-                      Campus {user.campus}
+                      Campus {displayCampus}
                     </p>
                     <p className="text-[13px] font-bold text-[#004c91] mt-1 flex items-center gap-1.5 truncate uppercase tracking-wide">
                       {getRoleIcon()}
-                      {user.role}
+                      {displayRole}
                     </p>
                   </div>
                   <div className="text-gray-400">

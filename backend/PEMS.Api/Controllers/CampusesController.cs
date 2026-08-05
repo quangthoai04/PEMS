@@ -2,14 +2,29 @@ using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Api.Filters;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace PEMS.Api.Controllers
 {
+    /// <summary>
+    /// Campus master data. Per PERMISSION_MATRIX §5.14 (UC-81..UC-87) and
+    /// docs/CampusManagement/00_CAMPUS_MANAGEMENT_COMMON_RULES_HO.md the only actor is HO.
+    ///
+    /// ADMIN is a technical administrator, not a business superuser, and is refused here —
+    /// it previously reached every action below because the class carried a bare
+    /// [Authorize] and the actions carried nothing at all, so any authenticated role
+    /// (including ADMIN, STUDENT and VISITOR) could list, create and disable campuses.
+    ///
+    /// The two anonymous actions are genuinely public surface: the login campus dropdown
+    /// and the visit-registration campus options.
+    /// </summary>
     [ApiController]
     [Authorize]
+    [RoleAuthorize(EffectiveRole.Ho)]
     [Route("api/[controller]")]
     public class CampusesController : ControllerBase
     {

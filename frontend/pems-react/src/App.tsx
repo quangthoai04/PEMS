@@ -82,6 +82,8 @@ import { InvalidAccountPage } from './pages/InvalidAccountPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { NotificationsPage } from './pages/notifications/NotificationsPage';
 import { ProtectedRoute } from './shared/auth/ProtectedRoute';
+import { RouteAccessGuard } from './shared/auth/RouteAccessGuard';
+import { useAuth } from './shared/hooks/useAuth';
 import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { PerCampusV2CapabilityProvider } from './shared/features/perCampusV2Capability';
 
@@ -117,12 +119,12 @@ export default function App() {
   const isDashboardRoute = location.pathname.startsWith('/dashboard');
   const isBareRoute = isDashboardRoute || BARE_ROUTES.includes(location.pathname);
 
-  const userStr = localStorage.getItem("currentUser");
-  const user = userStr ? JSON.parse(userStr) : null;
-  const isDeptLeader = user?.role?.toUpperCase() === 'DEPARTMENT' && user?.subRole?.toUpperCase() === 'LEADER';
-  const isDeptStaff = user?.role?.toUpperCase() === 'DEPARTMENT' && !isDeptLeader;
-  const isHO = user?.role?.toUpperCase() === 'HO';
-  const isStaffLeader = user?.role?.toUpperCase() === 'STAFF' && user?.subRole?.toUpperCase() === 'LEADER';
+  // Authorization reads the effective role from AuthContext, which derives it from the
+  // profile the backend returned. It used to read localStorage's `currentUser`, so editing
+  // that object in devtools re-wrote the route table — no request to the server involved.
+  // `effectiveRole` here only picks WHICH component a shared path renders; whether the user
+  // may be on that path at all is decided by <RouteAccessGuard routeKey=...>.
+  const { effectiveRole } = useAuth();
 
   return (
     <PerCampusV2CapabilityProvider>
@@ -170,75 +172,116 @@ export default function App() {
           <Route path="/visit-registration/v2" element={<VisitRequestV2Page mode="public" />} />
           <Route path="/visit/create-v2" element={<ProtectedRoute><VisitRequestV2Page mode="authenticated" /></ProtectedRoute>} />
 
-          {/* Dashboard Routes (require authentication) */}
+          {/* Dashboard Routes.
+              Every child carries a <RouteAccessGuard routeKey=...>; the policy for each key
+              lives in shared/auth/dashboardRouteAccess.ts and is shared with the Sidebar, so
+              a hidden menu item and a typed URL always reach the same verdict. */}
           <Route path="/dashboard" element={<ProtectedRoute><ErrorBoundary><DashboardLayout /></ErrorBoundary></ProtectedRoute>}>
-            <Route index element={['VISITOR', 'STUDENT'].includes(user?.role?.toUpperCase()) ? <Navigate to="/dashboard/visit" replace /> : <DashboardHome />} />
-            <Route path="profile" element={<Profile />} />
-            <Route path="news" element={<NewsManagement />} />
-            <Route path="news/create" element={<CreateNews />} />
-            <Route path="news/:id/edit" element={<EditNews />} />
-            <Route path="news/:id" element={<NewsDetailDashboard />} />
-            <Route path="email" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EmailManagement /></ProtectedRoute>} />
-            <Route path="email/create" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><CreateEmail /></ProtectedRoute>} />
-            <Route path="email/detail/:sourceType/:id" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><SentEmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EmailDetail /></ProtectedRoute>} />
-            <Route path="email/:id/edit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : <ProtectedRoute><EditEmail /></ProtectedRoute>} />
-            <Route path="partners" element={<PartnerManagement />} />
-            <Route path="partners/create" element={<CreatePartner />} />
-            <Route path="partners/:id/edit" element={<PartnerEdit />} />
-            <Route path="partners/:id" element={<PartnerDetail />} />
-            <Route path="departments" element={<DepartmentManagement />} />
+            <Route
+              index
+              element={
+                <RouteAccessGuard routeKey="DASHBOARD_HOME">
+                  {effectiveRole === 'VISITOR' || effectiveRole === 'STUDENT'
+                    ? <Navigate to="/dashboard/visit" replace />
+                    : <DashboardHome />}
+                </RouteAccessGuard>
+              }
+            />
+            <Route path="profile" element={<RouteAccessGuard routeKey="PROFILE"><Profile /></RouteAccessGuard>} />
+
+            <Route path="news" element={<RouteAccessGuard routeKey="NEWS_LIST"><NewsManagement /></RouteAccessGuard>} />
+            <Route path="news/create" element={<RouteAccessGuard routeKey="NEWS_CREATE"><CreateNews /></RouteAccessGuard>} />
+            <Route path="news/:id/edit" element={<RouteAccessGuard routeKey="NEWS_EDIT"><EditNews /></RouteAccessGuard>} />
+            <Route path="news/:id" element={<RouteAccessGuard routeKey="NEWS_DETAIL"><NewsDetailDashboard /></RouteAccessGuard>} />
+
+            <Route path="email" element={<RouteAccessGuard routeKey="EMAIL_LIST"><EmailManagement /></RouteAccessGuard>} />
+            <Route path="email/create" element={<RouteAccessGuard routeKey="EMAIL_CREATE"><CreateEmail /></RouteAccessGuard>} />
+            <Route path="email/detail/:sourceType/:id" element={<RouteAccessGuard routeKey="EMAIL_DETAIL"><SentEmailDetail /></RouteAccessGuard>} />
+            <Route path="email/:id" element={<RouteAccessGuard routeKey="EMAIL_DETAIL"><EmailDetail /></RouteAccessGuard>} />
+            <Route path="email/:id/edit" element={<RouteAccessGuard routeKey="EMAIL_EDIT"><EditEmail /></RouteAccessGuard>} />
+
+            <Route path="partners" element={<RouteAccessGuard routeKey="PARTNER_LIST"><PartnerManagement /></RouteAccessGuard>} />
+            <Route path="partners/create" element={<RouteAccessGuard routeKey="PARTNER_CREATE"><CreatePartner /></RouteAccessGuard>} />
+            <Route path="partners/:id/edit" element={<RouteAccessGuard routeKey="PARTNER_EDIT"><PartnerEdit /></RouteAccessGuard>} />
+            <Route path="partners/:id" element={<RouteAccessGuard routeKey="PARTNER_DETAIL"><PartnerDetail /></RouteAccessGuard>} />
+
+            <Route path="departments" element={<RouteAccessGuard routeKey="DEPARTMENT_LIST"><DepartmentManagement /></RouteAccessGuard>} />
             {/* Department Leader personnel management. No :id — the department is resolved from the
                 signed-in Leader server-side, so there is no id in the URL to tamper with. Non-Leaders
-                are bounced here and refused again by the API. */}
-            <Route
-              path="my-department"
-              element={isDeptLeader ? <MyDepartmentPage /> : <Navigate to="/dashboard" replace />}
-            />
-            {/* Legacy per-id department screen. A Department Leader is bounced to their own screen:
+                get 403 here and are refused again by the API. */}
+            <Route path="my-department" element={<RouteAccessGuard routeKey="MY_DEPARTMENT"><MyDepartmentPage /></RouteAccessGuard>} />
+            {/* Legacy per-id department screen. A Department Leader is sent to their own screen:
                 the id in this URL is client-supplied, and this page's personnel modal is the older
                 one. Their single entry point is /dashboard/my-department. */}
             <Route
               path="departments/:id"
               element={
-                isDeptLeader ? <Navigate to="/dashboard/my-department" replace /> : <DepartmentDetailDashboard />
+                <RouteAccessGuard routeKey="DEPARTMENT_DETAIL">
+                  {effectiveRole === 'DEPARTMENT_LEAD'
+                    ? <Navigate to="/dashboard/my-department" replace />
+                    : <DepartmentDetailDashboard />}
+                </RouteAccessGuard>
               }
             />
-            <Route path="accounts" element={<ProtectedRoute><AccountManagement /></ProtectedRoute>} />
-            <Route path="campus" element={<ProtectedRoute><CampusManagement /></ProtectedRoute>} />
-            <Route path="campus/:id" element={<ProtectedRoute><CampusDetail /></ProtectedRoute>} />
-            <Route path="faq" element={<FAQManagement />} />
-            <Route path="faq/:id" element={<FAQDetail />} />
-            <Route path="visit" element={isDeptStaff ? <Navigate to="/dashboard" replace /> : isDeptLeader ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />} />
-            <Route path="visit/invitations/:participantId" element={<VisitParticipantInvitationDetail />} />
-            <Route path="visit/department-tasks/:participantId" element={<VisitParticipantInvitationDetail />} />
-            <Route path="visit/create" element={<CreateVisitRequestEntry />} />
-            <Route path="visit/v2/:visitRequestId" element={<VisitRequestV2DetailPage />} />
-            <Route path="visit/v2/:visitRequestId/edit" element={<EditVisitRequestV2Page mode="edit" />} />
-            <Route path="visit/v2/:visitRequestId/resubmit" element={<EditVisitRequestV2Page mode="resubmit" />} />
-            <Route path="visit/agenda-templates" element={<AgendaTemplateManagement />} />
-            {/* Student: quản lý ảnh đoàn khách (visit_photos) — backend enforce scope, FE chỉ ẩn menu */}
-            <Route path="visit-photos" element={<VisitPhotoManagement />} />
-            <Route path="visit/process/:id" element={<VisitProcess />} />
-            <Route path="visit/feedback/:visitInstanceId" element={<VisitFeedbackPage />} />
-            <Route path="visit/process-summary/:visitInstanceId" element={<VisitProcessSummaryPage />} />
-            <Route path="visit/contribution/:visitInstanceId" element={<VisitContributionPage />} />
-            <Route path="visit/reception-detail/:id" element={<VisitProcess />} />
-            <Route path="visit/ho-detail/:id" element={<HoVisitProcessDetail />} />
-            <Route path="visit/process/:id/request/:type" element={<VisitRequestDetail />} />
-            <Route path="documents" element={<DocumentManagement />} />
-            <Route path="gallery" element={<GalleryManagement />} />
-            <Route path="gallery/locations" element={<LocationManagement />} />
-            <Route path="minutes" element={<MinuteManagement />} />
-            <Route path="post-visit-tasks" element={<PostVisitTaskManagement />} />
-            <Route path="reports" element={<ProtectedRoute>{(isDeptLeader || isDeptStaff) ? <DeptReportManagement /> : isHO ? <HoReportManagement /> : isStaffLeader ? <StaffLeaderReportManagement /> : <Navigate to="/dashboard" replace />}</ProtectedRoute>} />
-            <Route path="feedback" element={<FeedbackManagement />} />
-            <Route path="feedback/:id" element={<FeedbackDetail />} />
-            <Route path="apis" element={<ProtectedRoute roles={['ADMIN']}><ApiManagement /></ProtectedRoute>} />
+
+            <Route path="accounts" element={<RouteAccessGuard routeKey="ACCOUNT_LIST"><AccountManagement /></RouteAccessGuard>} />
+            <Route path="campus" element={<RouteAccessGuard routeKey="CAMPUS_LIST"><CampusManagement /></RouteAccessGuard>} />
+            <Route path="campus/:id" element={<RouteAccessGuard routeKey="CAMPUS_DETAIL"><CampusDetail /></RouteAccessGuard>} />
+            <Route path="faq" element={<RouteAccessGuard routeKey="FAQ_LIST"><FAQManagement /></RouteAccessGuard>} />
+            <Route path="faq/:id" element={<RouteAccessGuard routeKey="FAQ_DETAIL"><FAQDetail /></RouteAccessGuard>} />
+
+            <Route
+              path="visit"
+              element={
+                <RouteAccessGuard routeKey="VISIT_LIST">
+                  {effectiveRole === 'DEPARTMENT_LEAD' ? <DeptLeadVisitTasksPage /> : <VisitRequestManagement />}
+                </RouteAccessGuard>
+              }
+            />
+            <Route path="visit/invitations/:participantId" element={<RouteAccessGuard routeKey="VISIT_INVITATION"><VisitParticipantInvitationDetail /></RouteAccessGuard>} />
+            <Route path="visit/department-tasks/:participantId" element={<RouteAccessGuard routeKey="VISIT_INVITATION"><VisitParticipantInvitationDetail /></RouteAccessGuard>} />
+            <Route path="visit/create" element={<RouteAccessGuard routeKey="VISIT_CREATE"><CreateVisitRequestEntry /></RouteAccessGuard>} />
+            <Route path="visit/v2/:visitRequestId" element={<RouteAccessGuard routeKey="VISIT_DETAIL"><VisitRequestV2DetailPage /></RouteAccessGuard>} />
+            <Route path="visit/v2/:visitRequestId/edit" element={<RouteAccessGuard routeKey="VISIT_EDIT"><EditVisitRequestV2Page mode="edit" /></RouteAccessGuard>} />
+            <Route path="visit/v2/:visitRequestId/resubmit" element={<RouteAccessGuard routeKey="VISIT_EDIT"><EditVisitRequestV2Page mode="resubmit" /></RouteAccessGuard>} />
+            <Route path="visit/agenda-templates" element={<RouteAccessGuard routeKey="AGENDA_TEMPLATE"><AgendaTemplateManagement /></RouteAccessGuard>} />
+            {/* Ảnh đoàn khách: guard chỉ chặn theo role; ảnh của instance nào thuộc về ai
+                do backend quyết định theo assignment. */}
+            <Route path="visit-photos" element={<RouteAccessGuard routeKey="VISIT_PHOTOS"><VisitPhotoManagement /></RouteAccessGuard>} />
+            <Route path="visit/process/:id" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><VisitProcess /></RouteAccessGuard>} />
+            <Route path="visit/feedback/:visitInstanceId" element={<RouteAccessGuard routeKey="VISIT_FEEDBACK"><VisitFeedbackPage /></RouteAccessGuard>} />
+            <Route path="visit/process-summary/:visitInstanceId" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><VisitProcessSummaryPage /></RouteAccessGuard>} />
+            <Route path="visit/contribution/:visitInstanceId" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><VisitContributionPage /></RouteAccessGuard>} />
+            <Route path="visit/reception-detail/:id" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><VisitProcess /></RouteAccessGuard>} />
+            <Route path="visit/ho-detail/:id" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><HoVisitProcessDetail /></RouteAccessGuard>} />
+            <Route path="visit/process/:id/request/:type" element={<RouteAccessGuard routeKey="VISIT_PROCESS"><VisitRequestDetail /></RouteAccessGuard>} />
+
+            <Route path="documents" element={<RouteAccessGuard routeKey="DOCUMENTS"><DocumentManagement /></RouteAccessGuard>} />
+            <Route path="gallery" element={<RouteAccessGuard routeKey="GALLERY"><GalleryManagement /></RouteAccessGuard>} />
+            <Route path="gallery/locations" element={<RouteAccessGuard routeKey="GALLERY_LOCATIONS"><LocationManagement /></RouteAccessGuard>} />
+            <Route path="minutes" element={<RouteAccessGuard routeKey="MINUTES"><MinuteManagement /></RouteAccessGuard>} />
+            <Route path="post-visit-tasks" element={<RouteAccessGuard routeKey="POST_VISIT_TASKS"><PostVisitTaskManagement /></RouteAccessGuard>} />
+
+            {/* One reports route, three role-specific screens. The guard decides who gets in;
+                this picks which report view they see once inside. */}
+            <Route
+              path="reports"
+              element={
+                <RouteAccessGuard routeKey="REPORTS">
+                  {effectiveRole === 'HO' ? <HoReportManagement />
+                    : effectiveRole === 'STAFF_LEADER' ? <StaffLeaderReportManagement />
+                      : <DeptReportManagement />}
+                </RouteAccessGuard>
+              }
+            />
+            <Route path="feedback" element={<RouteAccessGuard routeKey="FEEDBACK"><FeedbackManagement /></RouteAccessGuard>} />
+            <Route path="feedback/:id" element={<RouteAccessGuard routeKey="FEEDBACK"><FeedbackDetail /></RouteAccessGuard>} />
+
             {/* System Administration Console (ADMIN-only) */}
-            <Route path="admin/sessions" element={<ProtectedRoute roles={['ADMIN']}><SessionManagement /></ProtectedRoute>} />
-            <Route path="admin/security" element={<ProtectedRoute roles={['ADMIN']}><SecurityMonitoring /></ProtectedRoute>} />
-            <Route path="admin/audit-logs" element={<ProtectedRoute roles={['ADMIN']}><AuditLogManagement /></ProtectedRoute>} />
+            <Route path="apis" element={<RouteAccessGuard routeKey="API_MANAGEMENT"><ApiManagement /></RouteAccessGuard>} />
+            <Route path="admin/sessions" element={<RouteAccessGuard routeKey="ADMIN_SESSIONS"><SessionManagement /></RouteAccessGuard>} />
+            <Route path="admin/security" element={<RouteAccessGuard routeKey="ADMIN_SECURITY"><SecurityMonitoring /></RouteAccessGuard>} />
+            <Route path="admin/audit-logs" element={<RouteAccessGuard routeKey="ADMIN_AUDIT_LOGS"><AuditLogManagement /></RouteAccessGuard>} />
           </Route>
           
           <Route path="*" element={<NotFoundPage />} />
