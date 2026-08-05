@@ -51,16 +51,18 @@ import {
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { getVisitRequestFilterConfig } from '../../../features/delegations/config/visitRequestFilterConfig';
 import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
+import { authenticationApi } from '../../../features/authentication/api/authenticationApi';
+import type { CampusOption } from '../../../features/authentication/types/authentication.types';
 import { visitFeedbackApi } from '../../../features/feedbacks/api/visitFeedbackApi';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 import { VisitChangeBadges } from '../../../features/delegations/components/VisitChangeBadges';
 import { VisitRowActionMenu, type VisitRowMenuItem } from '../../../features/delegations/components/VisitRowActionMenu';
-import { VisitNextTaskLine } from '../../../features/delegations/components/VisitNextTaskLine';
+
 import VisitHostTransferModal, { type HostTransferTarget } from '../../../features/visit-request/components/VisitHostTransferModal';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
-type Tab = 'responsible' | 'attending' | 'registered' | 'hosted';
+type Tab = 'responsible' | 'attending' | 'registered' | 'hosted' | 'all';
 
 /** Which of the two layouts an element belongs to — both are in the DOM, CSS picks one. */
 type RowVariant = 'desktop' | 'mobile';
@@ -184,24 +186,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   const canReceiveParticipantInvitations = isRegularStaff || isStaffLeader || isDept || isStudent;
   const canUseAttendingTab = canReceiveParticipantInvitations;
-  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin;
+  const canUseResponsibleTab = !isStudent && !isDept && !isAdmin && !isStaffLeader;
   // Actor relation: tab "Đơn tôi đăng ký / Tôi là người đăng ký" (registrant, read-only)
   // cho các role được tạo đoàn khách; tab "Tôi là host" riêng cho Staff Leader.
   const canUseRegisteredTab = isVisitor || isStaff;
   const canUseHostedTab = isStaffLeader;
+  // "Tất cả các loại đơn" — gộp mọi tab quan hệ thành 1 danh sách (backend QueryAllMergedAsync).
+  // Chỉ role có ≥2 tab mới cần (HO/Dept/Student chỉ có đúng 1 tab, "tất cả" sẽ trùng y hệt tab đó):
+  //   - Staff Leader: THAY THẾ "Yêu cầu tại cơ sở" (theo yêu cầu — responsible cũ đã ẩn ở trên).
+  //   - Visitor / Staff thường: THÊM làm 1 lựa chọn mới, giữ nguyên các tab hiện có.
+  const canUseAllTab = isStaffLeader || isVisitor || isRegularStaff;
   // Các role được tạo đoàn khách (Visitor / IC Staff / Staff Leader) — backend revalidate.
   const canCreateVisitRequest = isVisitor || isRegularStaff || isStaffLeader;
-  const showTabs = [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab].filter(Boolean).length > 1
+  const showTabs = [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab, canUseAllTab].filter(Boolean).length > 1
     || canUseAttendingTab || (canUseResponsibleTab && canUseRegisteredTab);
 
   const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách'
     : isVisitor ? 'Tôi là đầu mối'
-      : isStaffLeader ? 'Yêu cầu tại cơ sở'
-        : 'Đơn phụ trách';
+      : 'Đơn phụ trách';
+  const allTabLabel = 'Tất cả các loại đơn';
   const attendingTabLabel = (isDept && subRole === 'STAFF') ? 'Nhiệm vụ được giao' : 'Lời mời tham dự';
   const registeredTabLabel = isVisitor ? 'Tôi là người đăng ký' : 'Đơn tôi đăng ký';
   const hostedTabLabel = 'Đoàn tôi phụ trách';
   const tabOptions = ([
+    { key: 'all' as Tab, label: allTabLabel, show: canUseAllTab },
     { key: 'responsible' as Tab, label: responsibleTabLabel, show: canUseResponsibleTab },
     { key: 'hosted' as Tab, label: hostedTabLabel, show: canUseHostedTab },
     { key: 'attending' as Tab, label: attendingTabLabel, show: canUseAttendingTab },
@@ -238,12 +246,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (tab === 'attending') return canUseAttendingTab;
     if (tab === 'registered') return canUseRegisteredTab;
     if (tab === 'hosted') return canUseHostedTab;
+    if (tab === 'all') return canUseAllTab;
     return false;
   };
   const urlTab = searchParams.get('tab') as Tab | null;
   const defaultTab: Tab = isTabAllowed(urlTab)
     ? urlTab
-    : (isStudent || isDept) ? 'attending' : 'responsible';
+    : (isStudent || isDept) ? 'attending' : canUseAllTab ? 'all' : 'responsible';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
   // UC-27: pending participation invitations for invitee roles. This banner is the entry
@@ -276,20 +285,34 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     isVisitor,
   });
 
-  // Campus filter options (HO-only filter) from the database — never hardcoded. The filter
-  // sends campusId, so value = campusId; label = campuses.name. Best-effort: if the options
-  // fail to load the dropdown still renders the "Tất cả cơ sở" default. Includes INACTIVE
-  // campuses so historical/cancelled visits at a disabled campus stay filterable.
+  // Campus filter options — never hardcoded, always from the database. The filter sends
+  // campusId, so value = campusId; label = campus name. Best-effort: if the options fail to
+  // load the dropdown still renders the "Tất cả cơ sở" default.
+  // HO uses the campus-management dataset (HO/ADMIN-only endpoint) which includes INACTIVE
+  // campuses so historical/cancelled visits at a disabled campus stay filterable. Visitor has
+  // no access to that endpoint (403) — it falls back to the public "active campuses" list
+  // instead (same one the login page uses), active-only being an acceptable trade-off here.
   const campusFilterOptions = useCampusFilterOptions();
+  const [visitorActiveCampuses, setVisitorActiveCampuses] = useState<CampusOption[]>([]);
+  useEffect(() => {
+    if (!isVisitor) return;
+    let active = true;
+    authenticationApi.getActiveCampuses()
+      .then((list) => { if (active) setVisitorActiveCampuses(list); })
+      .catch(() => { /* best-effort, same as the HO campus filter options */ });
+    return () => { active = false; };
+  }, [isVisitor]);
   const campusOptions = useMemo(
     () => [
       { value: '', label: 'Tất cả cơ sở' },
-      ...(campusFilterOptions?.campuses ?? []).map((c) => ({
-        value: String(c.campusId),
-        label: c.name,
-      })),
+      ...(isVisitor
+        ? visitorActiveCampuses.map((c) => ({ value: String(c.campusId), label: c.campusName }))
+        : (campusFilterOptions?.campuses ?? []).map((c) => ({
+          value: String(c.campusId),
+          label: c.name,
+        }))),
     ],
-    [campusFilterOptions],
+    [isVisitor, visitorActiveCampuses, campusFilterOptions],
   );
 
   const showTabFilter = showTabs && !isEmbedded;
@@ -455,6 +478,24 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const formatDateTimeShort = (value?: string | null) => {
     if (!value) return '-';
     return formatVietnamDateTime(value);
+  };
+
+  /**
+   * Hiển thị lịch tiếp:
+   * - Cùng ngày: "DD/MM/YYYY HH:mm - HH:mm"
+   * - Khác ngày: trả về null (caller sẽ dùng layout Từ/Đến 2 dòng)
+   */
+  const formatSameDayRange = (start?: string | null, end?: string | null): string | null => {
+    if (!start || !end) return null;
+    const startDT = formatVietnamDateTime(start);
+    const endDT = formatVietnamDateTime(end);
+    if (startDT === '-' || endDT === '-') return null;
+    // So sánh phần ngày (10 ký tự đầu "DD/MM/YYYY")
+    if (startDT.slice(0, 10) === endDT.slice(0, 10)) {
+      // Cùng ngày: hiện "DD/MM/YYYY HH:mm - HH:mm"
+      return `${startDT} - ${endDT.slice(11)}`;
+    }
+    return null; // khác ngày
   };
 
   const handleApplyFilters = () => {
@@ -686,12 +727,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return true;
     }
 
-    if (activeTab === 'attending') return true;
+    if (rowTab(row) === 'attending') return true;
 
     if (isVisitor) {
       const approvedish = row.requestStatus === 'APPROVED' || row.requestStatus === 'PARTIALLY_APPROVED';
+      // MULTI_CAMPUS: no separate icon — it only ever toggled the same per-campus accordion the
+      // "Xem N cơ sở" link right under the name already opens, so the icon was a pure duplicate.
       if (row.visitScope === 'MULTI_CAMPUS') {
-        return approvedish;
+        return false;
       }
       return !!row.host && approvedish;
     }
@@ -740,7 +783,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
 
-    if (activeTab === 'attending') {
+    if (rowTab(row) === 'attending') {
       return isDept && subRole === 'STAFF' ? 'Xem nhiệm vụ' : 'Xem lời mời';
     }
 
@@ -819,6 +862,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     const idForRoute = row.id;
 
+    // Dedicated "Lời mời tham dự" tab: rows come from the invitations API and carry a real
+    // participantId. On the merged "all" tab an attending-origin row is the generic
+    // VisitRequestManagementItemDto shape instead (no participantId) — it falls through to
+    // the request detail route below, same as any other read-only row.
     if (activeTab === 'attending') {
       const partId = (row as any).participantId;
       if (isDept && subRole === 'STAFF') {
@@ -826,6 +873,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       } else {
         navTo(`/dashboard/visit/invitations/${partId}`);
       }
+      return;
+    }
+    if (rowTab(row) === 'attending') {
+      navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
       return;
     }
 
@@ -982,6 +1033,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     isStaffLeader && row.campusStatus === 'WAITING_REQUEST_APPROVAL'
     && (row.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST');
 
+  /**
+   * On every OTHER tab, activeTab already describes every row on screen. On the merged "all" tab
+   * (Staff Leader) rows come from 3 different sources mixed into one list, so code that used to
+   * branch on activeTab to mean "this row is an invitation / a registered-only row" must branch
+   * on the ROW's own origin instead — backend-tagged via tabType.
+   */
+  const rowTab = (row: Row): Tab => {
+    if (activeTab !== 'all') return activeTab;
+    switch (row.tabType) {
+      case 'INVITED': return 'attending';
+      case 'REGISTERED': return 'registered';
+      case 'HOSTED': return 'hosted';
+      default: return 'responsible';
+    }
+  };
+
   const isCancelledOrRejected = (row: Row) => {
     return row.requestStatus === 'CANCELLED' ||
       row.campusStatus === 'CANCELLED' ||
@@ -995,14 +1062,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const chip = (key: string, text: string, cls: string) => (
       <span key={key} className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ${cls}`}>{text}</span>
     );
-    if (activeTab === 'attending') {
+    if (rowTab(row) === 'attending') {
       badges.push(chip('att', attendingTabLabel, 'bg-purple-50 text-purple-700 border-purple-200'));
       if (row.participantRole) {
         badges.push(chip('prole', PARTICIPANT_ROLE_LABELS[row.participantRole] ?? 'Tham dự', 'bg-slate-50 text-slate-700 border-slate-200'));
       }
-      const visitStatusText = getVietnameseStatus((row as any).visitRequestStatus, (row as any).campusVisitStatus);
-      if (visitStatusText && visitStatusText !== '-' && visitStatusText !== 'Không xác định') {
-        badges.push(chip('v-status', visitStatusText, 'bg-slate-100 text-slate-600 border-slate-300'));
+      // visitRequestStatus/campusVisitStatus only exist on the dedicated invitations API shape —
+      // a merged-origin row already gets its own status badge from getStatusBadge, so this extra
+      // inline chip is scoped to the literal "attending" tab only.
+      if (activeTab === 'attending') {
+        const visitStatusText = getVietnameseStatus((row as any).visitRequestStatus, (row as any).campusVisitStatus);
+        if (visitStatusText && visitStatusText !== '-' && visitStatusText !== 'Không xác định') {
+          badges.push(chip('v-status', visitStatusText, 'bg-slate-100 text-slate-600 border-slate-300'));
+        }
       }
     } else if (row.visitScope) {
       const single = row.visitScope === 'SINGLE_CAMPUS';
@@ -1014,12 +1086,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     //    kept separate from the status badge (layer 1) and from "việc cần làm" (layer 3), because a
     //    single chip that tried to be all three is what made "Chờ xử lý tại cơ sở" read as an
     //    instruction to the visitor who could do nothing about it. ──
-    if (activeTab === 'registered') {
+    if (rowTab(row) === 'registered') {
       badges.push(chip('registered', row.relationLabel || 'Bạn là người đăng ký', 'bg-slate-50 text-slate-600 border-slate-200'));
       if (row.isAlsoHost) {
         badges.push(chip('also-host', 'Đồng thời phụ trách tiếp đón', 'bg-emerald-50 text-emerald-700 border-emerald-200'));
       }
-    } else if (row.relationLabel && activeTab !== 'attending') {
+    } else if (row.relationLabel && rowTab(row) !== 'attending') {
       const emphasised = row.currentUserIsHost || isAwaitingMyDecision(row);
       badges.push(chip(
         'relation',
@@ -1237,7 +1309,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         onSelect: () => setReason({ open: true, row }),
       });
     }
-    if (activeTab !== 'attending'
+    if (rowTab(row) !== 'attending'
       && (row.isCancelled === true || row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED')) {
       items.push({
         key: 'cancel-reason',
@@ -1248,7 +1320,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
 
     // The full before/after diff is a detail-screen job (§10) — the menu only points at it.
-    if (row.canViewRequestDetail !== false && activeTab !== 'attending') {
+    if (row.canViewRequestDetail !== false && rowTab(row) !== 'attending') {
       items.push({
         key: 'history',
         label: 'Xem lịch sử thay đổi',
@@ -1344,7 +1416,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   ? <FileText className="h-5 w-5" />
                   : can('VIEW_RECEPTION_DETAIL')
                     ? <Eye className="h-5 w-5" />
-                    : (activeTab === 'attending' && !can('OPEN_HOST_PROCESS'))
+                    : (rowTab(row) === 'attending' && !can('OPEN_HOST_PROCESS'))
                       ? <MailOpen className="h-5 w-5" />
                       : <ArrowRightCircle className="h-5 w-5" />
             }
@@ -1575,9 +1647,19 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
                 {/* Time Column */}
                 <div className="lg:py-1 lg:px-3 text-[11px] text-slate-600 flex flex-wrap items-center gap-1 mt-1 lg:mt-0">
-                  <span className="truncate">{formatDateTimeShort(item.plannedStartAt)}</span>
-                  <span className="text-slate-300">→</span>
-                  <span className="truncate">{formatDateTimeShort(item.plannedEndAt)}</span>
+                  {(() => {
+                    const sameDay = formatSameDayRange(item.plannedStartAt, item.plannedEndAt);
+                    if (sameDay) {
+                      return <span className="truncate">{sameDay}</span>;
+                    }
+                    return (
+                      <>
+                        <span className="truncate">{formatDateTimeShort(item.plannedStartAt)}</span>
+                        <span className="text-slate-300">→</span>
+                        <span className="truncate">{formatDateTimeShort(item.plannedEndAt)}</span>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Status Column */}
@@ -1691,9 +1773,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         ? 'Bạn chưa đăng ký đoàn khách nào cho người khác.'
         : activeTab === 'hosted'
           ? 'Bạn chưa phụ trách tiếp đón đoàn khách nào.'
-          : isVisitor
-            ? 'Bạn chưa là đầu mối của đơn tiếp khách nào.'
-            : 'Bạn chưa có đơn phụ trách nào.';
+          : activeTab === 'all'
+            ? isStaffLeader
+              ? 'Chưa có đơn tiếp khách nào tại campus của bạn.'
+              : 'Bạn chưa có đơn tiếp khách nào.'
+            : isVisitor
+              ? 'Bạn chưa là đầu mối của đơn tiếp khách nào.'
+              : 'Bạn chưa có đơn phụ trách nào.';
 
   return (
     <div className="w-full flex flex-col space-y-4 pb-12 animate-in fade-in duration-300">
@@ -1733,67 +1819,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       {/* UC-27: pending invitations entry point (removed per user request to declutter) */}
 
-      {/* Summary Chips */}
-      {summaryStats && (
-        <div className="flex flex-wrap items-center mb-4 text-sm font-medium text-slate-700">
-          {activeTab === 'attending' ? (
-            <span>{[
-              { label: 'Tổng', count: summaryStats.total },
-              { label: 'Chờ phản hồi', count: summaryStats.pending },
-              { label: 'Đã nhận lời', count: summaryStats.accepted },
-              { label: 'Đã từ chối', count: summaryStats.declined },
-              { label: 'Hết hiệu lực / Đã hủy', count: summaryStats.cancelledOrExpired }
-            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
-          ) : isHO ? (
-            <span>{[
-              { label: 'Tổng', count: summaryStats.total },
-              { label: 'Còn cơ sở chờ xử lý', count: summaryStats.pendingApproval },
-              { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after + summaryStats.closed },
-              { label: 'Đã từ chối', count: summaryStats.rejected },
-              { label: 'Đã hủy', count: summaryStats.cancelled }
-            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
-          ) : isVisitor ? (
-            <span>{[
-              { label: 'Tổng', count: summaryStats.total },
-              { label: 'Chờ xử lý', count: summaryStats.pendingApproval },
-              { label: 'Đã tiếp nhận', count: summaryStats.assigned + summaryStats.before + summaryStats.during + summaryStats.after },
-              { label: 'Đã từ chối', count: summaryStats.rejected },
-              { label: 'Đã hoàn tất', count: summaryStats.closed },
-              { label: 'Đã hủy', count: summaryStats.cancelled }
-            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
-          ) : isStaffLeader ? (
-            <span>{[
-              { label: 'Tổng', count: summaryStats.total },
-              { label: 'Chờ duyệt & phân công', count: summaryStats.pendingApproval },
-              { label: 'Đã duyệt & phân công', count: summaryStats.assigned },
-              { label: 'Trước tiếp khách', count: summaryStats.before },
-              { label: 'Trong tiếp khách', count: summaryStats.during },
-              { label: 'Chờ đóng đoàn', count: summaryStats.after },
-              { label: 'Đã đóng đoàn', count: summaryStats.closed },
-              { label: 'Đã từ chối', count: summaryStats.rejected },
-              { label: 'Đã hủy', count: summaryStats.cancelled }
-            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
-          ) : (
-            <span>{[
-              { label: 'Tổng', count: summaryStats.total },
-              { label: 'Đã phân công người phụ trách', count: summaryStats.assigned },
-              { label: 'Trước tiếp khách', count: summaryStats.before },
-              { label: 'Trong tiếp khách', count: summaryStats.during },
-              { label: 'Chờ đóng đoàn', count: summaryStats.after },
-              { label: 'Đã đóng đoàn', count: summaryStats.closed },
-              { label: 'Đã hủy', count: summaryStats.cancelled }
-            ].filter(it => it.count > 0 || it.label === 'Tổng').map(it => `${it.label} ${it.count}`).join(' · ')}</span>
-          )}
-          {summaryStats._isLocal && <span className="text-xs font-medium text-slate-400 ml-auto">Số liệu theo trang hiện tại</span>}
-        </div>
-      )}
-
       {/* Filters */}
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-visible">
         <div className="flex flex-wrap gap-3 xl:items-end">
           {/* Search — first, grows to take leftover space */}
           <div className="min-w-[160px] flex-1 basis-40">
-            <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Tìm kiếm</label>
             <div className="relative w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 shrink-0" />
               <input type="text" data-testid="visit-search-input" placeholder="Tìm tên đoàn, người phụ trách, đối tác..." value={draftFilters.keyword}
@@ -1808,7 +1838,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Loại đơn (filter button thay cho tabs) — width fits its own label */}
           {showTabFilter && (
             <div className="relative shrink-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Loại đơn</label>
               <button onClick={() => setIsTabFilterOpen(!isTabFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{tabOptions.find((t) => t.key === activeTab)?.label ?? 'Chọn loại đơn'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
@@ -1847,7 +1876,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Status — width fits its own label */}
           {filterConfig.showStatus && (
             <div className="relative shrink-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.statusLabel || 'Trạng thái'}</label>
               <button onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{filterConfig.statusOptions.find((o) => o.value === draftFilters.status)?.label ?? 'Tất cả trạng thái'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
@@ -1872,7 +1900,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Scope — width fits its own label */}
           {filterConfig.showScope && (
             <div className="relative shrink-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.scopeLabel || 'Phạm vi đơn'}</label>
               <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{filterConfig.scopeOptions?.find((o) => o.value === draftFilters.visitScope)?.label ?? 'Tất cả phạm vi'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
@@ -1897,7 +1924,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Campus */}
           {filterConfig.showCampus && (
             <div className="relative w-[190px] shrink-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Cơ sở</label>
               <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{campusOptions.find((o) => o.value === draftFilters.campusId)?.label ?? 'Tất cả cơ sở'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
@@ -1922,7 +1948,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Relation */}
           {filterConfig.showRelation && (
             <div className="relative w-[170px] shrink-0">
-              <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">{filterConfig.relationLabel || 'Loại xử lý'}</label>
               <button onClick={() => setIsRelationFilterOpen(!isRelationFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{filterConfig.relationOptions.find((o) => o.value === draftFilters.relation)?.label ?? 'Tất cả'}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
@@ -1946,7 +1971,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
           {/* Date range — width fits its own label */}
           <div className="relative shrink-0">
-            <label className="block h-5 mb-1 truncate text-xs font-bold text-slate-500">Khoảng ngày</label>
             <button onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
               <span className="truncate">
                 {!draftFilters.fromDate && !draftFilters.toDate ? 'Chọn khoảng ngày'
@@ -2054,7 +2078,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                       <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
                       <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
-                      {!isHO && activeTab !== 'attending' && (
+                      {!isHO && row.visitScope !== 'MULTI_CAMPUS' && rowTab(row) !== 'attending' && (
                         <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
                           <span className="text-slate-400">Người phụ trách tiếp đón:</span> {row.host || (row.campusStatus === 'WAITING_REQUEST_APPROVAL' ? 'Chưa được phân công' : '-')}
                           <span className="mx-1 text-slate-300">|</span>
@@ -2062,7 +2086,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                         </p>
                       )}
                       {renderBadges(row)}
-                      <VisitNextTaskLine task={row.nextTask} testId={`next-task-${row.id}`} />
                       <SearchMatchContexts contexts={row.matchedContexts} />
                       {row.canExpandCampuses && (
                         <button
@@ -2079,8 +2102,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       )}
                     </div>
                     <div className="py-3 px-3 text-sm leading-6 text-slate-700">
-                      <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Từ:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
-                      <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Đến:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
+                      {(() => {
+                        const sameDay = formatSameDayRange(row.plannedStartAt, row.plannedEndAt);
+                        if (sameDay) {
+                          return <div className="font-semibold text-slate-800 whitespace-nowrap">{sameDay}</div>;
+                        }
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Từ:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
+                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">Đến:</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
+                          </>
+                        );
+                      })()}
                     </div>
                     <div className="py-3 px-3 flex flex-col items-center justify-center gap-1">{getStatusBadge(row)}</div>
                     <div className="py-3 px-2 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>{renderRowActions(row, 'desktop')}</div>
@@ -2111,10 +2144,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     <div className="flex-shrink-0">{getStatusBadge(row)}</div>
                   </div>
                   {renderBadges(row)}
-                  <VisitNextTaskLine task={row.nextTask} testId={`next-task-mobile-${row.id}`} />
                   <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
-                    <div className="flex items-center gap-2"><Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate">{formatDateTimeShort(row.plannedStartAt)} <span className="text-slate-400 mx-1">→</span> {formatDateTimeShort(row.plannedEndAt)}</span></div>
-                    {!isHO && activeTab !== 'attending' && (
+                    <div className="flex items-center gap-2">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <span className="truncate">
+                        {(() => {
+                          const sameDay = formatSameDayRange(row.plannedStartAt, row.plannedEndAt);
+                          if (sameDay) return sameDay;
+                          return <>{formatDateTimeShort(row.plannedStartAt)} <span className="text-slate-400 mx-1">→</span> {formatDateTimeShort(row.plannedEndAt)}</>;
+                        })()}
+                      </span>
+                    </div>
+                    {!isHO && row.visitScope !== 'MULTI_CAMPUS' && rowTab(row) !== 'attending' && (
                       <>
                         <div className="flex items-center gap-2 mt-0.5"><Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Người phụ trách tiếp đón:</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? 'Đang phân công' : 'Chưa được phân công')}</span></div>
                         <div className="flex items-center gap-2 mt-0.5"><MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">Cơ sở:</span> {row.campus || '-'}</span></div>

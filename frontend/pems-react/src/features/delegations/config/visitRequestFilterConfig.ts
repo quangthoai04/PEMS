@@ -38,7 +38,7 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: true,
+      showScope: false,
       // Visitor lọc "Đơn của tôi" với bộ filter tương tự HO (gồm cả Cơ sở). Backend LUÔN
       // ép ownership (visit_requests.visitor_user_id/created_by = currentUser) bất kể filter
       // params — campusId/scope/status chỉ thu hẹp TRONG tập đơn của chính Visitor, không thể
@@ -72,7 +72,7 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: true,
+      showScope: false,
       showRelation: false,
       statusLabel: isDeptStaff ? 'Trạng thái nhiệm vụ' : 'Trạng thái lời mời',
       scopeLabel: 'Phạm vi đơn',
@@ -101,7 +101,7 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: true,
+      showScope: false,
       showRelation: false,
       showCampus: true,
       statusLabel: 'Trạng thái',
@@ -135,7 +135,7 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: true,
+      showScope: false,
       showRelation: false,
       statusLabel: 'Trạng thái',
       scopeLabel: 'Phạm vi đơn',
@@ -166,7 +166,7 @@ export function getVisitRequestFilterConfig({
     return {
       showKeyword: true,
       showStatus: true,
-      showScope: true,
+      showScope: false,
       showRelation: false,
       statusLabel: 'Trạng thái',
       scopeLabel: 'Phạm vi đơn',
@@ -192,7 +192,7 @@ export function getVisitRequestFilterConfig({
   return {
     showKeyword: true,
     showStatus: true,
-    showScope: true,
+    showScope: false,
     showRelation: false,
     statusLabel: 'Trạng thái',
     scopeLabel: 'Phạm vi đơn',

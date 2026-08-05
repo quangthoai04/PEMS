@@ -1027,6 +1027,13 @@ export interface VisitRequestManagementItem {
   statusLabel?: string | null;
   /** What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …). */
   relationLabel?: string | null;
+  /**
+   * Which relationship view this row came from: RESPONSIBLE | INVITED | REGISTERED | HOSTED |
+   * MY_REQUESTS. On the merged "Tất cả các loại đơn" tab (Staff Leader), rows from different
+   * sources are mixed in one list — this is how the frontend tells them apart per-row instead
+   * of assuming the page-level active tab describes every row.
+   */
+  tabType?: string | null;
   /** Backend-decided next task. NONE is a real answer, not an absent one. */
   nextTask?: VisitNextTask | null;
 

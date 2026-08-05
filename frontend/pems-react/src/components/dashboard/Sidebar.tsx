@@ -38,6 +38,7 @@ import {
   ScrollText,
   Camera,
   ListChecks,
+  Star,
 } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
 import avatarImg from "../../assets/Avatar/AvatarDefault.png";
@@ -213,6 +214,16 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                   <span>Dashboard</span>
                 </NavLink>
               )}
+              {/* ── Quản lý tiếp khách: trang chính, luôn hiện ngay sau Dashboard ── */}
+              {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
+                <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
+                  <Briefcase className="w-5 h-5 flex-shrink-0" />
+                  <span className="flex items-center gap-1.5">
+                    Quản lý tiếp khách
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 flex-shrink-0" />
+                  </span>
+                </NavLink>
+              )}
               {roleForSidebar !== "DEPARTMENT" && roleForSidebar !== "VISITOR" && !isRealAdmin && (
                 <NavLink to="/dashboard/news" className={navItemClass} onClick={handleLinkClick}>
                   <Newspaper className="w-5 h-5 flex-shrink-0" />
@@ -252,12 +263,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 <NavLink to="/dashboard/campus" className={navItemClass} onClick={handleLinkClick}>
                   <MapPin className="w-5 h-5 flex-shrink-0" />
                   <span>Quản lý campus</span>
-                </NavLink>
-              )}
-              {(["HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"].includes(roleForSidebar)) && !isDeptStaff && (
-                <NavLink to="/dashboard/visit" className={navItemClass} onClick={handleLinkClick}>
-                  <Briefcase className="w-5 h-5 flex-shrink-0" />
-                  <span>Quản lý tiếp khách</span>
                 </NavLink>
               )}
               {(["STUDENT", "STAFF", "HO"].includes(roleForSidebar)) && !isRealAdmin && !isDeptStaff && (
