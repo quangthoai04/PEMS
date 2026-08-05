@@ -37,6 +37,7 @@
     "department": "Phòng HTQT"
   },
   "profile": {
+    "backToHome": "Quay về trang chủ",
     "myVisitRequests": "Đơn tham quan của tôi",
     "adminDashboard": "Trang quản trị",
     "userProfile": "Hồ sơ cá nhân",

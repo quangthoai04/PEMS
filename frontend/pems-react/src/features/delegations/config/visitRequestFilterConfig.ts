@@ -1,15 +1,21 @@
 import { VisitScopeFilterOption, VisitStatusFilterOption, VisitRelationFilterOption, VisitFilterConfig } from '../types/delegations.types';
 
+/** Minimal shape of react-i18next's `t` — avoids importing the whole lib into this pure config module. */
+type TranslateFn = (key: string, options?: Record<string, unknown>) => string;
+
 export function getVisitRequestFilterConfig({
   roleCode,
   subRole,
   activeTab,
   isVisitor,
+  t,
 }: {
   roleCode: string;
   subRole: string;
   activeTab: string;
   isVisitor: boolean;
+  /** Only consumed for the Visitor branch — every other role's labels stay Vietnamese (backend-driven UI, out of i18n scope). */
+  t?: TranslateFn;
 }): VisitFilterConfig {
   const isAdmin = roleCode === 'ADMIN';
   const isHO = roleCode === 'HO';
@@ -45,23 +51,23 @@ export function getVisitRequestFilterConfig({
       // dùng để lộ đơn của Visitor khác (xem ViewGuestDelegationListQueryHandler.QueryRequestLevelAsync).
       showCampus: true,
       showRelation: false,
-      statusLabel: 'Trạng thái',
-      scopeLabel: 'Phạm vi đơn',
+      statusLabel: t ? t('visitRequestV2:list.filterVisitor.statusLabel') : 'Trạng thái',
+      scopeLabel: t ? t('visitRequestV2:list.filterVisitor.scopeLabel') : 'Phạm vi đơn',
       scopeOptions: [
-        { value: '', label: 'Tất cả phạm vi' },
-        { value: 'SINGLE_CAMPUS', label: 'Đơn một cơ sở' },
-        { value: 'MULTI_CAMPUS', label: 'Đơn liên cơ sở' },
+        { value: '', label: t ? t('visitRequestV2:list.allScopes') : 'Tất cả phạm vi' },
+        { value: 'SINGLE_CAMPUS', label: t ? t('visitRequestV2:list.filterVisitor.scopeSingle') : 'Đơn một cơ sở' },
+        { value: 'MULTI_CAMPUS', label: t ? t('visitRequestV2:list.filterVisitor.scopeMulti') : 'Đơn liên cơ sở' },
       ],
       relationOptions: [],
       statusOptions: [
-        { value: '', label: 'Tất cả trạng thái' },
-        { value: 'PENDING_APPROVAL', label: 'Chờ duyệt', description: 'Đơn đang trong quá trình duyệt', requestStatus: 'PENDING_APPROVAL' },
-        { value: 'APPROVED', label: 'Đã duyệt', description: 'Đơn đã được duyệt (bao gồm đang chuẩn bị, đang diễn ra hoặc đã hoàn tất)', requestStatus: 'APPROVED' },
-        { value: 'BEFORE_VISIT', label: 'Đang chuẩn bị', description: 'Đơn đã được duyệt và đang trong quá trình chuẩn bị', campusStatus: 'BEFORE_VISIT' },
-        { value: 'DURING_VISIT', label: 'Đang diễn ra', description: 'Đoàn đang trong quá trình thăm viếng tại Campus', campusStatus: 'DURING_VISIT' },
-        { value: 'CLOSED', label: 'Đã hoàn tất', description: 'Đoàn đã hoàn tất toàn bộ chuyến thăm và thủ tục', campusStatus: 'CLOSED' },
-        { value: 'REJECTED', label: 'Từ chối', description: 'Đơn đã bị từ chối', requestStatus: 'REJECTED' },
-        { value: 'CANCELLED_ANY', label: 'Đã hủy', description: 'Đơn đã bị hủy', cancelledOnly: true },
+        { value: '', label: t ? t('visitRequestV2:list.allStatuses') : 'Tất cả trạng thái' },
+        { value: 'PENDING_APPROVAL', label: t ? t('visitRequestV2:list.statusOptions.pendingApproval.label') : 'Chờ duyệt', description: t ? t('visitRequestV2:list.statusOptions.pendingApproval.description') : 'Đơn đang trong quá trình duyệt', requestStatus: 'PENDING_APPROVAL' },
+        { value: 'APPROVED', label: t ? t('visitRequestV2:list.statusOptions.approved.label') : 'Đã duyệt', description: t ? t('visitRequestV2:list.statusOptions.approved.description') : 'Đơn đã được duyệt (bao gồm đang chuẩn bị, đang diễn ra hoặc đã hoàn tất)', requestStatus: 'APPROVED' },
+        { value: 'BEFORE_VISIT', label: t ? t('visitRequestV2:list.statusOptions.beforeVisit.label') : 'Đang chuẩn bị', description: t ? t('visitRequestV2:list.statusOptions.beforeVisit.description') : 'Đơn đã được duyệt và đang trong quá trình chuẩn bị', campusStatus: 'BEFORE_VISIT' },
+        { value: 'DURING_VISIT', label: t ? t('visitRequestV2:list.statusOptions.duringVisit.label') : 'Đang diễn ra', description: t ? t('visitRequestV2:list.statusOptions.duringVisit.description') : 'Đoàn đang trong quá trình thăm viếng tại Campus', campusStatus: 'DURING_VISIT' },
+        { value: 'CLOSED', label: t ? t('visitRequestV2:list.statusOptions.closed.label') : 'Đã hoàn tất', description: t ? t('visitRequestV2:list.statusOptions.closed.description') : 'Đoàn đã hoàn tất toàn bộ chuyến thăm và thủ tục', campusStatus: 'CLOSED' },
+        { value: 'REJECTED', label: t ? t('visitRequestV2:list.statusOptions.rejected.label') : 'Từ chối', description: t ? t('visitRequestV2:list.statusOptions.rejected.description') : 'Đơn đã bị từ chối', requestStatus: 'REJECTED' },
+        { value: 'CANCELLED_ANY', label: t ? t('visitRequestV2:list.statusOptions.cancelled.label') : 'Đã hủy', description: t ? t('visitRequestV2:list.statusOptions.cancelled.description') : 'Đơn đã bị hủy', cancelledOnly: true },
       ],
     };
   }

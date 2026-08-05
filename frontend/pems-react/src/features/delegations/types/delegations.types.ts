@@ -966,6 +966,8 @@ export interface VisitRequestManagementItem {
   isCurrentUserParticipant: boolean;
   participantRole: string | null;
   currentUserRelation: string;
+  /** PENDING_CONFIRMATION | ACTIVE — the invited primary contact has (not) claimed the request yet. */
+  primaryContactAccessStatus?: string | null;
 
   expectedStartAt: string | null;
   expectedEndAt: string | null;
