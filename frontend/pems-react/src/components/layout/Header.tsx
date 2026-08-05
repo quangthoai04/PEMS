@@ -146,7 +146,7 @@ export function Header() {
                 <span className="truncate">Inbound</span>
               </a>
 
-              <Link to="/visit-fptu" className={getLinkClass('/visit-fptu', 'w-[132px]')}>
+              <Link to="/visit-fptu" className={getLinkClass('/visit-fptu', 'w-[148px]')}>
                 <span className="truncate">{t('publicLayout:nav.galleryShort')}</span>
               </Link>
 

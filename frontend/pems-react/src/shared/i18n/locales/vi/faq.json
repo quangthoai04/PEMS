@@ -38,7 +38,8 @@
     "retry": "Thử lại",
     "noResultTitle": "Không tìm thấy câu hỏi phù hợp",
     "noResultMsg": "Hãy thử từ khóa khác hoặc liên hệ Phòng HTQT.",
-    "clearFilter": "Xóa bộ lọc"
+    "clearFilter": "Xóa bộ lọc",
+    "deepLinkMissing": "Câu hỏi bạn tìm hiện không còn được hiển thị công khai."
   },
   "cta": {
     "title": "Bạn vẫn cần hỗ trợ?",

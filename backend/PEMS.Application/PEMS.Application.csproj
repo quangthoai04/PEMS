@@ -28,6 +28,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Public search composes its four section queries as IQueryable so a test can call ToQueryString()
+      on them and prove they translate to SQL — i.e. that visibility, language, keyword match, ranking
+      and the limit really are pushed to MySQL rather than evaluated after loading the table. Those
+      builders are an internal detail of the handler, not public API, so the test assembly reaches them
+      here instead of them being promoted.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>PEMS.IntegrationTests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Common\Assets\fpt-logo.png" />
     <!--
       The shipped default content of every system email template (G11-I restore-to-default).

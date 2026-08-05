@@ -302,6 +302,18 @@ export function PartnersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [countryOptions]);
 
+  // Deep-link support: /partners?search=<keyword> — where the search popup's "view more related
+  // partners" lands. Hydrating both the input and the debounced value means the list is already
+  // filtered on arrival instead of showing everything for one debounce interval. Read once on mount:
+  // afterwards the input owns the value, so clearing it must not be undone by the stale URL.
+  useEffect(() => {
+    const fromUrl = searchParams.get('search');
+    if (!fromUrl) return;
+    setSearchQuery(fromUrl);
+    setDebouncedSearch(fromUrl.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 400);
     return () => clearTimeout(handle);
