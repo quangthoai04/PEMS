@@ -29,6 +29,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// to the verify endpoint.
     /// </summary>
     [HttpPost("initiate")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status410Gone)]
     public IActionResult Initiate()
     {
@@ -44,6 +45,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// 409 DUPLICATE_VISIT_REQUEST.
     /// </summary>
     [HttpPost("verify")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status410Gone)]
     public IActionResult Verify()
     {
@@ -56,6 +58,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// challenge that already requires human verification cannot be resent (428).
     /// </summary>
     [HttpPost("resend-otp")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(InitiateVisitRequestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status428PreconditionRequired)]
@@ -75,6 +78,7 @@ public sealed class VisitRequestsController : ControllerBase
     /// the old code.
     /// </summary>
     [HttpPost("otp/recover")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(InitiateVisitRequestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]

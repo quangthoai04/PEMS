@@ -46,9 +46,9 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Environment/secrets
-.env
-.env.*
-!.env.example
+# .env
+# .env.*
+# !.env.example
 appsettings.Local.json
 appsettings.Testing.json
 appsettings.Development.Local.json

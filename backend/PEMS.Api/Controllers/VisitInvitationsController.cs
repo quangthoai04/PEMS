@@ -1,6 +1,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Delegations.Commands.AssignDepartmentStaff;
@@ -11,7 +12,13 @@ using PEMS.Domain.Constants;
 
 namespace PEMS.Api.Controllers;
 
+/// <summary>
+/// Participant invitations. Every action is scoped to the signed-in participant in its handler
+/// (anti-IDOR on participantId); the class-level [Authorize] closes the anonymous hole that let
+/// these endpoints be called with no token at all.
+/// </summary>
 [ApiController]
+[Authorize]
 [Route("api/visit-invitations")]
 public class VisitInvitationsController : ControllerBase
 {

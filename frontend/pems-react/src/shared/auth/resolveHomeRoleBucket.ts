@@ -1,7 +1,10 @@
 /**
  * resolveHomeRoleBucket
- * Thin wrapper riêng cho Homepage (Quick Access / Guide Steps) — tách STAFF và DEPARTMENT
- * theo sub_role thành 4 bucket riêng, vì Quick Access khác nhau giữa Leader và Staff thường.
+ * Thin wrapper riêng cho Homepage (Quick Access / Guide Steps). Trước đây nó phải tự
+ * đọc lại sub_role để tách Leader khỏi Staff thường, vì resolveEffectiveRole gộp hai
+ * vai này làm một. Nay effective role đã đủ 8 giá trị nên đây chỉ còn là phép đổi tên
+ * sang thuật ngữ của Homepage (DEPT_LEADER / DEPT_STAFF).
+ *
  * Không thay thế resolveEffectiveRole (dùng cho routing/guard) — chỉ dùng nội bộ trong
  * feature Homepage để chọn nội dung hiển thị.
  */
@@ -21,15 +24,13 @@ export type HomeRoleBucket =
 
 export function resolveHomeRoleBucket(user: AuthUser | null | undefined): HomeRoleBucket | null {
   const effectiveRole = resolveEffectiveRole(user);
-  if (!effectiveRole || !user) return null;
-
-  const subRole = (user.subRole ?? '').trim().toUpperCase();
+  if (!effectiveRole) return null;
 
   switch (effectiveRole) {
-    case 'STAFF':
-      return subRole === 'LEADER' ? 'STAFF_LEADER' : 'STAFF';
+    case 'DEPARTMENT_LEAD':
+      return 'DEPT_LEADER';
     case 'DEPARTMENT':
-      return subRole === 'LEADER' ? 'DEPT_LEADER' : 'DEPT_STAFF';
+      return 'DEPT_STAFF';
     default:
       return effectiveRole;
   }

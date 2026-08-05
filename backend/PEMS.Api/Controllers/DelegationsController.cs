@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Common.Security;
@@ -37,7 +38,30 @@ using System.Threading.Tasks;
 
 namespace PEMS.Api.Controllers
 {
+    /// <summary>
+    /// Delegation reception — the core visit workflow (UC-17..UC-41, UC-136).
+    ///
+    /// The controller carried no authorization attribute at all, so approve/reject, host
+    /// assignment, participant invite/remove, agenda writes and the setup-progress email send
+    /// were all reachable without a token. It is now authenticated, and ADMIN is excluded at
+    /// the coarse layer per PERMISSION_MATRIX §5.4 ("ADMIN must stay — for UC-17 to UC-41 and
+    /// UC-136, and must not receive indirect visit access through dashboard/search/detail").
+    ///
+    /// This gate says nothing about WHICH delegation the caller may touch. Every handler still
+    /// resolves object scope — current host, accepted participant, instance campus, assigned
+    /// department, request owner — so changing visitRequestId or visitInstanceId in the URL
+    /// does not widen access.
+    /// </summary>
     [ApiController]
+    [Authorize]
+    [RoleAuthorize(
+        EffectiveRole.Ho,
+        EffectiveRole.StaffLeader,
+        EffectiveRole.Staff,
+        EffectiveRole.DepartmentLead,
+        EffectiveRole.Department,
+        EffectiveRole.Student,
+        EffectiveRole.Visitor)]
     [Route("api/[controller]")]
     public class DelegationsController : ControllerBase
     {

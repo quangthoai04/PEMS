@@ -6,13 +6,20 @@ namespace PEMS.Application.Partners.Common;
 
 /// <summary>
 /// Fixed role/scope policy of the Partner module (no dynamic permissions):
-///  - ADMIN: technical admin, full read; not the business approver.
+///  - ADMIN: technical admin. NO partner access at all — see note below.
 ///  - HO: read-only monitor of all partners.
 ///  - STAFF+LEADER: sees + approves/rejects partners of own campus (owner_campus_id).
 ///  - STAFF+STAFF: creates partners (PENDING_APPROVAL, owner_campus_id = own campus),
 ///    manages contacts within campus scope.
 ///  - DEPARTMENT/STUDENT: read APPROVED internal partners only.
 ///  - VISITOR/PUBLIC: public endpoint only (APPROVED + PUBLIC).
+///
+/// ADMIN was removed from every rule here. It previously had full cross-campus read plus a
+/// "technical fallback" that let it edit any partner and manage that partner's contacts,
+/// aliases and documents. PERMISSION_MATRIX §5.6 marks Admin "—" for UC-50..UC-54, and §4.2
+/// states ADMIN is not a business superuser; a technical fallback that edits business records
+/// is exactly the implicit grant that rule forbids. IsAdmin() is kept because callers may still
+/// want to branch on it for non-authorization reasons, but no access decision uses it.
 /// </summary>
 public static class PartnerAccess
 {
@@ -30,13 +37,13 @@ public static class PartnerAccess
 
     /// <summary>Any internal role that may open the partner management screens.</summary>
     public static bool CanViewPartnerModule(ICurrentUserService user) =>
-        Effective(user) is EffectiveRole.Admin or EffectiveRole.Ho
+        Effective(user) is EffectiveRole.Ho
             or EffectiveRole.StaffLeader or EffectiveRole.Staff
             or EffectiveRole.DepartmentLead or EffectiveRole.Department or EffectiveRole.Student;
 
     /// <summary>Roles that see every campus (list is not campus-scoped).</summary>
     public static bool SeesAllCampuses(ICurrentUserService user) =>
-        Effective(user) is EffectiveRole.Admin or EffectiveRole.Ho;
+        Effective(user) is EffectiveRole.Ho;
 
     /// <summary>Roles restricted to APPROVED + INTERNAL/PUBLIC partners only.</summary>
     public static bool ApprovedOnly(ICurrentUserService user) =>
@@ -46,11 +53,10 @@ public static class PartnerAccess
     public static bool CanCreatePartner(ICurrentUserService user) =>
         Effective(user) is EffectiveRole.Staff or EffectiveRole.StaffLeader;
 
-    /// <summary>Creator (own campus staff) or campus Staff Leader may edit; Admin as technical fallback.</summary>
+    /// <summary>Creator (own campus staff) or campus Staff Leader may edit. No admin fallback.</summary>
     public static bool CanEditPartner(ICurrentUserService user, Partner partner)
     {
         var role = Effective(user);
-        if (role == EffectiveRole.Admin) return true;
         if (role is EffectiveRole.Staff or EffectiveRole.StaffLeader)
             return user.PrimaryCampusId == partner.OwnerCampusId;
         return false;
@@ -64,7 +70,7 @@ public static class PartnerAccess
     public static bool CanViewPartner(ICurrentUserService user, Partner partner)
     {
         var role = Effective(user);
-        if (role is EffectiveRole.Admin or EffectiveRole.Ho) return true;
+        if (role == EffectiveRole.Ho) return true;
         if (role is EffectiveRole.Staff or EffectiveRole.StaffLeader)
         {
             // Own-campus rows always; other campuses only once APPROVED and not PRIVATE.
@@ -78,7 +84,7 @@ public static class PartnerAccess
         return false;
     }
 
-    /// <summary>Contacts/aliases/documents mutations: campus scope (Staff/Staff Leader) or Admin.</summary>
+    /// <summary>Contacts/aliases/documents mutations: campus scope (Staff/Staff Leader) only.</summary>
     public static bool CanManagePartnerChildren(ICurrentUserService user, Partner partner) =>
         CanEditPartner(user, partner);
 }

@@ -4,8 +4,11 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using PEMS.Api.Filters;
+using PEMS.Application.Common.Security;
 using PEMS.Application.Galleries.Commands.AddGalleryItem;
 using PEMS.Application.Galleries.Commands.BackfillGalleryTranslations;
 using PEMS.Application.Galleries.Commands.ChangeGalleryItemStatus;
@@ -31,8 +34,15 @@ namespace PEMS.Api.Controllers
     /// rest of the project. Every handler self-guards via <c>StaffLeaderGalleryScope</c> (campus is taken
     /// from the JWT, never the request), so anonymous/other roles get 403. Add/Edit are multipart so the
     /// shared Google Drive upload foundation can store the media files.
+    ///
+    /// The handler self-guard was the ONLY check: the controller had no [Authorize], so the
+    /// gate depended on every handler remembering to call StaffLeaderGalleryScope. The coarse
+    /// role is now declared here as well, so a new action is refused by default rather than
+    /// published anonymously. Handlers keep their campus scope — this does not replace it.
     /// </summary>
     [ApiController]
+    [Authorize]
+    [RoleAuthorize(EffectiveRole.StaffLeader)]
     [Route("api/[controller]")]
     public class GalleriesController : ControllerBase
     {

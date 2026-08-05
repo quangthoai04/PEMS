@@ -1,12 +1,26 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PEMS.Api.Filters;
+using PEMS.Application.Common.Security;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace PEMS.Api.Controllers
 {
+    /// <summary>
+    /// Department master data and personnel (UC-101..UC-116).
+    ///
+    /// Only one action here used to carry [Authorize]; the other nineteen — including
+    /// addnewdepartment, updatedepartment, managedepartmentstatus, removepersonnel and
+    /// reassigndepartmentlead — were reachable with no token. The class is now authenticated,
+    /// and the master-data actions are gated to Staff Leader per matrix §5.17. Personnel and
+    /// coordination actions stay open to the department roles at this layer and are scoped in
+    /// their handlers, which resolve the department from the signed-in user rather than from a
+    /// client-supplied departmentId.
+    /// </summary>
     [ApiController]
+    [Authorize]
     [Route("api/[controller]")]
     public class DepartmentsController : ControllerBase
     {
@@ -14,6 +28,7 @@ namespace PEMS.Api.Controllers
         public DepartmentsController(IMediator mediator) => _mediator = mediator;
 
         [HttpPost("addnewdepartment")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> AddNewDepartment([FromBody] PEMS.Application.Departments.Commands.AddNewDepartment.AddNewDepartmentCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -21,6 +36,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("updatedepartment")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> UpdateDepartment([FromBody] PEMS.Application.Departments.Commands.UpdateDepartment.UpdateDepartmentCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -28,6 +44,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("searchandfilterdepartments")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> SearchandFilterDepartments([FromQuery] PEMS.Application.Departments.Queries.SearchandFilterDepartments.SearchandFilterDepartmentsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -35,6 +52,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewdepartmentlist")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> ViewDepartmentList([FromQuery] PEMS.Application.Departments.Queries.ViewDepartmentList.ViewDepartmentListQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -42,6 +60,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("viewdepartmentdetails")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Department)]
         public async Task<IActionResult> ViewDepartmentDetails([FromQuery] PEMS.Application.Departments.Queries.ViewDepartmentDetails.ViewDepartmentDetailsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -49,6 +68,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("departmentstatusimpact")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> GetDepartmentStatusImpact([FromQuery] PEMS.Application.Departments.Queries.GetDepartmentStatusImpact.GetDepartmentStatusImpactQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -56,6 +76,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpPost("managedepartmentstatus")]
+        [RoleAuthorize(EffectiveRole.StaffLeader)]
         public async Task<IActionResult> ManageDepartmentStatus([FromBody] PEMS.Application.Departments.Commands.ManageDepartmentStatus.ManageDepartmentStatusCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
