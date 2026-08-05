@@ -520,4 +520,32 @@ public class VisitSetupEmailTableStructureTests
         foreach (var cell in table.Descendants("td"))
             Assert.Contains("border:1px solid #374151", StyleOf(cell));
     }
+
+    /// <summary>
+    /// The block a Host edits must satisfy the rules the editor's tables are held to (V4 §7.3, §17).
+    ///
+    /// <para>
+    /// This is the one place the two meet. VisitSetupProgressUpdate is runtime-editable, so this markup
+    /// is handed to the shared editor, comes back through <c>AuthoredByUser.Create</c>, and is checked by
+    /// <see cref="PEMS.Application.Emails.Common.EmailTableRules"/> like anything else an author sends. A
+    /// change here that nests a table or widens one past the ceiling would not fail as a layout
+    /// complaint — it would refuse the send outright, with the Host's own edit already in front of them.
+    /// </para>
+    /// <para>
+    /// The large delegation is the point of the second case: rows scale with the guest list, so a rule
+    /// that capped them would refuse this send for having too many guests.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData("vi")]
+    [InlineData("en")]
+    public void The_setup_block_satisfies_the_email_table_rules(string language)
+    {
+        Assert.Empty(PEMS.Application.Emails.Common.EmailTableRules.Problems(
+            VisitSetupEmailHtml.Render(Snapshot(), language)));
+
+        var crowd = Enumerable.Range(1, 40).Select(i => Person($"Khách {i}")).ToList();
+        Assert.Empty(PEMS.Application.Emails.Common.EmailTableRules.Problems(
+            VisitSetupEmailHtml.Render(Snapshot(guests: crowd), language)));
+    }
 }

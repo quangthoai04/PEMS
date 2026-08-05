@@ -99,6 +99,12 @@ public abstract record SystemEmailContent
             AssertNoActionBlockMarker(raw);
             AssertNoTrustedBlockPlaceholder(trimmedSubject, raw);
 
+            // Checked before sanitising too, and for the same reason: the sanitiser has no opinion about
+            // a table's SHAPE. A nested table survives it intact, so leaving this until afterwards would
+            // only mean refusing the same content one step later, with the author's own markup already
+            // rewritten in the error they are shown.
+            EmailTableRules.AssertUsable(raw);
+
             var sanitized = sanitizer.SanitizeEmailHtml(raw);
             if (string.IsNullOrWhiteSpace(sanitized))
                 throw new ValidationException(

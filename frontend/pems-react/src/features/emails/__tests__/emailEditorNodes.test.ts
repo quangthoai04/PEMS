@@ -10,7 +10,9 @@ import {
   VARIABLE_CHIP_CLASS, chipNames, chipsToVariables, registerVariableChipBlot, variablesToChips,
 } from '../utils/emailEditorVariableChips';
 import {
-  buildEmailTable, nodesToTables, readTableCells, registerEmailTableBlot, tablesToNodes,
+  TABLE_MAX_COLS, TABLE_MAX_ROWS,
+  addTableColumn, addTableRow, applyTableEdit, buildEmailTable, nodesToTables, parseEmailTable,
+  readTableCells, registerEmailTableBlot, removeTableColumn, removeTableRow, tablesToNodes,
 } from '../utils/emailEditorTable';
 import { registerEmailEditorFormats } from '../utils/emailEditorFormats';
 
@@ -158,6 +160,107 @@ describe('email-safe tables', () => {
   it('leaves content with no table untouched in both directions', () => {
     expect(tablesToNodes('<p>không có bảng</p>')).toBe('<p>không có bảng</p>');
     expect(nodesToTables('<p>không có bảng</p>')).toBe('<p>không có bảng</p>');
+  });
+});
+
+// ── the table model the dialog edits ────────────────────────────────────────
+
+/**
+ * `applyTableEdit` on its own, without a dialog or an editor in the way.
+ *
+ * The case that matters most here is deleting a row that is not the last one. The first implementation
+ * resized the table to the model's row COUNT, which removes from the end — so deleting the header row
+ * dropped the final row's markup and then left the header text in place. The table came back with the
+ * row the author had just deleted and without one they had not touched.
+ */
+describe('the table model', () => {
+  const THREE_ROWS = '<table style="border-collapse:collapse"><tbody>'
+    + '<tr><td style="border:1px solid #dbe4ee">một</td></tr>'
+    + '<tr><td style="border:1px solid #dbe4ee">hai</td></tr>'
+    + '<tr><td style="border:1px solid #dbe4ee">ba</td></tr>'
+    + '</tbody></table>';
+
+  const model = (html: string) => parseEmailTable(html)!;
+
+  it('deletes the row that was asked for, not the last one', () => {
+    const out = applyTableEdit(THREE_ROWS, removeTableRow(model(THREE_ROWS), 0));
+
+    expect(out).not.toContain('một');
+    expect(out).toContain('hai');
+    expect(out).toContain('ba');
+  });
+
+  it('deletes the column that was asked for', () => {
+    const html = buildEmailTable(1, 3, [['A', 'B', 'C']], { headerRow: false });
+    const out = applyTableEdit(html, removeTableColumn(model(html), 0));
+
+    expect(out).not.toContain('>A<');
+    expect(out).toContain('>B<');
+    expect(out).toContain('>C<');
+  });
+
+  it('returns the original markup untouched when the model did not change', () => {
+    expect(applyTableEdit(THREE_ROWS, model(THREE_ROWS))).toBe(THREE_ROWS);
+  });
+
+  it('keeps inline markup in a cell nobody retyped', () => {
+    const html = '<table><tbody><tr><td><strong>đậm</strong></td><td>thường</td></tr></tbody></table>';
+    const edited = model(html);
+    edited.rows[0][1] = { ...edited.rows[0][1], text: 'đã sửa' };
+
+    const out = applyTableEdit(html, edited);
+
+    expect(out).toContain('<strong>đậm</strong>');
+    expect(out).toContain('đã sửa');
+  });
+
+  it('escapes text an author typed rather than letting it become markup', () => {
+    const html = buildEmailTable(1, 1, [['x']], { headerRow: false });
+    const edited = model(html);
+    edited.rows[0][0] = { ...edited.rows[0][0], text: '<script>alert(1)</script>' };
+
+    const out = applyTableEdit(html, edited);
+
+    expect(out).not.toContain('<script>');
+    expect(out).toContain('&lt;script&gt;');
+  });
+
+  it('refuses a nested table instead of flattening it', () => {
+    expect(parseEmailTable(
+      '<table><tbody><tr><td><table><tbody><tr><td>trong</td></tr></tbody></table></td></tr></tbody></table>',
+    )).toBeNull();
+  });
+
+  it('stops adding at the safe bounds', () => {
+    let m = model(THREE_ROWS);
+    for (let i = 0; i < TABLE_MAX_ROWS + 5; i += 1) m = addTableRow(m);
+    expect(m.rows.length).toBe(TABLE_MAX_ROWS);
+
+    for (let i = 0; i < TABLE_MAX_COLS + 5; i += 1) m = addTableColumn(m);
+    expect(m.rows[0].length).toBe(TABLE_MAX_COLS);
+  });
+
+  it('will not empty the table', () => {
+    const one = model('<table><tbody><tr><td>một</td></tr></tbody></table>');
+
+    expect(removeTableRow(one, 0).rows.length).toBe(1);
+    expect(removeTableColumn(one, 0).rows[0].length).toBe(1);
+  });
+
+  it('reads alignment and width back out of the markup it wrote', () => {
+    const html = buildEmailTable(1, 1, [['x']], { align: 'center', width: '50%' });
+    const m = model(html);
+
+    expect(m.align).toBe('center');
+    expect(m.width).toBe('50%');
+  });
+
+  it('survives a line break in a cell in both directions', () => {
+    const html = '<table><tbody><tr><td>dòng một<br>dòng hai</td></tr></tbody></table>';
+    const m = model(html);
+
+    expect(m.rows[0][0].text).toBe('dòng một\ndòng hai');
+    expect(applyTableEdit(html, m)).toBe(html);
   });
 });
 

@@ -14,11 +14,14 @@
  * name, and keeps the icon set consistent with the rest of the product.
  *
  * <b>What it deliberately does not offer.</b> No source view, no arbitrary HTML, no font or size outside
- * the fixed ladders (§6.2, §6.3, §6.4). Tables are not offered either: Quill 2 models a table as rows of
- * cells it owns, and pasting an email-safe one through it restructures the table (two cells in one row
- * came back as two rows) and strips the inline borders and padding that make it visible in mail. A button
- * that silently rearranges a table is worse than no button, so the gap is left open rather than papered
- * over.
+ * the fixed ladders (§6.2, §6.3, §6.4).
+ *
+ * <b>Tables are edited through a dialog, not in place.</b> Quill 2 models a table as rows of cells it
+ * owns, and pasting an email-safe one through it restructures the table (two cells in one row came back
+ * as two rows) and strips the inline borders and padding that make it visible in mail. So a table here is
+ * one atomic node — which means no caret can go inside it, and its cells are edited in
+ * `EmailTableDialog` instead. That dialog is also where the structural operations live, so adding a
+ * column is a decision rather than a side effect of where a cursor happened to be.
  *
  * <b>The backend is still the authority.</b> Everything here runs again server-side before anything is
  * hashed, previewed or sent. This layer exists so the sender sees the cleaned result while editing.
@@ -27,12 +30,13 @@ import React, {
   forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 } from 'react';
 // @ts-ignore - react-quill-new ships without bundled types in this project
-import ReactQuill from 'react-quill-new';
+import ReactQuill, { Quill } from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import {
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight,
   List, ListOrdered, IndentDecrease, IndentIncrease, Link2, ImageIcon, Minus, Eraser,
   Maximize2, Minimize2, Braces, MousePointerClick, Baseline, PaintBucket, Table as TableIcon,
+  TableProperties,
 } from 'lucide-react';
 import {
   DIVIDER_BLOT_NAME, EMAIL_EDITOR_FORMATS, EMAIL_FONTS, EMAIL_INDENTS, EMAIL_SIZES,
@@ -48,8 +52,11 @@ import {
   VARIABLE_CHIP_CLASS, chipsToVariables, variablesToChips,
 } from '../utils/emailEditorVariableChips';
 import {
-  TABLE_WRAPPER_CLASS, buildEmailTable, nodesToTables, tablesToNodes,
+  type EmailTableModel,
+  TABLE_BLOT_NAME, TABLE_WRAPPER_CLASS, applyTableEdit, buildEmailTable, nodesToTables,
+  parseEmailTable, tablesToNodes,
 } from '../utils/emailEditorTable';
+import { EmailTableDialog } from './EmailTableDialog';
 
 // Before any editor is constructed: Quill drops what it has no blot for, so a late registration means the
 // first document opened loses its action block and its dividers.
@@ -276,25 +283,104 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     isReady: () => !!editor(),
   }), [insertVariable, editor]);
 
-  const insertTable = useCallback(() => {
-    // eslint-disable-next-line no-alert
-    const raw = window.prompt('Kích thước bảng (số hàng x số cột), ví dụ 3x2:', '3x2');
-    if (raw === null) return;
+  // ── Table (§7.3) ──
+  //
+  // The node is atomic, so a caret cannot go inside it and the cells have to be edited somewhere else.
+  // `target.el` is the live wrapper element rather than a document index: the index is resolved from it
+  // at APPLY time, so an edit elsewhere in the document while the dialog is open cannot land the
+  // replacement on the wrong block.
+  const [tableEdit, setTableEdit] = useState<
+  { el: HTMLElement | null; original: string; model: EmailTableModel } | null>(null);
 
-    const match = /^\s*(\d+)\s*[xX*]\s*(\d+)\s*$/.exec(raw);
-    if (!match) {
-      onNotice?.('Kích thước bảng không hợp lệ. Nhập theo dạng "3x2".');
+  /** The table the caret/click is on, if any — what enables "Chỉnh sửa bảng". */
+  const [selectedTable, setSelectedTable] = useState<HTMLElement | null>(null);
+
+  const openTableDialog = useCallback((el: HTMLElement | null, original: string) => {
+    const model = parseEmailTable(original);
+    if (!model) {
+      // Refused rather than flattened — see `parseEmailTable`. The author keeps a table this dialog
+      // cannot express, instead of getting back a rearranged one it can.
+      onNotice?.('Không mở được trình chỉnh sửa cho bảng này (bảng lồng nhau hoặc cấu trúc không đọc được).');
+      return;
+    }
+    setTableEdit({ el, original, model });
+  }, [onNotice]);
+
+  const insertTable = useCallback(() => {
+    // A starting shape rather than a size prompt: rows and columns are added in the dialog, where the
+    // author can see what they are adding to.
+    openTableDialog(null, buildEmailTable(3, 2));
+  }, [openTableDialog]);
+
+  const editSelectedTable = useCallback(() => {
+    if (!selectedTable) return;
+    openTableDialog(selectedTable, selectedTable.innerHTML);
+  }, [selectedTable, openTableDialog]);
+
+  const applyTable = useCallback((model: EmailTableModel) => {
+    const target = tableEdit;
+    setTableEdit(null);
+    if (!target) return;
+
+    const html = applyTableEdit(target.original, model);
+    const q = editor();
+    if (!q) return;
+
+    if (!target.el) {
+      const at = lastRange.current;
+      const index = at ? at.index : q.getLength();
+      q.insertEmbed(index, TABLE_BLOT_NAME, html, 'user');
+      q.setSelection(index + 1, 0);
       return;
     }
 
-    const html = buildEmailTable(Number(match[1]), Number(match[2]));
-    withEditor((q) => {
-      const range = q.getSelection(true);
-      const index = range ? range.index : q.getLength();
-      q.insertEmbed(index, 'pemsEmailTable', html, 'user');
-      q.setSelection(index + 1, 0);
-    });
-  }, [withEditor, onNotice]);
+    // Nothing actually changed — leave the document alone. Replacing the embed with an identical one
+    // would still register as an edit, and the screen would offer to save a table nobody touched.
+    if (html === target.original) return;
+
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = (Quill as any)?.find?.(target.el);
+    if (!blot) {
+      // The element was replaced under the dialog (a reload, an undo). Said out loud rather than
+      // dropped: the author spent time in that dialog and is entitled to know the edit did not land.
+      onNotice?.('Bảng đã thay đổi trong lúc chỉnh sửa. Vui lòng mở lại bảng và áp dụng lần nữa.');
+      return;
+    }
+
+    const index = q.getIndex(blot);
+    q.deleteText(index, 1, 'user');
+    q.insertEmbed(index, TABLE_BLOT_NAME, html, 'user');
+    q.setSelection(index + 1, 0);
+    setSelectedTable(null);
+  }, [tableEdit, editor, onNotice]);
+
+  // Clicking a table selects it; double-clicking opens the editor, which is what every other table
+  // control in the product does and therefore what an author will try first.
+  useEffect(() => {
+    const q = editor();
+    const node: HTMLElement | undefined = q?.root;
+    if (!node || typeof node.addEventListener !== 'function') return undefined;
+
+    const wrapperOf = (e: Event): HTMLElement | null => {
+      const t = e.target as HTMLElement | null;
+      return t?.closest?.(`.${TABLE_WRAPPER_CLASS}`) ?? null;
+    };
+
+    const onClick = (e: Event) => setSelectedTable(wrapperOf(e));
+    const onDouble = (e: Event) => {
+      const el = wrapperOf(e);
+      if (!el || disabled) return;
+      setSelectedTable(el);
+      openTableDialog(el, el.innerHTML);
+    };
+
+    node.addEventListener('click', onClick);
+    node.addEventListener('dblclick', onDouble);
+    return () => {
+      node.removeEventListener('click', onClick);
+      node.removeEventListener('dblclick', onDouble);
+    };
+  }, [editor, openTableDialog, disabled]);
 
   const clearFormatting = useCallback(() => {
     withEditor((q) => {
@@ -457,6 +543,13 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
           <TB onClick={insertImage} title="Chèn ảnh" disabled={disabled}><ImageIcon className="h-4 w-4" /></TB>
         )}
         <TB onClick={insertTable} title="Chèn bảng" disabled={disabled}><TableIcon className="h-4 w-4" /></TB>
+        <TB
+          onClick={editSelectedTable}
+          title="Chỉnh sửa bảng"
+          disabled={disabled || !selectedTable}
+        >
+          <TableProperties className="h-4 w-4" />
+        </TB>
         <TB onClick={insertDivider} title="Chèn đường kẻ ngang" disabled={disabled}><Minus className="h-4 w-4" /></TB>
         <TB onClick={clearFormatting} title="Xóa định dạng" disabled={disabled}><Eraser className="h-4 w-4" /></TB>
 
@@ -550,6 +643,15 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
           />
         </div>
       </div>
+
+      {tableEdit && (
+        <EmailTableDialog
+          initial={tableEdit.model}
+          variables={caps.allowVariables ? variables : undefined}
+          onCancel={() => setTableEdit(null)}
+          onApply={applyTable}
+        />
+      )}
     </div>
   );
 });

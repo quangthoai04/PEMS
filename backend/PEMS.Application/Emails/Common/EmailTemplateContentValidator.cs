@@ -190,6 +190,17 @@ public static class EmailTemplateContentValidator
             }
         }
 
+        // Tables are a BODY concern; a subject is plain text and cannot carry one.
+        if (!isSubject)
+        {
+            foreach (var (vi, en) in EmailTableRules.Problems(content))
+            {
+                issues.Add(new EmailTemplateIssue(
+                    field, EmailErrorCodes.TemplateTableUnsupported, null,
+                    vi, en, EmailTemplateIssueSeverity.Error));
+            }
+        }
+
         foreach (var malformed in FindMalformed(normalized))
         {
             issues.Add(new EmailTemplateIssue(

@@ -252,10 +252,10 @@ describe('variable insertion', () => {
   });
 
   it('inserts a table the mail client can render, and stores it bare', async () => {
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('2x2');
     const { html, emitted } = setup({ mode: 'TEMPLATE', value: '<p>trên</p>' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+    fireEvent.click(await screen.findByTestId('table-dialog-apply'));
 
     await waitFor(() => expect(html()).toContain('<table'));
     // §17 — inline CSS, no stylesheet exists in mail.
@@ -265,17 +265,221 @@ describe('variable insertion', () => {
     // Stored without the editor's wrapper.
     await waitFor(() => expect(emitted().at(-1) ?? '').toContain('<table'));
     expect(emitted().at(-1)).not.toContain('data-email-table');
-    prompt.mockRestore();
+  });
+});
+
+// ── §7.3 table editing ──────────────────────────────────────────────────────
+
+/**
+ * The table UX, driven end to end: click the node, open the dialog, change it, apply.
+ *
+ * The node is atomic (see `emailEditorTable.ts`), so none of this can be done by typing — which makes
+ * these the only tests that cover editing a table at all. They run against a real Quill for the reason
+ * the rest of this file does: a mocked editor has no blot to click and no document to replace.
+ */
+describe('table editing', () => {
+  const variables = [
+    { name: 'senderName', label: 'Họ tên người gửi' },
+    { name: 'delegationName', label: 'Tên đoàn' },
+  ];
+
+  const STORED = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
+    + ' style="border-collapse:collapse;width:100%;margin:16px 0"><tbody>'
+    + '<tr><th style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top;background:#f8fafc;font-weight:600;text-align:left">Hạng mục</th>'
+    + '<th style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top;background:#f8fafc;font-weight:600;text-align:left">Số lượng</th></tr>'
+    + '<tr><td style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top">Ghế</td>'
+    + '<td style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top">20</td></tr>'
+    + '</tbody></table>';
+
+  /** Opens the dialog on the table already in the document, the way an author does: by clicking it. */
+  async function openDialog(utils: ReturnType<typeof setup>) {
+    const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+    expect(node).toBeTruthy();
+    fireEvent.click(node);
+    fireEvent.click(screen.getByRole('button', { name: 'Chỉnh sửa bảng' }));
+    return screen.findByTestId('table-dialog-apply');
+  }
+
+  const cell = (row: number, col: number) =>
+    screen.getByLabelText(`Ô hàng ${row} cột ${col}`) as HTMLTextAreaElement;
+
+  it('reads the cells out of the document, chips and all', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED, variables });
+    await openDialog(utils);
+
+    expect(cell(1, 1).value).toBe('Hạng mục');
+    expect(cell(2, 2).value).toBe('20');
   });
 
-  it('refuses a table size it cannot parse rather than guessing one', () => {
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('rất to');
-    const { onNotice } = setup({ mode: 'TEMPLATE' });
+  it('writes an edited cell back and leaves the untouched ones exactly as they were', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+    fireEvent.change(cell(2, 2), { target: { value: '25' } });
+    fireEvent.click(apply);
 
-    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('không hợp lệ'));
-    prompt.mockRestore();
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('>25<'));
+    const out = utils.emitted().at(-1) ?? '';
+    expect(out).toContain('Hạng mục');
+    expect(out).toContain('Ghế');
+    expect(out).not.toContain('>20<');
+    // Structure and the inline CSS a mail client needs, both intact.
+    expect((out.match(/<tr>/g) ?? []).length).toBe(2);
+    expect(out).toContain('border:1px solid #dbe4ee');
+    expect(out).toContain('padding:8px 10px');
+  });
+
+  /**
+   * Opening the dialog and applying it unchanged must not report the document as edited.
+   *
+   * This is the reason `applyTableEdit` patches the original markup instead of regenerating a table
+   * from the model: a regenerated table is a different string even when it is the same table, and the
+   * screen would offer to save a template nobody had touched.
+   */
+  it('does not dirty the document when nothing was changed', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const before = utils.emitted().length;
+
+    const apply = await openDialog(utils);
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(screen.queryByTestId('table-dialog-apply')).toBeNull());
+    expect(utils.emitted().length).toBe(before);
+    expect(isSameEmailHtml(utils.emitted().at(-1) ?? STORED, STORED)).toBe(true);
+  });
+
+  it('adds rows and columns, and the new cells carry the styling of the old', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm hàng' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm cột' }));
+    fireEvent.change(cell(3, 3), { target: { value: 'mới' } });
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('mới'));
+    const out = utils.emitted().at(-1) ?? '';
+    expect((out.match(/<tr>/g) ?? []).length).toBe(3);
+    // A cloned cell keeps the styling of the one it came from — 3×3 cells, all still bordered. Without
+    // this a widened table came out with the new column invisible in mail.
+    expect((out.match(/border:1px solid #dbe4ee/g) ?? []).length).toBe(9);
+  });
+
+  it('removes a row, and takes only that row', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa hàng 2' }));
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').not.toContain('Ghế'));
+    const out = utils.emitted().at(-1) ?? '';
+    expect((out.match(/<tr>/g) ?? []).length).toBe(1);
+    expect(out).toContain('Hạng mục');
+    expect(out).toContain('Số lượng');
+  });
+
+  it('removes a column, and takes only that column', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa cột 2' }));
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').not.toContain('Số lượng'));
+    const out = utils.emitted().at(-1) ?? '';
+    expect((out.match(/<tr>/g) ?? []).length).toBe(2);
+    expect(out).toContain('Hạng mục');
+    expect(out).toContain('Ghế');
+    expect(out).not.toContain('>20<');
+  });
+
+  it('will not delete the last row or the last column', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: '<table><tbody><tr><td>một</td></tr></tbody></table>' });
+    await openDialog(utils);
+
+    expect(screen.getByRole('button', { name: 'Xóa hàng 1' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Xóa cột 1' })).toBeDisabled();
+  });
+
+  it('turns the heading row off, keeping the cells', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hàng đầu là tiêu đề' }));
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').not.toContain('<th'));
+    expect(utils.emitted().at(-1)).toContain('Hạng mục');
+  });
+
+  it('applies alignment and a width preset in a form mail can use', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const apply = await openDialog(utils);
+
+    fireEvent.change(screen.getByLabelText('Căn lề bảng'), { target: { value: 'center' } });
+    fireEvent.change(screen.getByLabelText('Độ rộng bảng'), { target: { value: '50%' } });
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('align="center"'));
+    const out = utils.emitted().at(-1) ?? '';
+    // Outlook honours the attribute; everything else honours the margin. Both, or it drifts left there.
+    expect(out).toContain('margin:16px auto');
+    expect(out).toContain('width="50%"');
+    expect(out).toContain('width:50%');
+  });
+
+  it('puts a variable into a cell as a placeholder, not as the label', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED, variables });
+    const apply = await openDialog(utils);
+
+    fireEvent.focus(cell(2, 2));
+    fireEvent.change(screen.getByLabelText('Chèn biến vào ô đang chọn'), { target: { value: 'senderName' } });
+    fireEvent.click(apply);
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('{{senderName}}'));
+    // On the wire it is the placeholder; on screen it is a chip.
+    expect(utils.emitted().at(-1)).not.toContain('Họ tên người gửi');
+    await waitFor(() => expect(utils.html()).toContain('data-variable="senderName"'));
+  });
+
+  it('offers no variables in COMPOSE, where a placeholder would ship unresolved', async () => {
+    const utils = setup({ mode: 'COMPOSE', value: STORED, variables });
+    await openDialog(utils);
+
+    expect(screen.queryByLabelText('Chèn biến vào ô đang chọn')).toBeNull();
+  });
+
+  it('refuses to open a nested table rather than flattening it', async () => {
+    const nested = '<table><tbody><tr><td><table><tbody><tr><td>trong</td></tr></tbody></table></td></tr></tbody></table>';
+    const utils = setup({ mode: 'TEMPLATE', value: nested });
+
+    const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+    fireEvent.click(node);
+    fireEvent.click(screen.getByRole('button', { name: 'Chỉnh sửa bảng' }));
+
+    expect(screen.queryByTestId('table-dialog-apply')).toBeNull();
+    expect(utils.onNotice).toHaveBeenCalledWith(expect.stringContaining('bảng lồng nhau'));
+  });
+
+  it('cannot be opened until a table is selected', () => {
+    setup({ mode: 'TEMPLATE', value: '<p>không có bảng</p>' });
+
+    expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).toBeDisabled();
+  });
+
+  it('leaves the document alone when the dialog is cancelled', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    const before = utils.emitted().length;
+    await openDialog(utils);
+
+    fireEvent.change(cell(1, 1), { target: { value: 'không lưu' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+
+    await waitFor(() => expect(screen.queryByTestId('table-dialog-apply')).toBeNull());
+    expect(utils.emitted().length).toBe(before);
+    expect(utils.html()).toContain('Hạng mục');
+    expect(utils.html()).not.toContain('không lưu');
   });
 });
 

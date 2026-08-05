@@ -66,6 +66,12 @@ public static class EmailErrorCodes
     /// </summary>
     public const string AuthoredActionBlockForbidden = "EMAIL_AUTHORED_ACTION_BLOCK_FORBIDDEN";
 
+    /// <summary>
+    /// The body carries a table an email cannot render — nested, or past the row/column ceiling. See
+    /// <see cref="EmailTableRules"/> for why these are refused rather than quietly rearranged.
+    /// </summary>
+    public const string AuthoredTableUnsupported = "EMAIL_AUTHORED_TABLE_UNSUPPORTED";
+
     // ── Action-block integrity ───────────────────────────────────────────────
 
     /// <summary>
@@ -220,6 +226,9 @@ public static class EmailErrorCodes
 
     /// <summary>A brace-shaped fragment that is not a well-formed <c>{{camelCase}}</c> placeholder.</summary>
     public const string TemplateVariableMalformed = "EMAIL_TEMPLATE_VARIABLE_MALFORMED";
+
+    /// <summary>A template body carries a table an email cannot render — see <see cref="EmailTableRules"/>.</summary>
+    public const string TemplateTableUnsupported = "EMAIL_TEMPLATE_TABLE_UNSUPPORTED";
 
     /// <summary>The edit removed a variable this template cannot send a usable message without.</summary>
     public const string TemplateRequiredVariableMissing = "EMAIL_TEMPLATE_REQUIRED_VARIABLE_MISSING";
