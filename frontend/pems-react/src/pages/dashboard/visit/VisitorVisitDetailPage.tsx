@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  MapPin, User, Mail, Phone, Calendar, Clock, Star, AlertCircle, 
+import {
+  MapPin, User, Mail, Phone, Calendar, Clock, Star, AlertCircle,
   Building, Globe, Briefcase, Car, Users, MessageSquare, ShieldCheck, CheckCircle2,
   CalendarCheck2, Info, ChevronRight, XCircle, Bell, Newspaper
 } from 'lucide-react';
@@ -9,6 +9,7 @@ import { VisitorNotification, VisitorPublicNewsListItem } from '../../../feature
 import { VisitProcessDetail, VisitProcessPermission } from '../../../features/delegations/types/delegations.types';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
+import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
 
 interface VisitorVisitDetailPageProps {
   perm: VisitProcessPermission | null;
@@ -93,7 +94,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
         <VisitorCampusInfoSection campusName={detail.campusName} />
 
         {/* 9. Feedback sau chuyến thăm */}
-        <VisitorFeedbackCard status={detail.instanceStatus} isCancelled={isCancelled} />
+        <VisitorFeedbackCard visitInstanceId={detail.visitInstanceId} status={detail.instanceStatus} isCancelled={isCancelled} />
 
         {/* 10. Thông báo / cập nhật từ nhà trường */}
         {detail.notifications && detail.notifications.length > 0 && (
@@ -442,21 +443,48 @@ function VisitorCampusInfoSection({ campusName }: { campusName?: string | null }
   );
 }
 
-function VisitorFeedbackCard({ status, isCancelled }: { status: string, isCancelled: boolean }) {
+function VisitorFeedbackCard({ visitInstanceId, status, isCancelled }: { visitInstanceId: number, status: string, isCancelled: boolean }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
   if (isCancelled || (status !== 'AFTER_VISIT' && status !== 'CLOSED')) {
     return null;
   }
 
   return (
-    <section className="mb-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
-      <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3">
-        <Star className="w-6 h-6 text-[#f37021] fill-[#f37021]" />
-      </div>
-      <h3 className="text-[15px] font-bold text-slate-900 mb-1">Phản hồi chuyến thăm</h3>
-      <p className="text-[13px] text-slate-600 font-medium max-w-lg mx-auto">
-        Nhà trường rất mong nhận được phản hồi của bạn. Tính năng gửi phản hồi sẽ sớm được cập nhật.
-      </p>
-    </section>
+    <>
+      <section className="mb-6 bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
+        <div className="w-12 h-12 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3">
+          {submitted
+            ? <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+            : <Star className="w-6 h-6 text-[#f37021] fill-[#f37021]" />}
+        </div>
+        <h3 className="text-[15px] font-bold text-slate-900 mb-1">Phản hồi chuyến thăm</h3>
+        {submitted ? (
+          <p className="text-[13px] text-emerald-600 font-bold">Cảm ơn bạn đã gửi phản hồi về chuyến thăm này!</p>
+        ) : (
+          <>
+            <p className="text-[13px] text-slate-600 font-medium max-w-lg mx-auto mb-4">
+              Nhà trường rất mong nhận được phản hồi của bạn về chuyến thăm này.
+            </p>
+            <button
+              type="button"
+              onClick={() => setModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#f37021] hover:bg-orange-600 text-white text-[13px] font-bold rounded-xl shadow-sm transition-colors"
+            >
+              <Star className="w-4 h-4" /> Gửi đánh giá
+            </button>
+          </>
+        )}
+      </section>
+
+      <VisitFeedbackModal
+        open={modalOpen}
+        visitInstanceId={visitInstanceId}
+        onClose={() => setModalOpen(false)}
+        onSubmitted={() => setSubmitted(true)}
+      />
+    </>
   );
 }
 

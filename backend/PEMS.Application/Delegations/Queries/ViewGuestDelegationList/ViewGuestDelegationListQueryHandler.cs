@@ -158,6 +158,31 @@ public sealed class ViewGuestDelegationListQueryHandler
             item.CurrentUserRelation = ResolveRelation(item, itemTab, roleCode, isStaffLeader);
             item.RelationLabel = VisitRowLabels.Relation(item.CurrentUserRelation);
             item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, item.CampusStatus);
+            // Multi-campus SUMMARY row (no single instance of its own): visit_requests.status only
+            // tracks the approval aggregate, so a request stuck at "Đã duyệt" forever even after
+            // every campus finished was stale data. Re-derive from the campus instances themselves.
+            if (item.CampusStatus is null && item.RequestStatus == VisitRequestStatuses.Approved
+                && item.CampusProgressItems.Count > 0)
+            {
+                var progressLabel = VisitRowLabels.MultiCampusProgress(
+                    item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus));
+                if (progressLabel is not null) item.StatusLabel = progressLabel;
+            }
+            // Visitor doesn't see the internal "chờ đóng đoàn" close-out step — from their side the
+            // reception already happened, and closing the delegation record is FPT's own paperwork.
+            // They see the same "đã hoàn tất" wording as CLOSED; the feedback star in the action
+            // column (fed by the AFTER_VISIT/CLOSED pending-feedback query) is what actually changes.
+            if (roleCode == RoleCodes.Visitor && item.CampusStatus == VisitInstanceStatus.AfterVisit)
+                item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, VisitInstanceStatus.Closed);
+            // The invited primary contact has not claimed the request yet (VisitContactClaim) —
+            // every viewer sees "Chờ xác nhận" instead of the normal status until they do.
+            // QueryInstanceLevelAsync already hides these rows from campus review queues entirely;
+            // this only affects rows a registrant/Visitor/HO can still see. Skipped when already
+            // cancelled — that later fact stays visible rather than being masked by the earlier one.
+            if (item.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.PendingConfirmation
+                && item.RequestStatus != VisitRequestStatuses.Cancelled
+                && item.CampusStatus != VisitInstanceStatus.Cancelled)
+                item.StatusLabel = "Chờ xác nhận";
             // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
             item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
@@ -498,6 +523,13 @@ public sealed class ViewGuestDelegationListQueryHandler
             }
         }
 
+        // Hidden from every internal FPT queue (review/host/attending) until the invited primary
+        // contact has claimed the request through their email link (VisitContactClaim) — there is
+        // nothing for a campus actor to decide on an identity that has not been confirmed yet.
+        // A registrant/HO/Visitor still sees the row (QueryRequestLevelAsync does not apply this
+        // filter); Handle() labels it "Chờ xác nhận" there instead of the normal status.
+        q = q.Where(x => x.vr.PrimaryContactAccessStatus != PrimaryContactAccessStatuses.PendingConfirmation);
+
         // â”€â”€ Common filters â”€â”€
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
@@ -791,7 +823,106 @@ public sealed class ViewGuestDelegationListQueryHandler
             };
         }).ToList();
 
+        // Staff Leader/Staff/Dept/Student get one row per campus INSTANCE, so a MULTI_CAMPUS
+        // request used to give them no way to see a sibling campus's status at all — the
+        // accordion was request-level-only (Visitor/HO). This fills the same
+        // CanExpandCampuses/CampusProgressItems the request-level query already builds, so the
+        // SAME frontend accordion just works here too.
+        await AttachMultiCampusProgressAsync(items, ct);
+
         return (items, total);
+    }
+
+    /// <summary>
+    /// Read-only per-campus data for an instance-level row's own multi-campus request — never
+    /// capabilities: Handle()'s AttachCampusCapabilities runs afterward and adds the real
+    /// (enabled/refused) verdicts, scoped to the leader's own campus, so a sibling campus this
+    /// caller does not lead is populated with plain facts and no action surface, same as the
+    /// request-level accordion.
+    /// </summary>
+    private async Task AttachMultiCampusProgressAsync(List<VisitRequestManagementItemDto> items, CancellationToken ct)
+    {
+        var multiCampusItems = items.Where(i => i.VisitScope == VisitScopes.MultiCampus).ToList();
+        if (multiCampusItems.Count == 0) return;
+
+        var requestIds = multiCampusItems.Select(i => i.VisitRequestId).Distinct().ToList();
+        var siblings = await _context.VisitRequestCampuses
+            .Where(c => requestIds.Contains(c.VisitRequestId))
+            .Select(c => new
+            {
+                c.VisitInstanceId,
+                c.VisitRequestId,
+                c.CampusId,
+                c.Status,
+                c.PlannedStartAt,
+                c.PlannedEndAt,
+                c.CurrentHostUserId,
+                c.RowVersion,
+                c.DecisionNote,
+                c.DecidedBy,
+                c.DecidedAt,
+                c.CancellationReason,
+                c.CancelledBy,
+                c.CancelledAt,
+                c.CancellationActorType,
+                c.CancellationSource,
+            })
+            .ToListAsync(ct);
+        if (siblings.Count == 0) return;
+
+        var campusIds = siblings.Select(i => i.CampusId).Distinct().ToList();
+        var userIds = siblings.SelectMany(i => new[] { i.CurrentHostUserId, i.DecidedBy, i.CancelledBy })
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+
+        var campusRows = campusIds.Count == 0
+            ? new List<(ulong CampusId, string Name, string Code)>()
+            : (await _context.Campuses.Where(cc => campusIds.Contains(cc.CampusId))
+                    .Select(cc => new { cc.CampusId, cc.Name, cc.CampusCode })
+                    .ToListAsync(ct))
+                .Select(cc => (CampusId: cc.CampusId, Name: cc.Name, Code: cc.CampusCode)).ToList();
+        var campusNames = campusRows.ToDictionary(c => c.CampusId, c => c.Name);
+        var campusCodes = campusRows.ToDictionary(c => c.CampusId, c => c.Code);
+        var userNames = userIds.Count == 0
+            ? new Dictionary<ulong, string>()
+            : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
+
+        var siblingsByRequest = siblings.GroupBy(i => i.VisitRequestId).ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var item in multiCampusItems)
+        {
+            if (!siblingsByRequest.TryGetValue(item.VisitRequestId, out var group)) continue;
+            item.CanExpandCampuses = group.Count > 1;
+            item.CampusProgressItems = group
+                .OrderBy(i => i.PlannedStartAt)
+                .Select(i => new CampusProgressItemDto
+                {
+                    VisitInstanceId = i.VisitInstanceId,
+                    CampusId = i.CampusId,
+                    CampusCode = campusCodes.TryGetValue(i.CampusId, out var code) ? code : null,
+                    CampusName = campusNames.TryGetValue(i.CampusId, out var name) ? name : null,
+                    PlannedStartAt = i.PlannedStartAt,
+                    PlannedEndAt = i.PlannedEndAt,
+                    InstanceStatus = i.Status,
+                    HostUserId = i.CurrentHostUserId,
+                    HostName = i.CurrentHostUserId.HasValue && userNames.TryGetValue(i.CurrentHostUserId.Value, out var hn) ? hn : null,
+                    RowVersion = i.RowVersion,
+                    DecisionNote = i.DecisionNote,
+                    DecidedBy = i.DecidedBy,
+                    DecidedByName = i.DecidedBy.HasValue && userNames.TryGetValue(i.DecidedBy.Value, out var dcn) ? dcn : null,
+                    DecidedAt = i.DecidedAt,
+                    CancellationReason = i.CancellationReason,
+                    CancelledBy = i.CancelledBy,
+                    CancelledByName = i.CancelledBy.HasValue && userNames.TryGetValue(i.CancelledBy.Value, out var ccn) ? ccn : null,
+                    CancelledAt = i.CancelledAt,
+                    CancellationActorType = i.CancellationActorType,
+                    CancellationSource = i.CancellationSource,
+                    CanViewCampusDetail = true,
+                    // Never the Visitor owner on an instance-level row — cancel-from-accordion stays a Visitor-only action.
+                    CanCancelCampusVisit = false,
+                    CanViewCancelReason = i.Status == VisitInstanceStatus.Cancelled && !string.IsNullOrEmpty(i.CancellationReason),
+                    CanViewRejectReason = i.Status == VisitInstanceStatus.Rejected && !string.IsNullOrEmpty(i.DecisionNote),
+                }).ToList();
+        }
     }
 
     // ── Request-level: responsible tab for Visitor & HO, and the read-only REGISTERED tab
@@ -1119,6 +1250,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                     : instances.FirstOrDefault()?.FormDetail?.DelegationName,
                 PartnerName = vr.Partner != null ? vr.Partner.Name : vr.RegistrantOrganization,
                 RequestStatus = vr.Status,
+                PrimaryContactAccessStatus = vr.PrimaryContactAccessStatus,
                 CampusStatus = single?.Status,
                 VisitScope = vr.VisitScope,
                 HasMixedCampusDetails = vr.HasMixedCampusDetails,

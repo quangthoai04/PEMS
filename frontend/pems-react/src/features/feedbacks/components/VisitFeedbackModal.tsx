@@ -12,7 +12,7 @@ import { feedbackApiError, useVisitFeedback } from '../hooks/useVisitFeedback';
 import { FeedbackGroupSection } from './FeedbackGroupSection';
 
 const STATUS_LABELS: Record<string, string> = {
-  DURING_VISIT: 'Đang tiếp khách',
+  DURING_VISIT: 'Đang diễn ra',
   AFTER_VISIT: 'Chờ đóng đoàn',
   CLOSED: 'Đã hoàn tất',
 };

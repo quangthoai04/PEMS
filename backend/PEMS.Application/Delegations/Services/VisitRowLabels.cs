@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -19,27 +21,71 @@ public static class VisitRowLabels
     /// <summary>
     /// Process status. The campus instance wins when there is one — a request aggregate of
     /// PARTIALLY_APPROVED says nothing useful about the campus the reader is looking at.
+    ///
+    /// Vocabulary shared by every role: Chờ duyệt · Đã duyệt · Đang chuẩn bị · Đang diễn ra ·
+    /// Chờ đóng đoàn · Đã hoàn tất · Từ chối · Đã hủy.
+    ///
+    /// A multi-campus request with SOME campuses decided and others still waiting used to say
+    /// "Duyệt một phần" — a distinct word campus staff had to learn. It no longer gets one: the
+    /// request-level aggregate stays "Chờ duyệt" until every campus is past waiting, and the
+    /// per-campus movement that already happened is carried by the row's ChangeSummary/campus
+    /// indicators instead (see AttachChangeSummariesAsync) — a "something changed here" signal
+    /// deliberately separate from the status word.
     /// </summary>
     public static string Status(string requestStatus, string? campusStatus) => campusStatus switch
     {
         VisitInstanceStatus.Cancelled => "Đã hủy",
-        VisitInstanceStatus.Rejected => "Đã bị từ chối",
-        VisitInstanceStatus.WaitingRequestApproval => "Chờ xử lý tại cơ sở",
-        VisitInstanceStatus.Assigned => "Đã duyệt và phân công",
+        VisitInstanceStatus.Rejected => "Từ chối",
+        VisitInstanceStatus.WaitingRequestApproval => "Chờ duyệt",
+        VisitInstanceStatus.Assigned => "Đã duyệt",
         VisitInstanceStatus.BeforeVisit => "Đang chuẩn bị",
-        VisitInstanceStatus.DuringVisit => "Đang tiếp khách",
+        VisitInstanceStatus.DuringVisit => "Đang diễn ra",
         VisitInstanceStatus.AfterVisit => "Chờ đóng đoàn",
-        VisitInstanceStatus.Closed => "Đã đóng đoàn",
+        VisitInstanceStatus.Closed => "Đã hoàn tất",
         _ => requestStatus switch
         {
             VisitRequestStatuses.Cancelled => "Đã hủy",
-            VisitRequestStatuses.Rejected => "Đã bị từ chối",
-            VisitRequestStatuses.PendingApproval => "Chờ xử lý",
-            VisitRequestStatuses.PartiallyApproved => "Duyệt một phần",
+            VisitRequestStatuses.Rejected => "Từ chối",
+            VisitRequestStatuses.PendingApproval => "Chờ duyệt",
+            VisitRequestStatuses.PartiallyApproved => "Chờ duyệt",
             VisitRequestStatuses.Approved => "Đã duyệt",
             _ => requestStatus,
         },
     };
+
+    // Same order a single campus instance moves through, once decided — used to pick the ONE
+    // status a multi-campus SUMMARY row (no single instance of its own) should show.
+    private static readonly string[] ProgressOrder =
+    {
+        VisitInstanceStatus.Assigned,
+        VisitInstanceStatus.BeforeVisit,
+        VisitInstanceStatus.DuringVisit,
+        VisitInstanceStatus.AfterVisit,
+        VisitInstanceStatus.Closed,
+    };
+
+    /// <summary>
+    /// The status a multi-campus SUMMARY row shows once <see cref="Status"/> would otherwise say
+    /// the generic aggregate "Đã duyệt" — visit_requests.status only tracks the APPROVAL aggregate
+    /// (pending/partially/approved/rejected/cancelled), it is never re-derived as campuses move
+    /// through preparing/during/after/closed, so a request left at "Đã duyệt" forever even after
+    /// every campus actually finished was reading stale data, not a wording choice.
+    ///
+    /// Shows whichever campus is LEAST progressed (Rejected/Cancelled instances excluded — they
+    /// are a different, already-terminal outcome for that campus, not "still in progress"): the
+    /// whole delegation is not "Đã hoàn tất" until every live campus is, mirroring how the single-
+    /// campus badge already reads. Null when there is nothing left to rank (e.g. every campus
+    /// Rejected/Cancelled — <see cref="Status"/>'s own requestStatus branch already covers that).
+    /// </summary>
+    public static string? MultiCampusProgress(IEnumerable<string?> campusInstanceStatuses)
+    {
+        var leastProgressed = campusInstanceStatuses
+            .Select(s => System.Array.IndexOf(ProgressOrder, s))
+            .Where(rank => rank >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
+        return leastProgressed < 0 ? null : Status(VisitRequestStatuses.Approved, ProgressOrder[leastProgressed]);
+    }
 
     /// <summary>
     /// What the signed-in user is to this row. Never an authorization input — the relation is

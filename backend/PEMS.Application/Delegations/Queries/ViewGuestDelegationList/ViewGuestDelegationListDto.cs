@@ -16,6 +16,14 @@ public sealed class VisitRequestManagementItemDto
     public string RequestStatus { get; set; } = default!;
     public string? CampusStatus { get; set; }
 
+    /// <summary>
+    /// PENDING_CONFIRMATION | ACTIVE (visit_requests.primary_contact_access_status). While
+    /// PENDING_CONFIRMATION the invited primary contact has not yet claimed the request via their
+    /// email link (see VisitContactClaim) — the row is hidden from campus review queues and its
+    /// StatusLabel reads "Chờ xác nhận" regardless of the underlying campus/request status.
+    /// </summary>
+    public string? PrimaryContactAccessStatus { get; set; }
+
     public string? VisitScope { get; set; }
 
     /// <summary>True when the request stores different content per campus (drives the "Khác nhau theo cơ sở" label).</summary>

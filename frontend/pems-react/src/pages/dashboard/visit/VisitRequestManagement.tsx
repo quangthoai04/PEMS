@@ -16,7 +16,7 @@ import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
   FileText, ArrowRightCircle, Info, ClipboardList, Star, CheckCircle2,
-  PencilLine, MailOpen, RefreshCw, FileX, FileMinus, UserCog, History,
+  PencilLine, MailOpen, RefreshCw, FileX, FileMinus, UserCog, History, Bell,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
@@ -106,16 +106,17 @@ const ActionIconButton = ({
 const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | null) => {
   if (campStatus === 'CANCELLED' || reqStatus === 'CANCELLED') return 'Đã hủy';
   if (campStatus === 'REJECTED') return 'Từ chối';
-  if (campStatus === 'WAITING_REQUEST_APPROVAL') return 'Chờ xử lý tại cơ sở';
-  if (campStatus === 'ASSIGNED') return 'Đã duyệt và phân công';
-  if (campStatus === 'BEFORE_VISIT') return 'Trước tiếp khách';
-  if (campStatus === 'DURING_VISIT') return 'Trong tiếp khách';
+  if (campStatus === 'WAITING_REQUEST_APPROVAL') return 'Chờ duyệt';
+  if (campStatus === 'ASSIGNED') return 'Đã duyệt';
+  if (campStatus === 'BEFORE_VISIT') return 'Đang chuẩn bị';
+  if (campStatus === 'DURING_VISIT') return 'Đang diễn ra';
   if (campStatus === 'AFTER_VISIT') return 'Chờ đóng đoàn';
-  if (campStatus === 'CLOSED') return 'Đã đóng đoàn';
-  // Request-level rows (không có campusStatus): dùng aggregate.
+  if (campStatus === 'CLOSED') return 'Đã hoàn tất';
+  // Request-level rows (không có campusStatus): dùng aggregate. Không còn "Duyệt một phần" —
+  // đơn liên cơ sở còn cơ sở nào chưa xong thì vẫn hiện "Chờ duyệt" (xem VisitRowLabels.Status).
   if (reqStatus === 'REJECTED') return 'Từ chối';
-  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ xử lý';
-  if (reqStatus === 'PARTIALLY_APPROVED') return 'Duyệt một phần';
+  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ duyệt';
+  if (reqStatus === 'PARTIALLY_APPROVED') return 'Chờ duyệt';
   if (reqStatus === 'APPROVED') return 'Đã duyệt';
   return reqStatus ?? '-';
 };
@@ -123,12 +124,12 @@ const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | nu
 // Map campus instanceStatus CODE → nhãn tiếng Việt + class badge (dùng cho accordion liên cơ sở).
 // Chỉ để render hiển thị; KHÔNG dùng để gate action (action lấy từ boolean backend trả về).
 const CAMPUS_STATUS_LABELS: Record<string, string> = {
-  WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
-  ASSIGNED: 'Đã duyệt và phân công',
-  BEFORE_VISIT: 'Trước tiếp khách',
-  DURING_VISIT: 'Đang tiếp khách',
+  WAITING_REQUEST_APPROVAL: 'Chờ duyệt',
+  ASSIGNED: 'Đã duyệt',
+  BEFORE_VISIT: 'Đang chuẩn bị',
+  DURING_VISIT: 'Đang diễn ra',
   AFTER_VISIT: 'Chờ đóng đoàn',
-  CLOSED: 'Đã đóng đoàn',
+  CLOSED: 'Đã hoàn tất',
   CANCELLED: 'Đã hủy',
   REJECTED: 'Từ chối',
 };
@@ -1141,9 +1142,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     // Chuẩn hóa trạng thái hiển thị (AC-04): KHÔNG ghép request status với campus status
     // (bỏ kiểu "Đã duyệt · Đã phân công Host"). Trong màn vận hành theo campus/role ưu tiên
-    // visit_request_campuses.status; request status chỉ dùng cho quyết định tổng. `kind` chọn
-    // màu badge, nhãn theo vai trò (Visitor xem ngôn ngữ thân thiện hơn nội bộ).
-    type StatusKind = 'pending' | 'pending_request' | 'rejected' | 'cancelled' | 'partially' | 'assigned'
+    // visit_request_campuses.status; request status chỉ dùng cho quyết định tổng.
+    //
+    // Vocabulary chung mọi role: Chờ duyệt · Đã duyệt · Đang chuẩn bị ·
+    // Đang diễn ra · Chờ đóng đoàn · Đã hoàn tất · Từ chối · Đã hủy — khớp
+    // VisitRowLabels.Status backend. Đơn liên cơ sở còn cơ sở chưa xong (trước là "Duyệt một
+    // phần") giờ gộp chung "pending_request" (Chờ duyệt) — riêng biệt bằng ChangeSummary/
+    // campus indicator, không phải bằng tên trạng thái. `kind` chỉ chọn MÀU badge.
+    type StatusKind = 'pending' | 'pending_request' | 'rejected' | 'cancelled' | 'assigned'
       | 'before' | 'during' | 'after' | 'closed' | 'approved';
     let kind: StatusKind;
     if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') kind = 'cancelled';
@@ -1156,9 +1162,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     else if (row.campusStatus === 'CLOSED') kind = 'closed';
     // Request-level rows (không có campusStatus): aggregate.
     else if (row.requestStatus === 'REJECTED') kind = 'rejected';
-    else if (row.requestStatus === 'PARTIALLY_APPROVED') kind = 'partially';
     else if (row.requestStatus === 'APPROVED') kind = 'approved';
-    else kind = 'pending_request';
+    else kind = 'pending_request'; // gồm cả PENDING_APPROVAL và PARTIALLY_APPROVED
 
     let cancelledText = 'Đã hủy';
     if (kind === 'cancelled') {
@@ -1168,24 +1173,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       else if (actor === 'SYSTEM') cancelledText = 'Hệ thống đã hủy';
     }
 
-    const assignedText = isStaffLeader ? 'Đã duyệt và phân công' : 'Đã được phân công';
-
-    const labelByKind: Record<StatusKind, string> = isVisitor ? {
-      pending: 'Chờ xử lý', pending_request: 'Chờ xử lý', rejected: 'Đã bị từ chối', cancelled: cancelledText,
-      partially: 'Duyệt một phần', assigned: 'Đã phân công người phụ trách',
-      before: 'Sắp diễn ra', during: 'Đang diễn ra', after: 'Đã diễn ra',
-      closed: 'Đã hoàn tất', approved: 'Đã được duyệt',
-    } : {
-      pending: 'Chờ xử lý tại cơ sở', pending_request: 'Chờ xử lý', rejected: 'Đã bị từ chối', cancelled: cancelledText,
-      partially: 'Duyệt một phần', assigned: assignedText,
-      before: 'Đang chuẩn bị', during: 'Đang tiếp khách', after: 'Chờ đóng đoàn',
-      closed: 'Đã đóng đoàn', approved: 'Đã duyệt',
+    const labelByKind: Record<StatusKind, string> = {
+      pending: 'Chờ duyệt', pending_request: 'Chờ duyệt', rejected: 'Từ chối', cancelled: cancelledText,
+      assigned: 'Đã duyệt',
+      before: 'Đang chuẩn bị', during: 'Đang diễn ra', after: 'Chờ đóng đoàn',
+      closed: 'Đã hoàn tất', approved: 'Đã duyệt',
     };
 
     const clsByKind: Record<StatusKind, string> = {
       pending: 'bg-yellow-50 text-yellow-700 border-yellow-200',
       pending_request: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      partially: 'bg-amber-50 text-amber-700 border-amber-200',
       assigned: 'bg-cyan-50 text-cyan-700 border-cyan-200',
       approved: 'bg-cyan-50 text-cyan-700 border-cyan-200',
       before: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -1201,7 +1198,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       pending_request: 'Đơn đang chờ xử lý tại các cơ sở',
       rejected: 'Đã bị từ chối tiếp nhận',
       cancelled: 'Đơn/cơ sở đã bị hủy',
-      partially: 'Một số cơ sở đã tiếp nhận, một số còn chờ xử lý hoặc bị từ chối',
       assigned: 'Đã duyệt và có người phụ trách tiếp đón, chờ triển khai',
       before: 'Đang trong giai đoạn chuẩn bị đón tiếp',
       during: 'Đoàn đang được tiếp khách tại cơ sở',
@@ -2074,7 +2070,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               return (
                 <Fragment key={row.id}>
                   <div className={`grid grid-cols-[52px_minmax(0,1fr)_210px_150px_246px] items-center min-h-[78px] border-b border-slate-200/70 transition-colors duration-150 ${isExpanded ? 'bg-blue-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 group`}>
-                    <div className="py-3 px-3 text-center font-bold text-[#004c91] text-sm">{(currentPage - 1) * pageSize + index + 1}</div>
+                    <div className="py-3 px-3 flex flex-col items-center justify-center gap-0.5 text-center font-bold text-[#004c91] text-sm">
+                      {row.changeSummary?.hasUnreadChanges && (
+                        <span
+                          data-testid={`stt-change-indicator-${row.id}`}
+                          title={`Có thay đổi mới${row.changeSummary?.requiresViewerAction ? ' — cần bạn xử lý' : ''}`}
+                          className={row.changeSummary?.requiresViewerAction ? 'text-[#f37021]' : 'text-blue-500'}
+                        >
+                          <Bell className="h-3.5 w-3.5" fill="currentColor" />
+                        </span>
+                      )}
+                      <span>{(currentPage - 1) * pageSize + index + 1}</span>
+                    </div>
                     <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                       <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
                       <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
@@ -2138,7 +2145,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className={`rounded-2xl border bg-white p-4 shadow-sm transition-colors ${isExpanded ? 'border-[#004c91]/40' : 'border-slate-200 hover:border-[#004c91]/30'}`}>
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <div className="min-w-0 flex-1">
-                      <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug">{row.name}</p>
+                      <p className="font-bold text-[#004c91] text-sm line-clamp-2 leading-snug flex items-center gap-1.5">
+                        {row.changeSummary?.hasUnreadChanges && (
+                          <span
+                            data-testid={`stt-change-indicator-mobile-${row.id}`}
+                            title={`Có thay đổi mới${row.changeSummary?.requiresViewerAction ? ' — cần bạn xử lý' : ''}`}
+                            className={`flex-shrink-0 ${row.changeSummary?.requiresViewerAction ? 'text-[#f37021]' : 'text-blue-500'}`}
+                          >
+                            <Bell className="h-3.5 w-3.5" fill="currentColor" />
+                          </span>
+                        )}
+                        <span className="truncate">{row.name}</span>
+                      </p>
                       <p className="text-xs text-slate-500 truncate">{row.org}</p>
                     </div>
                     <div className="flex-shrink-0">{getStatusBadge(row)}</div>

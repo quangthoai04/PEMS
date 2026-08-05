@@ -148,6 +148,23 @@ const POLICIES: readonly DashboardRoutePolicy[] = [
     defaultForRoles: ['ADMIN', 'HO', 'STAFF_LEADER', 'STAFF', 'DEPARTMENT_LEAD', 'DEPARTMENT'],
   },
 
+  // ── Tiếp khách: trang chính của sản phẩm — đặt ngay sau Dashboard trong mọi menu, đánh
+  // dấu bằng icon sao ở Sidebar (xem ROUTE_ICONS/rendering riêng cho VISIT_LIST). Mọi role
+  // nghiệp vụ, ADMIN bị loại (matrix §5.4). Route ở đây chỉ là cổng thô — xem/sửa đúng bản
+  // ghi nào là việc của backend (host hiện tại, participant đã accept, campus của instance,
+  // chủ đơn...).
+  {
+    key: 'VISIT_LIST',
+    path: '/dashboard/visit',
+    // Department Staff bị loại khỏi MÀN DANH SÁCH (giữ đúng hành vi trước đây). Họ vẫn
+    // vào được các route tiếp khách theo phân công bên dưới (lời mời, nhiệm vụ, chi tiết) —
+    // đó là chỗ công việc thật của họ, và trước nay cũng không bị chặn.
+    allowedRoles: ['HO', 'STAFF_LEADER', 'STAFF', 'DEPARTMENT_LEAD', 'STUDENT', 'VISITOR'],
+    showInSidebar: true,
+    sidebarLabel: 'Quản lý tiếp khách',
+    defaultForRoles: ['STUDENT', 'VISITOR'],
+  },
+
   // ── System Administration Console (matrix §5.18, §5.19) ──
   {
     key: 'ACCOUNT_LIST',
@@ -261,20 +278,6 @@ const POLICIES: readonly DashboardRoutePolicy[] = [
   },
   { key: 'CAMPUS_DETAIL', path: '/dashboard/campus/:id', allowedRoles: HO_ONLY },
 
-  // ── Tiếp khách: mọi role nghiệp vụ, ADMIN bị loại (matrix §5.4) ──
-  // Route ở đây chỉ là cổng thô. Xem/sửa đúng bản ghi nào là việc của backend
-  // (host hiện tại, participant đã accept, campus của instance, chủ đơn...).
-  {
-    key: 'VISIT_LIST',
-    path: '/dashboard/visit',
-    // Department Staff bị loại khỏi MÀN DANH SÁCH (giữ đúng hành vi trước đây). Họ vẫn
-    // vào được các route tiếp khách theo phân công bên dưới (lời mời, nhiệm vụ, chi tiết) —
-    // đó là chỗ công việc thật của họ, và trước nay cũng không bị chặn.
-    allowedRoles: ['HO', 'STAFF_LEADER', 'STAFF', 'DEPARTMENT_LEAD', 'STUDENT', 'VISITOR'],
-    showInSidebar: true,
-    sidebarLabel: 'Quản lý tiếp khách',
-    defaultForRoles: ['STUDENT', 'VISITOR'],
-  },
   { key: 'VISIT_CREATE', path: '/dashboard/visit/create', allowedRoles: BUSINESS_ROLES },
   { key: 'VISIT_DETAIL', path: '/dashboard/visit/v2/:visitRequestId', allowedRoles: BUSINESS_ROLES },
   { key: 'VISIT_EDIT', path: '/dashboard/visit/v2/:visitRequestId/edit', allowedRoles: BUSINESS_ROLES },

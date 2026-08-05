@@ -229,7 +229,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 title={collapsed ? item.sidebarLabel : undefined}
               >
                 {Icon ? <Icon className="w-5 h-5 flex-shrink-0" /> : null}
-                <span>{item.sidebarLabel}</span>
+                <span className="flex items-center gap-1.5">
+                  {item.sidebarLabel}
+                  {/* Trang chính của sản phẩm — đánh dấu để không lẫn với các mục còn lại. */}
+                  {item.key === 'VISIT_LIST' && (
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 flex-shrink-0" />
+                  )}
+                </span>
               </NavLink>
             );
           })}
