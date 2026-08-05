@@ -118,6 +118,35 @@ describe('the toolbar offers what V4 §6.1 lists', () => {
     expect(Array.from(sizes.options).slice(1).map((o) => o.value)).toEqual([...EMAIL_SIZES]);
   });
 
+  /**
+   * The formatting controls do NOT depend on the mode.
+   *
+   * What separates TEMPLATE from COMPOSE is authority over variables and the action block — who may place
+   * a placeholder, who may create an action area. It is not "may I centre this line", and hiding half the
+   * toolbar behind a mode is how the two screens drifted apart in the first place: the same wording came
+   * out differently depending on where it was typed.
+   */
+  it.each([
+    'Hoàn tác', 'Làm lại', 'Đậm', 'Nghiêng', 'Gạch chân', 'Gạch ngang',
+    'Căn trái', 'Căn giữa', 'Căn phải',
+    'Danh sách đánh số', 'Danh sách gạch đầu dòng',
+    'Giảm thụt lề', 'Tăng thụt lề',
+    'Chèn liên kết', 'Chèn bảng', 'Chèn đường kẻ ngang', 'Xóa định dạng', 'Toàn màn hình',
+  ])('offers %s in COMPOSE too', (label) => {
+    setup({ mode: 'COMPOSE' });
+    expect(screen.getByRole('button', { name: label })).toBeTruthy();
+  });
+
+  it('offers the same font and size ladders in COMPOSE', () => {
+    setup({ mode: 'COMPOSE' });
+
+    const fonts = screen.getByLabelText('Phông chữ') as HTMLSelectElement;
+    const sizes = screen.getByLabelText('Cỡ chữ') as HTMLSelectElement;
+
+    expect(Array.from(fonts.options).slice(1).map((o) => o.value)).toEqual([...EMAIL_FONTS]);
+    expect(Array.from(sizes.options).slice(1).map((o) => o.value)).toEqual([...EMAIL_SIZES]);
+  });
+
   it('hides the image button when the host provides no uploader', () => {
     setup();
     expect(screen.queryByRole('button', { name: 'Chèn ảnh' })).toBeNull();

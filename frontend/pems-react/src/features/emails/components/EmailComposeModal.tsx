@@ -19,10 +19,8 @@
  * the backend MIME builder turns into a linked resource so it renders inline in the recipient's client.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-// @ts-ignore - react-quill-new ships without bundled types in this project
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
 import { X, Loader2, Paperclip, Send, Image as ImageIcon, Eye, ChevronLeft } from 'lucide-react';
+import { EmailRichTextEditor } from './EmailRichTextEditor';
 import {
   emailsApi,
   type EmailComposeAttachmentInput,
@@ -146,14 +144,6 @@ interface Props {
   /** Notices to show above the form (a missing guest address). Display only. */
   notices?: string[];
 }
-
-const QUILL_MODULES_TOOLBAR = [
-  ['bold', 'italic', 'underline', 'strike'],
-  [{ align: [] }],
-  [{ list: 'ordered' }, { list: 'bullet' }],
-  ['link', 'image'],
-  ['clean'],
-];
 
 /**
  * One key per opening of the composer.
@@ -281,8 +271,7 @@ export function EmailComposeModal({
   // fails the counter says so instead of showing a made-up denominator.
   const { limit: recipientLimit, status: limitStatus } = useRecipientLimit(open);
 
-  const quillRef = useRef<any>(null);
-  // src -> inline image identity, since quill strips data-* attributes off <img>.
+  // src -> inline image identity, since the editor strips data-* attributes off <img>.
   const inlineMapRef = useRef<Map<string, { fileId: number; contentId: string }>>(new Map());
 
   // Reset state each time the modal opens.
@@ -379,44 +368,37 @@ export function EmailComposeModal({
     relatedId: relatedId ?? null,
   }), [selectedTemplateId, relatedType, relatedId]);
 
-  // ── Inline image upload (quill toolbar image button) ──────────────────────
-  const imageHandler = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      setUploading(true);
-      try {
-        const uploaded = await filesApi.upload(file, 'EMAIL_INLINE');
-        const cid = contentIdForFile(uploaded.fileId);
+  /**
+   * Uploads one inline image and answers with the URL to embed; the editor places it.
+   *
+   * The composer used to own the placement too — it reached through a Quill ref for the caret and called
+   * `insertEmbed` itself, which is a second implementation of a thing the editor already does and the
+   * reason this screen needed its own toolbar at all. What is genuinely this screen's business is the
+   * mapping recorded here: `finalizeBody` rewrites each tracked src to `cid:{contentId}` so the backend
+   * can attach it as a linked resource, and an image the map does not know about ships as a bare URL that
+   * the recipient's client will refuse to load.
+   */
+  const uploadInlineImage = useCallback(async (file: File): Promise<string> => {
+    setUploading(true);
+    try {
+      const uploaded = await filesApi.upload(file, 'EMAIL_INLINE');
+      const cid = contentIdForFile(uploaded.fileId);
 
-        const token = authStorage.getAccessToken();
-        const proxyUrl = `/api/files/${uploaded.fileId}/content?access_token=${token}`;
+      const token = authStorage.getAccessToken();
+      const proxyUrl = `/api/files/${uploaded.fileId}/content?access_token=${token}`;
 
-        inlineMapRef.current.set(proxyUrl, { fileId: uploaded.fileId, contentId: cid });
-        const editor = quillRef.current?.getEditor?.();
-        const range = editor?.getSelection?.(true);
-        const index = range ? range.index : (editor?.getLength?.() ?? 0);
-        editor?.insertEmbed(index, 'image', proxyUrl, 'user');
-        editor?.setSelection(index + 1, 0);
-        markDirty();
-      } catch (err: any) {
-        const status = err.response?.status || 'Unknown';
-        const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
-        pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
-      } finally {
-        setUploading(false);
-      }
-    };
-    input.click();
+      inlineMapRef.current.set(proxyUrl, { fileId: uploaded.fileId, contentId: cid });
+      markDirty();
+      return proxyUrl;
+    } catch (err: any) {
+      const status = err.response?.status || 'Unknown';
+      const msg = err.response?.data?.message || err.message || 'Không có chi tiết lỗi';
+      pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
+      throw err;
+    } finally {
+      setUploading(false);
+    }
   }, [pushToast, markDirty]);
-
-  const modules = useMemo(
-    () => ({ toolbar: { container: QUILL_MODULES_TOOLBAR, handlers: { image: imageHandler } } }),
-    [imageHandler],
-  );
 
   // ── File attachments ──────────────────────────────────────────────────────
   const onPickFiles = useCallback(async (files: FileList | null) => {
@@ -930,14 +912,21 @@ export function EmailComposeModal({
               {/* Body (rich text) */}
               <div>
                 <label className="mb-1 block text-xs font-bold uppercase tracking-wide text-gray-500">Nội dung</label>
-                <div className="rounded-lg border border-gray-200">
-                  <ReactQuill
-                    ref={quillRef}
-                    theme="snow"
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                  {/*
+                    The SHARED editor, in COMPOSE mode. This screen used to build its own ReactQuill with a
+                    five-group toolbar, so an administrator writing an ad-hoc message here had a different
+                    set of formatting than the same person editing the same wording in a template — and
+                    what an email may safely contain is not a per-screen opinion.
+                  */}
+                  <EmailRichTextEditor
+                    mode="COMPOSE"
                     value={bodyHtml}
                     onChange={(v: string) => { setBodyHtml(v); markDirty(); }}
+                    onUploadImage={uploadInlineImage}
+                    onNotice={(msg) => pushToast?.('error', msg)}
                     placeholder="Nhập nội dung email… (định dạng, chèn ảnh inline, liên kết)"
-                    modules={modules}
+                    minHeight={260}
                   />
                 </div>
                 <p className="mt-1 text-[11px] text-gray-400">
