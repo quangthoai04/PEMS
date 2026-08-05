@@ -2,7 +2,6 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Dashboard.Queries.GetDepartmentLeaderDashboardSummary;
 using PEMS.Application.Dashboard.Queries.GetHODashboardOverview;
 using PEMS.Application.Dashboard.Queries.GetStaffCalendar;
@@ -64,33 +63,10 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [Microsoft.AspNetCore.Authorization.AllowAnonymous]
-        [HttpGet("debug-user")]
-        public async Task<IActionResult> DebugUser(
-            [FromQuery] string email,
-            [FromServices] PEMS.Application.Common.Interfaces.IApplicationDbContext dbContext,
-            [FromServices] global::Application.Common.Interfaces.IJwtTokenService jwtTokenService,
-            CancellationToken cancellationToken)
-        {
-            var user = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                dbContext.Users.Include(u => u.Role), u => u.Email == email, cancellationToken);
-            if (user == null) return NotFound("User not found");
-
-            var tokenResult = jwtTokenService.GenerateAccessToken(user, 1, "LOCAL");
-            var handler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
-            var jwt = handler.ReadJwtToken(tokenResult.Token);
-
-            var claims = jwt.Claims.Select(c => new { c.Type, c.Value }).ToList();
-
-            return Ok(new
-            {
-                user.UserId,
-                RoleCode = user.Role?.RoleCode,
-                user.DepartmentId,
-                Token = tokenResult.Token,
-                Claims = claims
-            });
-        }
+        // NOTE: `GET debug-user` was removed (P0). It was [AllowAnonymous], looked a user up by
+        // email and returned a freshly minted access token — an unauthenticated impersonation
+        // endpoint for any account whose email an attacker could guess. It must not come back in
+        // any form (env flag, renamed route, "dev only"); PEMS.ArchitectureTests asserts its absence.
     }
 }
 

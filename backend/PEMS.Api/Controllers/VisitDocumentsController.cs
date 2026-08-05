@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Delegations.VisitDocuments.Commands.UploadVisitDocument;
 
@@ -9,7 +10,10 @@ namespace PEMS.Api.Controllers
     /// handler (<see cref="Application.Delegations.VisitPhotos.VisitInstanceMediaAccessScope"/>) —
     /// the controller only maps transport.
     /// </summary>
+    /// Authenticated at class level as well: the handler-side scope was the only check, so a
+    /// missing call in a future action would have published it anonymously.
     [ApiController]
+    [Authorize]
     [Route("api/visit-documents")]
     public class VisitDocumentsController : ControllerBase
     {
