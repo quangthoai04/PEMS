@@ -155,7 +155,17 @@ public class ResendEmailService : IEmailService
     public async Task SendAsync(OutboundEmail email, CancellationToken cancellationToken = default)
         => ThrowIfFailed(await TrySendAsync(email, cancellationToken));
 
-    private static ResendPayload BuildResendPayload(
+    /// <summary>
+    /// The exact JSON body sent to Resend.
+    ///
+    /// <para>
+    /// <c>internal</c> so the transport-parity tests can compare it against the <c>.eml</c> the SMTP
+    /// path writes. Two transports that quietly disagree about Reply-To, CC or attachments is the
+    /// failure this whole comparison exists to catch, and there is no way to see it from outside
+    /// without actually sending mail.
+    /// </para>
+    /// </summary>
+    internal static ResendPayload BuildResendPayload(
         OutboundEmail email, ValidatedEnvelope envelope, ResendProviderSettings settings)
     {
         var fromEmail = !string.IsNullOrWhiteSpace(settings.FromEmail) ? settings.FromEmail : "no-reply@mail.pems-fpt.site";
@@ -179,8 +189,20 @@ public class ResendEmailService : IEmailService
             payload.Bcc = envelope.Bcc.Select(r => FormatRecipient(r)).ToList();
         }
 
-        var replyToEmail = email.ReplyTo?.Email ?? settings.ReplyToEmail;
-        var replyToName = email.ReplyTo?.DisplayName ?? settings.ReplyToName;
+        // Reply-To is taken from ONE source, whole. The two halves used to fall back independently
+        // (`email.ReplyTo?.Email ?? settings.ReplyToEmail` beside
+        // `email.ReplyTo?.DisplayName ?? settings.ReplyToName`), so a message carrying an address with
+        // no display name — which is what the dispatcher produces whenever the sending account has no
+        // resolved name — was labelled with the SYSTEM's name: "PEMS <ha.nguyen@fpt.edu.vn>". The
+        // recipient then reads a reply addressed to PEMS that in fact goes to a person.
+        //
+        // SMTP never had the problem: it adds the message's own Reply-To recipient wholesale and
+        // consults configuration only when the list came out empty. This now matches it.
+        var (replyToEmail, replyToName) =
+            email.ReplyTo is { } messageReplyTo && !string.IsNullOrWhiteSpace(messageReplyTo.Email)
+                ? (messageReplyTo.Email, messageReplyTo.DisplayName)
+                : (settings.ReplyToEmail, settings.ReplyToName);
+
         if (!string.IsNullOrWhiteSpace(replyToEmail))
         {
             var replyToFormatted = !string.IsNullOrWhiteSpace(replyToName) ? $"{replyToName} <{replyToEmail}>" : replyToEmail;

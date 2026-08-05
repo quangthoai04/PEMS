@@ -19,4 +19,15 @@
 		<ProjectReference Include="..\PEMS.Domain\PEMS.Domain.csproj" />
 		<ProjectReference Include="..\PEMS.Application\PEMS.Application.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+		<!--
+			The transport-parity tests compare the Resend request body against the .eml the SMTP path
+			writes. Both are internal details of how a transport talks to its provider, and two
+			transports quietly disagreeing is exactly what those tests exist to catch — so the payload
+			builder is reachable from the test assembly rather than promoted to public API.
+		-->
+		<AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+			<_Parameter1>PEMS.IntegrationTests</_Parameter1>
+		</AssemblyAttribute>
+	</ItemGroup>
 </Project>
