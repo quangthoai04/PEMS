@@ -6,9 +6,22 @@
  *
  * NO network mocking, no real SMTP, no real mail.
  *
- * <b>Journey A</b> compose → preview → draft/autosave → reopen draft → edit → send.
+ * <b>Journey A</b> compose → preview → back to edit → preview again → send.
  * <b>Journey B</b> Reply.
  * <b>Journey C</b> Reply All.
+ *
+ * <b>There is no draft here, and that is the current design.</b> These journeys used to go
+ * compose → autosave → reopen → edit → send, and the reopen was the point: it proved each address came
+ * back in the group it was entered in. `bc4c6a54` removed drafts entirely — a composer opened on a
+ * draft id that no longer existed showed a form full of generated text that looked exactly like a loaded
+ * draft, and sending from it quietly created a NEW draft to send from. A composed message now lives in
+ * the browser until it is sent.
+ *
+ * So the round trip these journeys exercise is the one that still exists: <b>preview</b>. It is a server
+ * call that returns the sanitised message and the three groups as the send will use them, and the walk
+ * back through "Quay lại sửa" and forward again is what proves a second look does not merge them. The
+ * assertions about grouping, casing, duplicates and blind copies are unchanged — only the mechanism they
+ * ride on moved, because the old one is gone.
  *
  * <b>Why a browser, when the API-level suites already pass.</b> Every property here is a property of a
  * HAND-OFF: the screen holds three groups, the draft endpoint stores which group each address came
@@ -27,7 +40,7 @@ import { authedPage, meUser } from './realstackHelpers';
 import { asStoredUser } from './departmentRealstackHelpers';
 import {
   DEPT_LEADER, FACILITIES_LEADER, HO, LEADER_HN, MODE,
-  allEnvelopes, chipsIn, dbDraftRecipients, dbRecipients, dispatchedCount, expectAbsentFromMessage,
+  allEnvelopes, chipsIn, dbRecipients, dispatchedCount, expectAbsentFromMessage,
   expectChips, expectRecipientRefused, previewGroup, queryDb, scalar, sorted,
   typeBody, typeRecipient, waitForMessage,
 } from './emailRealstackHelpers';
@@ -83,9 +96,9 @@ function replyIdFor(tag: string): number {
   return Number(rows[1][0]);
 }
 
-// ── Journey A — compose → preview → draft → reopen → edit → send ────────────────────────────────
+// ── Journey A — compose → preview → edit → preview → send ──────────────────────────────────────
 
-test('Journey A — compose, preview, autosave, reopen, edit and send keeps TO/CC/BCC apart', async ({ browser, request }) => {
+test('Journey A — compose, preview, edit and send keeps TO/CC/BCC apart', async ({ browser, request }) => {
   const tag = marker();
   const { context, page } = await emailScreen(browser, request, HO.key);
 
@@ -135,44 +148,37 @@ test('Journey A — compose, preview, autosave, reopen, edit and send keeps TO/C
     await page.getByPlaceholder('Tiêu đề email…').fill(`${tag} thu moi hop`);
     await typeBody(page, `Noi dung ${tag}. Vui long xac nhan.`);
 
-    // ── Autosave. Waiting for the screen's own "saved" stamp rather than a sleep: the assertion is
-    //    that the draft reached the server, and that is what the stamp reports.
-    await expect(page.getByText(/Đã lưu nháp lúc/)).toBeVisible({ timeout: 15_000 });
-
-    // ── The draft stored each address under the group it was entered in.
-    const draftId = Number(scalar(
-      `SELECT email_draft_id FROM email_drafts WHERE subject LIKE '%${tag}%' ORDER BY email_draft_id DESC LIMIT 1`));
-    expect(Number.isFinite(draftId) && draftId > 0, 'the composer must have created a draft').toBe(true);
-    const storedDraft = dbDraftRecipients(draftId);
-    expect(sorted(storedDraft.filter(r => r.type === 'TO').map(r => r.email))).toEqual([LEADER_HN.email]);
-    expect(sorted(storedDraft.filter(r => r.type === 'CC').map(r => r.email))).toEqual([DEPT_LEADER.email]);
-    expect(sorted(storedDraft.filter(r => r.type === 'BCC').map(r => r.email))).toEqual([FACILITIES_LEADER.email]);
-    expect(storedDraft, 'the draft holds exactly the three addresses entered').toHaveLength(3);
-
-    // ── Preview shows all three groups to their own author, still separated.
+    // ── PREVIEW. A server call, not a local render: it returns the sanitised message and the three
+    //    groups as the send will use them. This is the round trip the journey now turns on — the draft
+    //    that used to provide one is gone.
     await page.getByRole('button', { name: 'Xem trước' }).click();
     await expect(page.getByText('Xem trước email')).toBeVisible();
     expect(await previewGroup(page, 'TO')).toEqual([LEADER_HN.email]);
     expect(await previewGroup(page, 'CC')).toEqual([DEPT_LEADER.email]);
     expect(await previewGroup(page, 'BCC')).toEqual([FACILITIES_LEADER.email]);
+
+    // The body previewed is the body composed. The preview is what the author approves, so a preview
+    // showing something else is the one failure this stage cannot be allowed to have.
+    await expect(page.getByTestId('compose-preview-body')).toContainText(`Noi dung ${tag}`);
+
+    // ── BACK TO EDIT. Nothing may be lost or merged by looking and returning: the groups the composer
+    //    holds after a preview must still be the three it held before one.
     await page.getByRole('button', { name: 'Quay lại sửa' }).click();
-
-    // ── Reopen. A full page load first, so what is restored comes from the server and not from any
-    //    state this browser was still holding.
-    await page.goto('/dashboard/email');
-    await page.locator('select:has(option[value="drafts"])').selectOption('drafts');
-    await page.getByTestId('drafts-list').getByRole('button').filter({ hasText: tag }).click();
-
-    await expect(page.getByPlaceholder('Tiêu đề email…')).toHaveValue(new RegExp(tag), { timeout: 15_000 });
-    await expectChips(page, 'TO', [LEADER_HN.email], 'TO must survive the round trip');
+    await expectChips(page, 'TO', [LEADER_HN.email], 'TO must survive a look at the preview');
     await expectChips(page, 'CC', [DEPT_LEADER.email], 'a CC must not come back as a TO');
     await expectChips(page, 'BCC', [FACILITIES_LEADER.email], 'a BCC must not come back as a CC');
 
-    // ── Edit the reopened draft, then send it.
+    // ── Change the message, and preview again. The second preview must show the CHANGE — a cached
+    //    first answer would let an author send one message while approving another.
     await page.getByPlaceholder('Tiêu đề email…').fill(`${tag} thu moi hop (da sua)`);
-    await expect(page.getByText(/Đã lưu nháp lúc/)).toBeVisible({ timeout: 15_000 });
 
     await page.getByRole('button', { name: 'Xem trước' }).click();
+    await expect(page.getByText('Xem trước email')).toBeVisible();
+    await expect(page.getByTestId('compose-preview')).toContainText('da sua');
+    expect(await previewGroup(page, 'BCC'), 'the blind copy survives a second preview')
+      .toEqual([FACILITIES_LEADER.email]);
+
+    // ── SEND, from the preview the author is looking at.
     await page.getByRole('button', { name: 'Xác nhận gửi' }).click();
     await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
 
@@ -214,9 +220,10 @@ test('Journey A — compose, preview, autosave, reopen, edit and send keeps TO/C
     expect(scalar(`SELECT COUNT(*) FROM sent_email_recipients WHERE sent_email_id = ${sentEmailId} AND delivery_status = 'DELIVERED'`))
       .toBe('0');
 
-    // ── The draft is spent, and points at the message it became.
-    expect(scalar(`SELECT status FROM email_drafts WHERE email_draft_id = ${draftId}`)).toBe('SENT');
-    expect(scalar(`SELECT sent_email_id FROM email_drafts WHERE email_draft_id = ${draftId}`)).toBe(String(sentEmailId));
+    // ── One message, not two. Sending used to go through a draft row, and the failure that removal was
+    //    meant to end was a send creating a second record of itself; a run that produced two sent_emails
+    //    for one press would satisfy every assertion above.
+    expect(historyFor(tag), 'one press of send produces exactly one message').toHaveLength(1);
   } finally {
     await context.close();
   }
@@ -238,8 +245,10 @@ test('Journey A2 — history shows a blind copy to its sender and to nobody else
     await typeRecipient(page, 'BCC', FACILITIES_LEADER.email);
     await page.getByPlaceholder('Tiêu đề email…').fill(`${tag} kiem tra che do an`);
     await typeBody(page, `Noi dung ${tag}.`);
-    await expect(page.getByText(/Đã lưu nháp lúc/)).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: 'Xem trước' }).click();
+    // Waiting on the preview rather than on a stamp: it is a server call, so its arrival is the signal
+    // that the message reached the API — which is what the removed autosave stamp used to report.
+    await expect(page.getByTestId('compose-preview')).toBeVisible({ timeout: 15_000 });
     await page.getByRole('button', { name: 'Xác nhận gửi' }).click();
     await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
 
@@ -307,8 +316,8 @@ test('Journey B — Reply answers the sender only and inherits nothing from the 
     await typeRecipient(composer.page, 'BCC', FACILITIES_LEADER.email);
     await composer.page.getByPlaceholder('Tiêu đề email…').fill(`${tag} ban goc`);
     await typeBody(composer.page, `Noi dung goc ${tag}.`);
-    await expect(composer.page.getByText(/Đã lưu nháp lúc/)).toBeVisible({ timeout: 15_000 });
     await composer.page.getByRole('button', { name: 'Xem trước' }).click();
+    await expect(composer.page.getByTestId('compose-preview')).toBeVisible({ timeout: 15_000 });
     await composer.page.getByRole('button', { name: 'Xác nhận gửi' }).click();
     await composer.page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
     await waitForMessage(tag, before);
@@ -379,8 +388,8 @@ test('Journey C — Reply All reaches the visible recipients and never the blind
     await typeRecipient(composer.page, 'BCC', FACILITIES_LEADER.email);
     await composer.page.getByPlaceholder('Tiêu đề email…').fill(`${tag} ban goc tra loi tat ca`);
     await typeBody(composer.page, `Noi dung goc ${tag}.`);
-    await expect(composer.page.getByText(/Đã lưu nháp lúc/)).toBeVisible({ timeout: 15_000 });
     await composer.page.getByRole('button', { name: 'Xem trước' }).click();
+    await expect(composer.page.getByTestId('compose-preview')).toBeVisible({ timeout: 15_000 });
     await composer.page.getByRole('button', { name: 'Xác nhận gửi' }).click();
     await composer.page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
     await waitForMessage(tag, before);

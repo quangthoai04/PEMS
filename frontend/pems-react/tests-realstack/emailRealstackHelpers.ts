@@ -79,13 +79,9 @@ export function dbRecipients(sentEmailId: number): Array<{ email: string; type: 
   ).map(([email, type]) => ({ email, type }));
 }
 
-/** `email → TYPE` for one draft, straight out of `email_draft_recipients`. */
-export function dbDraftRecipients(draftId: number): Array<{ email: string; type: string }> {
-  return queryDb(
-    `SELECT recipient_email, recipient_type FROM email_draft_recipients
-      WHERE email_draft_id = ${draftId} ORDER BY display_order`,
-  ).map(([email, type]) => ({ email, type }));
-}
+// `dbDraftRecipients` lived here until 2026-08-05. `email_draft_recipients` is dropped by the canonical
+// schema — `bc4c6a54` removed drafts, and a composed message now lives in the browser until it is sent —
+// so the helper could only ever have thrown. Its caller, Journey A's reopen step, is gone with it.
 
 // ── Dispatcher witnesses ───────────────────────────────────────────────────────────────────────
 
