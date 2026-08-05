@@ -8,7 +8,7 @@
  */
 import React, { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 // @ts-ignore - react-quill-new ships without bundled types in this project
 import { Quill } from 'react-quill-new';
 import {
@@ -17,7 +17,7 @@ import {
 import { isSameEmailHtml } from '../utils/emailHtmlCanonicalizer';
 import { EMAIL_FONTS, EMAIL_SIZES } from '../utils/emailEditorFormats';
 import { SYSTEM_ACTION_NODE, countSystemActionNodes } from '../utils/systemActionNode';
-import { cleanInlineStyle, hasSpaceRun, normalizeSpaceRuns } from '../utils/emailEditorPaste';
+import { SPACE_RUN_WARNING, cleanInlineStyle, hasSpaceRun, normalizeSpaceRuns } from '../utils/emailEditorPaste';
 import { COMPOSE_CAPABILITIES, TEMPLATE_CAPABILITIES, capabilitiesFor } from '../utils/emailEditorCapabilities';
 
 /**
@@ -665,5 +665,124 @@ describe('paste cleanup', () => {
     expect(normalizeSpaceRuns('Số điện thoại:     0901234567')).toBe('Số điện thoại: 0901234567');
     expect(hasSpaceRun('a   b')).toBe(true);
     expect(hasSpaceRun('a b')).toBe(false);
+  });
+
+  /**
+   * The blind spot that made the typed-run warning dead code.
+   *
+   * Quill returns a typed run as `&nbsp;` — `<p>a&nbsp;&nbsp;&nbsp;b</p>` — so a check against the
+   * ASCII space alone never matched anything a person typed, and the warning could only ever appear
+   * on paste, where the fragment is read before Quill touches it.
+   */
+  it('sees a run of NON-BREAKING spaces, which is how a typed run comes back', () => {
+    expect(hasSpaceRun('a   b')).toBe(true);
+    expect(hasSpaceRun('a   b')).toBe(true);   // mixed, as Quill actually emits them
+    expect(hasSpaceRun('a b')).toBe(false);          // one is a normal character
+  });
+});
+
+/**
+ * V4 §7.4 — the space-run warning, on the way the runs actually get there.
+ *
+ * It used to fire on paste only. Typing is the likelier route: pasting from Word brings a table,
+ * while a person lining two columns up by hand reaches for the space bar — and HTML collapses those
+ * runs, so what they carefully aligned arrives as one ragged line.
+ *
+ * The editor WARNS and leaves the text alone. Deleting characters out from under someone mid-sentence
+ * is worse than the problem, and `&nbsp;` would be worse still: it holds in the composer and then
+ * refuses to wrap on a phone.
+ */
+
+/**
+ * V4 §7.4 — the space-run warning, on the way the runs actually get there.
+ *
+ * It used to fire on paste only. Typing is the likelier route: pasting from Word brings a table,
+ * while a person lining two columns up by hand reaches for the space bar — and HTML collapses those
+ * runs, so what they carefully aligned arrives as one ragged line.
+ *
+ * The editor WARNS and leaves the text alone. Deleting characters out from under someone mid-sentence
+ * is worse than the problem, and `&nbsp;` would be worse still: it holds in the composer and then
+ * refuses to wrap on a phone.
+ *
+ * Typed through Quill's own text API rather than by assigning innerHTML. Quill owns its document; a
+ * DOM write goes in behind its back, and its observer may or may not have caught up by the assertion —
+ * which is how a test ends up measuring timing instead of behaviour.
+ */
+describe('EmailRichTextEditor space runs', () => {
+  /** Types at the end of the document, as a person would. */
+  const type = async (container: HTMLElement, text: string) => {
+    const q = quillOf(container);
+    await act(async () => {
+      q.insertText(q.getLength() - 1, text, 'user');
+    });
+  };
+
+  const warningsOf = (onNotice: ReturnType<typeof vi.fn>) =>
+    onNotice.mock.calls.filter(([m]: [string]) => m === SPACE_RUN_WARNING);
+
+  it('warns when a sender TYPES a run of spaces', async () => {
+    const { container, onNotice } = setup({ value: '<p>Số điện thoại:</p>' });
+
+    await type(container, '     0901234567');
+
+    expect(warningsOf(onNotice)).toHaveLength(1);
+  });
+
+  it('leaves the typed text exactly as written', async () => {
+    const { container, root } = setup({ value: '<p>Cột một</p>' });
+
+    await type(container, '     Cột hai');
+
+    // Warned, not rewritten: the sender still has their words, and the canonicalizer collapses the
+    // run before anything is compared or sent.
+    expect(root.textContent).toContain('Cột một     Cột hai');
+  });
+
+  it('says it once, not once per keystroke', async () => {
+    const { container, onNotice } = setup({ value: '<p>a</p>' });
+
+    await type(container, '   b');
+    await type(container, 'c');
+    await type(container, 'd');
+
+    expect(warningsOf(onNotice)).toHaveLength(1);
+  });
+
+  it('warns again after the runs are removed and a new one is made', async () => {
+    const { container, onNotice } = setup({ value: '<p>a</p>' });
+    const q = quillOf(container);
+
+    await type(container, '   b');
+    expect(warningsOf(onNotice)).toHaveLength(1);
+
+    // The sender fixes it — the whole document goes back to single spacing, and the flag re-arms.
+    await act(async () => {
+      q.setText('a b\n', 'user');
+    });
+
+    await type(container, '   c');
+
+    expect(warningsOf(onNotice)).toHaveLength(2);
+  });
+
+  it('says nothing about ordinary single-spaced prose', async () => {
+    const { container, onNotice } = setup({ value: '<p>Kính gửi anh Bình,</p>' });
+
+    await type(container, ' nhờ anh hỗ trợ đón đoàn khách.');
+
+    expect(warningsOf(onNotice)).toHaveLength(0);
+  });
+
+  /**
+   * Two spaces are ordinary typing — after a full stop, or a stray double-tap. Three is somebody
+   * building a column. `hasSpaceRun` draws the line at three deliberately: warning on two would make
+   * the message noise, and a message people learn to dismiss protects nothing.
+   */
+  it('does not warn about a double space', async () => {
+    const { container, onNotice } = setup({ value: '<p>Xong.</p>' });
+
+    await type(container, '  Cảm ơn anh.');
+
+    expect(warningsOf(onNotice)).toHaveLength(0);
   });
 });

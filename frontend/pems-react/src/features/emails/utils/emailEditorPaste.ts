@@ -115,9 +115,23 @@ export function normalizeSpaceRuns(text: string): string {
   return text.replace(/ {2,}/g, ' ');
 }
 
-/** True when the text contains a run of spaces somebody is probably using to line something up. */
+/**
+ * True when the text contains a run of spaces somebody is probably using to line something up.
+ *
+ * <b>Non-breaking spaces count.</b> Quill hands back typed runs as `&nbsp;` — three spaces typed into
+ * the editor arrive at `onChange` as `<p>a&nbsp;&nbsp;&nbsp;b</p>` — so a check against the ASCII space
+ * alone could never fire for the commonest case, and did not: the warning only ever appeared on paste,
+ * where the fragment is inspected before Quill touches it.
+ *
+ * A run of non-breaking spaces is also the WORSE version of the problem, not a lesser one. It holds its
+ * width in the composer, so the column looks right to the person building it, and then refuses to wrap
+ * on a phone — turning a tidy column into a line the reader has to scroll sideways to finish.
+ *
+ * Three, not two: two spaces are ordinary typing after a full stop. A warning that fires on those is
+ * noise, and a message people learn to dismiss protects nothing.
+ */
 export function hasSpaceRun(text: string): boolean {
-  return / {3,}/.test(text);
+  return / {3,}/.test(text.replace(/ /g, ' '));
 }
 
 /** The warning shown when it does. Wording from V4 §7.4. */

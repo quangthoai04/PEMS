@@ -155,6 +155,14 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
    */
   const lastRange = useRef<{ index: number; length: number } | null>(null);
 
+  /**
+   * Whether this editing session has already been told that runs of spaces do not align anything.
+   *
+   * One warning, not one per keystroke — and shared with the paste handler, which would otherwise
+   * toast the same sentence twice for a single paste.
+   */
+  const warnedSpaceRun = useRef(false);
+
   const editor = useCallback(() => quillRef.current?.getEditor?.(), []);
 
   /** Applies `fn` to the live editor, then refreshes the toolbar's active state. */
@@ -414,7 +422,12 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       if (range && range.length > 0) q.deleteText(range.index, range.length, 'user');
       q.clipboard.dangerouslyPasteHTML(index, doc.body.innerHTML, 'user');
 
-      if (hasSpaceRun(doc.body.textContent ?? '')) onNotice?.(SPACE_RUN_WARNING);
+      // Checked on the pasted fragment specifically, so a paste is warned about even when the document
+      // already carried a run. The shared flag stops handleChange repeating it for the same paste.
+      if (hasSpaceRun(doc.body.textContent ?? '') && !warnedSpaceRun.current) {
+        warnedSpaceRun.current = true;
+        onNotice?.(SPACE_RUN_WARNING);
+      }
     };
 
     node.addEventListener('paste', onPaste);
@@ -450,9 +463,42 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     [],
   );
 
+  /**
+   * V4 §7.4 — a run of spaces is not a layout tool, however it got there.
+   *
+   * The warning used to fire on paste only, so holding the space bar to line two columns up was
+   * silently accepted — and HTML collapses those runs, so the sender's tidy column arrives as one
+   * ragged line. Typing is in fact the likelier way to do it: pasting from Word brings tables, while
+   * a person building a column by hand reaches for the space bar.
+   *
+   * Warned, not rewritten. Deleting characters out from under someone mid-sentence is worse than the
+   * problem — and `&nbsp;` would be worse still, since it "works" in the composer and then refuses to
+   * wrap on a phone. The canonicalizer already collapses runs before the HTML is compared or sent, so
+   * nothing depends on the author acting on this.
+   */
   const handleChange = useCallback((html: string) => {
-    onChange(fromEditor(html));
-  }, [onChange, fromEditor]);
+    const canonical = fromEditor(html);
+
+    // Once per editing session, not once per keystroke: a warning that reappears on every space after
+    // the third is noise, and the sender has already been told.
+    if (typeof document !== 'undefined' && onNotice) {
+      const probe = document.createElement('div');
+      probe.innerHTML = html;
+      const text = probe.textContent ?? '';
+
+      if (hasSpaceRun(text)) {
+        if (!warnedSpaceRun.current) {
+          warnedSpaceRun.current = true;
+          onNotice(SPACE_RUN_WARNING);
+        }
+      } else {
+        // Re-armed once the runs are gone, so a second attempt later is warned about again.
+        warnedSpaceRun.current = false;
+      }
+    }
+
+    onChange(canonical);
+  }, [onChange, fromEditor, onNotice]);
 
   const editorHtml = useMemo(() => toEditor(value), [value, toEditor]);
 
