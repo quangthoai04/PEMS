@@ -1,27 +1,18 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Plus, Edit2, Check, X, ShieldAlert, Loader2, Lock, Info, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
-import ReactQuill from 'react-quill-new';
+import {
+  EmailRichTextEditor, type EmailRichTextEditorHandle,
+} from '../../../features/emails/components/EmailRichTextEditor';
+import { canonicalizeEmailHtml } from '../../../features/emails/utils/emailHtmlCanonicalizer';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
-import {
-  ContactSettingsPanel,
-  toContactPayload,
-} from '../../../features/emails/components/ContactSettingsPanel';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
-import {
-  containsContactInformationBlock,
-  removeContactInformationBlock,
-} from '../../../features/emails/utils/contactBlock';
-import type {
-  EmailContactSettings,
-  EmailContactSettingsPayload,
-} from '../../../features/emails/api/emailsApi';
 import {
   TEMPLATE_ERROR_CODES,
   applySamples,
   applySystemBlocks,
-  contactSupportedOf,
+  isSenderVariable,
   describeSystemBlocks,
   errorCodeOf,
   issuesFromError,
@@ -31,15 +22,6 @@ import {
   type TemplateContentField,
   type TemplateContentIssue,
 } from '../../../features/emails/types/templateContract';
-
-const QUILL_MODULES = {
-  toolbar: [
-    ['bold', 'italic', 'underline', 'strike'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ align: [] }],
-    ['clean']
-  ]
-};
 
 type EditorLanguage = 'VI' | 'EN';
 
@@ -60,21 +42,12 @@ interface TemplateForm {
   /** Whether PEMS ships a default for this code — decides whether restore is offered at all. */
   hasShippedDefault: boolean;
   updatedAt: string | null;
-  /**
-   * The contact configuration, as one more group of fields in the SAME form.
-   *
-   * Null means one of two different things and the screen tells them apart elsewhere: the card has not
-   * finished loading, or this template has no configuration at all. Neither is dirty, because the
-   * baseline is null in both cases too.
-   */
-  contactSettings: EmailContactSettingsPayload | null;
 }
 
 const EMPTY_FORM: TemplateForm = {
   templateCode: '', name: '', description: '',
   subjectVi: '', bodyVi: '', subjectEn: '', bodyEn: '',
   status: 'ACTIVE', revision: null, hasShippedDefault: false, updatedAt: null,
-  contactSettings: null,
 };
 
 /** Matches the `description` column and `UpdateEmailTemplateCommandValidator.DescriptionMaxLength`. */
@@ -108,12 +81,6 @@ type BodyField = (typeof BODY_FIELDS)[number];
 const isBodyField = (field: string): field is BodyField =>
   field === 'bodyVi' || field === 'bodyEn';
 
-/** The two content fields each language tab owns. Used to attribute an issue to a TAB, not just a field. */
-const LANGUAGE_FIELDS: Record<EditorLanguage, { subject: TemplateContentField; body: TemplateContentField }> = {
-  VI: { subject: 'subjectVi', body: 'bodyVi' },
-  EN: { subject: 'subjectEn', body: 'bodyEn' },
-};
-
 const LANGUAGE_LABELS: Record<EditorLanguage, string> = { VI: 'Tiếng Việt', EN: 'English' };
 
 /**
@@ -132,9 +99,6 @@ const languageOfField = (field: TemplateContentField | string): EditorLanguage |
 
 /** Where the caret was in a plain-text input. */
 type TextSelection = { start: number; end: number };
-
-/** Where the caret was in a Quill document. */
-type QuillSelection = { index: number; length: number };
 
 /**
  * Which control the operator was last writing in, per language.
@@ -162,15 +126,22 @@ const normalizeText = (value: string | null | undefined) =>
   (value ?? '').replace(/\r\n?/g, '\n').trim();
 
 /**
- * As above, plus the editor's idea of "empty".
+ * As above, but for a body — compared by MEANING rather than by spelling.
  *
- * An empty Quill document serialises to `<p><br></p>`, while an empty stored body is ''. Left
- * unreconciled, clearing a body and typing it back exactly as it was would leave the screen claiming an
- * unsaved change forever.
+ * <b>What this replaces.</b> The screen used to compare body strings and carry a per-language
+ * `pendingEditorNormalization` flag to absorb the one change event the editor emits on mount, because a
+ * controlled Quill re-serialises whatever html it is handed: `<br>` becomes `<br />`, style declarations
+ * are reordered, a trailing empty paragraph appears. Without the flag the screen said "có thay đổi chưa
+ * lưu" before the operator had touched anything; with it, the FIRST genuine edit to a body that had not
+ * yet rendered was silently taken into the baseline instead of being reported as unsaved.
+ *
+ * The canonicaliser removes the need for either. Two bodies that say the same thing compare equal however
+ * they are spelled, so the editor's own rendering of stored html is simply not a change — and every real
+ * edit is, including the first one.
  */
 const normalizeHtml = (value: string | null | undefined) => {
   const text = normalizeText(value);
-  return /^<p>(?:\s|<br\s*\/?>)*<\/p>$/i.test(text) ? '' : text;
+  return /^<p>(?:\s|<br\s*\/?>)*<\/p>$/i.test(text) ? '' : canonicalizeEmailHtml(text);
 };
 
 const normalizeField = (field: (typeof CONTENT_FIELDS)[number], value: string) =>
@@ -188,9 +159,11 @@ const normalizeField = (field: (typeof CONTENT_FIELDS)[number], value: string) =
  * and LF are the same body, and an empty Quill document is the same as an empty stored one. Comparing
  * raw values would leave the screen claiming unsaved work the moment a template was opened.
  */
+// The snapshot is content only now. It used to carry the contact settings as a second half, because
+// one "có thay đổi chưa lưu" flag had to cover a form and a configuration card saved by the same
+// button. There is one kind of thing on this screen again.
 type EditorSnapshot = {
   content: ContentSnapshot;
-  contact: EmailContactSettingsPayload | null;
 };
 
 const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
@@ -201,17 +174,6 @@ const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
       acc[field] = normalizeField(field, content[field]);
       return acc;
     }, {} as ContentSnapshot),
-    contact: form.contactSettings
-      ? {
-          ...form.contactSettings,
-          // The headings are the only free text here, and the API trims them and treats '' as "inherit".
-          // Comparing untrimmed values would report a trailing space as an unsaved change that no save
-          // could ever clear, because the save would store the trimmed form and the next comparison would
-          // find them different again.
-          headingVi: normalizeText(form.contactSettings.headingVi),
-          headingEn: normalizeText(form.contactSettings.headingEn),
-        }
-      : null,
   };
 };
 
@@ -222,15 +184,8 @@ const normalizeEditorSnapshot = (form: TemplateForm): EditorSnapshot => {
  * well as values — so a payload rebuilt from a server response with its properties in a different order
  * would read as an edit. The fields are enumerated instead.
  */
-const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot): boolean => {
-  if (CONTENT_FIELDS.some(field => a.content[field] !== b.content[field])) return false;
-
-  if (a.contact === null || b.contact === null) return a.contact === b.contact;
-
-  const keys = Object.keys(a.contact) as (keyof EmailContactSettingsPayload)[];
-  return keys.length === Object.keys(b.contact).length
-    && keys.every(key => a.contact![key] === b.contact![key]);
-};
+const sameSnapshot = (a: EditorSnapshot, b: EditorSnapshot): boolean =>
+  CONTENT_FIELDS.every(field => a.content[field] === b.content[field]);
 
 /**
  * The system email template catalog (UC-42/43/44).
@@ -273,7 +228,7 @@ const getTemplateGroup = (code: string) => {
 };
 
 export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' | 'error', msg: string) => void }) {
-  const quillRef = useRef<any>(null);
+  const bodyEditorRef = useRef<EmailRichTextEditorHandle | null>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -284,7 +239,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * the editor on every cursor move — which fights Quill for the caret it is trying to record.
    */
   const subjectSelection = useRef<Record<EditorLanguage, TextSelection | null>>({ VI: null, EN: null });
-  const bodySelection = useRef<Record<EditorLanguage, QuillSelection | null>>({ VI: null, EN: null });
+  // The BODY caret is no longer tracked here — the shared editor remembers its own, per mounted editor,
+  // and the editors are keyed by language so the two tabs cannot share one.
   const lastInsertTarget = useRef<Record<EditorLanguage, InsertTarget | null>>({ VI: null, EN: null });
 
   /**
@@ -319,9 +275,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * nothing (NONE, or both channels hidden), which the preview shows as the block simply not being
    * there. Owned here rather than inside the panel because the pane that displays it is up here.
    */
-  const [contactBlockPreview, setContactBlockPreview] = useState('');
   /**
-   * The whole template as it is STORED — content and contact settings together — so "có thay đổi chưa
+   * The whole template as it is STORED — so "có thay đổi chưa
    * lưu" is a fact rather than "the operator typed something". Re-baselined after every successful save
    * and restore; leaving the old baseline would keep the warning on screen after the work had been saved,
    * which teaches operators to ignore it.
@@ -337,25 +292,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     baselineRef.current = normalizeEditorSnapshot(form);
     setBaselineVersion(v => v + 1);
   }, []);
-  /**
-   * Whether each body still has to absorb the editor's own rendering of the STORED html — the last step
-   * of hydration, and the reason this screen used to open already claiming unsaved changes.
-   *
-   * ReactQuill is controlled, so it converts whatever html it is handed into its own canonical form and
-   * reports the result through `onChange` the moment it mounts (source `api`, not `user`). The stored
-   * bodies are not in that form — `{{actionBlock}}` sits between two paragraphs as bare text, the
-   * footers carry inline `style` attributes Quill's format list does not include — so the very first
-   * thing that happened after opening a template was a change event nobody had made. The baseline was
-   * the html from the API, the form now held the editor's version of it, and the screen said "● Nội dung
-   * mẫu có thay đổi chưa lưu" before the operator had touched anything.
-   *
-   * The flag makes that one event part of hydration instead: the FIRST non-user change to a body moves
-   * the baseline with the form, so the two still agree. It is cleared as soon as anything else touches
-   * that body — typing, inserting a variable, removing a block — after which every change is the
-   * operator's and is reported as unsaved. Held per language because each editor normalises when ITS tab
-   * is first shown, which is not when the template was opened.
-   */
-  const pendingEditorNormalization = useRef<Record<BodyField, boolean>>({ bodyVi: true, bodyEn: true });
+  // `pendingEditorNormalization` was here: a per-language flag that absorbed the one change event a
+  // controlled Quill emits on mount, because the screen compared body STRINGS and the editor's rendering
+  // of stored html never matched it character for character. It is gone — `normalizeHtml` now compares
+  // meaning, so the editor's re-serialisation is not a change and needs no flag, and the first real edit
+  // to an un-rendered body is reported instead of being swallowed into the baseline.
   const [contract, setContract] = useState<ContractState>({ status: 'idle' });
   const [serverIssues, setServerIssues] = useState<TemplateContentIssue[]>([]);
   const [confirmState, setConfirmState] = useState<{
@@ -393,14 +334,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    */
   const localIssues = useMemo<TemplateContentIssue[]>(() => {
     if (contract.status !== 'ready') return [];
-    // The DRAFT level, not the one the contract was fetched with. Switching "Mức hiển thị" has to change
-    // what counts as valid content immediately — otherwise choosing "Không hiển thị" would raise no error
-    // until after a round trip, and choosing "Bắt buộc" back again would leave one on screen that no
-    // longer applies.
-    return validateContent(contract.contract, contentByField, {
-      contactRequirement: formData.contactSettings?.requirement ?? null,
-    });
-  }, [contract, contentByField, formData.contactSettings?.requirement]);
+    return validateContent(contract.contract, contentByField);
+  }, [contract, contentByField]);
 
   const issues = useMemo(
     () => [...localIssues, ...serverIssues],
@@ -501,7 +436,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
       reveal(bodyEditorAnchor.current);
       try {
-        quillRef.current?.getEditor()?.focus();
+        // Focus the editor surface itself. The shared editor owns its Quill instance, so the screen
+        // reaches for the DOM node rather than through a handle it no longer holds.
+        bodyEditorAnchor.current?.querySelector<HTMLElement>('.ql-editor')?.focus();
       } catch {
         /* an unmounted editor is not worth reporting — the tab still switched, which is the main thing */
       }
@@ -588,16 +525,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         revision: typeof t.revision === 'number' ? t.revision : null,
         hasShippedDefault: t.hasShippedDefault === true,
         updatedAt: t.updatedAt ?? t.createdAt ?? null,
-        // Filled in by the contact card's own request, which seeds form and baseline together through
-        // `handleContactLoaded`. Null until then, and null in the baseline too, so the window before it
-        // arrives is not reported as an unsaved change.
-        contactSettings: null,
       };
       setFormData(loaded);
       setBaseline(loaded);
-      // A fresh template hydrates from scratch: the previous one's baseline, and the editors' state
-      // about it, must not survive into this one.
-      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
       setEditingId(t.emailTemplateId || id);
       setServerIssues([]);
       setLanguage('VI');
@@ -659,10 +589,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         subjectEn: formData.subjectEn || null,
         bodyEn: formData.bodyEn || null,
         expectedRevision: formData.revision,
-        // Omitted, not sent as an empty object, when this template has no configuration. The API treats
-        // a missing object as "leave the policy alone", which is exactly right on a template that has
-        // none — and quite different from an object full of defaults, which would write one.
-        contactSettings: formData.contactSettings,
       });
 
       // Re-seeded from the STORED snapshot rather than from what was typed. The two are not always the
@@ -679,9 +605,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         bodyVi: res.data?.bodyVi ?? '',
         subjectEn: res.data?.subjectEn ?? '',
         bodyEn: res.data?.bodyEn ?? '',
-        contactSettings: res.data?.contactSettings
-          ? toContactPayload(res.data.contactSettings)
-          : formData.contactSettings,
       };
 
       setFormData(saved);
@@ -723,36 +646,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           ?? 'Mẫu này đã được người khác cập nhật. Vui lòng mở lại để xem nội dung mới nhất.');
         return;
 
-      case TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden:
-        // Reported as a field issue as well as a toast, so the "Xóa khối khỏi nội dung" action appears
-        // next to the content it is about instead of only as a message that disappears.
-        setServerIssues([{
-          field: containsContactInformationBlock(formData.bodyVi) ? 'bodyVi' : 'bodyEn',
-          code,
-          variableName: 'contactInformationBlock',
-          messageVi: serverMessage
-            ?? 'Không thể lưu mẫu vì mức hiển thị là “Không hiển thị” nhưng nội dung vẫn chứa khối thông '
-              + 'tin liên hệ.',
-          messageEn: 'The content still carries the contact block while the level is hidden.',
-          severity: 'ERROR',
-        }]);
-        pushToast('error', 'Nội dung vẫn còn khối thông tin liên hệ trong khi mức hiển thị là “Không hiển thị”.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.requiredContactBlockMissing:
-        pushToast('error', serverMessage
-          ?? 'Mức hiển thị đang là “Bắt buộc” nhưng nội dung chưa có khối thông tin liên hệ.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.contactNotSupported:
-        pushToast('error', serverMessage
-          ?? 'Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để lưu.');
-        return;
-
-      case TEMPLATE_ERROR_CODES.contactConfigurationInvalid:
-        pushToast('error', serverMessage ?? 'Cấu hình thông tin liên hệ chưa hợp lệ.');
-        return;
-
       case TEMPLATE_ERROR_CODES.defaultUnavailable:
         pushToast('error', 'Mẫu này không có nội dung mặc định để phục hồi.');
         return;
@@ -773,8 +666,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const handleRestoreDefault = () => {
     if (!editingId || formData.revision === null) return;
 
-    const restoresContact = contract.status === 'ready' && contactSupportedOf(contract.contract);
-
     setConfirmState({
       isOpen: true,
       title: 'Khôi phục toàn bộ mẫu?',
@@ -788,9 +679,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         '• Tên và mô tả mẫu\n' +
         '• Tiêu đề và nội dung tiếng Việt\n' +
         '• Tiêu đề và nội dung tiếng Anh\n' +
-        (restoresContact
-          ? '• Cấu hình thông tin liên hệ và Reply-To\n'
-          : '• (Mẫu này không dùng khối thông tin liên hệ nên không có cấu hình liên hệ để khôi phục)\n') +
         '\nCác tùy chỉnh hiện tại sẽ bị thay thế (vẫn được ghi lại trong lịch sử thao tác).\n\n' +
         'Mã mẫu, phân loại và trạng thái không thay đổi.',
       confirmText: 'Khôi phục mặc định',
@@ -824,22 +712,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         updatedAt: t?.updatedAt ?? formData.updatedAt,
         // Falls back to what is on screen rather than to null when the response omits the settings.
         // On a template with no configuration that IS null already, so the two agree; but an API built
-        // before the combined restore answers without the field, and reading that as "there is no
-        // configuration" would blank a card that has one — leaving the panel with a loaded template and
-        // no value, which it can only render as a failure.
-        contactSettings: t?.contactSettings
-          ? toContactPayload(t.contactSettings)
-          : formData.contactSettings,
       };
 
       setFormData(restored);
-      // The restore WROTE all of this, so nothing is unsaved. Both halves move together because both
-      // halves were replaced in one transaction.
+      // The restore WROTE all of this, so nothing is unsaved.
       setBaseline(restored);
-      // The bodies changed, so the editors will re-serialise them — and that re-serialisation is
-      // hydration, not an edit. Without this the screen would report unsaved changes immediately after a
-      // restore, which is the same defect the flag was introduced to fix when opening a template.
-      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
       setServerIssues([]);
       pushToast('success', t?.message || 'Đã khôi phục mẫu email về bản mặc định.');
       fetchData();
@@ -857,113 +734,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     }
   };
 
-  /**
-   * The contact card has loaded (or reloaded) this template's stored settings.
-   *
-   * Form AND baseline are seeded in the same step. Setting only the form would make the card's own
-   * arrival look like an edit the operator had made, and the screen would announce unsaved changes on a
-   * template nobody had touched — the same defect the rich-text editor's first change event used to cause.
-   */
-  const handleContactLoaded = useCallback((settings: EmailContactSettings) => {
-    const payload = toContactPayload(settings);
-
-    setFormData(prev => {
-      const next = { ...prev, contactSettings: payload };
-      baselineRef.current = {
-        ...baselineRef.current,
-        contact: normalizeEditorSnapshot(next).contact,
-      };
-      return next;
-    });
-    setBaselineVersion(v => v + 1);
-  }, []);
-
-  /** One field on the contact card changed. Merged into the one form; the one dirty flag re-derives. */
-  const handleContactChange = useCallback((next: EmailContactSettingsPayload) => {
-    setFormData(prev => ({ ...prev, contactSettings: next }));
-  }, []);
-
-  /**
-   * Deletes the contact block from BOTH bodies, at the operator's request.
-   *
-   * Both, always: a policy is one setting for the whole template, so removing the block from Vietnamese
-   * and leaving it in English produces a template that is still refused, having already asked the
-   * operator to fix it once. The level is left exactly as it is — a template at "Bắt buộc" that has just
-   * lost its block moves from one error to another, which is correct and is what the validator then says.
-   *
-   * Nothing is saved. This is an edit like any other: it marks the form dirty and waits for "Lưu thay đổi".
-   */
-  const removeContactBlockFromContent = useCallback(() => {
-    markBodyEdited('bodyVi');
-    markBodyEdited('bodyEn');
-
-    setFormData(prev => ({
-      ...prev,
-      bodyVi: removeContactInformationBlock(prev.bodyVi),
-      bodyEn: removeContactInformationBlock(prev.bodyEn),
-    }));
-
-    // The server's refusal was about content that no longer exists; leaving it on screen would report a
-    // problem the operator has just fixed.
-    setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
-  }, []);
-
-  /**
-   * "Không hiển thị" was chosen on the contact card.
-   *
-   * Applied straight away when neither body carries the block — there is nothing to decide. When one
-   * does, the operator is asked, because the two ways out are not equivalent and neither is ours to pick:
-   * removing the block is an edit to text they wrote, and keeping the level is a decision about what the
-   * mail says. Silently deleting from the bodies would be an edit they never made and cannot see; silently
-   * setting the level and leaving the block would produce a template that cannot be saved, with no
-   * explanation of why.
-   */
-  const handleRequestHideContact = useCallback(() => {
-    const setLevelToNone = () =>
-      setFormData(prev => (prev.contactSettings
-        ? { ...prev, contactSettings: { ...prev.contactSettings, requirement: 'NONE' } }
-        : prev));
-
-    const viHasBlock = containsContactInformationBlock(formData.bodyVi);
-    const enHasBlock = containsContactInformationBlock(formData.bodyEn);
-
-    if (!viHasBlock && !enHasBlock) {
-      setLevelToNone();
-      return;
-    }
-
-    setConfirmState({
-      isOpen: true,
-      title: 'Nội dung đang có khối thông tin liên hệ',
-      variant: 'warning',
-      message:
-        'Nội dung hiện có khối {{contactInformationBlock}}'
-        + (viHasBlock && enHasBlock
-          ? ' ở cả tiếng Việt và tiếng Anh'
-          : viHasBlock ? ' ở nội dung tiếng Việt' : ' ở nội dung tiếng Anh')
-        + '.\n\n'
-        + 'Chuyển sang “Không hiển thị” yêu cầu xóa khối này khỏi cả nội dung tiếng Việt và tiếng Anh.',
-      confirmText: 'Xóa khối và chuyển sang Không hiển thị',
-      cancelText: 'Giữ cấu hình hiện tại',
-      onConfirm: () => {
-        setConfirmState(prev => ({ ...prev, isOpen: false }));
-        // Both, in one state update, so the form never passes through a state where the level says NONE
-        // and the bodies still have the block — which the validator would flag for one render.
-        markBodyEdited('bodyVi');
-        markBodyEdited('bodyEn');
-        setFormData(prev => ({
-          ...prev,
-          bodyVi: removeContactInformationBlock(prev.bodyVi),
-          bodyEn: removeContactInformationBlock(prev.bodyEn),
-          contactSettings: prev.contactSettings
-            ? { ...prev.contactSettings, requirement: 'NONE' }
-            : prev.contactSettings,
-        }));
-        setServerIssues(prev => prev.filter(i => i.variableName !== 'contactInformationBlock'));
-      },
-    });
-  }, [formData.bodyVi, formData.bodyEn]);
-
   const closeEditor = () => {
     setShowForm(false);
     setFormData(EMPTY_FORM);
@@ -971,7 +741,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     setEditingId(null);
     setServerIssues([]);
     setContract({ status: 'idle' });
-    setContactBlockPreview('');
   };
 
   /**
@@ -1026,39 +795,15 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     return () => window.removeEventListener('beforeunload', warn);
   }, [showForm, isDirty]);
 
-  /** This body is now the operator's; the editor's own rendering of it is no longer hydration. */
-  const markBodyEdited = (field: BodyField) => {
-    pendingEditorNormalization.current[field] = false;
-  };
-
   /**
    * Everything the editor reports for one language.
    *
-   * `source` is what separates the two kinds of event: `user` is somebody typing or pasting, anything
-   * else is Quill re-serialising content it was handed. The first of the latter, per language, is the
-   * tail of hydration and moves the baseline with the form; every event after it is a change to be
-   * saved. The mocked editor in the tests passes no source, which is treated as a real edit — a change
-   * event with no editor behind it can only be the test acting as the operator.
+   * There is no longer a `source` to inspect, and no hydration flag to carry. The dirty check compares
+   * bodies by meaning (see `normalizeHtml`), so the editor's own re-serialisation of stored html is not a
+   * change and needs no special case — while a real edit is reported from the very first keystroke,
+   * including in a body the operator has not yet visited.
    */
-  const handleBodyChange = (field: BodyField, value: string, source?: string) => {
-    const isEditorNormalization = source !== undefined && source !== 'user';
-
-    if (isEditorNormalization && pendingEditorNormalization.current[field]) {
-      markBodyEdited(field);
-      setFormData(prev => ({ ...prev, [field]: value }));
-      // The baseline moves WITH the form for this one event, so the editor's own rendering of the stored
-      // html is not reported as an edit. Written straight into the ref rather than through `setBaseline`,
-      // which takes a whole form: only this one field is being re-baselined, and the rest of the form may
-      // already hold changes the operator made before switching to this language tab.
-      baselineRef.current = {
-        ...baselineRef.current,
-        content: { ...baselineRef.current.content, [field]: normalizeField(field, value) },
-      };
-      setBaselineVersion(v => v + 1);
-      return;
-    }
-
-    markBodyEdited(field);
+  const handleBodyChange = (field: BodyField, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -1073,18 +818,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     lastInsertTarget.current[language] = 'subject';
   };
 
-  /**
-   * Records where the caret is in the body of the tab currently shown.
-   *
-   * A null range means Quill has just lost the focus — which is precisely what clicking a variable chip
-   * does — so it is IGNORED rather than stored. Storing it would erase the position the insert is about
-   * to need, one event before it needs it.
-   */
-  const rememberBodySelection = (range: QuillSelection | null) => {
-    if (!range) return;
-    bodySelection.current[language] = { index: range.index, length: range.length };
-    lastInsertTarget.current[language] = 'body';
-  };
+  // `rememberBodySelection` was here. Remembering the body caret is now the shared editor's job — it has
+  // to do it anyway for its own toolbar, and one copy of that rule is better than two that can disagree
+  // about what a null range means.
 
   /**
    * Inserts a variable at the caret the operator left, in the control they left it in.
@@ -1135,39 +871,24 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       return;
     }
 
-    const editor = quillRef.current?.getEditor?.();
-    if (!editor) {
-      // No editor to insert into (the mocked editor in the unit tests, or a mount still in flight).
-      // Falls back to the head of the body, never the tail: see the note above.
-      markBodyEdited(bodyField);
+    // The body goes through the shared editor, which owns the caret and inserts a CHIP rather than the
+    // characters `{{name}}` — an atomic object with no half to leave behind if somebody backspaces
+    // through it. It remembers its own last caret for the same reason this screen used to: clicking a
+    // chip in the sidebar blurs the editor, and asking a blurred editor where the caret is answers 0.
+    const editor = bodyEditorRef.current;
+    if (!editor?.isReady()) {
+      // No live editor (a mocked one in the unit tests, or a mount still in flight). Falls back to the
+      // HEAD of the body, never the tail: an obvious place the operator can move it from.
       setFormData(prev => ({ ...prev, [bodyField]: token + (prev[bodyField] ?? '') }));
       return;
     }
 
-    // Before the insert, not after: `insertText` makes the editor emit an `api` change, and a body
-    // still waiting to absorb its normalisation would take the inserted variable into the baseline —
-    // an edit that never showed as unsaved and would have been dropped on close.
-    markBodyEdited(bodyField);
+    const label = contract.status === 'ready'
+      ? contract.contract.variables.find(v => v.name === name)?.label ?? name
+      : name;
 
-    const remembered = bodySelection.current[language]
-      // `getSelection()` without the force flag — passing true would FOCUS the editor and, on a blurred
-      // one, report position 0, quietly overwriting the caret we are trying to honour.
-      ?? (editor.getSelection?.() as QuillSelection | null)
-      ?? { index: 0, length: 0 };
-
-    const index = Math.min(remembered.index, Math.max(0, editor.getLength() - 1));
-    const length = Math.max(0, remembered.length);
-
-    // A selected range is REPLACED, which is what every other editor does with a paste.
-    if (length > 0) editor.deleteText(index, length, 'user');
-    editor.insertText(index, token, 'user');
-
-    const caret = index + token.length;
-    editor.setSelection(caret, 0, 'user');
-    bodySelection.current[language] = { index: caret, length: 0 };
+    editor.insertVariable({ name, label });
     lastInsertTarget.current[language] = 'body';
-
-    setFormData(prev => ({ ...prev, [bodyField]: editor.root.innerHTML }));
   };
 
   const filteredData = data.filter(item => {
@@ -1193,9 +914,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * waits for "Lưu thay đổi mẫu" like any other edit, so it stays a change they made.
    */
   const removeBlockFromField = (field: TemplateContentField, block: string) => {
-    // A deletion the operator asked for. Marked as theirs so the editor's re-serialisation of the
-    // result cannot be mistaken for hydration and quietly folded into the baseline.
-    if (isBodyField(field)) markBodyEdited(field);
+    // No "mark as edited" step any more: the dirty check compares meaning, so a deletion the operator
+    // asked for differs from the baseline on its own merits and cannot be mistaken for hydration.
     setFormData(prev => ({ ...prev, [field]: removeSystemBlock(prev[field], block) }));
     // The refusal came from the server for content that no longer exists; keeping it on screen would
     // report a problem the operator has just fixed.
@@ -1258,20 +978,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   /**
    * The repair offered next to one issue, or none.
    *
-   * The two block problems get different buttons because they are different problems. A block that can
-   * never live on this template is deleted from the field it was written into. A block that is legal but
-   * currently hidden has to go from BOTH bodies — the level is one setting for the whole template, so
-   * clearing one language leaves a template that is still refused.
+   * A block that can never live on this template is deleted from the field it was written into.
    */
   const issueAction = (field: TemplateContentField, issue: TemplateContentIssue) => {
-    if (issue.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden) {
-      return {
-        label: 'Xóa khối khỏi nội dung',
-        testId: 'remove-contact-block',
-        onClick: removeContactBlockFromContent,
-      };
-    }
-
     if (issue.code === TEMPLATE_ERROR_CODES.systemBlockNotAllowed && issue.variableName) {
       return {
         label: 'Xóa khối không hợp lệ',
@@ -1297,40 +1006,22 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       ? applySystemBlocks(
           ready,
           applySamples(ready, formData[bodyField]),
-          contactBlockPreview ? { contactInformationBlock: contactBlockPreview } : {},
         )
       : formData[bodyField];
     const visibleVariables = (ready?.variables ?? []).filter(v =>
       v.label.toLowerCase().includes(varSearch.toLowerCase()) ||
       v.name.toLowerCase().includes(varSearch.toLowerCase()));
 
+    // The sender group is listed last and under its own heading — see the picker below. Derived from the
+    // NAME rather than from the contract's `senderVariables` list so the search filter above applies to
+    // both groups identically; the two agree by construction, because the backend builds that list from
+    // the same six names.
+    const senderVariables = visibleVariables.filter(v => isSenderVariable(v.name));
+    const businessVariables = visibleVariables.filter(v => !isSenderVariable(v.name));
+
     // One entry per block, one description each. See `describeSystemBlocks`.
     const systemBlockNotices = ready ? describeSystemBlocks(ready) : [];
 
-    // Whether card 4 has anything to configure. Read from the contract rather than from the settings
-    // response so the card's own request is not what decides whether the card is shown — the two agree,
-    // and the contract is the one the editor already has when it renders.
-    const contactSupported = ready ? contactSupportedOf(ready) : true;
-
-    /**
-     * The one problem that belongs to the contact card AND to the body at the same time: content still
-     * carrying the block while the level says it is hidden.
-     *
-     * Rendered in both places on purpose. Under the body it says which text is at fault; on the card it
-     * sits next to the radio that made it a fault, which is the other half of the repair. Only the first
-     * such issue is passed up — the two languages produce two issues, and the action clears both, so
-     * showing the card two identical refusals would say nothing the first does not.
-     */
-    const conflictIssue = issues.find(
-      i => i.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-
-    const contactBlockConflict = conflictIssue
-      ? {
-          message: conflictIssue.messageVi,
-          actionLabel: 'Xóa khối khỏi nội dung',
-          onAction: removeContactBlockFromContent,
-        }
-      : null;
 
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -1484,28 +1175,28 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                     <label className="block text-sm font-bold text-gray-700 mb-1">Nội dung (Body)</label>
                     <div ref={bodyEditorAnchor} className="border border-gray-300 rounded-lg overflow-hidden bg-white">
                       {/*
-                        One editor per language, not one editor re-pointed at the other body.
+                        The SHARED editor, in TEMPLATE mode — the same component, formats, sanitiser and
+                        canonicaliser the send modal uses in COMPOSE. There used to be two editors here
+                        and there, each with its own four-button toolbar, which is two answers to "may I
+                        centre this?" when only the recipient's mail client gets a vote.
 
-                        ReactQuill loads a new `value` from inside `shouldComponentUpdate`, where its
-                        own props have not been committed yet — so the change event for the English body
-                        was delivered to the handler still bound to `bodyVi`, and switching the tab
-                        overwrote the Vietnamese content with Quill's rendering of the English one. The
-                        key remounts the editor instead, which binds the handler to the language whose
-                        content it is about to load.
+                        Keyed by language: one editor per body, not one editor re-pointed at the other.
+                        A controlled Quill loads a new `value` from inside `shouldComponentUpdate`, where
+                        its own props are not yet committed — so a change event for the English body was
+                        delivered to the handler still bound to `bodyVi`, and switching tabs overwrote the
+                        Vietnamese content with the editor's rendering of the English one. Remounting
+                        binds the handler to the language whose content it is about to load.
                       */}
-                      <ReactQuill
+                      <EmailRichTextEditor
                         key={bodyField}
-                        ref={quillRef}
-                        theme="snow"
+                        ref={bodyEditorRef}
+                        mode="TEMPLATE"
                         value={formData[bodyField]}
-                        readOnly={isHistorical}
-                        onChange={(v, _delta, source) => handleBodyChange(bodyField, v, source)}
-                        /* Where the caret is, reported by the editor itself. This is the only reliable
-                           source once a chip has taken the focus away: `getSelection()` on a blurred
-                           editor answers null, and forcing it answers 0. */
-                        onChangeSelection={(range: QuillSelection | null) => rememberBodySelection(range)}
-                        modules={QUILL_MODULES}
-                        className="min-h-[250px]"
+                        disabled={isHistorical}
+                        onChange={(html) => handleBodyChange(bodyField, html)}
+                        variables={contract.status === 'ready' ? contract.contract.variables : undefined}
+                        onNotice={(message) => pushToast('error', message)}
+                        minHeight={250}
                       />
                     </div>
                     {renderIssueList(bodyField)}
@@ -1648,112 +1339,59 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                       {visibleVariables.length === 0 && (
                         <div className="text-xs text-gray-400 italic">Không tìm thấy biến</div>
                       )}
-                      <div className="flex flex-wrap gap-1.5">
-                        {visibleVariables.map(v => (
-                          <button
-                            key={v.name}
-                            type="button"
-                            onClick={() => insertVariable(v.name)}
-                            className="inline-flex items-center gap-1 bg-white border border-[#004c91] text-[#004c91] hover:bg-[#004c91] hover:text-white transition-colors px-2 py-1 rounded text-[11px] font-bold outline-none"
-                            title={`{{${v.name}}} — Ví dụ: ${v.sample}${v.forbiddenInSubject ? ' (không được đặt trong tiêu đề)' : ''}`}
-                          >
-                            <Plus className="w-3 h-3" /> {v.label}
-                            {v.required && <span className="text-[9px] font-normal opacity-70">bắt buộc</span>}
-                          </button>
-                        ))}
-                      </div>
+                      {/*
+                        Two groups, and the split is not cosmetic. The business variables are values the
+                        SEND supplies about the message — a delegation name, a time, a quantity. The
+                        sender group describes WHO the message is from, and an administrator reaches for
+                        it with a different question in mind: "how do I sign this off". Mixed into one
+                        alphabetical wall, {{senderPhone}} sat between {{quantity}} and {{roleLabel}} and
+                        was found only by searching for a name nobody had told them.
+
+                        The group is absent entirely on a NOT_AVAILABLE template — the backend sends no
+                        sender variables in the contract there — so the picker offers nothing the save
+                        would refuse.
+                      */}
+                      {[
+                        { key: 'business', title: null as string | null, items: businessVariables },
+                        { key: 'sender', title: 'Thông tin người gửi', items: senderVariables },
+                      ].filter(g => g.items.length > 0).map(group => (
+                        <div key={group.key} className="space-y-1.5">
+                          {group.title && (
+                            <div
+                              data-testid="sender-variable-group"
+                              className="pt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400"
+                            >
+                              {group.title}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.items.map(v => (
+                              <button
+                                key={v.name}
+                                type="button"
+                                onClick={() => insertVariable(v.name)}
+                                className="inline-flex items-center gap-1 bg-white border border-[#004c91] text-[#004c91] hover:bg-[#004c91] hover:text-white transition-colors px-2 py-1 rounded text-[11px] font-bold outline-none"
+                                title={`{{${v.name}}} — Ví dụ: ${v.sample}${v.forbiddenInSubject ? ' (không được đặt trong tiêu đề)' : ''}`}
+                              >
+                                <Plus className="w-3 h-3" /> {v.label}
+                                {v.required && <span className="text-[9px] font-normal opacity-70">bắt buộc</span>}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </>
                 )}
               </div>
 
               {/*
-                4. Contact settings. Still its own card, because it is a different KIND of decision from
-                the wording — one edits sentences, the other decides who the recipient is told to
-                contact — but no longer its own save: it is part of the same form, saved by the same
-                button, in one transaction. Two buttons meant an operator could change both and save one.
-
-                This screen is HO-only (EmailManagement renders it only for HO) and the API enforces that
-                independently, so passing canEdit is presentation, not protection.
+                Card 4 was the contact configuration: who the recipient should be told to contact, at
+                which level, and which of their fields the block prints. It is gone with the feature.
+                There is nothing to configure any more — the sender is the account that presses send,
+                read from authentication — so what used to be a card of controls is now six ordinary
+                variables in the picker above, under "Thông tin người gửi".
               */}
-              {/* Withheld for a historical row: contact policy is keyed on a registered template code,
-                  so offering the panel here would present settings that resolve to nothing at send
-                  time — this template has no sender in any release. */}
-              {formData.templateCode && !isHistorical && (
-                <div className="bg-white p-5 rounded-lg border border-gray-200">
-                  <h3 className="font-bold text-[#004c91] mb-1 text-base border-b border-gray-200 pb-2">
-                    4. Cấu hình thông tin liên hệ
-                  </h3>
-                  {/* The lead-in describes a configuration, so it is withheld where there is none to
-                      make: on a template that cannot carry the block the card says why, and promising
-                      "quyết định người nhận nên liên hệ với ai" above that sentence would contradict it. */}
-                  {contactSupported && (
-                    <p className="text-[11px] text-gray-500 mb-3">
-                      Quyết định người nhận <span className="font-mono">{formData.templateCode}</span> nên
-                      liên hệ với ai, và email được hiển thị những gì về họ.
-                    </p>
-                  )}
-                  {/*
-                    Which languages satisfy the level, both at once.
-
-                    The level is ONE setting for the whole template but it is judged against TWO bodies,
-                    and that mismatch is what made the refusal invisible: the card showed "Bắt buộc" and
-                    the open tab showed a body with the block in it, so everything on screen agreed the
-                    template was fine. Listing both languages here states the thing the level actually
-                    depends on, next to the control that sets it.
-                  */}
-                  {contactSupported && formData.contactSettings && (
-                    <ul className="mb-3 space-y-1 text-[11px]" data-testid="contact-block-checklist">
-                      {(['VI', 'EN'] as EditorLanguage[]).map(lang => {
-                        const hasBlock = containsContactInformationBlock(formData[LANGUAGE_FIELDS[lang].body]);
-                        const requirement = formData.contactSettings!.requirement;
-                        // OPTIONAL is not a test — both answers are correct — so it is reported as a
-                        // fact rather than as a tick or a cross. Marking "no block" as a failure under a
-                        // level that permits it would be a warning nobody can act on.
-                        const neutral = requirement === 'OPTIONAL';
-                        const ok = requirement === 'NONE' ? !hasBlock : hasBlock;
-
-                        return (
-                          <li
-                            key={lang}
-                            data-testid={`contact-block-status-${lang}`}
-                            data-has-block={hasBlock}
-                            className={neutral ? 'text-gray-600' : ok ? 'text-emerald-700' : 'text-red-700'}
-                          >
-                            <span aria-hidden="true" className="font-bold">
-                              {neutral ? '•' : ok ? '✓' : '✕'}
-                            </span>{' '}
-                            {LANGUAGE_LABELS[lang]}{' '}
-                            {hasBlock ? 'đã có khối thông tin liên hệ' : 'chưa có khối thông tin liên hệ'}
-                            {!neutral && !ok && requirement === 'NONE' && ' — cần xóa khỏi nội dung'}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-
-                  <ContactSettingsPanel
-                    templateCode={formData.templateCode}
-                    canEdit
-                    /* Capability comes from the contract this editor already holds, so the card knows
-                       whether there is anything to configure without waiting for — or depending on —
-                       its own request. Two responses carry the same answer; the card must show the
-                       read-only reason if EITHER of them says the block cannot appear, never a form
-                       because one of them was silent about it. */
-                    contactSupported={ready ? contactSupported : undefined}
-                    contactReasonVi={ready?.contactReasonVi ?? undefined}
-                    language={language}
-                    value={formData.contactSettings}
-                    onChange={handleContactChange}
-                    onLoaded={handleContactLoaded}
-                    onRequestHide={handleRequestHideContact}
-                    onBlockPreviewChange={setContactBlockPreview}
-                    /* The contradiction is shown on the card as well as under the body field. The
-                       operator's next move is to change one of the two, and the level is here. */
-                    crossFieldError={contactBlockConflict}
-                  />
-                </div>
-              )}
             </aside>
           </div>
           {/*

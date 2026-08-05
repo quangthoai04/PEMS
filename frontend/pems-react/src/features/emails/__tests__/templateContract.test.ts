@@ -11,7 +11,8 @@ import {
   TEMPLATE_ERROR_CODES,
   applySamples,
   applySystemBlocks,
-  contactSupportedOf,
+  runtimeEditableOf,
+  senderVariablesAllowedOf,
   describeSystemBlocks,
   errorCodeOf,
   extractPlaceholders,
@@ -106,14 +107,9 @@ const setupProgressContract: TemplateContract = {
   allowedVariables: ['recipientName'],
   requiredVariables: [],
   optionalVariables: ['recipientName'],
-  requiredSystemBlocks: ['setupSummaryBlock', 'contactInformationBlock'],
+  requiredSystemBlocks: ['setupSummaryBlock'],
   optionalSystemBlocks: ['actionBlock'],
-  forbiddenInSubject: ['actionBlock', 'setupSummaryBlock', 'contactInformationBlock'],
-  // The LEVEL, which is what actually decides whether the body must keep the contact block. It appears
-  // in `requiredSystemBlocks` above because the backend derives that list from this value; the validator
-  // reads the level directly so that changing it on screen takes effect before the contract is re-fetched.
-  contactSupported: true,
-  contactRequirement: 'REQUIRED',
+  forbiddenInSubject: ['actionBlock', 'setupSummaryBlock'],
 };
 
 const content = (over: Partial<Record<'subjectVi' | 'bodyVi' | 'subjectEn' | 'bodyEn', string>>) => ({
@@ -167,6 +163,39 @@ describe('validateContent', () => {
       expect(issues[0].field).toBe('bodyVi');
     },
   );
+
+  /**
+   * A run of spaces is an ERROR, so the save button goes dead on it (V4 §7.4).
+   *
+   * The screen disables "Lưu thay đổi" on any issue of this severity and never calls the save API, so
+   * severity is the whole of the blocking behaviour here — and the backend answers the identical code,
+   * which is what makes a save attempted around this screen come back the same way.
+   */
+  it('refuses a run of spaces, per field and per language', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận tài khoản',
+      bodyVi: '<p>Chào {{fullName}}, vai trò {{roleName}} tại {{campusName}} — {{expiresInHours}} giờ.</p>',
+      subjectEn: 'Account confirmed',
+      bodyEn: '<p>Role&nbsp;&nbsp;&nbsp;{{roleName}} at {{campusName}} — {{expiresInHours}}h, {{fullName}}.</p>',
+    }));
+
+    const spacing = issues.filter(i => i.code === TEMPLATE_ERROR_CODES.spaceRunUnsupported);
+
+    expect(spacing).toHaveLength(1);
+    expect(spacing[0].field).toBe('bodyEn');       // names the tab that is actually holding the save
+    expect(spacing[0].severity).toBe('ERROR');
+    expect(spacing[0].messageVi).toContain('căn lề, thụt lề hoặc bảng');
+  });
+
+  it('says nothing about the indentation in formatted markup', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}</p>\n    <table>\n      <tr><td>{{roleName}}</td></tr>\n'
+        + '      <tr><td>{{campusName}}</td></tr>\n    </table>\n    <p>{{expiresInHours}} giờ</p>',
+    }));
+
+    expect(issues).toEqual([]);
+  });
 
   it('addresses each issue to the field that carries it', () => {
     const issues = validateContent(accountContract, content({
@@ -256,16 +285,16 @@ describe('validateContent', () => {
 /**
  * System blocks are not variables and must never be judged by the variable rules.
  *
- * The defect these pin: `{{contactInformationBlock}}` — legal on fourteen templates and MANDATORY on
+ * The defect these pin: `{{setupSummaryBlock}}` — legal on fourteen templates and MANDATORY on
  * them — was checked against `allowedVariables`, which by design never contained it, and so came back
  * as EMAIL_TEMPLATE_VARIABLE_UNKNOWN: "biến không tồn tại trong hệ thống". Every one of these fails
  * against the pre-split contract.
  */
 describe('system blocks are judged as blocks, not variables', () => {
-  it('accepts a required contact block without calling it an unknown variable', () => {
+  it('accepts a required block without calling it an unknown variable', () => {
     const issues = validateContent(setupProgressContract, content({
       subjectVi: 'Cập nhật chuẩn bị',
-      bodyVi: '<p>Chào {{recipientName}}.</p>{{setupSummaryBlock}}{{contactInformationBlock}}',
+      bodyVi: '<p>Chào {{recipientName}}.</p>{{setupSummaryBlock}}',
     }));
 
     expect(issues).toEqual([]);
@@ -283,7 +312,7 @@ describe('system blocks are judged as blocks, not variables', () => {
   it('never reports a system block under the unknown-VARIABLE code', () => {
     const issues = validateContent(accountContract, content({
       subjectVi: 'Xác nhận',
-      bodyVi: '<p>{{contactInformationBlock}}{{setupSummaryBlock}}</p>',
+      bodyVi: '<p>{{setupSummaryBlock}}</p>',
     }));
 
     expect(issues).not.toHaveLength(0);
@@ -317,21 +346,21 @@ describe('system blocks are judged as blocks, not variables', () => {
     expect(issues[0].variableName).toBe('vehicleInfo');
   });
 
-  it('reports a missing contact block under its own code, not the action-block one', () => {
+  it('reports a missing content block under its own code, not the action-block one', () => {
     const issues = validateContent(setupProgressContract, content({
       subjectVi: 'Cập nhật chuẩn bị',
-      bodyVi: '<p>Chào {{recipientName}}.</p>{{setupSummaryBlock}}',
+      bodyVi: '<p>Chào {{recipientName}}.</p>',
     }));
 
     expect(issues).toHaveLength(1);
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
-    expect(issues[0].variableName).toBe('contactInformationBlock');
+    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredBlockMissing);
+    expect(issues[0].variableName).toBe('setupSummaryBlock');
   });
 
   it('keeps a block out of the subject, where it would be stored in history', () => {
     const issues = validateContent(setupProgressContract, content({
-      subjectVi: 'Liên hệ {{contactInformationBlock}}',
-      bodyVi: '<p>x</p>{{setupSummaryBlock}}{{contactInformationBlock}}',
+      subjectVi: 'Liên hệ {{setupSummaryBlock}}',
+      bodyVi: '<p>x</p>{{setupSummaryBlock}}',
     }));
 
     expect(issues).toHaveLength(1);
@@ -395,33 +424,30 @@ describe('system blocks are judged as blocks, not variables', () => {
     expect(out).toBe('<p>x</p>');
   });
 
-  it('substitutes the contact block from the live draft, not from the contract', () => {
-    const out = applySystemBlocks(
-      setupProgressContract,
-      '<p>x</p>{{contactInformationBlock}}',
-      { contactInformationBlock: '<table><tr><td>Điện thoại</td><td>0900 000 000</td></tr></table>' },
-    );
+  /**
+   * The sample comes from the CONTRACT and nowhere else.
+   *
+   * There used to be a third argument for blocks resolved outside it — the contact card, whose markup
+   * depended on toggles the operator had not saved. Nothing is drafted on this screen any more, so a
+   * second source would only be a way for the preview and the send to disagree.
+   */
+  it('substitutes a block from the sample the contract carries', () => {
+    const withSample: TemplateContract = {
+      ...setupProgressContract,
+      systemBlockPreviews: { setupSummaryBlock: '<table><tr><td>Lịch trình</td></tr></table>' },
+    };
 
-    expect(out).toContain('0900 000 000');
-    expect(out).not.toContain('{{contactInformationBlock}}');
-  });
+    const out = applySystemBlocks(withSample, '<p>x</p>{{setupSummaryBlock}}');
 
-  /** NO_CONTACT: the backend answers with an empty block, and the preview simply has no card. */
-  it('renders no contact card when the policy renders nothing', () => {
-    const out = applySystemBlocks(
-      setupProgressContract,
-      '<p>x</p>{{contactInformationBlock}}',
-      { contactInformationBlock: '' },
-    );
-
-    expect(out).toBe('<p>x</p>');
+    expect(out).toContain('Lịch trình');
+    expect(out).not.toContain('{{setupSummaryBlock}}');
   });
 
   it('recognises exactly the blocks the backend registers', () => {
     expect([...SYSTEM_BLOCK_NAMES].sort()).toEqual(
-      ['actionBlock', 'contactInformationBlock', 'setupSummaryBlock'],
+      ['actionBlock', 'setupSummaryBlock'],
     );
-    expect(isSystemBlock('contactInformationBlock')).toBe(true);
+    expect(isSystemBlock('setupSummaryBlock')).toBe(true);
     expect(isSystemBlock('fullName')).toBe(false);
   });
 });
@@ -523,7 +549,7 @@ describe('describeSystemBlocks', () => {
     const notices = describeSystemBlocks(setupProgressContract);
 
     expect(notices.map(n => n.name).sort()).toEqual(
-      ['actionBlock', 'contactInformationBlock', 'setupSummaryBlock'],
+      ['actionBlock', 'setupSummaryBlock'],
     );
     expect(new Set(notices.map(n => n.name)).size).toBe(notices.length);
     expect(notices.find(n => n.name === 'setupSummaryBlock')!.required).toBe(true);
@@ -532,274 +558,113 @@ describe('describeSystemBlocks', () => {
 });
 
 /**
- * Contact capability (§5).
- *
- * Whether the block MAY be written is a different question from whether the current policy renders one,
- * and answering the first with the second is what produced the reported refusal: an operator who had
- * just set the level to "Tùy chọn" added the block and was told it "không dùng được ở mẫu này".
+ * Sender-variable capability (§3).
  */
-describe('the contact block is judged by capability, not by the current level', () => {
-  const supported: TemplateContract = {
+describe('sender variables are judged by the template CAPABILITY', () => {
+  /**
+   * The rule the removed contact card could not express. Whether a message names a sender is fixed by
+   * what the message IS — a one-time credential names nobody — rather than by a setting an operator
+   * moves. There is no level to draft, no card to keep in step, and therefore no state in which the
+   * screen and the save disagree.
+   */
+  const editable: TemplateContract = {
     ...accountContract,
-    templateCode: 'ACCOUNT_ROLE_CHANGED',
-    contactSupported: true,
-    // The policy renders nothing today, so the block is in NEITHER list — and is still legal to write.
-    requiredSystemBlocks: [],
-    optionalSystemBlocks: [],
+    templateCode: 'VISIT_PARTICIPANT_INVITATION',
+    allowedVariables: [...accountContract.allowedVariables, 'senderName', 'senderEmail'],
+    optionalVariables: [...accountContract.optionalVariables, 'senderName', 'senderEmail'],
+    senderVariableCapability: 'AVAILABLE_EDITABLE_RUNTIME',
+    senderVariables: ['senderName', 'senderRole', 'senderEmail', 'senderPhone', 'senderDepartment', 'senderCampus'],
+    senderVariablesAllowed: true,
+    runtimeEditable: true,
   };
 
-  const unsupported: TemplateContract = {
+  const credential: TemplateContract = {
     ...accountContract,
-    contactSupported: false,
-    contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
-    requiredSystemBlocks: [],
-    optionalSystemBlocks: [],
+    templateCode: 'ACCOUNT_EMAIL_CONFIRMATION',
+    senderVariableCapability: 'NOT_AVAILABLE',
+    senderVariables: [],
+    senderVariablesAllowed: false,
+    runtimeEditable: false,
+    senderReasonVi: 'Mẫu này mang mã hoặc liên kết dùng một lần nên không hiển thị thông tin người gửi.',
   };
 
-  it('accepts the block on a supported template whose level is currently NONE', () => {
-    const issues = validateContent(supported, content({
-      subjectVi: 'Vai trò của bạn đã thay đổi',
-      bodyVi: '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}',
+  it('accepts a sender variable on a template whose capability permits one', () => {
+    const issues = validateContent(editable, content({
+      subjectVi: 'Lời mời',
+      bodyVi: '<p>{{fullName}}</p><p>{{senderName}} — {{senderEmail}}</p>{{actionBlock}}',
     }));
 
     expect(issues).toEqual([]);
   });
 
-  it('refuses it on a template that can never carry it, and names the repair', () => {
-    const issues = validateContent(unsupported, content({
+  /**
+   * Under the generic unknown-variable rule this would read "Biến {{senderName}} không tồn tại trong hệ
+   * thống" — false, since it resolves on twenty-eight other templates, and it sends the operator hunting
+   * for a typo they did not make. Its own code says the real reason.
+   */
+  it('refuses one on a credential-bearing template, under its own code, and says why', () => {
+    const issues = validateContent(credential, content({
       subjectVi: 'Xác nhận email',
-      bodyVi: '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}',
+      bodyVi: '<p>{{fullName}} {{roleName}} {{campusName}} {{expiresInHours}}</p><p>{{senderName}}</p>{{actionBlock}}',
     }));
 
-    expect(issues).toHaveLength(1);
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
-    expect(issues[0].messageVi).toContain('Hãy xóa khối khỏi nội dung');
-    // The reason travels with the refusal, so the operator is not left to work out why.
-    expect(issues[0].messageVi).toContain('liên kết xác nhận dùng một lần');
+    const refusal = issues.find(i => i.variableName === 'senderName');
+    expect(refusal).toBeDefined();
+    expect(refusal!.code).toBe(TEMPLATE_ERROR_CODES.senderVariableNotAllowed);
+    expect(refusal!.code).not.toBe(TEMPLATE_ERROR_CODES.variableUnknown);
+    expect(refusal!.messageVi).toContain('dùng một lần');
   });
 
-  it('treats an API that predates the capability field as supporting the block', () => {
-    const { contactSupported: _omitted, ...legacy } = supported;
-
-    expect(contactSupportedOf(legacy as TemplateContract)).toBe(true);
-    expect(validateContent(legacy as TemplateContract, content({
-      subjectVi: 'x', bodyVi: '{{contactInformationBlock}}',
-    }))).toEqual([]);
-  });
-
-  it('still refuses the block in a SUBJECT on a supported template', () => {
-    const issues = validateContent(supported, content({
-      subjectVi: 'Xin chào {{contactInformationBlock}}',
-      bodyVi: '<p>Chào {{fullName}}.</p>',
+  /** A sender variable is not a secret, so nothing stops one appearing in a subject. */
+  it('allows a sender variable in a subject', () => {
+    const issues = validateContent(editable, content({
+      subjectVi: 'Lời mời từ {{senderName}}',
+      bodyVi: '<p>{{fullName}}</p>{{actionBlock}}',
     }));
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.subjectForbiddenSensitive);
-  });
-});
-
-/**
- * The visibility matrix (§2 of the contact-block-visibility prompt), as the client-side mirror enforces
- * it.
- *
- * | Mức hiển thị | Block in VI/EN | Result |
- * |---|---|---|
- * | NONE     | absent          | valid   |
- * | NONE     | present in either | INVALID |
- * | OPTIONAL | absent or present | valid   |
- * | REQUIRED | missing in either | INVALID |
- * | REQUIRED | present in both   | valid   |
- *
- * The row that did not exist before this change is the second one. `AllowsSystemBlock` answered from
- * CAPABILITY alone, so a template whose administrator had switched the block off still accepted a body
- * carrying it — the save succeeded at both layers and the send silently replaced the placeholder with
- * an empty string, leaving the contradiction with no way to be noticed.
- *
- * `contactRequirement` is passed as an OPTION rather than read off the contract, because the level the
- * operator is looking at is the one on the contact card, which may have changed since the contract was
- * fetched.
- */
-describe('the contact block against the display level', () => {
-  /** A template that may carry the block; the level is supplied per test. */
-  const supported: TemplateContract = {
-    ...accountContract,
-    templateCode: 'ACCOUNT_ROLE_CHANGED',
-    contactSupported: true,
-    requiredSystemBlocks: [],
-    optionalSystemBlocks: ['actionBlock', 'contactInformationBlock'],
-  };
-
-  const withBlock = '<p>Chào {{fullName}}.</p>{{contactInformationBlock}}';
-  const withoutBlock = '<p>Chào {{fullName}}.</p>';
-
-  it('NONE with no block anywhere is valid', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withoutBlock, subjectEn: 'x', bodyEn: withoutBlock }),
-      { contactRequirement: 'NONE' },
-    );
-
-    expect(issues).toEqual([]);
-  });
-
-  it('NONE with the block in the Vietnamese body is refused, under its own code', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withBlock }),
-      { contactRequirement: 'NONE' },
-    );
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].field).toBe('bodyVi');
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-    expect(issues[0].variableName).toBe('contactInformationBlock');
-    // NOT the "this template cannot carry it" code: this template can, and the repair is a choice
-    // between removing the block and putting the level back.
-    expect(issues[0].code).not.toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
-    // The sentence names the language, so an operator with a clean Vietnamese tab is not left guessing.
-    expect(issues[0].messageVi).toContain('nội dung tiếng Việt');
-  });
-
-  it('NONE with the block in the English body is refused, and names English', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectEn: 'x', bodyEn: withBlock }),
-      { contactRequirement: 'NONE' },
-    );
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].field).toBe('bodyEn');
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-    expect(issues[0].messageVi).toContain('nội dung tiếng Anh');
-  });
-
-  it('NONE with the block in both is refused twice, once per language', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withBlock }),
-      { contactRequirement: 'NONE' },
-    );
-
-    expect(issues).toHaveLength(2);
-    expect(issues.map(i => i.field).sort()).toEqual(['bodyEn', 'bodyVi']);
-    expect(issues.every(i => i.code === TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden)).toBe(true);
-  });
-
-  it('OPTIONAL accepts a body with the block and a body without it alike', () => {
-    expect(validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withBlock }),
-      { contactRequirement: 'OPTIONAL' },
-    )).toEqual([]);
-
-    expect(validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withoutBlock }),
-      { contactRequirement: 'OPTIONAL' },
-    )).toEqual([]);
-  });
-
-  it('REQUIRED refuses a Vietnamese body that has dropped the block', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withoutBlock }),
-      { contactRequirement: 'REQUIRED' },
-    );
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].field).toBe('bodyVi');
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
-    expect(issues[0].messageVi).toContain('nội dung tiếng Việt');
-  });
-
-  it('REQUIRED refuses an English body that has dropped the block', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withoutBlock }),
-      { contactRequirement: 'REQUIRED' },
-    );
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].field).toBe('bodyEn');
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.requiredContactBlockMissing);
-    expect(issues[0].messageVi).toContain('nội dung tiếng Anh');
-  });
-
-  it('REQUIRED accepts a template that carries the block in both languages', () => {
-    const issues = validateContent(
-      supported,
-      content({ subjectVi: 'x', bodyVi: withBlock, subjectEn: 'x', bodyEn: withBlock }),
-      { contactRequirement: 'REQUIRED' },
-    );
 
     expect(issues).toEqual([]);
   });
 
   /**
-   * §9: UNSUPPORTED and NONE are two different states, and the level must not be used to simulate the
-   * capability. An unsupported template refuses the block under the code that says it can never carry
-   * one — a fact no setting will change — rather than under the one that offers a choice.
+   * An API built before the capability field answers without it. Absent reads as allowed — the safe
+   * direction: hiding the group everywhere until the backend catches up is a worse failure than
+   * offering it on three templates that refuse it at save.
    */
-  it('keeps UNSUPPORTED distinct from NONE', () => {
-    const unsupported: TemplateContract = {
-      ...supported,
-      templateCode: 'ACCOUNT_EMAIL_CONFIRMATION',
-      contactSupported: false,
-      contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
-    };
-
-    const issues = validateContent(
-      unsupported,
-      content({ subjectVi: 'x', bodyVi: withBlock }),
-      { contactRequirement: 'NONE' },
-    );
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.systemBlockNotAllowed);
-    expect(issues[0].code).not.toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-    // And it says WHY, which is the part no level can explain.
-    expect(issues[0].messageVi).toContain('liên kết xác nhận dùng một lần');
-  });
-
-  /** With no option supplied, the contract's own stored level is what applies. */
-  it('falls back to the level on the contract when none is supplied', () => {
-    const hidden: TemplateContract = { ...supported, contactRequirement: 'NONE' };
-
-    const issues = validateContent(hidden, content({ subjectVi: 'x', bodyVi: withBlock }));
-
-    expect(issues).toHaveLength(1);
-    expect(issues[0].code).toBe(TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden);
-  });
-
-  /**
-   * An API built before `contactRequirement` existed answers without it. Absent reads as OPTIONAL —
-   * the previous behaviour — so an old backend cannot make this screen refuse content it would accept.
-   */
-  it('treats a contract with no level as OPTIONAL', () => {
-    const legacy = { ...supported } as Record<string, unknown>;
-    delete legacy.contactRequirement;
+  it('treats a contract with no capability field as permitting sender variables', () => {
+    const legacy = { ...editable } as Record<string, unknown>;
+    delete legacy.senderVariableCapability;
+    delete legacy.senderVariablesAllowed;
 
     const issues = validateContent(
       legacy as unknown as TemplateContract,
-      content({ subjectVi: 'x', bodyVi: withBlock }),
+      content({ subjectVi: 'x', bodyVi: '<p>{{fullName}}</p><p>{{senderName}}</p>{{actionBlock}}' }),
     );
 
     expect(issues).toEqual([]);
   });
+
+  /** Capability is about the FLOW; the wording has no say in whether a runtime editor is offered. */
+  it('reads runtimeEditable from the capability, not from the body', () => {
+    expect(runtimeEditableOf(editable)).toBe(true);
+    expect(runtimeEditableOf({ ...editable, senderVariableCapability: 'AVAILABLE_READ_ONLY_RUNTIME', runtimeEditable: false })).toBe(false);
+    expect(senderVariablesAllowedOf({ ...editable, senderVariableCapability: 'AVAILABLE_READ_ONLY_RUNTIME', senderVariablesAllowed: true })).toBe(true);
+    expect(senderVariablesAllowedOf(credential)).toBe(false);
+  });
 });
+
 
 describe('removeSystemBlock', () => {
   it('removes every occurrence, in both placeholder forms', () => {
     const out = removeSystemBlock(
-      '<p>a</p>{{contactInformationBlock}}<p>b</p>%7B%7BcontactInformationBlock%7D%7D',
-      'contactInformationBlock',
+      '<p>a</p>{{setupSummaryBlock}}<p>b</p>%7B%7BsetupSummaryBlock%7D%7D',
+      'setupSummaryBlock',
     );
 
     expect(out).toBe('<p>a</p><p>b</p>');
   });
 
   it('leaves other blocks and the surrounding text alone', () => {
-    const out = removeSystemBlock('{{actionBlock}} giữ nguyên {{contactInformationBlock}}', 'contactInformationBlock');
+    const out = removeSystemBlock('{{actionBlock}} giữ nguyên {{setupSummaryBlock}}', 'setupSummaryBlock');
 
     expect(out).toBe('{{actionBlock}} giữ nguyên ');
   });

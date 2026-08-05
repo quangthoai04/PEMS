@@ -69,12 +69,13 @@ public sealed class ContactGuardTests : IClassFixture<ContactGuardTests.GuardDat
             try
             {
                 var name = CanonicalSqlScript.NewDisposableDatabaseName();
-                var server = System.Text.RegularExpressions.Regex.Replace(
-                    BaseConnection, @"database=[^;]+;", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                var server = TestDatabaseTarget.ForServer(BaseConnection);
 
                 using (var conn = new MySqlConnection(server))
                 {
                     conn.Open();
+                    TestDatabaseTarget.AssertConnectedDatabaseIsNotProtected(conn, "the contact-guard import");
+
                     using (var cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = $"CREATE DATABASE `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;";
@@ -87,9 +88,7 @@ public sealed class ContactGuardTests : IClassFixture<ContactGuardTests.GuardDat
                 }
 
                 DatabaseName = name;
-                ConnectionString = System.Text.RegularExpressions.Regex.Replace(
-                    BaseConnection, @"database=[^;]+;", $"database={name};",
-                    System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                ConnectionString = TestDatabaseTarget.ForDisposable(BaseConnection, name);
 
                 ResolveFixtureIds();
                 CreateSqlStateProbe();

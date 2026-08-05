@@ -60,7 +60,6 @@ public sealed class AgendaEmailRemovalTests
             new[]
             {
                 EmailTrustedBlocks.ActionBlock,
-                EmailTrustedBlocks.ContactInformationBlock,
                 EmailTrustedBlocks.SetupSummaryBlock,
             }.OrderBy(b => b, StringComparer.Ordinal),
             EmailTrustedBlocks.All.OrderBy(b => b, StringComparer.Ordinal));
@@ -85,7 +84,7 @@ public sealed class AgendaEmailRemovalTests
     ///
     /// <para>
     /// The address used to be a <c>{{hostEmail}}</c> variable printed mid-sentence. It now arrives in
-    /// <c>{{contactInformationBlock}}</c>, which is a better answer to the same requirement: the block
+    /// <c>{{senderEmail}}</c>, which is a better answer to the same requirement: the value
     /// resolves the Host from the visit INSTANCE rather than from whatever the caller passed — so a
     /// multi-campus request cannot show a guest another campus's Host — and it carries the role and
     /// telephone number, which a bare address never did. The variable is gone rather than kept alongside
@@ -100,17 +99,18 @@ public sealed class AgendaEmailRemovalTests
         foreach (var body in new[] { shipped.BodyVi, shipped.BodyEn })
         {
             Assert.Contains("{{hostName}}", body);
-            Assert.Contains("{{contactInformationBlock}}", body);
+            Assert.Contains("{{senderEmail}}", body);
             Assert.DoesNotContain("{{hostEmail}}", body);
         }
 
         var declared = SystemEmailTemplates.Find(SystemEmailTemplates.VisitSetupProgressUpdate)!.DeclaredVariables;
         Assert.DoesNotContain("hostEmail", declared);
 
-        // REQUIRED, so a body edited to drop the block is refused rather than sending the instruction
-        // with nothing behind it.
-        Assert.True(PEMS.Application.Emails.Contact.EmailContactPolicyDefaults
-            .RequiresContactBlock(SystemEmailTemplates.VisitSetupProgressUpdate));
+        // The Host IS the sender of this message, so their address arrives as {{senderEmail}} rather
+        // than as a declared variable or a configured block.
+        Assert.Contains(
+            PEMS.Application.Emails.Sender.EmailSenderVariableNames.Email,
+            declared);
     }
 
     /// <summary>
@@ -119,9 +119,9 @@ public sealed class AgendaEmailRemovalTests
     ///
     /// <para>
     /// This used to assert the classification of a <c>hostEmail</c> VARIABLE. There is no such variable
-    /// any more — the address travels inside <c>{{contactInformationBlock}}</c> — so the assertion moved
-    /// to the property that actually protects the record: the template carries no secret, so its history
-    /// policy is to keep the body in full.
+    /// any more — the address arrives as <c>{{senderEmail}}</c> — so the assertion moved to the property
+    /// that actually protects the record: the template carries no secret, so its history policy is to
+    /// keep the body in full.
     /// </para>
     /// </summary>
     [Fact]
@@ -135,9 +135,9 @@ public sealed class AgendaEmailRemovalTests
             HistoryBodyPolicy.Full,
             SensitiveEmailHistory.PolicyFor(SystemEmailTemplates.VisitSetupProgressUpdate));
 
-        // And the block itself may never be put in a subject, which IS stored and shown in list screens.
-        Assert.True(SensitiveEmailVariables.ForbiddenInSubject(
-            EmailTrustedBlocks.ContactInformationBlock));
+        // A sender address is not a secret, so nothing stops it appearing in a subject either.
+        Assert.False(SensitiveEmailVariables.ForbiddenInSubject(
+            PEMS.Application.Emails.Sender.EmailSenderVariableNames.Email));
     }
 
     // ── Nothing in the shipped source still reaches for the removed flow ──────

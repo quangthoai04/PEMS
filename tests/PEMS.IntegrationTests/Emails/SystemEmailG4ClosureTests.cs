@@ -198,8 +198,17 @@ public sealed class SystemEmailG4ClosureTests
             Assert.DoesNotContain("{{", rendered.Subject);
             Assert.DoesNotContain("{{", rendered.Body);
             Assert.Equal(language, rendered.LanguageUsed);
+
+            // A declared variable must reach the output — except the sender names, which every capable
+            // template declares all six of while its shipped wording prints only some. Declaring the
+            // full set is what lets an operator add {{senderPhone}} without a re-seed; requiring the
+            // shipped body to print it would defeat that. The no-placeholder-left-behind assertion above
+            // still covers them: if one were declared and NOT substituted, "{{" would survive.
             foreach (var v in template.DeclaredVariables)
+            {
+                if (PEMS.Application.Emails.Sender.EmailSenderVariableNames.IsSenderVariable(v)) continue;
                 Assert.Contains($"[{v}]", rendered.Subject + rendered.Body);
+            }
         }
     }
 

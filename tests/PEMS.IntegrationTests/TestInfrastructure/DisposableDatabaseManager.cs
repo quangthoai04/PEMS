@@ -59,6 +59,10 @@ public static class DisposableDatabaseManager
                 {
                     conn.Open();
 
+                    // The server's own answer, on the live connection: no default schema means no
+                    // statement can land in a real database before the script's retargeted USE runs.
+                    TestDatabaseTarget.AssertConnectedDatabaseIsNotProtected(conn, "the canonical import");
+
                     Execute(conn, $"CREATE DATABASE `{dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
                     created = true;
 
@@ -84,8 +88,7 @@ public static class DisposableDatabaseManager
             }
 
             _disposableDbName = dbName;
-            _disposableConnectionString = Regex.Replace(
-                originalConnectionString, @"database=[^;]+;", $"database={dbName};", RegexOptions.IgnoreCase);
+            _disposableConnectionString = TestDatabaseTarget.ForDisposable(originalConnectionString, dbName);
 
             AppDomain.CurrentDomain.ProcessExit += (_, _) =>
             {
@@ -124,6 +127,8 @@ public static class DisposableDatabaseManager
             using var conn = new MySqlConnection(masterConnStr);
             conn.Open();
 
+            TestDatabaseTarget.AssertConnectedDatabaseIsNotProtected(conn, "the pristine canonical import");
+
             Execute(conn, $"CREATE DATABASE `{dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
             created = true;
 
@@ -141,8 +146,7 @@ public static class DisposableDatabaseManager
             throw;
         }
 
-        var connectionString = Regex.Replace(
-            originalConnectionString, @"database=[^;]+;", $"database={dbName};", RegexOptions.IgnoreCase);
+        var connectionString = TestDatabaseTarget.ForDisposable(originalConnectionString, dbName);
 
         return new PristineCanonicalDatabase(dbName, connectionString, originalConnectionString);
     }
@@ -255,12 +259,20 @@ public static class DisposableDatabaseManager
         Execute(conn, $"DROP DATABASE IF EXISTS `{dbName}`;");
     }
 
-    /// <summary>Strips database/GuidFormat so the connection targets the server, not a specific schema.</summary>
+    /// <summary>
+    /// Strips database/GuidFormat so the connection targets the server, not a specific schema.
+    ///
+    /// <para>
+    /// This used to be two <c>Regex.Replace</c> calls. Both required a trailing semicolon
+    /// (<c>database=[^;]+;?</c> made it optional, but only by also matching to end-of-string, which the
+    /// sibling rewrite did not), and neither knew <c>Initial Catalog</c> — the synonym MySql.Data accepts
+    /// for the same key. A connection string spelled either way kept its schema through the strip.
+    /// <see cref="TestDatabaseTarget.ForServer"/> parses with the driver and then re-reads its own output
+    /// to prove the schema is gone.
+    /// </para>
+    /// </summary>
     private static string ToServerConnectionString(string connectionString)
-    {
-        var s = Regex.Replace(connectionString, @"database=[^;]+;?", "", RegexOptions.IgnoreCase);
-        return Regex.Replace(s, @"GuidFormat=[^;]+;?", "", RegexOptions.IgnoreCase);
-    }
+        => TestDatabaseTarget.ForServer(connectionString);
 
     private static void Execute(MySqlConnection conn, string sql)
     {

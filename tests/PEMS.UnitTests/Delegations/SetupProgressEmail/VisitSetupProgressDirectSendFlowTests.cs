@@ -497,7 +497,7 @@ public class VisitSetupProgressDirectSendFlowTests
         var sender = new RecordingDirectEmailSender();
         var composer = new VisitSetupProgressComposer(
             db, renderer, reports, formRead,
-            new PEMS.UnitTests.TestInfrastructure.StubEmailContactResolver());
+            new PEMS.UnitTests.TestInfrastructure.StubEmailSenderVariableResolver());
 
         return new Sut
         {

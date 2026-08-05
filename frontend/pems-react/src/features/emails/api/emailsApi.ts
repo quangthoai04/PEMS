@@ -163,20 +163,19 @@ export const emailsApi = {
     );
   },
   /**
-   * The ONE save the template editor makes: content and contact settings, in one atomic request.
+   * The ONE save the template editor makes.
    *
    * The command no longer carries templateCode, purpose, campusId, bodyFormat, variablesText or status —
    * the catalog is fixed in code (G11-I) — and `expectedRevision` is the optimistic-concurrency token
    * read back from the detail response. The whole request is one transaction on the server, so a failure
-   * in either half leaves both unchanged and the revision where it was.
+   * The contact half is gone: sender information is ordinary variables, saved with the wording.
    */
   updateEmailTemplate: (id: number | string, data: UpdateEmailTemplatePayload) => {
     return httpClient.put<UpdateEmailTemplateResult>(`/email-templates/${id}`, data);
   },
   /**
-   * Puts a template back to what PEMS ships — content AND, where the template has one, its contact
-   * configuration — in one transaction. HO only; the backend refuses anyone else, so hiding the button is
-   * presentation, not protection.
+   * Puts a template back to the content PEMS ships. HO only; the backend refuses anyone else, so
+   * hiding the button is presentation, not protection.
    *
    * Carries the same `expectedRevision` as a save: restore is a full overwrite, and restoring over a
    * colleague's unseen edit is the same lost update as saving over it.
@@ -185,152 +184,8 @@ export const emailsApi = {
     return httpClient.post<RestoreEmailTemplateResult>(
       `/email-templates/${id}/restore-default`, { expectedRevision });
   },
-  /**
-   * The reply-contact settings for one template: whether the block appears, where the contact comes
-   * from, and which of its fields are shown.
-   *
-   * Readable by every composing role — the compose and preview screens need to know whether a block
-   * will appear at all. Saving is HO only; the backend enforces that.
-   */
-  getEmailContactSettings: (templateCode: string) => {
-    return httpClient.get<EmailContactSettings>(
-      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
-    );
-  },
-  /**
-   * Writes the contact policy on its own, WITHOUT touching content.
-   *
-   * Not called by the template editor any more — that screen saves both halves through
-   * `updateEmailTemplate`, because two separate calls could not be made atomic from a browser and left a
-   * body and a policy able to contradict each other. Kept because it is a live API route that does
-   * something the combined save cannot: change a policy while guaranteeing the wording is untouched.
-   */
-  updateEmailContactSettings: (templateCode: string, data: EmailContactSettingsPayload) => {
-    return httpClient.put<EmailContactSettings>(
-      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings`,
-      data,
-    );
-  },
-  /** As above: policy only, and not used by the editor, which restores both halves together. */
-  restoreEmailContactSettingsDefault: (templateCode: string) => {
-    return httpClient.post<EmailContactSettings>(
-      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/restore-default`,
-      {}
-    );
-  },
-  /**
-   * Renders the contact block as an UNSAVED policy would produce it, with sample data. A POST because
-   * the draft policy travels in the body; nothing is stored.
-   */
-  previewEmailContactBlock: (
-    templateCode: string,
-    data: EmailContactSettingsPayload & { language?: string },
-  ) => {
-    return httpClient.post<EmailContactBlockPreview>(
-      `/email-templates/${encodeURIComponent(templateCode)}/contact-settings/preview`,
-      data,
-    );
-  },
 };
 
-export interface EmailContactBlockPreview {
-  /** Rendered block, or '' when this policy renders nothing. Empty is a valid answer, not a failure. */
-  html: string;
-  rendersBlock: boolean;
-}
-
-/**
- * How a template's reply-contact block behaves.
- *
- * Note what is NOT here: no name, no address, no telephone number, no user id. An operator chooses
- * WHICH fields the block shows; the values are read from users/campuses/departments when the mail is
- * sent, so a template can never present a hand-typed mailbox as somebody's.
- */
-export interface EmailContactSettings {
-  templateCode: string;
-  requirement: 'NONE' | 'OPTIONAL' | 'REQUIRED';
-  contactSource:
-    | 'HOST' | 'SENDER' | 'HOST_THEN_SENDER'
-    | 'CAMPUS_DEFAULT' | 'DEPARTMENT_DEFAULT' | 'SUPPORT_CONTACT';
-  showEmail: boolean;
-  showPhone: boolean;
-  showDepartment: boolean;
-  showCampus: boolean;
-  showSender: boolean;
-  headingVi: string;
-  headingEn: string;
-  replyToSource: 'NONE' | 'CONTACT' | 'SENDER';
-  /** The placeholder a REQUIRED policy needs in the body — supplied so no screen hard-codes it. */
-  blockPlaceholder: string;
-  bodyCarriesBlockVi: boolean;
-  bodyCarriesBlockEn: boolean;
-  /**
-   * Whether a TEMPLATE-scope row exists at all. This is a plain fact, NOT "these are the defaults":
-   * the seed writes a row for every catalogued template, so it is true almost everywhere and says
-   * nothing about whether any given value was inherited. Read the per-field `*Source` labels for that.
-   */
-  hasOwnPolicyRow: boolean;
-  requirementSource: EmailContactPolicyLevel;
-  contactSourceSource: EmailContactPolicyLevel;
-  showEmailSource: EmailContactPolicyLevel;
-  showPhoneSource: EmailContactPolicyLevel;
-  showDepartmentSource: EmailContactPolicyLevel;
-  showCampusSource: EmailContactPolicyLevel;
-  showSenderSource: EmailContactPolicyLevel;
-  replyToSourceSource: EmailContactPolicyLevel;
-  /** The two headings share one label: they are stored on one row and edited as a pair. */
-  headingSource: EmailContactPolicyLevel;
-  /**
-   * The requirement levels this template may be set to, already narrowed by capability: empty when the
-   * block can never appear, and without `NONE` when the wording tells the recipient to make contact.
-   * The card renders what it is given rather than deciding which options to hide.
-   */
-  availableRequirements: string[];
-  availableSources: string[];
-  availableReplyToSources: string[];
-  /**
-   * Whether the block may appear AT ALL, which is not the same question as `requirement`.
-   *
-   * `UNSUPPORTED` — the message is a one-time credential, or is addressed to the very person the block
-   * would name; there is no configuration, and the card says why instead of showing a form.
-   * `REQUIRED` — the text instructs the recipient to make contact, so `NONE` is not on offer.
-   * `SUPPORTED` — the administrator chooses.
-   *
-   * Optional on the type because an API built before the capability split answers without it; absent is
-   * read as `SUPPORTED`, which is how every template behaved before.
-   */
-  capability?: EmailContactCapability;
-  /** False when nothing on this card can be changed. */
-  editable?: boolean;
-  capabilityReasonCode?: string;
-  capabilityReasonVi?: string;
-  capabilityReasonEn?: string;
-}
-
-export type EmailContactCapability = 'UNSUPPORTED' | 'SUPPORTED' | 'REQUIRED';
-
-/**
- * Which cascade level supplied one field's effective value. Per field, because the cascade is applied
- * per field — a campus row that only hides telephone numbers changes one label and leaves the rest.
- */
-export type EmailContactPolicyLevel =
-  | 'TEMPLATE' | 'CAMPUS' | 'DEPARTMENT' | 'SYSTEM' | 'SHIPPED_DEFAULT';
-
-export type EmailContactSettingsPayload = Pick<
-  EmailContactSettings,
-  'requirement' | 'contactSource' | 'showEmail' | 'showPhone'
-  | 'showDepartment' | 'showCampus' | 'showSender' | 'headingVi' | 'headingEn' | 'replyToSource'
->;
-
-/**
- * Everything one press of "Lưu thay đổi" writes: the content fields, the concurrency token they loaded
- * with, and — when the template has one — the contact configuration.
- *
- * `contactSettings` is optional and `null` is meaningful: omitting it (or sending null) tells the API to
- * leave the stored policy alone, which is what a caller editing only wording sends and what an
- * unsupported template must send. It is NOT the same as sending an object full of default values, which
- * would reset the policy on every wording fix.
- */
 export interface UpdateEmailTemplatePayload {
   name: string;
   description?: string | null;
@@ -339,7 +194,6 @@ export interface UpdateEmailTemplatePayload {
   subjectEn?: string | null;
   bodyEn?: string | null;
   expectedRevision?: number | null;
-  contactSettings?: EmailContactSettingsPayload | null;
 }
 
 /**
@@ -363,15 +217,8 @@ export interface UpdateEmailTemplateResult {
   bodyVi?: string | null;
   subjectEn?: string | null;
   bodyEn?: string | null;
-  /** Null only on a template that cannot carry the contact block. */
-  contactSettings?: EmailContactSettings | null;
 }
 
-/** As above, for the combined restore. */
-export interface RestoreEmailTemplateResult extends UpdateEmailTemplateResult {
-  /**
-   * False on an unsupported template, where there was no policy to put back. Reported so the screen can
-   * say what was restored instead of implying it did more than it did.
-   */
-  contactSettingsRestored?: boolean;
-}
+// Restore returns the same shape as a save. It used to add contactSettingsRestored, because restore
+// replaced two things and the screen had to say which; there is one thing again.
+export type RestoreEmailTemplateResult = UpdateEmailTemplateResult;

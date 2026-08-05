@@ -13,15 +13,9 @@ public sealed class GetEmailTemplateContractQueryHandler
     : IRequestHandler<GetEmailTemplateContractQuery, EmailTemplateContractDto>
 {
     private readonly ICurrentUserService _currentUser;
-    private readonly PEMS.Application.Emails.Contact.IEmailContactPolicyStore _contactPolicies;
 
-    public GetEmailTemplateContractQueryHandler(
-        ICurrentUserService currentUser,
-        PEMS.Application.Emails.Contact.IEmailContactPolicyStore contactPolicies)
-    {
-        _currentUser = currentUser;
-        _contactPolicies = contactPolicies;
-    }
+    public GetEmailTemplateContractQueryHandler(ICurrentUserService currentUser)
+        => _currentUser = currentUser;
 
     public async Task<EmailTemplateContractDto> Handle(
         GetEmailTemplateContractQuery request, CancellationToken cancellationToken)
@@ -34,14 +28,11 @@ public sealed class GetEmailTemplateContractQueryHandler
 
         var code = request.TemplateCode.Trim();
 
-        // The CONFIGURED requirement, not the shipped one. The editor uses this contract to decide
-        // whether a body may drop {{contactInformationBlock}}, and answering from the shipped default
-        // told an operator who had already lowered the policy to OPTIONAL that the block was still
-        // mandatory — a refusal with no setting on screen that could resolve it.
-        var contactRequirement = await PEMS.Application.Emails.Contact.EffectiveContactRequirement
-            .ResolveAsync(_contactPolicies, code, cancellationToken);
-
-        var contract = EmailTemplateContracts.Describe(code, request.Language, contactRequirement);
+        // No stored policy to consult any more. The contract used to depend on a CONFIGURED contact
+        // requirement read from the database, because whether a body could legally drop the contact block
+        // was a setting; sender variables are ordinary variables, so the whole contract is a pure function
+        // of the template code and the language.
+        var contract = EmailTemplateContracts.Describe(code, request.Language);
 
         if (contract is null)
         {
@@ -55,11 +46,12 @@ public sealed class GetEmailTemplateContractQueryHandler
                 IsSystemTemplate = false,
                 SecurityClassification = EmailTemplateContracts.ClassificationStandard,
                 EditableFields = new List<string>(),
-                // No sender in any release, so no policy can resolve for it. Reported as unsupported
-                // rather than left at the field's default, which would offer a contact card on a row
-                // nothing can send.
-                ContactSupported = false,
-                ContactSettingsEditable = false,
+                // Nothing sends this row, so it has no sender to name and no runtime flow to edit.
+                // Reported explicitly rather than left at the field's default, which would offer the
+                // sender variable group on a template that can never resolve one.
+                SenderVariableCapability =
+                    nameof(Emails.Sender.EmailSenderVariableCapability.NOT_AVAILABLE),
+                SenderVariables = new List<string>(),
             };
         }
 
@@ -90,13 +82,13 @@ public sealed class GetEmailTemplateContractQueryHandler
             ActionSupported = contract.ActionSupported,
             ActionRequired = contract.ActionRequired,
             SystemActionDescription = contract.SystemActionDescription,
-            ContactSupported = contract.ContactSupported,
-            ContactRequired = contract.ContactRequired,
-            ContactRequirement = contract.ContactRequirement,
-            ContactSettingsEditable = contract.ContactSettingsEditable,
-            ContactReasonCode = contract.ContactReasonCode,
-            ContactReasonVi = contract.ContactReasonVi,
-            ContactReasonEn = contract.ContactReasonEn,
+            SenderVariableCapability = contract.SenderVariableCapability,
+            SenderVariables = contract.SenderVariables ?? new List<string>(),
+            SenderVariablesAllowed = contract.SenderVariablesAllowed,
+            RuntimeEditable = contract.RuntimeEditable,
+            SenderReasonCode = contract.SenderReasonCode,
+            SenderReasonVi = contract.SenderReasonVi,
+            SenderReasonEn = contract.SenderReasonEn,
             CarriesSecret = contract.CarriesSecret,
             AllowCc = contract.AllowCc,
             AllowBcc = contract.AllowBcc,
@@ -112,7 +104,6 @@ public sealed class GetEmailTemplateContractQueryHandler
     /// Every branch here mirrors <c>PreviewEmailTemplateQueryHandler</c>, which is the same decision made
     /// for the preview modal: which disabled block a template gets depends on its action spec, and a
     /// detail-link template shows the label its own send uses rather than the Department flow's wording.
-    /// The contact block is excluded — see the DTO remarks.
     /// </para>
     /// </summary>
     private static IReadOnlyDictionary<string, string> BuildBlockPreviews(
@@ -123,8 +114,6 @@ public sealed class GetEmailTemplateContractQueryHandler
 
         foreach (var block in contract.AllowedSystemBlocks)
         {
-            if (block == EmailTrustedBlocks.ContactInformationBlock) continue;
-
             previews[block] = block switch
             {
                 EmailTrustedBlocks.SetupSummaryBlock =>

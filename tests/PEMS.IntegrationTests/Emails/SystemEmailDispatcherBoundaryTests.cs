@@ -108,12 +108,12 @@ public sealed class SystemEmailDispatcherBoundaryTests
     /// The resolver is an optional constructor argument and leaving it out is silent — the dispatcher
     /// contributes no contact block, and the renderer then refuses with "còn placeholder chưa thay thế",
     /// which names the symptom rather than the missing dependency. These tests are about transaction
-    /// boundaries, not about contact policy, and they were failing on the latter.
+    /// boundaries, not about who the message is from, and they were failing on the latter.
     /// </para>
     /// </summary>
     private static SystemEmailDispatcher Dispatcher(ApplicationDbContext db, IEmailService sender)
         => new(db, new EmailTemplateRenderer(db), sender,
-               recipientOptions: null, contacts: EmailEvidenceHarness.Contacts(db));
+               recipientOptions: null, senders: EmailEvidenceHarness.Senders(db));
 
     /// <summary>Removes only the rows this class creates, identified by its marker address.</summary>
     private static async Task CleanupAsync()
@@ -448,6 +448,59 @@ public sealed class SystemEmailDispatcherBoundaryTests
 
             template.Description = originalDescription;
             await db.SaveChangesAsync();
+        }
+        finally { await CleanupAsync(); }
+    }
+
+    // ── A dispatcher built without a sender resolver still sends ────────────────────────────────
+
+    /// <summary>
+    /// The resolver is an OPTIONAL constructor argument, and a dispatcher built without one must still
+    /// send. This is the regression test for a defect that reached the claim/transfer flow.
+    ///
+    /// <para>
+    /// The renderer compares the template's DECLARED variables against the SUPPLIED ones in both
+    /// directions and fails closed. Once every capable template declared the six sender names, a
+    /// dispatcher with no resolver supplied none of them — so the render threw "thiếu giá trị cho biến:
+    /// senderName, …" for all twenty-eight of them. Where the caller raises that, the failure is at
+    /// least loud; on the primary-contact claim and transfer path the send is best-effort and its
+    /// exception is logged rather than rethrown, so the invitation email never arrived while the command
+    /// reported success and the token row sat committed. Eight workflow tests caught it only because
+    /// they read the link back out of the sent body.
+    /// </para>
+    /// <para>
+    /// The fix is that an unresolvable sender yields EMPTY values for the declared names rather than
+    /// absent ones — which is what the dispatcher's own documentation had claimed all along. Absent and
+    /// empty are the same thing to a reader of the mail and opposite things to the renderer.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_dispatcher_with_no_sender_resolver_still_sends()
+    {
+        RequireDb();
+
+        try
+        {
+            using var db = NewContext();
+            var sender = new FakeSender(EmailDeliveryResult.Sent());
+
+            // Deliberately NOT the container's wiring: no resolver, which is how every hand-built
+            // dispatcher in the suite and in VisitContactClaimService's tests is constructed.
+            var dispatcher = new SystemEmailDispatcher(db, new EmailTemplateRenderer(db), sender);
+
+            var result = await dispatcher.SendAsync(Request());
+
+            Assert.Equal(1, sender.SendCount);
+            Assert.NotNull(sender.Last);
+
+            // The mail is real: it reached the provider and was recorded.
+            var stored = await ReadBackAsync(result.SentEmailId);
+            Assert.NotNull(stored);
+
+            // Nothing is left unsubstituted — an unresolved sender renders as an absence, not a
+            // placeholder leaking to a recipient.
+            Assert.DoesNotContain("{{", sender.Last!.Body ?? "");
+            Assert.DoesNotContain("{{", sender.Last!.Subject ?? "");
         }
         finally { await CleanupAsync(); }
     }

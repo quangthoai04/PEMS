@@ -75,7 +75,7 @@ public class VisitInvitationsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new AssignDepartmentStaffCommand(participantId, body.DepartmentStaffUserId, body.Note, body.EmailOverride),
+            new AssignDepartmentStaffCommand(participantId, body.DepartmentStaffUserId, body.Note, body.ApprovedContent),
             cancellationToken);
         return Ok(result);
     }
@@ -83,4 +83,4 @@ public class VisitInvitationsController : ControllerBase
 
 public sealed record DeclineInvitationBody(string Reason);
 
-public sealed record AssignDepartmentStaffBody(ulong DepartmentStaffUserId, string Note, EmailOverride? EmailOverride = null);
+public sealed record AssignDepartmentStaffBody(ulong DepartmentStaffUserId, string Note, PEMS.Application.Emails.Preview.ApprovedEmailContent? ApprovedContent = null);

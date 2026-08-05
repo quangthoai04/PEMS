@@ -237,11 +237,39 @@ public static class SystemEmailTemplates
 
     private static SystemEmailTemplate Single(
         string code, string purpose, bool sensitive, params string[] variables)
-        => new(code, purpose, EmailRecipientPolicy.SingleRecipientNoCopies, sensitive, variables);
+        => new(code, purpose, EmailRecipientPolicy.SingleRecipientNoCopies, sensitive,
+            WithSenderVariables(code, variables));
 
     private static SystemEmailTemplate CallerControlledTemplate(
         string code, string purpose, params string[] variables)
-        => new(code, purpose, EmailRecipientPolicy.CallerControlled, HasSensitiveAction: false, variables);
+        => new(code, purpose, EmailRecipientPolicy.CallerControlled, HasSensitiveAction: false,
+            WithSenderVariables(code, variables));
+
+    /// <summary>
+    /// Appends the six sender variables to every template whose capability permits them.
+    ///
+    /// <para>
+    /// Derived from the capability map rather than listed per template, and the direction matters: the map
+    /// is the product decision about which templates may name a sender, so declaring the variables anywhere
+    /// it says <c>NOT_AVAILABLE</c> — or omitting them anywhere it does not — would be a drift with no
+    /// single place to notice it. Here the two cannot disagree.
+    /// </para>
+    /// <para>
+    /// <b>Declared is not the same as used.</b> A declared variable must be SUPPLIED at render time (the
+    /// renderer refuses a template missing a value for one) but need not appear in the body. That is what
+    /// makes the sender group an editorial choice: an administrator may add <c>{{senderPhone}}</c> to a
+    /// body months from now and it resolves immediately, with no code change and no re-seed — while a
+    /// template that never mentions a sender is unaffected by the values being available.
+    /// </para>
+    /// <para>
+    /// The values themselves are merged in by <see cref="ISystemEmailDispatcher"/>, once, rather than by
+    /// each of the ~30 call sites. Callers keep passing exactly their own business variables.
+    /// </para>
+    /// </summary>
+    private static string[] WithSenderVariables(string code, string[] variables)
+        => Sender.EmailSenderVariableCapabilities.AllowsVariables(code)
+            ? variables.Concat(Sender.EmailSenderVariableNames.All).ToArray()
+            : variables;
 
     /// <summary>Every registered template code.</summary>
     public static IReadOnlyCollection<string> AllCodes => (IReadOnlyCollection<string>)ByCode.Keys;

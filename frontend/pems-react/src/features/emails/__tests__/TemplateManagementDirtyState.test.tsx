@@ -22,10 +22,6 @@ const getEmailTemplateDetail = vi.fn();
 const getEmailTemplateContract = vi.fn();
 const updateEmailTemplate = vi.fn();
 const restoreEmailTemplateDefault = vi.fn();
-const getEmailContactSettings = vi.fn();
-const updateEmailContactSettings = vi.fn();
-const previewEmailContactBlock = vi.fn();
-const restoreEmailContactSettingsDefault = vi.fn();
 
 vi.mock('../../../features/emails/api/emailsApi', () => ({
   emailsApi: {
@@ -34,52 +30,67 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
     getEmailTemplateContract: (...a: unknown[]) => getEmailTemplateContract(...a),
     updateEmailTemplate: (...a: unknown[]) => updateEmailTemplate(...a),
     restoreEmailTemplateDefault: (...a: unknown[]) => restoreEmailTemplateDefault(...a),
-    getEmailContactSettings: (...a: unknown[]) => getEmailContactSettings(...a),
-    updateEmailContactSettings: (...a: unknown[]) => updateEmailContactSettings(...a),
-    previewEmailContactBlock: (...a: unknown[]) => previewEmailContactBlock(...a),
-    restoreEmailContactSettingsDefault: (...a: unknown[]) => restoreEmailContactSettingsDefault(...a),
   },
 }));
 
 /**
- * What Quill's own serialisation does to the stored markup, in the two ways that matter here.
+ * How a rich-text editor RESPELLS markup it is handed, without changing what it says.
  *
- * Idempotent, like the real one: applying it to its own output changes nothing. A normaliser that kept
- * finding work to do would loop against a controlled editor rather than settle, which is a property of
- * the mock and not of the screen.
+ * <b>What changed here, and why.</b> This used to also strip inline `style` attributes, because the old
+ * four-button editor genuinely dropped them. The screen no longer compares body strings — it compares
+ * meaning — and losing every `style` in a body is a change of meaning, not of spelling: a footer that
+ * arrives unstyled is a different email. Simulating that now would be asserting the screen should IGNORE
+ * a real edit.
+ *
+ * So the double does only what a respelling does: notation differences a reader cannot see. If the
+ * screen's comparison ever regresses to string equality, every test below fails.
+ *
+ * Idempotent, like a real serialiser: applied to its own output it changes nothing. One that kept finding
+ * work would loop against a controlled editor rather than settle — a property of the double, not the
+ * screen.
  */
-const normalizeLikeQuill = (html: string) =>
+const respellLikeAnEditor = (html: string) =>
   html
-    .replace(/(?<!<p>)(\{\{[a-zA-Z]+Block\}\})(?!<\/p>)/g, '<p>$1</p>')
-    .replace(/ style="[^"]*"/g, '')
-    .replace(/<br\s*\/>/g, '<br>');
+    .replace(/<br\s*\/>/g, '<br>')
+    .replace(/;"/g, '"')                       // a dropped trailing semicolon
+    + (/<p><br><\/p>$/.test(html) ? '' : '<p><br></p>');   // the trailing blank line editors keep
 
-vi.mock('react-quill-new', async () => {
+/**
+ * The SHARED editor, doubled.
+ *
+ * The screen renders `EmailRichTextEditor`, so that is what is stood in for — mocking `react-quill-new`
+ * underneath it would leave the component's own conversions running against a stub and test neither
+ * thing properly. Real-editor behaviour is covered where it belongs: `EmailRichTextEditor.test.tsx`,
+ * `emailEditorNodes.test.ts` and `emailHtmlCanonicalizer.test.ts` all drive a real Quill.
+ */
+vi.mock('../../../features/emails/components/EmailRichTextEditor', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
 
   return {
-    default: ({
-      value,
-      onChange,
-    }: {
-      value: string;
-      onChange: (v: string, delta: unknown, source: string) => void;
-    }) => {
-      // Mount, and every time it is handed html it has not already canonicalised: exactly when
-      // ReactQuill calls setEditorContents and Quill emits a text-change with source `api`.
+    EmailRichTextEditor: React.forwardRef((
+      { value, onChange }: { value: string; onChange: (v: string) => void },
+      ref: React.Ref<{ insertVariable: (v: { name: string; label: string }) => void; isReady: () => boolean }>,
+    ) => {
+      // On mount, and whenever it is handed html it has not already respelled: what a controlled editor
+      // does when it loads a document.
       React.useEffect(() => {
-        const normalized = normalizeLikeQuill(value);
-        if (normalized !== value) onChange(normalized, null, 'api');
+        const respelled = respellLikeAnEditor(value);
+        if (respelled !== value) onChange(respelled);
       }, [value]);
+
+      React.useImperativeHandle(ref, () => ({
+        insertVariable: (v: { name: string; label: string }) => onChange(`${value}{{${v.name}}}`),
+        isReady: () => true,
+      }), [value, onChange]);
 
       return (
         <textarea
           data-testid="quill"
           value={value}
-          onChange={e => onChange(e.target.value, null, 'user')}
+          onChange={e => onChange(e.target.value)}
         />
       );
-    },
+    }),
   };
 });
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));
@@ -149,11 +160,12 @@ const CONTRACT = {
   allowBcc: false,
   securityClassification: 'SENSITIVE',
   editableFields: ['name', 'description', 'subjectVi', 'subjectEn', 'bodyVi', 'bodyEn'],
-  contactSupported: false,
-  contactRequired: false,
-  contactSettingsEditable: false,
-  contactReasonCode: 'ONE_TIME_CREDENTIAL',
-  contactReasonVi: 'Mẫu này không dùng khối thông tin liên hệ vì email chứa liên kết xác nhận dùng một lần.',
+  senderVariableCapability: 'NOT_AVAILABLE',
+  senderVariables: [],
+  senderVariablesAllowed: false,
+  runtimeEditable: false,
+  senderReasonCode: 'ONE_TIME_CREDENTIAL',
+  senderReasonVi: 'Mẫu này mang mã hoặc liên kết dùng một lần nên không hiển thị thông tin người gửi.',
 };
 
 const pushToast = vi.fn();
@@ -171,8 +183,6 @@ beforeEach(() => {
   });
   getEmailTemplateDetail.mockResolvedValue({ data: DETAIL });
   getEmailTemplateContract.mockResolvedValue({ data: CONTRACT });
-  getEmailContactSettings.mockRejectedValue(new Error('not asked for'));
-  previewEmailContactBlock.mockResolvedValue({ data: { html: '', rendersBlock: false } });
 });
 
 const openEditor = async (code = 'ACCOUNT_EMAIL_CONFIRMATION') => {
@@ -314,7 +324,6 @@ describe('a real edit is reported, and only while it stands', () => {
         bodyVi: DETAIL.bodyVi,
         subjectEn: DETAIL.subjectEn,
         bodyEn: DETAIL.bodyEn,
-        contactSettings: null,
       },
     });
 
@@ -334,23 +343,19 @@ describe('a real edit is reported, and only while it stands', () => {
 });
 
 /**
- * Card 4 on a template that cannot carry the block (§3.1) — decided by the contract the editor already
- * holds, so no settings request is made and no form can appear while one is in flight.
+ * A credential-bearing template offers no sender variables at all (§3.1).
+ *
+ * The picker is where that shows: the group is absent rather than present-and-refused, so an operator
+ * cannot insert a placeholder the save would then reject. This replaces the read-only "card 4" the
+ * contact feature showed for the same templates — there is no card to render, because there was never
+ * anything on it to configure.
  */
-describe('an unsupported template gets a reason, not a form', () => {
-  it('renders the read-only card without asking for settings', async () => {
+describe('a credential-bearing template offers no sender variables', () => {
+  it('shows no sender group in the variable picker', async () => {
     await openEditor();
 
-    const card = await screen.findByTestId('contact-settings-unsupported');
-    expect(card).toHaveTextContent('Không có cấu hình cần chỉnh sửa');
-    expect(getEmailContactSettings).not.toHaveBeenCalled();
-
-    expect(screen.queryByTestId('contact-settings-panel')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('contact-settings-loading')).not.toBeInTheDocument();
-    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Nguồn thông tin liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByText('Lưu cấu hình liên hệ')).not.toBeInTheDocument();
-    expect(screen.queryByText('Phục hồi mặc định')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sender-variable-group')).not.toBeInTheDocument();
+    expect(screen.queryByText('Thông tin người gửi')).not.toBeInTheDocument();
   });
 });
 

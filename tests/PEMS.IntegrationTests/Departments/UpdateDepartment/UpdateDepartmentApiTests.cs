@@ -26,10 +26,11 @@ namespace PEMS.IntegrationTests.Departments.UpdateDepartment;
 /// - UpdateDepartmentCommand only carries DepartmentId + Name. There is no DepartmentType,
 ///   HeadUserId or Status field — campus, type, head and status are never touched by this UC
 ///   (confirmed by the handler's own doc comment: "ONLY the department name may change").
-/// - Same handler-only authorization as UC-101: DepartmentsController has no
-///   [Authorize]/[RoleAuthorize]; StaffLeaderDepartmentScope.EnsureStaffLeaderCampus rejects
-///   anonymous and wrong-role actors identically with 403 (not 401) — tests below use
-///   Anonymous_Forbidden, matching real confirmed behavior. Every Forbidden test also asserts the
+/// - Two authorization layers since 2026-08-05: the API-wide fallback policy stops an anonymous
+///   caller with 401 (Anonymous_Unauthorized below), and [RoleAuthorize] stops an authenticated
+///   wrong-role caller with 403 + DepartmentManagementForbidden — the same code
+///   StaffLeaderDepartmentScope.EnsureStaffLeaderCampus still returns from inside the handler.
+///   Every Forbidden test also asserts the
 ///   response's <c>errorCode</c> equals DepartmentManagementForbidden (not just the HTTP status),
 ///   so a future regression that reaches a *different* 403 (e.g. campus-scope) via a broken role
 ///   guard cannot masquerade as this test passing for the right reason.
@@ -208,8 +209,13 @@ public sealed class UpdateDepartmentApiTests : IClassFixture<PemsWebApplicationF
     // seeded department is byte-for-byte unchanged, so a 403 arriving for the *wrong* reason (e.g.
     // a broken role guard that still happens to fail on campus-scope) cannot pass as this test.
 
+    /// <summary>
+    /// No token means 401, not 403 — see SearchFilterDepartmentsApiTests.Anonymous_Unauthorized for why
+    /// this changed on 2026-08-05. The department must still be untouched: a refusal at the
+    /// authentication layer has to leave the record exactly as a refusal at the handler did.
+    /// </summary>
     [Fact]
-    public async Task Anonymous_Forbidden()
+    public async Task Anonymous_Unauthorized()
     {
         var campusId = await GetAnyActiveCampusIdAsync();
         var departmentId = await SeedDepartmentAsync($"{DatabaseResetHelper.UpdateDepartmentNamePrefix}anon-old {UniqueToken()}", campusId, "GENERAL", "ACTIVE");
@@ -221,11 +227,7 @@ public sealed class UpdateDepartmentApiTests : IClassFixture<PemsWebApplicationF
             DepartmentId = departmentId,
             Name = $"{DatabaseResetHelper.UpdateDepartmentNamePrefix}anon-new {UniqueToken()}"
         });
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        var body = await response.Content.ReadFromJsonAsync<ErrorResponse>(JsonOptions);
-        Assert.NotNull(body);
-        Assert.Equal(DepartmentErrorCodes.DepartmentManagementForbidden, body!.ErrorCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
 
         await AssertDepartmentUnchangedAsync(departmentId, snapshot);
     }

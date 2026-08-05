@@ -92,11 +92,6 @@ public interface IApplicationDbContext
     /// <summary>Send reservations for the six report/invoice actions (G11 / R-103).</summary>
     DbSet<EmailSendIdempotency> EmailSendIdempotencies { get; }
 
-    /// <summary>
-    /// Per-template / campus / department / system policy for the reply-contact block. Policy only —
-    /// the addresses themselves are read from users, campuses and departments at send time.
-    /// </summary>
-    DbSet<EmailContactPolicy> EmailContactPolicies { get; }
     DbSet<AccountEmailConfirmation> AccountEmailConfirmations { get; }
     DbSet<Notification> Notifications { get; }
     DbSet<CalendarEvent> CalendarEvents { get; }

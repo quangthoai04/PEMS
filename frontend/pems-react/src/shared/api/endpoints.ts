@@ -314,6 +314,14 @@ export const API_ENDPOINTS = {
   // Email template preview (read-only render for the "Xem trước email" modal — never sends).
   emailTemplates: {
     preview: '/email-templates/preview',
+    /**
+     * "Xem trước kết quả" — turns the sender's edit into the exact message that will be delivered and
+     * returns the token the send accepts as proof they approved it. Stores nothing.
+     */
+    finalPreview: '/email-templates/final-preview',
+    // The five contact-* routes were removed with the feature: a contact preview, a candidate search,
+    // and three settings routes. The sender is read from authentication, so there is nobody to search
+    // for and nothing to configure.
   },
   // Phase 3: meeting minutes (biên bản) — 1 per visit_instance with an edit-lock workflow.
   meetingMinutes: {

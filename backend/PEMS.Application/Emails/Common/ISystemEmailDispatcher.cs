@@ -44,36 +44,6 @@ public sealed record SystemEmailRequest(
     /// unaffected by this choice — see <see cref="SystemEmailContent"/>.
     /// </summary>
     public SystemEmailContent Content { get; init; } = SystemEmailContent.FromTemplate.Instance;
-
-    /// <summary>
-    /// What this message is about, so the dispatcher can work out who the recipient should contact.
-    ///
-    /// <para>
-    /// Init-only and defaulted to empty so the ~30 existing callers compile unchanged: a send that
-    /// declares no scope simply resolves no visit-specific contact. That is safe for the templates whose
-    /// policy is OPTIONAL or NONE, and deliberately NOT safe for a REQUIRED one — those fail closed,
-    /// which is how a caller that forgot to say which visit it is sending about gets found at once
-    /// instead of shipping an invitation with a dead "contact the host" instruction.
-    /// </para>
-    /// </summary>
-    public EmailContactScope ContactScope { get; init; } = EmailContactScope.None;
-}
-
-/// <summary>
-/// The identifiers a contact lookup needs.
-///
-/// <para>
-/// <see cref="VisitInstanceId"/> is the PER-CAMPUS id. A visit request spanning three campuses has three
-/// Hosts, so resolving from the request id would let a guest invited to one campus be told to contact
-/// another campus's Host — which is why no field here accepts a request id.
-/// </para>
-/// </summary>
-public sealed record EmailContactScope(
-    ulong? VisitInstanceId = null,
-    ulong? CampusId = null,
-    ulong? DepartmentId = null)
-{
-    public static readonly EmailContactScope None = new();
 }
 
 /// <summary>

@@ -56,7 +56,9 @@ public sealed class EmailPreviewCoverageTests : IDisposable
     }
 
     private static PreviewEmailTemplateQueryHandler Preview(ApplicationDbContext db)
-        => new(db, new Operator(), new EmailTemplateRenderer(db));
+        => new(db, new Operator(), new EmailTemplateRenderer(db),
+               EmailEvidenceHarness.Senders(db),
+               EmailEvidenceHarness.PreviewTokens());
 
     /// <summary>Every active code in the catalog, once per language: 30 × 2.</summary>
     public static IEnumerable<object[]> EveryTemplateAndLanguage()
@@ -98,10 +100,10 @@ public sealed class EmailPreviewCoverageTests : IDisposable
 
         Assert.Equal(code, result.TemplateCode);
         Assert.False(string.IsNullOrWhiteSpace(result.Subject), $"{code}/{language}: empty subject");
-        Assert.False(string.IsNullOrWhiteSpace(result.BodyHtml), $"{code}/{language}: empty body");
+        Assert.False(string.IsNullOrWhiteSpace(result.EditableBodyHtml), $"{code}/{language}: empty body");
 
         // The point of the preview is that nothing survives wearing braces — the same rule the send obeys.
-        Assert.DoesNotContain("{{", result.BodyHtml, StringComparison.Ordinal);
+        Assert.DoesNotContain("{{", result.EditableBodyHtml, StringComparison.Ordinal);
         Assert.DoesNotContain("{{", result.Subject, StringComparison.Ordinal);
     }
 
@@ -159,8 +161,54 @@ public sealed class EmailPreviewCoverageTests : IDisposable
 
             // The editable half must not contain the action area: an operator saving it back would
             // otherwise write the preview's own markup into the template.
-            Assert.DoesNotContain("PEMS_ACTION_BLOCK", result.BodyHtml!, StringComparison.Ordinal);
+            Assert.DoesNotContain("PEMS_ACTION_BLOCK", result.EditableBodyHtml!, StringComparison.Ordinal);
         }
+    }
+
+    // ── The first preview is a whole message, for every template ────────────────────────────────
+
+    /// <summary>
+    /// Every template, in both languages, hands the eye icon a finished message: the branded shell, and
+    /// an action block exactly when the template has one.
+    ///
+    /// <para>
+    /// A theory over the catalog rather than the four screens somebody happened to check by hand. The
+    /// two halves guard opposite mistakes — a template that quietly stopped carrying its buttons, and a
+    /// template with no action that gets a block invented for it. The second is the one that would ship:
+    /// the setup-progress update has no action area at all, and a composer that appended buttons "just
+    /// in case" would put two dead spans at the end of a message that never had any.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(EveryTemplateAndLanguage))]
+    public async Task Every_template_previews_as_a_whole_message(string code, string language)
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+
+        var result = await Preview(db).Handle(
+            new PreviewEmailTemplateQuery(code, await ContextForAsync(db, code), language), default);
+
+        Assert.False(
+            string.IsNullOrWhiteSpace(result.InitialFinalPreviewHtml),
+            $"{code}/{language}: the first preview had no assembled message to show");
+
+        // Nothing may survive wearing braces here either — this copy is the one a sender reads.
+        Assert.DoesNotContain("{{", result.InitialFinalPreviewHtml, StringComparison.Ordinal);
+
+        if (result.BodyFormat == "HTML")
+        {
+            Assert.Contains("PEMS — Campus Visit", result.InitialFinalPreviewHtml, StringComparison.Ordinal);
+        }
+
+        var hasBlock = result.InitialFinalPreviewHtml
+            .Contains(EmailComposition.ActionBlockStart, StringComparison.Ordinal);
+
+        Assert.True(
+            hasBlock == result.IsActionTemplate,
+            result.IsActionTemplate
+                ? $"{code}/{language}: reported as an action template, but the preview shows no buttons"
+                : $"{code}/{language}: no action area exists, yet the preview invented one");
     }
 
     // ── Nothing in a preview is live ────────────────────────────────────────────────────────────
@@ -175,7 +223,18 @@ public sealed class EmailPreviewCoverageTests : IDisposable
         var result = await Preview(db).Handle(
             new PreviewEmailTemplateQuery(code, await ContextForAsync(db, code), language), default);
 
-        var whole = result.Subject + result.BodyHtml + (result.LockedActionBlockHtml ?? string.Empty);
+        // Every string this response hands a screen, the ASSEMBLED message included. That last one is
+        // the reason this list is spelled out rather than reduced: the initial preview is the copy with
+        // the action block substituted INTO it, so it is the one place a live URL could reach a screen
+        // while the editable half stayed clean and this test stayed green.
+        var whole = result.Subject
+                    + result.EditableBodyHtml
+                    + result.InitialFinalPreviewHtml
+                    + (result.LockedActionBlockHtml ?? string.Empty);
+
+        // The assembled preview is made of the same inert spans: an action area a sender can press is
+        // an action area a sender can answer their own message with.
+        Assert.DoesNotContain("<a href=\"http", result.InitialFinalPreviewHtml, StringComparison.OrdinalIgnoreCase);
 
         // A disabled block is made of <span>, never <a>: a preview button must not be pressable at all,
         // and a fake href is a link somebody will eventually click.

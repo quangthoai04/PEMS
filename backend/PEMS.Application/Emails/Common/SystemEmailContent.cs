@@ -99,6 +99,19 @@ public abstract record SystemEmailContent
             AssertNoActionBlockMarker(raw);
             AssertNoTrustedBlockPlaceholder(trimmedSubject, raw);
 
+            // Checked before sanitising too, and for the same reason: the sanitiser has no opinion about
+            // a table's SHAPE. A nested table survives it intact, so leaving this until afterwards would
+            // only mean refusing the same content one step later, with the author's own markup already
+            // rewritten in the error they are shown.
+            EmailTableRules.AssertUsable(raw);
+
+            // Same reasoning, one rule further: the sanitiser has no opinion about how many spaces are in
+            // a row, and by the time it has finished the author's `&nbsp;` runs are indistinguishable from
+            // deliberate ones. Refused here so the finalize step cannot mint a token for a body that would
+            // arrive un-wrappable on a phone — and so a request posted straight at the API meets the same
+            // answer the screen would have given.
+            EmailSpaceRuns.AssertUsable(raw);
+
             var sanitized = sanitizer.SanitizeEmailHtml(raw);
             if (string.IsNullOrWhiteSpace(sanitized))
                 throw new ValidationException(

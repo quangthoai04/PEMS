@@ -30,17 +30,81 @@ public sealed record PreviewEmailTemplateQuery(
     /// correct when there is no real data to be wrong about.
     /// </para>
     /// </summary>
-    bool UseSampleData = false) : IRequest<PreviewEmailTemplateResponse>;
+    bool UseSampleData = false,
+
+    /// <summary>
+    /// The PER-CAMPUS visit this message is about, when there is one.
+    ///
+    /// <para>
+    /// It no longer changes what the preview RENDERS — the sender is resolved from the signed-in account
+    /// either way — but it is still the thing that distinguishes "an operator is reading a template" from
+    /// "somebody is about to send this message", which the prepared-preview pipeline binds into its token.
+    /// </para>
+    /// </summary>
+    ulong? VisitInstanceId = null,
+
+    ulong? CampusId = null,
+
+    ulong? DepartmentId = null,
+
+    /// <summary>
+    /// What this message is about, in the form the SENDING command will recompute from its own arguments
+    /// — e.g. <c>visitInstance:41|participant:907</c>.
+    ///
+    /// <para>
+    /// Taken from the client and trusted for nothing. It is signed into the preview token, and the send
+    /// recomputes it from the ids it was itself given; a client that puts the wrong value here gets a
+    /// token every send refuses. What it buys is that one preview endpoint serves every flow without
+    /// growing a branch per flow.
+    /// </para>
+    /// </summary>
+    string? ScopeKey = null)
+    : IRequest<PreviewEmailTemplateResponse>
+{
+    /// <summary>
+    /// True when this preview is about a REAL message with a real recipient, rather than a template an
+    /// operator is editing. Derived from the context the caller supplied rather than from a flag it sets,
+    /// because a flag can disagree with the data.
+    /// </summary>
+    public bool IsOperational =>
+        VisitInstanceId is not null || CampusId is not null || DepartmentId is not null;
+}
 
 public sealed record PreviewEmailTemplateResponse(
     string TemplateCode,
     string Subject,
-    /// <summary>Editable message content as HTML (action buttons stripped for action templates). Kept
-    /// for the read-only rendered preview; the editor binds to <see cref="EditableBodyText"/>.</summary>
-    string BodyHtml,
+    /// <summary>
+    /// What the EDITOR opens on: the rendered body carrying an inert system node wherever the action
+    /// block belongs, and no branded shell.
+    ///
+    /// <para>
+    /// Named for the editor because it is only ever the editor's. It used to be the read-only preview's
+    /// too, and that is what made the first preview a different message from the one that gets sent —
+    /// the shell was missing and the browser had to draw the buttons itself. Read
+    /// <see cref="InitialFinalPreviewHtml"/> to SHOW the message; read this one to EDIT it.
+    /// </para>
+    /// </summary>
+    string EditableBodyHtml,
     /// <summary>The same editable content as readable plain text (no &lt;p&gt;/&lt;br&gt; tags) — what
     /// the host edits in the modal. Sent back as emailOverride.bodyText.</summary>
     string EditableBodyText,
+    /// <summary>
+    /// The WHOLE message, exactly as it stands before anybody edits it: the action block at its position
+    /// inside the branded shell, assembled by <see cref="EmailPreviewComposition"/> — the same composer
+    /// the final preview uses.
+    ///
+    /// <para>
+    /// This is what the eye icon shows, and what a sender who changes nothing approves. Pressing send
+    /// from there re-renders the same template through the same renderer, so there is no second assembly
+    /// step in which the approved shape could diverge from the delivered one.
+    /// </para>
+    /// <para>
+    /// Its action buttons are the DISABLED copy — inert spans, no href, no token — for the same reason
+    /// the final preview's are: a preview must not mint a credential, and a sender must not be able to
+    /// answer their own message by mis-clicking a picture of it.
+    /// </para>
+    /// </summary>
+    string InitialFinalPreviewHtml,
     bool IsActionTemplate,
     string? SystemActionDescription,
     /// <summary>Read-only (disabled) preview of the system action block, if any.</summary>
@@ -48,4 +112,25 @@ public sealed record PreviewEmailTemplateResponse(
     string[] RequiredActionPlaceholders,
     bool Editable,
     /// <summary>Body format of the source template: "PLAIN_TEXT" | "HTML" (from email_templates.body_format).</summary>
-    string BodyFormat);
+    string BodyFormat,
+    /// <summary>
+    /// Where a reply to this message would go — the sender's own address, or the system support address
+    /// for mail nobody presses send on.
+    ///
+    /// <para>
+    /// Reported as its own field rather than inferred from the body. The preview says "khi người nhận bấm
+    /// Trả lời, email sẽ gửi tới …", and reading that out of the rendered HTML would be guessing at
+    /// something the send decides from the account — the two could disagree and the reader would have no
+    /// way to tell which was true.
+    /// </para>
+    /// </summary>
+    string? ReplyToEmail = null,
+    /// <summary>True when the send flow may offer a "Chỉnh sửa" button for this template.</summary>
+    bool RuntimeEditable = false,
+    /// <summary>
+    /// Signed proof of what this preview rendered, to be handed to <c>final-preview</c> when the sender
+    /// edits. Null when the template is not runtime-editable — there is nothing to hand anywhere.
+    /// </summary>
+    string? PreviewToken = null,
+    /// <summary>When <see cref="PreviewToken"/> stops being accepted. ISO-8601.</summary>
+    string? ExpiresAt = null);

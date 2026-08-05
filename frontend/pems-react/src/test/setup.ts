@@ -54,6 +54,30 @@ if (typeof globalThis.IntersectionObserver === 'undefined') {
   globalThis.IntersectionObserver = IntersectionObserverStub as unknown as typeof IntersectionObserver;
 }
 
+// jsdom implements no layout, so `Range` has no geometry methods. Quill asks for them on every focus()
+// (scrollSelectionIntoView → Selection.getBounds → range.getBoundingClientRect), which makes any test that
+// drives a real editor throw from inside Quill rather than from the code under test.
+//
+// Stubbed as a zero rect rather than something plausible: nothing here should ever make an assertion about
+// geometry — jsdom cannot produce a true one — and a zero rect is the honest answer to "where is this on
+// screen?" in an environment that does not lay anything out.
+if (typeof Range !== 'undefined') {
+  const zeroRect = () => ({
+    x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0,
+    toJSON() { return this; },
+  }) as DOMRect;
+
+  if (typeof Range.prototype.getBoundingClientRect !== 'function') {
+    Range.prototype.getBoundingClientRect = zeroRect;
+  }
+  if (typeof Range.prototype.getClientRects !== 'function') {
+    Range.prototype.getClientRects = function getClientRects() {
+      const list: DOMRect[] = [];
+      return Object.assign(list, { item: (i: number) => list[i] ?? null }) as unknown as DOMRectList;
+    };
+  }
+}
+
 afterEach(() => {
   cleanup();
   localStorage.clear();

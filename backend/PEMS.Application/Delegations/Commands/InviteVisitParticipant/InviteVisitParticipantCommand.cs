@@ -1,5 +1,5 @@
 using MediatR;
-using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 
 namespace PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 
@@ -15,10 +15,16 @@ public sealed record InviteVisitParticipantCommand(
     ulong? UserId,            // required for IC_SUPPORT / STUDENT
     ulong? DepartmentId,      // required for DEPT_SUPPORT
     string? Message,
-    /// <summary>Optional host-edited subject/body from the "Xem trước email" modal. When
-    /// UseEditedContent is true the edited content is used and the system action block (real
-    /// accept/decline tokens) is injected by the backend.</summary>
-    EmailOverride? EmailOverride = null) : IRequest<InviteVisitParticipantResponse>;
+    /// <summary>
+    /// The message the Host edited and approved in the FINAL preview, or null to send the template.
+    ///
+    /// <para>
+    /// Carries a signed token, so "the mail that goes out is the mail they approved" is checked rather
+    /// than assumed. The system action block — the real accept/decline tokens — is still injected by the
+    /// backend either way; an author may not place one.
+    /// </para>
+    /// </summary>
+    ApprovedEmailContent? ApprovedContent = null) : IRequest<InviteVisitParticipantResponse>;
 
 public static class InviteParticipantTypes
 {

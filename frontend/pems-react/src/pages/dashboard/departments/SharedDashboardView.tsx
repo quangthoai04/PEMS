@@ -44,6 +44,7 @@ import { matchCalendarChangeNotifs } from '../../../features/notifications/utils
 import { TaskHandoverModal } from './TaskHandoverModal';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../features/delegations/components/EmailPreviewModal';
+import { participantScopeKey, logisticsAssigneeScopeKey } from '../../../features/emails/utils/emailScopeKey';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
@@ -263,8 +264,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   // Editable "Xem trước email" before assigning a logistics task to a staff member.
   const [assignPreview, setAssignPreview] = useState({
     open: false, loading: false, sending: false, error: null as string | null,
-    subject: '', body: '', isActionTemplate: false,
+    subject: '', body: '', initialFinalPreviewHtml: '', isActionTemplate: false,
     systemActionDescription: null as string | null, lockedActionBlockHtml: null as string | null,
+    replyToEmail: null as string | null,
+    runtimeEditable: false,
+    previewToken: null as string | null,
   });
   const [pendingAssign, setPendingAssign] = useState<{
     itemType: 'REQUEST' | 'INVITATION';
@@ -274,12 +278,17 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     staffName: string;
     title?: string;
     delegationName?: string;
+    /** Carried so "Khôi phục mẫu gốc" re-resolves the SAME message's contact, not a scopeless one. */
+    visitInstanceId?: number | string | null;
+    departmentName?: string;
   } | null>(null);
 
-  const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string }) => {
+  const openLogisticsAssignPreview = async (p: { logisticsItemId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string; visitInstanceId?: number | string | null }) => {
     setPendingAssign({ ...p, itemType: 'REQUEST' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
+      // The scope is what AssignRequestAssigneeCommandHandler rebuilds from its own arguments: the
+      // logistics item and the assignee. Anything else here would produce a token the send refuses.
       const res = await delegationsApi.previewEmailTemplate({
         // Exactly the five variables LOGISTICS_ASSIGNEE_ASSIGNMENT declares — the preview shares the
         // send's renderer, which refuses an undeclared or missing key.
@@ -291,42 +300,60 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           campusName: p.campusName ?? 'FPT University',
           delegationName: p.delegationName ?? 'đoàn khách',
         },
+        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
+        departmentId: user?.departmentId != null ? Number(user.departmentId) : null,
+        scopeKey: logisticsAssigneeScopeKey(Number(p.logisticsItemId), Number(p.staffId)),
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+        subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+        // NOT stripped: this one is the assembled message, and its action block is the point of it.
+        initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+        replyToEmail: res.replyToEmail ?? null,
+        runtimeEditable: !!res.runtimeEditable,
+        previewToken: res.previewToken ?? null,
       }));
     } catch (e: any) {
       setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
     }
   };
 
-  const openInvitationAssignPreview = async (p: { participantId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string; plannedTime?: string; hostName?: string }) => {
+  const openInvitationAssignPreview = async (p: { participantId: number | string; staffId: number | string; staffName: string; title?: string; delegationName?: string; campusName?: string; plannedTime?: string; hostName?: string; departmentName?: string; visitInstanceId?: number | string | null }) => {
     setPendingAssign({ ...p, itemType: 'INVITATION' });
     setAssignPreview((s) => ({ ...s, open: true, loading: true, error: null }));
     try {
+      // VISIT_DEPARTMENT_STAFF_ASSIGNMENT, which is what `assignDepartmentStaff` actually sends. This
+      // screen previewed VISIT_PARTICIPANT_INVITATION instead: different wording, different variables,
+      // so the Leader approved and edited a message no recipient was ever going to receive. The two
+      // templates happen to share a contact policy, which is why nothing else caught it.
       const res = await delegationsApi.previewEmailTemplate({
-        // Exactly the seven variables VISIT_PARTICIPANT_INVITATION declares.
-        templateCode: 'VISIT_PARTICIPANT_INVITATION',
+        // Exactly the five variables VISIT_DEPARTMENT_STAFF_ASSIGNMENT declares.
+        templateCode: 'VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
         context: {
           recipientName: p.staffName,
           delegationName: p.delegationName ?? p.title ?? 'đoàn khách',
           campusName: p.campusName ?? 'FPT University',
           plannedTime: p.plannedTime ?? 'Chưa có thông tin',
-          hostName: p.hostName ?? 'Host',
-          roleLabel: 'Nhân sự phòng ban',
-          hostMessage: 'Bạn được Trưởng phòng ủy quyền tham gia đón tiếp.',
+          departmentName: p.departmentName ?? user?.departmentName ?? 'Phòng ban phụ trách',
         },
+        visitInstanceId: p.visitInstanceId != null ? Number(p.visitInstanceId) : null,
+        scopeKey: participantScopeKey(
+          p.visitInstanceId != null ? Number(p.visitInstanceId) : null, Number(p.staffId)),
       });
       setAssignPreview((s) => ({
         ...s, open: true, loading: false, error: null,
-        subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+        subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+        // NOT stripped: this one is the assembled message, and its action block is the point of it.
+        initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
         isActionTemplate: res.isActionTemplate,
         systemActionDescription: res.systemActionDescription ?? null,
         lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+        replyToEmail: res.replyToEmail ?? null,
+        runtimeEditable: !!res.runtimeEditable,
+        previewToken: res.previewToken ?? null,
       }));
     } catch (e: any) {
       setAssignPreview((s) => ({ ...s, open: true, loading: false, error: e?.response?.data?.message || e?.message || 'Không thể tải bản xem trước email.' }));
@@ -342,6 +369,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         staffName: pendingAssign.staffName,
         title: pendingAssign.title,
         delegationName: pendingAssign.delegationName,
+        departmentName: pendingAssign.departmentName,
+        visitInstanceId: pendingAssign.visitInstanceId,
       });
       return;
     }
@@ -351,28 +380,28 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       staffName: pendingAssign.staffName,
       title: pendingAssign.title,
       delegationName: pendingAssign.delegationName,
+      visitInstanceId: pendingAssign.visitInstanceId,
     });
   };
   const closeAssignPreview = () => setAssignPreview((s) => ({ ...s, open: false }));
 
   const confirmLogisticsAssign = async (payload: EmailPreviewSendPayload) => {
     if (!pendingAssign) return;
-    if (!payload.subject.trim()) { toast.error('Tiêu đề email không được để trống.'); return; }
-    if (!payload.bodyHtml.trim()) { toast.error('Nội dung email không được để trống.'); return; }
     setAssignPreview((s) => ({ ...s, sending: true }));
     try {
-      const emailOverride = { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments };
+      // Absent when the Leader sent the preview unchanged — the backend renders the template then.
+      const approvedContent = payload.approvedContent;
       if (pendingAssign.itemType === 'INVITATION') {
         await delegationsApi.visitInvitations.assignDepartmentStaff(
           pendingAssign.participantId!,
           Number(pendingAssign.staffId),
           '',
-          emailOverride,
+          approvedContent,
         );
       } else {
         await departmentReceptionTasksApi.assignAssignee(
           pendingAssign.logisticsItemId!, pendingAssign.staffId,
-          emailOverride,
+          approvedContent,
         );
       }
       toast.success('Đã phân công người phụ trách và gửi email.');
@@ -1464,6 +1493,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
         staffName,
         title: assigningTaskItem.title,
         delegationName: (assigningTaskItem as any).delegationName,
+        visitInstanceId: (assigningTaskItem as any).visitInstanceId ?? null,
       });
       return;
     }
@@ -1473,6 +1503,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       staffName,
       title: assigningTaskItem.title,
       delegationName: (assigningTaskItem as any).delegationName,
+      visitInstanceId: (assigningTaskItem as any).visitInstanceId ?? null,
     });
   };
 
@@ -3460,6 +3491,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                               staffName: staff.name || staff.fullName || 'Nhân sự',
                                               title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
                                               delegationName: activePopoverEvent?.delegationName,
+                                              visitInstanceId: activePopoverEvent?.visitInstanceId ?? null,
                                             });
                                           }
                                         }}
@@ -4007,6 +4039,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                               staffName: staff.name || staff.fullName || 'Nhân sự',
                                               title: activePopoverEvent?.fullTitle || activePopoverEvent?.title,
                                               delegationName: activePopoverEvent?.delegationName,
+                                              visitInstanceId: activePopoverEvent?.visitInstanceId ?? null,
                                             });
                                           }
                                         }}
@@ -4199,9 +4232,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
           error={assignPreview.error}
           subject={assignPreview.subject}
           body={assignPreview.body}
+          initialFinalPreviewHtml={assignPreview.initialFinalPreviewHtml}
           isActionTemplate={assignPreview.isActionTemplate}
           systemActionDescription={assignPreview.systemActionDescription}
           lockedActionBlockHtml={assignPreview.lockedActionBlockHtml}
+          replyToEmail={assignPreview.replyToEmail}
+          runtimeEditable={assignPreview.runtimeEditable}
+          previewToken={assignPreview.previewToken}
           canSend
           sendLabel="Gán với nội dung này"
           pushToast={(type, msg) => { if (type === 'error') toast.error(msg); else if (type === 'success') toast.success(msg); else toast(msg); }}

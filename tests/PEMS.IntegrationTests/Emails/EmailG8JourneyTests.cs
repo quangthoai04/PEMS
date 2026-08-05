@@ -117,7 +117,9 @@ public sealed class EmailG8JourneyTests : IDisposable
         => new(db, user, Sanitizer, ManualSender(db), Options.Create(new EmailRecipientOptions()));
 
     private static PreviewEmailTemplateQueryHandler Preview(ApplicationDbContext db, ICurrentUserService user)
-        => new(db, user, new EmailTemplateRenderer(db));
+        => new(db, user, new EmailTemplateRenderer(db),
+               EmailEvidenceHarness.Senders(db),
+               EmailEvidenceHarness.PreviewTokens());
 
     /// <summary>
     /// The template the preview tests use, and why it is this one: its body does NOT reference

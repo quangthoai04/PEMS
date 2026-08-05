@@ -115,8 +115,14 @@ describe('EmailComposeModal preview', () => {
   });
 });
 
-describe('EmailPreviewModal action block', () => {
-  it('sanitises the locked action block before showing it', async () => {
+describe('EmailPreviewModal', () => {
+  /**
+   * VIEW renders a whole message assembled by the backend, which makes it the modal's widest HTML sink:
+   * shell, body and action block arrive as one string over the network. Trusting it because "the server
+   * built it" is exactly the reasoning that turns one injected template body into a live script on every
+   * sender's screen.
+   */
+  it('sanitises the assembled message before showing it', async () => {
     vi.resetModules();
     vi.doMock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 't' } }));
 
@@ -130,9 +136,8 @@ describe('EmailPreviewModal action block', () => {
         error={null}
         subject="Chủ đề"
         body="<p>nội dung</p>"
-        // The block only renders for an action template — that is the branch under test.
+        initialFinalPreviewHtml={XSS}
         isActionTemplate
-        lockedActionBlockHtml={XSS}
         canSend={false}
         sendLabel="Gửi"
         onSubjectChange={vi.fn()}
@@ -142,6 +147,46 @@ describe('EmailPreviewModal action block', () => {
         onRestore={vi.fn()}
       />,
     );
+
+    expectNeutralised(container);
+  });
+
+  /**
+   * The locked action block still has a sink of its own: EDIT prints it when the body carries no node,
+   * so the author can see which buttons the message has even though they cannot place them.
+   */
+  it('sanitises the locked action block shown while editing', async () => {
+    vi.resetModules();
+    vi.doMock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 't' } }));
+
+    const { EmailPreviewModal } = await import('../../delegations/components/EmailPreviewModal');
+
+    const { container } = render(
+      <EmailPreviewModal
+        open
+        loading={false}
+        sending={false}
+        error={null}
+        subject="Chủ đề"
+        // No action node, which is the case that makes EDIT print the block itself.
+        body="<p>nội dung</p>"
+        initialFinalPreviewHtml="<p>nội dung</p>"
+        isActionTemplate
+        lockedActionBlockHtml={XSS}
+        runtimeEditable
+        previewToken="tok"
+        canSend={false}
+        sendLabel="Gửi"
+        onSubjectChange={vi.fn()}
+        onBodyChange={vi.fn()}
+        onClose={vi.fn()}
+        onSend={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Chỉnh sửa/ }));
+    await screen.findByText(/Nút phản hồi hệ thống/i);
 
     expectNeutralised(container);
   });

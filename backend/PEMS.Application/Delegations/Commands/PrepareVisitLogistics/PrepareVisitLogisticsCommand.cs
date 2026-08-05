@@ -1,5 +1,5 @@
 using MediatR;
-using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 
 namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 
@@ -19,7 +19,11 @@ public sealed record PrepareVisitLogisticsCommand(
     string? UsageEndAt,
     string? CoordinationMode = null,        // SYSTEM_REQUEST (default) | OFFLINE_COORDINATED
     string? OfflineCoordinationNote = null, // required when OFFLINE_COORDINATED
-    EmailOverride? EmailOverride = null) : IRequest<PrepareVisitLogisticsResponse>;
+    /// <summary>
+    /// The message the Host edited and approved in the FINAL preview, or null to send the template.
+    /// Ignored for an OFFLINE_COORDINATED item, which sends no email at all.
+    /// </summary>
+    ApprovedEmailContent? ApprovedContent = null) : IRequest<PrepareVisitLogisticsResponse>;
 
 public static class LogisticsItemTypes
 {

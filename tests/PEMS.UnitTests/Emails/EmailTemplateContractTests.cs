@@ -170,47 +170,70 @@ public sealed class EmailTemplateContractTests
     }
 
     /// <summary>
-    /// A shipped body carries <c>{{contactInformationBlock}}</c> in BOTH languages exactly where the
-    /// reply-contact policy is REQUIRED, and nowhere the policy renders no block at all.
+    /// A shipped body writes a sender variable only where the template's capability permits one.
     ///
     /// <para>
-    /// The failure this pins is asymmetric and both halves are real. Missing where REQUIRED: the
-    /// renderer refuses the send outright, so the template cannot be used. Present where the policy
-    /// renders nothing: the placeholder resolves to empty at best, and at worst an operator "fixes" a
-    /// block the template was never meant to show.
+    /// This replaces the contact-block symmetry check. That one pinned two failures: a body missing the
+    /// block where the policy said REQUIRED (the renderer refused the send outright) and a body carrying
+    /// it where the policy rendered nothing (the placeholder resolved to empty, or an operator "fixed" a
+    /// block the template was never meant to show). Neither can happen now — there is no policy, and a
+    /// body that does not mention the sender is simply a body that does not mention the sender.
     /// </para>
     /// <para>
-    /// It is stated over the shipped defaults because those are what a restore, and the generated sync
-    /// script, write into a database. The database-side half lives in EmailTemplateSyncScriptTests.
+    /// What IS still worth pinning is the one-directional rule: the three credential-bearing templates
+    /// must never name a person. A shipped body that did would be refused at every save AND every send,
+    /// so it would ship as a template nobody could edit.
     /// </para>
     /// </summary>
     [Fact]
-    public void A_shipped_body_carries_the_contact_block_exactly_where_the_policy_requires_one()
+    public void No_shipped_body_names_a_sender_on_a_template_that_may_not_have_one()
     {
-        var marker = "{{" + EmailTrustedBlocks.ContactInformationBlock + "}}";
         var offenders = new List<string>();
 
         foreach (var code in EmailTemplateDefaults.AllCodes)
         {
+            if (PEMS.Application.Emails.Sender.EmailSenderVariableCapabilities.AllowsVariables(code))
+                continue;
+
             var shipped = EmailTemplateDefaults.For(code)!;
-            var policy = PEMS.Application.Emails.Contact.EmailContactPolicyDefaults.For(code);
 
-            var inVi = (shipped.BodyVi ?? "").Contains(marker, StringComparison.Ordinal);
-            var inEn = (shipped.BodyEn ?? "").Contains(marker, StringComparison.Ordinal);
+            foreach (var name in PEMS.Application.Emails.Sender.EmailSenderVariableNames.All)
+            {
+                var marker = "{{" + name + "}}";
 
-            if (policy.Requirement == PEMS.Domain.Enums.EmailContactRequirement.REQUIRED)
-            {
-                if (!inVi) offenders.Add($"{code}.body_vi: policy REQUIRED but no {marker}");
-                if (!inEn) offenders.Add($"{code}.body_en: policy REQUIRED but no {marker}");
-            }
-            else if (!policy.RendersBlock && (inVi || inEn))
-            {
-                offenders.Add($"{code}: policy renders no contact block, body carries {marker}");
+                if ((shipped.SubjectVi ?? "").Contains(marker, StringComparison.Ordinal))
+                    offenders.Add($"{code}.subject_vi carries {marker}");
+                if ((shipped.BodyVi ?? "").Contains(marker, StringComparison.Ordinal))
+                    offenders.Add($"{code}.body_vi carries {marker}");
+                if ((shipped.SubjectEn ?? "").Contains(marker, StringComparison.Ordinal))
+                    offenders.Add($"{code}.subject_en carries {marker}");
+                if ((shipped.BodyEn ?? "").Contains(marker, StringComparison.Ordinal))
+                    offenders.Add($"{code}.body_en carries {marker}");
             }
         }
 
         Assert.Empty(offenders);
     }
+
+    /// <summary>
+    /// Every template the capability permits DECLARES all six, so an administrator can add any of them
+    /// to a body at any time and have it resolve on the next send with no code change and no re-seed.
+    /// </summary>
+    [Fact]
+    public void Every_capable_template_declares_all_six_sender_variables()
+    {
+        foreach (var template in SystemEmailTemplates.All)
+        {
+            var allowed = PEMS.Application.Emails.Sender.EmailSenderVariableCapabilities
+                .AllowsVariables(template.TemplateCode);
+
+            foreach (var name in PEMS.Application.Emails.Sender.EmailSenderVariableNames.All)
+            {
+                Assert.Equal(allowed, template.DeclaredVariables.Contains(name));
+            }
+        }
+    }
+
 
     /// <summary>
     /// The registry and the shipped wording agree, in both directions: a body writes

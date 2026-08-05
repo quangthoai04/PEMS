@@ -1,0 +1,174 @@
+/**
+ * Paste cleanup (V4 §14.8) and the whitespace rule (V4 §7.1, §7.4).
+ *
+ * <b>What Quill already does.</b> Measured on 2.0.3, pasting Word/Gmail markup through its clipboard
+ * already drops `position:absolute`, `MsoNormal`, `<o:p>` and unsupported font declarations. So this is
+ * not a re-implementation — it handles the cases Quill keeps and email cannot.
+ *
+ * <b>The backend remains the authority.</b> Everything here runs again, server-side, in
+ * `HtmlSanitizerService` before anything is hashed, previewed or sent. This layer exists so the sender
+ * sees the cleaned result while they are still editing, rather than approving one document and delivering
+ * another — not because the browser is trusted.
+ */
+
+/** V4 §14.4 — declarations that position content out of the flow, which email cannot render anyway. */
+const FORBIDDEN_CSS = /(?:^|;)\s*(?:position|z-index|transform|animation|transition|filter|clip-path|behavior|expression)\s*:[^;]*/gi;
+
+/** V4 §14.7 — declarations whose only purpose is to make content unreadable. */
+const HIDING_CSS = new RegExp(
+  '(?:^|;)\\s*(?:'
+  + 'display\\s*:\\s*none'
+  + '|visibility\\s*:\\s*(?:hidden|collapse)'
+  + '|opacity\\s*:\\s*0*(?:\\.0+)?(?=\\s*(?:;|$))'
+  + '|font-size\\s*:\\s*0(?:\\.0+)?(?:px|pt|em|rem|%)?(?=\\s*(?:;|$))'
+  + '|text-indent\\s*:\\s*-\\d'
+  + ')[^;]*',
+  'gi',
+);
+
+/** Elements that must never survive a paste, with their subtree. */
+const FORBIDDEN_TAGS = new Set([
+  'SCRIPT', 'IFRAME', 'OBJECT', 'EMBED', 'FORM', 'INPUT', 'BUTTON', 'TEXTAREA', 'SELECT',
+  'STYLE', 'LINK', 'META', 'BASE', 'SVG', 'CANVAS', 'VIDEO', 'AUDIO', 'NOSCRIPT', 'APPLET',
+]);
+
+/** V4 §14.5 — the only schemes a link may use. */
+const SAFE_SCHEME = /^(?:https?:|mailto:|tel:|cid:|#|\/)/i;
+
+/**
+ * Strips the declarations email cannot carry from one inline style, leaving the rest intact.
+ * Returns null when nothing usable remains, so the caller can drop the attribute instead of writing
+ * `style=""`.
+ */
+export function cleanInlineStyle(style: string | null): string | null {
+  if (!style) return null;
+
+  const cleaned = style
+    .replace(FORBIDDEN_CSS, '')
+    .replace(HIDING_CSS, '')
+    .replace(/;{2,}/g, ';')
+    .trim()
+    .replace(/^;+|;+$/g, '')
+    .trim();
+
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
+ * Cleans a pasted fragment in place.
+ *
+ * Deliberately preserves the things §14.8 says to keep — basic formatting, simple tables, valid links —
+ * and removes only what cannot be rendered or cannot be trusted. A paste that lost the sender's bold and
+ * their bullet list would be obeyed by nobody: they would paste it again into a plain field and send that.
+ */
+export function sanitizePastedFragment(root: Element): void {
+  for (const el of Array.from(root.querySelectorAll('*'))) {
+    if (FORBIDDEN_TAGS.has(el.tagName)) {
+      el.remove();
+      continue;
+    }
+
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+
+      // Inline event handlers, in any spelling.
+      if (name.startsWith('on')) {
+        el.removeAttribute(attr.name);
+        continue;
+      }
+
+      if (name === 'style') {
+        const cleaned = cleanInlineStyle(attr.value);
+        if (cleaned) el.setAttribute('style', cleaned);
+        else el.removeAttribute('style');
+        continue;
+      }
+
+      if (name === 'href' || name === 'src') {
+        const value = attr.value.replace(/\s+/g, '');
+        // A `data:` image is the one data URL worth keeping — it is how a pasted screenshot arrives.
+        const isInlineImage = name === 'src' && /^data:image\//i.test(value);
+        if (!isInlineImage && !SAFE_SCHEME.test(value)) el.removeAttribute(attr.name);
+        continue;
+      }
+
+      // Word and Google Docs carry their own bookkeeping; none of it means anything in mail.
+      if (name === 'class' || name === 'id' || name.startsWith('data-') || name.startsWith('aria-')) {
+        // The system-block marker is the one data- attribute that carries meaning here.
+        if (name !== 'data-system-block') el.removeAttribute(attr.name);
+      }
+    }
+  }
+}
+
+/**
+ * V4 §7.1 / §7.4 — runs of spaces are not a layout tool.
+ *
+ * HTML collapses consecutive spaces, so text a sender lined up by holding the space bar arrives
+ * un-aligned. The rule is to normalise rather than convert to `&nbsp;`: a run of non-breaking spaces
+ * would "work" in the composer and then refuse to wrap on a phone, turning a tidy column into a line
+ * the reader has to scroll sideways to finish.
+ *
+ * Returns the text unchanged when there is nothing to collapse, so callers can compare by identity.
+ */
+export function normalizeSpaceRuns(text: string): string {
+  return text.replace(/ {2,}/g, ' ');
+}
+
+/**
+ * True when the text contains a run of spaces somebody is probably using to line something up.
+ *
+ * <b>Non-breaking spaces count.</b> Quill hands back typed runs as `&nbsp;` — three spaces typed into
+ * the editor arrive at `onChange` as `<p>a&nbsp;&nbsp;&nbsp;b</p>` — so a check against the ASCII space
+ * alone could never fire for the commonest case, and did not: the warning only ever appeared on paste,
+ * where the fragment is inspected before Quill touches it.
+ *
+ * A run of non-breaking spaces is also the WORSE version of the problem, not a lesser one. It holds its
+ * width in the composer, so the column looks right to the person building it, and then refuses to wrap
+ * on a phone — turning a tidy column into a line the reader has to scroll sideways to finish.
+ *
+ * Three, not two: two spaces are ordinary typing after a full stop. A warning that fires on those is
+ * noise, and a message people learn to dismiss protects nothing.
+ */
+export function hasSpaceRun(text: string): boolean {
+  return / {3,}/.test(text.replace(/ /g, ' '));
+}
+
+/**
+ * The same question asked of a document rather than of a string.
+ *
+ * <b>Why the text nodes are read one at a time.</b> Reading `textContent` off the whole body, or matching
+ * against the markup, joins things that were never together: the newline and indent between `</p>` and
+ * `<table>` becomes a run, and so does the padding in a `style` value and the `%20`s in a URL. Measured
+ * against the 31 shipped templates, that mistake reports 62 offending fields and every one is spurious —
+ * which would mean an operator opening a template and being told they may not save it.
+ *
+ * Leading and trailing ASCII whitespace is dropped from each node because that is how the markup was
+ * formatted and the browser collapses it anyway. A non-breaking space at the edge is NOT dropped: nothing
+ * produces one by accident, and indenting a paragraph with four of them is exactly the habit at issue.
+ *
+ * Mirrors `EmailSpaceRuns` on the backend, which is the authority — this runs so the author is told while
+ * they are still editing, rather than at the moment they press save.
+ */
+export function htmlHasSpaceRun(html: string): boolean {
+  if (!html) return false;
+
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    // Text the SYSTEM owns — the action area, a variable chip's label — is not an editorial decision,
+    // and an author has no way to repair a warning about it.
+    if (node.parentElement?.closest('[data-system-block],.pems-var-chip') != null) continue;
+
+    const visible = (node.nodeValue ?? '').replace(/^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g, '');
+    if (hasSpaceRun(visible)) return true;
+  }
+
+  return false;
+}
+
+/** The warning shown when it does. Wording from V4 §7.4. */
+export const SPACE_RUN_WARNING =
+  'Nội dung đang có nhiều khoảng trắng liên tiếp. Khoảng trắng này có thể làm email hiển thị sai '
+  + 'trên điện thoại. Vui lòng dùng căn lề, thụt lề hoặc bảng trước khi lưu hoặc xem trước kết quả.';

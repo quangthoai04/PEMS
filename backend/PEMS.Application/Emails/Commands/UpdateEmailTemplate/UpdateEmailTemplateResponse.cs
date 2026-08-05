@@ -49,11 +49,4 @@ public sealed class UpdateEmailTemplateResponse
     public string? BodyVi { get; set; }
     public string? SubjectEn { get; set; }
     public string? BodyEn { get; set; }
-
-    /// <summary>
-    /// The contact settings as they now stand — including when the request left them alone, so the screen
-    /// always re-baselines from the same shape. Null only on a template that cannot carry the block, where
-    /// there is no policy to describe.
-    /// </summary>
-    public PEMS.Application.Emails.Contact.EmailContactSettingsDto? ContactSettings { get; set; }
 }

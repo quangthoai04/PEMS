@@ -119,6 +119,26 @@ public static class EmailVariableCatalog
             // ── reporting ────────────────────────────────────────────────────────
             V("periodFrom", "Từ ngày", "Period from", "01/07/2026", "1 Jul 2026"),
             V("periodTo", "Đến ngày", "Period to", "31/07/2026", "31 Jul 2026"),
+
+            // ── the sender ───────────────────────────────────────────────────────
+            // Who this message is FROM — the account that pressed send, or the support unit when nobody
+            // did. They replace {{contactInformationBlock}} and every policy behind it: a block could only
+            // be positioned, whereas these compose, so an administrator can write a footer sentence, a
+            // table, or nothing at all.
+            //
+            // The e-mail sample uses the reserved .invalid TLD on purpose. A preview is shown on the
+            // template-management screen where there is no real sender, and a plausible fptu.edu.vn address
+            // is one an operator could copy out and write to; .invalid cannot resolve, so the sample can
+            // never become a real recipient of somebody's reply.
+            V("senderName", "Họ tên người gửi", "Sender full name", "Nguyễn Văn An", "Nguyen Van An"),
+            V("senderRole", "Vai trò người gửi", "Sender role",
+              "Người phụ trách tiếp đón", "Host for this visit"),
+            V("senderEmail", "Email người gửi", "Sender email",
+              "an.nguyen@example.invalid", "an.nguyen@example.invalid"),
+            V("senderPhone", "Số điện thoại người gửi", "Sender phone", "0901234567", "0901234567"),
+            V("senderDepartment", "Phòng ban người gửi", "Sender department",
+              "Phòng Hợp tác Quốc tế", "International Cooperation Office"),
+            V("senderCampus", "Cơ sở người gửi", "Sender campus", "FPTU Hà Nội", "FPTU Hanoi"),
         }
         .ToDictionaryByName();
 

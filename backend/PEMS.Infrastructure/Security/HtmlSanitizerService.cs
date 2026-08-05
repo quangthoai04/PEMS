@@ -26,6 +26,16 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         _emailSanitizer.AllowedAttributes.Add("data-content-id");
         _emailSanitizer.AllowedAttributes.Add("data-file-id");
 
+        // The marker for a system block's POSITION (today: the action buttons). It has to survive the
+        // sanitiser because an edited body makes its round trip through here, and the attribute is the
+        // only thing distinguishing "the author moved the action area to this paragraph" from an ordinary
+        // empty div. Stripping it would silently discard the position and send the buttons somewhere else.
+        //
+        // Safe to allow: it is an ATTRIBUTE NAME on a div, carrying no URL and no script. The markup it
+        // stands for is never accepted from a client — the backend substitutes the real block over this
+        // node at send time, and an author who writes the node by hand gets an empty div and no buttons.
+        _emailSanitizer.AllowedAttributes.Add("data-system-block");
+
         // ── Inline style, on EMAIL bodies only, restricted to a named list of properties ──
         //
         // <b>What this fixes.</b> `BuildBase` strips `style`, and an email body is sanitised on its way
@@ -90,13 +100,16 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         _emailSanitizer.AllowedAttributes.Add("rel");
         _emailSanitizer.PostProcessNode += (_, e) =>
         {
-            if (e.Node is AngleSharp.Dom.IElement el
-                && string.Equals(el.TagName, "A", System.StringComparison.OrdinalIgnoreCase)
+            if (e.Node is not AngleSharp.Dom.IElement el) return;
+
+            if (string.Equals(el.TagName, "A", System.StringComparison.OrdinalIgnoreCase)
                 && el.HasAttribute("href"))
             {
                 el.SetAttribute("target", "_blank");
                 el.SetAttribute("rel", "noopener noreferrer");
             }
+
+            StripHidingDeclarations(el);
         };
     }
 
@@ -135,6 +148,48 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         };
 
         return sanitizer;
+    }
+
+    /// <summary>
+    /// Declarations whose only effect is to make content unreadable while leaving it in the message.
+    ///
+    /// <para>
+    /// <c>display</c> and <c>opacity</c> are on the allow-list because the templates need
+    /// <c>display:block</c> and <c>display:inline-block</c>, and dropping the whole property to stop the
+    /// hiding values would flatten every button in every action block. So the VALUES are matched instead:
+    /// the property survives, the hiding form of it does not.
+    /// </para>
+    /// <para>
+    /// Why it matters in mail specifically: invisible text is how a message is made to read one way to a
+    /// recipient and another to a filter, and how a tracking marker is smuggled past somebody who looked
+    /// at the message before approving it. A sender approving a final preview must be approving
+    /// everything the mail carries — text they cannot see is text they did not approve.
+    /// </para>
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex HidingDeclaration = new(
+        @"(?:^|;)\s*(?:"
+        + @"display\s*:\s*none"
+        + @"|visibility\s*:\s*(?:hidden|collapse)"
+        + @"|opacity\s*:\s*0*(?:\.0+)?(?=\s*(?:;|$))"
+        + @"|font-size\s*:\s*0(?:\.0+)?(?:px|pt|em|rem|%)?(?=\s*(?:;|$))"
+        + @"|text-indent\s*:\s*-\d"
+        + @")[^;]*",
+        System.Text.RegularExpressions.RegexOptions.Compiled
+        | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Removes the hiding declarations from one element's inline style, leaving the rest of it intact.
+    /// An element left with an empty style attribute has it dropped rather than kept as <c>style=""</c>.
+    /// </summary>
+    private static void StripHidingDeclarations(AngleSharp.Dom.IElement el)
+    {
+        var style = el.GetAttribute("style");
+        if (string.IsNullOrEmpty(style) || !HidingDeclaration.IsMatch(style)) return;
+
+        var cleaned = HidingDeclaration.Replace(style, string.Empty).Trim().Trim(';').Trim();
+
+        if (cleaned.Length == 0) el.RemoveAttribute("style");
+        else el.SetAttribute("style", cleaned);
     }
 
     /// <summary>

@@ -151,9 +151,6 @@ public sealed class ConfirmAccountEmailCommandHandler
                 RelatedType: "User",
                 RelatedId: user.UserId)
             {
-                // "nếu gặp khó khăn khi truy cập, vui lòng liên hệ…" — the owner's own campus is the
-                // right place to send them, and it is the only scope this message has.
-                ContactScope = new EmailContactScope(CampusId: user.PrimaryCampusId),
             }, cancellationToken);
         }
         catch { /* welcome is best-effort */ }

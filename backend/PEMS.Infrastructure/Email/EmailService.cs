@@ -89,6 +89,19 @@ public class EmailService : IEmailService
         foreach (var r in envelope.Cc) message.CC.Add(ToMailAddress(r));
         foreach (var r in envelope.Bcc) message.Bcc.Add(ToMailAddress(r));
 
+        // The message's OWN reply address, when the pipeline resolved one.
+        //
+        // This was missing, and its absence was invisible from every side: the dispatcher computed a
+        // Reply-To from the contact policy, put it on the outbound message, and this method dropped it —
+        // after which the configured <c>Smtp:ReplyToEmail</c> was added below because the list was empty.
+        // So an invitation whose policy says "replies go to the Host" went out with replies pointed at
+        // the system mailbox, and nothing anywhere reported a mismatch. The Resend transport honoured the
+        // field the whole time, so the two transports also disagreed about the same message.
+        //
+        // Added BEFORE the configuration fallback deliberately: that fallback is conditioned on the list
+        // being empty, which is exactly the "nobody had an opinion about this message" case it is for.
+        if (email.ReplyTo is { } replyTo) message.ReplyToList.Add(ToMailAddress(replyTo));
+
         var inline = email.Attachments
             .Where(a => a.IsInline && !string.IsNullOrWhiteSpace(a.ContentId)).ToList();
         var files = email.Attachments

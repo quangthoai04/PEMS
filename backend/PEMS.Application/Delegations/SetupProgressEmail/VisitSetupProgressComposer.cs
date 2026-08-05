@@ -7,7 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ExportScheduleReport;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Emails.Common;
-using PEMS.Application.Emails.Contact;
+using PEMS.Application.Emails.Sender;
 using PEMS.Domain.Entities.Delegations;
 
 namespace PEMS.Application.Delegations.SetupProgressEmail;
@@ -51,20 +51,20 @@ public sealed class VisitSetupProgressComposer : IVisitSetupProgressComposer
     private readonly IEmailTemplateRenderer _renderer;
     private readonly IScheduleReportArtifactService _reports;
     private readonly IVisitFormReadService _formRead;
-    private readonly IEmailContactResolver _contacts;
+    private readonly IEmailSenderVariableResolver _senders;
 
     public VisitSetupProgressComposer(
         IApplicationDbContext db,
         IEmailTemplateRenderer renderer,
         IScheduleReportArtifactService reports,
         IVisitFormReadService formRead,
-        IEmailContactResolver contacts)
+        IEmailSenderVariableResolver senders)
     {
         _db = db;
         _renderer = renderer;
         _reports = reports;
         _formRead = formRead;
-        _contacts = contacts;
+        _senders = senders;
     }
 
     public async Task<ComposedSetupProgressEmail> ComposeAsync(
@@ -87,26 +87,25 @@ public sealed class VisitSetupProgressComposer : IVisitSetupProgressComposer
         var artifact = await _reports.RenderAsync(instance, language, cancellationToken);
         var snapshot = await VisitSetupSnapshotBuilder.BuildAsync(_db, instance, artifact, cancellationToken);
 
-        // The reply contact is resolved here and travels into the body the Host reviews. Scoped to this
-        // instance, so a multi-campus request cannot borrow another campus's Host.
-        var contact = await _contacts.ResolveAsync(
-            new EmailContactRequest(
-                VisitSetupProgressEmailGuard.TemplateCode,
-                language,
-                VisitInstanceId: instance.VisitInstanceId,
-                CampusId: instance.CampusId,
-                SenderUserId: hostUserId),
-            cancellationToken);
+        // The sender is the Host — the person who prepares this message and presses send — so their name,
+        // role and address are substituted into the body they are about to review. Resolved here rather
+        // than left to the dispatcher because this composer renders directly: the Host reviews and edits
+        // THIS body, so it has to already read the way the sent one will.
+        var variables = VisitSetupProgressEmailGuard.BuildVariables(
+            instance, delegationName, snapshot.CampusName, hostName);
+
+        var sender = await _senders.ResolveAsync(
+            hostUserId, VisitSetupProgressEmailGuard.TemplateCode, cancellationToken);
+
+        foreach (var pair in sender.ToVariableValues()) variables[pair.Key] = pair.Value;
 
         var rendered = await _renderer.RenderAsync(new EmailRenderRequest(
             VisitSetupProgressEmailGuard.TemplateCode,
             language,
-            VisitSetupProgressEmailGuard.BuildVariables(
-                instance, delegationName, snapshot.CampusName, hostName),
+            variables,
             new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 [EmailTrustedBlocks.SetupSummaryBlock] = VisitSetupEmailHtml.Render(snapshot, language),
-                [EmailTrustedBlocks.ContactInformationBlock] = contact.BlockHtml,
             }),
             cancellationToken);
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -32,20 +32,20 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
     private readonly IEmailTemplateRenderer _renderer;
     private readonly IEmailService _email;
     private readonly EmailRecipientOptions _recipientOptions;
-    private readonly Contact.IEmailContactResolver? _contacts;
+    private readonly Sender.IEmailSenderVariableResolver? _senders;
 
     public SystemEmailDispatcher(
         IApplicationDbContext db,
         IEmailTemplateRenderer renderer,
         IEmailService email,
         IOptions<EmailRecipientOptions>? recipientOptions = null,
-        Contact.IEmailContactResolver? contacts = null)
+        Sender.IEmailSenderVariableResolver? senders = null)
     {
         _db = db;
         _renderer = renderer;
         _email = email;
         _recipientOptions = recipientOptions?.Value ?? new EmailRecipientOptions();
-        _contacts = contacts;
+        _senders = senders;
     }
 
     /// <summary>Prepare and deliver, back to back. The ordinary path.</summary>
@@ -67,41 +67,21 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             new[] { request.To }, cc: request.Cc, bcc: null, _recipientOptions.MaxRecipients);
         EmailRecipientPolicyEnforcer.Assert(request.TemplateCode, envelope);
 
-        // 1b) Who the recipient should contact. Resolved HERE rather than in each of the ~30 callers, for
-        //     the same reason the render is: it is the only way "preview, draft and send show the same
-        //     contact" can be true without every caller remembering to do it. A REQUIRED template that
-        //     cannot resolve one throws, before any row is written.
-        var contactBlock = await ResolveContactBlockAsync(request, cancellationToken);
+        // 1b) Who this message is FROM. Resolved HERE rather than in each of the ~30 callers, for the same
+        //     reason the render is: it is the only way "the preview, the final preview and the sent mail
+        //     name the same sender" can be true without every caller remembering to do it. Callers keep
+        //     passing only their own business variables.
+        var senderValues = await ResolveSenderVariablesAsync(request, cancellationToken);
 
-        // Whether the block is SUPPLIED at all now follows the policy, not merely whether a resolver was
-        // wired. It used to be merged unconditionally — as the empty string when the policy rendered
-        // nothing — which meant a body under a NONE policy had its placeholder quietly replaced with
-        // nothing and the mail went out looking correct. Withholding it lets the renderer see the
-        // contradiction and refuse (see AssertContactBlockIsNotInBody).
-        //
-        // OPTIONAL is deliberately on the supplying side even when nothing resolved: there the empty
-        // substitution is the intended outcome, because the words never promised a contact.
-        var contactPolicyHidesBlock =
-            contactBlock is not null
-            && contactBlock.Policy.Requirement == Domain.Enums.EmailContactRequirement.NONE;
-
-        var trustedBlocks = contactBlock is null || contactPolicyHidesBlock
-            ? request.TrustedBlocks
-            : Merge(request.TrustedBlocks, EmailTrustedBlocks.ContactInformationBlock, contactBlock.BlockHtml);
+        var variables = MergeSenderVariables(request.TemplateCode, request.Variables, senderValues);
 
         // 2) Content. A missing/inactive/mis-declared template throws a stable error here and no history
         //    row is written — there is nothing truthful to record about a message that cannot exist. The
         //    same call handles authored content: one renderer, one set of guards, both modes.
         var rendered = await _renderer.RenderAsync(
-            new EmailRenderRequest(request.TemplateCode, request.Language, request.Variables, trustedBlocks)
+            new EmailRenderRequest(request.TemplateCode, request.Language, variables, request.TrustedBlocks)
             {
                 Content = request.Content,
-                // The RESOLVED policy, not the shipped one: whether a body may go out without the card is
-                // decided by what this send actually produced, so the renderer's refusal can never
-                // contradict a save the editor accepted under a policy an operator had changed.
-                ContactBlockRequired =
-                    contactBlock?.Policy.Requirement == Domain.Enums.EmailContactRequirement.REQUIRED,
-                ContactBlockForbidden = contactPolicyHidesBlock,
             },
             cancellationToken);
 
@@ -170,58 +150,103 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             Attachments = request.Attachments ?? Array.Empty<OutboundAttachment>(),
             Cc = envelope.Cc,
             // An explicit Reply-To from the caller wins: it is a decision somebody made about this one
-            // message, and a policy default must not silently overrule it.
-            ReplyTo = request.ReplyTo ?? ReplyToFrom(contactBlock),
+            // message, and a default must not silently overrule it.
+            ReplyTo = request.ReplyTo ?? ReplyToFrom(senderValues),
         };
     }
 
     /// <summary>
-    /// Resolves the reply contact for this send, or null when the feature has nothing to say about it.
+    /// Who this message is from, read fresh from the account it is recorded against.
     ///
     /// <para>
     /// The resolver is optional in the constructor so the many unit tests that build a dispatcher by hand
-    /// keep working. That is a test-ergonomics allowance, not a bypass: in the running application it is
-    /// always registered, and the fail-closed refusal for a REQUIRED template lives inside the resolver
-    /// where both this path and any future one must go through it.
+    /// keep working. That is a test-ergonomics allowance and not a bypass: with no resolver wired, a
+    /// template that declares sender variables simply gets empty values, which the renderer accepts and a
+    /// recipient sees as an absence. In the running application it is always registered.
     /// </para>
     /// </summary>
-    private async Task<Contact.EmailContactResolution?> ResolveContactBlockAsync(
+    private async Task<Sender.EmailSenderVariables?> ResolveSenderVariablesAsync(
         SystemEmailRequest request, CancellationToken cancellationToken)
-    {
-        if (_contacts is null) return null;
-
-        var scope = request.ContactScope;
-
-        return await _contacts.ResolveAsync(
-            new Contact.EmailContactRequest(
-                request.TemplateCode,
-                request.Language,
-                scope.VisitInstanceId,
-                scope.CampusId,
-                scope.DepartmentId,
-                request.SentBy),
-            cancellationToken);
-    }
-
-    private static EmailRecipient? ReplyToFrom(Contact.EmailContactResolution? resolution)
-        => resolution?.ReplyTo is { } address
-            ? new EmailRecipient(address.Email, address.DisplayName)
-            : null;
+        => _senders is null
+            ? null
+            // SentBy, never a field from the request body. It is the account the message is RECORDED
+            // against, so the name printed to the recipient and the name in the email history cannot
+            // diverge — and there is no route by which a client could name somebody else as the sender.
+            : await _senders.ResolveAsync(request.SentBy, request.TemplateCode, cancellationToken);
 
     /// <summary>
-    /// Adds one trusted block to the caller's map without mutating it — callers pass dictionaries they
-    /// still own, and several reuse one across a loop of recipients.
+    /// Layers the resolved sender values UNDER the caller's variables, restricted to what the template
+    /// declares.
+    ///
+    /// <para>
+    /// Restricted, because the renderer refuses a variable the template does not declare — supplying all
+    /// six to a template that declares none would fail every send with
+    /// <c>EMAIL_TEMPLATE_VARIABLE_UNKNOWN</c>. Restricted to DECLARED rather than to "used in the body" so
+    /// an administrator can add <c>{{senderPhone}}</c> to a body at any time and have it resolve on the
+    /// next send with no code change.
+    /// </para>
+    /// <para>
+    /// Under rather than over: a caller that has already supplied a sender variable itself keeps its value.
+    /// No caller does today, and the ordering is what makes that a fact about the callers rather than an
+    /// assumption this method depends on.
+    /// </para>
     /// </summary>
-    private static IReadOnlyDictionary<string, string> Merge(
-        IReadOnlyDictionary<string, string>? existing, string name, string html)
+    private static IReadOnlyDictionary<string, string> MergeSenderVariables(
+        string templateCode,
+        IReadOnlyDictionary<string, string> callerVariables,
+        Sender.EmailSenderVariables? sender)
     {
-        var merged = existing is null
-            ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : new Dictionary<string, string>(existing, StringComparer.Ordinal);
+        var declared = SystemEmailTemplates.Find(templateCode)?.DeclaredVariables;
+        if (declared is null) return callerVariables;
 
-        merged[name] = html;
+        // Empty rather than absent when no sender could be resolved.
+        //
+        // The renderer compares the DECLARED set against the SUPPLIED set in both directions and fails
+        // closed, so a declared name with no value is not a blank line in the mail — it is a refusal to
+        // send at all. Returning the caller's variables untouched here therefore did not mean "no sender
+        // shown": it meant every template declaring the six sender names failed with "thiếu giá trị cho
+        // biến: senderName, …", and on the claim/transfer path — where the send is best-effort and its
+        // exception is logged rather than raised — the invitation email simply never arrived, with the
+        // command still reporting success.
+        //
+        // The paragraph above this method promised this behaviour before the code did.
+        var senderValues = sender?.ToVariableValues();
+        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var name in declared)
+        {
+            if (!Sender.EmailSenderVariableNames.IsSenderVariable(name)) continue;
+
+            merged[name] = senderValues is not null && senderValues.TryGetValue(name, out var value)
+                ? value
+                : string.Empty;
+        }
+
+        if (merged.Count == 0) return callerVariables;
+
+        foreach (var pair in callerVariables) merged[pair.Key] = pair.Value;
+
         return merged;
     }
+
+    /// <summary>
+    /// Where a reply goes when the caller did not say: the sender's own address, or the configured support
+    /// address for mail nobody pressed send on (plan §9.1).
+    ///
+    /// <para>
+    /// Both cases come out of the same resolver, so there is no branch here on "was this automated" — the
+    /// resolver has already answered that, and asking again would give the answer two places to be wrong.
+    /// An address that is not well-formed produces no Reply-To rather than a broken header: a profile with
+    /// a malformed address is a data fault to fix, not a reason to refuse a message the recipient needs.
+    /// </para>
+    /// </summary>
+    private static EmailRecipient? ReplyToFrom(Sender.EmailSenderVariables? sender)
+        => sender is not null
+           && !string.IsNullOrWhiteSpace(sender.Email)
+           && EmailRecipientValidator.IsWellFormed(sender.Email!)
+            ? new EmailRecipient(sender.Email!.Trim(), sender.Name)
+            : null;
+
 
     public async Task<EmailDeliveryResult> DeliverAsync(
         PreparedSystemEmail prepared, CancellationToken cancellationToken = default)

@@ -224,6 +224,75 @@ public class AuthorizationTests
         Assert.DoesNotContain(EffectiveRole.Admin, allowed);
     }
 
+    /// <summary>
+    /// A module-specific refusal code stays the exception it was introduced as.
+    ///
+    /// <para>
+    /// <c>RoleAuthorize.ErrorCode</c> exists for one reason: some modules were guarded inside their
+    /// handlers, already published a code, and already had a client reading it — putting a gate in
+    /// front of those handlers must not change what the refusal says. Department management is that
+    /// case, and the department screen maps its code to a specific sentence.
+    /// </para>
+    /// <para>
+    /// It is a hazard as much as a fix. If every endpoint eventually declares its own refusal code,
+    /// clients gain a list of strings to branch on and learn nothing they did not already know from
+    /// the 403 — and the generic answer, which is the right one almost everywhere, quietly becomes the
+    /// unusual one. So the whitelist is the test: adding a code elsewhere is a decision that has to be
+    /// made here, in the open, rather than in passing on one action.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Only_department_management_overrides_the_generic_forbidden_code()
+    {
+        var offenders = new List<string>();
+
+        foreach (var controller in Controllers())
+        {
+            var gates = controller.GetCustomAttributes<RoleAuthorizeAttribute>(inherit: true)
+                .Select(a => (Owner: controller.Name, Attribute: a))
+                .Concat(Actions(controller).SelectMany(action =>
+                    action.GetCustomAttributes<RoleAuthorizeAttribute>(inherit: true)
+                        .Select(a => (Owner: $"{controller.Name}.{action.Name}", Attribute: a))));
+
+            foreach (var (owner, gate) in gates)
+            {
+                if (string.IsNullOrWhiteSpace(gate.ErrorCode)) continue;
+
+                if (controller.Name == "DepartmentsController"
+                    && gate.ErrorCode == "DEPARTMENT_MANAGEMENT_FORBIDDEN")
+                {
+                    continue;
+                }
+
+                offenders.Add($"{owner} -> {gate.ErrorCode}");
+            }
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "These gates declare a non-generic errorCode. Every one of them is a new string a client "
+            + "has to know about, so each needs a deliberate decision and an entry here: "
+            + string.Join(", ", offenders.OrderBy(o => o)));
+    }
+
+    /// <summary>
+    /// …and the Department gates really do declare it, so the test above cannot pass by the override
+    /// having been dropped altogether.
+    /// </summary>
+    [Fact]
+    public void Department_management_gates_declare_their_own_forbidden_code()
+    {
+        var departments = Controllers().Single(c => c.Name == "DepartmentsController");
+
+        var gated = Actions(departments)
+            .SelectMany(a => a.GetCustomAttributes<RoleAuthorizeAttribute>(inherit: true))
+            .ToList();
+
+        Assert.NotEmpty(gated);
+        Assert.All(gated, gate =>
+            Assert.Equal("DEPARTMENT_MANAGEMENT_FORBIDDEN", gate.ErrorCode));
+    }
+
     private static IEnumerable<string> GetAllowedRoles(RoleAuthorizeAttribute attribute)
     {
         // The attribute keeps its role list private; read it back for assertion purposes.

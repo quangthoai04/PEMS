@@ -12,6 +12,16 @@ namespace PEMS.Application.Emails.Common;
 /// BodyText first, falling back to BodyHtml. <see cref="Attachments"/> carries the file/inline-image
 /// references (validated + streamed to real MIME parts at send time, same rules as email drafts).
 /// </para>
+/// <para>
+/// <b>There is no contact override on this type any more, and no sender override either.</b> The removed
+/// one let a sender name a THIRD PARTY as the message's reply contact, which needed a validator, a
+/// candidate service, an authorisation check and an audit row to keep somebody from attributing a
+/// hand-written address to a Host. Sender information is not that: it describes the account that pressed
+/// send, it is resolved from authentication, and a client has nothing to contribute to it. What the sender
+/// MAY change is the wording — including the already-substituted sentence naming them, which by then is
+/// ordinary text like any other — and that travels in <see cref="BodyText"/>/<see cref="BodyHtml"/> where
+/// it is sanitised with everything else.
+/// </para>
 /// </summary>
 public sealed record EmailOverride(
     bool UseEditedContent,

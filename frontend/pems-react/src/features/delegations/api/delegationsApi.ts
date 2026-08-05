@@ -1,4 +1,4 @@
-import httpClient from '../../../shared/api/httpClient';
+﻿import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type {
   CancelVisitRequestPayload,
@@ -31,6 +31,11 @@ import type {
   SaveVisitReminderSettingsResult,
   PreviewEmailTemplatePayload,
   PreviewEmailTemplateResult,
+  BuildFinalEmailPreviewPayload,
+  BuildFinalEmailPreviewResult,
+  ApprovedEmailContentPayload,
+
+
   PrepareVisitLogisticsPayload,
   PrepareVisitLogisticsResult,
   GetVisitInstanceLogisticsResult,
@@ -310,6 +315,21 @@ export const delegationsApi = {
   async previewEmailTemplate(payload: PreviewEmailTemplatePayload): Promise<PreviewEmailTemplateResult> {
     const { data } = await httpClient.post<PreviewEmailTemplateResult>(
       API_ENDPOINTS.emailTemplates.preview, payload);
+    return data;
+  },
+
+  /**
+   * "Xem trước kết quả": the sender's edit becomes the exact message that will be delivered, and comes
+   * back with the token the send accepts as proof they approved it.
+   *
+   * Nothing is stored — the token is signed, not persisted. Calling it again after a further edit simply
+   * supersedes the previous token; there is no draft to clean up.
+   */
+  async buildFinalEmailPreview(
+    payload: BuildFinalEmailPreviewPayload,
+  ): Promise<BuildFinalEmailPreviewResult> {
+    const { data } = await httpClient.post<BuildFinalEmailPreviewResult>(
+      API_ENDPOINTS.emailTemplates.finalPreview, payload);
     return data;
   },
 
@@ -631,14 +651,9 @@ export const delegationsApi = {
       participantId: string | number,
       departmentStaffUserId: number,
       note: string,
-      emailOverride?: {
-        useEditedContent: boolean;
-        subject: string;
-        bodyHtml: string;
-        attachments?: { fileId: number; attachmentType?: 'ATTACHMENT' | 'INLINE_IMAGE'; contentId?: string | null; displayName?: string | null; displayOrder?: number }[];
-      },
+      approvedContent?: ApprovedEmailContentPayload,
     ): Promise<any> {
-      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, emailOverride });
+      const { data } = await httpClient.post<any>(API_ENDPOINTS.visitInvitations.assignDepartmentStaff(participantId), { departmentStaffUserId, note, approvedContent });
       return data;
     },
   },

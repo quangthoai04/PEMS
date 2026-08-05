@@ -121,22 +121,46 @@ public sealed class EmailEvidenceHarness : IDisposable
     /// </summary>
     public SystemEmailDispatcher Dispatcher(ApplicationDbContext db, string? brokenHost = null)
         => new(db, new EmailTemplateRenderer(db), Sender(brokenHost),
-               recipientOptions: null, contacts: Contacts(db));
+               recipientOptions: null, senders: Senders(db));
 
-    /// <summary>The contact resolver, over the same context, with the support contact tests rely on.</summary>
-    public static PEMS.Application.Emails.Contact.IEmailContactResolver Contacts(ApplicationDbContext db)
-        => new PEMS.Application.Emails.Contact.EmailContactResolver(
+    /// <summary>
+    /// The sender-variable resolver, over the same context, with the support identity these tests rely
+    /// on for mail nobody pressed send on.
+    ///
+    /// <para>
+    /// It replaces the contact resolver, which needed a policy store and a candidate service alongside
+    /// it — three wired dependencies to answer "who should the recipient contact". The sender is the
+    /// account the message is recorded against, so one lookup answers it.
+    /// </para>
+    /// </summary>
+    public static PEMS.Application.Emails.Sender.IEmailSenderVariableResolver Senders(ApplicationDbContext db)
+        => new PEMS.Application.Emails.Sender.EmailSenderVariableResolver(
             db,
-            new PEMS.Application.Emails.Contact.EmailContactPolicyStore(db),
-            Options.Create(new PEMS.Application.Emails.Contact.EmailSupportContactOptions
+            Options.Create(new PEMS.Application.Emails.Sender.EmailSystemSenderOptions
             {
-                // A last-resort address for the templates whose policy is SUPPORT_CONTACT. Present so a
-                // REQUIRED template can resolve at all; the tests that care about the fail-closed path
-                // set their own options rather than relying on this one being absent.
                 Name = "PEMS Support",
                 Email = "support@pems.test",
                 Phone = "1900 0000",
             }));
+
+    /// <summary>
+    /// A real token signer, over a fixed key.
+    ///
+    /// <para>
+    /// Real rather than a stub because the tests that use it assert the ROUND TRIP — a token issued by
+    /// the preview and accepted by the send. A stub that returned a constant would pass those tests on
+    /// an implementation that signed nothing.
+    /// </para>
+    /// </summary>
+    public static PEMS.Application.Emails.Preview.IEmailPreviewTokenService PreviewTokens()
+        => new PEMS.Infrastructure.Email.EmailPreviewTokenService(
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["JwtSettings:SecretKey"] = "integration-test-signing-key-not-a-real-secret-0123456789",
+                })
+                .Build(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<PEMS.Infrastructure.Email.EmailPreviewTokenService>.Instance);
 
     public string[] Messages()
         => Directory.Exists(PickupDirectory) ? Directory.GetFiles(PickupDirectory, "*.eml") : Array.Empty<string>();

@@ -404,8 +404,38 @@ public static class CanonicalSqlScript
     /// tables, 32 triggers, 250 foreign keys, 31 email_templates, zero <c>email_draft*</c> tables, and
     /// <c>03_verify.sql</c> reporting 16 PASS / 0 FAIL (including the new F2, which now asserts the three
     /// tables are ABSENT rather than that their rows resolve).
+    /// NINETEENTH BUMP — the draft tables' DROP entries came back, and only those.
+    ///
+    /// The eighteenth bump removed the three <c>email_draft*</c> tables from the script entirely: no
+    /// <c>CREATE</c>, and no <c>DROP</c> either. Dropping the <c>DROP</c>s was the part that was wrong.
+    /// The reset section exists to make an import idempotent against a database created by an OLDER
+    /// version of this script, and such a database still HAS those three tables — so re-importing left
+    /// them behind, orphaned, with foreign keys into tables the reset had just dropped and recreated.
+    ///
+    /// The repair is three <c>DROP TABLE IF EXISTS</c> lines in the reset block and nothing else: no
+    /// <c>CREATE</c>, no seed row, no change to <c>merged_runtime_table_count</c>. A fresh import is
+    /// byte-for-byte the same database it was — <c>IF EXISTS</c> against a table this script never
+    /// creates is a no-op.
+    ///
+    /// The hash constant is bumped HERE rather than in the commit that changed the script, because that
+    /// commit (<c>adcae824</c>, "update SQL") did not bump it — which left every integration test in the
+    /// repository failing at startup with "Canonical SQL hash mismatch", before a single assertion ran.
+    ///
+    /// Bumped again on 2026-08-05, for the sender-variable migration: the fourteen bodies that carried
+    /// <c>{{contactInformationBlock}}</c> now print the sender instead, <c>variables_text</c> gained the
+    /// six <c>{{sender*}}</c> names on the twenty-eight templates whose capability permits them, and the
+    /// <c>email_contact_policies</c> seed is marked deprecated in place (the table is deliberately NOT
+    /// dropped — that is a separate, separately-approved task). Verified against a real MySQL 8.0.46 by
+    /// a fresh import and by the upgrade patch, which reach byte-identical <c>email_templates</c> rows.
+    ///
+    /// Bumped again on 2026-08-05 for the §16 content rewrite: all 31 templates have new
+    /// <c>subject_vi</c>, <c>body_vi</c>, <c>subject_en</c> and <c>body_en</c>, and nothing else. No
+    /// schema change, no new row, no changed <c>variables_text</c> — the summary tables, action panels,
+    /// security notes and sender cards are built from variables every one of those templates already
+    /// declared. This is also what closes the declared-but-unused sender variables: the thirteen bodies
+    /// that declared the <c>{{sender*}}</c> group without printing it now carry the sender card.
     public const string ExpectedSha256 =
-        "48dc6a6d12601f68aa3c807624e0b2ad8e669368cdc6034a6619025563a75d6e";
+        "a60e00ebeacae17bedb7482d111428772c89b2637e4ca0d53193cb09180719b8";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

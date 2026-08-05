@@ -320,7 +320,7 @@ namespace PEMS.Api.Controllers
             ulong visitInstanceId, [FromBody] InviteVisitParticipantBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message, body.EmailOverride),
+                new InviteVisitParticipantCommand(visitInstanceId, body.ParticipantType, body.UserId, body.DepartmentId, body.Message, body.ApprovedContent),
                 cancellationToken);
             return Ok(result);
         }
@@ -762,7 +762,7 @@ namespace PEMS.Api.Controllers
     /// IC_SUPPORT/STUDENT; departmentId for DEPT_SUPPORT (backend resolves the leader). emailOverride
     /// carries the host-edited subject/body from the "Xem trước email" modal (optional).</summary>
     public sealed record InviteVisitParticipantBody(
-        string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message, EmailOverride? EmailOverride);
+        string ParticipantType, ulong? UserId, ulong? DepartmentId, string? Message, PEMS.Application.Emails.Preview.ApprovedEmailContent? ApprovedContent);
 
     /// <summary>Request body for saving the host's "Ghi chú chung" (preparation note). Null clears it.</summary>
     public sealed record UpdatePreparationNoteBody(string? Note);

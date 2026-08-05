@@ -121,7 +121,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<SentEmailAttachment> SentEmailAttachments { get; set; }
     public DbSet<EmailActionToken> EmailActionTokens { get; set; }
     public DbSet<EmailSendIdempotency> EmailSendIdempotencies { get; set; }
-    public DbSet<EmailContactPolicy> EmailContactPolicies { get; set; }
     public DbSet<Notification> Notifications { get; set; }
 
     // ── Calendar + Agenda Template ────────────────────────────────────────
@@ -900,23 +899,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<SentEmail>()
             .Property(se => se.BodyFormat).HasConversion<string>();
 
-        // email_contact_policies — the cascade that decides whether a mail shows a reply contact.
-        // Every enum persists as its SQL string, and every optional column stays nullable so that an
-        // unset level inherits instead of meaning "no" (see EmailContactPolicy).
-        modelBuilder.Entity<EmailContactPolicy>(b =>
-        {
-            b.Property(p => p.ScopeType).HasConversion<string>();
-            b.Property(p => p.Requirement).HasConversion<string>();
-            b.Property(p => p.ContactSource).HasConversion<string>();
-            b.Property(p => p.ReplyToSource).HasConversion<string>();
-            // SQL: UNIQUE KEY uq_email_contact_policies_scope (scope_type, scope_key)
-            b.HasIndex(p => new { p.ScopeType, p.ScopeKey })
-                .IsUnique().HasDatabaseName("uq_email_contact_policies_scope");
-            b.HasOne<User>().WithMany()
-                .HasForeignKey(p => p.CreatedBy).OnDelete(DeleteBehavior.SetNull);
-            b.HasOne<User>().WithMany()
-                .HasForeignKey(p => p.UpdatedBy).OnDelete(DeleteBehavior.SetNull);
-        });
+        // email_contact_policies was mapped here. The reply-contact cascade it configured is gone —
+        // sender information is ordinary template variables now, resolved from the sending account, so
+        // there is no policy to store. The TABLE is deliberately left in the database: dropping schema is
+        // a separate, separately-approved task, and nothing in this application reads or writes it any
+        // more, which is what makes that drop safe to do later.
 
         // sent_email_attachments → sent_emails (CASCADE), files (RESTRICT)
         modelBuilder.Entity<SentEmailAttachment>(b =>

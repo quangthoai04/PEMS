@@ -10,6 +10,7 @@
  *
  * Everything below is fetched per template code. `GET /email-templates/contract/{code}`.
  */
+import { SPACE_RUN_WARNING, htmlHasSpaceRun } from '../utils/emailEditorPaste';
 
 /** Stable codes from `EmailErrorCodes`. Matched on the code, never on the Vietnamese message text. */
 export const TEMPLATE_ERROR_CODES = {
@@ -20,20 +21,25 @@ export const TEMPLATE_ERROR_CODES = {
   subjectForbiddenSensitive: 'EMAIL_TEMPLATE_SUBJECT_FORBIDDEN_SENSITIVE_VARIABLE',
   actionBlockRequired: 'EMAIL_TEMPLATE_ACTION_BLOCK_REQUIRED',
   requiredBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY',
-  requiredContactBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_CONTACT_BLOCK_NOT_IN_BODY',
   systemBlockNotAllowed: 'EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED',
   /**
-   * The body still carries the contact block while the display level is "Không hiển thị".
+   * A `{{sender*}}` placeholder on a template whose capability is NOT_AVAILABLE.
    *
-   * Kept apart from `systemBlockNotAllowed` because the two ask for different repairs, and the screen
-   * offers different actions for them. "Not allowed" means this template can never carry the block and the
-   * only move is to delete it. This one means the template CAN carry it and the administrator has hidden
-   * it, so there are two ways out — delete the block, or put the level back — and the operator owns both.
+   * Its own code rather than `variableUnknown`, which is what a generic check would produce. "Biến không
+   * tồn tại" is false — the variable works on twenty-eight other templates — and it sends the operator
+   * hunting for a typo they did not make. The real rule is that THIS message carries a one-time
+   * credential and does not name a person.
    */
-  contactBlockNotAllowedWhenHidden: 'EMAIL_TEMPLATE_CONTACT_BLOCK_NOT_ALLOWED_WHEN_HIDDEN',
-  contactNotSupported: 'EMAIL_TEMPLATE_CONTACT_NOT_SUPPORTED',
-  contactConfigurationInvalid: 'EMAIL_CONTACT_CONFIGURATION_INVALID',
-  contactPolicyStoreUnavailable: 'EMAIL_CONTACT_POLICY_STORE_UNAVAILABLE',
+  senderVariableNotAllowed: 'EMAIL_TEMPLATE_SENDER_VARIABLE_NOT_ALLOWED',
+  /**
+   * The field lines something up with a run of spaces (V4 §7.4).
+   *
+   * Blocking rather than advisory: HTML collapses runs of plain spaces, so the column arrives ragged,
+   * and the editor's own `&nbsp;` spelling is the worse outcome — it holds its width in the composer and
+   * then refuses to wrap on a phone. The same code comes back from the server, so a save attempted
+   * around this screen is answered identically.
+   */
+  spaceRunUnsupported: 'EMAIL_TEMPLATE_CONSECUTIVE_SPACES_NOT_ALLOWED',
   templateNotFound: 'EMAIL_TEMPLATE_NOT_FOUND',
   catalogFixed: 'EMAIL_TEMPLATE_CATALOG_FIXED',
   fieldImmutable: 'EMAIL_TEMPLATE_FIELD_IMMUTABLE',
@@ -56,7 +62,8 @@ export const TEMPLATE_ERROR_CODES = {
 export const SYSTEM_BLOCK_NAMES = [
   'actionBlock',
   'setupSummaryBlock',
-  'contactInformationBlock',
+  // contactInformationBlock was here. It is not a block any more and not a variable either — it is six
+  // ordinary {{sender*}} variables, which the picker offers under "Thông tin người gửi".
 ] as const;
 
 export type SystemBlockName = (typeof SYSTEM_BLOCK_NAMES)[number];
@@ -76,11 +83,24 @@ export const SYSTEM_BLOCK_LABELS: Record<string, { title: string; hint: string }
     title: 'Bảng thông tin chuẩn bị',
     hint: 'Hệ thống dựng các bảng khách, thành phần, lịch trình và trạng thái chuẩn bị khi gửi.',
   },
-  contactInformationBlock: {
-    title: 'Khối thông tin liên hệ',
-    hint: 'Hệ thống điền đầu mối liên hệ theo cấu hình ở mục 4 khi gửi.',
-  },
 };
+
+/** The six sender variables, mirroring `EmailSenderVariableNames.All`. */
+export const SENDER_VARIABLE_NAMES = [
+  'senderName',
+  'senderRole',
+  'senderEmail',
+  'senderPhone',
+  'senderDepartment',
+  'senderCampus',
+] as const;
+
+export type SenderVariableName = (typeof SENDER_VARIABLE_NAMES)[number];
+
+/** True when the placeholder is one of the six sender variables. */
+export function isSenderVariable(name: string): name is SenderVariableName {
+  return (SENDER_VARIABLE_NAMES as readonly string[]).includes(name);
+}
 
 /** The four editable content fields, matching the API's property names. */
 export type TemplateContentField = 'subjectVi' | 'subjectEn' | 'bodyVi' | 'bodyEn';
@@ -138,9 +158,26 @@ export function describeSystemBlocks(contract: TemplateContract): SystemBlockNot
   return notices;
 }
 
-/** True unless the backend says this template can never carry the contact block. */
-export function contactSupportedOf(contract: Pick<TemplateContract, 'contactSupported'>): boolean {
-  return contract.contactSupported !== false;
+/**
+ * True unless the backend says this template may never name a sender.
+ *
+ * Absent reads as allowed, matching the contract's own default: an API built before the field answers
+ * without it, and the alternative — hiding the variable group on every template until the backend
+ * catches up — would be a worse failure than showing it on three that refuse it at save.
+ */
+export function senderVariablesAllowedOf(
+  contract: Pick<TemplateContract, 'senderVariablesAllowed' | 'senderVariableCapability'>,
+): boolean {
+  if (typeof contract.senderVariablesAllowed === 'boolean') return contract.senderVariablesAllowed;
+  return contract.senderVariableCapability !== 'NOT_AVAILABLE';
+}
+
+/** True when the send flow may offer "Chỉnh sửa" for this template. */
+export function runtimeEditableOf(
+  contract: Pick<TemplateContract, 'runtimeEditable' | 'senderVariableCapability'>,
+): boolean {
+  if (typeof contract.runtimeEditable === 'boolean') return contract.runtimeEditable;
+  return contract.senderVariableCapability === 'AVAILABLE_EDITABLE_RUNTIME';
 }
 
 /**
@@ -201,8 +238,6 @@ export interface TemplateContract {
    * carries the real labels and styling. The buttons are `<span>`s with no href at all, so a click
    * cannot navigate and no token or business URL exists to leak.
    *
-   * `contactInformationBlock` is absent: it depends on the contact policy being edited, including
-   * unsaved toggles, and comes from the contact-block preview endpoint instead.
    */
   systemBlockPreviews: Record<string, string>;
   sensitiveVariables: string[];
@@ -214,35 +249,28 @@ export interface TemplateContract {
   /** The backend-provided description of the system action. */
   systemActionDescription: string | null;
   /**
-   * Whether this template may carry `{{contactInformationBlock}}` AT ALL — a different question from
-   * whether it shows one today, which is the contact policy in card 4.
+   * NOT_AVAILABLE / AVAILABLE_READ_ONLY_RUNTIME / AVAILABLE_EDITABLE_RUNTIME.
    *
-   * Optional on the type because an API built before the capability split answers without it; absent is
-   * read as "supported", which is what every template was treated as before. `contactCapabilityOf`
-   * is the only place that decision is made.
+   * This replaces the four contact fields the contract used to carry (supported / required /
+   * requirement / settings-editable). Those described a CONFIGURATION an operator moved between three
+   * levels, and the screen needed all four to work out which state it was in. There is no configuration
+   * here — the capability is fixed by what the message is and how it is sent — so one value answers
+   * every question the screen has.
+   *
+   * Optional on the type because an API built before it answers without one; absent reads as
+   * AVAILABLE_READ_ONLY_RUNTIME, which offers the variables and no runtime editor — the safe direction.
    */
-  contactSupported?: boolean;
-  /** True when the effective policy is REQUIRED, so the body may not drop the block. */
-  contactRequired?: boolean;
-  /**
-   * The STORED display level — NONE / OPTIONAL / REQUIRED.
-   *
-   * Carried in full rather than as `contactRequired` alone because the editor has to tell NONE from
-   * OPTIONAL: under OPTIONAL a body may keep the block or drop it, and under NONE it may not keep it. A
-   * boolean can only express one of those two rules, which is why "hidden but the block is still there"
-   * went unnoticed by both this screen and the API.
-   *
-   * It is the stored value, so the editor overrides it with whatever the contact card currently shows —
-   * see the `contactRequirement` option on `validateContent`. Optional on the type because an API built
-   * before this field answers without it; absent reads as OPTIONAL, the previous behaviour.
-   */
-  contactRequirement?: 'NONE' | 'OPTIONAL' | 'REQUIRED' | string;
-  /** False when there is nothing on the contact card an operator could change. */
-  contactSettingsEditable?: boolean;
+  senderVariableCapability?: 'NOT_AVAILABLE' | 'AVAILABLE_READ_ONLY_RUNTIME' | 'AVAILABLE_EDITABLE_RUNTIME' | string;
+  /** The `{{sender*}}` names to offer under "Thông tin người gửi", or empty when not permitted. */
+  senderVariables?: string[];
+  /** True when the body may contain `{{sender*}}`. */
+  senderVariablesAllowed?: boolean;
+  /** True when the send flow may offer "Chỉnh sửa" — a property of the flow, not of the wording. */
+  runtimeEditable?: boolean;
   /** Stable reason for the capability — matched on; the sentences below are for people. */
-  contactReasonCode?: string | null;
-  contactReasonVi?: string | null;
-  contactReasonEn?: string | null;
+  senderReasonCode?: string | null;
+  senderReasonVi?: string | null;
+  senderReasonEn?: string | null;
   /** The message carries a one-time code or a personal action link. */
   carriesSecret: boolean;
   allowCc: boolean;
@@ -298,22 +326,23 @@ export function extractPlaceholders(...parts: (string | undefined | null)[]): st
  * something the backend would refuse, and it never refuses something the backend would permit.
  */
 /**
- * What the caller knows that the fetched contract does not.
+ * Nothing, now.
  *
- * The contract is fetched once, when the template is opened, so its `contactRequirement` is the level as
- * STORED. The editor's contact card holds an unsaved draft of that level, and validation has to follow the
- * draft — otherwise switching the level to "Không hiển thị" would raise no error until after a round trip,
- * and switching it back would leave one on screen that no longer applies.
+ * It used to carry the contact card's UNSAVED level, because validation had to follow a draft the
+ * contract knew nothing about: the same body was legal or illegal depending on a toggle elsewhere on the
+ * screen. Sender variables have no such setting — a placeholder is permitted or not by the template's
+ * fixed capability — so validation depends only on the contract and the content.
+ *
+ * Kept as a type so the signature does not churn if a future option appears.
  */
 export interface ValidateContentOptions {
-  /** The level currently shown on the contact card. Omitted means "use the stored one". */
-  contactRequirement?: 'NONE' | 'OPTIONAL' | 'REQUIRED' | string | null;
+  [key: string]: never;
 }
 
 export function validateContent(
   contract: TemplateContract,
   content: Record<TemplateContentField, string>,
-  options: ValidateContentOptions = {},
+  _options: ValidateContentOptions = {},
 ): TemplateContentIssue[] {
   // A historical row has no contract to validate against. The API answers one for it anyway — so the
   // editor can say what the row IS rather than showing a failed request — but with empty variable
@@ -331,14 +360,7 @@ export function validateContent(
   const issues: TemplateContentIssue[] = [];
   const fields: TemplateContentField[] = ['subjectVi', 'bodyVi', 'subjectEn', 'bodyEn'];
 
-  const contactSupported = contactSupportedOf(contract);
-  const contactRequirement =
-    options.contactRequirement ?? contract.contactRequirement ?? 'OPTIONAL';
-
-  // The block is HIDDEN, not unsupported. Only meaningful on a template that could carry one — on an
-  // unsupported template the requirement has no bearing on anything and the block is refused by the
-  // capability rule below instead, with the sentence that names the real reason.
-  const contactHidden = contactSupported && contactRequirement === 'NONE';
+  const senderAllowed = senderVariablesAllowedOf(contract);
 
   for (const field of fields) {
     const isSubject = field === 'subjectVi' || field === 'subjectEn';
@@ -350,45 +372,16 @@ export function validateContent(
       // "does not belong to this template": true of the variable list, and irrelevant, because the
       // block was never in it and was never supposed to be.
       if (isSystemBlock(name)) {
-        // The contact block answers from CAPABILITY, mirroring `EmailTemplateContract.AllowsSystemBlock`.
-        // Reading the two lists alone said "not allowed" whenever the current policy happened to render
-        // nothing — so an operator who had just switched the level to Tùy chọn was refused the block that
-        // setting exists to place, and the message named neither the setting nor the reason.
-        const allowed = name === 'contactInformationBlock'
-          ? contactSupported
-          : contract.requiredSystemBlocks.includes(name)
-            || contract.optionalSystemBlocks.includes(name);
+        const allowed = contract.requiredSystemBlocks.includes(name)
+          || contract.optionalSystemBlocks.includes(name);
 
         if (!allowed) {
-          const why = name === 'contactInformationBlock' && contract.contactReasonVi
-            ? ` ${contract.contactReasonVi}`
-            : '';
-
           issues.push({
             field,
             code: TEMPLATE_ERROR_CODES.systemBlockNotAllowed,
             variableName: name,
-            messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này. Hãy xóa khối khỏi nội dung.${why}`,
+            messageVi: `Khối hệ thống {{${name}}} không dùng được ở mẫu ${contract.templateCode}; khi gửi sẽ không có gì thay thế vào chỗ này. Hãy xóa khối khỏi nội dung.`,
             messageEn: `System block {{${name}}} is not available on ${contract.templateCode}.`,
-            severity: 'ERROR',
-          });
-          continue;
-        }
-
-        // Permitted on this template, but switched off. Its own code and its own sentence, because the
-        // repair is a choice between two things the operator owns and neither the "not available here"
-        // wording above nor a bare "remove it" states that.
-        if (name === 'contactInformationBlock' && contactHidden) {
-          issues.push({
-            field,
-            code: TEMPLATE_ERROR_CODES.contactBlockNotAllowedWhenHidden,
-            variableName: name,
-            messageVi:
-              `Khối thông tin liên hệ vẫn tồn tại trong ${describeFieldVi(field)}, nhưng mức hiển thị `
-              + 'đang là “Không hiển thị”. Hãy xóa khối khỏi nội dung hoặc chọn lại “Tùy chọn/Bắt buộc”.',
-            messageEn:
-              `The contact block is still present in ${describeFieldEn(field)} while the display level is `
-              + 'hidden. Remove the block from the content, or set the level back to Optional/Required.',
             severity: 'ERROR',
           });
           continue;
@@ -405,6 +398,26 @@ export function validateContent(
           });
         }
 
+        continue;
+      }
+
+      // A sender variable on a template that may not name one is answered BEFORE the generic
+      // unknown-variable rule, mirroring EmailTemplateContentValidator. Reported as "không tồn tại
+      // trong hệ thống" it would be false — the variable works on twenty-eight other templates — and it
+      // would send the operator hunting for a typo instead of telling them this message carries a
+      // one-time credential and does not name a person.
+      if (isSenderVariable(name) && !senderAllowed) {
+        issues.push({
+          field,
+          code: TEMPLATE_ERROR_CODES.senderVariableNotAllowed,
+          variableName: name,
+          messageVi: `Biến {{${name}}} không dùng được ở mẫu ${contract.templateCode}: `
+            + (contract.senderReasonVi ?? 'mẫu này không hiển thị thông tin người gửi.')
+            + ` Hãy xóa biến khỏi ${describeFieldVi(field)}.`,
+          messageEn: `Variable {{${name}}} is not available on ${contract.templateCode}: `
+            + (contract.senderReasonEn ?? 'this template does not show sender information.'),
+          severity: 'ERROR',
+        });
         continue;
       }
 
@@ -430,6 +443,21 @@ export function validateContent(
           severity: 'ERROR',
         });
       }
+    }
+
+    // Spacing is judged per field, so an operator with a clean Vietnamese tab is told that the English
+    // one is what is holding the save. A subject counts too: it is one line of visible text, and a run
+    // in it survives into the recipient's list view and into the stored history exactly as typed.
+    if (htmlHasSpaceRun(content[field] ?? '')) {
+      issues.push({
+        field,
+        code: TEMPLATE_ERROR_CODES.spaceRunUnsupported,
+        variableName: null,
+        messageVi: SPACE_RUN_WARNING,
+        messageEn: 'The content has runs of consecutive spaces, which make the email render incorrectly '
+          + 'on phones. Use alignment, indentation or a table instead.',
+        severity: 'ERROR',
+      });
     }
   }
 
@@ -460,38 +488,21 @@ export function validateContent(
       });
     }
 
-    // Each missing block reports under the code that names ITS repair. Reporting them all as
-    // "action block required" was survivable while the action block was the only one an operator could
-    // delete; with three blocks it would tell somebody who removed the contact card to go restore a
-    // button they never touched.
+    // Each missing block reports under the code that names ITS repair.
     //
-    // The contact block is taken from the LEVEL rather than from the fetched list, because the level may
-    // have been changed on screen since the contract was fetched. Reading the stale list would keep
-    // demanding the block after somebody had lowered the level to Tùy chọn — the refusal that used to make
-    // "remove the block" and "set it to optional" impossible to do in one edit.
-    const requiredBlocks = contract.requiredSystemBlocks.filter(b => b !== 'contactInformationBlock');
-    if (contactSupported && contactRequirement === 'REQUIRED') {
-      requiredBlocks.push('contactInformationBlock');
-    }
-
-    for (const required of requiredBlocks) {
+    // Straight from the contract's own list now. The contact block used to be taken from the LEVEL
+    // instead, because the level could change on screen after the contract was fetched — the whole
+    // reason `validateContent` needed an options bag. A required block is a fact about the template
+    // again, so there is nothing to override.
+    for (const required of contract.requiredSystemBlocks) {
       if (present.includes(required)) continue;
 
       issues.push({
         field: body,
         code: blockMissingCode(required),
         variableName: required,
-        messageVi: required === 'contactInformationBlock'
-          // Named per language: an operator whose Vietnamese body is fine and whose English body is not
-          // needs to be sent to the English tab, and "this template needs the block" sends them to neither.
-          ? `${describeFieldVi(body)} thiếu khối thông tin liên hệ ({{contactInformationBlock}}). `
-            + 'Mức hiển thị đang là “Bắt buộc”, nên bỏ khối đi thì người nhận được yêu cầu liên hệ mà '
-            + 'không có địa chỉ nào. Hãy thêm lại khối, hoặc đổi mức hiển thị.'
-          : blockMissingMessageVi(required),
-        messageEn: required === 'contactInformationBlock'
-          ? `${describeFieldEn(body)} is missing the contact block ({{contactInformationBlock}}) while the `
-            + 'level is Required. Add it back, or change the level.'
-          : blockMissingMessageEn(required),
+        messageVi: blockMissingMessageVi(required),
+        messageEn: blockMissingMessageEn(required),
         severity: 'ERROR',
       });
     }
@@ -527,7 +538,6 @@ function describeFieldEn(field: TemplateContentField | string): string {
 
 function blockMissingCode(block: string): string {
   if (block === 'actionBlock') return TEMPLATE_ERROR_CODES.actionBlockRequired;
-  if (block === 'contactInformationBlock') return TEMPLATE_ERROR_CODES.requiredContactBlockMissing;
   return TEMPLATE_ERROR_CODES.requiredBlockMissing;
 }
 
@@ -537,8 +547,6 @@ function blockMissingMessageVi(block: string): string {
       return 'Mẫu này cần {{actionBlock}} — khu vực nút thao tác do hệ thống gắn khi gửi. Bỏ nó đi thì người nhận không có nút nào để bấm.';
     case 'setupSummaryBlock':
       return 'Mẫu này cần {{setupSummaryBlock}} — các bảng thông tin chuẩn bị do hệ thống dựng khi gửi. Bỏ nó đi thì email chỉ còn câu dẫn, không có nội dung cập nhật nào.';
-    case 'contactInformationBlock':
-      return 'Mẫu này cần {{contactInformationBlock}} — khối đầu mối liên hệ do hệ thống điền khi gửi. Nội dung email có câu bảo người nhận liên hệ, nên bỏ khối này thì họ được yêu cầu liên hệ mà không có địa chỉ nào. Nếu không muốn hiển thị, hãy đổi mức bắt buộc ở mục 4.';
     default:
       return `Mẫu này bắt buộc phải chứa khối hệ thống {{${block}}}.`;
   }
@@ -550,8 +558,6 @@ function blockMissingMessageEn(block: string): string {
       return 'This template needs {{actionBlock}} — the action area the system attaches when sending.';
     case 'setupSummaryBlock':
       return 'This template needs {{setupSummaryBlock}} — the setup tables the system builds when sending.';
-    case 'contactInformationBlock':
-      return 'This template needs {{contactInformationBlock}} — the reply-contact card the system fills in when sending. To leave it out, change the requirement level in contact settings.';
     default:
       return `This template must contain the system block {{${block}}}.`;
   }
@@ -559,24 +565,18 @@ function blockMissingMessageEn(block: string): string {
 
 /**
  * Substitutes system blocks with the inert sample markup the backend supplied, so the preview pane
- * shows the action buttons and the contact card a recipient would see instead of the literal text
- * `{{actionBlock}}`.
+ * shows the action buttons a recipient would see instead of the literal text `{{actionBlock}}`.
  *
  * The EDITOR keeps the placeholder — an operator has to be able to see and move it — so this runs only
- * on the copy being previewed. A block with no sample renders as nothing rather than as raw braces:
- * leaving `{{contactInformationBlock}}` visible in a preview reads as an unresolved variable, which is
- * the very confusion this work removes.
- *
- * @param extra Blocks resolved outside the contract, keyed by name — the contact block, whose markup
- *              depends on the policy toggles currently on screen.
+ * on the copy being previewed. A block with no sample renders as nothing rather than as raw braces,
+ * which would read as an unresolved variable.
  */
 export function applySystemBlocks(
   contract: TemplateContract,
   content: string,
-  extra: Record<string, string> = {},
 ): string {
   let out = content;
-  const samples = { ...contract.systemBlockPreviews, ...extra };
+  const samples = contract.systemBlockPreviews;
 
   for (const name of SYSTEM_BLOCK_NAMES) {
     const pattern = new RegExp(`(?:\\{\\{|%7B%7B)\\s*${name}\\s*(?:\\}\\}|%7D%7D)`, 'g');

@@ -25,13 +25,15 @@ namespace PEMS.IntegrationTests.Departments.AddNewDepartment;
 ///   server-populated — the handler always uses currentUser.PrimaryCampusId, always creates
 ///   DepartmentType=GENERAL, Status=ACTIVE, HeadUserId=null. There is no way for the caller to
 ///   target another campus or department type through this endpoint.
-/// - DepartmentsController has no [Authorize]/[RoleAuthorize] attribute at all; the Staff-Leader
-///   check happens only inside the handler via StaffLeaderDepartmentScope.EnsureStaffLeaderCampus.
-///   Confirmed real (and per the UC doc's own authorization rule, intentional) behavior: an
-///   anonymous caller is NOT challenged with 401 — the request reaches the handler, where
-///   IsAuthenticated is false, so it is rejected the same way as a wrong-role actor: 403
-///   Forbidden. This differs from the FAQ endpoints' 401-for-anonymous convention; tests below are
-///   named Anonymous_Forbidden (not Anonymous_Unauthorized) to match real, confirmed behavior.
+/// - Authorization moved in front of the handler on 2026-08-05. DepartmentsController now carries
+///   [Authorize] plus [RoleAuthorize(StaffLeader)] on the master-data actions, and the API has a
+///   fallback policy requiring an authenticated user. So an anonymous caller is challenged with 401
+///   (Anonymous_Unauthorized below) instead of reaching the handler and being refused as a wrong
+///   ACTOR — which also puts these endpoints back on the same 401-for-anonymous convention the FAQ
+///   endpoints always used, and the departure from it recorded here was never a decision, only a
+///   description of what the code happened to do.
+///   An authenticated wrong-role caller still gets 403 + DepartmentManagementForbidden, from the
+///   gate rather than from StaffLeaderDepartmentScope, which still guards the handler underneath.
 /// - Name is trimmed AND has internal repeated whitespace collapsed to one space before save
 ///   (Regex.Replace(name, @"\s+", " ")). Duplicate-name check is case-insensitive within the same
 ///   campus (Name.ToLower() comparison).
@@ -160,13 +162,24 @@ public sealed class AddNewDepartmentApiTests : IClassFixture<PemsWebApplicationF
     // the row would leak into pems_test permanently and pollute later runs (e.g. duplicate-name
     // checks, total-count assertions).
 
+    /// <summary>
+    /// No token means 401, not 403 — see SearchFilterDepartmentsApiTests.Anonymous_Unauthorized for why
+    /// this changed on 2026-08-05. This is the endpoint that CREATES a department, so the refusal is
+    /// checked against the table as well: an anonymous POST must leave nothing behind.
+    /// </summary>
     [Fact]
-    public async Task Anonymous_Forbidden()
+    public async Task Anonymous_Unauthorized()
     {
         var client = _factory.CreateClient();
         var name = $"{DatabaseResetHelper.AddDepartmentNamePrefix}anonymous {UniqueToken()}";
         var response = await client.PostAsJsonAsync(Url, new AddNewDepartmentCommand { Name = name });
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(
+            await db.Departments.AsNoTracking().AnyAsync(d => d.Name == name),
+            "an unauthenticated POST must not create a department");
     }
 
     [Fact]

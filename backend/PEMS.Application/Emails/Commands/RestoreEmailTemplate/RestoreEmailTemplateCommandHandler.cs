@@ -16,22 +16,14 @@ using PEMS.Domain.Enums;
 namespace PEMS.Application.Emails.Commands.RestoreEmailTemplate;
 
 /// <summary>
-/// Restores one template to the shipped defaults — its six operator-editable content fields AND its
-/// contact configuration — in one transaction, with an audit row recording what was replaced.
+/// Restores one template's six operator-editable content fields to the shipped defaults, with an audit
+/// row recording what was replaced.
 ///
 /// <para>
-/// <b>Why the contact policy is restored here too.</b> "Khôi phục mặc định" was two buttons, and the pair
-/// could not be pressed atomically: restoring the content put the shipped body back (with or without the
-/// contact placeholder, whichever the shipped wording has) while leaving a policy the operator had
-/// changed, so a template could land in exactly the contradiction both halves refuse — a shipped body
-/// carrying the block under a stored policy of NONE, or a shipped body without it under REQUIRED. Since
-/// the shipped content and the shipped policy are consistent with each other by construction, restoring
-/// them together is the only version of "restore" that always produces a valid template.
-/// </para>
-/// <para>
-/// Ordering matters within the transaction: the shipped policy is validated against the shipped BODIES,
-/// not against whatever the row currently holds, because the content write in this same transaction is
-/// about to replace them.
+/// It used to restore a contact configuration alongside the content, because the two could contradict
+/// each other — a shipped body carrying the contact block under a stored policy of NONE, and the reverse.
+/// There is no second thing to restore now: the shipped body either mentions the sender or it does not,
+/// and either way it is valid on its own.
 /// </para>
 /// </summary>
 public sealed class RestoreEmailTemplateCommandHandler
@@ -42,19 +34,13 @@ public sealed class RestoreEmailTemplateCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
-    private readonly PEMS.Application.Emails.Contact.IEmailContactPolicyStore _contactPolicies;
-    private readonly IMediator _mediator;
 
     public RestoreEmailTemplateCommandHandler(
         IApplicationDbContext context,
-        ICurrentUserService currentUser,
-        PEMS.Application.Emails.Contact.IEmailContactPolicyStore contactPolicies,
-        IMediator mediator)
+        ICurrentUserService currentUser)
     {
         _context = context;
         _currentUser = currentUser;
-        _contactPolicies = contactPolicies;
-        _mediator = mediator;
     }
 
     public async Task<RestoreEmailTemplateResponse> Handle(
@@ -67,20 +53,8 @@ public sealed class RestoreEmailTemplateCommandHandler
         if (template == null)
             throw new NotFoundException(nameof(PEMS.Domain.Entities.Emails.EmailTemplate), request.EmailTemplateId);
 
-        var capability = PEMS.Application.Emails.Contact.EmailContactCapabilities.For(template.TemplateCode);
-
         // ── 1. Only a registered system template can be restored ─────────────
-        // Judged against the SHIPPED contact requirement, because that is what this restore is about to
-        // write. Reading the currently-configured one — which is what happened while restore was two
-        // buttons — would validate the shipped body against a policy the same operation is replacing, and
-        // refuse a restore whose only fault was that the operator had previously changed the level.
-        var shippedContact = capability.Supported
-            ? PEMS.Application.Emails.Contact.EmailContactSettingsInput.ShippedFor(template.TemplateCode)
-            : null;
-
-        var contactRequirement = shippedContact?.Requirement ?? EmailContactRequirement.NONE;
-
-        var contract = EmailTemplateContracts.For(template.TemplateCode, contactRequirement);
+        var contract = EmailTemplateContracts.For(template.TemplateCode);
         if (contract is null)
         {
             throw new ConflictException(
@@ -125,15 +99,6 @@ public sealed class RestoreEmailTemplateCommandHandler
         if (issues.Any(i => i.IsError))
             throw new EmailTemplateContentException(issues);
 
-        // The shipped policy against the shipped bodies — the pair that will exist after the commit. A
-        // failure here is a defect in what this application ships, not in anything the operator did, and
-        // is worth refusing loudly rather than writing a template that no send could use.
-        if (shippedContact is not null)
-        {
-            PEMS.Application.Emails.Contact.EmailContactSettingsValidator.Validate(
-                template.TemplateCode, shippedContact, shipped.BodyVi, shipped.BodyEn);
-        }
-
         // ── 4. Conditional write + audit, together or not at all ─────────────
         // No trusted block is listed — see UpdateEmailTemplateCommandHandler for why.
         var variablesText = string.Join(",", contract.AllowedVariables
@@ -151,30 +116,6 @@ public sealed class RestoreEmailTemplateCommandHandler
             variablesText,
             _currentUser.UserId,
             cancellationToken);
-
-        // The policy, in the same transaction. Its previous values are snapshotted for the audit row
-        // below for the same reason the content is: an operator who restores by mistake has to be able to
-        // find out what their configuration used to be.
-        string? oldContactSnapshot = null;
-        string? newContactSnapshot = null;
-
-        if (shippedContact is not null)
-        {
-            var existing = await _context.EmailContactPolicies
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    p => p.ScopeType == EmailContactScopeType.TEMPLATE
-                         && p.ScopeKey == template.TemplateCode,
-                    cancellationToken);
-
-            oldContactSnapshot = existing is null ? null : ContactSnapshot(existing);
-
-            var row = await PEMS.Application.Emails.Contact.EmailContactPolicyWriter.ApplyAsync(
-                _context, template.TemplateCode, shippedContact,
-                _currentUser.UserId, written.UpdatedAt, cancellationToken);
-
-            newContactSnapshot = ContactSnapshot(row);
-        }
 
         // The replaced text is recorded, not just the fact of a restore: an operator who restores by
         // mistake needs their wording to still exist somewhere, and "content was reset" alone does not
@@ -209,44 +150,17 @@ public sealed class RestoreEmailTemplateCommandHandler
             },
         };
 
-        // A second change row rather than a second audit entry: one restore is one event, and splitting it
-        // in two would make the history read as though somebody had pressed two buttons — which is exactly
-        // the arrangement this replaces.
-        if (newContactSnapshot is not null)
-        {
-            audit.Changes.Add(new AuditLogChange
-            {
-                FieldName = "ContactSettings",
-                ValueFormat = "JSON",
-                DisplayOrder = 1,
-                OldValueText = oldContactSnapshot,
-                NewValueText = newContactSnapshot,
-                CreatedAt = written.UpdatedAt,
-            });
-        }
-
         _context.AuditLogs.Add(audit);
 
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-
-        var contactSettings = shippedContact is null
-            ? null
-            : await _mediator.Send(
-                new PEMS.Application.Emails.Contact.GetEmailContactSettingsQuery
-                {
-                    TemplateCode = template.TemplateCode,
-                },
-                cancellationToken);
 
         return new RestoreEmailTemplateResponse
         {
             EmailTemplateId = template.EmailTemplateId,
             TemplateCode = template.TemplateCode,
             Success = true,
-            Message = shippedContact is null
-                ? "Đã phục hồi nội dung mặc định của mẫu email."
-                : "Đã phục hồi nội dung và cấu hình thông tin liên hệ mặc định của mẫu email.",
+            Message = "Đã phục hồi nội dung mặc định của mẫu email.",
             Revision = written.Revision,
             UpdatedAt = written.UpdatedAt,
             Name = shipped.Name,
@@ -255,25 +169,8 @@ public sealed class RestoreEmailTemplateCommandHandler
             BodyVi = shipped.BodyVi,
             SubjectEn = shipped.SubjectEn,
             BodyEn = shipped.BodyEn,
-            ContactSettings = contactSettings,
-            ContactSettingsRestored = shippedContact is not null,
         };
     }
-
-    private static string ContactSnapshot(PEMS.Domain.Entities.Emails.EmailContactPolicy p)
-        => JsonSerializer.Serialize(new
-        {
-            p.Requirement,
-            p.ContactSource,
-            p.ShowEmail,
-            p.ShowPhone,
-            p.ShowDepartment,
-            p.ShowCampus,
-            p.ShowSender,
-            p.HeadingVi,
-            p.HeadingEn,
-            p.ReplyToSource,
-        });
 
     private static string Snapshot(
         string name, string? description,

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { delegationsApi } from '../api/delegationsApi';
 import { EmailPreviewModal, type EmailPreviewRecipient, type EmailPreviewSendPayload } from './EmailPreviewModal';
+import { participantScopeKey } from '../../emails/utils/emailScopeKey';
 import { stripLegacyActionHtml } from '../../emails/utils/actionLinks';
 import { SentEmailsModal } from './SentEmailsModal';
 import type {
@@ -198,13 +199,22 @@ export function ParticipantInvitationSection({
   type PreviewState = {
     open: boolean; loading: boolean; sending: boolean; restoring: boolean; error: string | null;
     templateCode: string; subject: string; body: string;
+    /** The assembled message VIEW shows — backend-composed, shell and action block included. */
+    initialFinalPreviewHtml: string;
     isActionTemplate: boolean; systemActionDescription: string | null; lockedActionBlockHtml: string | null;
     target: PreviewTarget | null;
+    /** Where a reply goes, as the backend resolved it from the sending account. */
+    replyToEmail: string | null;
+    /** True when this template's flow may offer "Chỉnh sửa" — capability, not wording. */
+    runtimeEditable: boolean;
+    /** Signed proof of the render, handed to final-preview when the Host edits. */
+    previewToken: string | null;
   };
   const EMPTY_PREVIEW: PreviewState = {
     open: false, loading: false, sending: false, restoring: false, error: null,
-    templateCode: '', subject: '', body: '',
+    templateCode: '', subject: '', body: '', initialFinalPreviewHtml: '',
     isActionTemplate: false, systemActionDescription: null, lockedActionBlockHtml: null, target: null,
+    replyToEmail: null, runtimeEditable: false, previewToken: null,
   };
   const [preview, setPreview] = useState<PreviewState>(EMPTY_PREVIEW);
 
@@ -232,19 +242,39 @@ export function ParticipantInvitationSection({
     };
   };
 
-  const applyTemplate = (res: import('../types/delegations.types').PreviewEmailTemplateResult) =>
+  const applyTemplate = (
+    res: import('../types/delegations.types').PreviewEmailTemplateResult,
+  ) =>
     setPreview((p) => ({
       ...p, open: true, loading: false, restoring: false, error: null,
-      subject: res.subject, body: stripLegacyActionHtml(res.bodyHtml),
+      subject: res.subject, body: stripLegacyActionHtml(res.editableBodyHtml),
+      // NOT stripped: this one is the assembled message, and its action block is the point of it.
+      initialFinalPreviewHtml: res.initialFinalPreviewHtml ?? '',
       isActionTemplate: res.isActionTemplate,
       systemActionDescription: res.systemActionDescription ?? null,
       lockedActionBlockHtml: res.lockedActionBlockHtml ?? null,
+      replyToEmail: res.replyToEmail ?? null,
+      runtimeEditable: !!res.runtimeEditable,
+      previewToken: res.previewToken ?? null,
     }));
+
+  /**
+   * The scope the send will recompute. Only a preview BOUND to a candidate is a real message: the
+   * panel-header "xem mẫu" links have no recipient, so they get no scope and no token, and the modal
+   * shows them read-only with no edit button.
+   */
+  const scopeFor = (target: PreviewTarget | null) =>
+    target?.payload.userId ? participantScopeKey(visitInstanceId, target.payload.userId) : null;
 
   const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
     setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({ templateCode, context: previewContext(target) });
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode,
+        context: previewContext(target),
+        visitInstanceId: target ? visitInstanceId : null,
+        scopeKey: scopeFor(target),
+      });
       applyTemplate(res);
     } catch (e: any) {
       setPreview((p) => ({ ...p, open: true, loading: false, error: apiError(e, 'Không thể tải bản xem trước email.') }));
@@ -261,7 +291,14 @@ export function ParticipantInvitationSection({
     if (!preview.templateCode) return;
     setPreview((p) => ({ ...p, restoring: true, error: null }));
     try {
-      const res = await delegationsApi.previewEmailTemplate({ templateCode: preview.templateCode, context: previewContext(preview.target) });
+      const res = await delegationsApi.previewEmailTemplate({
+        templateCode: preview.templateCode,
+        context: previewContext(preview.target),
+        visitInstanceId: preview.target ? visitInstanceId : null,
+        scopeKey: scopeFor(preview.target),
+      });
+      // A fresh preview, so a fresh token too: the wording the Host is about to approve is the wording
+      // this render produced, and reusing the previous token would bind them to the one they discarded.
       applyTemplate(res);
       pushToast('success', 'Đã khôi phục nội dung email theo mẫu gốc.');
     } catch {
@@ -273,13 +310,13 @@ export function ParticipantInvitationSection({
 
   const sendWithEditedContent = async (payload: EmailPreviewSendPayload) => {
     if (!preview.target) return;
-    if (!payload.subject.trim()) { pushToast('error', 'Tiêu đề email không được để trống.'); return; }
-    if (!payload.bodyHtml.trim()) { pushToast('error', 'Nội dung email không được để trống.'); return; }
     setPreview((p) => ({ ...p, sending: true }));
     try {
+      // approvedContent is absent when the Host read the preview and sent it unchanged — the backend
+      // then renders the template, exactly as it did before anybody could edit anything.
       const res = await delegationsApi.inviteVisitParticipant(visitInstanceId, {
         ...preview.target.payload,
-        emailOverride: { useEditedContent: true, subject: payload.subject.trim(), bodyHtml: payload.bodyHtml, attachments: payload.attachments },
+        approvedContent: payload.approvedContent,
       });
       {
         const who = res.emailRecipient ? `${preview.target.displayName} (${res.emailRecipient})` : preview.target.displayName;
@@ -557,10 +594,14 @@ export function ParticipantInvitationSection({
         error={preview.error}
         subject={preview.subject}
         body={preview.body}
+        initialFinalPreviewHtml={preview.initialFinalPreviewHtml}
         isActionTemplate={preview.isActionTemplate}
         systemActionDescription={preview.systemActionDescription}
         lockedActionBlockHtml={preview.lockedActionBlockHtml}
         recipient={preview.target?.recipient ?? null}
+        replyToEmail={preview.replyToEmail}
+        runtimeEditable={preview.runtimeEditable}
+        previewToken={preview.previewToken}
         canSend={!!preview.target}
         sendLabel="Mời với nội dung này"
         pushToast={pushToast}

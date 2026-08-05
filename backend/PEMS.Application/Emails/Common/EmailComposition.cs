@@ -348,7 +348,15 @@ public static class EmailComposition
         s = Regex.Replace(s, @">(?:\s|&nbsp;)*\|(?:\s|&nbsp;|\|)*<", "><", RegexOptions.IgnoreCase);
 
         // 5) Collapse a block (<p>/<div>) now holding only separators/whitespace.
-        s = Regex.Replace(s, @"<(p|div)(?:\s[^>]*)?>(?:\s|\||&nbsp;|&amp;|<br\s*/?>)*</\1>", string.Empty, RegexOptions.IgnoreCase);
+        //
+        //    The system-block node is EXEMPT, and the exemption is load-bearing: that node is an empty
+        //    <div> by design (see EmailSystemBlockNodes), so without the exclusion this step would delete
+        //    the author's chosen position for the action area and the block would fall back to being
+        //    appended at the end — reintroducing, silently, the exact defect the node exists to fix.
+        s = Regex.Replace(
+            s,
+            @"<(p|div)(?![^>]*\bdata-system-block\b)(?:\s[^>]*)?>(?:\s|\||&nbsp;|&amp;|<br\s*/?>)*</\1>",
+            string.Empty, RegexOptions.IgnoreCase);
 
         return s.Trim();
     }

@@ -2,6 +2,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 using PEMS.Application.Emails.Common;
+using PEMS.Application.Emails.Preview;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 using PEMS.UnitTests.TestInfrastructure;
@@ -34,7 +35,8 @@ public class PrepareVisitLogisticsCommandHandlerTests
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new PrepareVisitLogisticsCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object);
+            mocks.Storage.Object, mocks.Normalizer.Object, mocks.Notifications.Object,
+            new PEMS.UnitTests.TestInfrastructure.StubApprovedEmailContentResolver(mocks.Sanitizer.Object));
         return (db, handler, user, mocks, dispatcher);
     }
 
@@ -372,9 +374,9 @@ public class PrepareVisitLogisticsCommandHandlerTests
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "LED", "Welcome LED",
                 null, 1, "2026-08-01T08:00", "2026-08-01T12:00", "MEDIUM", null,
-                EmailOverride: new EmailOverride(
-                    UseEditedContent: true,
-                    Subject: "Nhờ phòng hỗ trợ màn LED sảnh A",
+                ApprovedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
+                Subject: "Nhờ phòng hỗ trợ màn LED sảnh A",
                     BodyHtml: "<p>Nhờ phòng chuẩn bị giúp màn LED sảnh A trước 7h30.</p>")),
             default);
 
@@ -396,8 +398,9 @@ public class PrepareVisitLogisticsCommandHandlerTests
             new PrepareVisitLogisticsCommand(
                 DelegationsTestData.VisitInstanceId, DeptId, "LED", "Welcome LED",
                 null, 1, null, null, "MEDIUM", null,
-                EmailOverride: new EmailOverride(
-                    UseEditedContent: true, Subject: "Nhờ phòng",
+                ApprovedContent: new ApprovedEmailContent(
+                FinalPreviewToken: "stub",
+                Subject: "Nhờ phòng",
                     BodyHtml: "<!-- PEMS_ACTION_BLOCK_START --><p>giả</p><!-- PEMS_ACTION_BLOCK_END -->")),
             default));
 

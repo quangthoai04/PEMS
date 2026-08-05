@@ -27,8 +27,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         public ulong LogisticsItemId { get; set; }
         public ulong AssigneeUserId { get; set; }
 
-        /// <summary>Optional Department-Leader-edited subject/body from the "Xem trước email" modal.</summary>
-        public EmailOverride? EmailOverride { get; set; }
+        /// <summary>
+        /// The message the Department Leader edited and approved in the FINAL preview, or null to send
+        /// the template.
+        /// </summary>
+        public PEMS.Application.Emails.Preview.ApprovedEmailContent? ApprovedContent { get; set; }
     }
 
     public class AssignRequestAssigneeCommandHandler : IRequestHandler<AssignRequestAssigneeCommand, bool>
@@ -45,14 +48,17 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
         private readonly IUserMutationLockService _lockService;
+        private readonly PEMS.Application.Emails.Preview.IApprovedEmailContentResolver _approvedContent;
 
         public AssignRequestAssigneeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService, IDateTimeService clock,
             ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens, IHtmlSanitizerService sanitizer,
             IFileStorageService storage, PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
             PEMS.Application.Notifications.Common.INotificationService notificationService,
-            IUserMutationLockService lockService)
+            IUserMutationLockService lockService,
+            PEMS.Application.Emails.Preview.IApprovedEmailContentResolver approvedContent)
         {
+            _approvedContent = approvedContent;
             _lockService = lockService;
             _context = context;
             _currentUserService = currentUserService;
@@ -119,8 +125,19 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 .FirstOrDefaultAsync(c => c.VisitInstanceId == l.VisitInstanceId, cancellationToken);
             // Đơn yêu cầu không bị chặn bởi các đơn yêu cầu hoặc thư mời khác trùng thời gian
 
-            var content = await ResolveContentAsync(request.EmailOverride, cancellationToken);
-            var attachInputs = OutboundEmailAttachments.From(request.EmailOverride);
+            // The scope names the logistics item and the assignee, so an approval prepared for one staff
+            // member cannot be replayed to hand the same wording to another.
+            var scopeKey = PEMS.Application.Emails.Preview.EmailPreviewFingerprint.Scope(
+                ("logisticsItem", l.LogisticsItemId),
+                ("assignee", request.AssigneeUserId));
+
+            var content = await _approvedContent.ResolveAsync(
+                request.ApprovedContent,
+                SystemEmailTemplates.LogisticsAssigneeAssignment,
+                scopeKey,
+                cancellationToken);
+
+            var attachInputs = _approvedContent.AttachmentsOf(request.ApprovedContent);
             await OutboundEmailAttachments.ValidateAsync(_context, userId, attachInputs, cancellationToken);
             var now = _clock.VietnamNow;
             // Mixed per-campus v2: the email uses THIS instance's detail name.
@@ -252,17 +269,6 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             return true;
         }
 
-        /// <summary>
-        /// Turns the optional Leader edit into a content mode. Validation and sanitising happen inside
-        /// <see cref="SystemEmailContent.AuthoredByUser.Create"/>, the only way to build the type.
-        /// </summary>
-        private async Task<SystemEmailContent> ResolveContentAsync(EmailOverride? ov, CancellationToken ct)
-        {
-            if (ov is null || !ov.UseEditedContent) return SystemEmailContent.FromTemplate.Instance;
-
-            var rawHtml = await _normalizer.NormalizeHtmlAsync(EmailComposition.ResolveEditableHtml(ov), ct);
-            return SystemEmailContent.AuthoredByUser.Create(ov.Subject, rawHtml, _sanitizer);
-        }
 
         /// <summary>Adds sent_email_attachments rows for a message the dispatcher has already written.</summary>
         private void AttachTo(ulong sentEmailId, System.Collections.Generic.IReadOnlyList<EmailComposeAttachmentInput> inputs, DateTime now)
