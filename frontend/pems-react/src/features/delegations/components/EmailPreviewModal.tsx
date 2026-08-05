@@ -26,9 +26,7 @@
  * inline in the recipient's client.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-// @ts-ignore - react-quill-new ships without bundled types in this project
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { EmailRichTextEditor } from '../../emails/components/EmailRichTextEditor';
 import {
   Eye, X, Loader2, AlertCircle, Send, Mail, RotateCcw, Paperclip, Pencil, ArrowLeft, CheckCircle2,
 } from 'lucide-react';
@@ -36,13 +34,6 @@ import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
 import { hasSystemActionNode, renderSystemActionNode } from '../../emails/utils/systemActionNode';
-import {
-  ACTION_BLOT_CLASS, fromEditorHtml, registerSystemActionBlot, toEditorHtml,
-} from '../../emails/utils/emailEditorSystemNodes';
-
-// Once, at module load, before any editor is constructed. Quill drops an element it has no blot for, so
-// registering late would mean the first message opened had its action position silently deleted.
-registerSystemActionBlot();
 import { delegationsApi } from '../api/delegationsApi';
 import type {
   EmailAttachmentRefInput,
@@ -121,14 +112,6 @@ export interface EmailPreviewModalProps {
   onSend: (payload: EmailPreviewSendPayload) => void;
 }
 
-const QUILL_MODULES_TOOLBAR = [
-  ['bold', 'italic', 'underline', 'strike'],
-  [{ align: [] }],
-  [{ list: 'ordered' }, { list: 'bullet' }],
-  ['link', 'image'],
-  ['clean'],
-];
-
 export function EmailPreviewModal({
   open, loading, sending, restoring, error, subject, body, isActionTemplate,
   systemActionDescription, lockedActionBlockHtml, recipient, replyToEmail,
@@ -145,7 +128,6 @@ export function EmailPreviewModal({
   const [finalToken, setFinalToken] = useState<string | null>(null);
   const [finalising, setFinalising] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
-  const quillRef = useRef<any>(null);
   const inlineMapRef = useRef<Map<string, { fileId: number; contentId: string }>>(new Map());
 
   // Reset everything whenever the modal (re)opens — it stays mounted between opens, and a stage or a
@@ -202,42 +184,32 @@ export function EmailPreviewModal({
     [attachments],
   );
 
-  // ── Inline image upload (quill toolbar image button) ──
-  const imageHandler = useCallback(() => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      setUploading(true);
-      try {
-        const uploaded = await filesApi.upload(file, 'EMAIL_INLINE');
-        const cid = contentIdForFile(uploaded.fileId);
-        const token = authStorage.getAccessToken();
-        const proxyUrl = `/api/files/${uploaded.fileId}/content?access_token=${token}`;
-        inlineMapRef.current.set(proxyUrl, { fileId: uploaded.fileId, contentId: cid });
-        const editor = quillRef.current?.getEditor?.();
-        const range = editor?.getSelection?.(true);
-        const index = range ? range.index : (editor?.getLength?.() ?? 0);
-        editor?.insertEmbed(index, 'image', proxyUrl, 'user');
-        editor?.setSelection(index + 1, 0);
-        invalidateApproval();
-      } catch (err: any) {
-        const status = err?.response?.status || 'Unknown';
-        const msg = err?.response?.data?.message || err?.message || 'Không có chi tiết lỗi';
-        pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
-      } finally {
-        setUploading(false);
-      }
-    };
-    input.click();
+  /**
+   * Uploads an inline image and returns the URL to embed. The shared editor does the inserting.
+   *
+   * The tracking map is still kept here rather than in the editor, because it is not an editing concern:
+   * on finalise each tracked `<img>` is rewritten to `cid:` and registered as an INLINE_IMAGE attachment,
+   * which is a fact about how THIS message is assembled and hashed, not about how it was typed.
+   */
+  const uploadInlineImage = useCallback(async (file: File): Promise<string> => {
+    setUploading(true);
+    try {
+      const uploaded = await filesApi.upload(file, 'EMAIL_INLINE');
+      const cid = contentIdForFile(uploaded.fileId);
+      const token = authStorage.getAccessToken();
+      const proxyUrl = `/api/files/${uploaded.fileId}/content?access_token=${token}`;
+      inlineMapRef.current.set(proxyUrl, { fileId: uploaded.fileId, contentId: cid });
+      invalidateApproval();
+      return proxyUrl;
+    } catch (err: any) {
+      const status = err?.response?.status || 'Unknown';
+      const msg = err?.response?.data?.message || err?.message || 'Không có chi tiết lỗi';
+      pushToast?.('error', `Lỗi tải ảnh [${status}]: ${msg}`);
+      throw err;
+    } finally {
+      setUploading(false);
+    }
   }, [pushToast, invalidateApproval]);
-
-  const modules = useMemo(
-    () => ({ toolbar: { container: QUILL_MODULES_TOOLBAR, handlers: { image: imageHandler } } }),
-    [imageHandler],
-  );
 
   const onPickFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -411,44 +383,19 @@ export function EmailPreviewModal({
                       Nội dung đã điền sẵn thông tin thật — kể cả phần thông tin người gửi. Anh/chị sửa
                       câu chữ tự do như văn bản bình thường.
                     </p>
-                    <div className="mt-1 rounded-xl border border-gray-200">
-                      <style>{`
-                        .ql-editor img {
-                          max-width: 560px;
-                          max-height: 420px;
-                          width: auto;
-                          height: auto;
-                          display: block;
-                          margin: 16px auto;
-                        }
-                        /* The action area, as an object the sender may drag but not type into. Styled to
-                           read as a system element rather than as text they are expected to reword. */
-                        .ql-editor .${ACTION_BLOT_CLASS} {
-                          margin: 16px 0;
-                          padding: 12px 14px;
-                          border: 1px dashed #f59e0b;
-                          border-radius: 10px;
-                          background: #fffbeb;
-                          color: #92400e;
-                          font-size: 12px;
-                          font-weight: 600;
-                          text-align: center;
-                          cursor: move;
-                          user-select: none;
-                        }
-                      `}</style>
-                      <ReactQuill
-                        ref={quillRef}
-                        theme="snow"
-                        // The body is held canonically in state and shown to Quill in the shape its blot
-                        // recognises. Converting on the way in and out keeps every other consumer — the
-                        // hash, the final preview, the send — reading one spelling of this document.
-                        value={toEditorHtml(body)}
-                        onChange={(v: string) => { onBodyChange(fromEditorHtml(v)); invalidateApproval(); }}
-                        placeholder="Soạn nội dung email..."
-                        modules={modules}
-                      />
-                    </div>
+                    {/* The shared editor, in COMPOSE mode: no variable picker (this text is already
+                        substituted) and no way to create a second action area, but full freedom to move
+                        the one that is there. It owns the canonical↔editor conversion, so `body` stays in
+                        the spelling the hash, the final preview and the send all read. */}
+                    <EmailRichTextEditor
+                      mode="COMPOSE"
+                      value={body}
+                      onChange={(html) => { onBodyChange(html); invalidateApproval(); }}
+                      onUploadImage={uploadInlineImage}
+                      onNotice={(message) => pushToast?.('warning', message)}
+                      placeholder="Soạn nội dung email..."
+                      minHeight={220}
+                    />
                   </div>
                 </>
               ) : (

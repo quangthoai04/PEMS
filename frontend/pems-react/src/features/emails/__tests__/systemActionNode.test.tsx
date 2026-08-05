@@ -10,7 +10,7 @@
  * the read-only stage draws the (disabled, tokenless) block over it.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { EmailPreviewModal } from '../../delegations/components/EmailPreviewModal';
 import {
   SYSTEM_ACTION_NODE,
@@ -117,6 +117,49 @@ describe('EmailPreviewModal VIEW stage', () => {
     await screen.findByTestId('view-body');
 
     expect(container.innerHTML.match(/NUT-PHAN-HOI/g) ?? []).toHaveLength(1);
+  });
+
+  /**
+   * The send modal's EDIT stage is the COMPOSE half of the shared editor (V4 §5.1, §18.3).
+   *
+   * It used to build its own five-button ReactQuill, separately from the template screen's. Two editors
+   * meant two answers to "may I centre this?", and the one that mattered was whichever the recipient's
+   * mail client rendered.
+   */
+  it('opens the shared editor, in COMPOSE mode, when the sender chooses to edit', async () => {
+    render(
+      <EmailPreviewModal
+        open
+        loading={false}
+        sending={false}
+        error={null}
+        subject="Chủ đề"
+        body={`<p>INTRO</p>${SYSTEM_ACTION_NODE}<p>SIGNATURE</p>`}
+        isActionTemplate
+        lockedActionBlockHtml='<div><span>NUT-PHAN-HOI</span></div>'
+        runtimeEditable
+        previewToken="tok"
+        canSend
+        sendLabel="Gửi"
+        onSubjectChange={vi.fn()}
+        onBodyChange={vi.fn()}
+        onClose={vi.fn()}
+        onSend={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Chỉnh sửa/ }));
+
+    // The shared toolbar, not the old five buttons.
+    expect(await screen.findByRole('toolbar', { name: /Định dạng nội dung email/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Căn giữa' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tăng thụt lề' })).toBeTruthy();
+
+    // COMPOSE withholds both: the text is already substituted, and the flow — not the sender — decides
+    // whether this message has an action area at all.
+    expect(screen.queryByRole('button', { name: 'Chèn biến' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Chèn khối nút phản hồi' })).toBeNull();
   });
 
   it('falls back to the panel when the body carries no node', async () => {
