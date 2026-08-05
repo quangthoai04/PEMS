@@ -81,6 +81,50 @@ public class MovableActionBlockTests
         Assert.Equal(Block, result);
     }
 
+    /// <summary>
+    /// The editor draws a human-readable label inside its copy of the node so the sender can see what they
+    /// are dragging. The frontend normalises that away before sending — but if it ever failed to, the
+    /// worst outcome available is that the node stops matching here: the block would be appended at the
+    /// end instead, AND the editor's own label would be delivered to the recipient as part of the message.
+    ///
+    /// <para>
+    /// So the pattern deliberately matches a node WITH text in it, and consumes that text along with the
+    /// node. The label is a rendering affordance, never content.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_node_still_carrying_the_editor_label_is_matched_and_the_label_consumed()
+    {
+        const string EditorForm =
+            "<div class=\"pems-system-action-block\" data-system-block=\"action\" contenteditable=\"false\">"
+            + "Khối nút phản hồi — hệ thống tự gắn khi gửi</div>";
+
+        Assert.True(EmailSystemBlockNodes.HasActionNode(EditorForm));
+        Assert.Equal(1, EmailSystemBlockNodes.CountActionNodes(EditorForm));
+
+        Assert.True(EmailSystemBlockNodes.TrySubstituteActionNode(
+            "<p>Xin chào,</p>" + EditorForm + "<p>Trân trọng,</p>", Block, out var result));
+
+        Assert.Contains(Block, result);
+        Assert.DoesNotContain("Khối nút phản hồi", result);
+        Assert.DoesNotContain("pems-system-action-block", result);
+    }
+
+    /// <summary>
+    /// The content of a node is TEXT, never nested markup — so the pattern uses <c>[^&lt;]*</c>. A lazy
+    /// any-character match would stop at the first inner <c>&lt;/div&gt;</c> and strand its closing tag in
+    /// the message.
+    /// </summary>
+    [Fact]
+    public void A_div_that_merely_contains_the_node_is_not_itself_consumed()
+    {
+        var wrapped = "<div class=\"wrap\">" + EmailSystemBlockNodes.ActionNodeHtml + "</div>";
+
+        Assert.True(EmailSystemBlockNodes.TrySubstituteActionNode(wrapped, Block, out var result));
+
+        Assert.Equal("<div class=\"wrap\">" + Block + "</div>", result);
+    }
+
     // ── One, and only one ────────────────────────────────────────────────────
 
     [Fact]

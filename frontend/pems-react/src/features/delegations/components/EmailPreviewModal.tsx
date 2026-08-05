@@ -36,6 +36,13 @@ import { filesApi } from '../../../shared/api/filesApi';
 import { authStorage } from '../../../shared/auth/authStorage';
 import { contentIdForFile } from '../../emails/utils/inlineImages';
 import { hasSystemActionNode, renderSystemActionNode } from '../../emails/utils/systemActionNode';
+import {
+  ACTION_BLOT_CLASS, fromEditorHtml, registerSystemActionBlot, toEditorHtml,
+} from '../../emails/utils/emailEditorSystemNodes';
+
+// Once, at module load, before any editor is constructed. Quill drops an element it has no blot for, so
+// registering late would mean the first message opened had its action position silently deleted.
+registerSystemActionBlot();
 import { delegationsApi } from '../api/delegationsApi';
 import type {
   EmailAttachmentRefInput,
@@ -414,12 +421,30 @@ export function EmailPreviewModal({
                           display: block;
                           margin: 16px auto;
                         }
+                        /* The action area, as an object the sender may drag but not type into. Styled to
+                           read as a system element rather than as text they are expected to reword. */
+                        .ql-editor .${ACTION_BLOT_CLASS} {
+                          margin: 16px 0;
+                          padding: 12px 14px;
+                          border: 1px dashed #f59e0b;
+                          border-radius: 10px;
+                          background: #fffbeb;
+                          color: #92400e;
+                          font-size: 12px;
+                          font-weight: 600;
+                          text-align: center;
+                          cursor: move;
+                          user-select: none;
+                        }
                       `}</style>
                       <ReactQuill
                         ref={quillRef}
                         theme="snow"
-                        value={body}
-                        onChange={(v: string) => { onBodyChange(v); invalidateApproval(); }}
+                        // The body is held canonically in state and shown to Quill in the shape its blot
+                        // recognises. Converting on the way in and out keeps every other consumer — the
+                        // hash, the final preview, the send — reading one spelling of this document.
+                        value={toEditorHtml(body)}
+                        onChange={(v: string) => { onBodyChange(fromEditorHtml(v)); invalidateApproval(); }}
                         placeholder="Soạn nội dung email..."
                         modules={modules}
                       />
@@ -495,14 +520,15 @@ export function EmailPreviewModal({
                   <p className="mt-1 text-[12px] text-amber-700/90">
                     {systemActionDescription || 'Nút Chấp nhận/Từ chối sẽ được hệ thống tự gắn khi gửi email.'}
                   </p>
-                  {/* Printed here only when the body is NOT already showing it in position. In
-                      FINAL_PREVIEW the assembled body contains the real thing, and in VIEW the node is
-                      substituted inline — in either case a second copy would suggest the recipient gets
-                      two sets of buttons. EDIT still needs it: the editor does not yet render the node,
-                      so this panel is where the sender sees which buttons the message carries. */}
+                  {/* Printed here only when the message is NOT already showing the action area in
+                      position: FINAL_PREVIEW carries the assembled block, VIEW substitutes it inline, and
+                      EDIT renders it as a draggable object. A second copy in any of those cases would
+                      suggest the recipient gets two sets of buttons. The panel remains the fallback for a
+                      body with no node — content prepared before the node existed, where the sender still
+                      needs to know which buttons the message carries. */}
                   {lockedActionBlockHtml
                     && stage !== 'FINAL_PREVIEW'
-                    && !(stage === 'VIEW' && hasSystemActionNode(body)) && (
+                    && !hasSystemActionNode(body) && (
                     <div
                       className="mt-2 rounded-lg border border-amber-200 bg-white p-2 opacity-80 pointer-events-none select-none"
                       dangerouslySetInnerHTML={{ __html: sanitizeHtml(lockedActionBlockHtml) }}

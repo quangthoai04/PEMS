@@ -50,9 +50,22 @@ public static class EmailSystemBlockNodes
     /// been through Quill's serialiser and the sanitiser, either of which may reorder attributes or add a
     /// class. Refusing those would report "you removed the button" to an author who moved it correctly.
     /// </para>
+    /// <para>
+    /// <b>Text inside the node is matched and consumed.</b> The canonical node is empty, but the editor
+    /// draws a human-readable label inside its copy ("Khối nút phản hồi — hệ thống tự gắn khi gửi") so the
+    /// sender can see what they are dragging. The frontend normalises that away before sending; this
+    /// pattern tolerates it anyway, because the failure mode otherwise is the worst one available — the
+    /// node would not match, the block would be appended at the end instead, and the editor's own label
+    /// would be delivered to the recipient as part of the message.
+    /// </para>
+    /// <para>
+    /// <c>[^&lt;]*</c> rather than <c>.*?</c>: the content is text, never nested markup, and a lazy
+    /// any-character match would stop at the first <c>&lt;/div&gt;</c> of a nested block and leave a
+    /// stray closing tag behind.
+    /// </para>
     /// </summary>
     private static readonly Regex ActionNodePattern = new(
-        @"<div\b[^>]*\bdata-system-block\s*=\s*(?:""action""|'action'|action)[^>]*>\s*</div\s*>",
+        @"<div\b[^>]*\bdata-system-block\s*=\s*(?:""action""|'action'|action)[^>]*>[^<]*</div\s*>",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     /// <summary>The canonical injected block, START…END, as one span.</summary>

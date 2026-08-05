@@ -11,6 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { EmailPreviewModal } from '../../delegations/components/EmailPreviewModal';
 import {
   SYSTEM_ACTION_NODE,
   countSystemActionNodes,
@@ -73,12 +74,12 @@ describe('systemActionNode', () => {
 });
 
 describe('EmailPreviewModal VIEW stage', () => {
+  // Statically imported, and deliberately NOT behind vi.resetModules() + a dynamic import. That
+  // combination made these two tests fail roughly one run in four: resetting the registry mid-suite while
+  // the modal pulls in a real Quill lets the component under test and the helpers it calls resolve to
+  // different copies of the same module, so the node the test wrote was not the node the component looked
+  // for. Nothing here needs a mock — VIEW touches no auth and no editor.
   const renderModal = async (body: string) => {
-    vi.resetModules();
-    vi.doMock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 't' } }));
-
-    const { EmailPreviewModal } = await import('../../delegations/components/EmailPreviewModal');
-
     return render(
       <EmailPreviewModal
         open

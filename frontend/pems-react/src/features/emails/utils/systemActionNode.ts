@@ -21,7 +21,10 @@ export const SYSTEM_ACTION_NODE = '<div data-system-block="action"></div>';
  * Matches one action node however the sanitiser or editor respelled its attributes.
  * Mirrors `EmailSystemBlockNodes.ActionNodePattern` on the backend.
  */
-const ACTION_NODE = /<div\b[^>]*\bdata-system-block\s*=\s*(?:"action"|'action'|action)[^>]*>\s*<\/div\s*>/gi;
+// Tolerates text INSIDE the node, which is how the editor's copy carries its visible label. All three
+// copies of this pattern — here, `emailEditorSystemNodes.ts`, and `EmailSystemBlockNodes` on the backend —
+// must agree, or a node one of them can see becomes a node another silently ignores.
+const ACTION_NODE = /<div\b[^>]*\bdata-system-block\s*=\s*(?:"action"|'action'|action)[^>]*>[^<]*<\/div\s*>/gi;
 
 /** True when the body carries a system action node. */
 export function hasSystemActionNode(html: string | null | undefined): boolean {
