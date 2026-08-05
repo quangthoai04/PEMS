@@ -33,13 +33,24 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
   },
 }));
 
-// react-quill-new pulls in a DOM range API jsdom does not implement; the editor's behaviour is not
-// what these tests are about.
-vi.mock('react-quill-new', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <textarea data-testid="quill" value={value} onChange={e => onChange(e.target.value)} />
-  ),
-}));
+// The editor's own behaviour is not what these tests are about — they are about the screen around it.
+// Doubled at the SHARED component the screen renders, so its internals are not half-running against a
+// stub. Real-editor behaviour is covered by EmailRichTextEditor.test.tsx and emailEditorNodes.test.ts.
+vi.mock('../../../features/emails/components/EmailRichTextEditor', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+  return {
+    EmailRichTextEditor: React.forwardRef((
+      { value, onChange }: { value: string; onChange: (v: string) => void },
+      ref: React.Ref<unknown>,
+    ) => {
+      React.useImperativeHandle(ref, () => ({
+        insertVariable: (v: { name: string }) => onChange(`${value}{{${v.name}}}`),
+        isReady: () => true,
+      }), [value, onChange]);
+      return <textarea data-testid="quill" value={value} onChange={e => onChange(e.target.value)} />;
+    }),
+  };
+});
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));
 
 import { TemplateManagement } from '../../../pages/dashboard/emails/TemplateManagement';

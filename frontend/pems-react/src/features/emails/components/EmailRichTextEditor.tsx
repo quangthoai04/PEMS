@@ -23,14 +23,16 @@
  * <b>The backend is still the authority.</b> Everything here runs again server-side before anything is
  * hashed, previewed or sent. This layer exists so the sender sees the cleaned result while editing.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
+} from 'react';
 // @ts-ignore - react-quill-new ships without bundled types in this project
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import {
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight,
   List, ListOrdered, IndentDecrease, IndentIncrease, Link2, ImageIcon, Minus, Eraser,
-  Maximize2, Minimize2, Braces, MousePointerClick, Baseline, PaintBucket,
+  Maximize2, Minimize2, Braces, MousePointerClick, Baseline, PaintBucket, Table as TableIcon,
 } from 'lucide-react';
 import {
   DIVIDER_BLOT_NAME, EMAIL_EDITOR_FORMATS, EMAIL_FONTS, EMAIL_INDENTS, EMAIL_SIZES,
@@ -42,6 +44,12 @@ import {
 import { SPACE_RUN_WARNING, hasSpaceRun, sanitizePastedFragment } from '../utils/emailEditorPaste';
 import { fromEditorHtml, toEditorHtml } from '../utils/emailEditorSystemNodes';
 import { countSystemActionNodes } from '../utils/systemActionNode';
+import {
+  VARIABLE_CHIP_CLASS, chipsToVariables, variablesToChips,
+} from '../utils/emailEditorVariableChips';
+import {
+  TABLE_WRAPPER_CLASS, buildEmailTable, nodesToTables, tablesToNodes,
+} from '../utils/emailEditorTable';
 
 // Before any editor is constructed: Quill drops what it has no blot for, so a late registration means the
 // first document opened loses its action block and its dividers.
@@ -102,10 +110,24 @@ function TB({
 
 const SEP = <span className="mx-1 h-5 w-px shrink-0 bg-gray-200" aria-hidden="true" />;
 
-export function EmailRichTextEditor({
+/**
+ * What a host screen may ask the editor to do from outside it.
+ *
+ * Exists for one real case: the template screen has its own variable sidebar, listing each variable with
+ * the description from the template's contract. That list is worth more than the compact picker in the
+ * toolbar, so the screen keeps it — and needs a way to say "put this one where the caret was".
+ */
+export interface EmailRichTextEditorHandle {
+  /** Inserts a variable chip at the last known caret, replacing a selection if there was one. */
+  insertVariable: (variable: EmailEditorVariable) => void;
+  /** True when a live editor is attached — false under a mocked one, where the host must fall back. */
+  isReady: () => boolean;
+}
+
+export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRichTextEditorProps>(({
   mode, value, onChange, capabilities, variables, placeholder,
   onUploadImage, onNotice, disabled, minHeight = 240, 'data-testid': testId,
-}: EmailRichTextEditorProps) {
+}: EmailRichTextEditorProps, ref) => {
   const caps = useMemo(
     () => ({ ...capabilitiesFor(mode), ...(capabilities ?? {}) }),
     [mode, capabilities],
@@ -115,6 +137,16 @@ export function EmailRichTextEditor({
   const [fullscreen, setFullscreen] = useState(false);
   const [active, setActive] = useState<Record<string, any>>({});
   const [showVariables, setShowVariables] = useState(false);
+
+  /**
+   * The last caret the editor actually had.
+   *
+   * Clicking anything outside the editor — a toolbar button, a chip in the host's sidebar — blurs it, and
+   * by the time the handler runs `getSelection()` reports null. Asking for it with the force flag would
+   * FOCUS the editor and answer 0, which silently moves the insert to the top of the document. So the
+   * position is remembered while it is still true, and a null range is ignored rather than stored.
+   */
+  const lastRange = useRef<{ index: number; length: number } | null>(null);
 
   const editor = useCallback(() => quillRef.current?.getEditor?.(), []);
 
@@ -215,15 +247,54 @@ export function EmailRichTextEditor({
     });
   }, [value, withEditor, onNotice]);
 
-  const insertVariable = useCallback((name: string) => {
+  /**
+   * Inserts a variable as an atomic CHIP, not as the characters `{{name}}`.
+   *
+   * Typed characters are editable as characters: an operator can delete one brace, correct the spelling
+   * to something the renderer does not know, or paste half of it — and each of those surfaces at SEND
+   * time, in front of a recipient. A chip can only be inserted or deleted whole.
+   */
+  const insertVariable = useCallback((v: EmailEditorVariable) => {
     setShowVariables(false);
+    const q = editor();
+    if (!q) return;
+
+    // The remembered caret, not a forced one — see `lastRange`. A selected range is REPLACED, which is
+    // what every other editor does with a paste.
+    const at = lastRange.current ?? { index: 0, length: 0 };
+    const index = Math.min(at.index, Math.max(0, q.getLength() - 1));
+    if (at.length > 0) q.deleteText(index, at.length, 'user');
+
+    q.insertEmbed(index, 'pemsVariable', { name: v.name, label: v.label }, 'user');
+    q.setSelection(index + 1, 0);
+    lastRange.current = { index: index + 1, length: 0 };
+    setActive(q.getFormat() ?? {});
+  }, [editor]);
+
+  useImperativeHandle(ref, () => ({
+    insertVariable,
+    isReady: () => !!editor(),
+  }), [insertVariable, editor]);
+
+  const insertTable = useCallback(() => {
+    // eslint-disable-next-line no-alert
+    const raw = window.prompt('Kích thước bảng (số hàng x số cột), ví dụ 3x2:', '3x2');
+    if (raw === null) return;
+
+    const match = /^\s*(\d+)\s*[xX*]\s*(\d+)\s*$/.exec(raw);
+    if (!match) {
+      onNotice?.('Kích thước bảng không hợp lệ. Nhập theo dạng "3x2".');
+      return;
+    }
+
+    const html = buildEmailTable(Number(match[1]), Number(match[2]));
     withEditor((q) => {
       const range = q.getSelection(true);
       const index = range ? range.index : q.getLength();
-      q.insertText(index, `{{${name}}}`, 'user');
-      q.setSelection(index + name.length + 4, 0);
+      q.insertEmbed(index, 'pemsEmailTable', html, 'user');
+      q.setSelection(index + 1, 0);
     });
-  }, [withEditor]);
+  }, [withEditor, onNotice]);
 
   const clearFormatting = useCallback(() => {
     withEditor((q) => {
@@ -237,9 +308,13 @@ export function EmailRichTextEditor({
   // once, which is where `position`/hidden-content rules are cheapest to apply correctly.
   useEffect(() => {
     const q = editor();
-    if (!q) return undefined;
+    // `q.root` is Quill's contenteditable element. Checked rather than assumed: a stand-in editor (the
+    // mocked one several screens' tests use) answers `getEditor()` with an object that has no root, and
+    // an unguarded addEventListener there takes the whole screen down — the editor is not the only thing
+    // on it, and a paste refinement is no reason for a template screen to fail to render.
+    const node: HTMLElement | undefined = q?.root;
+    if (!q || !node || typeof node.addEventListener !== 'function') return undefined;
 
-    const node: HTMLElement = q.root;
     const onPaste = (e: ClipboardEvent) => {
       const html = e.clipboardData?.getData('text/html');
       if (!html) return;    // plain text needs no cleaning; let Quill handle it
@@ -266,11 +341,34 @@ export function EmailRichTextEditor({
     clipboard: { matchVisual: false },
   }), []);
 
-  const handleChange = useCallback((html: string) => {
-    onChange(fromEditorHtml(html));
-  }, [onChange]);
+  /**
+   * The two conversions that keep ONE spelling of a document in the host's hands.
+   *
+   * Stored form is what the renderer, the hash, the final preview and the send all read: `{{name}}`
+   * placeholders, bare `<table>`s, and the canonical action node. Editor form is what Quill's blots
+   * recognise: chips carrying a label, tables wrapped in their atomic node, the action node classed so
+   * Parchment matches it. Neither side ever sees the other's spelling.
+   */
+  const labelOf = useCallback(
+    (name: string) => variables?.find((v) => v.name === name)?.label,
+    [variables],
+  );
 
-  const editorHtml = useMemo(() => toEditorHtml(value), [value]);
+  const toEditor = useCallback(
+    (stored: string) => tablesToNodes(variablesToChips(toEditorHtml(stored), labelOf)),
+    [labelOf],
+  );
+
+  const fromEditor = useCallback(
+    (html: string) => fromEditorHtml(nodesToTables(chipsToVariables(html))),
+    [],
+  );
+
+  const handleChange = useCallback((html: string) => {
+    onChange(fromEditor(html));
+  }, [onChange, fromEditor]);
+
+  const editorHtml = useMemo(() => toEditor(value), [value, toEditor]);
 
   const groupClass = 'flex flex-wrap items-center gap-0.5';
   const selectClass = 'h-8 rounded-lg border border-gray-200 bg-white px-1.5 text-xs text-gray-700 outline-none focus:border-[#004c91]';
@@ -358,6 +456,7 @@ export function EmailRichTextEditor({
         {caps.allowImages && onUploadImage && (
           <TB onClick={insertImage} title="Chèn ảnh" disabled={disabled}><ImageIcon className="h-4 w-4" /></TB>
         )}
+        <TB onClick={insertTable} title="Chèn bảng" disabled={disabled}><TableIcon className="h-4 w-4" /></TB>
         <TB onClick={insertDivider} title="Chèn đường kẻ ngang" disabled={disabled}><Minus className="h-4 w-4" /></TB>
         <TB onClick={clearFormatting} title="Xóa định dạng" disabled={disabled}><Eraser className="h-4 w-4" /></TB>
 
@@ -378,7 +477,7 @@ export function EmailRichTextEditor({
                   <button
                     key={v.name}
                     type="button"
-                    onClick={() => insertVariable(v.name)}
+                    onClick={() => insertVariable(v)}
                     className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
                   >
                     <span className="font-semibold">{v.label}</span>
@@ -403,6 +502,28 @@ export function EmailRichTextEditor({
           .pems-email-editor .ql-container { border: none; font-family: Arial, sans-serif; }
           .pems-email-editor .ql-editor img { max-width: 560px; height: auto; display: block; margin: 16px auto; }
           .pems-email-editor .ql-editor hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+          /* A variable reads as an object, not as text somebody is invited to correct. */
+          .pems-email-editor .ql-editor .${VARIABLE_CHIP_CLASS} {
+            display: inline-block;
+            padding: 1px 8px;
+            margin: 0 1px;
+            border-radius: 999px;
+            background: #e0edff;
+            color: #0f3d67;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            user-select: none;
+          }
+          /* The table is atomic here: what was loaded is what is saved, so it must not look editable. */
+          .pems-email-editor .ql-editor .${TABLE_WRAPPER_CLASS} {
+            margin: 16px 0;
+            padding: 4px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            user-select: none;
+          }
+          .pems-email-editor .ql-editor .${TABLE_WRAPPER_CLASS} table { width: 100%; }
           .pems-email-editor .ql-editor .pems-system-action-block {
             margin: 16px 0; padding: 12px 14px;
             border: 1px dashed #f59e0b; border-radius: 10px; background: #fffbeb;
@@ -417,7 +538,12 @@ export function EmailRichTextEditor({
             readOnly={disabled}
             value={editorHtml}
             onChange={handleChange}
-            onChangeSelection={() => setActive(editor()?.getFormat() ?? {})}
+            onChangeSelection={(range: { index: number; length: number } | null) => {
+              // Ignore null: that is the blur a toolbar click causes, and storing it would erase the
+              // position the insert is about to need, one event before it needs it.
+              if (range) lastRange.current = { index: range.index, length: range.length };
+              setActive(editor()?.getFormat() ?? {});
+            }}
             placeholder={placeholder ?? 'Soạn nội dung email...'}
             modules={modules}
             formats={EMAIL_EDITOR_FORMATS}
@@ -426,4 +552,6 @@ export function EmailRichTextEditor({
       </div>
     </div>
   );
-}
+});
+
+EmailRichTextEditor.displayName = 'EmailRichTextEditor';

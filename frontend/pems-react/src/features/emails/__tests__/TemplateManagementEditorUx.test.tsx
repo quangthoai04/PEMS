@@ -31,80 +31,40 @@ vi.mock('../../../features/emails/api/emailsApi', () => ({
 }));
 
 /**
- * A Quill stand-in with the parts `insertVariable` actually uses.
+ * What the screen asked the body editor to insert.
  *
- * The other suites mock the editor as a bare textarea, which is right for tests about validation — but
- * useless here, because the whole point is WHERE the token lands inside the document. This one keeps a
- * text model, honours a selection, and exposes the same five methods the component calls, so an insert
- * at index 6 can be asserted as an insert at index 6 rather than as "onChange fired".
+ * The screen no longer manipulates the document: it calls `insertVariable` on the shared editor, which
+ * owns the caret. So the assertion available here — and the honest one — is about the REQUEST, not about
+ * the resulting html. Where the token actually lands is asserted against a real Quill in
+ * `EmailRichTextEditor.test.tsx`.
  */
-let liveEditor: {
-  select: (index: number, length?: number) => void;
-  blur: () => void;
-  text: () => string;
-} | null = null;
+let inserted: { name: string; label: string }[] = [];
 
-vi.mock('react-quill-new', async () => {
-  const { forwardRef, useImperativeHandle, useRef } = await import('react');
+/** Lets one test drive the "no live editor attached" fallback. */
+let editorReady = true;
 
-  type Props = {
-    value: string;
-    onChange: (v: string, delta: unknown, source: string) => void;
-    onChangeSelection?: (range: { index: number; length: number } | null) => void;
+vi.mock('../../../features/emails/components/EmailRichTextEditor', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+
+  return {
+    EmailRichTextEditor: React.forwardRef((
+      { value, onChange }: { value: string; onChange: (v: string) => void },
+      ref: React.Ref<unknown>,
+    ) => {
+      React.useImperativeHandle(ref, () => ({
+        insertVariable: (v: { name: string; label: string }) => { inserted.push(v); },
+        isReady: () => editorReady,
+      }), [value, onChange]);
+
+      return (
+        <textarea
+          data-testid="quill"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+      );
+    }),
   };
-
-  const QuillMock = forwardRef<unknown, Props>(({ value, onChange, onChangeSelection }, ref) => {
-    // Mutated in place by insertText/deleteText so `root.innerHTML` reflects the edit within the same
-    // call — exactly as Quill does, and what the component reads to update its form state.
-    const model = useRef({ text: value ?? '' });
-    model.current.text = value ?? '';
-    const selection = useRef<{ index: number; length: number } | null>(null);
-
-    useImperativeHandle(ref, () => ({
-      getEditor: () => ({
-        getSelection: () => selection.current,
-        getLength: () => model.current.text.length + 1,
-        insertText(index: number, text: string) {
-          const t = model.current.text;
-          model.current.text = t.slice(0, index) + text + t.slice(index);
-        },
-        deleteText(index: number, length: number) {
-          const t = model.current.text;
-          model.current.text = t.slice(0, index) + t.slice(index + length);
-        },
-        setSelection(index: number, length = 0) {
-          selection.current = { index, length };
-        },
-        focus: () => {},
-        get root() {
-          return { get innerHTML() { return model.current.text; } };
-        },
-      }),
-    }));
-
-    liveEditor = {
-      select: (index: number, length = 0) => {
-        selection.current = { index, length };
-        onChangeSelection?.({ index, length });
-      },
-      // What clicking a chip does: Quill reports a null range as it loses the focus.
-      blur: () => {
-        selection.current = null;
-        onChangeSelection?.(null);
-      },
-      text: () => model.current.text,
-    };
-
-    return (
-      <textarea
-        data-testid="quill"
-        value={value}
-        onChange={e => onChange(e.target.value, null, 'user')}
-      />
-    );
-  });
-
-  return { default: QuillMock };
 });
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));
 
@@ -168,7 +128,8 @@ async function openEditor(bodyVi: string, bodyEn: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  liveEditor = null;
+  inserted = [];
+  editorReady = true;
   getEmailTemplateList.mockResolvedValue({
     data: { items: [{ emailTemplateId: 7, templateCode: 'ACCOUNT_ROLE_CHANGED', name: 'Thay đổi vai trò', description: '' }], totalItems: 1 },
   });
@@ -240,44 +201,45 @@ describe('TemplateManagement — variables land at the caret', () => {
     await waitFor(() => expect(subjectInput().value).toBe('Vai trò của bạn đã thay đổi'));
   });
 
-  it('inserts into the body at the remembered caret after the editor has lost focus', async () => {
+  /**
+   * WHERE a variable lands inside the body is no longer this screen's responsibility.
+   *
+   * The caret, the selection-replacement and the null-range-on-blur rule all moved into
+   * `EmailRichTextEditor`, which has to track them for its own toolbar anyway — one copy of that rule
+   * instead of two that can disagree. Those behaviours are now tested against a REAL Quill in
+   * `EmailRichTextEditor.test.tsx`; a hand-written text model, however careful, could only ever confirm
+   * the model.
+   *
+   * What remains this screen's job, and is asserted here: routing the click to the BODY editor rather
+   * than the subject, and passing the variable's human label along with its name.
+   */
+  it('asks the body editor to insert, rather than editing the html itself', async () => {
     await openEditor(BODY_VI, BODY_EN);
-    expect(liveEditor).not.toBeNull();
 
-    // Caret inside the paragraph, then the chip steals the focus and Quill reports a null range.
-    liveEditor!.select(3, 0);
-    liveEditor!.blur();
-
+    // Focus the body, so the screen routes there rather than to the subject.
+    fireEvent.focus(screen.getByTestId('quill'));
     insertFullName();
 
-    await waitFor(() =>
-      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}}Chào bạn.</p>'));
+    await waitFor(() => expect(inserted).toEqual([{ name: 'fullName', label: 'Họ tên' }]));
   });
 
-  it('replaces a selected run in the body', async () => {
-    await openEditor(BODY_VI, BODY_EN);
+  it('falls back to the head of the body when no editor is attached', async () => {
+    editorReady = false;
+    try {
+      await openEditor(BODY_VI, BODY_EN);
+      fireEvent.focus(screen.getByTestId('quill'));
 
-    // Select "Chào" (indices 3..7).
-    liveEditor!.select(3, 4);
-    liveEditor!.blur();
+      insertFullName();
 
-    insertFullName();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('quill')).toHaveValue('<p>{{fullName}} bạn.</p>'));
-  });
-
-  it('does not append to the end when nothing has been focused', async () => {
-    await openEditor(BODY_VI, BODY_EN);
-
-    insertFullName();
-
-    // The head of the body, which is visible and movable — never the tail, which is where the token
-    // used to disappear to.
-    await waitFor(() => {
-      const body = (screen.getByTestId('quill') as HTMLTextAreaElement).value;
-      expect(body.startsWith('{{fullName}}')).toBe(true);
-      expect(body.endsWith('{{fullName}}')).toBe(false);
-    });
+      // The head, which is visible and movable — never the tail, which is where the token used to
+      // disappear to below the fold.
+      await waitFor(() => {
+        const body = (screen.getByTestId('quill') as HTMLTextAreaElement).value;
+        expect(body.startsWith('{{fullName}}')).toBe(true);
+        expect(body.endsWith('{{fullName}}')).toBe(false);
+      });
+    } finally {
+      editorReady = true;
+    }
   });
 });

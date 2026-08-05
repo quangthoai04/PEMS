@@ -20,6 +20,8 @@
  */
 import { Quill } from 'react-quill-new';
 import { registerSystemActionBlot } from './emailEditorSystemNodes';
+import { registerVariableChipBlot } from './emailEditorVariableChips';
+import { registerEmailTableBlot } from './emailEditorTable';
 
 /**
  * V4 §6.2. Bare family names rather than full stacks: the value has to survive a round trip through the
@@ -120,8 +122,12 @@ export function registerEmailEditorFormats(): boolean {
   }
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
-  // The action block travels with the same content and must be registered before any editor is built.
+  // All three travel with the same content and must be registered before any editor is built: Quill
+  // drops what it has no blot for, so a late registration silently deletes an action area, a variable or
+  // a table from the first document opened.
   registerSystemActionBlot();
+  registerVariableChipBlot();
+  registerEmailTableBlot();
 
   registered = true;
   return true;
@@ -142,4 +148,6 @@ export const EMAIL_EDITOR_FORMATS = [
   'link', 'image',
   DIVIDER_BLOT_NAME,
   'pemsSystemActionBlock',
+  'pemsVariable',
+  'pemsEmailTable',
 ];

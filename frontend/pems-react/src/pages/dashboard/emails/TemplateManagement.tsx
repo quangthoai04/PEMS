@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, Plus, Edit2, Check, X, ShieldAlert, Loader2, Lock, Info, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
 import { emailsApi } from '../../../features/emails/api/emailsApi';
-import ReactQuill from 'react-quill-new';
+import {
+  EmailRichTextEditor, type EmailRichTextEditorHandle,
+} from '../../../features/emails/components/EmailRichTextEditor';
+import { canonicalizeEmailHtml } from '../../../features/emails/utils/emailHtmlCanonicalizer';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
@@ -19,15 +22,6 @@ import {
   type TemplateContentField,
   type TemplateContentIssue,
 } from '../../../features/emails/types/templateContract';
-
-const QUILL_MODULES = {
-  toolbar: [
-    ['bold', 'italic', 'underline', 'strike'],
-    [{ list: 'ordered' }, { list: 'bullet' }],
-    [{ align: [] }],
-    ['clean']
-  ]
-};
 
 type EditorLanguage = 'VI' | 'EN';
 
@@ -106,9 +100,6 @@ const languageOfField = (field: TemplateContentField | string): EditorLanguage |
 /** Where the caret was in a plain-text input. */
 type TextSelection = { start: number; end: number };
 
-/** Where the caret was in a Quill document. */
-type QuillSelection = { index: number; length: number };
-
 /**
  * Which control the operator was last writing in, per language.
  *
@@ -135,15 +126,22 @@ const normalizeText = (value: string | null | undefined) =>
   (value ?? '').replace(/\r\n?/g, '\n').trim();
 
 /**
- * As above, plus the editor's idea of "empty".
+ * As above, but for a body — compared by MEANING rather than by spelling.
  *
- * An empty Quill document serialises to `<p><br></p>`, while an empty stored body is ''. Left
- * unreconciled, clearing a body and typing it back exactly as it was would leave the screen claiming an
- * unsaved change forever.
+ * <b>What this replaces.</b> The screen used to compare body strings and carry a per-language
+ * `pendingEditorNormalization` flag to absorb the one change event the editor emits on mount, because a
+ * controlled Quill re-serialises whatever html it is handed: `<br>` becomes `<br />`, style declarations
+ * are reordered, a trailing empty paragraph appears. Without the flag the screen said "có thay đổi chưa
+ * lưu" before the operator had touched anything; with it, the FIRST genuine edit to a body that had not
+ * yet rendered was silently taken into the baseline instead of being reported as unsaved.
+ *
+ * The canonicaliser removes the need for either. Two bodies that say the same thing compare equal however
+ * they are spelled, so the editor's own rendering of stored html is simply not a change — and every real
+ * edit is, including the first one.
  */
 const normalizeHtml = (value: string | null | undefined) => {
   const text = normalizeText(value);
-  return /^<p>(?:\s|<br\s*\/?>)*<\/p>$/i.test(text) ? '' : text;
+  return /^<p>(?:\s|<br\s*\/?>)*<\/p>$/i.test(text) ? '' : canonicalizeEmailHtml(text);
 };
 
 const normalizeField = (field: (typeof CONTENT_FIELDS)[number], value: string) =>
@@ -230,7 +228,7 @@ const getTemplateGroup = (code: string) => {
 };
 
 export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' | 'error', msg: string) => void }) {
-  const quillRef = useRef<any>(null);
+  const bodyEditorRef = useRef<EmailRichTextEditorHandle | null>(null);
   const subjectInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -241,7 +239,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * the editor on every cursor move — which fights Quill for the caret it is trying to record.
    */
   const subjectSelection = useRef<Record<EditorLanguage, TextSelection | null>>({ VI: null, EN: null });
-  const bodySelection = useRef<Record<EditorLanguage, QuillSelection | null>>({ VI: null, EN: null });
+  // The BODY caret is no longer tracked here — the shared editor remembers its own, per mounted editor,
+  // and the editors are keyed by language so the two tabs cannot share one.
   const lastInsertTarget = useRef<Record<EditorLanguage, InsertTarget | null>>({ VI: null, EN: null });
 
   /**
@@ -293,25 +292,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     baselineRef.current = normalizeEditorSnapshot(form);
     setBaselineVersion(v => v + 1);
   }, []);
-  /**
-   * Whether each body still has to absorb the editor's own rendering of the STORED html — the last step
-   * of hydration, and the reason this screen used to open already claiming unsaved changes.
-   *
-   * ReactQuill is controlled, so it converts whatever html it is handed into its own canonical form and
-   * reports the result through `onChange` the moment it mounts (source `api`, not `user`). The stored
-   * bodies are not in that form — `{{actionBlock}}` sits between two paragraphs as bare text, the
-   * footers carry inline `style` attributes Quill's format list does not include — so the very first
-   * thing that happened after opening a template was a change event nobody had made. The baseline was
-   * the html from the API, the form now held the editor's version of it, and the screen said "● Nội dung
-   * mẫu có thay đổi chưa lưu" before the operator had touched anything.
-   *
-   * The flag makes that one event part of hydration instead: the FIRST non-user change to a body moves
-   * the baseline with the form, so the two still agree. It is cleared as soon as anything else touches
-   * that body — typing, inserting a variable, removing a block — after which every change is the
-   * operator's and is reported as unsaved. Held per language because each editor normalises when ITS tab
-   * is first shown, which is not when the template was opened.
-   */
-  const pendingEditorNormalization = useRef<Record<BodyField, boolean>>({ bodyVi: true, bodyEn: true });
+  // `pendingEditorNormalization` was here: a per-language flag that absorbed the one change event a
+  // controlled Quill emits on mount, because the screen compared body STRINGS and the editor's rendering
+  // of stored html never matched it character for character. It is gone — `normalizeHtml` now compares
+  // meaning, so the editor's re-serialisation is not a change and needs no flag, and the first real edit
+  // to an un-rendered body is reported instead of being swallowed into the baseline.
   const [contract, setContract] = useState<ContractState>({ status: 'idle' });
   const [serverIssues, setServerIssues] = useState<TemplateContentIssue[]>([]);
   const [confirmState, setConfirmState] = useState<{
@@ -451,7 +436,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
       reveal(bodyEditorAnchor.current);
       try {
-        quillRef.current?.getEditor()?.focus();
+        // Focus the editor surface itself. The shared editor owns its Quill instance, so the screen
+        // reaches for the DOM node rather than through a handle it no longer holds.
+        bodyEditorAnchor.current?.querySelector<HTMLElement>('.ql-editor')?.focus();
       } catch {
         /* an unmounted editor is not worth reporting — the tab still switched, which is the main thing */
       }
@@ -541,9 +528,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       };
       setFormData(loaded);
       setBaseline(loaded);
-      // A fresh template hydrates from scratch: the previous one's baseline, and the editors' state
-      // about it, must not survive into this one.
-      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
       setEditingId(t.emailTemplateId || id);
       setServerIssues([]);
       setLanguage('VI');
@@ -733,10 +717,6 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       setFormData(restored);
       // The restore WROTE all of this, so nothing is unsaved.
       setBaseline(restored);
-      // The bodies changed, so the editors will re-serialise them — and that re-serialisation is
-      // hydration, not an edit. Without this the screen would report unsaved changes immediately after a
-      // restore, which is the same defect the flag was introduced to fix when opening a template.
-      pendingEditorNormalization.current = { bodyVi: true, bodyEn: true };
       setServerIssues([]);
       pushToast('success', t?.message || 'Đã khôi phục mẫu email về bản mặc định.');
       fetchData();
@@ -815,39 +795,15 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     return () => window.removeEventListener('beforeunload', warn);
   }, [showForm, isDirty]);
 
-  /** This body is now the operator's; the editor's own rendering of it is no longer hydration. */
-  const markBodyEdited = (field: BodyField) => {
-    pendingEditorNormalization.current[field] = false;
-  };
-
   /**
    * Everything the editor reports for one language.
    *
-   * `source` is what separates the two kinds of event: `user` is somebody typing or pasting, anything
-   * else is Quill re-serialising content it was handed. The first of the latter, per language, is the
-   * tail of hydration and moves the baseline with the form; every event after it is a change to be
-   * saved. The mocked editor in the tests passes no source, which is treated as a real edit — a change
-   * event with no editor behind it can only be the test acting as the operator.
+   * There is no longer a `source` to inspect, and no hydration flag to carry. The dirty check compares
+   * bodies by meaning (see `normalizeHtml`), so the editor's own re-serialisation of stored html is not a
+   * change and needs no special case — while a real edit is reported from the very first keystroke,
+   * including in a body the operator has not yet visited.
    */
-  const handleBodyChange = (field: BodyField, value: string, source?: string) => {
-    const isEditorNormalization = source !== undefined && source !== 'user';
-
-    if (isEditorNormalization && pendingEditorNormalization.current[field]) {
-      markBodyEdited(field);
-      setFormData(prev => ({ ...prev, [field]: value }));
-      // The baseline moves WITH the form for this one event, so the editor's own rendering of the stored
-      // html is not reported as an edit. Written straight into the ref rather than through `setBaseline`,
-      // which takes a whole form: only this one field is being re-baselined, and the rest of the form may
-      // already hold changes the operator made before switching to this language tab.
-      baselineRef.current = {
-        ...baselineRef.current,
-        content: { ...baselineRef.current.content, [field]: normalizeField(field, value) },
-      };
-      setBaselineVersion(v => v + 1);
-      return;
-    }
-
-    markBodyEdited(field);
+  const handleBodyChange = (field: BodyField, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -862,18 +818,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     lastInsertTarget.current[language] = 'subject';
   };
 
-  /**
-   * Records where the caret is in the body of the tab currently shown.
-   *
-   * A null range means Quill has just lost the focus — which is precisely what clicking a variable chip
-   * does — so it is IGNORED rather than stored. Storing it would erase the position the insert is about
-   * to need, one event before it needs it.
-   */
-  const rememberBodySelection = (range: QuillSelection | null) => {
-    if (!range) return;
-    bodySelection.current[language] = { index: range.index, length: range.length };
-    lastInsertTarget.current[language] = 'body';
-  };
+  // `rememberBodySelection` was here. Remembering the body caret is now the shared editor's job — it has
+  // to do it anyway for its own toolbar, and one copy of that rule is better than two that can disagree
+  // about what a null range means.
 
   /**
    * Inserts a variable at the caret the operator left, in the control they left it in.
@@ -924,39 +871,24 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       return;
     }
 
-    const editor = quillRef.current?.getEditor?.();
-    if (!editor) {
-      // No editor to insert into (the mocked editor in the unit tests, or a mount still in flight).
-      // Falls back to the head of the body, never the tail: see the note above.
-      markBodyEdited(bodyField);
+    // The body goes through the shared editor, which owns the caret and inserts a CHIP rather than the
+    // characters `{{name}}` — an atomic object with no half to leave behind if somebody backspaces
+    // through it. It remembers its own last caret for the same reason this screen used to: clicking a
+    // chip in the sidebar blurs the editor, and asking a blurred editor where the caret is answers 0.
+    const editor = bodyEditorRef.current;
+    if (!editor?.isReady()) {
+      // No live editor (a mocked one in the unit tests, or a mount still in flight). Falls back to the
+      // HEAD of the body, never the tail: an obvious place the operator can move it from.
       setFormData(prev => ({ ...prev, [bodyField]: token + (prev[bodyField] ?? '') }));
       return;
     }
 
-    // Before the insert, not after: `insertText` makes the editor emit an `api` change, and a body
-    // still waiting to absorb its normalisation would take the inserted variable into the baseline —
-    // an edit that never showed as unsaved and would have been dropped on close.
-    markBodyEdited(bodyField);
+    const label = contract.status === 'ready'
+      ? contract.contract.variables.find(v => v.name === name)?.label ?? name
+      : name;
 
-    const remembered = bodySelection.current[language]
-      // `getSelection()` without the force flag — passing true would FOCUS the editor and, on a blurred
-      // one, report position 0, quietly overwriting the caret we are trying to honour.
-      ?? (editor.getSelection?.() as QuillSelection | null)
-      ?? { index: 0, length: 0 };
-
-    const index = Math.min(remembered.index, Math.max(0, editor.getLength() - 1));
-    const length = Math.max(0, remembered.length);
-
-    // A selected range is REPLACED, which is what every other editor does with a paste.
-    if (length > 0) editor.deleteText(index, length, 'user');
-    editor.insertText(index, token, 'user');
-
-    const caret = index + token.length;
-    editor.setSelection(caret, 0, 'user');
-    bodySelection.current[language] = { index: caret, length: 0 };
+    editor.insertVariable({ name, label });
     lastInsertTarget.current[language] = 'body';
-
-    setFormData(prev => ({ ...prev, [bodyField]: editor.root.innerHTML }));
   };
 
   const filteredData = data.filter(item => {
@@ -982,9 +914,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
    * waits for "Lưu thay đổi mẫu" like any other edit, so it stays a change they made.
    */
   const removeBlockFromField = (field: TemplateContentField, block: string) => {
-    // A deletion the operator asked for. Marked as theirs so the editor's re-serialisation of the
-    // result cannot be mistaken for hydration and quietly folded into the baseline.
-    if (isBodyField(field)) markBodyEdited(field);
+    // No "mark as edited" step any more: the dirty check compares meaning, so a deletion the operator
+    // asked for differs from the baseline on its own merits and cannot be mistaken for hydration.
     setFormData(prev => ({ ...prev, [field]: removeSystemBlock(prev[field], block) }));
     // The refusal came from the server for content that no longer exists; keeping it on screen would
     // report a problem the operator has just fixed.
@@ -1244,28 +1175,28 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                     <label className="block text-sm font-bold text-gray-700 mb-1">Nội dung (Body)</label>
                     <div ref={bodyEditorAnchor} className="border border-gray-300 rounded-lg overflow-hidden bg-white">
                       {/*
-                        One editor per language, not one editor re-pointed at the other body.
+                        The SHARED editor, in TEMPLATE mode — the same component, formats, sanitiser and
+                        canonicaliser the send modal uses in COMPOSE. There used to be two editors here
+                        and there, each with its own four-button toolbar, which is two answers to "may I
+                        centre this?" when only the recipient's mail client gets a vote.
 
-                        ReactQuill loads a new `value` from inside `shouldComponentUpdate`, where its
-                        own props have not been committed yet — so the change event for the English body
-                        was delivered to the handler still bound to `bodyVi`, and switching the tab
-                        overwrote the Vietnamese content with Quill's rendering of the English one. The
-                        key remounts the editor instead, which binds the handler to the language whose
-                        content it is about to load.
+                        Keyed by language: one editor per body, not one editor re-pointed at the other.
+                        A controlled Quill loads a new `value` from inside `shouldComponentUpdate`, where
+                        its own props are not yet committed — so a change event for the English body was
+                        delivered to the handler still bound to `bodyVi`, and switching tabs overwrote the
+                        Vietnamese content with the editor's rendering of the English one. Remounting
+                        binds the handler to the language whose content it is about to load.
                       */}
-                      <ReactQuill
+                      <EmailRichTextEditor
                         key={bodyField}
-                        ref={quillRef}
-                        theme="snow"
+                        ref={bodyEditorRef}
+                        mode="TEMPLATE"
                         value={formData[bodyField]}
-                        readOnly={isHistorical}
-                        onChange={(v, _delta, source) => handleBodyChange(bodyField, v, source)}
-                        /* Where the caret is, reported by the editor itself. This is the only reliable
-                           source once a chip has taken the focus away: `getSelection()` on a blurred
-                           editor answers null, and forcing it answers 0. */
-                        onChangeSelection={(range: QuillSelection | null) => rememberBodySelection(range)}
-                        modules={QUILL_MODULES}
-                        className="min-h-[250px]"
+                        disabled={isHistorical}
+                        onChange={(html) => handleBodyChange(bodyField, html)}
+                        variables={contract.status === 'ready' ? contract.contract.variables : undefined}
+                        onNotice={(message) => pushToast('error', message)}
+                        minHeight={250}
                       />
                     </div>
                     {renderIssueList(bodyField)}

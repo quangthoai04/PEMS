@@ -11,7 +11,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 // @ts-ignore - react-quill-new ships without bundled types in this project
 import { Quill } from 'react-quill-new';
-import { EmailRichTextEditor } from '../components/EmailRichTextEditor';
+import {
+  EmailRichTextEditor, type EmailRichTextEditorHandle,
+} from '../components/EmailRichTextEditor';
+import { isSameEmailHtml } from '../utils/emailHtmlCanonicalizer';
 import { EMAIL_FONTS, EMAIL_SIZES } from '../utils/emailEditorFormats';
 import { SYSTEM_ACTION_NODE, countSystemActionNodes } from '../utils/systemActionNode';
 import { cleanInlineStyle, hasSpaceRun, normalizeSpaceRuns } from '../utils/emailEditorPaste';
@@ -228,13 +231,51 @@ describe('variable insertion', () => {
     expect(screen.queryByRole('button', { name: 'Chèn biến' })).toBeNull();
   });
 
-  it('inserts the placeholder the renderer will substitute', async () => {
-    const { html } = setup({ mode: 'TEMPLATE', variables, value: '<p>Kính gửi </p>' });
+  /**
+   * The chip is the whole point of §8.1: a label on screen, a placeholder on the wire. Asserting the
+   * editor DOM contains `{{senderName}}` would be asserting the feature is absent.
+   */
+  it('shows a chip in the editor and stores the placeholder', async () => {
+    const { html, emitted } = setup({ mode: 'TEMPLATE', variables, value: '<p>Kính gửi </p>' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Chèn biến' }));
     fireEvent.click(screen.getByRole('button', { name: /Họ tên người gửi/ }));
 
-    await waitFor(() => expect(html()).toContain('{{senderName}}'));
+    // On screen: the friendly label, as an object.
+    await waitFor(() => expect(html()).toContain('data-variable="senderName"'));
+    expect(html()).toContain('Họ tên người gửi');
+
+    // On the wire: the placeholder the renderer substitutes, and no trace of the label.
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{senderName}}'));
+    expect(emitted().at(-1)).not.toContain('Họ tên người gửi');
+    expect(emitted().at(-1)).not.toContain('pems-variable-chip');
+  });
+
+  it('inserts a table the mail client can render, and stores it bare', async () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('2x2');
+    const { html, emitted } = setup({ mode: 'TEMPLATE', value: '<p>trên</p>' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+
+    await waitFor(() => expect(html()).toContain('<table'));
+    // §17 — inline CSS, no stylesheet exists in mail.
+    expect(html()).toContain('border-collapse:collapse');
+    expect(html()).toContain('role="presentation"');
+
+    // Stored without the editor's wrapper.
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('<table'));
+    expect(emitted().at(-1)).not.toContain('data-email-table');
+    prompt.mockRestore();
+  });
+
+  it('refuses a table size it cannot parse rather than guessing one', () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('rất to');
+    const { onNotice } = setup({ mode: 'TEMPLATE' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+
+    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('không hợp lệ'));
+    prompt.mockRestore();
   });
 });
 
@@ -283,6 +324,119 @@ describe('capabilities', () => {
   it('lets a caller override where its flow genuinely differs', () => {
     setup({ mode: 'COMPOSE', capabilities: { allowSystemBlockInsert: true } });
     expect(screen.getByRole('button', { name: 'Chèn khối nút phản hồi' })).toBeTruthy();
+  });
+});
+
+// ── where an inserted variable LANDS (moved here from the template screen) ──
+
+describe('insertVariable, through the imperative handle', () => {
+  const variables = [{ name: 'fullName', label: 'Họ tên' }];
+
+  /** Renders with a ref, so a host screen's sidebar can be simulated. */
+  function setupWithRef(value: string) {
+    const ref = React.createRef<EmailRichTextEditorHandle>();
+    const seen: string[] = [];
+
+    function Host() {
+      const [html, setHtml] = useState(value);
+      return (
+        <EmailRichTextEditor
+          ref={ref}
+          mode="TEMPLATE"
+          variables={variables}
+          value={html}
+          onChange={(next) => { seen.push(next); setHtml(next); }}
+        />
+      );
+    }
+
+    const utils = render(<Host />);
+    const root = utils.container.querySelector('.ql-editor') as HTMLElement;
+    return { ref, root, container: utils.container, html: () => root.innerHTML };
+  }
+
+  it('lands at the remembered caret after the editor has lost focus', async () => {
+    const { ref, container, html } = setupWithRef('<p>Chào bạn.</p>');
+
+    // Caret after "Chà" (index 3), then the sidebar chip steals the focus — the exact sequence that
+    // used to defeat a DOM-focus check and send the variable to the end of the document.
+    const q = quillOf(container);
+    q.setSelection(3, 0, 'user');
+    q.blur();
+
+    ref.current!.insertVariable(variables[0]);
+
+    await waitFor(() => expect(html()).toContain('data-variable="fullName"'));
+    // Inside the sentence, not after it.
+    expect(html().indexOf('data-variable')).toBeLessThan(html().indexOf('o bạn.'));
+  });
+
+  it('replaces a selected run rather than adding to it', async () => {
+    const { ref, container, html } = setupWithRef('<p>Chào bạn.</p>');
+
+    quillOf(container).setSelection(0, 4, 'user');   // "Chào"
+
+    ref.current!.insertVariable(variables[0]);
+
+    await waitFor(() => expect(html()).toContain('data-variable="fullName"'));
+    expect(html()).not.toContain('Chào');
+    expect(html()).toContain('bạn.');
+  });
+
+  it('falls back to the head of the document, never the tail', async () => {
+    const { ref, html } = setupWithRef('<p>Chào bạn.</p>');
+
+    // Nothing has been focused: no caret was ever reported.
+    ref.current!.insertVariable(variables[0]);
+
+    await waitFor(() => expect(html()).toContain('data-variable="fullName"'));
+    expect(html().indexOf('data-variable')).toBeLessThan(html().indexOf('Chào'));
+  });
+
+  it('reports whether a live editor is attached', () => {
+    const { ref } = setupWithRef('<p>x</p>');
+    expect(ref.current!.isReady()).toBe(true);
+  });
+});
+
+// ── §15.3 load → edit → save → reload ───────────────────────────────────────
+
+describe('the round trip a template makes', () => {
+  /**
+   * Stored html → editor → stored html must be semantically identical, or every save writes a diff
+   * nobody asked for and every open reports unsaved changes.
+   */
+  it.each([
+    '<p>Kính gửi <strong>{{recipientName}}</strong>,</p><p>Trân trọng,</p>',
+    `<p>Trước</p>${SYSTEM_ACTION_NODE}<p>Sau</p>`,
+    '<p style="text-align:center">Giữa</p><p style="margin-left:32px">Thụt</p>',
+    '<ul><li>Một</li><li>Hai</li></ul>',
+    '<table role="presentation" style="border-collapse:collapse"><tbody>'
+      + '<tr><td style="border:1px solid #dbe4ee">Đoàn</td>'
+      + '<td style="border:1px solid #dbe4ee">{{delegationName}}</td></tr></tbody></table>',
+  ])('survives load → edit → save → reload: %s', async (stored) => {
+    const seen: string[] = [];
+
+    function Host() {
+      const [html, setHtml] = useState(stored);
+      return (
+        <EmailRichTextEditor
+          mode="TEMPLATE"
+          variables={[{ name: 'recipientName', label: 'Người nhận' }, { name: 'delegationName', label: 'Tên đoàn' }]}
+          value={html}
+          onChange={(next) => { seen.push(next); setHtml(next); }}
+        />
+      );
+    }
+
+    render(<Host />);
+
+    // Whatever the editor emitted on load must MEAN the same as what was stored — that is what makes
+    // "opening a template is not an edit" true on the screen above it.
+    await waitFor(() => expect(document.querySelector('.ql-editor')).toBeTruthy());
+    const emitted = seen.at(-1) ?? stored;
+
+    expect(isSameEmailHtml(stored, emitted)).toBe(true);
   });
 });
 
