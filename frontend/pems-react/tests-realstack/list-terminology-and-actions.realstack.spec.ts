@@ -196,13 +196,16 @@ test.describe('Real-stack FULL-DOM: list terminology, next task and scoped hando
     expect(ownerWaiting.nextTask.code).toBe('NONE');
     expect(ownerWaiting.nextTask.requiresAction).toBe(false);
 
-    // Verify the task is acted on, not just returned: the row's ONLY primary action button IS the
-    // next task now (the "Việc cần làm" text line was removed from the list — see §15.5/§15.6 in
-    // VisitRequestManagementActions.test.tsx).
+    // Verify it renders AND is acted on: the row carries the backend's "Việc cần làm" sentence
+    // (VisitNextTaskLine) alongside the primary action button that performs it.
     const leader = await meUser(request, 'campus_leader_hn');
     const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       const desktop = await openListFor(page, requestCode);
+      const task = desktop.getByTestId(`next-task-${hnInstance}`);
+      await expect(task).toBeVisible({ timeout: 20_000 });
+      await expect(task).toHaveAttribute('data-next-task-code', 'REVIEW_AND_ASSIGN');
+      await expect(task).toContainText('Duyệt hoặc từ chối và phân công người phụ trách');
       await expect(desktop.getByRole('button', { name: 'Duyệt & phân công người phụ trách' })).toBeVisible({ timeout: 20_000 });
     } finally {
       await context.close();

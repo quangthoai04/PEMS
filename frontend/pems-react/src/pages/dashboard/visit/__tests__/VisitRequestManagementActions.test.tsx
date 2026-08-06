@@ -135,7 +135,7 @@ const summaryRow = (over: Record<string, unknown> = {}) => ({
   campusName: '2 cơ sở',
   currentUserIsHost: false,
   currentUserRelation: 'VISITOR_OWNER',
-  relationLabel: 'Bạn là đầu mối chính',
+  relationLabel: 'Bạn là đầu mối đoàn khách',
   statusLabel: 'Đã duyệt',
   campusStatus: null,
   nextTask: { code: 'NONE', label: 'Không có nhiệm vụ cần xử lý', requiresAction: false, scope: 'REQUEST' },
@@ -220,19 +220,22 @@ describe('terminology: the reader sees "người phụ trách tiếp đón", the
   });
 });
 
-// ── §15.5 / §15.6 status and relation stay apart; the next-task line was removed from the row ────
-// "Việc cần làm" no longer renders anywhere in the list table — nextTask now only decides which
-// primary action button appears (see renderRowActions), so there is no next-task element to assert on.
+// ── §15.5 / §15.6 / §15.7 the three layers ───────────────────────────────────────────────────────
+// Status, relation and "Việc cần làm" are three separate readings of the same row. The next-task
+// line is backend-written prose (VisitNextTaskLine renders it verbatim, mapping nothing itself),
+// so an ASSIGNED campus never looks like "nothing to do" to the host who owns it.
 
-describe('a row keeps status and relation apart, with no next-task line in the row', () => {
-  it('renders status and relation as two separate things, and no next-task element', async () => {
+describe('a row keeps status, relation and next task apart', () => {
+  it('renders all three, from the backend, as three separate things', async () => {
     renderList([instanceRow()]);
     expect(await waitFor(() => desktop().getByText('Đang chuẩn bị'))).toBeInTheDocument();        // status
     expect(desktop().getByText('Bạn phụ trách tiếp đón')).toBeInTheDocument();      // relation
-    expect(desktop().queryByTestId('next-task-5001')).not.toBeInTheDocument();
+    const task = desktop().getByTestId('next-task-5001');                            // next task
+    expect(task).toHaveTextContent('Hoàn thiện lịch trình và công tác chuẩn bị');
+    expect(task).toHaveAttribute('data-next-task-code', 'COMPLETE_PREPARATION');
   });
 
-  it('still drives the primary action button off the backend-granted capability on a WAITING row', async () => {
+  it('shows the review-and-assign task on a WAITING row, and the button that performs it', async () => {
     renderList([instanceRow({
       campusStatus: 'WAITING_REQUEST_APPROVAL', currentUserIsHost: false, hostName: null,
       currentHostUserId: null, statusLabel: 'Chờ xử lý tại cơ sở',
@@ -244,8 +247,22 @@ describe('a row keeps status and relation apart, with no next-task line in the r
         actionCode: 'APPROVE_AND_ASSIGN_HOST',
       },
     })]);
-    await waitFor(() => desktop().getByText('Chờ xử lý tại cơ sở'));
+    const task = await waitFor(() => desktop().getByTestId('next-task-5001'));
+    expect(task).toHaveTextContent('Duyệt hoặc từ chối và phân công người phụ trách');
+    // The primary button matches the task rather than being derived separately.
     expect(desktop().getByRole('button', { name: 'Duyệt & phân công người phụ trách' })).toBeInTheDocument();
+  });
+
+  it('renders "không có nhiệm vụ" as a real answer, not an empty gap', async () => {
+    renderList([summaryRow()]);
+    const task = await waitFor(() => desktop().getByTestId('next-task-4001'));
+    expect(task).toHaveTextContent('Không có nhiệm vụ cần xử lý');
+    expect(task).toHaveAttribute('data-next-task-code', 'NONE');
+  });
+
+  it('never invents a task when the backend sent none', async () => {
+    renderList([instanceRow({ nextTask: null })]);
+    await waitFor(() => desktop().getByText('Đang chuẩn bị'));
     expect(desktop().queryByTestId('next-task-5001')).not.toBeInTheDocument();
   });
 });

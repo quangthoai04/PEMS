@@ -110,20 +110,22 @@ describe('the success screen (plan §8)', () => {
     expect(screen.getByText(/already recorded|đã được ghi nhận/i)).toBeInTheDocument();
   });
 
-  it('always tells the visitor how to track status, even with no contact claim pending', () => {
+  it('always tells the visitor how to track status, even with no contact confirmation pending', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(/sign in with Google/i);
     expect(notice).toHaveTextContent('reg@example.com');
     // No contact-differs-from-registrant bullet when nothing is pending.
-    expect(notice).not.toHaveTextContent(/differs from the contact person/i);
+    expect(notice).not.toHaveTextContent(/is not the guest-side operational contact/i);
   });
 
-  it('adds the claim-pending bullet ahead of the tracking bullet when the contact must confirm', () => {
-    render(<VisitRequestV2SuccessPanel response={response({ contactClaimPending: true })} values={values()} />);
+  it('adds the pending-confirmation bullet ahead of the tracking bullet, counting CAMPUSES', () => {
+    // Per-campus contacts: the bullet reports how many campuses are still waiting on their own
+    // operational contact, not one request-level contact address.
+    render(<VisitRequestV2SuccessPanel response={response({ pendingConfirmations: 2 })} values={values()} />);
     const notice = screen.getByRole('status');
-    expect(notice).toHaveTextContent(/differs from the contact person/i);
-    expect(notice).toHaveTextContent('contact@example.com');
+    expect(notice).toHaveTextContent(/is not the guest-side operational contact/i);
+    expect(notice).toHaveTextContent(/contact of 2 campus/i);
     expect(notice).toHaveTextContent(/also check your own email/i);
     expect(notice).toHaveTextContent('reg@example.com');
   });

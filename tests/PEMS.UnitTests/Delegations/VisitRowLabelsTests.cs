@@ -34,6 +34,7 @@ public class VisitRowLabelsTests
     }
 
     [Theory]
+    [InlineData(VisitRequestStatuses.PendingContactConfirmation, "Chờ đầu mối xác nhận")]
     [InlineData(VisitRequestStatuses.PendingApproval, "Chờ xử lý")]
     [InlineData(VisitRequestStatuses.PartiallyApproved, "Duyệt một phần")]
     [InlineData(VisitRequestStatuses.Approved, "Đã duyệt")]
@@ -52,7 +53,7 @@ public class VisitRowLabelsTests
 
     [Theory]
     [InlineData("HOST", "Bạn phụ trách tiếp đón")]
-    [InlineData("VISITOR_OWNER", "Bạn là đầu mối chính")]
+    [InlineData("VISITOR_OWNER", "Bạn là đầu mối đoàn khách")]
     [InlineData("REGISTRANT_VIEWER", "Bạn là người đăng ký")]
     [InlineData("CAMPUS_APPROVER", "Bạn có quyền duyệt tại cơ sở")]
     [InlineData("IC_SUPPORT", "Bạn được mời tham dự")]
