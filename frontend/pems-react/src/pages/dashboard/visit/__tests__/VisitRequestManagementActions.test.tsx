@@ -220,19 +220,19 @@ describe('terminology: the reader sees "người phụ trách tiếp đón", the
   });
 });
 
-// ── §15.5 / §15.6 / §15.7 the three layers ───────────────────────────────────────────────────────
+// ── §15.5 / §15.6 status and relation stay apart; the next-task line was removed from the row ────
+// "Việc cần làm" no longer renders anywhere in the list table — nextTask now only decides which
+// primary action button appears (see renderRowActions), so there is no next-task element to assert on.
 
-describe('a row keeps status, relation and next task apart', () => {
-  it('renders all three, from the backend, as three separate things', async () => {
+describe('a row keeps status and relation apart, with no next-task line in the row', () => {
+  it('renders status and relation as two separate things, and no next-task element', async () => {
     renderList([instanceRow()]);
     expect(await waitFor(() => desktop().getByText('Đang chuẩn bị'))).toBeInTheDocument();        // status
     expect(desktop().getByText('Bạn phụ trách tiếp đón')).toBeInTheDocument();      // relation
-    const task = desktop().getByTestId('next-task-5001');                            // next task
-    expect(task).toHaveTextContent('Hoàn thiện lịch trình và công tác chuẩn bị');
-    expect(task).toHaveAttribute('data-next-task-code', 'COMPLETE_PREPARATION');
+    expect(desktop().queryByTestId('next-task-5001')).not.toBeInTheDocument();
   });
 
-  it('shows the review-and-assign task on a WAITING row', async () => {
+  it('still drives the primary action button off the backend-granted capability on a WAITING row', async () => {
     renderList([instanceRow({
       campusStatus: 'WAITING_REQUEST_APPROVAL', currentUserIsHost: false, hostName: null,
       currentHostUserId: null, statusLabel: 'Chờ xử lý tại cơ sở',
@@ -244,22 +244,8 @@ describe('a row keeps status, relation and next task apart', () => {
         actionCode: 'APPROVE_AND_ASSIGN_HOST',
       },
     })]);
-    const task = await waitFor(() => desktop().getByTestId('next-task-5001'));
-    expect(task).toHaveTextContent('Duyệt hoặc từ chối và phân công người phụ trách');
-    // The primary button matches the task rather than being derived separately.
+    await waitFor(() => desktop().getByText('Chờ xử lý tại cơ sở'));
     expect(desktop().getByRole('button', { name: 'Duyệt & phân công người phụ trách' })).toBeInTheDocument();
-  });
-
-  it('renders "không có nhiệm vụ" as a real answer, not an empty gap', async () => {
-    renderList([summaryRow()]);
-    const task = await waitFor(() => desktop().getByTestId('next-task-4001'));
-    expect(task).toHaveTextContent('Không có nhiệm vụ cần xử lý');
-    expect(task).toHaveAttribute('data-next-task-code', 'NONE');
-  });
-
-  it('never invents a task when the backend sent none', async () => {
-    renderList([instanceRow({ nextTask: null })]);
-    await waitFor(() => desktop().getByText('Đang chuẩn bị'));
     expect(desktop().queryByTestId('next-task-5001')).not.toBeInTheDocument();
   });
 });
@@ -367,14 +353,15 @@ describe('multi-campus handover lives on the campus, never on the summary row', 
 });
 
 // ── §15.15 mobile affordances carry words, not only icons ────────────────────────────────────────
+// "Xem form" and "Mở quy trình" no longer live in the action column as their own icons — the
+// row/card itself is the click target now (handleRowClick), so this only has to prove the escape
+// hatch is still text-labeled, not that a hidden icon exists.
 
 describe('mobile', () => {
-  it('gives the row actions text labels as well as icons', async () => {
+  it('keeps "Xem form đăng ký tham quan" reachable as a text-labeled ⋯ menu item', async () => {
     renderList([instanceRow()]);
     await waitFor(() => desktop().getByText('Đang chuẩn bị'));
-    // Rendered for the mobile breakpoint (hidden at lg by CSS, present in the DOM either way) —
-    // an icon with no word is a guess on a phone.
-    expect(mobile().getAllByText('Xem form').length).toBeGreaterThan(0);
-    expect(mobile().getAllByText('Mở quy trình').length).toBeGreaterThan(0);
+    const panel = await openRowMenu('row-menu-mobile-5001');
+    expect(within(panel).getByText('Xem form đăng ký tham quan')).toBeInTheDocument();
   });
 });

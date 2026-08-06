@@ -70,9 +70,9 @@
     "operationalContact": "Đầu mối phối hợp tại cơ sở",
     "operationalContactHint": "Chỉ dùng để phối hợp tại cơ sở này — không phải tài khoản đăng nhập",
     "quickFillRegistrant": "Dùng người đăng ký",
-    "quickFillPrimaryContact": "Dùng đầu mối chính",
+    "quickFillPrimaryContact": "Dùng thông tin người đăng ký",
     "quickFillCopiedRegistrant": "Đã sao chép thông tin người đăng ký.",
-    "quickFillCopiedContact": "Đã sao chép thông tin đầu mối chính.",
+    "quickFillCopiedContact": "Đã sao chép thông tin người đăng ký.",
     "quickFillIndependent": "Sau khi sao chép, thông tin này chỉnh sửa độc lập — sửa nguồn về sau không cập nhật lại đây.",
     "quickFillReplaceTitle": "Thông tin đầu mối phối hợp hiện tại sẽ được thay thế.",
     "quickFillReplaceYes": "Tiếp tục",
@@ -177,41 +177,44 @@
     "requestCode": "Mã yêu cầu: {{code}}",
     "mixedNote": "nội dung khác nhau theo cơ sở",
     "idempotentReplay": "Yêu cầu này đã được ghi nhận trước đó (gửi lại không tạo đơn mới).",
-    "claimPending": "Đầu mối liên hệ khác người đăng ký: hệ thống đã gửi email mời xác nhận vai trò (hiệu lực 72 giờ). Việc duyệt của các cơ sở không phụ thuộc xác nhận này.",
+    "claimPending": "Người đăng ký khác đầu mối đoàn khách: hệ thống đã gửi email mời xác nhận vai trò tới đầu mối của {{campusCount}} cơ sở (hiệu lực 72 giờ). Các cơ sở chỉ bắt đầu xử lý sau khi tất cả đầu mối đã xác nhận.",
+    "trackStatusAlso": "Đồng thời kiểm tra email của bạn hoặc đăng nhập vào hệ thống bằng Google ({{email}}) để theo dõi trạng thái đơn.",
+    "trackStatus": "Kiểm tra email của bạn hoặc đăng nhập vào hệ thống bằng Google ({{email}}) để theo dõi trạng thái đơn.",
     "backHome": "Về trang chủ",
     "statusLabel": "Trạng thái:",
     "submittedAtLabel": "Thời gian gửi:",
-    "campusCountLabel": "Số cơ sở:",
-    "saved": "Đơn của bạn đã được lưu thành công.",
-    "keepCode": "Vui lòng lưu lại mã đơn và kiểm tra email để theo dõi các bước tiếp theo.",
+    "campusCountLabel": "Cơ sở:",
     "viewRequest": "Xem đơn vừa tạo",
     "goToList": "Về danh sách đơn",
     "createAnother": "Tạo đơn mới",
     "reviewSubmitted": "Xem lại thông tin đã gửi",
     "hideSubmitted": "Ẩn thông tin đã gửi",
-    "copyCode": "Sao chép mã đơn",
-    "codeCopied": "Đã sao chép mã đơn.",
-    "codeCopyFailed": "Trình duyệt không cho phép sao chép tự động. Mã đơn của bạn: {{code}}",
     "close": "Đóng",
     "toast": "Đã tạo đơn {{code}} thành công.",
     "status": {
+      "PENDING_CONTACT_CONFIRMATION": "Chờ đầu mối đoàn khách xác nhận",
+      "WAITING_CONTACT_CONFIRMATION": "Chờ đầu mối đoàn khách xác nhận",
+      "PENDING_APPROVAL": "Đầu mối đã xác nhận — chờ Staff Leader duyệt và chọn người phụ trách",
       "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
-      "PENDING_APPROVAL": "Chờ phê duyệt",
       "PENDING": "Chờ xử lý",
-      "PARTIALLY_APPROVED": "Đã duyệt một phần",
-      "APPROVED": "Đã duyệt",
+      "PARTIALLY_APPROVED": "Đã có cơ sở được duyệt, các cơ sở còn lại đang chờ xử lý",
+      "APPROVED": "Đầu mối đã xác nhận — đã có người phụ trách tiếp đón",
+      "ASSIGNED": "Đầu mối đã xác nhận — đã có người phụ trách tiếp đón",
       "REJECTED": "Đã từ chối",
       "CANCELLED": "Đã hủy",
       "CLOSED": "Đã đóng",
       "UNKNOWN": "{{status}}"
-    }
+    },
+    "copyCode": "Sao chép mã đơn",
+    "codeCopied": "Đã sao chép mã đơn.",
+    "codeCopyFailed": "Trình duyệt không cho phép sao chép tự động. Mã đơn của bạn: {{code}}"
   },
   "summary": {
     "heading": "Tóm tắt đơn đã gửi",
     "requestCode": "Mã yêu cầu",
     "campusCount": "Số cơ sở đăng ký",
     "registrant": "Người đăng ký",
-    "primaryContact": "Đầu mối liên hệ",
+    "primaryContact": "Đầu mối đoàn khách",
     "contactActive": "Đã xác nhận",
     "contactPending": "Chờ xác nhận",
     "partner": "Đối tác",
@@ -345,7 +348,7 @@
       "REQUEST_CODE": "Mã yêu cầu",
       "REGISTRANT_ORGANIZATION": "Đơn vị người đăng ký",
       "PARTNER": "Đối tác",
-      "PRIMARY_CONTACT": "Đầu mối liên hệ",
+      "OPERATIONAL_CONTACT": "Đầu mối đoàn khách",
       "DELEGATION_NAME": "Tên đoàn",
       "CAMPUS": "Cơ sở",
       "HOST": "Người phụ trách tiếp đón"
@@ -366,7 +369,7 @@
     "campusTotal": "{{count}} cơ sở",
     "mixedLabel": "Khác nhau theo cơ sở",
     "submittedAt": "Gửi lúc",
-    "primaryContact": "Đầu mối liên hệ",
+    "primaryContact": "Đầu mối đoàn khách",
     "contactPending": "Chưa xác nhận",
     "historyTitle": "Lịch sử thay đổi",
     "backToList": "Về danh sách đơn",
@@ -522,10 +525,10 @@
       "registrantJobTitle": "Chức vụ người đăng ký",
       "registrantPhone": "Điện thoại người đăng ký",
       "registrantEmail": "Email người đăng ký",
-      "contactPersonFullName": "Họ tên đầu mối liên hệ",
-      "contactPersonOrganization": "Đơn vị đầu mối liên hệ",
-      "contactPersonPhone": "Điện thoại đầu mối liên hệ",
-      "contactPersonEmail": "Email đầu mối liên hệ"
+      "contactPersonFullName": "Họ tên đầu mối liên hệ (trường đã ngừng dùng)",
+      "contactPersonOrganization": "Đơn vị đầu mối liên hệ (trường đã ngừng dùng)",
+      "contactPersonPhone": "Điện thoại đầu mối liên hệ (trường đã ngừng dùng)",
+      "contactPersonEmail": "Email đầu mối liên hệ (trường đã ngừng dùng)"
     }
   },
   "revision": {
@@ -548,7 +551,7 @@
     "resendInvitation": "Gửi lại lời mời",
     "replaceOpen": "Nhập lại email đầu mối",
     "replaceSubmit": "Cập nhật & gửi lời mời mới",
-    "transferOpen": "Chuyển giao vai trò đầu mối",
+    "transferOpen": "Thay đổi đầu mối",
     "transferSubmit": "Gửi lời mời chuyển giao",
     "transferReason": "Lý do chuyển giao",
     "sending": "Đang gửi lời mời…",
@@ -676,5 +679,232 @@
     "noCandidates": "Cơ sở này chưa có IC Staff phù hợp",
     "scheduleWarning": "Người này đã có lịch tiếp đón trùng khung giờ. Vẫn có thể chọn.",
     "saved": "Đã lưu người phụ trách tiếp đón dự kiến."
+  },
+  "list": {
+    "breadcrumb": "Quản lý tiếp khách",
+    "titleDefault": "Quản lý tiếp khách",
+    "titleVisitor": "Đơn của tôi",
+    "createButton": "Tạo đoàn khách",
+    "searchPlaceholder": "Tìm tên đoàn, người phụ trách, đối tác...",
+    "chooseType": "Chọn loại đơn",
+    "allStatuses": "Tất cả trạng thái",
+    "allScopes": "Tất cả phạm vi",
+    "allCampuses": "Tất cả cơ sở",
+    "allRelations": "Tất cả",
+    "chooseDateRange": "Chọn khoảng ngày",
+    "fromDatePrefix": "Từ {{date}}",
+    "toDatePrefix": "Đến {{date}}",
+    "fromDateLabel": "Từ ngày",
+    "toDateLabel": "Đến ngày",
+    "close": "Đóng",
+    "reset": "Reset",
+    "notificationFilterActive": "Đang hiển thị đúng đơn từ thông báo bạn vừa bấm.",
+    "viewAll": "Xem tất cả",
+    "tabs": {
+      "all": "Tất cả các loại đơn",
+      "responsibleVisitor": "Tôi là đầu mối",
+      "registeredVisitor": "Tôi là người đăng ký"
+    },
+    "statusOptions": {
+      "awaitingConfirmation": {
+        "label": "Chờ đầu mối xác nhận",
+        "description": "Cơ sở đang chờ đầu mối đoàn khách xác nhận qua link email"
+      },
+      "pendingApproval": {
+        "label": "Chờ xử lý tại cơ sở",
+        "description": "Cơ sở đang chờ Staff Leader duyệt và chọn người phụ trách"
+      },
+      "approved": {
+        "label": "Đã duyệt",
+        "description": "Đơn đã được duyệt (bao gồm đang chuẩn bị, đang tiếp khách hoặc đã đóng đoàn)"
+      },
+      "beforeVisit": {
+        "label": "Đang chuẩn bị",
+        "description": "Người phụ trách đã bắt đầu chuẩn bị đón tiếp"
+      },
+      "duringVisit": {
+        "label": "Đang tiếp khách",
+        "description": "Đoàn đang trong quá trình thăm tại cơ sở"
+      },
+      "closed": {
+        "label": "Đã đóng đoàn",
+        "description": "Đoàn đã hoàn tất toàn bộ chuyến thăm và thủ tục"
+      },
+      "rejected": {
+        "label": "Đã bị từ chối",
+        "description": "Đơn/cơ sở đã bị từ chối"
+      },
+      "cancelled": {
+        "label": "Đã hủy",
+        "description": "Đơn đã bị hủy"
+      }
+    },
+    "filterVisitor": {
+      "statusLabel": "Trạng thái",
+      "scopeLabel": "Phạm vi đơn",
+      "scopeSingle": "Đơn một cơ sở",
+      "scopeMulti": "Đơn liên cơ sở"
+    },
+    "table": {
+      "stt": "STT",
+      "delegationInfo": "Thông tin đoàn",
+      "schedule": "Lịch tiếp",
+      "scheduleSortHint": "Nhấn để sắp xếp theo thời gian tiếp khách",
+      "status": "Trạng thái",
+      "actions": "Hành động"
+    },
+    "row": {
+      "hostLabel": "Người phụ trách tiếp đón:",
+      "campusLabel": "Cơ sở:",
+      "notAssignedYet": "Chưa được phân công",
+      "assigning": "Đang phân công",
+      "viewCampuses": "Xem {{count}} cơ sở",
+      "collapseCampuses": "Thu gọn cơ sở",
+      "expandToggleAria": "Xem tiến trình theo từng cơ sở",
+      "newChangeIndicator": "Có thay đổi mới",
+      "from": "Từ:",
+      "to": "Đến:",
+      "loading": "Đang tải danh sách...",
+      "loadError": "Không thể tải danh sách tiếp khách. Vui lòng thử lại.",
+      "viewProcessTitleMultiCampus": "Xem tiến trình các cơ sở",
+      "viewProcessTitleSingle": "Xem thông tin tiếp đón",
+      "viewFormTitle": "Xem form đăng ký tham quan",
+      "noData": "Chưa có dữ liệu cơ sở để hiển thị.",
+      "rejectReasonLabel": "Lý do từ chối:",
+      "changeIndicator": "Có thay đổi tại cơ sở này",
+      "changeIndicatorAction": " — cần bạn xử lý",
+      "viewCampusDetail": "Xem chi tiết cơ sở",
+      "viewSummaryReport": "Xem báo cáo tổng hợp",
+      "processTitle": {
+        "duringVisit": "Tiếp tục xử lý đang tiếp khách",
+        "afterVisit": "Hoàn tất sau tiếp khách",
+        "closed": "Xem quy trình đã đóng",
+        "default": "Xử lý quy trình tiếp khách",
+        "receptionDetail": "Xem thông tin tiếp khách",
+        "contribution": "Vào trang đóng góp nội dung",
+        "taskView": "Xem nhiệm vụ",
+        "invitationView": "Xem lời mời",
+        "multiCampusHO": "Theo dõi đơn liên cơ sở",
+        "cancelledProcess": "Xem quy trình đã hủy"
+      }
+    },
+    "badges": {
+      "registeredRelation": "Bạn là người đăng ký",
+      "alsoHost": "Đồng thời phụ trách tiếp đón",
+      "singleCampus": "Đơn cơ sở",
+      "multiCampus": "Liên cơ sở"
+    },
+    "statusBadge": {
+      "pending": {
+        "label": "Chờ xử lý tại cơ sở",
+        "title": "Cơ sở đang chờ Staff Leader duyệt và phân công người phụ trách tiếp đón"
+      },
+      "pendingRequest": {
+        "label": "Chờ xử lý",
+        "title": "Đơn đang chờ xử lý tại các cơ sở"
+      },
+      "rejected": {
+        "label": "Đã bị từ chối",
+        "title": "Đã bị từ chối tiếp nhận"
+      },
+      "cancelled": {
+        "label": "Đã hủy",
+        "title": "Đơn/cơ sở đã bị hủy"
+      },
+      "cancelledByVisitor": "Đã hủy bởi khách",
+      "cancelledByHost": "Đã hủy bởi người phụ trách",
+      "cancelledBySystem": "Hệ thống đã hủy",
+      "assigned": {
+        "label": "Đã phân công người phụ trách",
+        "title": "Đã duyệt và có người phụ trách tiếp đón, chờ bắt đầu chuẩn bị"
+      },
+      "before": {
+        "label": "Đang chuẩn bị",
+        "title": "Đang trong giai đoạn chuẩn bị đón tiếp"
+      },
+      "during": {
+        "label": "Đang tiếp khách",
+        "title": "Đoàn đang được tiếp khách tại cơ sở"
+      },
+      "after": {
+        "label": "Chờ đóng đoàn",
+        "title": "Đoàn đã kết thúc, chờ đóng đoàn/hoàn tất hồ sơ"
+      },
+      "closed": {
+        "label": "Đã đóng đoàn",
+        "title": "Đoàn đã hoàn tất toàn bộ quy trình"
+      },
+      "approved": {
+        "label": "Đã duyệt",
+        "title": "Tất cả cơ sở đã xử lý xong và có cơ sở tiếp nhận"
+      },
+      "awaitingConfirmation": {
+        "label": "Chờ đầu mối xác nhận",
+        "title": "Cơ sở đang chờ đầu mối đoàn khách xác nhận qua link email"
+      }
+    },
+    "relation": {
+      "visitorOwner": "Bạn là đầu mối đoàn khách",
+      "registrantViewer": "Bạn là người đăng ký",
+      "host": "Bạn phụ trách tiếp đón",
+      "none": "Chỉ theo dõi"
+    },
+    "empty": {
+      "noMatch": "Không tìm thấy đơn phù hợp với bộ lọc.",
+      "noRegistered": "Bạn chưa đăng ký đoàn khách nào cho người khác.",
+      "visitorNone": "Bạn chưa là đầu mối của đơn tiếp khách nào.",
+      "noAttending": "Bạn chưa có đơn mời tham dự nào.",
+      "noHosted": "Bạn chưa phụ trách tiếp đón đoàn khách nào.",
+      "allStaffLeader": "Chưa có đơn tiếp khách nào tại campus của bạn.",
+      "allDefault": "Bạn chưa có đơn tiếp khách nào.",
+      "staffNone": "Bạn chưa có đơn phụ trách nào."
+    },
+    "actions": {
+      "editPendingTitle": "Sửa đơn đăng ký tham quan",
+      "editPendingShort": "Sửa đơn",
+      "resubmitTitle": "Sửa & gửi lại đơn",
+      "resubmitShort": "Gửi lại",
+      "feedbackTitle": "Đánh giá chuyến thăm",
+      "feedbackShort": "Đánh giá",
+      "alreadyRated": "Đã đánh giá",
+      "menuViewForm": "Xem form đăng ký tham quan",
+      "menuViewRejectReason": "Xem lý do từ chối",
+      "menuViewCancelReason": "Xem lý do hủy",
+      "menuViewHistory": "Xem lịch sử thay đổi",
+      "menuCancelVisit": "Hủy lịch thăm",
+      "menuEditPending": "Sửa đơn",
+      "menuResubmit": "Sửa & gửi lại đơn",
+      "menuFeedback": "Đánh giá chuyến thăm",
+      "viewRejectReasonCampus": "Xem lý do từ chối cơ sở",
+      "cancelCampusVisit": "Hủy lịch thăm cơ sở"
+    },
+    "pagination": {
+      "showing": "Hiển thị",
+      "recordsPerPage": "bản ghi / trang"
+    },
+    "cancelModal": {
+      "titlePending": "Hủy đơn đăng ký tham quan",
+      "titleSingleCampus": "Hủy lịch thăm",
+      "titleInstance": "Hủy lịch thăm tại cơ sở {{campus}}",
+      "titleMultiCampus": "Hủy toàn bộ lịch thăm liên cơ sở",
+      "bodyPending": "Bạn đang hủy đơn đăng ký tham quan này. Sau khi hủy, đơn sẽ không tiếp tục được phê duyệt và bạn sẽ không thể khôi phục lại đơn này.",
+      "bodySingleCampus": "Bạn đang hủy lịch thăm đã được duyệt. Sau khi hủy, lịch tiếp khách tại cơ sở này sẽ bị hủy và không thể khôi phục.",
+      "bodyInstance": "Bạn đang hủy lịch thăm tại cơ sở {{campus}}. Các cơ sở khác trong đơn liên cơ sở sẽ không bị ảnh hưởng.",
+      "bodyMultiCampus": "Bạn đang hủy toàn bộ lịch thăm liên cơ sở. Tất cả cơ sở trong đơn này sẽ bị hủy và không thể khôi phục.",
+      "hintPending": "Nếu bạn vẫn muốn tham quan vào thời gian khác, vui lòng tạo đơn đăng ký mới.",
+      "hintSingleCampus": "Nhà trường có thể đã chuẩn bị nhân sự, phòng họp hoặc hậu cần cho lịch thăm này. Vui lòng nhập lý do hủy rõ ràng.",
+      "hintInstance": "Chỉ lịch thăm tại cơ sở này bị hủy. Những cơ sở đã diễn ra, đang diễn ra hoặc đã hoàn tất sẽ không thể hủy.",
+      "hintMultiCampus": "Hành động này sẽ ảnh hưởng đến toàn bộ lịch tiếp khách tại các cơ sở đã được sắp xếp. Nếu bạn chỉ muốn thay đổi một phần lịch trình, vui lòng liên hệ người phụ trách trước khi hủy.",
+      "hostCancelNotice": "Trường hợp người phụ trách tiếp đón hủy là do khách đã xác nhận hủy ngoài hệ thống.",
+      "reasonLabel": "Lý do hủy",
+      "reasonPlaceholder": "Nhập lý do hủy...",
+      "confirmCheckbox": "Tôi hiểu rằng thao tác hủy không thể hoàn tác.",
+      "back": "Quay lại",
+      "processing": "Đang xử lý...",
+      "confirmPending": "Xác nhận hủy đơn",
+      "confirmSingleCampus": "Xác nhận hủy lịch thăm",
+      "confirmInstance": "Xác nhận hủy cơ sở này",
+      "confirmMultiCampus": "Xác nhận hủy toàn bộ"
+    }
   }
 }

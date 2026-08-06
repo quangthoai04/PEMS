@@ -14,11 +14,25 @@ import avatarImg from '../../../assets/Avatar/AvatarDefault.png';
 import { useProfile } from '../../../features/profile/hooks/useProfile';
 import { profileApi, validateAvatarFile } from '../../../features/profile/api/profileApi';
 import type { GenderValue, UpdateProfileRequest, ViewProfileResponse } from '../../../features/profile/types/profile.types';
-import { NationalitySearchableDropdown } from '../../../features/profile/components/NationalitySearchableDropdown';
-import { nationalityLabel } from '../../../features/profile/constants/nationalities';
+import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
+import { getViCountryNames } from '../../../shared/utils/countryNames';
 import { getAuthErrorMessage } from '../../../features/authentication/api/authError';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { useAuth } from '../../../shared/hooks/useAuth';
+
+/** Chuyển mã alpha-2 (lưu trong DB) hoặc tên tiếng Anh về tên tiếng Việt để hiển thị. */
+function resolveNationalityLabel(value: string | null | undefined): string {
+  if (!value) return 'Chưa cập nhật';
+  const viNames = getViCountryNames();
+  // Nếu value là mã alpha-2 (2 ký tự viết hoa)
+  if (/^[A-Z]{2}$/.test(value) && viNames[value]) return viNames[value];
+  // Nếu value là tên tiếng Anh, tra ngược về alpha-2 rồi lấy tên vi
+  const found = Object.entries(viNames).find(
+    ([, vi]) => vi.toLowerCase() === value.toLowerCase()
+  );
+  if (found) return found[1];
+  return value;
+}
 
 const GENDER_LABELS: Record<GenderValue, string> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
 
@@ -53,7 +67,8 @@ function toForm(p: ViewProfileResponse): EditForm {
   };
 }
 
-/** Mirror name/phone into the legacy currentUser + pems_user so Header/Sidebar stay in sync. */
+/** Mirror name/phone into the legacy currentUser + pems_user so Header/Sidebar stay in sync.
+ *  Explicitly sets phone to null (not undefined) so clearing the field is persisted. */
 function syncLocalUser(updated: ViewProfileResponse) {
   try {
     const cuRaw = localStorage.getItem('currentUser');
@@ -66,7 +81,8 @@ function syncLocalUser(updated: ViewProfileResponse) {
     if (puRaw) {
       const pu = JSON.parse(puRaw);
       pu.fullName = updated.fullName;
-      pu.phone = updated.phone;
+      // Use null explicitly so cleared phone is not retained from old localStorage value
+      pu.phone = updated.phone ?? null;
       localStorage.setItem('pems_user', JSON.stringify(pu));
     }
   } catch {
@@ -183,9 +199,10 @@ export function Profile() {
     const payload: UpdateProfileRequest = {
       fullName: form.fullName.trim(),
       gender: form.gender ? form.gender : null,
-      phone: form.phone.trim() ? form.phone.trim() : null,
+      // Backend uses nullable-patch pattern: `null` is ignored, `""` clears the field.
+      phone: form.phone.trim() || '',
+      nationality: form.nationality ? form.nationality : null,
     };
-    if (isVisitor) payload.nationality = form.nationality ? form.nationality : null;
 
     try {
       const updated = await update(payload);
@@ -436,16 +453,18 @@ export function Profile() {
                     </>
                   )}
 
-                  {/* Quốc tịch — VISITOR */}
+                  {/* Quốc tịch — chỉ VISITOR */}
                   {isVisitor && (
                     <InfoCard icon={<Globe className="h-5 w-5" />} label="Quốc tịch" full>
                       {isEditing ? (
-                        <NationalitySearchableDropdown
-                          value={form.nationality || null}
+                        <CountrySelect
+                          value={form.nationality ?? ''}
                           onChange={(v) => setForm({ ...form, nationality: v })}
+                          placeholder="Tìm hoặc chọn quốc tịch..."
+                          storeLang="en"
                         />
                       ) : (
-                        <ValueText>{nationalityLabel(profile.nationality) || 'Chưa cập nhật'}</ValueText>
+                        <ValueText>{resolveNationalityLabel(profile.nationality)}</ValueText>
                       )}
                     </InfoCard>
                   )}

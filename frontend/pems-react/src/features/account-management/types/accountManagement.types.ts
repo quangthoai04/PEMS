@@ -1,5 +1,6 @@
 export type AccountRoleCode = 'ADMIN' | 'HO' | 'STAFF' | 'DEPARTMENT' | 'STUDENT' | 'VISITOR';
-export type AccountSubRole = 'Leader' | 'Staff';
+/** Wire format matches backend UserSubRoles ("LEADER" | "STAFF") — case-sensitive on the server. */
+export type AccountSubRole = 'LEADER' | 'STAFF';
 
 /** Generic paged envelope returned by list/search endpoints. Mirrors backend PaginatedResult<T>. */
 export interface PaginatedResult<T> {

@@ -4,6 +4,9 @@
 
 /** visit_requests.status — aggregate of the campus-instance decisions. */
 export const VisitRequestStatus = {
+  /** The confirmation gate is shut: at least one campus has no confirmed operational contact yet,
+   *  and while the request sits here NO Staff Leader of ANY campus may see or process it. */
+  PendingContactConfirmation: 'PENDING_CONTACT_CONFIRMATION',
   PendingApproval: 'PENDING_APPROVAL',
   PartiallyApproved: 'PARTIALLY_APPROVED',
   Approved: 'APPROVED',
@@ -16,6 +19,8 @@ export type VisitRequestStatus =
 /** visit_request_campuses.status — the actual visit progress per campus.
  * No WAITING_HOST_ASSIGNMENT anymore: approve assigns the host in the same action. */
 export const VisitInstanceStatus = {
+  /** This campus's own operational contact has not confirmed yet. */
+  WaitingContactConfirmation: 'WAITING_CONTACT_CONFIRMATION',
   WaitingRequestApproval: 'WAITING_REQUEST_APPROVAL',
   Assigned: 'ASSIGNED',
   BeforeVisit: 'BEFORE_VISIT',
@@ -28,24 +33,27 @@ export const VisitInstanceStatus = {
 export type VisitInstanceStatus =
   (typeof VisitInstanceStatus)[keyof typeof VisitInstanceStatus];
 
-/** Vietnamese display labels — never show the raw technical enum to users. */
+/** Vietnamese display labels — never show the raw technical enum to users.
+ *  Must read the same as VisitRowLabels.Status on the server. */
 export const REQUEST_STATUS_LABELS: Record<VisitRequestStatus, string> = {
+  PENDING_CONTACT_CONFIRMATION: 'Chờ đầu mối xác nhận',
   PENDING_APPROVAL: 'Chờ xử lý',
   PARTIALLY_APPROVED: 'Duyệt một phần',
   APPROVED: 'Đã duyệt',
-  REJECTED: 'Từ chối',
+  REJECTED: 'Đã bị từ chối',
   CANCELLED: 'Đã hủy',
 };
 
 export const INSTANCE_STATUS_LABELS: Record<VisitInstanceStatus, string> = {
+  WAITING_CONTACT_CONFIRMATION: 'Chờ đầu mối xác nhận',
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
-  ASSIGNED: 'Đã tiếp nhận',
+  ASSIGNED: 'Đã phân công người phụ trách',
   BEFORE_VISIT: 'Đang chuẩn bị',
-  DURING_VISIT: 'Đang diễn ra',
-  AFTER_VISIT: 'Hậu xử lý',
-  CLOSED: 'Đã đóng',
+  DURING_VISIT: 'Đang tiếp khách',
+  AFTER_VISIT: 'Chờ đóng đoàn',
+  CLOSED: 'Đã đóng đoàn',
   CANCELLED: 'Đã hủy',
-  REJECTED: 'Từ chối',
+  REJECTED: 'Đã bị từ chối',
 };
 
 /** A campus instance may only be cancelled while it is ASSIGNED or BEFORE_VISIT. */
@@ -1053,6 +1061,13 @@ export interface VisitRequestManagementItem {
   statusLabel?: string | null;
   /** What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …). */
   relationLabel?: string | null;
+  /**
+   * Which relationship view this row came from: RESPONSIBLE | INVITED | REGISTERED | HOSTED |
+   * MY_REQUESTS. On the merged "Tất cả các loại đơn" tab (Staff Leader), rows from different
+   * sources are mixed in one list — this is how the frontend tells them apart per-row instead
+   * of assuming the page-level active tab describes every row.
+   */
+  tabType?: string | null;
   /** Backend-decided next task. NONE is a real answer, not an absent one. */
   nextTask?: VisitNextTask | null;
 

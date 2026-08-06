@@ -11,7 +11,7 @@ using PEMS.Domain.Entities.Users;
 namespace PEMS.Application.Accounts.Commands.ReplaceStaffLeader;
 
 /// <summary>
-/// Replace Staff Leader (Trưởng phòng IC) of a campus. HO only. Runs the whole swap in one
+/// Replace Staff Leader (Trưởng phòng IC) of a campus. HO or ADMIN only. Runs the whole swap in one
 /// transaction: demote the old leader to STAFF/STAFF (status preserved), promote/create the new
 /// STAFF/LEADER, repoint campuses.ic_head_user_id + departments.head_user_id, revoke sessions, and
 /// audit. A LOCKED old leader additionally records a security event. See REPLACE_STAFF_LEADER spec.
@@ -48,8 +48,8 @@ public sealed class ReplaceStaffLeaderCommandHandler
     public async Task<ReplaceStaffLeaderResponse> Handle(
         ReplaceStaffLeaderCommand request, CancellationToken cancellationToken)
     {
-        // BR-RSL-01: only HO may replace a Staff Leader.
-        if (_currentUser.RoleCode != RoleCodes.Ho)
+        // BR-RSL-01: only HO or ADMIN may replace a Staff Leader.
+        if (_currentUser.RoleCode != RoleCodes.Ho && _currentUser.RoleCode != RoleCodes.Admin)
             throw new ForbiddenException("Bạn không có quyền thay thế Staff Leader.");
 
         var actorId = _currentUser.UserId;

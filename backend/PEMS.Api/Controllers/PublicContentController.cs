@@ -76,6 +76,26 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        /// <summary>
+        /// One PUBLISHED FAQ in the requested language, for the /faq?faqId= deep link. 404 when the FAQ
+        /// is hidden, absent, or has no content in that language (English never falls back to Vietnamese).
+        /// </summary>
+        // :long keeps this off the sibling literal route "faqs/type-counts" explicitly, rather than
+        // relying on literal-beats-parameter precedence to do it silently.
+        [HttpGet("faqs/{faqId:long}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetPublicFaqDetail(
+            ulong faqId,
+            [FromQuery] string? languageCode,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new PEMS.Application.PublicContent.Queries.GetPublicFaqDetail.GetPublicFaqDetailQuery(
+                    faqId, languageCode),
+                cancellationToken);
+            return Ok(result);
+        }
+
         /// <summary>Every faq_type with its PUBLISHED question count — for the FAQ page's topic cards.</summary>
         [HttpGet("faqs/type-counts")]
         [AllowAnonymous]

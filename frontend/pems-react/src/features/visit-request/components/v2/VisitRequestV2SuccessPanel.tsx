@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { VisitRequestV2SubmittedSummary } from './VisitRequestV2SubmittedSummary';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { showSuccessToast } from '../../../../shared/utils/toast';
+import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 
@@ -47,12 +48,16 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
   const [showSubmitted, setShowSubmitted] = useState(false);
   /** null = not attempted; true = in the clipboard; false = the browser refused (no permission). */
   const [copied, setCopied] = useState<boolean | null>(null);
+  const { campuses } = useRegistrationCampuses();
 
   // The lookup-recovered receipt (an uncertain result that turned out COMPLETED) knows the request
   // exists but not its campus breakdown — it answered an anonymous caller. Show what is known.
   const recovered = response.recoveredByLookup === true;
-  const campusCount = response.campusCount || response.instances.length;
   const code = response.requestCode;
+
+  // Campuses whose own operational contact has not answered yet. Counted per campus by the server —
+  // there is no request-level contact to be "pending" on.
+  const contactsPending = response.pendingConfirmations;
 
   const copyCode = async () => {
     if (!code) return;
@@ -66,6 +71,13 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
       setCopied(false);
     }
   };
+
+  // Names, not a count — "Campuses: 1" tells the reader nothing they can act on; "Hà Nội" does.
+  // Read from the submitted snapshot (always present, even on a lookup-recovered receipt) rather
+  // than the response, which carries campus IDs but not a name.
+  const campusNames = values.campusVisits
+    .map(cv => campuses.find(c => c.campusCode === cv.campus)?.campusName ?? cv.campus)
+    .join(', ');
 
   const actionBtn = 'inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50';
 
@@ -82,7 +94,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
           </div>
         </div>
 
-        <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-green-900 sm:grid-cols-2">
+        <dl className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-green-900">
           {response.status && (
             <div className="flex gap-2">
               <dt className="font-semibold">{t('visitRequestV2:success.statusLabel')}</dt>
@@ -91,33 +103,49 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
               </dd>
             </div>
           )}
+          <div className="flex gap-2">
+            <dt className="font-semibold">{t('visitRequestV2:success.campusCountLabel')}</dt>
+            <dd data-testid="v2-success-campuses">
+              {campusNames}
+              {response.hasMixedCampusDetails ? ` — ${t('visitRequestV2:success.mixedNote')}` : ''}
+            </dd>
+          </div>
           {response.submittedAt && (
             <div className="flex gap-2">
               <dt className="font-semibold">{t('visitRequestV2:success.submittedAtLabel')}</dt>
               <dd data-testid="v2-success-submitted-at">{formatVietnamDateTime(response.submittedAt)}</dd>
             </div>
           )}
-          <div className="flex gap-2">
-            <dt className="font-semibold">{t('visitRequestV2:success.campusCountLabel')}</dt>
-            <dd>
-              {campusCount}
-              {response.hasMixedCampusDetails ? ` — ${t('visitRequestV2:success.mixedNote')}` : ''}
-            </dd>
-          </div>
         </dl>
 
-        <p className="mt-4 text-sm font-semibold text-green-900">{t('visitRequestV2:success.saved')}</p>
-        <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.keepCode')}</p>
         {response.idempotent && (
-          <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
+          <p className="mt-4 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
         )}
 
-        {response.pendingConfirmations > 0 && (
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>{t('visitRequestV2:success.claimPending')}</p>
-          </div>
-        )}
+        {/* Always shown — "how do I track this?" is a question on every receipt, not only when a
+            campus is still waiting on its operational contact. The pending bullet is prepended when
+            it applies; the track-status bullet's own wording adapts ("Đồng thời…" only makes sense
+            after a first bullet) rather than always assuming something precedes it.
+
+            The pending bullet counts CAMPUSES, not a single request-level contact: each campus has
+            its own operational contact, and the confirmation gate stays shut until every one of
+            them has answered. */}
+        <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <ul className="list-disc space-y-1 pl-4">
+            {contactsPending > 0 && (
+              <li>{t('visitRequestV2:success.claimPending', { campusCount: contactsPending })}</li>
+            )}
+            <li>
+              {t(
+                contactsPending > 0
+                  ? 'visitRequestV2:success.trackStatusAlso'
+                  : 'visitRequestV2:success.trackStatus',
+                { email: values.registerInfo.email },
+              )}
+            </li>
+          </ul>
+        </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
           {onViewRequest && (
@@ -152,6 +180,8 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
                 : t('visitRequestV2:success.reviewSubmitted')}
             </button>
           )}
+          {/* The code is the whole point of the receipt — copying it must not depend on the user
+              selecting text by hand on a phone. */}
           {code && (
             <button type="button" data-testid="v2-success-copy" onClick={() => void copyCode()} className={actionBtn}>
               {copied ? <Check className="h-4 w-4 text-green-600" /> : <ClipboardCopy className="h-4 w-4" />}

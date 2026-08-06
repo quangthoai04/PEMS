@@ -37,6 +37,7 @@
     "department": "Intl. Relations"
   },
   "profile": {
+    "backToHome": "Back to home page",
     "myVisitRequests": "My Visit Requests",
     "adminDashboard": "Admin Dashboard",
     "userProfile": "Profile",

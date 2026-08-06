@@ -45,6 +45,14 @@ public sealed class ViewGuestDelegationListQueryHandler
     // "hosted" (Tôi là host): instance-level rows the caller officially hosts. Gives the Staff
     // Leader a dedicated host view separate from the campus-review tab.
     private const string TabHosted = "hosted";
+    // "all" (Tất cả các loại đơn): Staff (Leader or regular) and Visitor — the roles with more
+    // than one relationship tab worth merging (HO/Dept/Student only ever have one tab, so "all"
+    // would be identical to it). See QueryAllMergedAsync for what merges for which role.
+    private const string TabAll = "all";
+    // Cap on how many rows each source query may contribute to a merged "all" list before the
+    // in-memory sort/paginate step. A real campus's total live+recent order volume is nowhere near
+    // this; it exists so a merge can never turn into an unbounded fetch.
+    private const int MergeFetchCap = 1000;
 
     public ViewGuestDelegationListQueryHandler(
         IApplicationDbContext context, ICurrentUserService currentUser, IDateTimeService clock)
@@ -70,6 +78,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             TabAttending  => TabAttending,
             TabRegistered => TabRegistered,
             TabHosted     => TabHosted,
+            TabAll        => TabAll,
             _             => "responsible",
         };
 
@@ -79,11 +88,13 @@ public sealed class ViewGuestDelegationListQueryHandler
         // Visitor are never invitees (they approve / assign / own), so they have no Tab 2.
         // "registered" is for Visitor/Staff/Staff Leader (the only roles that may create);
         // "hosted" is instance-hosting Staff (in practice the Staff Leader's dedicated view).
+        // "all" is Staff (either sub-role) and Visitor — see the TabAll doc comment.
         if (roleCode == RoleCodes.Admin ||
             (tab == TabAttending &&
                 (roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho)) ||
             (tab == TabRegistered && !(roleCode == RoleCodes.Visitor || isStaffRole)) ||
-            (tab == TabHosted && !isStaffRole))
+            (tab == TabHosted && !isStaffRole) ||
+            (tab == TabAll && !(isStaffRole || roleCode == RoleCodes.Visitor)))
         {
             return PaginatedResult<VisitRequestManagementItemDto>.Create(
                 new List<VisitRequestManagementItemDto>(), request.Page, request.PageSize, 0);
@@ -91,8 +102,16 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         List<VisitRequestManagementItemDto> items;
         int totalItems;
+        // Only populated for tab == TabAll: each merged row keeps the tab it actually came from,
+        // so the per-row enrichment below (actions/capabilities/relation/next-task) treats a
+        // "registered" row as read-only even though the query as a whole is "all".
+        Dictionary<VisitRequestManagementItemDto, string>? mergedTabByItem = null;
 
-        if (tab == TabAttending)
+        if (tab == TabAll)
+        {
+            (items, totalItems, mergedTabByItem) = await QueryAllMergedAsync(request, userId, roleCode, cancellationToken);
+        }
+        else if (tab == TabAttending)
         {
             (items, totalItems) = await QueryInstanceLevelAsync(request, userId, attending: true, hostedOnly: false, cancellationToken);
         }
@@ -122,8 +141,10 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         foreach (var item in items)
         {
-            item.AllowedActions = BuildAllowedActions(item, tab, userId, now);
-            item.Capabilities = BuildRowCapabilities(item, tab, leaderCampusId, now);
+            var itemTab = mergedTabByItem != null && mergedTabByItem.TryGetValue(item, out var originTab) ? originTab : tab;
+
+            item.AllowedActions = BuildAllowedActions(item, itemTab, userId, now);
+            item.Capabilities = BuildRowCapabilities(item, itemTab, leaderCampusId, now);
             // The flat list stays the ENABLED subset, so a button can never appear for a verdict that
             // refused it. Actions with no verdict (navigation, cancel, the approval decision) keep
             // their existing booleans and are already in the list.
@@ -131,21 +152,140 @@ public sealed class ViewGuestDelegationListQueryHandler
                 if (capability.Enabled && !item.AllowedActions.Contains(capability.Code))
                     item.AllowedActions.Add(capability.Code);
 
-            AttachCampusCapabilities(item, tab, leaderCampusId, now);
+            AttachCampusCapabilities(item, itemTab, leaderCampusId, now);
 
-            item.TabType = ResolveTabType(tab, roleCode);
-            item.CurrentUserRelation = ResolveRelation(item, tab, roleCode, isStaffLeader);
+            item.TabType = ResolveTabType(itemTab, roleCode);
+            item.CurrentUserRelation = ResolveRelation(item, itemTab, roleCode, isStaffLeader);
             item.RelationLabel = VisitRowLabels.Relation(item.CurrentUserRelation);
             item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, item.CampusStatus);
+            // Multi-campus SUMMARY row (no single instance of its own): visit_requests.status only
+            // tracks the approval aggregate, so a request stuck at "Đã duyệt" forever even after
+            // every campus finished was stale data. Re-derive from the campus instances themselves.
+            if (item.CampusStatus is null && item.RequestStatus == VisitRequestStatuses.Approved
+                && item.CampusProgressItems.Count > 0)
+            {
+                var progressLabel = VisitRowLabels.MultiCampusProgress(
+                    item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus));
+                if (progressLabel is not null) item.StatusLabel = progressLabel;
+            }
+            // Visitor doesn't see the internal "chờ đóng đoàn" close-out step — from their side the
+            // reception already happened, and closing the delegation record is FPT's own paperwork.
+            // They see the same "đã hoàn tất" wording as CLOSED; the feedback star in the action
+            // column (fed by the AFTER_VISIT/CLOSED pending-feedback query) is what actually changes.
+            if (roleCode == RoleCodes.Visitor && item.CampusStatus == VisitInstanceStatus.AfterVisit)
+                item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, VisitInstanceStatus.Closed);
             // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
             item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
 
         await AttachInstanceChangeSummariesAsync(items, userId, cancellationToken);
-        await AttachNextTasksAsync(items, tab, userId, leaderCampusId, now, cancellationToken);
+        await AttachNextTasksAsync(items, tab, userId, leaderCampusId, now, cancellationToken, mergedTabByItem);
 
         return PaginatedResult<VisitRequestManagementItemDto>.Create(items, request.Page, request.PageSize, totalItems);
     }
+
+    /// <summary>
+    /// "all" tab (Tất cả các loại đơn). What merges depends on the caller's role, because each
+    /// role's "responsible" tab is a different shape:
+    ///
+    ///   • Staff (Leader or regular) — responsible (instance-level: every campus instance the
+    ///     Leader's own campus has, or every instance a regular Staff hosts) + attending
+    ///     (instance-level) + registered (request-level). "hosted" is deliberately NOT a 4th
+    ///     source: a Leader's hosted instances are always at their own campus, so they are
+    ///     already inside "responsible"; for a regular Staff "responsible" IS the hosted-only
+    ///     view already (see QueryInstanceLevelAsync's role branch) — either way querying
+    ///     "hosted" again would just re-add the same rows.
+    ///   • Visitor — responsible (request-level: rows they are the CONTACT OWNER of) +
+    ///     registered (request-level: rows they merely registered for someone else). Both are
+    ///     the same query shape and already mutually exclusive by construction (registered
+    ///     explicitly excludes anything the caller also owns), so there is nothing to dedupe
+    ///     between them — Visitor has no "attending" tab at all.
+    ///
+    /// Rows are deduped so the same real-world visit never appears twice: an instance-level row
+    /// is dropped when its instance id already came through an earlier source, and a
+    /// request-level row is dropped when its request id already came through an earlier source
+    /// (an instance-level row and a request-level row for the same request would otherwise look
+    /// like two different delegations).
+    ///
+    /// Each source is fetched unpaginated (capped at <see cref="MergeFetchCap"/>) under the SAME
+    /// filters as the caller asked for, then merged, sorted and paginated in memory — there is no
+    /// single SQL query that can UNION a request-level aggregate with an instance-level shape and
+    /// still paginate correctly.
+    /// </summary>
+    private async Task<(List<VisitRequestManagementItemDto> Items, int Total, Dictionary<VisitRequestManagementItemDto, string> TabByItem)>
+        QueryAllMergedAsync(ViewGuestDelegationListQuery request, ulong userId, string? roleCode, CancellationToken ct)
+    {
+        var fetchAll = CloneForMerge(request, MergeFetchCap);
+
+        var tabByItem = new Dictionary<VisitRequestManagementItemDto, string>();
+        var seenInstanceIds = new HashSet<ulong>();
+        var seenRequestIds = new HashSet<ulong>();
+        var merged = new List<VisitRequestManagementItemDto>();
+
+        void AddSource(List<VisitRequestManagementItemDto> items, string originTab, bool instanceLevel)
+        {
+            foreach (var item in items)
+            {
+                if (instanceLevel
+                        ? (item.VisitInstanceId.HasValue && seenInstanceIds.Contains(item.VisitInstanceId.Value))
+                        : seenRequestIds.Contains(item.VisitRequestId))
+                    continue;
+                merged.Add(item);
+                tabByItem[item] = originTab;
+                if (item.VisitInstanceId.HasValue) seenInstanceIds.Add(item.VisitInstanceId.Value);
+                seenRequestIds.Add(item.VisitRequestId);
+            }
+        }
+
+        if (roleCode == RoleCodes.Visitor)
+        {
+            var (responsibleItems, _) = await QueryRequestLevelAsync(fetchAll, userId, roleCode, ct);
+            var (registeredItems, _) = await QueryRequestLevelAsync(fetchAll, userId, roleCode, ct, registeredView: true);
+            AddSource(responsibleItems, "responsible", instanceLevel: false);
+            AddSource(registeredItems, TabRegistered, instanceLevel: false);
+        }
+        else
+        {
+            var (responsibleItems, _) = await QueryInstanceLevelAsync(fetchAll, userId, attending: false, hostedOnly: false, ct);
+            var (attendingItems, _) = await QueryInstanceLevelAsync(fetchAll, userId, attending: true, hostedOnly: false, ct);
+            var (registeredItems, _) = await QueryRequestLevelAsync(fetchAll, userId, roleCode, ct, registeredView: true);
+            AddSource(responsibleItems, "responsible", instanceLevel: true);
+            AddSource(attendingItems, TabAttending, instanceLevel: true);
+            AddSource(registeredItems, TabRegistered, instanceLevel: false);
+        }
+
+        var sorted = request.SortOrder?.ToLower() == "asc"
+            ? merged.OrderBy(i => i.PlannedStartAt ?? DateTime.MaxValue).ThenBy(i => i.VisitRequestId).ToList()
+            : merged.OrderByDescending(i => i.PlannedStartAt ?? DateTime.MinValue).ThenByDescending(i => i.VisitRequestId).ToList();
+
+        var total = sorted.Count;
+        var paged = sorted.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize).ToList();
+
+        return (paged, total, tabByItem);
+    }
+
+    /// <summary>Shallow copy with Page/PageSize overridden — used to fetch a merge source unpaginated.</summary>
+    private static ViewGuestDelegationListQuery CloneForMerge(ViewGuestDelegationListQuery source, int pageSize) => new()
+    {
+        Tab = source.Tab,
+        Page = 1,
+        PageSize = pageSize,
+        Keyword = source.Keyword,
+        RequestStatus = source.RequestStatus,
+        CampusStatus = source.CampusStatus,
+        CampusId = source.CampusId,
+        VisitScope = source.VisitScope,
+        VisitScopes = source.VisitScopes,
+        FromDate = source.FromDate,
+        ToDate = source.ToDate,
+        CancelledOnly = source.CancelledOnly,
+        Relation = source.Relation,
+        ReadOnlyOnly = source.ReadOnlyOnly,
+        ActionableOnly = source.ActionableOnly,
+        Timing = source.Timing,
+        SortBy = source.SortBy,
+        SortOrder = source.SortOrder,
+    };
 
     /// <summary>
     /// Attaches the change summary to INSTANCE-level rows (the campus actors' tabs).
@@ -271,21 +411,26 @@ public sealed class ViewGuestDelegationListQueryHandler
     /// </summary>
     private async Task AttachNextTasksAsync(
         List<VisitRequestManagementItemDto> items, string tab, ulong userId,
-        ulong? leaderCampusId, DateTime now, CancellationToken ct)
+        ulong? leaderCampusId, DateTime now, CancellationToken ct,
+        Dictionary<VisitRequestManagementItemDto, string>? tabByItem = null)
     {
         if (items.Count == 0) return;
 
-        var rows = items.Select(item => new VisitNextTaskBuilder.Row(
-            item.VisitRequestId,
-            item.VisitInstanceId,
-            item.RequestStatus,
-            item.CampusStatus,
-            item.PlannedStartAt,
-            item.PlannedEndAt,
-            ViewerIsHost: tab != TabAttending && tab != TabRegistered && item.CurrentUserIsHost,
-            ViewerLeadsCampus: tab != TabAttending && tab != TabRegistered
-                && leaderCampusId is not null && item.CampusId == leaderCampusId,
-            item.AllowedActions)).ToList();
+        var rows = items.Select(item =>
+        {
+            var itemTab = tabByItem != null && tabByItem.TryGetValue(item, out var originTab) ? originTab : tab;
+            return new VisitNextTaskBuilder.Row(
+                item.VisitRequestId,
+                item.VisitInstanceId,
+                item.RequestStatus,
+                item.CampusStatus,
+                item.PlannedStartAt,
+                item.PlannedEndAt,
+                ViewerIsHost: itemTab != TabAttending && itemTab != TabRegistered && item.CurrentUserIsHost,
+                ViewerLeadsCampus: itemTab != TabAttending && itemTab != TabRegistered
+                    && leaderCampusId is not null && item.CampusId == leaderCampusId,
+                item.AllowedActions);
+        }).ToList();
 
         var tasks = await VisitNextTaskBuilder.BuildAsync(_context, userId, rows, now, ct);
         for (var i = 0; i < items.Count; i++)
@@ -662,6 +807,12 @@ public sealed class ViewGuestDelegationListQueryHandler
             };
         }).ToList();
 
+        // NOT given a sibling-campus accordion. An instance-level row belongs to a SCOPED actor
+        // (Staff Leader = own campus, Staff = own hosted instance, Dept/Student = own assignment),
+        // and every one of them is scoped to a single campus. Filling CampusProgressItems here
+        // would hand them a sibling campus's status, host name, decision note and cancellation
+        // reason — data the scope explicitly withholds. The accordion stays request-level, where
+        // the caller (Visitor owner / HO / registrant) actually holds the whole request.
         return (items, total);
     }
 

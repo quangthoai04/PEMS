@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
@@ -19,6 +21,17 @@ public static class VisitRowLabels
     /// <summary>
     /// Process status. The campus instance wins when there is one — a request aggregate of
     /// PARTIALLY_APPROVED says nothing useful about the campus the reader is looking at.
+    ///
+    /// Vocabulary shared by every role: Chờ đầu mối xác nhận · Chờ xử lý tại cơ sở · Đã phân công
+    /// người phụ trách · Đang chuẩn bị · Đang tiếp khách · Chờ đóng đoàn · Đã đóng đoàn ·
+    /// Đã bị từ chối · Đã hủy.
+    ///
+    /// The REQUEST-level fallback (campusStatus null) keeps its own aggregate vocabulary — "Chờ xử
+    /// lý" / "Duyệt một phần" / "Đã duyệt" — because a summary row is answering a different
+    /// question from a campus row: "where is this request as a whole?", not "where is my campus?".
+    /// Per-campus movement underneath an aggregate is carried by the row's ChangeSummary/campus
+    /// indicators (see AttachChangeSummariesAsync) — a "something changed here" signal deliberately
+    /// separate from the status word.
     /// </summary>
     public static string Status(string requestStatus, string? campusStatus) => campusStatus switch
     {
@@ -39,12 +52,49 @@ public static class VisitRowLabels
         {
             VisitRequestStatuses.Cancelled => "Đã hủy",
             VisitRequestStatuses.Rejected => "Đã bị từ chối",
+            // The whole request is behind the confirmation gate. Without this the summary row a
+            // registrant/HO sees would fall through and print the raw enum.
+            VisitRequestStatuses.PendingContactConfirmation => "Chờ đầu mối xác nhận",
             VisitRequestStatuses.PendingApproval => "Chờ xử lý",
             VisitRequestStatuses.PartiallyApproved => "Duyệt một phần",
             VisitRequestStatuses.Approved => "Đã duyệt",
             _ => requestStatus,
         },
     };
+
+    // Same order a single campus instance moves through, once decided — used to pick the ONE
+    // status a multi-campus SUMMARY row (no single instance of its own) should show.
+    private static readonly string[] ProgressOrder =
+    {
+        VisitInstanceStatus.Assigned,
+        VisitInstanceStatus.BeforeVisit,
+        VisitInstanceStatus.DuringVisit,
+        VisitInstanceStatus.AfterVisit,
+        VisitInstanceStatus.Closed,
+    };
+
+    /// <summary>
+    /// The status a multi-campus SUMMARY row shows once <see cref="Status"/> would otherwise say
+    /// the generic aggregate "Đã duyệt" — visit_requests.status only tracks the APPROVAL aggregate
+    /// (pending/partially/approved/rejected/cancelled), it is never re-derived as campuses move
+    /// through preparing/during/after/closed, so a request left at "Đã duyệt" forever even after
+    /// every campus actually finished was reading stale data, not a wording choice.
+    ///
+    /// Shows whichever campus is LEAST progressed (Rejected/Cancelled instances excluded — they
+    /// are a different, already-terminal outcome for that campus, not "still in progress"): the
+    /// whole delegation is not "Đã đóng đoàn" until every live campus is, mirroring how the single-
+    /// campus badge already reads. Null when there is nothing left to rank (e.g. every campus
+    /// Rejected/Cancelled — <see cref="Status"/>'s own requestStatus branch already covers that).
+    /// </summary>
+    public static string? MultiCampusProgress(IEnumerable<string?> campusInstanceStatuses)
+    {
+        var leastProgressed = campusInstanceStatuses
+            .Select(s => System.Array.IndexOf(ProgressOrder, s))
+            .Where(rank => rank >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
+        return leastProgressed < 0 ? null : Status(VisitRequestStatuses.Approved, ProgressOrder[leastProgressed]);
+    }
 
     /// <summary>
     /// What the signed-in user is to this row. Never an authorization input — the relation is
@@ -54,7 +104,9 @@ public static class VisitRowLabels
     {
         "HOST" => "Bạn phụ trách tiếp đón",
         "TEMP_HOST" => "Bạn tạm phụ trách tiếp đón",
-        "VISITOR_OWNER" => "Bạn là đầu mối chính",
+        // "đầu mối đoàn khách", never "đầu mối chính": contacts are per campus, so no one is THE
+        // primary contact of a request any more.
+        "VISITOR_OWNER" => "Bạn là đầu mối đoàn khách",
         "REGISTRANT_VIEWER" => "Bạn là người đăng ký",
         "CAMPUS_APPROVER" => "Bạn có quyền duyệt tại cơ sở",
         "IC_SUPPORT" or "DEPT_SUPPORT" or "STUDENT_SUPPORT" => "Bạn được mời tham dự",

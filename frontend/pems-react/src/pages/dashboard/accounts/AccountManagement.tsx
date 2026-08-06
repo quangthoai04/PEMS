@@ -83,6 +83,8 @@ interface RoleEditForm {
   email: string;
   /** Successor for the department the target heads — only used when the change vacates that seat. */
   replacementHeadUserId: string;
+  /** ADMIN only — editable campus (Admin manages every campus, unlike HO/Staff Leader). */
+  campusId: string;
 }
 
 // Whether Họ tên / Email may be edited for a target, derived from its ORIGINAL role/sub-role
@@ -130,7 +132,7 @@ const subRoleLabel = (s?: unknown): string => {
 // list/detail rows keep the backend-provided roleName.
 const resolveCreateRoleDisplayName = (
   role: string,
-  ctx: { isHO: boolean; isStaffLeader: boolean },
+  ctx: { isHO: boolean; isStaffLeader: boolean; staffSubRole?: string },
 ): string => {
   const r = String(role ?? '').toUpperCase();
   if (ctx.isHO) {
@@ -146,7 +148,11 @@ const resolveCreateRoleDisplayName = (
   switch (r) {
     case 'ADMIN': return 'Quản trị viên';
     case 'HO': return 'Head Office';
-    case 'STAFF': return 'Staff';
+    case 'STAFF':
+      // ADMIN picks the chức vụ explicitly — reflect it instead of a generic "Staff".
+      return ctx.staffSubRole === 'LEADER' ? 'Staff Leader — Trưởng phòng IC'
+        : ctx.staffSubRole === 'STAFF' ? 'IC Staff'
+        : 'Staff';
     case 'DEPARTMENT': return 'Department Leader — Trưởng phòng ban';
     case 'STUDENT': return 'Student';
     case 'VISITOR': return 'Khách';
@@ -266,7 +272,10 @@ export function AccountManagement() {
   const [selectedDept, setSelectedDept] = useState("");
   const [selectedDeptStaffId, setSelectedDeptStaffId] = useState("");
   const [createCampus, setCreateCampus] = useState("");
-  
+  // ADMIN create — "Chức vụ" for role STAFF (Trưởng phòng IC / Nhân viên IC). Leader reuses the
+  // same StaffLeaderAvailability precheck HO's own Staff-Leader creation uses.
+  const [createStaffSubRole, setCreateStaffSubRole] = useState<'' | 'LEADER' | 'STAFF'>('');
+
   const [manualForm, setManualForm] = useState({
     role: "",
     name: "",
@@ -354,6 +363,8 @@ export function AccountManagement() {
       fullName: selectedAccount.name ?? '',
       email: selectedAccount.email ?? '',
       replacementHeadUserId: '',
+      // ADMIN only — defaults to the account's current campus; editable (Admin manages every campus).
+      campusId: selectedAccount.campusId != null ? String(selectedAccount.campusId) : '',
     });
     setEditForm({ role: roleCode });
     setIsEditingProfile(true);
@@ -496,11 +507,12 @@ export function AccountManagement() {
     return () => { active = false; };
   }, [isStaffLeader]);
 
-  // UC-96 — when HO picks a campus for role STAFF (Trưởng phòng IC), pre-check whether a Staff
-  // Leader can be created there. Mirrors the authoritative server check so the form can warn and
-  // disable submit before HO ever clicks "Xác nhận tạo". (Spec §11.1 / §12.)
+  // UC-96 — when HO (or ADMIN choosing "Trưởng phòng IC") picks a campus for role STAFF, pre-check
+  // whether a Staff Leader can be created there. Mirrors the authoritative server check so the form
+  // can warn and disable submit before ever clicking "Xác nhận tạo". (Spec §11.1 / §12.)
   useEffect(() => {
-    const shouldCheck = isHO && isCreateModalOpen && manualForm.role === 'STAFF' && !!createCampus;
+    const shouldCheck = isCreateModalOpen && manualForm.role === 'STAFF' && !!createCampus
+      && (isHO || (isRealAdmin && createStaffSubRole === 'LEADER'));
     if (!shouldCheck) { setSlAvailability(null); setSlAvailabilityLoading(false); return; }
 
     const campusId = campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId;
@@ -515,13 +527,13 @@ export function AccountManagement() {
       .catch(() => { if (active) setSlAvailability(null); /* non-fatal: server still re-checks on submit */ })
       .finally(() => { if (active) setSlAvailabilityLoading(false); });
     return () => { active = false; };
-  }, [isHO, isCreateModalOpen, manualForm.role, createCampus, campusOptions]);
+  }, [isHO, isRealAdmin, isCreateModalOpen, manualForm.role, createStaffSubRole, createCampus, campusOptions]);
 
-  // UC-96 — when HO picks a campus for role HO, pre-check whether a new HO can be created there.
-  // Mirrors the authoritative server check so the form can warn and disable submit before HO
-  // clicks "Xác nhận tạo". (HO_CREATE_HO_ACCOUNT spec §11.1 / §12.)
+  // UC-96 — when HO or ADMIN picks a campus for role HO, pre-check whether a new HO can be created
+  // there. Mirrors the authoritative server check so the form can warn and disable submit before
+  // clicking "Xác nhận tạo". (HO_CREATE_HO_ACCOUNT spec §11.1 / §12.)
   useEffect(() => {
-    const shouldCheck = isHO && isCreateModalOpen && manualForm.role === 'HO' && !!createCampus;
+    const shouldCheck = (isHO || isRealAdmin) && isCreateModalOpen && manualForm.role === 'HO' && !!createCampus;
     if (!shouldCheck) { setHoCampusCheck(null); setHoCampusCheckLoading(false); return; }
 
     const campusId = campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId;
@@ -536,7 +548,7 @@ export function AccountManagement() {
       .catch(() => { if (active) setHoCampusCheck(null); /* non-fatal: server still re-checks on submit */ })
       .finally(() => { if (active) setHoCampusCheckLoading(false); });
     return () => { active = false; };
-  }, [isHO, isCreateModalOpen, manualForm.role, createCampus, campusOptions]);
+  }, [isHO, isRealAdmin, isCreateModalOpen, manualForm.role, createCampus, campusOptions]);
 
   // Project API rows into the shape the existing table/drawer already expect.
   useEffect(() => {
@@ -946,9 +958,13 @@ export function AccountManagement() {
     setCreateFieldErrors({});
     const role = manualForm.role;
     if (!role) { setCreateError('Vui lòng chọn vai trò.'); return; }
-    if (isHO && !createCampus) { setCreateError('Vui lòng chọn cơ sở.'); return; }
-    if (isRealAdmin && ['HO', 'STUDENT'].includes(role) && !createCampus) {
-      setCreateError('Vui lòng chọn cơ sở cho vai trò này.');
+    // ADMIN quản lý mọi cơ sở nên phải chọn cơ sở cho mọi vai trò trừ VISITOR (VISITOR không gắn cơ sở).
+    if ((isHO || (isRealAdmin && role !== 'VISITOR')) && !createCampus) {
+      setCreateError('Vui lòng chọn cơ sở.');
+      return;
+    }
+    if (isRealAdmin && role === 'STAFF' && !createStaffSubRole) {
+      setCreateError('Vui lòng chọn chức vụ (Trưởng phòng IC hoặc Nhân viên IC).');
       return;
     }
 
@@ -976,14 +992,15 @@ export function AccountManagement() {
     const primaryCampusId = (isHO || isRealAdmin) && createCampus
       ? campusOptions.find((c) => c.campusName.includes(createCampus))?.campusId
       : undefined;
-    if ((isHO || (isRealAdmin && ['HO', 'STUDENT'].includes(role))) && !primaryCampusId) {
+    if ((isHO || (isRealAdmin && role !== 'VISITOR')) && !primaryCampusId) {
       setCreateError('Cơ sở được chọn không hợp lệ.');
       return;
     }
 
-    // UC-96: HO creating a Staff Leader — don't submit if the pre-check says the campus already
-    // has a leader / is in a blocking state. The backend re-checks regardless (BR-SL-22).
-    if (isHO && role === 'STAFF') {
+    // UC-96: HO (hoặc ADMIN chọn chức vụ Trưởng phòng IC) creating a Staff Leader — don't submit if
+    // the pre-check says the campus already has a leader / is in a blocking state. The backend
+    // re-checks regardless (BR-SL-22).
+    if ((isHO && role === 'STAFF') || (isRealAdmin && role === 'STAFF' && createStaffSubRole === 'LEADER')) {
       if (slAvailabilityLoading) { setCreateError('Đang kiểm tra cơ sở, vui lòng đợi giây lát.'); return; }
       if (slAvailability && !slAvailability.canCreateStaffLeader) {
         setCreateError(slAvailability.message || 'Không thể tạo Staff Leader cho cơ sở này.');
@@ -991,9 +1008,9 @@ export function AccountManagement() {
       }
     }
 
-    // UC-96: HO creating a new HO — don't submit if the pre-check says the campus already has an
-    // HO (any status) or has inconsistent data. The backend re-checks regardless (spec §10).
-    if (isHO && role === 'HO') {
+    // UC-96: HO / ADMIN creating a new HO — don't submit if the pre-check says the campus already
+    // has an HO (any status) or has inconsistent data. The backend re-checks regardless (spec §10).
+    if ((isHO || isRealAdmin) && role === 'HO') {
       if (hoCampusCheckLoading) { setCreateError('Đang kiểm tra cơ sở, vui lòng đợi giây lát.'); return; }
       if (hoCampusCheck && !hoCampusCheck.canCreateHo) {
         setCreateError(hoCampusCheck.message || 'Không thể tạo tài khoản HO cho cơ sở này.');
@@ -1007,6 +1024,10 @@ export function AccountManagement() {
       return;
     }
     const departmentId = isStaffLeader && role === 'DEPARTMENT' ? selectedDept : null;
+    // ADMIN chọn chức vụ tường minh cho STAFF; các vai trò khác không có sub-role.
+    const subRole: CreateAccountRequest['subRole'] = isRealAdmin && role === 'STAFF'
+      ? (createStaffSubRole || null)
+      : null;
 
     // The EXACT object that will be POSTed on confirm (spec §10.1). Nothing here is recomputed in
     // confirmCreateAccount — the summary below is a projection of THIS payload, so they can't drift.
@@ -1018,6 +1039,7 @@ export function AccountManagement() {
       // The create form has no gender field; the column is an ENUM
       // (MALE/FEMALE/OTHER/UNKNOWN), so leave it null rather than sending a label.
       gender: null,
+      subRole,
       primaryCampusId: primaryCampusId ?? null,
       departmentId,
       // MSSV only for STUDENT; null otherwise so no hidden code is ever sent (spec §5.6).
@@ -1036,12 +1058,18 @@ export function AccountManagement() {
     } else if (isStaffLeader && role === 'DEPARTMENT') {
       departmentDisplayName =
         campusDepartments.find((d) => String(d.departmentId) === String(departmentId))?.name || null;
+    } else if (isRealAdmin && role === 'STAFF') {
+      departmentDisplayName = createStaffSubRole === 'LEADER'
+        ? (slAvailability?.icDepartmentName || 'Phòng Hợp tác Quốc tế (IC)')
+        : 'Phòng Hợp tác Quốc tế (IC)';
     }
 
     const summary: PendingCreateSummary = {
       fullName,
       email,
-      roleDisplayName: resolveCreateRoleDisplayName(role, { isHO, isStaffLeader }),
+      roleDisplayName: resolveCreateRoleDisplayName(role, {
+        isHO, isStaffLeader, staffSubRole: isRealAdmin ? createStaffSubRole : undefined,
+      }),
       campusDisplayName,
       departmentDisplayName,
       studentCode: role === 'STUDENT' ? studentCode : null,
@@ -1085,6 +1113,7 @@ export function AccountManagement() {
       setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
       setCreateCampus('');
       setSelectedDept('');
+      setCreateStaffSubRole('');
       refetchAccounts();
       loadStatistics();
     } catch (err) {
@@ -1163,6 +1192,8 @@ export function AccountManagement() {
       && String(roleEditForm.departmentId || '') !== String(selectedAccount.departmentId ?? '')) ||
     (roleEditForm.roleCode === 'STUDENT'
       && roleEditForm.studentCode.trim() !== (selectedAccount.studentId ?? '')) ||
+    // ADMIN only — Admin manages every campus, so a campus move alone counts as a change too.
+    (isRealAdmin && String(roleEditForm.campusId || '') !== String(selectedAccount.campusId ?? '')) ||
     // Identity changes count only for editable targets, and only after normalization — a pure
     // whitespace/casing edit is a no-op and must not trigger a session revoke (spec §6.2.3).
     (canEditIdentity && normalizeFullName(roleEditForm.fullName) !== normalizeFullName(selectedAccount.name)) ||
@@ -1178,13 +1209,18 @@ export function AccountManagement() {
   );
 
   // Staff-Leader submit gate: options must be loaded/valid and the role's required field present.
-  const roleUpdateBlocked = !!roleEditForm && isStaffLeader && (
-    roleOptionsLoading ||
-    !!roleOptionsError ||
-    (roleEditForm.roleCode === 'STAFF' && !roleOptions?.icDepartment) ||
-    (roleEditForm.roleCode === 'DEPARTMENT' && !roleEditForm.departmentId) ||
-    (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0) ||
-    (needsHeadReplacement && !roleEditForm.replacementHeadUserId)
+  const roleUpdateBlocked = !!roleEditForm && (
+    (isStaffLeader && (
+      roleOptionsLoading ||
+      !!roleOptionsError ||
+      (roleEditForm.roleCode === 'STAFF' && !roleOptions?.icDepartment) ||
+      (roleEditForm.roleCode === 'DEPARTMENT' && !roleEditForm.departmentId) ||
+      (roleEditForm.roleCode === 'STUDENT' && roleEditForm.studentCode.trim().length === 0) ||
+      (needsHeadReplacement && !roleEditForm.replacementHeadUserId)
+    )) ||
+    // ADMIN submit gate: campus required for every role except VISITOR (Admin's STAFF always
+    // auto-resolves to the campus' IC department).
+    (isRealAdmin && roleEditForm.roleCode !== 'VISITOR' && !roleEditForm.campusId)
   );
 
   // Identity submit gate — the same shared rules as the create modal, so both flows accept and
@@ -1220,6 +1256,9 @@ export function AccountManagement() {
         fullName: prev.fullName,
         email: prev.email,
         replacementHeadUserId: prev.replacementHeadUserId,
+        // Campus is not role-dependent (it is a property of the account) — keep it across a role
+        // switch so the admin doesn't have to re-pick it just to change STAFF ↔ DEPARTMENT.
+        campusId: prev.campusId,
       }
       : prev));
   };
@@ -1414,6 +1453,12 @@ export function AccountManagement() {
         return;
       }
     }
+    if (isRealAdmin) {
+      if (roleCode !== 'VISITOR' && !roleEditForm.campusId) {
+        setRoleError('Vui lòng chọn cơ sở.');
+        return;
+      }
+    }
 
     // Compared after normalization, so a pure casing/whitespace edit is not a change: it must not
     // prompt for a confirmation, revoke sessions or invalidate an activation link.
@@ -1452,7 +1497,8 @@ export function AccountManagement() {
     if (!selectedAccount || !roleEditForm || roleSaving) return;   // double-click guard
     const { roleCode, departmentId, studentCode } = roleEditForm;
 
-    // ADMIN keeps the legacy behaviour: role-only change, original department preserved.
+    // ADMIN keeps the legacy behaviour for DEPARTMENT: role-only change, original department
+    // preserved (Admin manages STAFF/HO/ADMIN/STUDENT/VISITOR through this flow, not DEPARTMENT).
     const outgoingDepartmentId = roleCode === 'DEPARTMENT'
       ? (isStaffLeader ? departmentId : (selectedAccount.departmentId ?? null))
       : null;
@@ -1460,12 +1506,16 @@ export function AccountManagement() {
       ? (isStaffLeader ? studentCode.trim() : null)
       : null;
     const outgoingEmail = canEditIdentity ? normalizeAccountEmail(roleEditForm.email) : null;
+    // ADMIN — the campus Admin picked (STAFF auto-resolves its department server-side from this;
+    // DEPARTMENT/ADMIN/HO/STUDENT use it directly). Everyone else keeps their existing scope.
+    const outgoingCampusId = isRealAdmin ? (roleEditForm.campusId || null) : null;
 
     setRoleSaving(true);
     try {
       const res = await accountManagementApi.updateAccountRole({
         userId: (selectedAccount.userId ?? selectedAccount.id) as any,
         newRoleCode: roleCode as any,
+        primaryCampusId: outgoingCampusId as any,
         departmentId: outgoingDepartmentId as any,
         studentCode: outgoingStudentCode,
         // Identity is only sent for editable targets; otherwise leave null so the backend keeps it.
@@ -1596,6 +1646,8 @@ export function AccountManagement() {
             setCreateError(null);
             setCreateStudentCodeError(null);
             setSelectedDept('');
+            setCreateStaffSubRole('');
+            setCreateCampus('');
             setManualForm({ role: '', name: '', email: '', phone: '', gender: 'Nam', studentCode: '' });
             setIsCreateModalOpen(true);
           }}
@@ -2098,11 +2150,14 @@ export function AccountManagement() {
                   </div>
                 )}
 
-                {/* Replace Staff Leader (HO only) — the HO list only shows HO + Staff Leaders, so a
-                    STAFF row here is the campus IC Head. Hidden while the leader is still awaiting
-                    email confirmation: there is no seated leader to replace yet, only one to
-                    activate (or cancel), so the resend above is the action that applies. */}
-                {isHO && selectedAccount.role === 'STAFF' && selectedAccount.campusId && !isPendingEmailConfirmation && (
+                {/* Replace Staff Leader (HO / ADMIN) — the HO list only shows HO + Staff Leaders, so
+                    a STAFF row there is always the campus IC Head; ADMIN's list also shows regular
+                    IC staff, so it additionally checks the sub-role is LEADER. Hidden while the
+                    leader is still awaiting email confirmation: there is no seated leader to replace
+                    yet, only one to activate (or cancel), so the resend above is the action that
+                    applies. */}
+                {(isHO || (isRealAdmin && String(selectedAccount.rawSubRole ?? '').toUpperCase() === 'LEADER'))
+                  && selectedAccount.role === 'STAFF' && selectedAccount.campusId && !isPendingEmailConfirmation && (
                   <button
                     onClick={() => {
                       setReplaceLeaderTarget({ campusId: String(selectedAccount.campusId), campusName: selectedAccount.campus || '' });
@@ -2285,7 +2340,7 @@ export function AccountManagement() {
                     ? [{ value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'Staff Leader (Trưởng phòng IC)' }]
                     : isStaffLeader
                       ? [{ value: 'STAFF', label: 'STAFF (Nhân sự IC)' }, { value: 'DEPARTMENT', label: 'Department (Trưởng phòng ban)' }, { value: 'STUDENT', label: 'STUDENT (Sinh viên)' }]
-                      : [{ value: 'ADMIN', label: 'ADMIN' }, { value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'STAFF' }, { value: 'DEPARTMENT', label: 'DEPARTMENT' }, { value: 'STUDENT', label: 'STUDENT' }, { value: 'VISITOR', label: 'VISITOR' }];
+                      : [{ value: 'ADMIN', label: 'ADMIN' }, { value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'STAFF' }, { value: 'STUDENT', label: 'STUDENT' }, { value: 'VISITOR', label: 'VISITOR' }];
 
                   const selectClass = (disabled = false) =>
                     `px-3 py-2 pr-8 border rounded-lg text-sm font-medium focus:outline-none transition-all appearance-none w-full ${
@@ -2398,7 +2453,31 @@ export function AccountManagement() {
 
                       <StatusField />
 
-                      <DisplayField label="Cơ sở trực thuộc" value={data.campus} />
+                      {/* ADMIN quản lý mọi cơ sở nên được đổi cơ sở khi sửa tài khoản; các caller
+                          khác (HO/Staff Leader) giữ nguyên hành vi cũ — cơ sở chỉ đọc. */}
+                      {isRealAdmin ? (
+                        <div className="flex flex-col min-w-0">
+                          <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
+                            Cơ sở trực thuộc{editRoleCode !== 'VISITOR' && <span className="ml-1 text-red-500">*</span>}
+                          </span>
+                          <div className="relative">
+                            <select
+                              value={roleEditForm?.campusId ?? ''}
+                              disabled={editRoleCode === 'VISITOR'}
+                              onChange={(e) => setRoleEditForm((prev) => (prev ? { ...prev, campusId: e.target.value, departmentId: '' } : prev))}
+                              className={selectClass(editRoleCode === 'VISITOR')}
+                            >
+                              <option value="">-- Chọn cơ sở --</option>
+                              {campusOptions.map((c) => (
+                                <option key={c.campusId} value={c.campusId}>{c.campusName}</option>
+                              ))}
+                            </select>
+                            <ChevronDown className={chevronClass(editRoleCode === 'VISITOR')} />
+                          </div>
+                        </div>
+                      ) : (
+                        <DisplayField label="Cơ sở trực thuộc" value={data.campus} />
+                      )}
 
                       {/* HO editing a Staff Leader: position + IC department are shown read-only
                           (spec §5.3 — HO never sees a control that can change them). */}
@@ -2511,14 +2590,21 @@ export function AccountManagement() {
                         </div>
                       )}
 
-                      {/* ADMIN keeps the legacy read-only snapshot of the current org fields. */}
-                      {isRealAdmin && (data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
+                      {/* ADMIN — STAFF luôn là "Nhân viên IC" (auto gán theo phòng IC của cơ sở đã
+                          chọn ở trên). Bổ nhiệm Trưởng phòng IC MỚI đi qua "Thay thế Staff Leader"
+                          để tham chiếu đầu phòng ban/cơ sở luôn nhất quán. */}
+                      {isRealAdmin && editRoleCode === 'STAFF' && (
                         <>
-                          <DisplayField label="Chức vụ" value={subRoleLabel(data.subRole)} />
-                          <DisplayField label="Phòng ban" value={data.department} />
+                          <DisplayField label="Chức vụ" value="Nhân viên IC" />
+                          <DisplayField
+                            label="Phòng ban"
+                            value="Phòng Hợp tác Quốc tế (IC) — tự động gán theo cơ sở đã chọn"
+                            colSpan
+                          />
                         </>
                       )}
-                      {isRealAdmin && data.role === 'STUDENT' && (
+
+                      {isRealAdmin && editRoleCode === 'STUDENT' && (
                         <DisplayField label="Mã số sinh viên (MSSV)" value={data.studentId} highlight />
                       )}
                     </div>
@@ -2726,6 +2812,10 @@ export function AccountManagement() {
                         // is never carried over (spec §5.4).
                         setManualForm((prev) => ({ ...prev, role: nextRole, studentCode: nextRole === 'STUDENT' ? prev.studentCode : '' }));
                         setCreateStudentCodeError(null);
+                        // Role-dependent choices (chức vụ / phòng ban) never carry over to a
+                        // different role.
+                        setCreateStaffSubRole('');
+                        setSelectedDept('');
                       }}
                       className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
                     >
@@ -2745,20 +2835,22 @@ export function AccountManagement() {
                         <>
                           <option value="ADMIN">ADMIN (Quản trị viên)</option>
                           <option value="HO">HO (Head Office)</option>
+                          <option value="STAFF">STAFF (Nhân sự phòng IC)</option>
                           <option value="STUDENT">STUDENT (Sinh viên)</option>
                           <option value="VISITOR">VISITOR (Khách)</option>
                         </>
                       )}
                     </select>
                   </div>
-                  
-                  {/* HO luôn chọn campus; ADMIN chọn campus khi role cần (HO/STUDENT) */}
-                  {(isHO || (isRealAdmin && ['HO', 'STUDENT'].includes(manualForm.role))) && (
+
+                  {/* HO luôn chọn campus; ADMIN chọn campus cho mọi vai trò cần cơ sở (mọi vai trò
+                      trừ VISITOR) — Admin quản lý toàn bộ cơ sở, không riêng một nơi. */}
+                  {(isHO || (isRealAdmin && !!manualForm.role && manualForm.role !== 'VISITOR')) && (
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Cơ sở <span className="text-red-500">*</span></label>
                       <select
                         value={createCampus}
-                        onChange={(e) => setCreateCampus(e.target.value)}
+                        onChange={(e) => { setCreateCampus(e.target.value); setSelectedDept(''); }}
                         className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
                       >
                         <option value="">-- Chọn cơ sở --</option>
@@ -2767,8 +2859,27 @@ export function AccountManagement() {
                     </div>
                   )}
 
-                  {/* UC-96: Staff Leader availability for the chosen campus (HO + role STAFF). */}
-                  {isHO && manualForm.role === 'STAFF' && createCampus && (
+                  {/* ADMIN — STAFF role: chức vụ quyết định có kiểm tra "1 Trưởng phòng IC/cơ sở"
+                      hay không. Trưởng phòng IC đi qua đúng luồng an toàn của HO; Nhân viên IC chỉ
+                      cần cơ sở có Phòng Hợp tác Quốc tế đang hoạt động. */}
+                  {isRealAdmin && manualForm.role === 'STAFF' && (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">Chức vụ <span className="text-red-500">*</span></label>
+                      <select
+                        value={createStaffSubRole}
+                        onChange={(e) => setCreateStaffSubRole(e.target.value as '' | 'LEADER' | 'STAFF')}
+                        className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                      >
+                        <option value="">-- Chọn chức vụ --</option>
+                        <option value="LEADER">Trưởng phòng IC</option>
+                        <option value="STAFF">Nhân viên IC</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* UC-96: Staff Leader availability for the chosen campus (HO + role STAFF, hoặc
+                      ADMIN chọn chức vụ Trưởng phòng IC). */}
+                  {((isHO && manualForm.role === 'STAFF') || (isRealAdmin && manualForm.role === 'STAFF' && createStaffSubRole === 'LEADER')) && createCampus && (
                     <div>
                       {slAvailabilityLoading ? (
                         <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
@@ -2808,8 +2919,8 @@ export function AccountManagement() {
                     </div>
                   )}
 
-                  {/* UC-96: HO campus availability for the chosen campus (HO + role HO). */}
-                  {isHO && manualForm.role === 'HO' && createCampus && (
+                  {/* UC-96: HO campus availability for the chosen campus (HO hoặc ADMIN + role HO). */}
+                  {(isHO || isRealAdmin) && manualForm.role === 'HO' && createCampus && (
                     <div>
                       {hoCampusCheckLoading ? (
                         <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
@@ -2844,8 +2955,8 @@ export function AccountManagement() {
                     </div>
                   )}
 
-                  {/* UC-96-SL: STAFF auto-assigned to the IC department (read-only hint). */}
-                  {isStaffLeader && manualForm.role === 'STAFF' && (
+                  {/* UC-96-SL / ADMIN (Nhân viên IC): STAFF auto-assigned to the IC department. */}
+                  {((isStaffLeader || (isRealAdmin && createStaffSubRole === 'STAFF')) && manualForm.role === 'STAFF') && (
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">Phòng ban</label>
                       <input
@@ -2986,9 +3097,10 @@ export function AccountManagement() {
                   disabled={
                     creating ||
                     createIdentityInvalid ||
-                    (isHO && manualForm.role === 'STAFF' && !!createCampus &&
+                    (((isHO && manualForm.role === 'STAFF') ||
+                      (isRealAdmin && manualForm.role === 'STAFF' && createStaffSubRole === 'LEADER')) && !!createCampus &&
                       (slAvailabilityLoading || (!!slAvailability && !slAvailability.canCreateStaffLeader))) ||
-                    (isHO && manualForm.role === 'HO' && !!createCampus &&
+                    ((isHO || isRealAdmin) && manualForm.role === 'HO' && !!createCampus &&
                       (hoCampusCheckLoading || (!!hoCampusCheck && !hoCampusCheck.canCreateHo)))
                   }
                   className="px-5 py-2.5 rounded-xl font-bold text-white bg-orange-500 hover:bg-orange-600 shadow-[0_4px_12px_rgba(249,115,22,0.2)] hover:shadow-[0_6px_16px_rgba(249,115,22,0.4)] transition-all outline-none transform hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed"

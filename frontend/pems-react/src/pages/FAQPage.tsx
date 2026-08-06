@@ -4,7 +4,7 @@
  * GET /api/public/faqs/type-counts. Chỉ hiển thị FAQ status=PUBLISHED, không dùng mock data.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Search,
@@ -25,6 +25,7 @@ import {
   Mail,
   Sparkles,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { publicFaqApi } from '../features/public-faq/api/publicFaqApi';
 import { VisitEntrySurfaces } from '../shared/features/VisitEntrySurfaces';
 import { useVisitEntryCta } from '../shared/features/useVisitEntryCta';
@@ -121,6 +122,8 @@ function FaqAccordionItem({ faq, isOpen, onToggle }: { faq: PublicFaqItem; isOpe
   return (
     <motion.div
       layout
+      // Deep-link target: /faq?faqId=<id> scrolls to this element after it renders.
+      id={`faq-${faq.faqId}`}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
@@ -192,6 +195,64 @@ export function FAQPage() {
 
   const [suggested, setSuggested] = useState<PublicFaqItem[]>([]);
   const [suggestedLoading, setSuggestedLoading] = useState(true);
+
+  // ── Deep link: /faq?faqId=<id> (a search hit opening its own accordion) ──────────────
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkFaqId = Number(searchParams.get('faqId')) || null;
+  // The linked FAQ, fetched on its own so it can be shown even though it lives on another page of
+  // the paginated list. Rendered above the list, not merged into it, which keeps pagination honest.
+  const [deepLinkFaq, setDeepLinkFaq] = useState<PublicFaqItem | null>(null);
+  const [deepLinkMissing, setDeepLinkMissing] = useState(false);
+
+  /** Any manual filtering means the visitor has moved on — drop faqId so it cannot re-open itself. */
+  const clearDeepLink = useCallback(() => {
+    setDeepLinkFaq(null);
+    setDeepLinkMissing(false);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('faqId');
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
+
+  useEffect(() => {
+    if (!deepLinkFaqId) {
+      setDeepLinkFaq(null);
+      setDeepLinkMissing(false);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const faq = await publicFaqApi.getPublicFaqDetail(deepLinkFaqId, lang);
+        if (cancelled) return;
+        setDeepLinkFaq(faq);
+        setDeepLinkMissing(false);
+        setSelectedType(faq.faqType);
+        setOpenFaqId(faq.faqId);
+      } catch {
+        // Hidden, deleted, or not translated into this language: say so, keep the page working.
+        if (cancelled) return;
+        setDeepLinkFaq(null);
+        setDeepLinkMissing(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [deepLinkFaqId, lang]);
+
+  // Scroll only once the linked accordion is actually in the DOM.
+  useEffect(() => {
+    if (!deepLinkFaq) return undefined;
+    const timer = setTimeout(() => {
+      document
+        .getElementById(`faq-${deepLinkFaq.faqId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [deepLinkFaq]);
 
   // Topic type counts — reload when language changes.
   useEffect(() => {
@@ -267,6 +328,7 @@ export function FAQPage() {
   }, [debouncedKeyword, selectedType, currentPage, reloadToken, lang]);
 
   const handleTypeSelect = (type: string) => {
+    clearDeepLink();
     setSelectedType(type);
     setCurrentPage(1);
     setOpenFaqId(null);
@@ -274,14 +336,21 @@ export function FAQPage() {
   };
 
   const handlePageChange = (page: number) => {
+    clearDeepLink();
     setCurrentPage(page);
     setOpenFaqId(null);
     document.getElementById('faq-main-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const clearFilters = () => {
+    clearDeepLink();
     setSearchQuery('');
     setSelectedType(ALL_TYPE);
+  };
+
+  const handleSearchChange = (value: string) => {
+    if (deepLinkFaqId) clearDeepLink();
+    setSearchQuery(value);
   };
 
   const hasActiveFilter = debouncedKeyword !== '' || selectedType !== ALL_TYPE;
@@ -321,7 +390,7 @@ export function FAQPage() {
                 type="text"
                 placeholder={t('faq:hero.searchPlaceholder')}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="block w-full pl-12 pr-4 py-3.5 md:py-4 rounded-xl text-slate-900 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-orange-400/30 text-sm md:text-base shadow-lg transition-shadow"
               />
             </div>
@@ -446,6 +515,27 @@ export function FAQPage() {
 
           {/* Right: accordion list */}
           <div className="flex-1 min-w-0">
+            {/*
+              The FAQ a search result linked to. Rendered here only when it is NOT on the page of the
+              list currently loaded — otherwise the list renders it and this would duplicate both the
+              card and its DOM id, which is what the scroll target keys off.
+            */}
+            {deepLinkFaq && !faqs.some((f) => f.faqId === deepLinkFaq.faqId) && (
+              <div className="mb-4">
+                <FaqAccordionItem
+                  faq={deepLinkFaq}
+                  isOpen={openFaqId === deepLinkFaq.faqId}
+                  onToggle={() => setOpenFaqId(openFaqId === deepLinkFaq.faqId ? null : deepLinkFaq.faqId)}
+                />
+              </div>
+            )}
+
+            {deepLinkMissing && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-sm text-amber-800">{t('faq:main.deepLinkMissing')}</p>
+              </div>
+            )}
+
             {!loading && !error && (
               <p className="text-sm text-slate-500 mb-4">
                 {totalItems > 0 ? t('faq:main.found', { count: totalItems }) : ''}

@@ -8,6 +8,7 @@
 // Đây là component thanh bên (Sidebar) để điều hướng trong khu vực quản trị (Dashboard)
 import React, { useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Home,
   Newspaper,
@@ -38,6 +39,7 @@ import {
   ScrollText,
   Camera,
   ListChecks,
+  Star,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
@@ -95,6 +97,13 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
   const collapsed = isCollapsed && !isMobileOpen;
   const navigate = useNavigate();
   const { logout, user: authUser, effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation(['visitRequestV2', 'publicLayout']);
+  // Sidebar is shared by every role; only the Visitor-facing chrome was scoped for English
+  // (same boundary as the "Đơn của tôi" list itself — see VisitRequestManagement.tsx's `tt`).
+  // Every other role keeps reading Vietnamese regardless of the site-wide language setting.
+  const isVisitor = effectiveRole === 'VISITOR';
+  const tt = (key: string, options?: Record<string, unknown>) =>
+    t(key, { ...(options || {}), lng: isVisitor ? i18n.language : 'vi' });
 
   // Menu comes from the same policy table the route guards use, so "menu hidden" and
   // "URL typed by hand" can never disagree. It used to be a second, hand-maintained role
@@ -216,6 +225,10 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
         <nav className={`flex-grow space-y-2 overflow-y-auto ${collapsed ? "px-3" : "px-4"}`}>
           {menuItems.map((item) => {
             const Icon = ROUTE_ICONS[item.key];
+            // The rest of the sidebar policy table is Vietnamese-only data (see
+            // dashboardRouteAccess.ts) — VISIT_LIST is the one entry a Visitor can see, so it's
+            // the one entry that needs to follow the site language.
+            const label = item.key === 'VISIT_LIST' ? tt('visitRequestV2:list.breadcrumb') : item.sidebarLabel;
             return (
               <NavLink
                 key={item.key}
@@ -225,10 +238,16 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 end={item.path === "/dashboard"}
                 className={navItemClass}
                 onClick={handleLinkClick}
-                title={collapsed ? item.sidebarLabel : undefined}
+                title={collapsed ? label : undefined}
               >
                 {Icon ? <Icon className="w-5 h-5 flex-shrink-0" /> : null}
-                <span>{item.sidebarLabel}</span>
+                <span className="flex items-center gap-1.5">
+                  {label}
+                  {/* Trang chính của sản phẩm — đánh dấu để không lẫn với các mục còn lại. */}
+                  {item.key === 'VISIT_LIST' && (
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 flex-shrink-0" />
+                  )}
+                </span>
               </NavLink>
             );
           })}
@@ -254,13 +273,17 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               {!collapsed && (
                 <>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[17px] font-bold text-[#004c91] truncate tracking-tight">
+                    <p className="text-[17px] font-bold text-[#004c91] break-words leading-snug tracking-tight">
                       {displayName}
                     </p>
-                    <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
-                      <School className="w-3.5 h-3.5 flex-shrink-0" />
-                      Campus {displayCampus}
-                    </p>
+                    {/* Visitor is an external guest, not tied to any campus — showing "Campus
+                        Không rõ" would just be noise. */}
+                    {!isVisitor && (
+                      <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
+                        <School className="w-3.5 h-3.5 flex-shrink-0" />
+                        Campus {displayCampus}
+                      </p>
+                    )}
                     <p className="text-[13px] font-bold text-[#004c91] mt-1 flex items-center gap-1.5 truncate uppercase tracking-wide">
                       {getRoleIcon()}
                       {displayRole}
@@ -303,7 +326,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                   className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-[#004c91] hover:bg-[#d2e5f5] transition-colors"
                 >
                   <Home className="w-4 h-4" />
-                  Quay về trang chủ
+                  {tt('publicLayout:profile.backToHome')}
                 </button>
                 <button
                   onClick={() => {
@@ -314,7 +337,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                   className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-[#004c91] hover:bg-[#d2e5f5] transition-colors"
                 >
                   <User className="w-4 h-4" />
-                  Hồ sơ cá nhân
+                  {tt('publicLayout:profile.userProfile')}
                 </button>
                 <div className="h-px bg-gray-100 my-1 mx-4"></div>
                 <button
@@ -322,7 +345,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                   className="w-full flex items-center gap-3 px-5 py-3 text-sm font-semibold text-gray-700 hover:text-red-700 hover:bg-red-50 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
-                  Đăng xuất
+                  {tt('publicLayout:profile.logout')}
                 </button>
               </motion.div>
             )}

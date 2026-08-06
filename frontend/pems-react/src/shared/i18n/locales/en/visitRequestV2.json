@@ -70,9 +70,9 @@
     "operationalContact": "Working contact at this campus",
     "operationalContactHint": "Coordination only at this campus — never a login account",
     "quickFillRegistrant": "Use registrant",
-    "quickFillPrimaryContact": "Use primary contact",
+    "quickFillPrimaryContact": "Use the registrant details",
     "quickFillCopiedRegistrant": "Copied the registrant's details.",
-    "quickFillCopiedContact": "Copied the primary contact's details.",
+    "quickFillCopiedContact": "Copied the registrant details.",
     "quickFillIndependent": "These details are now edited independently — later changes to the source do not flow back here.",
     "quickFillReplaceTitle": "The current on-site contact details will be replaced.",
     "quickFillReplaceYes": "Continue",
@@ -177,41 +177,44 @@
     "requestCode": "Request code: {{code}}",
     "mixedNote": "content varies by campus",
     "idempotentReplay": "This request was already recorded (resubmitting did not create a duplicate).",
-    "claimPending": "The contact person differs from the registrant: a confirmation email has been sent (valid 72 hours). Campus approvals do not wait for this confirmation.",
+    "claimPending": "The registrant is not the guest-side operational contact: a role-confirmation invitation has been emailed to the contact of {{campusCount}} campus(es) (valid for 72 hours). No campus starts processing until every contact has confirmed.",
+    "trackStatusAlso": "Also check your own email or sign in with Google ({{email}}) to track your request status.",
+    "trackStatus": "Check your email or sign in with Google ({{email}}) to track your request status.",
     "backHome": "Back to home",
     "statusLabel": "Status:",
     "submittedAtLabel": "Submitted:",
     "campusCountLabel": "Campuses:",
-    "saved": "Your request has been saved.",
-    "keepCode": "Please keep the request code and check your email for the next steps.",
     "viewRequest": "View the request",
     "goToList": "Back to the request list",
     "createAnother": "Create another request",
     "reviewSubmitted": "Review what you submitted",
     "hideSubmitted": "Hide what you submitted",
-    "copyCode": "Copy request code",
-    "codeCopied": "Request code copied.",
-    "codeCopyFailed": "The browser blocked automatic copying. Your request code: {{code}}",
     "close": "Close",
     "toast": "Request {{code}} was created.",
     "status": {
+      "PENDING_CONTACT_CONFIRMATION": "Waiting for the guest-side operational contact to confirm",
+      "WAITING_CONTACT_CONFIRMATION": "Waiting for the guest-side operational contact to confirm",
+      "PENDING_APPROVAL": "Contact confirmed — waiting for the Staff Leader to approve and name a host",
       "WAITING_REQUEST_APPROVAL": "Waiting for the Staff Leader",
-      "PENDING_APPROVAL": "Waiting for approval",
       "PENDING": "Pending",
-      "PARTIALLY_APPROVED": "Partially approved",
-      "APPROVED": "Approved",
+      "PARTIALLY_APPROVED": "Some campuses approved, the rest still being processed",
+      "APPROVED": "Contact confirmed — a reception host has been named",
+      "ASSIGNED": "Contact confirmed — a reception host has been named",
       "REJECTED": "Rejected",
       "CANCELLED": "Cancelled",
       "CLOSED": "Closed",
       "UNKNOWN": "{{status}}"
-    }
+    },
+    "copyCode": "Copy request code",
+    "codeCopied": "Request code copied.",
+    "codeCopyFailed": "Your browser blocked automatic copying. Your request code: {{code}}"
   },
   "summary": {
     "heading": "Submitted request summary",
     "requestCode": "Request code",
     "campusCount": "Campuses registered",
     "registrant": "Registrant",
-    "primaryContact": "Primary contact",
+    "primaryContact": "Guest-side operational contact",
     "contactActive": "Confirmed",
     "contactPending": "Awaiting confirmation",
     "partner": "Partner",
@@ -345,7 +348,7 @@
       "REQUEST_CODE": "Request code",
       "REGISTRANT_ORGANIZATION": "Registrant organization",
       "PARTNER": "Partner",
-      "PRIMARY_CONTACT": "Primary contact",
+      "OPERATIONAL_CONTACT": "Guest-side operational contact",
       "DELEGATION_NAME": "Delegation name",
       "CAMPUS": "Campus",
       "HOST": "Reception owner"
@@ -366,7 +369,7 @@
     "campusTotal": "{{count}} campus(es)",
     "mixedLabel": "Varies by campus",
     "submittedAt": "Submitted at",
-    "primaryContact": "Contact person",
+    "primaryContact": "Guest-side operational contact",
     "contactPending": "Unconfirmed",
     "historyTitle": "Change history",
     "backToList": "Back to request list",
@@ -522,10 +525,10 @@
       "registrantJobTitle": "Registrant job title",
       "registrantPhone": "Registrant phone",
       "registrantEmail": "Registrant email",
-      "contactPersonFullName": "Primary contact name",
-      "contactPersonOrganization": "Primary contact organisation",
-      "contactPersonPhone": "Primary contact phone",
-      "contactPersonEmail": "Primary contact email"
+      "contactPersonFullName": "Contact person name (retired field)",
+      "contactPersonOrganization": "Contact person organisation (retired field)",
+      "contactPersonPhone": "Contact person phone (retired field)",
+      "contactPersonEmail": "Contact person email (retired field)"
     }
   },
   "revision": {
@@ -676,5 +679,232 @@
     "noCandidates": "This campus has no eligible IC staff",
     "scheduleWarning": "This person already hosts an overlapping visit. You can still select them.",
     "saved": "Proposed reception host saved."
+  },
+  "list": {
+    "breadcrumb": "Visit Management",
+    "titleDefault": "Visit Management",
+    "titleVisitor": "My Requests",
+    "createButton": "New Delegation",
+    "searchPlaceholder": "Search delegation name, host, partner...",
+    "chooseType": "Select order type",
+    "allStatuses": "All statuses",
+    "allScopes": "All scopes",
+    "allCampuses": "All campuses",
+    "allRelations": "All",
+    "chooseDateRange": "Select date range",
+    "fromDatePrefix": "From {{date}}",
+    "toDatePrefix": "To {{date}}",
+    "fromDateLabel": "From date",
+    "toDateLabel": "To date",
+    "close": "Close",
+    "reset": "Reset",
+    "notificationFilterActive": "Showing the exact request you opened from the notification.",
+    "viewAll": "View all",
+    "tabs": {
+      "all": "All request types",
+      "responsibleVisitor": "I'm the contact",
+      "registeredVisitor": "I'm the registrant"
+    },
+    "statusOptions": {
+      "awaitingConfirmation": {
+        "label": "Waiting for contact confirmation",
+        "description": "The campus is waiting for its guest-side operational contact to confirm by email link"
+      },
+      "pendingApproval": {
+        "label": "Waiting at the campus",
+        "description": "Waiting for the Staff Leader to approve and name a host"
+      },
+      "approved": {
+        "label": "Approved",
+        "description": "Approved (including preparing, receiving or closed)"
+      },
+      "beforeVisit": {
+        "label": "Preparing",
+        "description": "The host has started preparing the reception"
+      },
+      "duringVisit": {
+        "label": "Receiving guests",
+        "description": "The delegation is visiting the campus"
+      },
+      "closed": {
+        "label": "Closed",
+        "description": "The delegation completed the visit and its paperwork"
+      },
+      "rejected": {
+        "label": "Rejected",
+        "description": "The request/campus was rejected"
+      },
+      "cancelled": {
+        "label": "Cancelled",
+        "description": "The request was cancelled"
+      }
+    },
+    "filterVisitor": {
+      "statusLabel": "Status",
+      "scopeLabel": "Request scope",
+      "scopeSingle": "Single-campus request",
+      "scopeMulti": "Multi-campus request"
+    },
+    "table": {
+      "stt": "No.",
+      "delegationInfo": "Delegation Info",
+      "schedule": "Schedule",
+      "scheduleSortHint": "Click to sort by visit time",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "row": {
+      "hostLabel": "Reception host:",
+      "campusLabel": "Campus:",
+      "notAssignedYet": "Not assigned yet",
+      "assigning": "Assigning",
+      "viewCampuses": "View {{count}} campuses",
+      "collapseCampuses": "Collapse campuses",
+      "expandToggleAria": "View progress by campus",
+      "newChangeIndicator": "There's a new change",
+      "from": "From:",
+      "to": "To:",
+      "loading": "Loading the list...",
+      "loadError": "Could not load the visit list. Please try again.",
+      "viewProcessTitleMultiCampus": "View progress by campus",
+      "viewProcessTitleSingle": "View reception info",
+      "viewFormTitle": "View submitted request form",
+      "noData": "No campus data to display yet.",
+      "rejectReasonLabel": "Rejection reason:",
+      "changeIndicator": "There's a change at this campus",
+      "changeIndicatorAction": " — needs your action",
+      "viewCampusDetail": "View campus details",
+      "viewSummaryReport": "View summary report",
+      "processTitle": {
+        "duringVisit": "Continue handling the ongoing visit",
+        "afterVisit": "Complete the post-visit steps",
+        "closed": "View the closed process",
+        "default": "Handle the reception process",
+        "receptionDetail": "View reception details",
+        "contribution": "Go to the content contribution page",
+        "taskView": "View task",
+        "invitationView": "View invitation",
+        "multiCampusHO": "Track this multi-campus request",
+        "cancelledProcess": "View the cancelled process"
+      }
+    },
+    "badges": {
+      "registeredRelation": "You are the registrant",
+      "alsoHost": "Also the reception host",
+      "singleCampus": "Single campus",
+      "multiCampus": "Multi-campus"
+    },
+    "statusBadge": {
+      "pending": {
+        "label": "Waiting at the campus",
+        "title": "Waiting for the Staff Leader to approve and name a reception host"
+      },
+      "pendingRequest": {
+        "label": "Waiting",
+        "title": "The request is waiting to be processed at its campuses"
+      },
+      "rejected": {
+        "label": "Rejected",
+        "title": "Rejected"
+      },
+      "cancelled": {
+        "label": "Cancelled",
+        "title": "The request/campus was cancelled"
+      },
+      "cancelledByVisitor": "Cancelled by the guest",
+      "cancelledByHost": "Cancelled by the host",
+      "cancelledBySystem": "Cancelled by the system",
+      "assigned": {
+        "label": "Host assigned",
+        "title": "Approved with a reception host named, preparation not started"
+      },
+      "before": {
+        "label": "Preparing",
+        "title": "In the reception preparation stage"
+      },
+      "during": {
+        "label": "Receiving guests",
+        "title": "The delegation is being received at the campus"
+      },
+      "after": {
+        "label": "Awaiting close-out",
+        "title": "The visit has ended and is awaiting close-out / paperwork"
+      },
+      "closed": {
+        "label": "Closed",
+        "title": "The delegation completed the whole process"
+      },
+      "approved": {
+        "label": "Approved",
+        "title": "Every campus has been processed and at least one has accepted"
+      },
+      "awaitingConfirmation": {
+        "label": "Waiting for contact confirmation",
+        "title": "The campus is waiting for its guest-side operational contact to confirm by email link"
+      }
+    },
+    "relation": {
+      "visitorOwner": "You are the guest-side operational contact",
+      "registrantViewer": "You are the registrant",
+      "host": "You are the reception host",
+      "none": "View only"
+    },
+    "empty": {
+      "noMatch": "No request matches your filters.",
+      "noRegistered": "You haven't registered a delegation for anyone else yet.",
+      "visitorNone": "You aren't the contact for any visit request yet.",
+      "noAttending": "You have no invitations to attend yet.",
+      "noHosted": "You aren't hosting any delegation yet.",
+      "allStaffLeader": "No visit requests at your campus yet.",
+      "allDefault": "You have no visit requests yet.",
+      "staffNone": "You have no assigned requests yet."
+    },
+    "actions": {
+      "editPendingTitle": "Edit the visit request",
+      "editPendingShort": "Edit",
+      "resubmitTitle": "Edit & resubmit the request",
+      "resubmitShort": "Resubmit",
+      "feedbackTitle": "Rate this visit",
+      "feedbackShort": "Rate",
+      "alreadyRated": "Already rated",
+      "menuViewForm": "View submitted request form",
+      "menuViewRejectReason": "View rejection reason",
+      "menuViewCancelReason": "View cancellation reason",
+      "menuViewHistory": "View change history",
+      "menuCancelVisit": "Cancel this visit",
+      "menuEditPending": "Edit",
+      "menuResubmit": "Edit & resubmit",
+      "menuFeedback": "Rate this visit",
+      "viewRejectReasonCampus": "View campus rejection reason",
+      "cancelCampusVisit": "Cancel this campus visit"
+    },
+    "pagination": {
+      "showing": "Show",
+      "recordsPerPage": "records / page"
+    },
+    "cancelModal": {
+      "titlePending": "Cancel this visit request",
+      "titleSingleCampus": "Cancel this visit",
+      "titleInstance": "Cancel the visit at {{campus}}",
+      "titleMultiCampus": "Cancel the entire multi-campus visit",
+      "bodyPending": "You are cancelling this visit request. Once cancelled, it will no longer be reviewed and cannot be restored.",
+      "bodySingleCampus": "You are cancelling an approved visit. Once cancelled, the reception schedule at this campus will be cancelled and cannot be restored.",
+      "bodyInstance": "You are cancelling the visit at {{campus}}. Other campuses on this multi-campus request are not affected.",
+      "bodyMultiCampus": "You are cancelling the entire multi-campus visit. Every campus on this request will be cancelled and cannot be restored.",
+      "hintPending": "If you'd still like to visit at another time, please submit a new request.",
+      "hintSingleCampus": "The school may have already arranged staff, rooms, or logistics for this visit. Please state a clear reason for cancelling.",
+      "hintInstance": "Only the visit at this campus will be cancelled. Campuses already under way, in progress, or completed cannot be cancelled.",
+      "hintMultiCampus": "This action affects the entire reception schedule already arranged across campuses. If you only want to change part of the schedule, please contact the host before cancelling.",
+      "hostCancelNotice": "A host-initiated cancellation means the guest confirmed the cancellation outside the system.",
+      "reasonLabel": "Cancellation reason",
+      "reasonPlaceholder": "Enter the cancellation reason...",
+      "confirmCheckbox": "I understand this cancellation cannot be undone.",
+      "back": "Back",
+      "processing": "Processing...",
+      "confirmPending": "Confirm cancellation",
+      "confirmSingleCampus": "Confirm cancellation",
+      "confirmInstance": "Confirm cancelling this campus",
+      "confirmMultiCampus": "Confirm cancelling all"
+    }
   }
 }

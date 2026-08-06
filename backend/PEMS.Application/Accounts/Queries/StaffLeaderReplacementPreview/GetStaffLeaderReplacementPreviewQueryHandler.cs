@@ -11,9 +11,9 @@ using AvailabilityResolver = PEMS.Application.Accounts.Common.StaffLeaderAvailab
 namespace PEMS.Application.Accounts.Queries.StaffLeaderReplacementPreview;
 
 /// <summary>
-/// Replace Staff Leader preview. HO-only. Reuses <see cref="StaffLeaderAvailability"/> to evaluate
-/// the campus/IC/leader state so the modal hint matches the write-side replace check, then lists
-/// the eligible IC-Staff candidates (STAFF/STAFF, ACTIVE, same campus + IC dept).
+/// Replace Staff Leader preview. HO or ADMIN only. Reuses <see cref="StaffLeaderAvailability"/> to
+/// evaluate the campus/IC/leader state so the modal hint matches the write-side replace check,
+/// then lists the eligible IC-Staff candidates (STAFF/STAFF, ACTIVE, same campus + IC dept).
 /// </summary>
 public sealed class GetStaffLeaderReplacementPreviewQueryHandler
     : IRequestHandler<GetStaffLeaderReplacementPreviewQuery, StaffLeaderReplacementPreviewDto>
@@ -30,7 +30,7 @@ public sealed class GetStaffLeaderReplacementPreviewQueryHandler
     public async Task<StaffLeaderReplacementPreviewDto> Handle(
         GetStaffLeaderReplacementPreviewQuery request, CancellationToken cancellationToken)
     {
-        if (_currentUser.RoleCode != RoleCodes.Ho)
+        if (_currentUser.RoleCode != RoleCodes.Ho && _currentUser.RoleCode != RoleCodes.Admin)
             throw new ForbiddenException("Bạn không có quyền thay thế Staff Leader.");
 
         if (request.CampusId == 0)
