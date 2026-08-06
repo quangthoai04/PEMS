@@ -74,10 +74,11 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
         {/* 6. Form đăng ký đã gửi */}
         {summary && <VisitorRequestInfoSection summary={summary} />}
 
-        {/* Thông tin người liên hệ (nếu có) */}
-        {summary?.operationalContactFullName && (
-          <VisitorContactPersonSection summary={summary} />
-        )}
+        {/* Đầu mối đoàn khách phối hợp tại cơ sở. Shown whenever there is a form to show it against —
+            not gated on the name, because a contact who has been invited but has not confirmed yet
+            has an address and no name, and hiding the block is how the guest loses track of whom
+            they nominated. */}
+        {summary && <VisitorContactPersonSection summary={summary} />}
 
         {/* 7. Danh sách thành viên đoàn */}
         {summary?.guestMembers && summary.guestMembers.length > 0 && (
@@ -380,12 +381,13 @@ function VisitorGuestMembersSection({ members }: { members: any[] }) {
 function VisitorContactPersonSection({ summary }: { summary: any }) {
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Thông tin người liên hệ</SectionTitle>
+      <SectionTitle>Đầu mối đoàn khách phối hợp tại cơ sở</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
         <KV label="Họ và tên" value={summary.operationalContactFullName} />
-        <KV label="Email" value={summary.operationalContactEmail} />
+        <KV label="Đơn vị công tác" value={summary.operationalContactOrganization} />
+        <KV label="Chức vụ" value={summary.operationalContactJobTitle} />
         <KV label="Số điện thoại" value={summary.operationalContactPhone} />
-        <KV label="Tổ chức" value={summary.operationalContactOrganization} />
+        <KV label="Email" value={summary.operationalContactEmail} />
       </div>
     </section>
   );

@@ -93,9 +93,10 @@ public sealed class VisitRequestsController : ControllerBase
     /// <summary>
     /// AUTHENTICATED create (Visitor / IC Staff / Staff Leader) — no OTP: the JWT session
     /// is the registrant identity. Same shared form validation + fingerprint idempotency
-    /// as the public flow. Per-campus processing modes (SELF_HOST / ASSIGN_HOST) are only
-    /// honoured on the caller's own campus and only for Staff/Staff Leader; the handler
-    /// revalidates role, campus scope and host candidate from the DB.
+    /// as the public flow. RETIRED — answers 410; the per-campus create is
+    /// <see cref="CreateFormV2"/>, where the reception-host arrangement is a PROPOSAL
+    /// (SELF / SELECTED / WAIT_FOR_LATER) activated after the confirmation gate, not a
+    /// processing mode applied at submit.
     /// </summary>
     [HttpPost]
     [Authorize]
@@ -106,8 +107,8 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Host candidates for the authenticated create form's ASSIGN_HOST mode (Staff Leader
-    /// only, own campus implied — no campus parameter, other campuses can't be probed).
+    /// Host candidates for the create form's SELECTED arrangement (Staff Leader only, own campus
+    /// implied — no campus parameter, other campuses can't be probed).
     /// Optional planned window drives non-blocking schedule-conflict warnings.
     /// </summary>
     [HttpGet("host-candidates")]

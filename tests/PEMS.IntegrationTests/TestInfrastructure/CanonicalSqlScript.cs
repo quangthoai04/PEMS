@@ -512,8 +512,15 @@ public static class CanonicalSqlScript
     //     WAITING_REQUEST_APPROVAL.
     //   • visit_instance_form_details gained operational_contact_job_title (the detail screens show
     //     a job title, so it needs somewhere to live).
+    // Repinned again after real-stack verification: the two contact invitations
+    // (VISIT_CONTACT_CLAIM / VISIT_CONTACT_TRANSFER) now declare and show campusName + plannedTime.
+    // The cutover made the contact role per campus, so one request can send the same person two
+    // invitations; the seeded templates named only the request and the delegation, which are identical
+    // across them. The invitation service had already started supplying both variables, and the
+    // renderer refuses a variable a template does not declare — so on a fresh database EVERY
+    // invitation failed to render and no contact was ever sent a link. Data-only: no schema change.
     public const string ExpectedSha256 =
-        "c8268bc9240cb805320c9bf9fcd6462eb7909135a0bdc966145595c9bd0ec081";
+        "7a283dacb2a2cd41da3cca4d277cd566f05befe0b3e7a0f32c420b87208713c7";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

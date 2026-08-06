@@ -69,15 +69,9 @@ public static class VisitInstanceStatuses
         { WaitingContactConfirmation, WaitingRequestApproval };
 }
 
-// Per-campus processing mode chosen by an AUTHENTICATED creator (visit-request create).
-// Visitor/public always SEND_FOR_REVIEW; Staff may SELF_HOST their own campus; a Staff
-// Leader may SELF_HOST or ASSIGN_HOST on their own campus. Backend revalidates everything.
-public static class CampusSubmissionModes
-{
-    public const string SendForReview = "SEND_FOR_REVIEW";
-    public const string SelfHost      = "SELF_HOST";
-    public const string AssignHost    = "ASSIGN_HOST";
-}
+// CampusSubmissionModes (SEND_FOR_REVIEW / SELF_HOST / ASSIGN_HOST) was removed with direct
+// processing. Its replacement is HostSelectionModes (SELF / SELECTED / WAIT_FOR_LATER) in
+// PEMS.Domain.Enums: those values name an INTENTION recorded at submit, not a decision taken there.
 
 // Machine-readable error codes for the UC-17 public visit-request flow.
 // Surfaced to the client as response.errorCode (see ExceptionHandlingMiddleware).

@@ -4,10 +4,23 @@
 > - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
 > - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
 > - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> - **Approving a campus requires naming its host in the same act.** There is no "approved but
+>   nobody hosting" state. `ASSIGNED` is very much still in the lifecycle: it is where a campus sits
+>   once it has a host, until that host explicitly starts preparation (`ASSIGNED → BEFORE_VISIT`).
+> - **Per-campus operational contact + confirmation gate.** A request first sits at
+>   `PENDING_CONTACT_CONFIRMATION` while each campus waits for its OWN guest-side contact to
+>   confirm. Nothing is assigned and no setup data may be written until the LAST one confirms.
+> - **Proposed host.** An internal creator may record who should host their own campus
+>   (`host_selection_mode` = SELF / SELECTED / WAIT_FOR_LATER). That is an intention, not an
+>   assignment: it is revalidated and activated only when the gate opens, and falls back to
+>   `WAITING_REQUEST_APPROVAL` if it no longer holds. Nobody is ever auto-substituted.
+> - **New statuses:** `PENDING_CONTACT_CONFIRMATION` and `PARTIALLY_APPROVED` (request level),
+>   `WAITING_CONTACT_CONFIRMATION` and `REJECTED` (campus level).
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_CONTACT_CONFIRMATION`,
+>   `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** the per-campus `transportation_note` replaced the older request-level note.
+>
+> Canonical source for the two rules above: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3 and Mục 8.
 > Please refer to the latest codebase and SQL schema for the current implementation.
 
 # VISITOR_MANAGEMENT_SYSTEM_v8_4_refined_v6_FULL_UPDATED
@@ -398,14 +411,18 @@ decision_note bắt buộc
 Thông báo/email cho Visitor
 ```
 
-### 7.3 HO approve
+### 7.3 Staff Leader approve (per campus)
+
+> Thay cho "HO approve" của bản trước: HO không quyết định request.
+> Nguồn chuẩn: `PEMS_CANONICAL_BUSINESS_RULES` Mục 8.
 
 ```text
-Actor: HO
-visit_requests.status = APPROVED
-decision_actor_role = HO
+Actor: Staff Leader của ĐÚNG campus đó
+visit_request_campuses.status = ASSIGNED (kèm host bắt buộc)
+decision_actor_role = STAFF_LEADER
 decided_by = current user
 decided_at = now
+visit_requests.status = PARTIALLY_APPROVED hoặc APPROVED (tổng hợp từ các campus)
 ```
 
 Với mỗi campus instance:
@@ -717,7 +734,7 @@ Frontend phải:
 ```text
 [ ] Visitor submit single-campus, Staff Leader HN thấy, HO không xử lý.
 [ ] Visitor submit multi-campus, chỉ HO thấy trước approve.
-[ ] HO approve multi-campus, Staff Leader từng campus mới thấy instance mình.
+[ ] Staff Leader từng campus duyệt phần của mình; không cơ sở nào chờ HO.
 [ ] Staff Leader gán host, host dropdown không có Staff Leader/Department/Student.
 [ ] IC Staff host thấy instance được gán.
 [ ] Department Leader chỉ thấy logistics department mình.
@@ -837,13 +854,19 @@ Visitor submit form + OTP verified
 
 ## Luồng MULTI_CAMPUS sau V8.2
 
+> Cập nhật theo campus-independent approval + confirmation gate. HO chỉ theo dõi read-only.
+> Nguồn chuẩn: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3.
+
 ```text
 Visitor submit form + OTP verified
-→ visit_requests.status = PENDING_APPROVAL
-→ mỗi campus instance = WAITING_REQUEST_APPROVAL
-→ HO duyệt hoặc từ chối request tổng
-→ Nếu duyệt: backend auto gán Staff Leader từng campus làm host
-→ mỗi campus instance = ASSIGNED
+→ visit_requests.status = PENDING_CONTACT_CONFIRMATION
+→ mỗi campus instance = WAITING_CONTACT_CONFIRMATION
+→ mỗi cơ sở mời đầu mối đoàn khách CỦA CƠ SỞ ĐÓ xác nhận
+→ đầu mối cuối cùng xác nhận → gate mở, xử lý từng cơ sở độc lập:
+    • có Host dự kiến còn hợp lệ → ASSIGNED (kích hoạt đề xuất)
+    • chờ phân công sau / đề xuất hết hiệu lực → WAITING_REQUEST_APPROVAL
+→ Staff Leader từng cơ sở duyệt + gán host cho cơ sở còn lại
+→ Host bấm "Bắt đầu chuẩn bị": ASSIGNED → BEFORE_VISIT
 → từng campus vận hành độc lập: BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED
 ```
 

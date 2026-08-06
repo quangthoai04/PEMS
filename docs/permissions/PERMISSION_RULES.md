@@ -4,10 +4,23 @@
 > - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
 > - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
 > - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> - **Approving a campus requires naming its host in the same act.** There is no "approved but
+>   nobody hosting" state. `ASSIGNED` is very much still in the lifecycle: it is where a campus sits
+>   once it has a host, until that host explicitly starts preparation (`ASSIGNED → BEFORE_VISIT`).
+> - **Per-campus operational contact + confirmation gate.** A request first sits at
+>   `PENDING_CONTACT_CONFIRMATION` while each campus waits for its OWN guest-side contact to
+>   confirm. Nothing is assigned and no setup data may be written until the LAST one confirms.
+> - **Proposed host.** An internal creator may record who should host their own campus
+>   (`host_selection_mode` = SELF / SELECTED / WAIT_FOR_LATER). That is an intention, not an
+>   assignment: it is revalidated and activated only when the gate opens, and falls back to
+>   `WAITING_REQUEST_APPROVAL` if it no longer holds. Nobody is ever auto-substituted.
+> - **New statuses:** `PENDING_CONTACT_CONFIRMATION` and `PARTIALLY_APPROVED` (request level),
+>   `WAITING_CONTACT_CONFIRMATION` and `REJECTED` (campus level).
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_CONTACT_CONFIRMATION`,
+>   `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** the per-campus `transportation_note` replaced the older request-level note.
+>
+> Canonical source for the two rules above: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3 and Mục 8.
 > Please refer to the latest codebase and SQL schema for the current implementation.
 
 <!-- =====================================================================
@@ -31,7 +44,7 @@ The addendum section at the end is the authoritative update for cancellation UC-
 > 1. **File `PERMISSION_MATRIX_UPDATED_V5.md` nêu ở trên không còn tồn tại trong repo.** Dùng `docs/permissions/PERMISSION_MATRIX.md` (đã cập nhật cùng ngày) thay thế; và dùng `docs/PEMS_CANONICAL_BUSINESS_RULES_v8_4_refined_v6_v10_FULL_UPDATED.md` làm nguồn chuẩn nghiệp vụ cao nhất.
 > 2. **Toàn bộ mô hình "Permission Level" (`F/E/R/O`) gắn với `permission_code`/DB `role_permissions` ở mục 1–2 dưới đây mô tả một kiến trúc đã bị thay thế.** Code hiện tại (đã xác nhận: schema không có bảng `permissions`/`role_permissions`) dùng **fixed policy** — kiểm tra trực tiếp `role_code`/`sub_role`/scope trong Handler, không tra permission row trong DB. Giữ lại bảng Effective Role Resolution (mục 2) vì vẫn khớp code; bỏ qua phần ngụ ý có bảng `role_permissions` sống động.
 > 3. **§4 Strict Visit / Delegation Visibility — xác nhận đúng với code hiện tại**, kể cả chi tiết "HO View (read-only, monitor)" cho `SINGLE_CAMPUS` (evidence: `ViewGuestDelegationListQueryHandler.cs:455-456`, comment *"HO sees every MULTI_CAMPUS request ... AND every SINGLE_CAMPUS request in read-only monitoring mode"*). Đây là rule chi tiết hơn `CANONICAL_BUSINESS_RULES...md` §10 hiện có — nên dùng file này làm tham chiếu bổ sung cho riêng điểm này.
-> 4. **§5 Visit Status vs Display Status** liệt kê lifecycle `PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED` — đây là **lifecycle SQL v5 cũ**, đã bị thay bằng model 2 tầng hiện tại: `visit_requests.status` (`PENDING_APPROVAL/APPROVED/REJECTED/CANCELLED`) tách biệt với `visit_request_campuses.status` (`WAITING_REQUEST_APPROVAL → ASSIGNED → ASSIGNED → BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED/CANCELLED`). Xem `CANONICAL_BUSINESS_RULES...md` §6.
+> 4. **§5 Visit Status vs Display Status** liệt kê lifecycle `PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED` — đây là **lifecycle SQL v5 cũ**, đã bị thay bằng model 2 tầng hiện tại: `visit_requests.status` (`PENDING_APPROVAL/APPROVED/REJECTED/CANCELLED`) tách biệt với `visit_request_campuses.status` (`WAITING_CONTACT_CONFIRMATION → WAITING_REQUEST_APPROVAL → ASSIGNED → BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED/CANCELLED`). Xem `CANONICAL_BUSINESS_RULES...md` §6.
 > 5. **UC-136 cancellation section (cuối file)**: bổ sung nhánh Visitor được hủy request ngay cả khi còn `PENDING_APPROVAL` — xem `CANONICAL_BUSINESS_RULES...md` mục "V11.3" để biết chi tiết + evidence.
 > 6. **Role/SubRole Canonical Rules (cuối file, mục "Lưu trữ DB")**: dòng nói `role_permissions.sub_role ENUM('NONE','Leader','Staff')` mô tả bảng không còn tồn tại — chỉ `users.sub_role ENUM('LEADER','STAFF')` là còn áp dụng thật.
 
@@ -106,11 +119,11 @@ They still require security checks: account status, portal validation, rate limi
 
 This is the most important SQL v5 rule.
 
-| Role | Single-campus request | Multi-campus before HO approval | Multi-campus after HO approval/release |
+| Role | Single-campus request | Multi-campus, campus chưa quyết | Multi-campus, campus đã quyết |
 |---|---:|---:|---:|
 | ADMIN | No access | No access | No access |
-| HO | View (read-only, monitor) ¹ | View + approve/reject | View |
-| Staff Leader, same campus | View + process | No access | View own campus instance |
+| HO | View (read-only, monitor) ¹ | View (read-only, monitor) | View (read-only, monitor) |
+| Staff Leader, same campus | View + process | View + process own campus instance | View own campus instance |
 | Staff Leader, other campus | No access | No access | No access |
 | Staff | Only assigned/linked records | No access unless linked after release | Assigned/linked records only |
 | Department Lead/Department | Department task/resource scope only | No access unless task/resource is released | Assigned resource/task scope only |
@@ -168,10 +181,13 @@ ADMIN has no visit/delegation business access. Backend should return 403 or use 
 `visit_requests.status` is lifecycle status only:
 
 ```text
-PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED
+PENDING_CONTACT_CONFIRMATION → PENDING_APPROVAL → PARTIALLY_APPROVED → APPROVED
 PENDING_APPROVAL → REJECTED
-PENDING_APPROVAL / APPROVED → CANCELLED
+PENDING_CONTACT_CONFIRMATION / PENDING_APPROVAL / APPROVED → CANCELLED
 ```
+
+A request starts at `PENDING_CONTACT_CONFIRMATION` while any campus still waits for its own
+operational contact to confirm. See §6.3 of the canonical business rules.
 
 Do not add `HO_APPROVED` into `visit_requests.status`.
 
@@ -179,10 +195,13 @@ Use derived display labels instead:
 
 | Display Label | How to derive |
 |---|---|
-| `WAITING_HO_APPROVAL` | `visit_scope = MULTI_CAMPUS` and `status = PENDING_APPROVAL` |
-| `HO_APPROVED` | `visit_scope = MULTI_CAMPUS`, `status IN (APPROVED, IN_PROGRESS, COMPLETED)`, `decision_actor_role = HO` |
-| `WAITING_STAFF_LEADER_APPROVAL` | `visit_scope = SINGLE_CAMPUS` and `status = PENDING_APPROVAL` |
-| `STAFF_LEADER_APPROVED` | `visit_scope = SINGLE_CAMPUS`, approved lifecycle status, `decision_actor_role = STAFF_LEADER` |
+| `WAITING_CONTACT_CONFIRMATION` | `status = PENDING_CONTACT_CONFIRMATION` |
+| `WAITING_STAFF_LEADER_APPROVAL` | `status = PENDING_APPROVAL` (any scope) |
+| `STAFF_LEADER_APPROVED` | approved lifecycle status, `decision_actor_role = STAFF_LEADER` |
+| `PARTIALLY_APPROVED` | `visit_scope = MULTI_CAMPUS` and some — not all — campuses decided |
+
+`WAITING_HO_APPROVAL` / `HO_APPROVED` are **legacy** labels: HO never decides a visit request, so
+neither is derived any more. Approval is per campus, by that campus's Staff Leader.
 
 ---
 

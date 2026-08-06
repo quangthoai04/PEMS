@@ -61,6 +61,7 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                 v.RequestCode,
                 CampusName = site.Name,
                 c.PlannedStartAt,
+                c.PlannedEndAt,
                 DelegationName = c.FormDetail!.DelegationName,
                 CurrentContactName = c.FormDetail!.OperationalContactFullName,
             }).FirstOrDefaultAsync(cancellationToken);
@@ -103,7 +104,12 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                 ["requestCode"] = campus.RequestCode,
                 ["delegationName"] = campus.DelegationName,
                 ["campusName"] = campus.CampusName,
-                ["plannedStartAt"] = campus.PlannedStartAt.ToString("dd/MM/yyyy HH:mm"),
+                // Same name and same shape as every other visit email's window (participant, student,
+                // department): a per-campus invitation that named its time differently from the rest of
+                // the system would be one more spelling for the reader and the template author to keep
+                // in step.
+                ["plannedTime"] =
+                    $"{campus.PlannedStartAt:HH:mm dd/MM/yyyy} - {campus.PlannedEndAt:HH:mm dd/MM/yyyy}",
             };
             if (isTransfer)
                 // Naming the person handing the role over is what makes an unexpected invitation

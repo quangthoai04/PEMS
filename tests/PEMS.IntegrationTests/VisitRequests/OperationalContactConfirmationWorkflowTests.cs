@@ -1084,4 +1084,153 @@ public sealed class OperationalContactConfirmationWorkflowTests
         }
         finally { await CleanupAsync(requestId); }
     }
+
+    // ── The invitation actually renders and actually leaves ───────────────────────
+
+    /// <summary>
+    /// The invitation is the ONLY way the gate ever opens, and the service sends it best-effort: a
+    /// render that throws is logged and swallowed so a committed confirmation state is not rolled
+    /// back. That is right for the token, and it is exactly why nothing noticed when the per-campus
+    /// cutover started supplying campus and time variables the seeded template did not declare —
+    /// every caller still got its token back while no contact ever got a link.
+    ///
+    /// <para>
+    /// So the assertion is on the OUTBOUND MESSAGE, not on the return value, and it is made through
+    /// the real renderer against the real seeded row. Asserting a variable dictionary built inside the
+    /// test would re-create the drift: what matters is that what the SERVICE supplies and what the
+    /// TEMPLATE declares still agree.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_claim_invitation_renders_and_names_the_campus_it_invites_for()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var contact = "oc-render-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+            requestId = await CreateAsync(Form(Campus("HN", contact, 0)));
+            var (instanceId, changeId) = await PendingInvitationAsync(requestId);
+
+            var mail = new FakeEmail();
+            await MintTokenAsync(changeId, mail);
+
+            var sent = Assert.Single(mail.Sent);
+            Assert.Equal(contact, sent.To);
+            // The path half of the pair the SPA routes. Its counterpart is asserted in
+            // frontend/pems-react/src/pages/identity/__tests__/OperationalContactInvitationRoute.test.ts —
+            // neither side can see the other, so each pins the string it owns.
+            Assert.Contains("/operational-contact-confirmation/", sent.Html);
+            Assert.NotNull(mail.LastConfirmationToken);
+
+            // The contact role is held per campus, so one request can invite the same person twice.
+            // The campus and the window are what tell the two invitations apart.
+            using var db = NewContext();
+            var instance = await db.VisitRequestCampuses.AsNoTracking()
+                .FirstAsync(c => c.VisitInstanceId == instanceId);
+            var campusName = await db.Campuses.AsNoTracking()
+                .Where(c => c.CampusId == instance.CampusId).Select(c => c.Name).FirstAsync();
+
+            // Decoded first: the renderer HTML-encodes every substituted value, so a Vietnamese campus
+            // name reaches the body as numeric entities. Asserting on the raw HTML would be asserting
+            // on the encoder.
+            var body = System.Net.WebUtility.HtmlDecode(sent.Html);
+            Assert.Contains(campusName, body);
+            Assert.Contains(instance.PlannedStartAt.ToString("HH:mm dd/MM/yyyy"), body);
+            Assert.Contains(instance.PlannedEndAt.ToString("HH:mm dd/MM/yyyy"), body);
+
+            // A placeholder that survived into the body means a variable was declared and not supplied.
+            Assert.DoesNotContain("{{", sent.Html);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The transfer invitation supplies one variable the claim does not — who is handing the role over —
+    /// and a declared/supplied mismatch fails the WHOLE template, not the one variable that differs. So
+    /// the second kind needs its own render.
+    ///
+    /// <para>
+    /// The pending TRANSFER row is written here rather than through
+    /// <c>InitiateOperationalContactTransferCommandHandler</c>: that handler only opens the transfer
+    /// window at BEFORE_VISIT, and driving a campus that far is a different test's subject. What this
+    /// one pins is the render, so it starts from the row the handler would have produced.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task The_transfer_invitation_renders_and_names_the_outgoing_contact()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var seed = NewContext())
+                (contactId, contactEmail) = await VisitorUserAsync(seed);
+
+            requestId = await CreateAsync(Form(Campus("HN", contactEmail, 0)));
+            var (instanceId, changeId) = await PendingInvitationAsync(requestId);
+
+            var acceptToken = await MintTokenAsync(changeId);
+            using (var db = NewContext())
+            {
+                await Accept(db, contactId, contactEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+            }
+
+            var successor = "oc-transfer-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+            ulong transferId;
+            using (var db = NewContext())
+            {
+                var instance = await db.VisitRequestCampuses.AsNoTracking()
+                    .FirstAsync(c => c.VisitInstanceId == instanceId);
+                var transfer = new PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange
+                {
+                    VisitRequestId = requestId,
+                    VisitInstanceId = instanceId,
+                    ChangeKind = IdentityChangeKinds.Transfer,
+                    TokenVersion = 1,
+                    ConfirmationMethod = IdentityConfirmationMethods.GoogleSso,
+                    OldUserId = contactId,
+                    OldEmailNormalized = contactEmail.ToLowerInvariant(),
+                    NewEmailNormalized = successor,
+                    NewEmailMasked = successor[..2] + "***",
+                    Status = IdentityChangeStatuses.Pending,
+                    ExpectedRequestRowVersion = (uint)instance.RowVersion,
+                    RequestedBy = contactId,
+                    RequestedAt = Now,
+                    ExpiresAt = Now.AddDays(3),
+                    ResendCount = 0,
+                    CreatedAt = Now,
+                };
+                db.VisitRequestIdentityChanges.Add(transfer);
+                await db.SaveChangesAsync();
+                transferId = transfer.IdentityChangeId;
+            }
+
+            var mail = new FakeEmail();
+            await MintTokenAsync(transferId, mail);
+
+            var sent = Assert.Single(mail.Sent);
+            Assert.Equal(successor, sent.To);
+            Assert.NotNull(mail.LastConfirmationToken);
+            Assert.DoesNotContain("{{", sent.Html);
+
+            using var check = NewContext();
+            var detail = await check.VisitInstanceFormDetails.AsNoTracking()
+                .FirstAsync(d => d.VisitInstanceId == instanceId);
+            var campusId = await check.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceId).Select(c => c.CampusId).FirstAsync();
+            var campusName = await check.Campuses.AsNoTracking()
+                .Where(c => c.CampusId == campusId).Select(c => c.Name).FirstAsync();
+
+            var body = System.Net.WebUtility.HtmlDecode(sent.Html);
+            Assert.Contains(campusName, body);
+            // An invitation to REPLACE somebody is unverifiable — and indistinguishable from a phishing
+            // mail — if it will not say who is being replaced.
+            Assert.Contains(detail.OperationalContactFullName!, body);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
 }

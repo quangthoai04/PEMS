@@ -97,11 +97,12 @@ public class VisitRequestCampus
     [Column("host_assigned_at")]
     public DateTime? HostAssignedAt { get; set; }
 
-    // --- Campus-level decision (SQL v10 campus-independent approval). Normally the Staff
-    // Leader of this campus approves/rejects (decision_actor_role STAFF_LEADER); the single
-    // exception is decision_actor_role STAFF + decision_source INTERNAL_SELF_HOST: a regular
-    // IC Staff processed their OWN campus directly inside the create transaction of a request
-    // they registered. REJECTED always requires a decision_note (DB triggers enforce all). ---
+    // --- Campus-level decision (campus-independent approval). Normally the Staff Leader of this
+    // campus approves/rejects (decision_actor_role STAFF_LEADER); the single exception is
+    // decision_source PREAUTHORIZED_HOST_ACTIVATION, where a host PROPOSED before the confirmation
+    // gate is revalidated and activated the moment the gate opens — the decision is credited to the
+    // person who proposed, not to the contact whose confirmation opened the gate.
+    // REJECTED always requires a decision_note (DB triggers enforce all). ---
     [Column("decided_by")]
     public ulong? DecidedBy { get; set; }
 
@@ -111,7 +112,7 @@ public class VisitRequestCampus
     [Column("decision_actor_role")]
     public string? DecisionActorRole { get; set; }
 
-    // STANDARD_CAMPUS_REVIEW | INTERNAL_SELF_HOST | INTERNAL_LEADER_ASSIGN (see DecisionSources).
+    // STANDARD_CAMPUS_REVIEW | PREAUTHORIZED_HOST_ACTIVATION (see DecisionSources).
     [Column("decision_source")]
     public string? DecisionSource { get; set; }
 

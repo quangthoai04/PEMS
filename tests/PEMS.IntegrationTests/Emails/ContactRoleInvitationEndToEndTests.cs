@@ -32,6 +32,14 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
     private const string ClaimUrl = "https://pems.test/visit-contact-claim/RAW-CLAIM-TOKEN";
     private const string TransferUrl = "https://pems.test/visit-contact-transfer/RAW-TRANSFER-TOKEN";
 
+    /// <summary>
+    /// The campus and the window are part of both invitations: the contact role is held per campus, so
+    /// one request can send the same person two of these, and the request code and delegation name are
+    /// identical across them.
+    /// </summary>
+    private const string Campus = "FPT University Hà Nội";
+    private const string PlannedTime = "09:00 16/08/2026 - 13:00 16/08/2026";
+
     private SystemEmailRequest Claim() => new(
         SystemEmailTemplates.VisitContactClaim,
         new EmailRecipient(_h.Marker, "Trần Thị Đầu Mối"),
@@ -40,6 +48,8 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
             ["contactFullName"] = "Trần Thị Đầu Mối",
             ["requestCode"] = "VR-2026-0042",
             ["delegationName"] = "Đoàn Đại học Kyoto",
+            ["campusName"] = Campus,
+            ["plannedTime"] = PlannedTime,
         },
         TrustedBlocks: new Dictionary<string, string>
         {
@@ -56,6 +66,8 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
             ["contactFullName"] = _h.Marker,
             ["requestCode"] = "VR-2026-0042",
             ["delegationName"] = "Đoàn Đại học Kyoto",
+            ["campusName"] = Campus,
+            ["plannedTime"] = PlannedTime,
             ["currentContactName"] = "Trần Thị Đầu Mối",
         },
         TrustedBlocks: new Dictionary<string, string>

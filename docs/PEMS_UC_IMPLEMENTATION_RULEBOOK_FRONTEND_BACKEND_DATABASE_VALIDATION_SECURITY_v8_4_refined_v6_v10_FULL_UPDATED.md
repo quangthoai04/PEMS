@@ -4,10 +4,23 @@
 > - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
 > - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
 > - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> - **Approving a campus requires naming its host in the same act.** There is no "approved but
+>   nobody hosting" state. `ASSIGNED` is very much still in the lifecycle: it is where a campus sits
+>   once it has a host, until that host explicitly starts preparation (`ASSIGNED → BEFORE_VISIT`).
+> - **Per-campus operational contact + confirmation gate.** A request first sits at
+>   `PENDING_CONTACT_CONFIRMATION` while each campus waits for its OWN guest-side contact to
+>   confirm. Nothing is assigned and no setup data may be written until the LAST one confirms.
+> - **Proposed host.** An internal creator may record who should host their own campus
+>   (`host_selection_mode` = SELF / SELECTED / WAIT_FOR_LATER). That is an intention, not an
+>   assignment: it is revalidated and activated only when the gate opens, and falls back to
+>   `WAITING_REQUEST_APPROVAL` if it no longer holds. Nobody is ever auto-substituted.
+> - **New statuses:** `PENDING_CONTACT_CONFIRMATION` and `PARTIALLY_APPROVED` (request level),
+>   `WAITING_CONTACT_CONFIRMATION` and `REJECTED` (campus level).
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_CONTACT_CONFIRMATION`,
+>   `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** the per-campus `transportation_note` replaced the older request-level note.
+>
+> Canonical source for the two rules above: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3 and Mục 8.
 > Please refer to the latest codebase and SQL schema for the current implementation.
 
 # PEMS_UC_IMPLEMENTATION_RULEBOOK_FRONTEND_BACKEND_DATABASE_VALIDATION_SECURITY_v8_4_refined_v6_FULL_UPDATED
@@ -488,7 +501,7 @@ PENDING_APPROVAL + WAITING_REQUEST_APPROVAL
 ```text
 PENDING_APPROVAL + all instances WAITING_REQUEST_APPROVAL
 → only HO sees request tổng
-→ HO approve/reject
+→ Staff Leader từng campus approve/reject phần của mình (HO read-only)
 → approve: request APPROVED, all instances ASSIGNED
 → coordinator_user_id = Staff Leader từng campus
 → Staff Leader từng campus assign host
@@ -779,7 +792,7 @@ Không giữ mock mặc định khi API thật có.
 [ ] Visitor submit form thiếu EXTERNAL_SUPPORT -> 400/validation error.
 [ ] Multi-campus pending HO: Staff Leader không thấy instance.
 [ ] HO thấy multi-campus pending.
-[ ] HO approve: Staff Leader từng campus thấy ASSIGNED.
+[ ] Staff Leader từng campus tự duyệt; HO không phải một bước thấy ASSIGNED.
 [ ] Staff Leader assign host: candidate list đúng.
 [ ] Staff Leader không thấy campus khác.
 [ ] IC Staff host thấy instance được gán.

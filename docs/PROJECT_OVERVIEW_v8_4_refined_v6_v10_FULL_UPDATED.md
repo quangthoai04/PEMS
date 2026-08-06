@@ -4,10 +4,23 @@
 > - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
 > - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
 > - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> - **Approving a campus requires naming its host in the same act.** There is no "approved but
+>   nobody hosting" state. `ASSIGNED` is very much still in the lifecycle: it is where a campus sits
+>   once it has a host, until that host explicitly starts preparation (`ASSIGNED → BEFORE_VISIT`).
+> - **Per-campus operational contact + confirmation gate.** A request first sits at
+>   `PENDING_CONTACT_CONFIRMATION` while each campus waits for its OWN guest-side contact to
+>   confirm. Nothing is assigned and no setup data may be written until the LAST one confirms.
+> - **Proposed host.** An internal creator may record who should host their own campus
+>   (`host_selection_mode` = SELF / SELECTED / WAIT_FOR_LATER). That is an intention, not an
+>   assignment: it is revalidated and activated only when the gate opens, and falls back to
+>   `WAITING_REQUEST_APPROVAL` if it no longer holds. Nobody is ever auto-substituted.
+> - **New statuses:** `PENDING_CONTACT_CONFIRMATION` and `PARTIALLY_APPROVED` (request level),
+>   `WAITING_CONTACT_CONFIRMATION` and `REJECTED` (campus level).
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_CONTACT_CONFIRMATION`,
+>   `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** the per-campus `transportation_note` replaced the older request-level note.
+>
+> Canonical source for the two rules above: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3 and Mục 8.
 > Please refer to the latest codebase and SQL schema for the current implementation.
 
 # PROJECT_OVERVIEW_v8_4_refined_v6_FULL_UPDATED
@@ -259,8 +272,8 @@ Các từ này chỉ được dùng khi giải thích legacy mapping, không dù
 | Actor | Scope dữ liệu |
 |---|---|
 | Admin | Không mặc định xem visit/delegation nghiệp vụ |
-| HO | Multi-campus request/delegation; không xử lý single-campus |
-| Staff Leader | Single-campus campus mình; multi-campus instance campus mình sau HO approve |
+| HO | Theo dõi read-only mọi request (single + multi); không duyệt/từ chối/gán host/hủy |
+| Staff Leader | Campus instance thuộc campus mình, single lẫn multi — không chờ HO |
 | IC Staff | Instance mình là host/support/participant |
 | Department Leader | Logistics/task/resource thuộc department mình |
 | Department Staff | Task/logistics được assign |
@@ -365,39 +378,44 @@ ASSIGNED → BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED
 
 ## 8. Luồng multi-campus
 
+> Mục này đã được viết lại theo **campus-independent approval** + **confirmation gate**. HO KHÔNG
+> duyệt request; mỗi cơ sở tự quyết phần của mình. Nguồn chuẩn: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3.
+
 ```text
 Visitor/Staff submit request chọn >= 2 campus
-→ visit_requests.status = PENDING_APPROVAL
-→ tất cả campus instance = WAITING_REQUEST_APPROVAL
-→ chỉ HO nhìn thấy request tổng
+→ visit_requests.status = PENDING_CONTACT_CONFIRMATION
+→ tất cả campus instance = WAITING_CONTACT_CONFIRMATION
+→ mỗi cơ sở gửi lời mời riêng cho đầu mối đoàn khách của cơ sở đó
 ```
 
-Khi HO chưa duyệt:
+Khi còn cơ sở chưa có đầu mối xác nhận:
 
 ```text
-Staff Leader/Staff/Department/Student của campus con không thấy đoàn con.
-Không tạo participant/logistics/calendar/minutes cho campus con.
+Không cơ sở nào được ASSIGNED.
+Không cơ sở nào có current_host_user_id.
+Không tạo participant/logistics/calendar/minutes cho bất kỳ cơ sở nào.
 ```
 
-Nếu HO từ chối:
+Khi đầu mối **cuối cùng** xác nhận (gate mở), xử lý độc lập từng cơ sở:
 
 ```text
-visit_requests.status = REJECTED
-Ghi decision_actor_role = HO, decision_note
-Thông báo/email cho Visitor
+Cơ sở có Host dự kiến hợp lệ  → ASSIGNED, current_host_user_id = người được đề xuất,
+                                decision_source = PREAUTHORIZED_HOST_ACTIVATION
+Cơ sở WAIT_FOR_LATER          → WAITING_REQUEST_APPROVAL, chờ Staff Leader duyệt + gán host
+Cơ sở có đề xuất không còn hợp lệ → WAITING_REQUEST_APPROVAL, activation = NEEDS_RESELECTION
 ```
 
-Nếu HO duyệt:
+`visit_requests.status` khi đó là `APPROVED` (mọi cơ sở đã quyết) hoặc `PARTIALLY_APPROVED`.
+
+Staff Leader từng cơ sở chỉ thấy campus instance của mình, ở mọi giai đoạn — không phụ thuộc HO.
+Từ `ASSIGNED`, Host phải bấm "Bắt đầu chuẩn bị" để sang `BEFORE_VISIT` trước khi được ghi setup.
+
+Nếu Staff Leader của một cơ sở từ chối:
 
 ```text
-visit_requests.status = APPROVED
-Mỗi campus instance = ASSIGNED
-coordinator_user_id = Staff Leader của campus đó
-coordinator_assigned_by = HO
-coordinator_assigned_at = now
+campus instance = REJECTED, decision_actor_role = STAFF_LEADER, decision_note
+Cơ sở khác trong cùng request KHÔNG bị ảnh hưởng
 ```
-
-Sau HO approve, Staff Leader từng campus mới thấy instance của mình và gán host chính thức.
 
 Không có bước Staff Leader duyệt lại request tổng sau HO.
 

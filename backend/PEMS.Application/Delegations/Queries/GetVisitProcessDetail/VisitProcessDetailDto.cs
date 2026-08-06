@@ -97,6 +97,7 @@ public sealed class VisitProcessRequestSummaryDto
     // block could only ever show one of them.
     public string? OperationalContactFullName { get; set; }
     public string? OperationalContactOrganization { get; set; }
+    public string? OperationalContactJobTitle { get; set; }
     public string? OperationalContactPhone { get; set; }
     public string? OperationalContactEmail { get; set; }
 

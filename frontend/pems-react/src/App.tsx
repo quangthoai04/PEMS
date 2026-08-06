@@ -164,7 +164,14 @@ export default function App() {
           <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
 
           {/* Per-campus v2 identity invitations: anonymous MASKED landing; accept/decline require the
-              matching Google login (the page itself guides the user — no ProtectedRoute redirect). */}
+              matching Google login (the page itself guides the user — no ProtectedRoute redirect).
+
+              The FIRST path is the one the backend puts in the email today
+              (OperationalContactInvitationService builds {FrontendBaseUrl}/operational-contact-confirmation/{token}).
+              The two below it are the addresses the request-level flow used to send; they are kept
+              because links already in somebody's inbox outlive the code that wrote them, and the page
+              reads the invitation kind from the record rather than from the route. */}
+          <Route path="/operational-contact-confirmation/:token" element={<VisitContactInvitationPage kind="claim" />} />
           <Route path="/visit-contact-claim/:token" element={<VisitContactInvitationPage kind="claim" />} />
           <Route path="/visit-contact-transfer/:token" element={<VisitContactInvitationPage kind="transfer" />} />
 

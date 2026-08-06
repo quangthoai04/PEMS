@@ -148,6 +148,24 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         </div>
       </div>
 
+      {/* Đầu mối đoàn khách phối hợp tại cơ sở — THIS campus's own guest-side coordinator.
+          Rendered unconditionally: the person running the visit needs to know whether there is a
+          coordinator and what is known about them, and a block that disappears when a name happens
+          to be blank answers neither question. Each field falls back to "Chưa có thông tin" on its
+          own, so a missing name never hides a phone number that is present. */}
+      <div>
+        <p className="mb-1 border-b border-gray-200 pb-1 text-xs font-bold uppercase tracking-wide text-[#004c91]">
+          Đầu mối đoàn khách phối hợp tại cơ sở
+        </p>
+        <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+          <Field label="Họ và tên" value={summary?.operationalContactFullName} />
+          <Field label="Đơn vị công tác" value={summary?.operationalContactOrganization} />
+          <Field label="Chức vụ" value={summary?.operationalContactJobTitle} />
+          <Field label="Số điện thoại" value={summary?.operationalContactPhone} />
+          <Field label="Email" value={summary?.operationalContactEmail} />
+        </div>
+      </div>
+
       <div className="space-y-1">
         <Field label="Mục đích thăm" value={summary?.purpose} multiline />
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />

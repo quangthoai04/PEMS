@@ -4,10 +4,23 @@
 > - **HO is now monitor/read-only.** There is no centralized multi-campus approval by HO.
 > - **Staff Leader approval is per-campus.** Each Staff Leader directly receives and approves/rejects their own campus instance right after submission.
 > - **Self-hosting is supported.** Staff Leaders can assign themselves as the host during approval.
-> - **ASSIGNED is removed.** Approving a request now requires assigning a host immediately.
-> - **New statuses:** `PARTIALLY_APPROVED` (request level) and `REJECTED` (campus level) are added. 
-> - **Cancel logic:** Visitors can cancel requests in `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
-> - **Transportation:** `transportation_note` and `transportation_note` are replaced by `transportation_note`.
+> - **Approving a campus requires naming its host in the same act.** There is no "approved but
+>   nobody hosting" state. `ASSIGNED` is very much still in the lifecycle: it is where a campus sits
+>   once it has a host, until that host explicitly starts preparation (`ASSIGNED → BEFORE_VISIT`).
+> - **Per-campus operational contact + confirmation gate.** A request first sits at
+>   `PENDING_CONTACT_CONFIRMATION` while each campus waits for its OWN guest-side contact to
+>   confirm. Nothing is assigned and no setup data may be written until the LAST one confirms.
+> - **Proposed host.** An internal creator may record who should host their own campus
+>   (`host_selection_mode` = SELF / SELECTED / WAIT_FOR_LATER). That is an intention, not an
+>   assignment: it is revalidated and activated only when the gate opens, and falls back to
+>   `WAITING_REQUEST_APPROVAL` if it no longer holds. Nobody is ever auto-substituted.
+> - **New statuses:** `PENDING_CONTACT_CONFIRMATION` and `PARTIALLY_APPROVED` (request level),
+>   `WAITING_CONTACT_CONFIRMATION` and `REJECTED` (campus level).
+> - **Cancel logic:** Visitors can cancel requests in `PENDING_CONTACT_CONFIRMATION`,
+>   `PENDING_APPROVAL` or `PARTIALLY_APPROVED` states.
+> - **Transportation:** the per-campus `transportation_note` replaced the older request-level note.
+>
+> Canonical source for the two rules above: `PEMS_CANONICAL_BUSINESS_RULES` Mục 6.3 and Mục 8.
 > Please refer to the latest codebase and SQL schema for the current implementation.
 
 <!-- =====================================================================
@@ -79,9 +92,9 @@ File này mô tả ma trận phân quyền theo từng Use Case của hệ thố
 
 | Role in Matrix | DB Mapping | Scope |
 |---|---|---|
-| HO | `role_code = HO` | Head Office xử lý nghiệp vụ cấp liên cơ sở: xem/duyệt `MULTI_CAMPUS`, campus master, FAQ, report, agenda template và một số cấu hình nghiệp vụ. HO **được xem `SINGLE_CAMPUS` ở chế độ read-only để theo dõi** (chốt 2026-06) nhưng **không xử lý** `SINGLE_CAMPUS` (không duyệt/từ chối/gán host/hủy). |
+| HO | `role_code = HO` | Head Office xử lý nghiệp vụ cấp hệ thống: campus master, FAQ, report, agenda template và một số cấu hình nghiệp vụ. Với visit request — cả `SINGLE_CAMPUS` lẫn `MULTI_CAMPUS` — HO **chỉ theo dõi read-only**: không duyệt, không từ chối, không gán host, không hủy. Duyệt là việc của Staff Leader từng cơ sở (campus-independent approval). |
 | Admin | `role_code = ADMIN` | Quản trị kỹ thuật hệ thống, gồm role, permission, API configuration và API logs. Không phải super admin nghiệp vụ và không xem visit/delegation records. |
-| Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối cấp campus: xem/xử lý `SINGLE_CAMPUS` thuộc campus mình; xem `MULTI_CAMPUS` chỉ sau khi HO duyệt/release và chỉ với campus mình; duyệt news, quản lý account/department trong phạm vi được giao. |
+| Staff Leader | `role_code = STAFF`, `sub_role = Leader` | Điều phối cấp campus: xem/xử lý campus instance thuộc campus mình, với cả `SINGLE_CAMPUS` lẫn `MULTI_CAMPUS` — **không chờ HO release**, mỗi cơ sở tự duyệt phần của mình. Cơ sở khác trong cùng request không nhìn thấy. Duyệt news, quản lý account/department trong phạm vi được giao. |
 | Staff | `role_code = STAFF`, `sub_role = Staff` | Nhân sự vận hành chính, tạo/cập nhật delegation, chuẩn bị logistics, quản lý partner, tài liệu, ảnh và tin tức. |
 | Department Lead | `role_code = DEPARTMENT`, `sub_role = Leader` | Trưởng bộ phận, duyệt resource, phân công nhiệm vụ, quản lý personnel và theo dõi coordination tasks. |
 | Department | `role_code = DEPARTMENT`, `sub_role = Staff` | Nhân sự bộ phận, nhận nhiệm vụ, xác nhận tham gia, cập nhật task và ký báo cáo nếu được phân công. |
@@ -138,7 +151,13 @@ Implementation source query:
 - Staff Leader list/detail: `vw_visit_requests_for_staff_leader` plus `visible_campus_id = CurrentUser.PrimaryCampusId`.
 - ADMIN list/detail: no route or `vw_visit_requests_for_admin`, which returns zero rows.
 
-`approval_display_status` such as `WAITING_HO_APPROVAL`, `HO_APPROVED`, `WAITING_STAFF_LEADER_APPROVAL`, and `STAFF_LEADER_APPROVED` is a display/status-label concept. It must not replace the lifecycle column `visit_requests.status`.
+`approval_display_status` such as `WAITING_STAFF_LEADER_APPROVAL` and `STAFF_LEADER_APPROVED` is a
+display/status-label concept. It must not replace the lifecycle column `visit_requests.status`.
+
+`WAITING_HO_APPROVAL` and `HO_APPROVED` are **legacy labels and no longer derived** — HO does not
+approve a visit request at all (campus-independent approval). A multi-campus request waiting for a
+decision is waiting for the Staff Leader of each campus, one campus at a time, which is why
+`PARTIALLY_APPROVED` exists.
 
 ### 4.1. Public Endpoint Rule
 

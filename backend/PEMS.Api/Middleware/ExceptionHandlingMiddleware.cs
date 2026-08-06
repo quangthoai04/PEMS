@@ -148,7 +148,7 @@ public sealed class ExceptionHandlingMiddleware
 
             case ForbiddenException forbidden:
                 status = StatusCodes.Status403Forbidden;
-                payload = new { success = false, message = forbidden.Message, traceId };
+                payload = new { success = false, errorCode = forbidden.ErrorCode, message = forbidden.Message, traceId };
                 break;
 
             case NotFoundException notFound:

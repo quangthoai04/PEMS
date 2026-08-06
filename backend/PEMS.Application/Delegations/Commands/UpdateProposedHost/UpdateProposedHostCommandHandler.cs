@@ -106,7 +106,8 @@ public sealed class UpdateProposedHostCommandHandler
 
         if (!isLeaderHere && !isStaffHere)
             throw new ForbiddenException(
-                "Chỉ nhân sự IC của cơ sở này mới được đặt người phụ trách dự kiến.");
+                "Chỉ nhân sự IC của cơ sở này mới được đặt người phụ trách dự kiến.",
+                VisitRequestErrorCodes.ProposeHostOtherCampusForbidden);
 
         // A regular Staff speaks only for themself: they may take an empty slot or drop their own
         // proposal, never overwrite the Leader's pick of somebody else.
@@ -114,7 +115,8 @@ public sealed class UpdateProposedHostCommandHandler
             && instance.ProposedHostUserId is not null
             && instance.ProposedHostUserId != actorId)
             throw new ForbiddenException(
-                "Chỉ Staff Leader mới được thay đổi người phụ trách dự kiến do người khác đặt.");
+                "Chỉ Staff Leader mới được thay đổi người phụ trách dự kiến do người khác đặt.",
+                VisitRequestErrorCodes.StaffCannotAssignOtherHost);
 
         var now = _clock.VietnamNow;
         ulong? proposedId = null;
@@ -123,14 +125,17 @@ public sealed class UpdateProposedHostCommandHandler
         if (mode == HostSelectionModes.Self)
         {
             if (request.ProposedHostUserId.HasValue && request.ProposedHostUserId.Value != actorId)
-                throw new ForbiddenException("Chế độ tự nhận không được đề xuất người khác.");
+                throw new ForbiddenException(
+                    "Chế độ tự nhận không được đề xuất người khác.",
+                    VisitRequestErrorCodes.StaffCannotAssignOtherHost);
             proposedId = actorId;
         }
         else if (mode == HostSelectionModes.Selected)
         {
             if (!isLeaderHere)
                 throw new ForbiddenException(
-                    "Chỉ Staff Leader mới được đề xuất người khác làm người phụ trách tiếp đón.");
+                    "Chỉ Staff Leader mới được đề xuất người khác làm người phụ trách tiếp đón.",
+                    VisitRequestErrorCodes.StaffCannotAssignOtherHost);
             proposedId = request.ProposedHostUserId
                 ?? throw new BusinessRuleException(
                     "Chọn người phụ trách khác thì phải chọn cụ thể một người.",

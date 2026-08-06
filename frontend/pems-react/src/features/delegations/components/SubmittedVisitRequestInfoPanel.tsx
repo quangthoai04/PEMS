@@ -225,11 +225,18 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         </section>
       )}
 
-      {/* Đầu mối đoàn khách phối hợp tại cơ sở — PER CAMPUS (Chỉ IC role xem).
+      {/* Đầu mối đoàn khách phối hợp tại cơ sở — PER CAMPUS.
           One block per campus rather than one for the request: a mixed request has a different
           coordinator at each campus, and rendering the first one as "the" contact told the reader
-          somebody was coordinating a campus they had never heard of. */}
-      {canSeeRegistrantInfo && data.campuses.length > 0 && (
+          somebody was coordinating a campus they had never heard of.
+
+          Visibility follows the PAYLOAD, not a role read out of localStorage. The query already
+          decides who may open this detail at all and which campuses they get
+          (GetSubmittedVisitRequestFormDetailQueryHandler: HO global read-only, Staff Leader own
+          campus, Visitor own request, everyone else refused), so a second guess on the client could
+          only ever disagree with it — as it did: the registrant, who nominated these people, was the
+          one being shown nothing. */}
+      {data.campuses.length > 0 && (
         <section>
           <SectionTitle index={++sectionCounter}>
             Đầu mối đoàn khách phối hợp tại cơ sở

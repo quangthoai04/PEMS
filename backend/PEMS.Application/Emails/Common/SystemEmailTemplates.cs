@@ -158,10 +158,14 @@ public static class SystemEmailTemplates
             // VISIT_REQUEST — OTP and per-person action URLs.
             Single(VisitRequestOtp, EmailTemplatePurposes.VisitRequest, sensitive: true,
                 "fullName", "otpCode", "expireMinutes"),
+            // campusName + plannedTime are part of the contract, not decoration: the contact role is held
+            // per campus, so one request can send the same person two invitations. Without the campus and
+            // the window there is nothing in the message that tells them apart.
             Single(VisitContactClaim, EmailTemplatePurposes.VisitRequest, sensitive: true,
-                "contactFullName", "requestCode", "delegationName"),
+                "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime"),
             Single(VisitContactTransfer, EmailTemplatePurposes.VisitRequest, sensitive: true,
-                "contactFullName", "requestCode", "delegationName", "currentContactName"),
+                "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime",
+                "currentContactName"),
 
             // VISIT_PARTICIPANT — each invitee gets their own accept/decline token.
             Single(VisitParticipantInvitation, EmailTemplatePurposes.VisitParticipant, sensitive: true,

@@ -167,13 +167,16 @@ public static class V2HostProposalRules
                 && string.Equals(proposal.CampusCode, ownCode, StringComparison.OrdinalIgnoreCase);
             if (!isOwnCampus)
                 throw new ForbiddenException(
-                    "Bạn chỉ được đề xuất người phụ trách cho cơ sở của chính mình; cơ sở khác do Staff Leader cơ sở đó phân công.");
+                    "Bạn chỉ được đề xuất người phụ trách cho cơ sở của chính mình; cơ sở khác do Staff Leader cơ sở đó phân công.",
+                    VisitRequestErrorCodes.ProposeHostOtherCampusForbidden);
 
             switch (proposal.Mode)
             {
                 case HostSelectionModes.Selected:
                     if (!actor.IsStaffLeader)
-                        throw new ForbiddenException("Chỉ Staff Leader mới được đề xuất người khác làm người phụ trách tiếp đón.");
+                        throw new ForbiddenException(
+                            "Chỉ Staff Leader mới được đề xuất người khác làm người phụ trách tiếp đón.",
+                            VisitRequestErrorCodes.StaffCannotAssignOtherHost);
                     if (proposal.ProposedHostUserId is null)
                         throw new BusinessRuleException(
                             "Chọn người phụ trách khác thì phải chọn cụ thể một người.",
@@ -188,7 +191,8 @@ public static class V2HostProposalRules
                     if (proposal.ProposedHostUserId.HasValue
                         && proposal.ProposedHostUserId.Value != actor.ActorUserId)
                         throw new ForbiddenException(
-                            "Chế độ tự nhận không được đề xuất người khác.");
+                            "Chế độ tự nhận không được đề xuất người khác.",
+                            VisitRequestErrorCodes.StaffCannotAssignOtherHost);
                     if (actor.IsRegularStaff && !actor.OwnDepartmentIsIc)
                         throw new BusinessRuleException(
                             "Chỉ IC Staff thuộc phòng IC của cơ sở mới được tự nhận người phụ trách tiếp đón.",

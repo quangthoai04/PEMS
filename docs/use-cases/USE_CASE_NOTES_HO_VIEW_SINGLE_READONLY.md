@@ -285,6 +285,6 @@ UC-136 — Cancel Visit Request: Hủy yêu cầu thăm/đoàn khách thuộc FE
 ## Related UC Clarification Notes
 
 - **UC-17 Submit Visit Request:** Submit form xong mới tạo request. Hủy sau submit không thuộc UC-17, mà thuộc UC-136.
-- **UC-18 Approve Cross-Campus Request:** HO duyệt/từ chối multi-campus; nếu cần hủy sau khi đã duyệt thì dùng UC-136.
+- **UC-18 (LEGACY — HO không còn duyệt):** duyệt là việc của Staff Leader từng campus. Giữ mục này để đối chiếu lịch sử. Nội dung cũ: HO duyệt/từ chối multi-campus; nếu cần hủy sau khi đã duyệt thì dùng UC-136.
 - **UC-22 Process Visit Request:** Staff Leader xử lý approve/reject single-campus; nếu hủy sau khi đã duyệt thì dùng UC-136.
 - **UC-41 Close Delegation:** Close Delegation là đóng hồ sơ sau khi hoàn tất, không phải hủy.

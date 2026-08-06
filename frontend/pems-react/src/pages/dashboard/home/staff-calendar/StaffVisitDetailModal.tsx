@@ -79,6 +79,9 @@ const fmtDateTime = (value?: string | null) => {
   return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 };
 
+/** Shown in the contact block so a field that is not filled in yet reads as "not yet", not as absent. */
+const EMPTY_FIELD = 'Chưa có thông tin';
+
 function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string; value?: React.ReactNode }) {
   if (value === null || value === undefined || value === '' || value === '—') return null;
   return (
@@ -278,19 +281,21 @@ export function StaffVisitDetailModal({
                 </section>
               )}
 
-              {/* Đầu mối liên hệ (nếu khác người đăng ký) */}
-              {(detail.operationalContactFullName || detail.operationalContactEmail) && (
-                <section>
-                  <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-[#f37021]" /> Đầu mối liên hệ
-                  </h4>
-                  <div className="divide-y divide-slate-100 border-y border-slate-100">
-                    <InfoRow label="Họ tên" value={detail.operationalContactFullName} />
-                    <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.operationalContactPhone} />
-                    <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.operationalContactEmail} />
-                  </div>
-                </section>
-              )}
+              {/* Đầu mối đoàn khách phối hợp tại cơ sở — this campus's own, always shown. A name
+                  that is still blank means the invited person has not confirmed yet, which is
+                  information; dropping the section makes it look like nobody was ever nominated. */}
+              <section>
+                <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-[#f37021]" /> Đầu mối đoàn khách phối hợp tại cơ sở
+                </h4>
+                <div className="divide-y divide-slate-100 border-y border-slate-100">
+                  <InfoRow label="Họ tên" value={detail.operationalContactFullName || EMPTY_FIELD} />
+                  <InfoRow label="Đơn vị công tác" value={detail.operationalContactOrganization || EMPTY_FIELD} />
+                  <InfoRow label="Chức vụ" value={detail.operationalContactJobTitle || EMPTY_FIELD} />
+                  <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.operationalContactPhone || EMPTY_FIELD} />
+                  <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.operationalContactEmail || EMPTY_FIELD} />
+                </div>
+              </section>
 
               {/* Nội dung chuyến thăm */}
               <section>
