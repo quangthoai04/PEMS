@@ -11,6 +11,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
 
 /// <summary>Shared guards for the amendment handlers.</summary>
@@ -26,14 +27,21 @@ internal static class AmendmentGuards
         return currentUser.UserId.Value;
     }
 
-    /// <summary>Requester side: registrant or ACTIVE primary contact of THIS request.</summary>
-    public static void EnsureRequesterSide(VisitRequest visit, ulong actorId)
+    /// <summary>
+    /// Requester side of ONE campus: the registrant of the request, or the confirmed operational
+    /// contact of THAT campus.
+    ///
+    /// <para>
+    /// It takes the campus rather than the request because an amendment always changes exactly one
+    /// campus. Under the old request-level contact the check could not tell the difference, so the
+    /// person who confirmed campus A could propose changes to campus B — a campus they were never
+    /// invited to and whose Staff Leader has never heard of them.
+    /// </para>
+    /// </summary>
+    public static void EnsureRequesterSide(VisitRequest visit, VisitRequestCampus instance, ulong actorId)
     {
-        var isRegistrant = visit.RegistrantUserId == actorId;
-        var isActiveContact = visit.VisitorUserId == actorId
-                              && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active;
-        if (!isRegistrant && !isActiveContact)
-            throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của đơn này.");
+        if (!VisitRequestOwnership.IsGuestSide(visit, instance, actorId))
+            throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của cơ sở này.");
     }
 
     /// <summary>
@@ -115,10 +123,9 @@ public sealed class SubmitVisitAmendmentCommandHandler
             .Include(v => v.GuestMembers)
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
-        AmendmentGuards.EnsureRequesterSide(visit, actorId);
-
         var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == request.VisitInstanceId)
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
+        AmendmentGuards.EnsureRequesterSide(visit, instance, actorId);
 
         VisitInstanceAmendment amendment;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
@@ -199,16 +206,16 @@ public sealed class GetActiveVisitAmendmentQueryHandler
             {
                 c.CampusId,
                 c.CurrentHostUserId,
+                c.OperationalContactUserId,
                 c.VisitRequest!.RegistrantUserId,
-                c.VisitRequest.VisitorUserId,
-                c.VisitRequest.PrimaryContactAccessStatus,
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
 
-        // Scope: requester side, the current Host, or HO (read-only).
+        // Scope: requester side OF THIS CAMPUS, the current Host, or HO (read-only). The contact is
+        // read from the campus row — a sibling's contact is a different person with no business here.
         var allowed = row.RegistrantUserId == actorId
-            || (row.VisitorUserId == actorId && row.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active)
+            || row.OperationalContactUserId == actorId
             || row.CurrentHostUserId == actorId
             || _currentUser.RoleCode == RoleCodes.Ho;
         if (!allowed)
@@ -306,16 +313,16 @@ public sealed class DecideVisitAmendmentCommandHandlers :
         WithdrawVisitAmendmentCommand request, CancellationToken cancellationToken)
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
-        var head = await _db.VisitRequests.AsNoTracking()
-            .Where(v => v.VisitRequestId == request.VisitRequestId)
-            .Select(v => new { v.RegistrantUserId, v.VisitorUserId, v.PrimaryContactAccessStatus })
+        // Withdrawing names the campus whose proposal it closes, so the check is that campus's:
+        // the registrant, or the person who holds it.
+        var head = await _db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == request.VisitInstanceId
+                        && c.VisitRequestId == request.VisitRequestId)
+            .Select(c => new { c.OperationalContactUserId, c.VisitRequest!.RegistrantUserId })
             .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
-        var isRequesterSide = head.RegistrantUserId == actorId
-            || (head.VisitorUserId == actorId
-                && head.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active);
-        if (!isRequesterSide)
-            throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của đơn này.");
+            ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
+        if (head.RegistrantUserId != actorId && head.OperationalContactUserId != actorId)
+            throw new ForbiddenException("Bạn không có quyền thao tác đề xuất của cơ sở này.");
 
         VisitAmendmentDecisionResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))

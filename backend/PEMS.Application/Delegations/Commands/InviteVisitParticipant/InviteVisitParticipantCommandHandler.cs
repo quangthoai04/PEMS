@@ -15,6 +15,7 @@ using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.InviteVisitParticipant;
 
 /// <summary>
@@ -94,8 +95,7 @@ public sealed class InviteVisitParticipantCommandHandler
         // ── Host + window guards (never trust the frontend) ──
         if (instance.CurrentHostUserId != actorId)
             throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được mời thành phần tham gia.");
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể mời thành phần tham gia trong giai đoạn chuẩn bị.");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "mời thành phần tham gia");
 
         // ── Resolve the real invitee + participant role from the DB ──
         var (targetUserId, participantRole, roleLabel, recipientDeptId) =

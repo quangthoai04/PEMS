@@ -97,7 +97,7 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
     }
 
     /// <summary>Builds a valid edit payload from the CURRENT persisted state of the request.</summary>
@@ -114,13 +114,11 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote, content.Notes)).ToList();
+            content.MediaConsentNote)).ToList();
         return new VisitRequestEditV2Dto(
             r.RowVersion,
             new RegistrantInputV2(r.RegistrantFullName, r.RegistrantNationality ?? "VN", r.RegistrantOrganization,
                 r.RegistrantJobTitle ?? "Job", r.RegistrantPhone ?? "+8491", r.RegistrantEmail),
-            new ContactPointDto(r.ContactPersonFullName, r.ContactPersonOrganization ?? "Org",
-                r.ContactPersonPhone ?? "+8491", r.ContactPersonEmail),
             r.PartnerId, slots);
     }
 
@@ -132,7 +130,6 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
             new VisitRequestFormDataV2(
                 Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
                 null, new List<CampusVisitFormDto> { CampusContent() }),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
         await tx.CommitAsync();
@@ -200,30 +197,40 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
             Assert.Equal(0, n3.Batches);
 
 
-            // 5) ACTIVE contact → allowed; edit applies; exactly one notification batch.
+            // 5) A CONFIRMED operational contact still may not edit the whole request. This edits
+            //    request-level content across every campus, and the contact's authority is one campus —
+            //    so the answer is Forbidden even though the account is a legitimate participant in the
+            //    request. (Campus-scoped edits are VisitSafeEditV2Tests' subject, not this one.)
+            //    The status moves with the contact: a campus may not hold one while it is still
+            //    WAITING_CONTACT_CONFIRMATION, and may not be past that state without one.
             using (var db = NewContext())
                 await db.Database.ExecuteSqlRawAsync(
-                    "UPDATE visit_requests SET visitor_user_id = {0}, primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = {1}",
+                    "UPDATE visit_request_campuses SET operational_contact_user_id = {0}, "
+                    + "operational_contact_confirmed_at = NOW(), "
+                    + "operational_contact_confirmation_source = 'EMAIL_CONFIRMATION', "
+                    + "status = 'WAITING_REQUEST_APPROVAL' "
+                    + "WHERE visit_request_id = {1}",
                     otherUser, requestId);
             var n5 = new RecordingNotifications();
+            var contactPayload = await EditPayloadAsync(requestId, "Đoàn Contact Sửa");
             using (var db = NewContext())
-            {
-                var res = await Handler(db, otherUser, notifications: n5).Handle(
-                    new UpdatePendingVisitRequestV2Command(requestId, await EditPayloadAsync(requestId, "Đoàn Contact Sửa")),
-                    CancellationToken.None);
-                Assert.Equal("Đoàn Contact Sửa", (await db.VisitInstanceFormDetails.AsNoTracking()
-                    .FirstAsync(d => d.VisitInstanceId == res.Instances[0].VisitInstanceId)).DelegationName);
-            }
-            Assert.Equal(1, n5.Batches);
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, otherUser, notifications: n5).Handle(
+                        new UpdatePendingVisitRequestV2Command(requestId, contactPayload),
+                        CancellationToken.None));
+            Assert.Equal(0, n5.Batches);
 
-            // 6) Registrant edits successfully too (fresh row versions from the DB) with one more batch.
+            // 6) The registrant edits successfully (fresh row versions from the DB) with one notification batch.
             var n6 = new RecordingNotifications();
             using (var db = NewContext())
             {
                 var res = await Handler(db, Registrant, notifications: n6).Handle(
                     new UpdatePendingVisitRequestV2Command(requestId, await EditPayloadAsync(requestId, "Đoàn Registrant Sửa")),
                     CancellationToken.None);
-                Assert.True(res.RequestRowVersion >= 2);
+                // The first edit that actually lands, so the row version must have moved off its
+                // created-state value. It used to be >= 2 because step 5 applied an edit of its own;
+                // that step now refuses, and asserting >= 2 here would only be measuring the refusal.
+                Assert.True(res.RequestRowVersion >= 1);
             }
             Assert.Equal(1, n6.Batches);
 

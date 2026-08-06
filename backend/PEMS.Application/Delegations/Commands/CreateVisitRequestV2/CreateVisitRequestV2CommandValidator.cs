@@ -46,13 +46,11 @@ public sealed class VisitRequestFormDataV2Validator : AbstractValidator<VisitReq
             .NotEmpty().WithMessage("Thiếu submissionId.")
             .MaximumLength(100);
 
-        // ── Registrant + request-level primary contact — the SAME shared child validators used by
-        //    pending-edit-v2 and resubmit-v2, so the three write paths cannot drift. ──
+        // ── Registrant — the SAME shared child validator used by pending-edit-v2 and resubmit-v2,
+        //    so the three write paths cannot drift. The contact is validated per campus below:
+        //    there is no request-level one to check here. ──
         RuleFor(x => x.Registrant).NotNull().WithMessage("Thiếu thông tin người đăng ký.");
         RuleFor(x => x.Registrant!).SetValidator(new RegistrantInputV2Validator()).When(x => x.Registrant is not null);
-
-        RuleFor(x => x.PrimaryContact).NotNull().WithMessage("Thiếu thông tin đầu mối liên hệ.");
-        RuleFor(x => x.PrimaryContact!).SetValidator(new PrimaryContactV2Validator()).When(x => x.PrimaryContact is not null);
 
         // ── Campus collection ──
         RuleFor(x => x.CampusVisits)
@@ -139,8 +137,6 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
         // store a note the edit screen would then refuse to save back.
         RuleFor(c => c.MediaConsentNote)
             .MaximumLength(2000).WithMessage(TooLong("Ghi chú truyền thông", 2000));
-        RuleFor(c => c.Notes)
-            .MaximumLength(2000).WithMessage(TooLong("Ghi chú cho FPTU", 2000));
 
         // ── People (per-campus, independent) ──
         RuleFor(c => c.Visitors)

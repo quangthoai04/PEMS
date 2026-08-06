@@ -10,6 +10,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
+using PEMS.Application.Delegations.Commands.StartVisitPreparation;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Services;
@@ -98,8 +99,11 @@ public sealed class VisitAgendaScopeV2Tests
             $"Mục đích {delegationName}", $"Nội dung {delegationName}",
             new List<VisitorDto> { new($"Khách {delegationName}", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
-            "VI", null, "DECLINED", null, null, null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "VI", null, "DECLINED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
@@ -107,14 +111,14 @@ public sealed class VisitAgendaScopeV2Tests
         var actor = new FakeUser(Registrant, RoleCodes.Visitor);
         var handler = new CreateVisitRequestV2CommandHandler(
             db, actor, new FixedClock(), new VisitRequestV2CreateService(db),
-            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "AG" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }
@@ -127,6 +131,19 @@ public sealed class VisitAgendaScopeV2Tests
                 db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), new SilentNotifications(),
                 new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()), new MySqlUserMutationLockService(db))
             .Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null), CancellationToken.None);
+    }
+
+    /// <summary>
+    /// The Host's own step: ASSIGNED → BEFORE_VISIT. Approving assigns the Host and stops; every setup
+    /// mutation below refuses until the Host has actually started, so a fixture that only approves is
+    /// describing a campus nobody has opened yet.
+    /// </summary>
+    private static async Task StartPreparationAsync(ulong requestId, ulong instanceId, ulong hostId, ulong campusId)
+    {
+        using var db = NewContext();
+        var actor = new FakeUser(hostId, RoleCodes.Staff, UserSubRoles.Staff, campusId);
+        await new StartVisitPreparationCommandHandler(db, actor, new FixedClock())
+            .Handle(new StartVisitPreparationCommand(requestId, instanceId), CancellationToken.None);
     }
 
     private static async Task<Dictionary<ulong, ulong>> InstanceIdsAsync(ulong requestId)
@@ -180,6 +197,7 @@ public sealed class VisitAgendaScopeV2Tests
             requestId = await CreateAsync(Campus("HN", hnStart, "Đoàn nghị trình"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], HostHn, CampusHn);
             var hn = instances[CampusHn];
 
             using (var db = NewContext())
@@ -231,6 +249,7 @@ public sealed class VisitAgendaScopeV2Tests
             requestId = await CreateAsync(Campus("HN", originalStart, "Đoàn dời giờ"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], HostHn, CampusHn);
             var hn = instances[CampusHn];
 
             // The delegation asked to start a day later and stay an extra hour.
@@ -284,6 +303,7 @@ public sealed class VisitAgendaScopeV2Tests
             requestId = await CreateAsync(Campus("HN", start, "Đoàn giờ xấu"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], HostHn, CampusHn);
             var hn = instances[CampusHn];
 
             using (var db = NewContext())
@@ -312,7 +332,9 @@ public sealed class VisitAgendaScopeV2Tests
                 Campus("HCM", start.AddDays(1), "Đoàn HCM"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], HostHn, CampusHn);
             await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, HostHcm);
+            await StartPreparationAsync(requestId, instances[CampusHcm], HostHcm, CampusHcm);
             var hn = instances[CampusHn];
             var hcm = instances[CampusHcm];
 
@@ -357,6 +379,7 @@ public sealed class VisitAgendaScopeV2Tests
             requestId = await CreateAsync(Campus("HN", start, "Đoàn HN"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], HostHn, CampusHn);
             var hn = instances[CampusHn];
 
             // Any free-typed name is accepted — it is plain text, never validated against a user list

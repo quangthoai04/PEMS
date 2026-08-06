@@ -25,16 +25,13 @@ public class VisitRequestV2CampusInvariantTests
     private static RegistrantInputV2 Registrant()
         => new("Người ĐK", "VN", "ĐH X", "TP", "+84912345678", "reg@example.com");
 
-    private static ContactPointDto PrimaryContact()
-        => new("ĐM", "ĐH X", "+84987654321", "contact@example.com");
-
     // ── Layer 1: the create validator (boundary, before any transaction opens) ──
 
     private static readonly CreateVisitRequestV2CommandValidator CreateValidator = new();
 
     private static CreateVisitRequestV2Command CreateCommand(List<CampusVisitFormDto>? campuses)
         => new(new VisitRequestFormDataV2(
-            "SUB-1", Registrant(), PrimaryContact(), null, campuses!));
+            "SUB-1", Registrant(), null, campuses!));
 
     [Fact]
     public void Create_validator_rejects_an_empty_campus_list()
@@ -65,7 +62,7 @@ public class VisitRequestV2CampusInvariantTests
     private static readonly ResubmitRejectedVisitRequestV2CommandValidator ResubmitValidator = new();
 
     private static VisitRequestEditV2Dto Edit(List<CampusVisitEditV2Dto>? campuses)
-        => new(0, Registrant(), PrimaryContact(), null, campuses!);
+        => new(0, Registrant(), null, campuses!);
 
     [Fact]
     public void Pending_edit_validator_rejects_an_empty_campus_list()

@@ -54,6 +54,13 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
     private const ulong HoH = Base + 17;
     private const ulong StaffLeaderI = Base + 18;
 
+    /// <summary>
+    /// The guest who submitted the request, and — self-matched — this campus's operational contact.
+    /// Never authenticated as an actor here: the suite is about who may download an attachment, and a
+    /// campus past WAITING_CONTACT_CONFIRMATION is simply not allowed to have a NULL contact.
+    /// </summary>
+    private const ulong RegistrantJ = Base + 19;
+
     private const ulong VisitRequestId = Base + 30;
     private const ulong VisitInstanceId = Base + 31;
     private const ulong ParticipantId = Base + 32;
@@ -202,11 +209,13 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
 
         static string Str(string? v) => v is null ? "NULL" : $"'{v}'";
 
-        async Task User(ulong id, string name, string roleCode, string? subRole, bool inIc)
+        // A VISITOR must carry neither a campus nor a department — trg_users_validate_bi refuses both —
+        // so the registrant seeded below asks for no campus at all.
+        async Task User(ulong id, string name, string roleCode, string? subRole, bool inIc, bool onCampus = true)
             => await db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO users (user_id, full_name, email, role_id, sub_role, primary_campus_id, "
                 + $"department_id, status) VALUES ({id}, {{0}}, {{1}}, {Role(roleCode)}, {Str(subRole)}, "
-                + $"{CampusId}, {(inIc ? IcDeptId.ToString() : "NULL")}, 'ACTIVE')",
+                + $"{(onCampus ? CampusId.ToString() : "NULL")}, {(inIc ? IcDeptId.ToString() : "NULL")}, 'ACTIVE')",
                 name, Mail(id));
 
         await User(SenderA, "G5F A", "STAFF", "STAFF", true);
@@ -218,21 +227,24 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
         await User(OutsiderG, "G5F G", "STAFF", "STAFF", true);
         await User(HoH, "G5F H", "HO", null, false);
         await User(StaffLeaderI, "G5F I", "STAFF", "LEADER", true);
+        await User(RegistrantJ, "G5F J", "VISITOR", null, false, onCampus: false);
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_requests (visit_request_id, request_code, status, created_at, "
-            + "registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, "
-            + "registrant_email, registrant_nationality, contact_person_full_name, "
-            + "contact_person_organization, contact_person_phone, contact_person_email) "
-            + "VALUES ({0}, 'G5F-REQ', 'PENDING_APPROVAL', NOW(), 'G5F Người đăng ký', 'G5F Org', "
-            + "'G5F Title', '0900000000', {1}, 'Việt Nam', 'G5F Đầu mối', 'G5F Org', '0900000001', {1})",
-            VisitRequestId, MailPrefix + "visitor" + MailDomain);
+            + "registrant_user_id, registrant_full_name, registrant_organization, registrant_job_title, "
+            + "registrant_phone, registrant_email, registrant_nationality) "
+            + $"VALUES ({{0}}, 'G5F-REQ', 'PENDING_APPROVAL', NOW(), {RegistrantJ}, 'G5F Người đăng ký', "
+            + "'G5F Org', 'G5F Title', '0900000000', {1}, 'Việt Nam')",
+            VisitRequestId, Mail(RegistrantJ));
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, status, "
+            + "operational_contact_user_id, operational_contact_confirmed_at, "
+            + "operational_contact_confirmation_source, "
             + "current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, "
             + "decision_actor_role, decision_source, planned_start_at, planned_end_at, created_at) "
-            + $"VALUES ({{0}}, {{1}}, {{2}}, 'ASSIGNED', {HostF}, {StaffLeaderI}, NOW(), {StaffLeaderI}, "
+            + $"VALUES ({{0}}, {{1}}, {{2}}, 'ASSIGNED', {RegistrantJ}, NOW(), 'REGISTRANT_SELF_MATCH', "
+            + $"{HostF}, {StaffLeaderI}, NOW(), {StaffLeaderI}, "
             + "NOW(), 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', {3}, {4}, NOW())",
             VisitInstanceId, VisitRequestId, CampusId,
             new DateTime(2026, 8, 12, 9, 0, 0), new DateTime(2026, 8, 12, 11, 30, 0));

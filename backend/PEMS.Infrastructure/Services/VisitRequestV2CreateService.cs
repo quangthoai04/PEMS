@@ -21,8 +21,6 @@ namespace PEMS.Infrastructure.Services;
 public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
 {
     private const int MinDurationMinutes = 30;
-    private const string AccessActive = "ACTIVE";
-    private const string AccessPending = "PENDING_CONFIRMATION";
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -36,7 +34,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         string createdSource,
         DateTime vietnamNow,
         CancellationToken cancellationToken = default,
-        System.Collections.Generic.Dictionary<string, System.Action<PEMS.Domain.Entities.Delegations.VisitRequestCampus>>? campusInitializers = null)
+        IReadOnlyDictionary<string, CampusHostProposalSeed>? hostProposals = null)
     {
         if (form.CampusVisits is null || form.CampusVisits.Count == 0)
             throw new BusinessRuleException("Cần ít nhất một cơ sở.", VisitRequestErrorCodes.InvalidVisitTime);
@@ -109,27 +107,32 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         var scope = VisitRequestV2Canonical.ScopeOf(form.CampusVisits);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(form.CampusVisits);
 
-        // ── Identity (plan §16.4): same normalized email → one ACTIVE account; different → request is created
-        //    now but the contact stays PENDING_CONFIRMATION with an INITIAL_CLAIM (72h). ──
+        // ── Operational contact per campus (plan §3.1 step 4). The contact email is REQUIRED now: it is the
+        //    address that will be asked to take the campus on, and the column is NOT NULL. ──
         var registrantEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(form.Registrant.Email);
-        var contactEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(form.PrimaryContact.Email);
-        var contactIsRegistrant = registrantEmailNorm == contactEmailNorm;
+        foreach (var cv in form.CampusVisits)
+            if (string.IsNullOrWhiteSpace(cv.OperationalContact.Email))
+                throw new BusinessRuleException(
+                    "Mỗi cơ sở phải có email đầu mối vận hành.",
+                    VisitRequestErrorCodes.OperationalContactEmailRequired);
 
-        var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
-            registrantEmailNorm, contactEmailNorm, scope, form.CampusVisits);
+        // Self-match is decided ONLY by the normalized email of the registrant's own verified address —
+        // never by a matching name or phone (plan §1.6). Both create paths have proven that address before
+        // reaching here: the public one by OTP to it, the authenticated one because the endpoint is
+        // self-registration and the JWT vouches for the caller's mailbox.
+        var registrantIsVerified = registrantUserId is not null;
+
+        var fingerprint = VisitRequestV2Canonical.BuildFingerprint(registrantEmailNorm, scope, form.CampusVisits);
 
         var request = new VisitRequest
         {
             RequestCode = GenerateRequestCode(vietnamNow),
             SubmissionId = form.SubmissionId,
             BusinessFingerprint = fingerprint,
-            VisitorUserId = contactIsRegistrant ? registrantUserId : null,
             RegistrantUserId = registrantUserId,
             PartnerId = form.PartnerId,
             CreatedSource = createdSource,
             HasMixedCampusDetails = hasMixed,
-            PrimaryContactAccessStatus = contactIsRegistrant ? AccessActive : AccessPending,
-            PrimaryContactVerifiedAt = contactIsRegistrant ? vietnamNow : null,
             RegistrantFullName = form.Registrant.FullName,
             RegistrantNationality = form.Registrant.Nationality,
             RegistrantOrganization = registrantOrg,
@@ -137,30 +140,56 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RegistrantPhone = PhoneNumber.NormalizeOrNull(form.Registrant.Phone),
             RegistrantEmail = form.Registrant.Email,
             VisitScope = scope,
-            // Pure V2: form content is written per campus into visit_instance_form_details. The request row
-            // holds only identity, the PRIMARY contact (a request-level relation, NOT a campus operational
-            // contact), scope and lifecycle.
-            ContactPersonFullName = form.PrimaryContact.FullName,
-            ContactPersonOrganization = form.PrimaryContact.Organization,
-            ContactPersonPhone = PhoneNumber.NormalizeOrNull(form.PrimaryContact.Phone),
-            ContactPersonEmail = form.PrimaryContact.Email,
-            Status = VisitRequestStatuses.PendingApproval,
+            // Pure V2: form content — including the contact — is written per campus into
+            // visit_instance_form_details. The request row holds identity, scope and lifecycle only.
+            // Status starts behind the gate and is lowered to PENDING_APPROVAL below only if every campus
+            // auto-linked; the aggregate service owns every later transition.
+            Status = VisitRequestStatuses.PendingContactConfirmation,
+            ContactGateRevision = 0,
             SubmittedAt = vietnamNow,
+            EmailVerifiedAt = registrantIsVerified ? vietnamNow : null,
             RowVersion = 0,
             CreatedAt = vietnamNow,
             CreatedBy = creatorUserId,
         };
 
         // ── Instances + per-campus form detail (via navigation → shared PK after insert) ──
+        // Each campus decides its own starting status from its own contact: a campus run by the registrant
+        // themself is linked here and is immediately awaiting its Staff Leader; every other campus waits for
+        // its invited person and holds the whole request behind the gate until then.
+        var selfMatchedCampusCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var cv in form.CampusVisits)
         {
             var campus = campusByCode[cv.CampusId.Trim().ToUpperInvariant()];
+            var contactEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(cv.OperationalContact.Email);
+            var selfMatch = registrantIsVerified && contactEmailNorm == registrantEmailNorm;
+            if (selfMatch) selfMatchedCampusCodes.Add(campus.CampusCode);
+
+            // The reception-host arrangement is recorded here and NOTHING else happens with it: no
+            // current host, no decision, no participant row. Those all wait for the confirmation gate.
+            var seed = hostProposals is not null
+                       && hostProposals.TryGetValue(campus.CampusCode, out var found)
+                ? found
+                : CampusHostProposalSeed.WaitForLater;
+
             request.CampusInstances.Add(new VisitRequestCampus
             {
                 CampusId = campus.CampusId,
                 PlannedStartAt = cv.PlannedStartAt,
                 PlannedEndAt = cv.PlannedEndAt,
-                Status = VisitInstanceStatuses.WaitingRequestApproval,
+                Status = selfMatch
+                    ? VisitInstanceStatuses.WaitingRequestApproval
+                    : VisitInstanceStatuses.WaitingContactConfirmation,
+                OperationalContactUserId = selfMatch ? registrantUserId : null,
+                OperationalContactConfirmedAt = selfMatch ? vietnamNow : null,
+                OperationalContactConfirmationSource = selfMatch ? OperationalContactSources.RegistrantSelfMatch : null,
+                HostSelectionMode = seed.Mode,
+                ProposedHostUserId = seed.ProposedHostUserId,
+                ProposedHostByUserId = seed.ProposedHostUserId is null ? null : seed.ProposedByUserId,
+                ProposedHostAt = seed.ProposedHostUserId is null ? null : vietnamNow,
+                ProposedHostActivationStatus = seed.ProposedHostUserId is null
+                    ? null
+                    : ProposedHostActivationStatuses.Pending,
                 CoordinatorUserId = campus.ValidStaffLeaderUserId,
                 CoordinatorAssignedBy = creatorUserId,
                 CoordinatorAssignedAt = vietnamNow,
@@ -179,13 +208,13 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     // reject an empty string, so normalize blank → NULL (which the CHECKs and the now-nullable
                     // columns accept). Name + phone stay required upstream.
                     OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
+                    OperationalContactJobTitle = Clean(cv.OperationalContact.JobTitle),
                     OperationalContactPhone = PhoneNumber.NormalizeOrNull(cv.OperationalContact.Phone),
-                    OperationalContactEmail = Clean(cv.OperationalContact.Email),
+                    OperationalContactEmail = cv.OperationalContact.Email.Trim(),
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),
                     MediaConsentStatus = cv.MediaConsentStatus,
                     MediaConsentNote = cv.MediaConsentNote,
-                    NoteToFptu = cv.Notes,
                     FormRevision = 1,
                     ApprovalRevision = 1,
                     RowVersion = 0,
@@ -193,11 +222,6 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     CreatedBy = creatorUserId,
                 },
             });
-
-            if (campusInitializers != null && campusInitializers.TryGetValue(campus.CampusCode, out var initializer))
-            {
-                initializer(request.CampusInstances.Last());
-            }
         }
 
         _db.VisitRequests.Add(request);
@@ -271,26 +295,56 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             VisitRequestId = request.VisitRequestId,
             RequestRevision = 1,
             SourceType = "CREATE",
+            // Request-level snapshot = the registrant, and only the registrant. Each campus's contact is
+            // snapshotted in that campus's own form-detail revision above.
             SnapshotJson = JsonSerializer.Serialize(new
             {
                 request.RegistrantFullName, request.RegistrantOrganization, request.RegistrantJobTitle,
                 request.RegistrantPhone, request.RegistrantEmail,
-                request.ContactPersonFullName, request.ContactPersonOrganization,
-                request.ContactPersonPhone, request.ContactPersonEmail,
             }, Json),
             AppliedBy = creatorUserId,
             AppliedAt = vietnamNow,
         });
 
-        // ── Identity INITIAL_CLAIM (only when contact email != registrant email). The request already exists
-        //    and campus approval never waits for the claim. Raw tokens are never stored here. ──
-        if (!contactIsRegistrant)
+        // ── One INITIAL_CONFIRMATION per campus whose contact is somebody other than the registrant
+        //    (plan §3.1 step 4). A self-matched campus gets NO invitation and NO email — it is already
+        //    linked — but it does get an event, because "auto-linked at submit" is a real transition an
+        //    auditor must be able to see. Raw tokens are never stored here; the dispatcher mints the
+        //    single-use hashed token after commit. ──
+        var invitations = new List<(VisitRequestIdentityChange Change, string EmailNorm)>();
+        foreach (var instance in request.CampusInstances)
         {
-            var claim = new VisitRequestIdentityChange
+            var contactEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(
+                instance.FormDetail!.OperationalContactEmail);
+
+            if (instance.OperationalContactUserId is not null)
+            {
+                // No invitation row exists for a self-matched campus, and the event log is keyed to an
+                // invitation — so the auto-link is recorded in the audit log instead. It still has to be
+                // recorded: "this account got operating rights on this campus" is exactly what an auditor
+                // comes looking for, and here nobody clicked anything to make it happen.
+                _db.AuditLogs.Add(new AuditLog
+                {
+                    ActorUserId = registrantUserId,
+                    Action = "OPERATIONAL_CONTACT_AUTO_CONFIRMED_REGISTRANT_MATCH",
+                    EntityType = "VisitRequestCampus",
+                    EntityId = instance.VisitInstanceId,
+                    CampusId = instance.CampusId,
+                    VisitRequestId = request.VisitRequestId,
+                    VisitInstanceId = instance.VisitInstanceId,
+                    CorrelationId = form.SubmissionId,
+                    SourceType = "CREATE",
+                    Reason = $"source={OperationalContactSources.RegistrantSelfMatch};email={MaskEmail(contactEmailNorm)}",
+                    CreatedAt = vietnamNow,
+                });
+                continue;
+            }
+
+            var invitation = new VisitRequestIdentityChange
             {
                 VisitRequestId = request.VisitRequestId,
-                ChangeKind = "INITIAL_CLAIM",
-                TargetRelation = "PRIMARY_CONTACT",
+                VisitInstanceId = instance.VisitInstanceId,
+                ChangeKind = IdentityChangeKinds.InitialConfirmation,
                 ConfirmationMethod = "GOOGLE_SSO",
                 OldUserId = null,
                 NewUserId = null,
@@ -299,10 +353,13 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 NewEmailMasked = MaskEmail(contactEmailNorm),
                 PendingSnapshotJson = JsonSerializer.Serialize(new
                 {
-                    form.PrimaryContact.FullName, form.PrimaryContact.Organization,
-                    form.PrimaryContact.Phone, email = contactEmailNorm,
+                    instance.FormDetail!.OperationalContactFullName,
+                    instance.FormDetail!.OperationalContactOrganization,
+                    instance.FormDetail!.OperationalContactPhone,
+                    email = contactEmailNorm,
                 }, Json),
-                Status = "PENDING",
+                Status = IdentityChangeStatuses.Pending,
+                TokenVersion = 1,
                 ExpectedRequestRowVersion = 0,
                 RequestedBy = registrantUserId ?? 0,
                 RequestedAt = vietnamNow,
@@ -310,21 +367,34 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 ResendCount = 0,
                 CreatedAt = vietnamNow,
             };
-            _db.VisitRequestIdentityChanges.Add(claim);
-            await _db.SaveChangesAsync(cancellationToken); // resolve claim id for its event FK
+            _db.VisitRequestIdentityChanges.Add(invitation);
+            invitations.Add((invitation, contactEmailNorm));
+        }
 
-            _db.VisitRequestIdentityChangeEvents.Add(new VisitRequestIdentityChangeEvent
-            {
-                IdentityChangeId = claim.IdentityChangeId,
-                VisitRequestId = request.VisitRequestId,
-                EventType = "CREATED",
-                FromStatus = null,
-                ToStatus = "PENDING",
-                ActorUserId = registrantUserId,
-                EmailMasked = MaskEmail(contactEmailNorm),
-                CorrelationId = form.SubmissionId,
-                CreatedAt = vietnamNow,
-            });
+        if (invitations.Count > 0)
+        {
+            await _db.SaveChangesAsync(cancellationToken); // resolve invitation ids for their event FKs
+            foreach (var (invitation, emailNorm) in invitations)
+                _db.VisitRequestIdentityChangeEvents.Add(new VisitRequestIdentityChangeEvent
+                {
+                    IdentityChangeId = invitation.IdentityChangeId,
+                    VisitRequestId = request.VisitRequestId,
+                    VisitInstanceId = invitation.VisitInstanceId,
+                    EventType = "CREATED",
+                    FromStatus = null,
+                    ToStatus = IdentityChangeStatuses.Pending,
+                    ActorUserId = registrantUserId,
+                    EmailMasked = MaskEmail(emailNorm),
+                    CorrelationId = form.SubmissionId,
+                    CreatedAt = vietnamNow,
+                });
+        }
+        else
+        {
+            // Every campus auto-linked: nobody has to confirm anything, so the gate never closes and the
+            // Staff Leaders can be told immediately.
+            request.Status = VisitRequestStatuses.PendingApproval;
+            request.ContactGateRevision = 1;
         }
 
         // ── Create audit (masked; no OTP/token/raw PII) ──
@@ -351,7 +421,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
     {
         d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
         d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail,
-        d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote, d.NoteToFptu,
+        d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
         Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
     };
 

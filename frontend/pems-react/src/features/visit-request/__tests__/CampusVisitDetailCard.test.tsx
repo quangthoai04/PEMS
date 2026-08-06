@@ -11,7 +11,9 @@ describe('CampusVisitDetailCard', () => {
     render(<CampusVisitDetailCard campus={campusFixture()} />);
 
     expect(screen.getByText('FPTU Hà Nội')).toBeInTheDocument();
-    expect(screen.getByText('Approved — reception owner assigned')).toBeInTheDocument();
+    // The host moved out of the decision grid into its own block; the decision grid keeps who
+    // decided and when, which is a different question from who is running the campus.
+    expect(screen.getByTestId(`reception-host-${'10'}-current-name`)).toBeInTheDocument();
     expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
     expect(screen.getByText('Trao đổi hợp tác')).toBeInTheDocument();
     expect(screen.getByText('Nội dung làm việc HN')).toBeInTheDocument();

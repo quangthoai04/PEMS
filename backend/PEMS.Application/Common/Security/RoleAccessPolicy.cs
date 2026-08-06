@@ -4,6 +4,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using System;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Common.Security;
 
 /// <summary>
@@ -137,7 +138,12 @@ public class RoleAccessPolicy : IRoleAccessPolicy
 
         if (effectiveRole == EffectiveRole.Visitor)
         {
-            return request.VisitorUserId == user.UserId;
+            // The registrant sees their whole request; a confirmed operational contact sees the
+            // request because they hold at least one of its campuses. Which campuses they may
+            // actually read is decided per campus by the read model — this gate only answers
+            // "is this request any of their business at all".
+            return VisitRequestOwnership.IsRegistrant(request, user.UserId)
+                || VisitRequestOwnership.IsOperationalContactOfAny(request, user.UserId);
         }
 
         if (effectiveRole == EffectiveRole.Ho)

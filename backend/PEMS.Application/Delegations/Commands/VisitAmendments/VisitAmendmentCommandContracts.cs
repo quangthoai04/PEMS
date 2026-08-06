@@ -23,19 +23,22 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
             RuleFor(x => x.Patch.Registrant!.JobTitle).MaximumLength(150);
             RuleFor(x => x.Patch.Registrant!.Phone).MaximumLength(50);
         });
-        When(x => x.Patch?.Contact is not null, () =>
-        {
-            RuleFor(x => x.Patch.Contact!.FullName).NotEmpty().MaximumLength(150);
-            RuleFor(x => x.Patch.Contact!.Organization).MaximumLength(200);
-            RuleFor(x => x.Patch.Contact!.Phone).NotEmpty().MaximumLength(50);
-        });
         RuleForEach(x => x.Patch.Instances).ChildRules(i =>
         {
+            // The contact snapshot is validated per campus, because that is where it lives now. A
+            // patch may leave it out entirely (null = untouched); when present, all three display
+            // fields must be usable — the email is deliberately not here, since changing it is a
+            // re-confirmation rather than a safe edit.
+            i.When(p => p.OperationalContact is not null, () =>
+            {
+                i.RuleFor(p => p.OperationalContact!.FullName).NotEmpty().MaximumLength(150);
+                i.RuleFor(p => p.OperationalContact!.Organization).MaximumLength(200);
+                i.RuleFor(p => p.OperationalContact!.Phone).NotEmpty().MaximumLength(50);
+            });
             i.RuleFor(p => p.TransportationNote)
                 .MaximumLength(2000)
                 .Must(n => string.IsNullOrEmpty(n) || (!n.Contains('<') && !n.Contains('>')))
                 .WithMessage("Nhận diện phương tiện di chuyển không được chứa HTML/script.");
-            i.RuleFor(p => p.NoteToFptu).MaximumLength(2000);
             i.RuleFor(p => p.MediaConsentNote).MaximumLength(2000);
             // null is legitimate — the field is simply not part of this sparse patch.
             i.RuleFor(p => p.MediaConsentStatus)

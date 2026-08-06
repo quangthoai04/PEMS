@@ -53,8 +53,12 @@ public sealed class VisitRequestManagementItemDto
     /// <summary>First hosted instance id when <see cref="IsAlsoHost"/> — link target to the host context.</summary>
     public ulong? AlsoHostVisitInstanceId { get; set; }
 
-    public ulong? VisitorUserId { get; set; }
-    public string? VisitorName { get; set; }
+    /// <summary>
+    /// Confirmed operational contact of THIS campus row (null while nobody has confirmed, and on a
+    /// request-grouped row covering several campuses — those have several contacts and no single one).
+    /// </summary>
+    public ulong? OperationalContactUserId { get; set; }
+    public string? OperationalContactName { get; set; }
 
     public bool IsCurrentUserParticipant { get; set; }
     /// <summary>The signed-in user's participation role on the attending tab (IC_SUPPORT/DEPT_SUPPORT/...).</summary>
@@ -233,6 +237,8 @@ public sealed class VisitNextTaskDto
 public static class VisitNextTaskCodes
 {
     public const string ReviewAndAssign = "REVIEW_AND_ASSIGN";
+    /// <summary>The Host has been given this campus and has not opened its preparation window yet.</summary>
+    public const string StartPreparation = "START_PREPARATION";
     public const string CompletePreparation = "COMPLETE_PREPARATION";
     public const string ConfirmPreparation = "CONFIRM_PREPARATION";
     public const string ReviewAmendment = "REVIEW_AMENDMENT";
@@ -316,7 +322,8 @@ public static class VisitSearchFieldCodes
     public const string RequestCode = "REQUEST_CODE";
     public const string RegistrantOrganization = "REGISTRANT_ORGANIZATION";
     public const string Partner = "PARTNER";
-    public const string PrimaryContact = "PRIMARY_CONTACT";
+    /// <summary>Matched on the confirmed operational contact of the campus behind the row.</summary>
+    public const string OperationalContact = "OPERATIONAL_CONTACT";
     public const string DelegationName = "DELEGATION_NAME";
     public const string Campus = "CAMPUS";
     public const string Host = "HOST";

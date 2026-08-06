@@ -35,11 +35,8 @@ public sealed class EditableVisitRequestDetailDto
     public string Purpose { get; set; } = "";
     public string? WorkingContent { get; set; }
 
-    // ── Contact ──
-    public string ContactPersonFullName { get; set; } = "";
-    public string ContactPersonOrganization { get; set; } = "";
-    public string ContactPersonPhone { get; set; } = "";
-    public string ContactPersonEmail { get; set; } = "";
+    // The contact is NOT here. It belongs to a campus, so it is carried by each
+    // EditableCampusSlotDto — a request-level field could only prefill every campus from one of them.
 
     // ── Additional ──
     public string WorkingLanguage { get; set; } = "EN";
@@ -53,7 +50,6 @@ public sealed class EditableVisitRequestDetailDto
     public bool PartnerIsActive { get; set; }
     /// <summary>Linked partner's profile status (APPROVED/…), so the FE can decide whether to keep the link.</summary>
     public string? PartnerProfileStatus { get; set; }
-    public string? NoteToFptu { get; set; }
 
     public List<EditableCampusSlotDto> CampusVisits { get; set; } = new();
     public List<EditableGuestMemberDto> Visitors { get; set; } = new();
@@ -81,6 +77,17 @@ public sealed class EditableCampusSlotDto
     public DateTime PlannedStartAt { get; set; }
     public DateTime PlannedEndAt { get; set; }
     public string InstanceStatus { get; set; } = "";
+
+    // ── This campus's operational contact (its own snapshot, never a sibling's) ──
+    public string OperationalContactFullName { get; set; } = "";
+    public string OperationalContactOrganization { get; set; } = "";
+    public string OperationalContactPhone { get; set; } = "";
+    public string OperationalContactEmail { get; set; } = "";
+    /// <summary>
+    /// True once an account holds this campus. The editor uses it to warn that changing the email
+    /// re-opens the confirmation for this campus (and, until it is answered, for the whole request).
+    /// </summary>
+    public bool ContactConfirmed { get; set; }
 }
 
 public sealed class EditableGuestMemberDto

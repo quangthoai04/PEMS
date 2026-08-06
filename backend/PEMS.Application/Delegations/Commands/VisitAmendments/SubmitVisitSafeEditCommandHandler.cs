@@ -12,6 +12,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Enums;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
 
 /// <summary>
@@ -74,12 +75,25 @@ public sealed class SubmitVisitSafeEditCommandHandler
             throw new BusinessRuleException(
                 "Đơn đã bị hủy nên không thể sửa.", VisitRequestErrorCodes.VisitRequestNotEditable);
 
-        // Editor policy: registrant or the ACTIVE primary contact (same bar as the v2 edit flows).
-        var isRegistrant = visit.RegistrantUserId == actorId;
-        var isActiveContact = visit.VisitorUserId == actorId
-                              && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active;
-        if (!isRegistrant && !isActiveContact)
-            throw new ForbiddenException("Bạn không có quyền sửa đơn này.");
+        // Editor policy. The registrant may correct any campus of their request; anybody else must
+        // hold EVERY campus the patch touches. A sparse patch names its campuses explicitly, so this
+        // is checkable exactly — and it closes the case where the holder of one campus sent a patch
+        // listing three and had all three applied.
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
+        if (!isRegistrant)
+        {
+            var patched = request.Patch?.Instances ?? new List<SafeInstancePatchDto>();
+            if (patched.Count == 0)
+                throw new ForbiddenException("Bạn không có quyền sửa đơn này.");
+
+            foreach (var p in patched)
+            {
+                var target = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == p.VisitInstanceId)
+                    ?? throw new NotFoundException("Lịch thăm tại cơ sở", p.VisitInstanceId);
+                if (!VisitRequestOwnership.IsOperationalContact(target, actorId))
+                    throw new ForbiddenException("Bạn không có quyền sửa cơ sở này trong đơn.");
+            }
+        }
 
         VisitRequestSafeEditResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))

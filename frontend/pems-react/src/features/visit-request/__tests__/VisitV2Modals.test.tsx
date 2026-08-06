@@ -24,7 +24,7 @@ const form = (): ResolvedVisitForm => ({
   createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
   registrant: { fullName: 'Reg', organization: 'Org', jobTitle: 'Head', phone: '+84900000001', email: 'r@x.vn', nationality: 'VN' },
-  primaryContact: { fullName: 'Contact', organization: 'Org', phone: '+84900000002', email: 'c***@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
+  confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
   campusVisits: [campusFixture()],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW', 'SUBMIT_SAFE_EDIT'] },
 });
@@ -169,12 +169,11 @@ describe('VisitSafeEditModal', () => {
     await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
     const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
     expect(payload.registrant).toBeNull();
-    expect(payload.contact).toBeNull();
+    expect(payload.instances?.[0]?.operationalContact).toBeUndefined();
     expect(payload.instances).toHaveLength(1);
     expect(payload.instances?.[0]).toMatchObject({ visitInstanceId: 10, transportationNote: 'Xe 45 chỗ' });
     // The untouched fields of the touched campus are absent, not echoed back at their old values.
     expect(payload.instances?.[0].mediaConsentStatus).toBeUndefined();
-    expect(payload.instances?.[0].noteToFptu).toBeUndefined();
   });
 
   it('sends instances: [] when only a request-level field changed', async () => {
@@ -192,7 +191,7 @@ describe('VisitSafeEditModal', () => {
     const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
     expect(payload.instances).toEqual([]);
     expect(payload.registrant).toMatchObject({ phone: '+84900000009' });
-    expect(payload.contact).toBeNull();
+    expect(payload.instances?.[0]?.operationalContact).toBeUndefined();
   });
 
   it('refuses to call the API when nothing was edited', async () => {
@@ -240,7 +239,7 @@ describe('VisitSafeEditModal', () => {
     await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
     const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
     expect(payload.registrant).toBeNull();
-    expect(payload.contact).toBeNull();
+    expect(payload.instances?.[0]?.operationalContact).toBeUndefined();
     expect(payload.instances).toHaveLength(1);
     expect(payload.instances?.[0].visitInstanceId).toBe(10);
   });

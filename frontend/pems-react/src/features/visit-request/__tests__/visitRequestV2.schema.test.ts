@@ -41,12 +41,6 @@ const validValues = (): VisitRequestV2Schema => ({
     email: 'registrant@example.com',
     nationality: 'Việt Nam',
   },
-  contactPoint: {
-    fullName: 'Đầu Mối',
-    organization: 'ĐH ABC',
-    phone: '+84987654321',
-    email: 'contact@example.com',
-  },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [validCampus('HN')],

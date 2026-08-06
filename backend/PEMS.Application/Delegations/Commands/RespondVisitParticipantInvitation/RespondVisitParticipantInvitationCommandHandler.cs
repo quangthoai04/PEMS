@@ -76,7 +76,9 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
             || campusStatus == VisitInstanceStatuses.Cancelled || campusStatus == VisitInstanceStatuses.Rejected)
             throw new ConflictException($"Không thể {actionName} vì lịch thăm đã bị hủy hoặc từ chối.");
 
-        if (campusStatus != VisitInstanceStatuses.Assigned && campusStatus != VisitInstanceStatuses.BeforeVisit)
+        // BEFORE_VISIT only, and it cannot be otherwise: an invitation can only exist on a campus
+        // whose Host already opened preparation, because inviting is itself a setup action.
+        if (campusStatus != VisitInstanceStatuses.BeforeVisit)
             throw new ConflictException($"Không thể {actionName} vì chuyến thăm đã bắt đầu hoặc kết thúc.");
 
         var now = _clock.VietnamNow;

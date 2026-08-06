@@ -254,6 +254,9 @@ export const API_ENDPOINTS = {
     // Valid "Người phụ trách" candidates (active host + ACCEPTED supporting participants of the instance).
     agendaResponsibleCandidates: (visitInstanceId: string | number) =>
       `/delegations/visit-instances/${visitInstanceId}/agenda-responsible-candidates`,
+    // ASSIGNED → BEFORE_VISIT. The current Host opens the preparation window; nothing else may.
+    startPreparation: (visitRequestId: string | number, visitInstanceId: string | number) =>
+      `/delegations/${visitRequestId}/campuses/${visitInstanceId}/start-preparation`,
     // Operational reception stage transitions (Host only): Trước→Đang, Đang→Sau, Sau→Đóng đoàn.
     completeBeforeVisit: (visitRequestId: string | number, visitInstanceId: string | number) =>
       `/delegations/${visitRequestId}/campuses/${visitInstanceId}/process/complete-before-visit`,

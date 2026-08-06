@@ -8,7 +8,7 @@ import type {
   V2EditPayload,
   ResolvedVisitForm,
 } from '../api/visitRequestV2Api';
-import type { CampusProcessingChoice } from '../api/visitRequestApi';
+import type { CampusHostSelectionChoice } from '../api/visitRequestApi';
 
 /**
  * Pure helpers for the per-campus form v2. Everything here is side-effect free so the
@@ -115,7 +115,7 @@ const trimOrNull = (v: string | undefined | null): string | null => {
 
 const toApiCampusVisit = (
   cv: CampusVisitSchema,
-  processing: CampusProcessingChoice | undefined,
+  hostChoice: CampusHostSelectionChoice | undefined,
 ): V2CampusVisitForm => ({
   campusId: (cv.campus ?? '').trim().toUpperCase(),
   plannedStartAt: cv.startDatetime,
@@ -141,15 +141,22 @@ const toApiCampusVisit = (
     fullName: (cv.operationalContact?.fullName ?? '').trim(),
     organization: (cv.operationalContact?.organization ?? '').trim(),
     phone: normalizePhone(cv.operationalContact?.phone) ?? (cv.operationalContact?.phone ?? '').trim(),
+    jobTitle: trimOrNull(cv.operationalContact?.jobTitle),
     email: (cv.operationalContact?.email ?? '').trim(),
   },
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
   mediaConsentStatus: cv.mediaConsentStatus,
   mediaConsentNote: trimOrNull(cv.mediaConsentNote),
-  notes: trimOrNull(cv.notes),
-  processing: processing
-    ? { mode: processing.mode, hostUserId: processing.hostUserId ?? null }
+  // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
+  // external submit that names anybody, so sending a placeholder would fail the whole request.
+  hostSelection: hostChoice
+    ? {
+        mode: hostChoice.mode,
+        proposedHostUserId:
+          hostChoice.mode === 'SELECTED' ? hostChoice.proposedHostUserId ?? null : null,
+        confirmedHostConflict: hostChoice.confirmedHostConflict ?? false,
+      }
     : null,
 });
 
@@ -162,10 +169,10 @@ const toApiCampusVisit = (
 export const buildV2CreatePayload = (
   values: VisitRequestV2Schema,
   submissionId: string,
-  campusProcessing: CampusProcessingChoice[] = [],
+  campusHostSelections: CampusHostSelectionChoice[] = [],
 ): V2CreatePayload => {
-  const processingByCampus = new Map(
-    (campusProcessing ?? []).map(p => [(p.campusId ?? '').trim().toUpperCase(), p]),
+  const hostByCampus = new Map(
+    (campusHostSelections ?? []).map(h => [(h.campusId ?? '').trim().toUpperCase(), h]),
   );
   return {
     submissionId,
@@ -177,15 +184,9 @@ export const buildV2CreatePayload = (
       phone: normalizePhone(values.registerInfo?.phone) ?? (values.registerInfo?.phone ?? '').trim(),
       email: (values.registerInfo?.email ?? '').trim(),
     },
-    primaryContact: {
-      fullName: (values.contactPoint?.fullName ?? '').trim(),
-      organization: (values.contactPoint?.organization ?? '').trim(),
-      phone: normalizePhone(values.contactPoint?.phone) ?? (values.contactPoint?.phone ?? '').trim(),
-      email: (values.contactPoint?.email ?? '').trim(),
-    },
     partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
     campusVisits: (values.campusVisits ?? []).map(cv =>
-      toApiCampusVisit(cv, processingByCampus.get((cv.campus ?? '').trim().toUpperCase()))),
+      toApiCampusVisit(cv, hostByCampus.get((cv.campus ?? '').trim().toUpperCase()))),
   };
 };
 
@@ -207,12 +208,6 @@ export const buildV2EditPayload = (
     phone: normalizePhone(values.registerInfo?.phone) ?? (values.registerInfo?.phone ?? '').trim(),
     email: (values.registerInfo?.email ?? '').trim(),
   },
-  primaryContact: {
-    fullName: (values.contactPoint?.fullName ?? '').trim(),
-    organization: (values.contactPoint?.organization ?? '').trim(),
-    phone: normalizePhone(values.contactPoint?.phone) ?? (values.contactPoint?.phone ?? '').trim(),
-    email: (values.contactPoint?.email ?? '').trim(),
-  },
   partnerId: values.partnerSelectionMode === 'EXISTING_PARTNER' ? values.partnerId ?? null : null,
   campusVisits: (values.campusVisits ?? []).map((cv): V2CampusVisitEdit => ({
     ...toApiCampusVisit(cv, undefined),
@@ -232,7 +227,7 @@ export const buildV2EditPayload = (
 export const mapServerFieldPathToFormPath = (serverPath: string): string | null => {
   if (!serverPath) return null;
   let path = serverPath.replace(/^(Form|Edit)\./i, '');
-  if (!/^(CampusVisits|Registrant|PrimaryContact)/i.test(path)) return null;
+  if (!/^(CampusVisits|Registrant)/i.test(path)) return null;
 
   path = path
     .replace(/\[(\d+)\]/g, '.$1')
@@ -242,7 +237,6 @@ export const mapServerFieldPathToFormPath = (serverPath: string): string | null 
 
   const renames: Array<[RegExp, string]> = [
     [/^registrant\./, 'registerInfo.'],
-    [/^primaryContact\./, 'contactPoint.'],
     [/\.externalSupportMembers\./, '.supportTeam.'],
     [/\.campusId$/, '.campus'],
     [/\.plannedStartAt$/, '.startDatetime'],
@@ -275,12 +269,6 @@ export const resolvedFormToV2Schema = (
       email: form.registrant.email,
       nationality: form.registrant.nationality,
     },
-    contactPoint: {
-      fullName: form.primaryContact.fullName,
-      organization: form.primaryContact.organization,
-      phone: form.primaryContact.phone,
-      email: form.primaryContact.email,
-    },
     partnerSelectionMode: form.partnerId != null ? 'EXISTING_PARTNER' : 'NEW_ORGANIZATION',
     partnerId: form.partnerId ?? null,
     campusVisits: form.campusVisits.map((cv): CampusVisitSchema => ({
@@ -306,6 +294,7 @@ export const resolvedFormToV2Schema = (
       operationalContact: {
         fullName: cv.operationalContact.fullName,
         organization: cv.operationalContact.organization,
+        jobTitle: cv.operationalContact.jobTitle,
         phone: cv.operationalContact.phone,
         email: cv.operationalContact.email,
       },
@@ -313,7 +302,7 @@ export const resolvedFormToV2Schema = (
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',
       mediaConsentNote: cv.mediaConsentNote ?? '',
-      notes: cv.noteToFptu ?? '',
+      notes: '',
     })),
   },
 });

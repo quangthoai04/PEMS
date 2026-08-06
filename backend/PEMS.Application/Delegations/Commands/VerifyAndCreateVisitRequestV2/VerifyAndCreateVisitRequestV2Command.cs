@@ -26,8 +26,12 @@ public sealed record VerifyAndCreateVisitRequestV2Response(
     string RequestCode,
     string VisitScope,
     bool HasMixedCampusDetails,
-    string PrimaryContactAccessStatus,
-    bool ContactClaimPending,
+    /// <summary>
+    /// Campuses still waiting for their operational contact to confirm. The public success screen
+    /// uses it to say what happens next: zero means the registrant runs every campus themself and the
+    /// request is already with the Staff Leaders; more than that means invitations are on their way.
+    /// </summary>
+    int PendingContactConfirmations,
     IReadOnlyList<CreateVisitRequestV2CampusRef> Instances,
     bool Idempotent,
     string Message,

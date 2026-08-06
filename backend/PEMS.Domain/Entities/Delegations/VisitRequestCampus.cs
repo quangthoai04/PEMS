@@ -24,11 +24,62 @@ public class VisitRequestCampus
     public DateTime PlannedEndAt { get; set; }
 
     // NOTE: actual_start_at / actual_end_at were removed in SQL v8.3.
+    // WAITING_CONTACT_CONFIRMATION -> (WAITING_REQUEST_APPROVAL | ASSIGNED) -> BEFORE_VISIT -> ...
+    // Two ways to reach ASSIGNED, both strictly after the confirmation gate opens: the campus Staff
+    // Leader approves and names a host, or a proposed host authorized earlier is revalidated and
+    // activated. ASSIGNED -> BEFORE_VISIT is always the Host pressing "Bắt đầu chuẩn bị".
     [Column("status")]
-    public string Status { get; set; } = "WAITING_REQUEST_APPROVAL";
+    public string Status { get; set; } = "WAITING_CONTACT_CONFIRMATION";
 
+    // --- Operational contact: the confirmed account allowed to operate THIS campus. ---
+    // NULL exactly while Status is WAITING_CONTACT_CONFIRMATION. Set either at submit time when the
+    // contact email matches the registrant's verified email (REGISTRANT_SELF_MATCH — no invitation,
+    // no email), or when the invited person accepts the per-campus confirmation link.
+    //
+    // Deliberately NOT unique: one person may hold several campuses, including several campuses of
+    // the same request. Identity is decided ONLY by this column and the registrant relation — never
+    // by the contact name or phone snapshot, and never by an email stored on the form.
+    [Column("operational_contact_user_id")]
+    public ulong? OperationalContactUserId { get; set; }
+
+    [Column("operational_contact_confirmed_at")]
+    public DateTime? OperationalContactConfirmedAt { get; set; }
+
+    // REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER (see OperationalContactSources).
+    [Column("operational_contact_confirmation_source")]
+    public string? OperationalContactConfirmationSource { get; set; }
+
+    // --- Current Host: the OFFICIAL reception host. Never set before the confirmation gate opens. ---
     [Column("current_host_user_id")]
     public ulong? CurrentHostUserId { get; set; }
+
+    // --- Proposed host (Host dự kiến). An INTENTION recorded at create/edit time, not an
+    // assignment. It lives in its own columns precisely so that reading CurrentHostUserId can never
+    // return somebody nobody has confirmed yet: the whole point of the gate is that an outside
+    // contact accepts the visit before FPTU staff are told they are running it.
+    //
+    // SELF | SELECTED | WAIT_FOR_LATER (see HostSelectionModes). WAIT_FOR_LATER is the default and
+    // the only value an external/Visitor submit can produce.
+    [Column("host_selection_mode")]
+    public string HostSelectionMode { get; set; } = "WAIT_FOR_LATER";
+
+    [Column("proposed_host_user_id")]
+    public ulong? ProposedHostUserId { get; set; }
+
+    /// <summary>Who authorized the proposal. Becomes <c>DecidedBy</c> if and when it is activated.</summary>
+    [Column("proposed_host_by_user_id")]
+    public ulong? ProposedHostByUserId { get; set; }
+
+    [Column("proposed_host_at")]
+    public DateTime? ProposedHostAt { get; set; }
+
+    // PENDING | ACTIVATED | NEEDS_RESELECTION (see ProposedHostActivationStatuses). NULL iff there
+    // is no proposal.
+    [Column("proposed_host_activation_status")]
+    public string? ProposedHostActivationStatus { get; set; }
+
+    [Column("proposed_host_activated_at")]
+    public DateTime? ProposedHostActivatedAt { get; set; }
 
     [Column("coordinator_user_id")]
     public ulong? CoordinatorUserId { get; set; }
@@ -118,6 +169,8 @@ public class VisitRequestCampus
     public ulong? UpdatedBy { get; set; }
 
     public virtual VisitRequest VisitRequest { get; set; } = null!;
+    public virtual Users.User? OperationalContact { get; set; }
+    public virtual Users.User? ProposedHost { get; set; }
     public virtual ICollection<VisitAgenda> Agendas { get; set; } = new List<VisitAgenda>();
     public virtual ICollection<VisitParticipant> Participants { get; set; } = new List<VisitParticipant>();
     public virtual ICollection<VisitLogisticsItem> LogisticsItems { get; set; } = new List<VisitLogisticsItem>();
@@ -127,4 +180,7 @@ public class VisitRequestCampus
     public virtual ICollection<VisitInstanceGuestMember> GuestMemberLinks { get; set; } = new List<VisitInstanceGuestMember>();
     public virtual ICollection<VisitInstanceAmendment> Amendments { get; set; } = new List<VisitInstanceAmendment>();
     public virtual ICollection<VisitInstanceFormRevisionHistory> FormRevisionHistory { get; set; } = new List<VisitInstanceFormRevisionHistory>();
+
+    // Per-campus operational-contact confirmation / transfer invitations.
+    public virtual ICollection<VisitRequestIdentityChange> IdentityChanges { get; set; } = new List<VisitRequestIdentityChange>();
 }

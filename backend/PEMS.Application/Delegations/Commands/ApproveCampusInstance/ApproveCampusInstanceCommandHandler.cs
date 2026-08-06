@@ -13,6 +13,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 
 public sealed class ApproveCampusInstanceCommandHandler
@@ -68,6 +69,18 @@ public sealed class ApproveCampusInstanceCommandHandler
 
         if (visit.Status == VisitRequestStatuses.Cancelled)
             throw new ConflictException("Đơn đã bị hủy nên không thể duyệt.");
+
+        // ── The global confirmation gate (spec §3.4: "cổng xác nhận vẫn mở" is a precondition of
+        //    approve, and §6.1 names the code this must answer with). It is a property of the WHOLE
+        //    request, so it does not follow from the campus check below: this campus can be sitting at
+        //    WAITING_REQUEST_APPROVAL with its own contact confirmed while a SIBLING campus still has
+        //    nobody, and the request as a whole is then invisible to every Staff Leader. The queue
+        //    filters those rows out, but the queue is not authorization — a direct call has to be
+        //    refused here. ──
+        if (VisitRequestStatuses.IsBehindContactGate(visit.Status))
+            throw new ConflictException(
+                "Đơn chưa đủ đầu mối vận hành xác nhận nên chưa thể duyệt.",
+                OperationalContactErrorCodes.ContactConfirmationRequired);
 
         // Only a still-pending instance can be approved (ASSIGNED/REJECTED/CANCELLED/CLOSED → 409).
         if (instance.Status != VisitInstanceStatus.WaitingRequestApproval)
@@ -217,9 +230,8 @@ public sealed class ApproveCampusInstanceCommandHandler
         var notifications = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var visitProcessUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
 
-        var visitorRecipients = new HashSet<ulong>();
-        if (visit.VisitorUserId.HasValue) visitorRecipients.Add(visit.VisitorUserId.Value);
-        if (visit.RegistrantUserId.HasValue) visitorRecipients.Add(visit.RegistrantUserId.Value);
+        // This campus’s own contact plus the registrant — a sibling campus’s contact is not told.
+        var visitorRecipients = VisitRequestOwnership.GuestSideRecipients(visit, instance);
 
         foreach (var recipientId in visitorRecipients)
         {

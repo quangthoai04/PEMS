@@ -42,7 +42,6 @@ const values = (campusVisits: CampusVisitSchema[]): VisitRequestV2Schema => ({
     fullName: 'Registrant', organization: 'Reg Org', jobTitle: 'Head',
     phone: '+84911111111', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'Contact', organization: 'C Org', phone: '+84922222222', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits,
@@ -56,9 +55,8 @@ const response = (instances: V2CreateResponse['instances'], mixed: boolean): V2C
   status: 'WAITING_REQUEST_APPROVAL',
   submittedAt: '2026-08-01T09:30:00',
   campusCount: instances.length,
-  primaryContactAccessStatus: 'PENDING_CONFIRMATION',
-  contactClaimPending: true,
   instances,
+  pendingConfirmations: 0,
   idempotent: false,
 });
 

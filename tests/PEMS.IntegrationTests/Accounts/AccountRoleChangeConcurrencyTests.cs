@@ -46,6 +46,7 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
     private ulong _leaderUserId;
     private ulong _targetUserId;
     private ulong _successorUserId;
+    private ulong _registrantUserId;
     private ulong _visitRequestId;
     private ulong _visitInstanceId;
 
@@ -108,9 +109,29 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
         await db.SaveChangesAsync();
         _successorUserId = successor.UserId;
 
+        // The guest who submitted, and — self-matched — the campus's operational contact. A campus past
+        // WAITING_CONTACT_CONFIRMATION may not have a NULL contact, and this suite is about role-change
+        // concurrency, so the shortest valid contact model is the right one. Deliberately NOT one of the
+        // internal accounts above: making the successor or the target a contact would hand them
+        // guest-side rights and quietly change what the concurrency test is measuring.
+        var registrant = new User
+        {
+            FullName = $"{TestPrefix}Registrant",
+            Email = "it-safe-role-change-registrant@pems.test",
+            RoleId = await db.Roles.Where(r => r.RoleCode == RoleCodes.Visitor)
+                .Select(r => r.RoleId).FirstAsync(),
+            Status = UserStatuses.Active,
+            CreatedVia = "MANUAL_CREATED",
+            CreatedAt = DateTime.Now,
+        };
+        db.Users.Add(registrant);
+        await db.SaveChangesAsync();
+        _registrantUserId = registrant.UserId;
+
         var request = new VisitRequest
         {
             RequestCode = $"IT-SRC-{Guid.NewGuid().ToString("N")[..8]}",
+            RegistrantUserId = registrant.UserId,
             RegistrantFullName = "Registrant",
             RegistrantNationality = "VN",
             RegistrantOrganization = "Org",
@@ -118,10 +139,6 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             RegistrantPhone = "0900000000",
             RegistrantEmail = "it-safe-role-change-registrant@pems.test",
             VisitScope = VisitScopes.SingleCampus,
-            ContactPersonFullName = "Contact",
-            ContactPersonOrganization = "Contact Org",
-            ContactPersonPhone = "0900000001",
-            ContactPersonEmail = "it-safe-role-change-contact@pems.test",
             Status = VisitRequestStatuses.PendingApproval,
             CreatedAt = DateTime.Now,
         };
@@ -136,6 +153,9 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             PlannedStartAt = DateTime.Now.AddDays(30),
             PlannedEndAt = DateTime.Now.AddDays(30).AddHours(2),
             Status = VisitInstanceStatuses.WaitingRequestApproval,
+            OperationalContactUserId = registrant.UserId,
+            OperationalContactConfirmedAt = DateTime.Now,
+            OperationalContactConfirmationSource = OperationalContactSources.RegistrantSelfMatch,
             CreatedAt = DateTime.Now,
         };
         db.VisitRequestCampuses.Add(instance);
@@ -167,6 +187,10 @@ public sealed class AccountRoleChangeConcurrencyTests : IClassFixture<PemsWebApp
             "DELETE FROM audit_logs WHERE entity_type = 'User' AND entity_id = {0}", _targetUserId);
         await db.Database.ExecuteSqlRawAsync(
             "DELETE FROM users WHERE user_id = {0}", _targetUserId);
+        // After the request and its campuses, so neither registrant_user_id nor
+        // operational_contact_user_id is still pointing here.
+        await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM users WHERE user_id = {0}", _registrantUserId);
     }
 
     // ── §23.1 A responsibility that committed first makes the role change fail ──

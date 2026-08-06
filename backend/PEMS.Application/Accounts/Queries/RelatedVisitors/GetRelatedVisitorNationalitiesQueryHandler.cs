@@ -42,7 +42,7 @@ public sealed class GetRelatedVisitorNationalitiesQueryHandler
         // the list handler uses, which avoids the correlated subqueries Pomelo/MySQL translates
         // poorly.
         var visitorIds = await RelatedVisitorScope.VisibleInstances(_db, campusId)
-            .Select(vrc => vrc.VisitRequest.VisitorUserId!.Value)
+            .Select(vrc => vrc.OperationalContactUserId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
 

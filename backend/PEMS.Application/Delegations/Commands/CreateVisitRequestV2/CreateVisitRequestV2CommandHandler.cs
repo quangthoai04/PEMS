@@ -25,10 +25,11 @@ public sealed class CreateVisitRequestV2CommandHandler
     private readonly IDateTimeService _clock;
     private readonly IVisitRequestV2CreateService _createService;
     private readonly INotificationService _notificationService;
-    private readonly IVisitContactClaimService _contactClaimService;
+    private readonly IOperationalContactInvitationService _contactInvitations;
     private readonly IUserProvisionService _userProvisionService;
     private readonly ILogger<CreateVisitRequestV2CommandHandler> _logger;
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
+    private readonly IProposedHostActivationService _activationService;
     private readonly PerCampusFormV2Options _readFlag;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
     private readonly IUserMutationLockService _lockService;
@@ -37,19 +38,21 @@ public sealed class CreateVisitRequestV2CommandHandler
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestV2CreateService createService,
         INotificationService notificationService,
-        IVisitContactClaimService contactClaimService, IUserProvisionService userProvisionService,
+        IOperationalContactInvitationService contactInvitations, IUserProvisionService userProvisionService,
         ILogger<CreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag, PerCampusFormV2WriteOptions writeFlag,
         IVisitRequestAggregateStatusService aggregateStatus,
+        IProposedHostActivationService activationService,
         IUserMutationLockService lockService)
     {
+        _activationService = activationService;
         _lockService = lockService;
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _createService = createService;
         _notificationService = notificationService;
-        _contactClaimService = contactClaimService;
+        _contactInvitations = contactInvitations;
         _userProvisionService = userProvisionService;
         _logger = logger;
         _aggregateStatus = aggregateStatus;
@@ -96,7 +99,14 @@ public sealed class CreateVisitRequestV2CommandHandler
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
 
-        var contactEmail = RegistrantIdentityRules.Normalize(form.PrimaryContact.Email);
+        // Every campus names its own contact; one person may hold several, so de-duplicate before
+        // checking. There is no single request-level address left to check instead.
+        var contactEmails = form.CampusVisits
+            .Select(c => c.OperationalContact.Email)
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(RegistrantIdentityRules.Normalize)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
         var registrantEmail = RegistrantIdentityRules.Normalize(actor.Email);
 
         // ── Registrant identity (plan §5.3/§8.1) ──
@@ -106,25 +116,25 @@ public sealed class CreateVisitRequestV2CommandHandler
         // would describe two different people, with nothing having verified the second one.
         RegistrantIdentityRules.EnsureDirectCreateIsSelfRegistration(actor.Email, form.Registrant.Email);
 
-        if (isInternal && (contactEmail == registrantEmail))
+        // An internal creator may not appoint THEMSELF as any campus's operational contact: the whole
+        // point of the gate is that somebody outside FPTU confirms they will run the visit, and a
+        // Staff Leader self-appointing would clear it without anyone confirming anything.
+        if (isInternal && contactEmails.Contains(registrantEmail, StringComparer.OrdinalIgnoreCase))
             throw new BusinessRuleException(
-                "Nhân sự nội bộ không thể là đầu mối liên hệ của đoàn khách. Vui lòng nhập một người khác (tài khoản VISITOR).",
+                "Nhân sự nội bộ không thể là đầu mối vận hành của đoàn khách. Vui lòng nhập một người khác (tài khoản VISITOR).",
                 VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
 
-        if (isInternal && contactEmail != registrantEmail)
+        if (isInternal)
         {
-            await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(contactEmail, cancellationToken);
+            foreach (var contactEmail in contactEmails)
+                await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
+                    contactEmail, cancellationToken);
         }
 
-        // ── Per-campus processing (authenticated create only; default = route to the campus Staff Leader).
-        //    Authorization is the SAME role × mode × campus matrix as the v1 authenticated create, kept in
-        //    one pure, unit-tested place (V2CampusProcessingRules) so the two flows can never drift. Every
-        //    decision/host/audit column below is derived server-side — the client only states an intent. ──
-        var selectedCodes = form.CampusVisits
-            .Select(s => s.CampusId?.Trim().ToUpperInvariant() ?? string.Empty)
-            .Where(c => c.Length > 0)
-            .ToHashSet();
-
+        // ── Per-campus reception-host arrangement (authenticated create only; default = wait for the
+        //    campus Staff Leader to assign). Authorization lives in one pure, unit-tested place
+        //    (V2HostProposalRules). Nothing here names a CURRENT host: a proposal is stored and only
+        //    becomes an assignment when the confirmation gate opens. ──
         string? actorCampusCode = null;
         if (isInternal && actor.PrimaryCampusId.HasValue)
         {
@@ -143,7 +153,7 @@ public sealed class CreateVisitRequestV2CommandHandler
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        var processingActor = new V2ProcessingActor(
+        var proposalActor = new V2ProposalActor(
             IsVisitor: isVisitor,
             IsRegularStaff: isRegularStaff,
             IsStaffLeader: isStaffLeader,
@@ -151,17 +161,19 @@ public sealed class CreateVisitRequestV2CommandHandler
             OwnDepartmentIsIc: actorDepartmentType == "IC",
             ActorUserId: registrantUserId);
 
-        var planList = V2CampusProcessingRules.BuildPlans(form);
-        V2CampusProcessingRules.ValidateShape(processingActor, planList);
+        var proposalList = V2HostProposalRules.Authorize(
+            proposalActor, V2HostProposalRules.BuildProposals(form));
 
-        var plans = planList.ToDictionary(p => p.CampusCode, StringComparer.OrdinalIgnoreCase);
-        var hasDirectMode = planList.Count > 0;
+        var proposals = proposalList
+            .Where(p => HostSelectionModes.IsProposal(p.Mode))
+            .ToDictionary(p => p.CampusCode, StringComparer.OrdinalIgnoreCase);
 
-        // ASSIGN_HOST candidate: re-queried and re-authorized from the DB — the client dropdown is never
-        // trusted (a disabled / other-campus / non-IC / Leader pick is rejected here, not in the UI).
-        // Runs twice: once here to fail fast, once more under the row lock inside the transaction.
-        await EnsureAssignHostCandidatesEligibleAsync(
-            planList, registrantUserId, actor.PrimaryCampusId, cancellationToken);
+        // The proposed person is re-queried and re-authorized from the DB — the client dropdown is never
+        // trusted (a disabled / other-campus / non-IC / other-Leader pick is rejected here, not in the UI).
+        // Runs twice: once here to fail fast, once more under the row lock inside the transaction. It runs
+        // AGAIN at activation, because between submit and the gate opening anything may have changed.
+        await EnsureProposedHostsEligibleAsync(
+            proposals.Values, registrantUserId, actor.PrimaryCampusId, cancellationToken);
 
         // ── Idempotency (sequential): a retry with the same submissionId returns the same request. ──
         var existing = await FindBySubmissionAsync(form.SubmissionId, cancellationToken);
@@ -170,61 +182,36 @@ public sealed class CreateVisitRequestV2CommandHandler
 
         var now = _clock.VietnamNow;
         VisitRequest created;
+        IReadOnlyList<ProposedHostActivation> activations = System.Array.Empty<ProposedHostActivation>();
 
-        ulong? notifyAssignedHostId = null;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
             try
             {
-                // ── Direct SELF_HOST / ASSIGN_HOST assigns a Host inside this transaction, so the
-                //    accounts involved join the shared lock protocol (see IUserMutationLockService)
-                //    before their eligibility is trusted. The candidate loop above ran unlocked and
-                //    is deliberately re-run here against committed state (spec §13.6/§14). ──
-                var hostUserIds = planList
-                    .Where(p => p.HostUserId.HasValue)
-                    .Select(p => p.HostUserId!.Value)
+                // ── A proposal can be activated inside this very transaction (every contact
+                //    self-matched, so the gate never closes), so the accounts involved join the shared
+                //    lock protocol (see IUserMutationLockService) before their eligibility is trusted.
+                //    The candidate loop above ran unlocked and is deliberately re-run here against
+                //    committed state (spec §13.6/§14). ──
+                var proposedHostIds = proposals.Values
+                    .Select(p => p.ProposedHostUserId!.Value)
                     .Distinct()
                     .ToList();
-                if (hostUserIds.Count > 0)
+                if (proposedHostIds.Count > 0)
                 {
-                    await _lockService.LockUsersAsync(hostUserIds, cancellationToken);
-                    await EnsureAssignHostCandidatesEligibleAsync(
-                        planList, registrantUserId, actor.PrimaryCampusId, cancellationToken);
+                    await _lockService.LockUsersAsync(proposedHostIds, cancellationToken);
+                    await EnsureProposedHostsEligibleAsync(
+                        proposals.Values, registrantUserId, actor.PrimaryCampusId, cancellationToken);
                 }
 
-                var initializers = new System.Collections.Generic.Dictionary<string, System.Action<PEMS.Domain.Entities.Delegations.VisitRequestCampus>>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kvp in plans)
-                {
-                    var decision = V2CampusProcessingRules.Derive(processingActor, kvp.Value);
-                    if (decision.IsLeaderAssignOther)
-                        notifyAssignedHostId = decision.HostUserId;
-
-                    initializers[kvp.Key] = instance =>
-                    {
-                        instance.Status = VisitInstanceStatus.Assigned;
-                        instance.DecidedBy = registrantUserId;
-                        instance.DecidedAt = now;
-                        instance.DecisionActorRole = decision.DecisionActorRole;
-                        instance.DecisionSource = decision.DecisionSource;
-                        instance.CurrentHostUserId = decision.HostUserId;
-                        instance.HostAssignedBy = registrantUserId;
-                        instance.HostAssignedAt = now;
-                        instance.Participants.Add(new VisitParticipant
-                        {
-                            UserId = decision.HostUserId,
-                            ParticipantRole = ParticipantRoles.IcHost,
-                            IsHost = true,
-                            Status = ParticipantStatuses.Assigned,
-                            AssignedBy = registrantUserId,
-                            AssignedAt = now,
-                            CreatedAt = now,
-                            CreatedBy = registrantUserId,
-                        });
-                    };
-                }
+                var seeds = proposals.ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => new CampusHostProposalSeed(
+                        kvp.Value.Mode, kvp.Value.ProposedHostUserId, registrantUserId),
+                    StringComparer.OrdinalIgnoreCase);
 
                 created = await _createService.CreateV2Async(
-                    form, registrantUserId, createdSource, now, cancellationToken, initializers);
+                    form, registrantUserId, createdSource, now, cancellationToken, seeds);
 
                 // Aggregate status — single source that mirrors the SQL aggregate trigger.
                 _aggregateStatus.Apply(created);
@@ -232,8 +219,8 @@ public sealed class CreateVisitRequestV2CommandHandler
                 _db.AuditLogs.Add(new PEMS.Domain.Entities.Users.AuditLog
                 {
                     ActorUserId = registrantUserId,
-                    Action = hasDirectMode
-                        ? "CREATE_VISIT_REQUEST_AUTHENTICATED_WITH_DIRECT_PROCESSING"
+                    Action = proposals.Count > 0
+                        ? "CREATE_VISIT_REQUEST_AUTHENTICATED_WITH_PROPOSED_HOST"
                         : "CREATE_VISIT_REQUEST_AUTHENTICATED",
                     EntityType = "VisitRequest",
                     EntityId = created.VisitRequestId,
@@ -241,6 +228,22 @@ public sealed class CreateVisitRequestV2CommandHandler
                 });
 
                 await _db.SaveChangesAsync(cancellationToken);
+
+                // ── Branch C: every campus's contact was the registrant themself, so nobody has to
+                //    confirm anything and the gate is already open. Activate now — but only after the
+                //    flush above, because the DB refuses a campus reaching ASSIGNED while its request
+                //    row still reads PENDING_CONTACT_CONFIRMATION, and EF writes campuses first. ──
+                if (!VisitRequestStatuses.IsBehindContactGate(created.Status))
+                {
+                    activations = await _activationService.ActivateAsync(created, now, cancellationToken);
+                    if (activations.Count > 0)
+                    {
+                        _aggregateStatus.Apply(created);
+                        WriteActivationAudits(created, activations, registrantUserId, now);
+                        await _db.SaveChangesAsync(cancellationToken);
+                    }
+                }
+
                 await tx.CommitAsync(cancellationToken);
             }
             catch (DbUpdateException)
@@ -261,57 +264,64 @@ public sealed class CreateVisitRequestV2CommandHandler
         //    the idempotent return paths above and never re-sends. Best-effort; see V2CreateNotifier. ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
-        await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
-            _db, _contactClaimService, _logger, created, cancellationToken);
+        await V2CreateNotifier.SendOperationalContactInvitationsAfterCommitAsync(
+            _db, _contactInvitations, _logger, created, cancellationToken);
 
-        if (notifyAssignedHostId is { } assignedHostId)
-        {
-            var assignedInstance = created.CampusInstances.First(c => c.CurrentHostUserId == assignedHostId);
-            // The host is assigned to ONE campus, so name the delegation from THAT instance's own detail.
-            var assignedDelegationName = await _db.VisitInstanceFormDetails.AsNoTracking()
-                .Where(d => d.VisitInstanceId == assignedInstance.VisitInstanceId)
-                .Select(d => d.DelegationName)
-                .FirstOrDefaultAsync(cancellationToken) ?? created.RequestCode;
-            await _notificationService.CreateManyAsync(new[]
-            {
-                new CreateNotificationRequest(
-                    RecipientUserId: assignedHostId,
-                    Title: "Bạn được gán phụ trách đoàn khách",
-                    Message: $"Bạn được phân công làm host chính cho đoàn {assignedDelegationName}. Vui lòng vào Setup đoàn khách để chuẩn bị.",
-                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.HostAssigned,
-                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    RelatedId: assignedInstance.VisitInstanceId,
-                    ActorUserId: registrantUserId,
-                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
-                    IsActionRequired: true,
-                    VisitRequestId: created.VisitRequestId,
-                    VisitInstanceId: assignedInstance.VisitInstanceId,
-                    CampusId: assignedInstance.CampusId,
-                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit/process/{assignedInstance.VisitInstanceId}")
-            }, cancellationToken);
-        }
+        // Proposals that were stored but NOT activated (the gate is still shut) are announced as
+        // proposals — never as "you have been assigned". §7.3 is explicit that the two must not read
+        // the same, because until a contact confirms there is nothing to prepare for.
+        await ProposedHostNotifier.AnnounceOutcomeAsync(
+            _db, _notificationService, _logger, created, proposals.Values.Count > 0, activations,
+            registrantUserId, cancellationToken);
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false);
     }
 
     /// <summary>
-    /// Re-authorizes every ASSIGN_HOST pick straight from the database: an active IC Staff of the
-    /// leader's own campus, never a Leader and never another campus. Called once before the
-    /// transaction to fail fast, and again inside it under the users row lock — between those two
-    /// points a role change may have committed, and that is precisely the race the lock closes.
+    /// Files one audit row per activated campus. The activation is a real campus decision made by
+    /// somebody who is not present at the time, so it needs the same per-campus audit trail an
+    /// approve gets — otherwise a host appears on a campus with nothing recording how.
     /// </summary>
-    private async Task EnsureAssignHostCandidatesEligibleAsync(
-        IReadOnlyList<V2CampusProcessingPlan> plans, ulong registrantUserId,
+    private void WriteActivationAudits(
+        VisitRequest visit, IReadOnlyList<ProposedHostActivation> activations, ulong actorId, DateTime now)
+    {
+        foreach (var activation in activations)
+        {
+            _db.AuditLogs.Add(new PEMS.Domain.Entities.Users.AuditLog
+            {
+                ActorUserId = activation.ProposerUserId ?? actorId,
+                Action = activation.Activated
+                    ? "PROPOSED_HOST_ACTIVATED"
+                    : "PROPOSED_HOST_NEEDS_RESELECTION",
+                EntityType = "VisitRequestCampus",
+                EntityId = activation.VisitInstanceId,
+                CampusId = activation.CampusId,
+                VisitRequestId = visit.VisitRequestId,
+                VisitInstanceId = activation.VisitInstanceId,
+                SourceType = CampusDecisionAudit.SourceType,
+                Reason = activation.Activated
+                    ? $"mode={activation.SelectionMode};host={activation.ProposedHostUserId}"
+                    : $"mode={activation.SelectionMode};reason={activation.RejectionReason}",
+                CreatedAt = now,
+            });
+        }
+    }
+
+    /// <summary>
+    /// Re-authorizes every proposed host straight from the database: an active IC Staff of the
+    /// proposer's own campus, or the proposing Staff Leader themself — never another Leader and never
+    /// another campus. Called once before the transaction to fail fast, and again inside it under the
+    /// users row lock, because between those two points a role change may have committed.
+    /// </summary>
+    private async Task EnsureProposedHostsEligibleAsync(
+        IEnumerable<V2HostProposal> proposals, ulong registrantUserId,
         ulong? actorCampusId, CancellationToken ct)
     {
-        foreach (var plan in plans)
+        foreach (var proposal in proposals)
         {
-            if (plan.Mode != CampusSubmissionModes.AssignHost) continue;
-
-            var candidateId = plan.HostUserId!.Value;
+            var candidateId = proposal.ProposedHostUserId!.Value;
             if (candidateId == registrantUserId)
-                continue; // Leader picked themself — equivalent to SELF_HOST, already validated.
+                continue; // Proposing themself — the role × mode matrix already settled this.
 
             var candidate = await _db.Users
                 .Include(u => u.Role)
@@ -331,7 +341,7 @@ public sealed class CreateVisitRequestV2CommandHandler
 
             if (!candidateOk)
                 throw new BusinessRuleException(
-                    "Host được chọn phải là IC Staff đang hoạt động thuộc đúng cơ sở của bạn.",
+                    "Người phụ trách dự kiến phải là IC Staff đang hoạt động thuộc đúng cơ sở của bạn.",
                     VisitRequestErrorCodes.InvalidHostCandidate);
         }
     }
@@ -351,21 +361,24 @@ public sealed class CreateVisitRequestV2CommandHandler
     {
         var head = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == visitRequestId)
-            .Select(v => new
-            {
-                v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.PrimaryContactAccessStatus,
-                v.VisitorUserId, v.Status, v.SubmittedAt,
-            })
+            .Select(v => new { v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.Status, v.SubmittedAt })
             .FirstAsync(ct);
-        var instances = await _db.VisitRequestCampuses.AsNoTracking()
+        var rows = await _db.VisitRequestCampuses.AsNoTracking()
             .Where(c => c.VisitRequestId == visitRequestId)
             .OrderBy(c => c.CampusId)
-            .Select(c => new CreateVisitRequestV2CampusRef(c.VisitInstanceId, c.CampusId, c.Status))
+            .Select(c => new { c.VisitInstanceId, c.CampusId, c.Status, c.OperationalContactUserId })
             .ToListAsync(ct);
+        var instances = rows
+            .Select(c => new CreateVisitRequestV2CampusRef(c.VisitInstanceId, c.CampusId, c.Status))
+            .ToList();
+        // Counted from the campuses themselves, not from a request-level flag: the count IS the
+        // per-campus fact, and a cancelled campus is nobody's outstanding confirmation.
+        var pendingConfirmations = rows.Count(c =>
+            c.Status != VisitInstanceStatus.Cancelled && c.OperationalContactUserId is null);
+
         return new CreateVisitRequestV2Response(
             visitRequestId, head.RequestCode ?? string.Empty, head.VisitScope, head.HasMixedCampusDetails,
-            head.PrimaryContactAccessStatus,
-            ContactClaimPending: head.VisitorUserId is null,
+            pendingConfirmations,
             instances, idempotent,
             head.Status, head.SubmittedAt.ToString("yyyy-MM-ddTHH:mm:ss"), instances.Count);
     }

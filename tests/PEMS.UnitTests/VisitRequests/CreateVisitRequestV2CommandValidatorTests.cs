@@ -31,14 +31,13 @@ public class CreateVisitRequestV2CommandValidatorTests
             new List<VisitorDto> { Guest() },
             support ?? new List<SupportTeamMemberDto>(),
             opContact ?? new ContactPointDto("ĐM CS", "ĐH X", "+84911111111", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
 
     private static CreateVisitRequestV2Command Command(CampusVisitFormDto? campus = null,
-        RegistrantInputV2? registrant = null, ContactPointDto? primaryContact = null)
+        RegistrantInputV2? registrant = null)
         => new(new VisitRequestFormDataV2(
             "SUB-1",
             registrant ?? new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", "+84912345678", "reg@example.com"),
-            primaryContact ?? new ContactPointDto("ĐM", "ĐH X", "+84987654321", "contact@example.com"),
             null,
             new List<CampusVisitFormDto> { campus ?? Campus() }));
 
@@ -74,14 +73,6 @@ public class CreateVisitRequestV2CommandValidatorTests
         => Assert.Contains(
             ErrorsFor(Command(registrant: new RegistrantInputV2("Người ĐK", value, "ĐH X", "TP", "+84912345678", "reg@example.com"))),
             p => p.Contains("Nationality"));
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Primary_contact_organization_is_required(string value)
-        => Assert.Contains(
-            ErrorsFor(Command(primaryContact: new ContactPointDto("ĐM", value, "+84987654321", "contact@example.com"))),
-            p => p.Contains("Organization"));
 
     [Theory]
     [InlineData("", "op@example.com")]

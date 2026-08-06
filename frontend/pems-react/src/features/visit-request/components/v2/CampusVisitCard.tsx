@@ -17,9 +17,9 @@ import { countFieldErrors } from '../../utils/formErrorNavigation';
 import { validatePersonExcel, canApplyImport, type ExcelTranslator, type PersonRow } from '../ExcelUpload/excelValidator';
 import { ExcelImportPanel, type ExcelImportState } from '../ExcelUpload/ExcelImportPanel';
 import { downloadVisitorTemplate, downloadSupportTeamTemplate } from '../ExcelUpload/excelDownload';
-import { CampusProcessingV2Panel } from './CampusProcessingV2Panel';
+import { CampusHostSelectionV2Panel } from './CampusHostSelectionV2Panel';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
-import type { CampusProcessingChoice } from '../../api/visitRequestApi';
+import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
@@ -31,7 +31,8 @@ const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', '
  * edit somebody made deliberately (plan §12).
  */
 const QUICK_FILL_FIELDS = ['fullName', 'organization', 'phone', 'email'] as const;
-type QuickFillSource = 'registrant' | 'contact';
+/** The only block left to copy a campus contact from: there is no request-level contact any more. */
+type QuickFillSource = 'registrant';
 
 /**
  * Per-field ceilings, mirroring `buildCampusVisitSchema` and the FluentValidation rules that
@@ -80,8 +81,8 @@ interface Props {
     role: CreatorRole;
     ownCampusCode?: string | null;
     /** All choices keyed by campus CODE; this card reads its own by the campus it currently watches. */
-    values: Record<string, CampusProcessingChoice>;
-    onChange: (next: CampusProcessingChoice) => void;
+    values: Record<string, CampusHostSelectionChoice>;
+    onChange: (next: CampusHostSelectionChoice) => void;
   };
 }
 
@@ -200,13 +201,14 @@ export const CampusVisitCard: React.FC<Props> = ({
   // ── Operational-contact quick fill (plan §11–§13) ──────────────────────────────────────────
   // Watched, not read on click, so the buttons enable themselves as soon as the source block is
   // usable rather than staying grey until something else re-renders the card.
+  // Only the registrant is left to copy from: there is no request-level contact any more, so
+  // "same as the request's contact" no longer names anything a campus could inherit.
   const watchedRegistrant = watch('registerInfo');
-  const watchedPrimaryContact = watch('contactPoint');
   const [pendingQuickFill, setPendingQuickFill] = useState<QuickFillSource | null>(null);
   const [quickFilledFrom, setQuickFilledFrom] = useState<QuickFillSource | null>(null);
 
-  const quickFillValues = (kind: QuickFillSource) => {
-    const src = kind === 'registrant' ? watchedRegistrant : watchedPrimaryContact;
+  const quickFillValues = (_kind: QuickFillSource = 'registrant') => {
+    const src = watchedRegistrant;
     return {
       fullName: src?.fullName ?? '',
       organization: src?.organization ?? '',
@@ -894,15 +896,6 @@ export const CampusVisitCard: React.FC<Props> = ({
               >
                 <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillRegistrant')}
               </button>
-              <button
-                type="button"
-                data-testid={`campus-opcontact-use-contact-${index}`}
-                disabled={!canQuickFillFrom('contact')}
-                onClick={() => requestQuickFill('contact')}
-                className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 sm:px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillPrimaryContact')}
-              </button>
             </span>
           </legend>
 
@@ -1068,7 +1061,7 @@ export const CampusVisitCard: React.FC<Props> = ({
 
           {/* Who processes THIS campus — authenticated create only; absent for public submit. */}
           {processing && (
-            <CampusProcessingV2Panel
+            <CampusHostSelectionV2Panel
               campusCode={campusCode}
               role={processing.role}
               ownCampusCode={processing.ownCampusCode}

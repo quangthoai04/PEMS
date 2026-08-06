@@ -111,7 +111,6 @@ internal static class VisitRequestV2EditOps
         detail.TransportationNote = Clean(content.TransportationNote);
         detail.MediaConsentStatus = content.MediaConsentStatus;
         detail.MediaConsentNote = content.MediaConsentNote;
-        detail.NoteToFptu = content.Notes;
         detail.FormRevision += 1;
         detail.RowVersion += 1;
         detail.UpdatedAt = now;
@@ -136,7 +135,6 @@ internal static class VisitRequestV2EditOps
             TransportationNote = Clean(content.TransportationNote),
             MediaConsentStatus = content.MediaConsentStatus,
             MediaConsentNote = content.MediaConsentNote,
-            NoteToFptu = content.Notes,
             FormRevision = 1,
             ApprovalRevision = 1,
             RowVersion = 0,
@@ -150,15 +148,16 @@ internal static class VisitRequestV2EditOps
         {
             d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
             d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail,
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote, d.NoteToFptu,
+            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
             Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
         }, Json);
 
     public static string RequestSnapshotJson(VisitRequest r)
         => JsonSerializer.Serialize(new
         {
+            // Registrant only. The contact snapshot belongs to each campus and is captured by the
+            // per-instance snapshot above — there is no request-level contact to record here.
             r.RegistrantFullName, r.RegistrantOrganization, r.RegistrantJobTitle, r.RegistrantPhone, r.RegistrantEmail,
-            r.ContactPersonFullName, r.ContactPersonOrganization, r.ContactPersonPhone, r.ContactPersonEmail,
         }, Json);
 
     public static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();

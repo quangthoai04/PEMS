@@ -251,6 +251,7 @@ public class VisitMutationPolicyTests
     [InlineData(VisitInstanceStatuses.AfterVisit, true)]
     [InlineData(VisitInstanceStatuses.Closed, true)]
     [InlineData(VisitInstanceStatuses.Assigned, false)]
+    [InlineData(VisitInstanceStatuses.BeforeVisit, false)]
     [InlineData(VisitInstanceStatuses.WaitingRequestApproval, false)]
     [InlineData(VisitInstanceStatuses.Cancelled, false)]
     public void BlocksRequestLevel_IdentifiesThePointOfNoReturn(string status, bool expected)

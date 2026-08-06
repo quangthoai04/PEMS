@@ -3,6 +3,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.News;
 
 /// <summary>
@@ -25,7 +26,7 @@ internal static class VisitNewsAccess
         bool IsHost,
         bool IsStaffLeaderOfCampus,
         bool IsHo,
-        bool IsVisitorOwner,
+        bool IsGuestSide,
         bool IsAcceptedParticipant);
 
     public static VisitNewsActor Evaluate(
@@ -37,10 +38,10 @@ internal static class VisitNewsAccess
             && string.Equals(user.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && user.PrimaryCampusId == instance.CampusId;
         bool isHo = user.RoleCode == RoleCodes.Ho;
-        bool isVisitorOwner = user.RoleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
+        bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAccepted = acceptedParticipantRole != null;
 
-        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAccepted;
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAccepted;
 
         // Writing window: from AFTER_VISIT (news is a close condition) and still allowed after
         // CLOSED (late posts are fine); never on a cancelled instance/request.
@@ -55,6 +56,6 @@ internal static class VisitNewsAccess
                                || acceptedParticipantRole == ParticipantRoles.Student)))
             && inWritingWindow;
 
-        return new VisitNewsActor(inScope, canCreate, isHost, isStaffLeaderOfCampus, isHo, isVisitorOwner, isAccepted);
+        return new VisitNewsActor(inScope, canCreate, isHost, isStaffLeaderOfCampus, isHo, isGuestSide, isAccepted);
     }
 }

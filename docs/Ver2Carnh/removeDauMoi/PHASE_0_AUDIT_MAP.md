@@ -67,8 +67,8 @@ Không có `visit_instance_id`. Không có `token_hash` (token sống ở `email
 | `trg_users_protect_active_primary_contact_bu` | **Viết lại** theo `visit_request_campuses.operational_contact_user_id` |
 | `trg_visit_request_identity_changes_user_guard_bi` / `_bu` | **Viết lại** — bỏ ép role VISITOR (nội bộ được xác nhận) |
 | `trg_identity_changes_transfer_bi` / `_bu` | Giữ, đổi `INITIAL_CLAIM` → `INITIAL_CONFIRMATION` |
-| `trg_visit_campuses_aggregate_ai` / `_au` | **Viết lại** — bỏ `ASSIGNED`, thêm nhánh `PENDING_CONTACT_CONFIRMATION` |
-| `trg_visit_campuses_assignment_validate_bi` / `_bu` | **Viết lại** — `ASSIGNED` → `BEFORE_VISIT`, guard gate |
+| `trg_visit_campuses_aggregate_ai` / `_au` | **Viết lại** — thêm nhánh `PENDING_CONTACT_CONFIRMATION`; `ASSIGNED` và `BEFORE_VISIT` đều tính là approved |
+| `trg_visit_campuses_assignment_validate_bi` / `_bu` | **Viết lại** — guard gate + guard transition (`ASSIGNED` chỉ từ `WAITING_REQUEST_APPROVAL`, `BEFORE_VISIT` chỉ từ `ASSIGNED`, `DURING_VISIT` chỉ từ `BEFORE_VISIT`) |
 | `trg_visit_requests_cancel_validate_bu` | **Viết lại** — bỏ nhánh `visitor_user_id`/`primary_contact_access_status` |
 | `trg_visit_campuses_cancel_validate_bu` | Kiểm tra lại tham chiếu `visitor_user_id` |
 | **Mới** | Guard fail-closed: request không vào approval state khi còn campus thiếu `operational_contact_user_id` |
@@ -101,7 +101,7 @@ Cụm chính:
 - `Commands/ApproveCampusInstance` (342 dòng), `RejectCampusInstance` (230 dòng) — thêm gate guard
 - `Commands/CancelVisitRequest`, `UpdatePendingVisitRequestV2`, `ResubmitRejectedVisitRequestV2`, `VisitAmendments/*`
 - `Services/VisitFormRead/VisitFormReadService.cs` (748 dòng) — scope theo instance
-- `Services/VisitRequestAggregateStatusService.cs` — thêm `PENDING_CONTACT_CONFIRMATION`, bỏ `ASSIGNED`
+- `Services/VisitRequestAggregateStatusService.cs` — thêm `PENDING_CONTACT_CONFIRMATION`; `ASSIGNED` vẫn là approved
 - `Common/VisitInstanceAccess.cs` — **trả 1 relation duy nhất** → phải chuyển sang **capability union** (plan §2.1)
 
 ### 4.3 Backend — Infrastructure
@@ -180,7 +180,7 @@ Mọi lần xuất hiện khác (trong SELECT/INSERT/UPDATE/JOIN) đều làm ga
 
 **2c — seed:** 6 câu `INSERT INTO visit_requests` bỏ 7 cột đầu mối cấp request; 3 câu được bổ
 sung `registrant_user_id` mang đúng user id mà `visitor_user_id` từng giữ (nếu không, chính các
-lệnh huỷ trong seed sẽ vi phạm trigger huỷ mới); 32 dòng campus `ASSIGNED` → `BEFORE_VISIT`;
+lệnh huỷ trong seed sẽ vi phạm trigger huỷ mới); 32 dòng campus `ASSIGNED` → `BEFORE_VISIT` (**3 dòng §4.4 đã trả lại `ASSIGNED` 2026-08-05**, xem Mục vòng đời campus);
 3 khối `INSERT … SELECT` form-detail chuyển nguồn đầu mối từ `vr.contact_person_*` sang
 `vr.registrant_*` (trong seed hai bộ này **giống hệt nhau từng byte**, nên mỗi campus seed trở
 thành REGISTRANT_SELF_MATCH — đúng ca auto-link §1.5, không lời mời, không email); 117 dòng
@@ -207,3 +207,88 @@ cổng-xác-nhận hai chiều vào `sp_pems_assert_pure_v2_only`.
   32 → **33** và `ExpectedSha256`.
 - Sai lệch có chủ ý so với plan §4.1: token vẫn ở `email_action_tokens`; identity change chỉ
   thêm `token_version`. Đã được chốt với chủ dự án.
+
+---
+
+# Nợ seed baseline — PHẢI xử lý trước full gates Phase 9
+
+Hai check dưới đây đỏ **từ trước** đợt cutover (đo bằng cách import chính file canonical từ
+`Canh-Iter1`). Không phải hồi quy của Phase 2, nhưng **không được mang sang Phase 9 gate**.
+
+| Check | Giá trị | Ý nghĩa | Hướng xử lý |
+|---|---|---|---|
+| `operational_visit_instances_missing_agenda_final` | 3 | 3 campus instance ở `DURING_VISIT`/`AFTER_VISIT`/`CLOSED` nhưng không có dòng `visit_agendas` nào. Trigger `trg_visit_campuses_assignment_validate_*` cấm trạng thái này, nghĩa là 3 dòng seed lọt qua vì được ghi TRƯỚC khi trigger được tạo. | Xác định 3 instance, hoặc thêm agenda thật cho chúng, hoặc hạ trạng thái về `BEFORE_VISIT`. |
+| `invalid_04_host_driven_email_wrong_sender` | 1 | 1 dòng `sent_emails` do Host gửi nhưng sender không khớp quy ước Host-driven. | Sửa sender của dòng seed đó cho đúng vai trò đã gửi. |
+
+Ghi nhận: Phase 2 KHÔNG làm hai số này xấu đi (baseline = sau cutover). Phase 9 chỉ được báo
+xanh khi cả hai về 0.
+
+---
+# Vòng đời campus: ASSIGNED là một bước riêng (2026-08-05)
+
+Quyết định nghiệp vụ cuối: `ASSIGNED` **không** bị xoá, và cũng **không** phải tên khác của
+`BEFORE_VISIT`. Hai trạng thái có actor và action riêng:
+
+```text
+WAITING_REQUEST_APPROVAL --[Staff Leader: approve + gán Host]--> ASSIGNED
+ASSIGNED                 --[Current Host: Bắt đầu chuẩn bị]---> BEFORE_VISIT
+BEFORE_VISIT             --[Current Host: hoàn tất chuẩn bị]--> DURING_VISIT
+```
+
+- `ASSIGNED` — đã duyệt, đã có `current_host_user_id`, **chưa** có bất kỳ dữ liệu setup nào.
+- `BEFORE_VISIT` — Host đã mở giai đoạn chuẩn bị; toàn bộ thao tác setup mở từ đây.
+
+## Ranh giới: setup chỉ ở BEFORE_VISIT
+
+`VisitPreparationGate.EnsurePreparationOpen` là nơi duy nhất trả lời "campus này đã mở chuẩn bị
+chưa". Nó phân biệt hai kiểu từ chối vì chúng khác hẳn nhau với người dùng:
+
+| Trạng thái | Kết quả | Mã lỗi |
+|---|---|---|
+| `BEFORE_VISIT` | cho phép | — |
+| `ASSIGNED` | 409 | `VISIT_PREPARATION_NOT_STARTED` (một cú bấm là xong — UI nên mời bấm) |
+| còn lại | 409 | conflict thường (đóng/hủy/đang tiếp — không cú bấm nào mở lại được) |
+
+Consumer đi qua gate: agenda (save + apply template), mời thành phần tham gia, hậu cần (tạo + hủy),
+cấu hình nhắc lịch, ghi chú chuẩn bị. Email tiến độ setup dùng cùng rule dạng boolean.
+`CompleteVisitStage(Before)` chỉ nhận `BEFORE_VISIT`; gọi từ `ASSIGNED` trả đúng mã trên.
+
+## Ngược lại: "campus đã có chủ" thì ASSIGNED tính như BEFORE_VISIT
+
+Những chỗ hỏi "campus này đã được quyết định và chưa bắt đầu chưa?" — không phải "đã chuẩn bị
+chưa?" — đều nhận cả hai: aggregate approved, blocker đổi role/campus/department, trùng lịch Host,
+danh sách ứng viên Host, safe edit + amendment của người đăng ký, cancel-before-start, calendar,
+dashboard, report, danh sách, lịch sử.
+
+## Tầng DB
+
+`trg_visit_campuses_assignment_validate_bu` có guard transition riêng. Đã đo trên DB dùng-một-lần:
+
+| UPDATE | Kết quả |
+|---|---|
+| `WAITING_REQUEST_APPROVAL -> BEFORE_VISIT` | REFUSED (SIGNAL 45000) |
+| `ASSIGNED -> DURING_VISIT` | REFUSED (SIGNAL 45000) |
+| `ASSIGNED -> BEFORE_VISIT` | ALLOWED |
+
+Cộng thêm check 12.9 (enum phải CÓ `ASSIGNED`), 12.9b (campus `ASSIGNED` không được có agenda /
+participant / logistics / reminder — có nghĩa là mutation setup đã lọt gate) và 12.9c (campus
+`ASSIGNED` phải có Host + quyết định).
+
+## Seed
+
+Ba campus §4.4 (47108/47110/47120) dừng ở `ASSIGNED`. Đó là ba dòng approved duy nhất trong seed
+không có agenda/participant/logistics/reminder/prep-note, nên là ba dòng duy nhất có thể trung thực
+mang nghĩa "vừa duyệt, Host chưa bắt đầu". Mọi campus approved khác giữ `BEFORE_VISIT` kèm dữ liệu
+setup của nó. Đo sau import: 3 `ASSIGNED` / 19 `BEFORE_VISIT`, 0 campus `ASSIGNED` có dữ liệu setup,
+0 campus `ASSIGNED` thiếu Host.
+
+## Không đụng tới
+
+`ASSIGNED` của `visit_participants.status` (41 dòng seed) và `visit_logistics_items.status` (3 dòng)
+là enum khác — "đã phân công người/nhiệm vụ" — có transition ra thật. Mọi lần quét theo **cột/kiểu**,
+không grep chuỗi `ASSIGNED`.
+
+## Kiểm chứng
+
+Import tươi MySQL 8.0.46 vào DB dùng-một-lần: 81 bảng, 33 trigger, 5/5 gate Phase 2 xanh.
+Hash canonical: `73968c67…1123`.

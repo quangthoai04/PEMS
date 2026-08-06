@@ -542,19 +542,33 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         _hostUserId = hostUserId;
         _createdUserIds.Add(hostUserId);
 
+        // ── The guest, and — self-matched — the campus's operational contact ──
+        //
+        // A campus past WAITING_CONTACT_CONFIRMATION may not have a NULL operational contact
+        // (trg_visit_campuses_op_contact_guard_bi), and this one is BEFORE_VISIT. Owned by this suite
+        // for the same reason the Host is: borrowing a seeded account would make a shared write.
+        var guestUser = new PEMS.Domain.Entities.Users.User
+        {
+            FullName = "Reminder Guest " + Guid.NewGuid().ToString("N")[..8],
+            Email = "reminder-guest-" + Guid.NewGuid().ToString("N")[..8] + "@partner.example.com",
+            RoleId = await db.Roles.Where(r => r.RoleCode == "VISITOR").Select(r => r.RoleId).FirstAsync(),
+            Status = "ACTIVE",
+            CreatedAt = DateTime.Now,
+        };
+        db.Users.Add(guestUser);
+        await db.SaveChangesAsync();
+        _createdUserIds.Add(guestUser.UserId);
+
         var request = new VisitRequest
         {
             RequestCode = "RMD-" + Guid.NewGuid().ToString("N")[..12],
+            RegistrantUserId = guestUser.UserId,
             RegistrantFullName = "Nguyễn Văn Khách",
             RegistrantNationality = "VN",
             RegistrantOrganization = "Đối tác",
             RegistrantJobTitle = "Trưởng đoàn",
             RegistrantPhone = "0900000000",
             RegistrantEmail = "reminder-guest@partner.example.com",
-            ContactPersonFullName = "Đầu mối",
-            ContactPersonOrganization = "Đối tác",
-            ContactPersonPhone = "0900000001",
-            ContactPersonEmail = "reminder-contact@partner.example.com",
             Status = "APPROVED",
             SubmittedAt = DateTime.Now,
             CreatedAt = DateTime.Now,
@@ -572,6 +586,9 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
             PlannedStartAt = DateTime.Now.AddDays(2),
             PlannedEndAt = DateTime.Now.AddDays(2).AddHours(2),
             Status = PEMS.Shared.VisitInstanceStatus.BeforeVisit,
+            OperationalContactUserId = guestUser.UserId,
+            OperationalContactConfirmedAt = DateTime.Now,
+            OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
             CurrentHostUserId = hostUserId,
             // Assigned and decided BY the Staff Leader — the shape production produces, and it keeps this
             // suite's only write on rows it created itself.

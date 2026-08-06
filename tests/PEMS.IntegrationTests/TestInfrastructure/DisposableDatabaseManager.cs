@@ -33,8 +33,16 @@ public static class DisposableDatabaseManager
     /// </remarks>
     public const int ExpectedBaseTableCount = 81;
 
-    /// <summary>Number of triggers the canonical schema must produce.</summary>
-    public const int ExpectedTriggerCount = 32;
+    /// <summary>
+    /// Number of triggers the canonical schema must produce.
+    /// 33 since the per-campus operational-contact cutover: the three request-level primary-contact
+    /// guards (<c>trg_visit_requests_primary_contact_guard_bi</c>/<c>_bu</c>,
+    /// <c>trg_users_protect_active_primary_contact_bu</c>) were replaced by four per-campus ones
+    /// (<c>trg_visit_campuses_op_contact_guard_bi</c>/<c>_bu</c>,
+    /// <c>trg_visit_requests_contact_gate_guard_bu</c>, <c>trg_users_protect_operational_contact_bu</c>).
+    /// Net +1, measured against a fresh import.
+    /// </summary>
+    public const int ExpectedTriggerCount = 33;
 
     public static string GetDisposableConnectionString(string originalConnectionString)
     {

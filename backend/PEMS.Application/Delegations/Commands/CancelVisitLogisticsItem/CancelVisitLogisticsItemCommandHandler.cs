@@ -9,6 +9,7 @@ using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.CancelVisitLogisticsItem;
 
 public sealed class CancelVisitLogisticsItemCommandHandler
@@ -47,8 +48,7 @@ public sealed class CancelVisitLogisticsItemCommandHandler
 
         if (instance.CurrentHostUserId != actorId)
             throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được hủy yêu cầu hậu cần.");
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể hủy yêu cầu hậu cần trong giai đoạn chuẩn bị.");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "hủy yêu cầu hậu cần");
 
         var item = await _db.VisitLogisticsItems
             .FirstOrDefaultAsync(l => l.LogisticsItemId == request.LogisticsItemId

@@ -12,6 +12,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.RejectCampusInstance;
 
 public sealed class RejectCampusInstanceCommandHandler
@@ -69,6 +70,14 @@ public sealed class RejectCampusInstanceCommandHandler
 
         if (visit.Status == VisitRequestStatuses.Cancelled)
             throw new ConflictException("Đơn đã bị hủy nên không thể từ chối.");
+
+        // The same global gate as approve (spec §6.1). Reject is a decision too, and a decision taken
+        // while a sibling campus still has no confirmed contact is taken on a request nobody was
+        // supposed to be able to see yet.
+        if (VisitRequestStatuses.IsBehindContactGate(visit.Status))
+            throw new ConflictException(
+                "Đơn chưa đủ đầu mối vận hành xác nhận nên chưa thể từ chối.",
+                OperationalContactErrorCodes.ContactConfirmationRequired);
 
         if (instance.Status != VisitInstanceStatus.WaitingRequestApproval)
             throw new ConflictException("Cơ sở này đã được xử lý hoặc trạng thái đã thay đổi.");
@@ -130,9 +139,8 @@ public sealed class RejectCampusInstanceCommandHandler
 
         var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
 
-        var visitorRecipients = new System.Collections.Generic.HashSet<ulong>();
-        if (visit.VisitorUserId.HasValue) visitorRecipients.Add(visit.VisitorUserId.Value);
-        if (visit.RegistrantUserId.HasValue) visitorRecipients.Add(visit.RegistrantUserId.Value);
+        // This campus’s own contact plus the registrant — a sibling campus’s contact is not told.
+        var visitorRecipients = VisitRequestOwnership.GuestSideRecipients(visit, instance);
 
         foreach (var recipientId in visitorRecipients)
         {

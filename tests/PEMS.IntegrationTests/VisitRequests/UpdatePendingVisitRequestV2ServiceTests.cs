@@ -48,22 +48,22 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
     // ── Builders ─────────────────────────────────────────────────────────────
 
     private static CampusVisitFormDto Campus(string code, string delegation = "Đoàn Base", string purpose = "Thăm",
-        string visitorName = "Guest A", int startOffsetDays = 20, int durationMinutes = 120)
+        string visitorName = "Guest A", int startOffsetDays = 20, int durationMinutes = 120,
+        string contactName = "Op Contact", string contactPhone = "+8410", string contactEmail = "op@example.com")
     {
         var start = Now.AddDays(startOffsetDays);
         return new CampusVisitFormDto(
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, purpose, "Nội dung",
             new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            new ContactPointDto(contactName, "OpOrg", contactPhone, contactEmail),
+            "EN", null, "DECLINED", null, null);
     }
 
     private static VisitRequestFormDataV2 CreateForm(params CampusVisitFormDto[] campuses)
         => new(
             Guid.NewGuid().ToString("N"),
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-            new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"), // A==B → ACTIVE
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
 
     /// <summary>Edit slot for an EXISTING instance, carrying its stable id + current row version.</summary>
@@ -73,7 +73,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote, content.Notes);
+            content.MediaConsentNote);
 
     /// <summary>Edit slot for a NEW campus (no instance id).</summary>
     private static CampusVisitEditV2Dto Add(CampusVisitFormDto content)
@@ -82,15 +82,13 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote, content.Notes);
+            content.MediaConsentNote);
 
     private static VisitRequestEditV2Dto Edit(VisitRequest request, params CampusVisitEditV2Dto[] campuses)
         => new(request.RowVersion,
             new RegistrantInputV2(request.RegistrantFullName, request.RegistrantNationality ?? "VN",
                 request.RegistrantOrganization, request.RegistrantJobTitle ?? "Job",
                 request.RegistrantPhone ?? "+8491", request.RegistrantEmail),
-            new ContactPointDto(request.ContactPersonFullName, request.ContactPersonOrganization ?? "Org",
-                request.ContactPersonPhone ?? "+8491", request.ContactPersonEmail),
             request.PartnerId, campuses.ToList());
 
     /// <summary>Creates the aggregate + applies the edit inside one rolled-back transaction.</summary>
@@ -216,7 +214,12 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
 
             Assert.Equal(VisitScopes.MultiCampus, result.VisitScope);
             var hcm = InstanceOf(r, "HCM");
-            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, hcm.Status);
+            // A campus added by a pending edit enters the same way one added at submit does: its contact
+            // is not the registrant, so it starts by waiting for that person to confirm, holds the whole
+            // request behind the gate, and carries no contact account yet.
+            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, hcm.Status);
+            Assert.Null(hcm.OperationalContactUserId);
+            Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, r.Status);
             Assert.NotNull(hcm.CoordinatorUserId); // routed to the campus Staff Leader
             Assert.NotNull(hcm.FormDetail);
             Assert.NotEmpty(hcm.GuestMemberLinks); // independent members created + linked
@@ -367,33 +370,36 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
                 edit.ApplyPendingEditAsync(r, badRegistrant, Registrant, Now, default));
             Assert.Equal("IMMUTABLE_REGISTRANT_INFO", ex1.ErrorCode);
 
-            var badContact = Edit(r, keep) with
-            {
-                PrimaryContact = new ContactPointDto("Registrant", "Org", "+8491", "swapped@example.com"),
-            };
+            // The contact ADDRESS of a campus is immutable in a form edit: it is what that campus’s
+            // confirmation is bound to, so changing it has to go through replace/transfer.
+            var swappedCampus = Keep(InstanceOf(r, "HN"), Campus("HN", contactEmail: "swapped@example.com"));
             var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                edit.ApplyPendingEditAsync(r, badContact, Registrant, Now, default));
+                edit.ApplyPendingEditAsync(r, Edit(r, swappedCampus), Registrant, Now, default));
             Assert.Equal("IMMUTABLE_CONTACT_IDENTITY", ex2.ErrorCode);
         });
     }
 
     [Fact]
-    public async Task Contact_name_phone_change_writes_request_revision()
+    /// <summary>
+    /// Correcting the contact NAME or PHONE is a change to that campus, not to the request, so it is
+    /// recorded as an instance revision. Only the address is locked.
+    /// </summary>
+    public async Task Contact_name_phone_change_writes_an_instance_revision()
     {
         await RunAsync(async (db, create, edit) =>
         {
             var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
-            var payload = Edit(r, Keep(InstanceOf(r, "HN"), Campus("HN"))) with
-            {
-                PrimaryContact = new ContactPointDto("Tên Mới", "Org", "+84999", r.ContactPersonEmail),
-            };
+            var instanceId = InstanceOf(r, "HN").VisitInstanceId;
+            var renamed = Keep(InstanceOf(r, "HN"),
+                Campus("HN", contactName: "Tên Mới", contactPhone: "+84999"));
 
-            await edit.ApplyPendingEditAsync(r, payload, Registrant, Now, default);
+            await edit.ApplyPendingEditAsync(r, Edit(r, renamed), Registrant, Now, default);
 
-            Assert.Equal("Tên Mới", r.ContactPersonFullName);
-            var revisions = await db.VisitRequestRevisionHistories
-                .Where(h => h.VisitRequestId == r.VisitRequestId).ToListAsync();
-            Assert.Contains(revisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit && h.RequestRevision == 2);
+            var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceId);
+            Assert.Equal("Tên Mới", detail.OperationalContactFullName);
+            var revisions = await db.VisitInstanceFormRevisionHistories
+                .Where(h => h.VisitInstanceId == instanceId).ToListAsync();
+            Assert.Contains(revisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit);
         });
     }
 
@@ -406,7 +412,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             var hn = InstanceOf(r, "HN");
             var hcm = InstanceOf(r, "HCM");
             // In-memory only (no flush → no DB trigger involved): the service must gate on the tracked status.
-            hcm.Status = VisitInstanceStatuses.Assigned; // approved = host assigned
+            hcm.Status = VisitInstanceStatuses.BeforeVisit; // approved = host assigned
 
             // Editing the approved instance is blocked.
             var ex1 = await Assert.ThrowsAsync<BusinessRuleException>(() =>

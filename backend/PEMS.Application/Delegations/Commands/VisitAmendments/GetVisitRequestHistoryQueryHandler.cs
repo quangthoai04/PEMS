@@ -9,6 +9,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
 
 /// <summary>
@@ -52,18 +53,26 @@ public sealed class GetVisitRequestHistoryQueryHandler
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
         // ── Scope resolution BEFORE any projection ──
-        var isManager = visit.RegistrantUserId == actorId
-            || (visit.VisitorUserId == actorId
-                && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active);
+        // The registrant owns the request, so they see every campus's history plus the request-level
+        // events. An operational contact sees the history of the campuses THEY hold and no
+        // request-level events: those describe the request as a whole, which is not theirs.
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
+        var operatedInstanceIds = VisitRequestOwnership.OperatedCampuses(visit, actorId)
+            .Select(c => c.VisitInstanceId).ToList();
         var isHo = _currentUser.RoleCode == RoleCodes.Ho;
         List<ulong> visibleInstanceIds;
         var includeIdentity = false;
         var includeRequestLevel = false;
-        if (isManager || isHo)
+        if (isRegistrant || isHo)
         {
             visibleInstanceIds = visit.CampusInstances.Select(c => c.VisitInstanceId).ToList();
             includeIdentity = true;
             includeRequestLevel = true;
+        }
+        else if (operatedInstanceIds.Count > 0)
+        {
+            visibleInstanceIds = operatedInstanceIds;
+            includeIdentity = true;
         }
         else if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
                  && _currentUser.PrimaryCampusId is { } campusId)

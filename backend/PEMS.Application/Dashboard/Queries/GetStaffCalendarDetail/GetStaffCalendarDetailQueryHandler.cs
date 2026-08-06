@@ -137,13 +137,15 @@ public sealed class GetStaffCalendarDetailQueryHandler
 
         string? delegationName = d.DelegationName;
         string? contactFullName = d.OperationalContact.FullName;
+        string? contactOrganization = d.OperationalContact.Organization;
+        string? contactJobTitle = d.OperationalContact.JobTitle;
         string? contactPhone = d.OperationalContact.Phone;
         string? contactEmail = d.OperationalContact.Email;
         string? purpose = d.Purpose, workingContent = d.WorkingContent;
         string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
         string? workingLanguage = d.WorkingLanguage;
         string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
-        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        string? transportationNote = d.TransportationNote;
         // Guest count is the TARGET instance's linked members only (never the request-wide total).
         guestCount = d.Visitors.Count + d.SupportMembers.Count;
 
@@ -198,9 +200,11 @@ public sealed class GetStaffCalendarDetailQueryHandler
             RegistrantNationality = visit.RegistrantNationality,
             RegistrantPhone = visit.RegistrantPhone,
             RegistrantEmail = visit.RegistrantEmail,
-            ContactPersonFullName = contactFullName,
-            ContactPersonPhone = contactPhone,
-            ContactPersonEmail = contactEmail,
+            OperationalContactFullName = contactFullName,
+            OperationalContactOrganization = contactOrganization,
+            OperationalContactJobTitle = contactJobTitle,
+            OperationalContactPhone = contactPhone,
+            OperationalContactEmail = contactEmail,
             Purpose = purpose,
             WorkingContent = workingContent,
             VisitType = visitType,
@@ -210,7 +214,6 @@ public sealed class GetStaffCalendarDetailQueryHandler
             MediaConsentStatus = mediaConsentStatus,
             MediaConsentNote = mediaConsentNote,
             TransportationNote = transportationNote,
-            NoteToFptu = noteToFptu,
             CurrentHostUserId = instance.CurrentHostUserId,
             CurrentHostName = hostName,
             CurrentHostEmail = hostEmail,

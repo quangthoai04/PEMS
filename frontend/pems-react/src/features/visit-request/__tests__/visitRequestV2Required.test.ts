@@ -39,9 +39,6 @@ const validValues = () => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: {
-    fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com',
-  },
   partnerSelectionMode: 'NEW_ORGANIZATION' as const,
   partnerId: null,
   campusVisits: [validCampus()],
@@ -63,7 +60,7 @@ describe('v2 required-field contract', () => {
   describe.each([
     ['registerInfo.jobTitle', (v: ReturnType<typeof validValues>) => { v.registerInfo.jobTitle = ''; }],
     ['registerInfo.nationality', (v: ReturnType<typeof validValues>) => { v.registerInfo.nationality = ''; }],
-    ['contactPoint.organization', (v: ReturnType<typeof validValues>) => { v.contactPoint.organization = ''; }],
+    ['campusVisits.0.operationalContact.organization', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].operationalContact.organization = ''; }],
     ['campusVisits.0.workingContent', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].workingContent = ''; }],
     ['campusVisits.0.operationalContact.organization', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].operationalContact.organization = ''; }],
     ['campusVisits.0.operationalContact.email', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].operationalContact.email = ''; }],
@@ -73,7 +70,7 @@ describe('v2 required-field contract', () => {
 
   describe.each([
     ['registerInfo.jobTitle', (v: ReturnType<typeof validValues>) => { v.registerInfo.jobTitle = '   '; }],
-    ['contactPoint.organization', (v: ReturnType<typeof validValues>) => { v.contactPoint.organization = '   '; }],
+    ['campusVisits.0.operationalContact.organization', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].operationalContact.organization = '   '; }],
     ['campusVisits.0.workingContent', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].workingContent = '   '; }],
     ['campusVisits.0.operationalContact.organization', (v: ReturnType<typeof validValues>) => { v.campusVisits[0].operationalContact.organization = '  '; }],
   ])('%s', (path, mutate) => {
@@ -132,8 +129,8 @@ describe('v2 required-field contract', () => {
         .toContain('campusVisits.0.workingContent');
       expect(pathsFor(v => { v.registerInfo.fullName = 'x'.repeat(151); }))
         .toContain('registerInfo.fullName');
-      expect(pathsFor(v => { v.contactPoint.organization = 'x'.repeat(201); }))
-        .toContain('contactPoint.organization');
+      expect(pathsFor(v => { v.campusVisits[0].operationalContact.organization = 'x'.repeat(201); }))
+        .toContain('campusVisits.0.operationalContact.organization');
     });
   });
 

@@ -57,6 +57,7 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
     private ulong _departmentId;
     private ulong _leaderUserId;
     private ulong _staffUserId;
+    private ulong _registrantUserId;
     private ulong _visitRequestId;
     private ulong _visitInstanceId;
     private ulong _leaderParticipantId;
@@ -112,9 +113,29 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
         _leaderUserId = leader.UserId;
         _staffUserId = staff.UserId;
 
+        // The guest who submitted, and — self-matched — the campus's operational contact. A campus past
+        // WAITING_CONTACT_CONFIRMATION may not have a NULL contact, and this suite is about the
+        // atomicity of assigning department staff, so the shortest valid contact model is the right one.
+        // Deliberately its own account: making the leader or the staff member a contact would hand them
+        // guest-side rights and change what the assignment test is measuring.
+        var registrant = new User
+        {
+            FullName = $"{TestPrefix}Registrant",
+            Email = "it-assign-dept-staff-registrant@pems.test",
+            RoleId = await db.Roles.Where(r => r.RoleCode == RoleCodes.Visitor)
+                .Select(r => r.RoleId).FirstAsync(),
+            Status = UserStatuses.Active,
+            CreatedVia = "MANUAL_CREATED",
+            CreatedAt = DateTime.Now,
+        };
+        db.Users.Add(registrant);
+        await db.SaveChangesAsync();
+        _registrantUserId = registrant.UserId;
+
         var request = new VisitRequest
         {
             RequestCode = $"IT-ADS-{Guid.NewGuid().ToString("N")[..8]}",
+            RegistrantUserId = registrant.UserId,
             RegistrantFullName = "Registrant",
             RegistrantNationality = "VN",
             RegistrantOrganization = "Org",
@@ -122,10 +143,6 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             RegistrantPhone = "0900000000",
             RegistrantEmail = "it-assign-dept-staff-registrant@pems.test",
             VisitScope = VisitScopes.SingleCampus,
-            ContactPersonFullName = "Contact",
-            ContactPersonOrganization = "Contact Org",
-            ContactPersonPhone = "0900000001",
-            ContactPersonEmail = "it-assign-dept-staff-contact@pems.test",
             Status = VisitRequestStatuses.PendingApproval,
             CreatedAt = DateTime.Now,
         };
@@ -140,6 +157,9 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             PlannedStartAt = DateTime.Now.AddDays(20),
             PlannedEndAt = DateTime.Now.AddDays(20).AddHours(2),
             Status = VisitInstanceStatuses.WaitingRequestApproval,
+            OperationalContactUserId = registrant.UserId,
+            OperationalContactConfirmedAt = DateTime.Now,
+            OperationalContactConfirmationSource = OperationalContactSources.RegistrantSelfMatch,
             CreatedAt = DateTime.Now,
         };
         db.VisitRequestCampuses.Add(instance);
@@ -201,8 +221,11 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             "DELETE FROM visit_request_campuses WHERE visit_request_id = {0}", _visitRequestId);
         await db.Database.ExecuteSqlRawAsync(
             "DELETE FROM visit_requests WHERE visit_request_id = {0}", _visitRequestId);
+        // After the request and its campuses, so neither registrant_user_id nor
+        // operational_contact_user_id is still pointing at the registrant.
         await db.Database.ExecuteSqlRawAsync(
-            "DELETE FROM users WHERE user_id IN ({0}, {1})", _leaderUserId, _staffUserId);
+            "DELETE FROM users WHERE user_id IN ({0}, {1}, {2})",
+            _leaderUserId, _staffUserId, _registrantUserId);
     }
 
     // ── C-1a: one transaction, or none of it ─────────────────────────────────

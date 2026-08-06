@@ -76,6 +76,14 @@ public sealed class EmailSendIdempotencyTests : IDisposable
     private const ulong VisitInstanceId = Base + 11;
     private const ulong LogisticsItemId = Base + 12;
 
+    /// <summary>
+    /// The guest who submitted the request. This suite is about email idempotency, not about the
+    /// confirmation gate, so the campus is seeded self-matched (registrant = operational contact) and
+    /// therefore already past the gate — the shortest fixture that a campus beyond
+    /// WAITING_CONTACT_CONFIRMATION is allowed to have.
+    /// </summary>
+    private const ulong RegistrantId = Base + 13;
+
     private const string CampusName = "PEMS G11 Campus";
     private const string DeptName = "PEMS G11 Phòng Hành chính";
     private const string MailPrefix = "g11-idem-";
@@ -295,6 +303,7 @@ public sealed class EmailSendIdempotencyTests : IDisposable
         await User(DeptLeaderId, "PEMS G11 Trưởng phòng", "DEPARTMENT", "LEADER", CampusId, DeptId);
         await User(DeptStaffId, "PEMS G11 Nhân sự phòng", "DEPARTMENT", "STAFF", CampusId, DeptId);
         await User(StudentId, "PEMS G11 Sinh viên", "STUDENT", null, CampusId, null);
+        await User(RegistrantId, "PEMS G11 Người đăng ký", "VISITOR", null, null, null);
 
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE departments SET head_user_id = {0} WHERE department_id = {1}", DeptLeaderId, DeptId);
@@ -302,19 +311,22 @@ public sealed class EmailSendIdempotencyTests : IDisposable
         // One logistics line for the two invoice senders.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_requests (visit_request_id, request_code, status, created_at, "
-            + "registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, "
-            + "registrant_email, registrant_nationality, contact_person_full_name, "
-            + "contact_person_organization, contact_person_phone, contact_person_email) "
-            + "VALUES ({0}, {1}, 'PENDING_APPROVAL', NOW(), 'G11 Người đăng ký', 'G11 Org', 'G11 Title', "
-            + "'0900000000', {2}, 'Việt Nam', 'G11 Đầu mối', 'G11 Org', '0900000001', {2})",
-            VisitRequestId, "G11-REQ", MailPrefix + "visitor" + MailDomain);
+            + "registrant_user_id, registrant_full_name, registrant_organization, registrant_job_title, "
+            + "registrant_phone, registrant_email, registrant_nationality) "
+            + "VALUES ({0}, {1}, 'PENDING_APPROVAL', NOW(), {3}, 'G11 Người đăng ký', 'G11 Org', 'G11 Title', "
+            + "'0900000000', {2}, 'Việt Nam')",
+            VisitRequestId, "G11-REQ", Mail(RegistrantId), RegistrantId);
 
+        // Self-matched contact: the registrant is this campus's operational contact, so the campus sits
+        // past the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with a NULL
+        // operational_contact_user_id is refused by trg_visit_campuses_op_contact_guard_bi.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, status, "
+            + "operational_contact_user_id, operational_contact_confirmed_at, operational_contact_confirmation_source, "
             + "planned_start_at, planned_end_at, created_at) "
-            + "VALUES ({0}, {1}, {2}, 'WAITING_REQUEST_APPROVAL', {3}, {4}, NOW())",
+            + "VALUES ({0}, {1}, {2}, 'WAITING_REQUEST_APPROVAL', {5}, NOW(), 'REGISTRANT_SELF_MATCH', {3}, {4}, NOW())",
             VisitInstanceId, VisitRequestId, CampusId,
-            new DateTime(2026, 7, 10, 9, 0, 0), new DateTime(2026, 7, 10, 11, 30, 0));
+            new DateTime(2026, 7, 10, 9, 0, 0), new DateTime(2026, 7, 10, 11, 30, 0), RegistrantId);
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, title, item_type, "

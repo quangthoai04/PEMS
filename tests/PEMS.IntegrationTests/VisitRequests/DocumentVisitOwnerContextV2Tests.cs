@@ -97,7 +97,7 @@ public sealed class DocumentVisitOwnerContextV2Tests
             new List<VisitorDto> { new($"Khách {delegationName}", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
-            "VI", null, "DECLINED", null, null, null);
+            "VI", null, "DECLINED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
@@ -105,14 +105,14 @@ public sealed class DocumentVisitOwnerContextV2Tests
         var actor = new FakeUser(Registrant, RoleCodes.Visitor);
         var handler = new CreateVisitRequestV2CommandHandler(
             db, actor, new FixedClock(), new VisitRequestV2CreateService(db),
-            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "DOC" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }

@@ -17,21 +17,26 @@ public static class FormSchemaVersions
     public const byte PerCampus = 2;
 }
 
-public static class PrimaryContactAccessStatuses
+/// <summary>
+/// How a campus's operational contact came to be linked
+/// (<c>visit_request_campuses.operational_contact_confirmation_source</c>).
+/// </summary>
+public static class OperationalContactSources
 {
-    public const string PendingConfirmation = "PENDING_CONFIRMATION";
-    public const string Active = "ACTIVE";
+    /// <summary>Contact email matched the registrant's verified email at submit: auto-linked, no invitation, no email sent.</summary>
+    public const string RegistrantSelfMatch = "REGISTRANT_SELF_MATCH";
+    /// <summary>The invited person accepted the per-campus confirmation link.</summary>
+    public const string EmailConfirmation = "EMAIL_CONFIRMATION";
+    /// <summary>Ownership handed to a new person after the campus already had a decision.</summary>
+    public const string Transfer = "TRANSFER";
 }
 
 public static class IdentityChangeKinds
 {
-    public const string InitialClaim = "INITIAL_CLAIM";
+    /// <summary>First invitation for a campus that has no operational contact yet.</summary>
+    public const string InitialConfirmation = "INITIAL_CONFIRMATION";
+    /// <summary>Hand-over from an existing confirmed contact; the old owner keeps rights until the new one accepts.</summary>
     public const string Transfer = "TRANSFER";
-}
-
-public static class IdentityChangeTargetRelations
-{
-    public const string PrimaryContact = "PRIMARY_CONTACT";
 }
 
 public static class IdentityConfirmationMethods
@@ -119,4 +124,42 @@ public static class VisitFormV2ErrorCodes
     public const string AmendmentBaseRevisionConflict = "AMENDMENT_BASE_REVISION_CONFLICT";
     public const string AmendmentApproverScopeForbidden = "AMENDMENT_APPROVER_SCOPE_FORBIDDEN";
     public const string AmendmentWindowExpired = "AMENDMENT_WINDOW_EXPIRED";
+}
+
+/// <summary>
+/// Stable error codes for the per-campus operational-contact confirmation workflow (plan §5.2).
+/// Public-facing ones must never reveal whether an email or account exists.
+/// </summary>
+public static class OperationalContactErrorCodes
+{
+    /// <summary>409 — an action needs the global confirmation gate open and it is not.</summary>
+    public const string ContactConfirmationRequired = "CONTACT_CONFIRMATION_REQUIRED";
+
+    public const string ConfirmationNotFound = "OPERATIONAL_CONTACT_CONFIRMATION_NOT_FOUND";
+    public const string ConfirmationExpired = "OPERATIONAL_CONTACT_CONFIRMATION_EXPIRED";
+    public const string ConfirmationSuperseded = "OPERATIONAL_CONTACT_CONFIRMATION_SUPERSEDED";
+    /// <summary>The signed-in account's normalized email is not the invited address.</summary>
+    public const string EmailMismatch = "OPERATIONAL_CONTACT_EMAIL_MISMATCH";
+    public const string AlreadyConfirmed = "OPERATIONAL_CONTACT_ALREADY_CONFIRMED";
+    /// <summary>429 — resend cooldown or 24h cap hit; response carries Retry-After.</summary>
+    public const string RateLimited = "OPERATIONAL_CONTACT_CONFIRMATION_RATE_LIMITED";
+    /// <summary>A competing identity change won the race for this campus.</summary>
+    public const string ChangeConflict = "OPERATIONAL_CONTACT_CHANGE_CONFLICT";
+    /// <summary>The account is not ACTIVE, so it cannot take the contact role.</summary>
+    public const string AccountInactive = "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE";
+}
+
+/// <summary>Scope / decision error codes shared by the campus-approval endpoints (plan §5.2).</summary>
+public static class CampusScopeErrorCodes
+{
+    /// <summary>403 — the actor's campus is not this instance's campus.</summary>
+    public const string CampusScopeForbidden = "CAMPUS_SCOPE_FORBIDDEN";
+    /// <summary>The instance exists but does not belong to the request in the route.</summary>
+    public const string InstanceNotInRequest = "VISIT_INSTANCE_NOT_IN_REQUEST";
+    /// <summary>First valid decision already won; a later one is refused, not overwritten.</summary>
+    public const string ApprovalAlreadyDecided = "APPROVAL_ALREADY_DECIDED";
+    public const string HostScheduleConflict = "HOST_SCHEDULE_CONFLICT";
+    public const string ConcurrencyConflict = "CONCURRENCY_CONFLICT";
+    /// <summary>The campus has no ACTIVE Staff Leader to route to.</summary>
+    public const string StaffLeaderNotAvailable = "STAFF_LEADER_NOT_AVAILABLE";
 }

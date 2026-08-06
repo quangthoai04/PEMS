@@ -323,7 +323,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 x.vr.CreatedBy != userId &&
                 x.vr.RegistrantUserId != userId &&
                 (string.IsNullOrEmpty(currentUserEmail) || x.vr.RegistrantEmail == null || x.vr.RegistrantEmail.ToLower() != currentUserEmail) &&
-                x.vr.VisitorUserId != userId &&
+                !x.vr.CampusInstances.Any(ci => ci.OperationalContactUserId == userId) &&
                 _context.VisitParticipants.Any(pp =>
                     pp.VisitInstanceId == x.c.VisitInstanceId &&
                     pp.UserId == userId &&
@@ -386,7 +386,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 _context.Partners.Any(p => p.PartnerId == x.vr.PartnerId && p.Name != null && p.Name.ToLower().Contains(keyword)) ||
                 _context.Campuses.Any(cc => cc.CampusId == x.c.CampusId && cc.Name.ToLower().Contains(keyword)) ||
                 _context.Users.Any(u => u.UserId == x.c.CurrentHostUserId && u.FullName.ToLower().Contains(keyword)) ||
-                _context.Users.Any(u => u.UserId == x.vr.VisitorUserId && u.FullName.ToLower().Contains(keyword)));
+                _context.Users.Any(u => u.UserId == x.c.OperationalContactUserId && u.FullName.ToLower().Contains(keyword)));
         }
 
         if (request.CancelledOnly)
@@ -515,7 +515,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RequestStatus = x.vr.Status,
                 x.vr.VisitScope,
                 x.vr.CreatedBy,
-                x.vr.VisitorUserId,
+                x.c.OperationalContactUserId,
                 x.vr.RegistrantUserId,
                 x.vr.CreatedAt,
                 x.vr.SubmittedAt,
@@ -539,7 +539,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         var requestIds = page.Select(r => r.VisitRequestId).Distinct().ToList();
         var campusIds = page.Select(r => r.CampusId).Distinct().ToList();
         var partnerIds = page.Where(r => r.PartnerId.HasValue).Select(r => r.PartnerId!.Value).Distinct().ToList();
-        var userIds = page.SelectMany(r => new[] { r.CurrentHostUserId, (ulong?)r.VisitorUserId, r.CampusCancelledBy, r.RequestCancelledBy, r.DecidedBy })
+        var userIds = page.SelectMany(r => new[] { r.CurrentHostUserId, r.OperationalContactUserId, r.CampusCancelledBy, r.RequestCancelledBy, r.DecidedBy })
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
 
         var campusCountByRequest = (await _context.VisitRequestCampuses
@@ -580,7 +580,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 || r.CampusStatus == VisitInstanceStatus.Closed;
             string? campusName = campusNames.TryGetValue(r.CampusId, out var cn) ? cn : null;
             string? hostName = r.CurrentHostUserId.HasValue && userNames.TryGetValue(r.CurrentHostUserId.Value, out var hn) ? hn : null;
-            string? visitorName = r.VisitorUserId.HasValue && userNames.TryGetValue(r.VisitorUserId.Value, out var vn) ? vn : null;
+            string? contactName = r.OperationalContactUserId.HasValue && userNames.TryGetValue(r.OperationalContactUserId.Value, out var vn) ? vn : null;
             myParticipationRole.TryGetValue(r.VisitInstanceId, out var participantRole);
 
             // Instance-level cancel preferred; fall back to request-level when the whole request was cancelled.
@@ -598,7 +598,7 @@ public sealed class ViewGuestDelegationListQueryHandler
                 new(VisitSearchFieldCodes.RequestCode, r.RequestCode),
                 new(VisitSearchFieldCodes.RegistrantOrganization, r.RegistrantOrganization),
                 new(VisitSearchFieldCodes.Partner, rawPartnerName),
-                new(VisitSearchFieldCodes.PrimaryContact, visitorName),
+                new(VisitSearchFieldCodes.OperationalContact, contactName),
             };
             var campusMatchFields = new List<VisitSearchMatchContextBuilder.Field>
             {
@@ -633,9 +633,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 RowVersion = r.RowVersion,
 
                 CurrentUserIsHost = r.CurrentHostUserId == userId,
-                VisitorUserId = r.VisitorUserId,
+                OperationalContactUserId = r.OperationalContactUserId,
                 RegistrantUserId = r.RegistrantUserId,
-                VisitorName = visitorName,
+                OperationalContactName = contactName,
                 IsCurrentUserParticipant = participantRole != null,
                 ParticipantRole = participantRole,
                 ExpectedStartAt = r.PlannedStartAt,
@@ -679,14 +679,14 @@ public sealed class ViewGuestDelegationListQueryHandler
             // A Visitor who is BOTH registrant and contact owner sees the request only on
             // their owner tab — never duplicated here.
             q = q.Where(vr => vr.RegistrantUserId == userId
-                && (vr.VisitorUserId == null || vr.VisitorUserId != userId));
+                && (!vr.CampusInstances.Any(ci => ci.OperationalContactUserId != null) || !vr.CampusInstances.Any(ci => ci.OperationalContactUserId == userId)));
         }
         // Visitor "Tôi là đầu mối": CONTACT-OWNER rows only. Rows where the Visitor merely
         // registered for someone else live on the "registered" tab (actor relation). Legacy
         // rows without an owner fall back to created_by.
         else if (roleCode == RoleCodes.Visitor)
-            q = q.Where(vr => vr.VisitorUserId == userId
-                || (vr.VisitorUserId == null && vr.CreatedBy == userId));
+            q = q.Where(vr => vr.CampusInstances.Any(ci => ci.OperationalContactUserId == userId)
+                || (!vr.CampusInstances.Any(ci => ci.OperationalContactUserId != null) && vr.CreatedBy == userId));
         // HO sees every MULTI_CAMPUS request (they decide it) AND every SINGLE_CAMPUS request
         // in read-only monitoring mode (business rule chốt 2026-06: HO theo dõi SINGLE_CAMPUS).
         // No filter is applied for HO here â€” read-only is enforced via AllowedActions (the HO
@@ -762,7 +762,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         {
             var rel = request.Relation.ToUpperInvariant();
             if (rel == "VISITOR_OWNER")
-                q = q.Where(vr => vr.VisitorUserId == userId);
+                q = q.Where(vr => vr.CampusInstances.Any(ci => ci.OperationalContactUserId == userId));
         }
 
         // Campus-independent approval: HO never has actionable rows (monitor/read-only only).
@@ -814,7 +814,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             .SelectMany(vr => vr.CampusInstances.Select(i => i.CurrentHostUserId)
                 .Concat(vr.CampusInstances.Where(i => i.Status == VisitInstanceStatus.Cancelled).Select(i => i.CancelledBy))
                 .Concat(vr.CampusInstances.Select(i => i.DecidedBy))
-                .Append((ulong?)vr.VisitorUserId)
+                .Concat(vr.CampusInstances.Select(i => i.OperationalContactUserId))
                 .Append(vr.LastResubmittedBy)
                 .Append(vr.CancelledBy))
             .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
@@ -880,7 +880,10 @@ public sealed class ViewGuestDelegationListQueryHandler
                 : null;
             ulong? hostUserId = single?.CurrentHostUserId;
             string? hostName = hostUserId.HasValue && userNames.TryGetValue(hostUserId.Value, out var hnm) ? hnm : null;
-            string? visitorName = vr.VisitorUserId.HasValue && userNames.TryGetValue(vr.VisitorUserId.Value, out var vnm) ? vnm : null;
+            // Only a single-campus row can name a contact: a grouped row spans campuses that are
+            // routinely run by different people, and picking one of them would be a guess.
+            ulong? contactUserId = single?.OperationalContactUserId;
+            string? contactName = contactUserId.HasValue && userNames.TryGetValue(contactUserId.Value, out var vnm) ? vnm : null;
             DateTime? minStart = count > 0 ? instances.Min(i => i.PlannedStartAt) : (DateTime?)null;
             DateTime? maxEnd = count > 0 ? instances.Max(i => i.PlannedEndAt) : (DateTime?)null;
 
@@ -907,7 +910,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             // instance, with backend-computed action booleans. Only the Visitor owner may cancel,
             // and only when the request is APPROVED and the instance is still cancellable. ──
             bool isVisitor = roleCode == RoleCodes.Visitor;
-            bool isVisitorOwner = !registeredView && isVisitor && (vr.VisitorUserId == userId || (vr.VisitorUserId == null && vr.CreatedBy == userId));
+            bool isVisitorOwner = !registeredView && isVisitor && (vr.CampusInstances.Any(ci => ci.OperationalContactUserId == userId) || (!vr.CampusInstances.Any(ci => ci.OperationalContactUserId != null) && vr.CreatedBy == userId));
             var campusProgressItems = instances
                 .OrderBy(i => i.PlannedStartAt)
                 .Select(i =>
@@ -1004,8 +1007,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                 AlsoHostVisitInstanceId = alsoHostedInstance?.VisitInstanceId,
 
                 CurrentUserIsHost = false,
-                VisitorUserId = vr.VisitorUserId,
-                VisitorName = visitorName,
+                OperationalContactUserId = contactUserId,
+                OperationalContactName = contactName,
                 IsCurrentUserParticipant = false,
                 ParticipantRole = null,
                 ExpectedStartAt = minStart,
@@ -1126,7 +1129,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool sameCampus = item.CampusId.HasValue && primaryCampusId.HasValue && item.CampusId == primaryCampusId;
         bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
-        bool isVisitorOwner = isVisitor && (item.VisitorUserId == userId || (item.VisitorUserId == null && item.CreatedByUserId == userId));
+        // Guest side of this row: the registrant of the request, or the confirmed contact of this
+        // campus. No role test — a registrant may be a STAFF or STAFF LEADER account.
+        bool isGuestSide = item.RegistrantUserId == userId || item.OperationalContactUserId == userId;
 
         // HO never approves/rejects anymore (campus-independent approval) — monitor/read-only.
 
@@ -1139,10 +1144,11 @@ public sealed class ViewGuestDelegationListQueryHandler
             actions.Add("CAMPUS_REJECT");
         }
 
-        // Visitor — edit a still-fully-pending request / resubmit a fully-rejected one.
+        // Registrant — edit a still-fully-pending request / resubmit a fully-rejected one. Both are
+        // request-level acts, so a campus’s contact does not get them (see the edit/resubmit handlers).
         // Eligibility (status + 24h window) is precomputed per row in QueryRequestLevelAsync;
         // the commands re-validate everything server-side.
-        if (isVisitorOwner)
+        if (item.RegistrantUserId == userId)
         {
             if (item.CanEditPending)
                 actions.Add("EDIT_PENDING_REQUEST");
@@ -1150,8 +1156,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 actions.Add("RESUBMIT_REJECTED_REQUEST");
         }
 
-        // Visitor — self-cancel own request (UC-136).
-        if (isVisitorOwner)
+        // Guest side — self-cancel (UC-136). Request-level cancel is the registrant’s; the campus
+        // holder gets the instance-scoped one, which the cancel command scopes by visitInstanceId.
+        if (isGuestSide)
         {
             if (item.RequestStatus == VisitRequestStatuses.PendingApproval)
             {
@@ -1172,7 +1179,8 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // Host — cancel the campus instance they own before it starts.
         if (!isStaffLeader && item.CurrentUserIsHost
-            && (item.CampusStatus == VisitInstanceStatus.Assigned || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
+            && (item.CampusStatus == VisitInstanceStatus.Assigned
+                || item.CampusStatus == VisitInstanceStatus.BeforeVisit)
             && beforeStart)
         {
             actions.Add("CANCEL_BY_HOST");
@@ -1190,12 +1198,16 @@ public sealed class ViewGuestDelegationListQueryHandler
             if (item.CurrentUserIsHost)
             {
                 actions.Add("OPEN_HOST_PROCESS");
+                // The campus is theirs but not open yet — offer the one action that opens it, from
+                // the list, so the Host does not have to guess why the process screen is read-only.
+                if (item.CampusStatus == VisitInstanceStatus.Assigned)
+                    actions.Add(VisitListActions.StartPreparation);
             }
             if (item.CampusId != null && (isHo || (isStaffLeader && sameCampus)))
             {
                 actions.Add("OPEN_PROCESS_SUMMARY");
             }
-            if (isVisitor && item.VisitorUserId == userId)
+            if (isGuestSide)
             {
                 actions.Add("VIEW_RECEPTION_DETAIL");
             }

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using PEMS.Application.Common.Security;
 using PEMS.Domain.Constants;
+using PEMS.Shared;
 using PEMS.Infrastructure.Persistence;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
@@ -15,9 +16,10 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// <summary>
 /// Actor-relation + authenticated create (POST /api/visit-requests) against the REAL API
 /// pipeline and MySQL pems_test (validators, handlers, EF, DB triggers all live):
-///   - role × campus-mode matrix (Visitor never direct; Staff self-host own campus only;
-///     Staff Leader self/assign own campus only),
-///   - registrant/contact account linkage (registrant_user_id + visitor_user_id),
+///   - role × host-arrangement matrix (an external submit never names a host; Staff may propose
+///     THEMSELF on their own campus; a Staff Leader may also propose a same-campus IC Staff),
+///   - registrant/contact account linkage (visit_requests.registrant_user_id +
+///     visit_request_campuses.operational_contact_user_id, one per campus),
 ///   - aggregate status (APPROVED / PARTIALLY_APPROVED / PENDING_APPROVAL),
 ///   - the registrant relation staying strictly read-only (mutations → 403),
 ///   - the "registered" list tab returning read-only rows.
@@ -167,7 +169,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     private Dictionary<string, object?> CreatePayload(
         string delegationName,
         string contactEmail,
-        (string CampusCode, string Mode, ulong? HostUserId)[] campuses,
+        (string CampusCode, string HostSelectionMode, ulong? ProposedHostUserId)[] campuses,
         string? registrantEmailOverride = null)
     {
         return V2TestDataBuilder.BuildCreatePayload(
@@ -187,16 +189,18 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     // ── Visitor ─────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Visitor_SelfHostMode_IsRejected_NoRequestCreated()
+    public async Task Visitor_ProposingAHost_IsRejected_NoRequestCreated()
     {
-        var name = DelegationPrefix + "Visitor self-host " + Guid.NewGuid().ToString("N")[..8];
+        var name = DelegationPrefix + "Visitor proposes host " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SELF_HOST", (ulong?)null) });
+            new[] { (_campus1Code, "SELF", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
+        // Refused, not silently downgraded: a forged payload has to be distinguishable from a clean
+        // one, or the client cannot tell whether the intent applied.
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
-        Assert.Equal(VisitRequestErrorCodes.InvalidCampusSubmissionMode, await ErrorCodeOf(response));
+        Assert.Equal(VisitRequestErrorCodes.ProposedHostNotAllowedForRole, await ErrorCodeOf(response));
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -206,12 +210,12 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Visitor_SendForReview_Succeeds_WithRegistrantAndContactLinked()
+    public async Task Visitor_WaitForLater_Succeeds_WithRegistrantAndContactLinked()
     {
         var name = DelegationPrefix + "Visitor review " + Guid.NewGuid().ToString("N")[..8];
         var contactEmail = UniqueContactEmail();
         var payload = CreatePayload(name, contactEmail,
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -223,14 +227,21 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
 
         Assert.Equal(_visitorId, vr.RegistrantUserId);
         Assert.Equal(_visitorEmail, vr.RegistrantEmail);
-        Assert.Null(vr.VisitorUserId);
+        // The contact is per campus: nobody holds any campus yet, and the invitation names the
+        // campus it was sent for.
+        Assert.All(vr.CampusInstances, c => Assert.Null(c.OperationalContactUserId));
         var claim = await db.VisitRequestIdentityChanges.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.VisitRequestId == vr.VisitRequestId && c.ChangeKind == "INITIAL_CLAIM");
+            .FirstOrDefaultAsync(c => c.VisitRequestId == vr.VisitRequestId
+                                      && c.ChangeKind == IdentityChangeKinds.InitialConfirmation);
         Assert.NotNull(claim);
         Assert.Equal("PENDING", claim!.Status);
         Assert.Equal(contactEmail.ToLowerInvariant(), claim.NewEmailNormalized);
-        Assert.Equal(VisitRequestStatuses.PendingApproval, vr.Status);
-        Assert.All(vr.CampusInstances, i => Assert.Equal("WAITING_REQUEST_APPROVAL", i.Status));
+        Assert.Contains(vr.CampusInstances, c => c.VisitInstanceId == claim.VisitInstanceId);
+        // An outstanding confirmation holds the WHOLE request at the gate, and the campus it was sent
+        // for waits with it — WAITING_REQUEST_APPROVAL is where a campus lands only once its own
+        // contact has confirmed.
+        Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, vr.Status);
+        Assert.All(vr.CampusInstances, i => Assert.Equal("WAITING_CONTACT_CONFIRMATION", i.Status));
     }
 
     /// <summary>
@@ -242,7 +253,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "VN time " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var slots = (List<Dictionary<string, object?>>)payload["campusVisits"]!;
         var expectedStart = DateTime.Parse((string)slots[0]["plannedStartAt"]!);
@@ -269,11 +280,14 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     // ── Regular Staff ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Staff_OwnCampus_SelfHost_CreatesAssignedInstance_AggregateApproved()
+    public async Task Staff_OwnCampus_ProposesSelf_StoresProposalWithNoCurrentHost()
     {
-        var name = DelegationPrefix + "Staff self-host " + Guid.NewGuid().ToString("N")[..8];
+        var name = DelegationPrefix + "Staff proposes self " + Guid.NewGuid().ToString("N")[..8];
+        // The contact is somebody OUTSIDE FPTU: an internal registrant may never be their own
+        // campus contact, so the request legitimately sits behind the gate. That is exactly the
+        // state under test — a proposal is recorded and NOBODY is hosting anything yet.
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SELF_HOST", (ulong?)null) },
+            new[] { (_campus1Code, "SELF", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -285,32 +299,41 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
             .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
-        Assert.Equal(VisitRequestStatuses.Approved, vr.Status);
+        Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, vr.Status);
         Assert.Equal(_staffId, vr.RegistrantUserId);
         Assert.Equal("STAFF_CREATED", vr.CreatedSource);
 
         var instance = Assert.Single(vr.CampusInstances);
-        Assert.Equal("ASSIGNED", instance.Status);
-        Assert.Equal(_staffId, instance.CurrentHostUserId);
-        Assert.Equal(_staffId, instance.DecidedBy);
-        Assert.Equal(_staffId, instance.HostAssignedBy);
-        Assert.Equal("STAFF", instance.DecisionActorRole);
-        Assert.Equal("INTERNAL_SELF_HOST", instance.DecisionSource);
+        // The proposal is recorded...
+        Assert.Equal(HostSelectionModes.Self, instance.HostSelectionMode);
+        Assert.Equal(_staffId, instance.ProposedHostUserId);
+        Assert.Equal(_staffId, instance.ProposedHostByUserId);
+        Assert.Equal(ProposedHostActivationStatuses.Pending, instance.ProposedHostActivationStatus);
+        Assert.NotNull(instance.ProposedHostAt);
+
+        // ...and NOTHING has been assigned. This is the whole point of the model: until somebody on
+        // the guest side confirms they are coming there is no visit to host, so naming a current
+        // host here would tell an FPTU staff member to start preparing for nothing.
+        Assert.Equal("WAITING_CONTACT_CONFIRMATION", instance.Status);
+        Assert.Null(instance.CurrentHostUserId);
+        Assert.Null(instance.DecidedBy);
+        Assert.Null(instance.DecisionSource);
+        Assert.Null(instance.ProposedHostActivatedAt);
         Assert.NotNull(instance.CoordinatorUserId);
 
-        var hostParticipant = await db.VisitParticipants
-            .FirstOrDefaultAsync(p => p.VisitInstanceId == instance.VisitInstanceId && p.UserId == _staffId && p.IsHost);
-        Assert.NotNull(hostParticipant);
+        // No IC_HOST participant either — being proposed is not being on the team.
+        Assert.False(await db.VisitParticipants
+            .AnyAsync(p => p.VisitInstanceId == instance.VisitInstanceId && p.IsHost));
     }
 
     [Fact]
-    public async Task Staff_MultiCampus_SelfHostOwn_OtherPending_AggregatePartiallyApproved()
+    public async Task Staff_MultiCampus_ProposalOnOwnCampusOnly_OtherWaitsForAssignment()
     {
         var name = DelegationPrefix + "Staff multi " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(), new[]
         {
-            (_campus1Code, "SELF_HOST", (ulong?)null),
-            (_campus2Code, "SEND_FOR_REVIEW", (ulong?)null),
+            (_campus1Code, "SELF", (ulong?)null),
+            (_campus2Code, "WAIT_FOR_LATER", (ulong?)null),
         },
         registrantEmailOverride: _staffEmail);
 
@@ -323,20 +346,31 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var vr = await db.VisitRequests.Include(v => v.CampusInstances)
             .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
-        Assert.Equal(VisitRequestStatuses.PartiallyApproved, vr.Status);
+        // Both campuses are behind the gate: the gate is a property of the REQUEST, so a campus
+        // with an arrangement cannot run ahead of a sibling nobody has confirmed.
+        Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, vr.Status);
         var own = vr.CampusInstances.First(i => i.CampusId == _campus1Id);
         var other = vr.CampusInstances.First(i => i.CampusId == _campus2Id);
-        Assert.Equal("ASSIGNED", own.Status);
-        Assert.Equal("WAITING_REQUEST_APPROVAL", other.Status);
+
+        // The arrangement stays on the campus it was made for. A proposal on the creator's own
+        // campus says nothing about the sibling, which waits for its own Staff Leader.
+        Assert.Equal(HostSelectionModes.Self, own.HostSelectionMode);
+        Assert.Equal(_staffId, own.ProposedHostUserId);
+        Assert.Equal(HostSelectionModes.WaitForLater, other.HostSelectionMode);
+        Assert.Null(other.ProposedHostUserId);
+
+        Assert.Equal("WAITING_CONTACT_CONFIRMATION", own.Status);
+        Assert.Equal("WAITING_CONTACT_CONFIRMATION", other.Status);
+        Assert.Null(own.CurrentHostUserId);
         Assert.Null(other.CurrentHostUserId);
     }
 
     [Fact]
-    public async Task Staff_DirectProcess_OtherCampus_IsForbidden()
+    public async Task Staff_ProposingForAnotherCampus_IsForbidden()
     {
         var name = DelegationPrefix + "Staff other campus " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus2Code, "SELF_HOST", (ulong?)null) },
+            new[] { (_campus2Code, "SELF", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -350,11 +384,11 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Staff_AssignAnotherHost_IsForbidden()
+    public async Task Staff_ProposingSomebodyElse_IsForbidden()
     {
         var name = DelegationPrefix + "Staff assign " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_leaderId) },
+            new[] { (_campus1Code, "SELECTED", (ulong?)_leaderId) },
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -372,7 +406,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff self contact " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, _staffEmail,
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -391,7 +425,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff internal contact " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, _leaderEmail,
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -408,11 +442,11 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     // ── Staff Leader ────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Leader_OwnCampus_AssignSameCampusIcStaff_ProcessesDirectly()
+    public async Task Leader_OwnCampus_ProposesSameCampusIcStaff_StoresProposalWithNoCurrentHost()
     {
-        var name = DelegationPrefix + "Leader assign " + Guid.NewGuid().ToString("N")[..8];
+        var name = DelegationPrefix + "Leader proposes " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_staffId) },
+            new[] { (_campus1Code, "SELECTED", (ulong?)_staffId) },
             registrantEmailOverride: _leaderEmail);
 
         var response = await LeaderClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -425,20 +459,25 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             .FirstAsync(v => v.CampusInstances.Any(c => c.FormDetail!.DelegationName == name));
 
         var instance = Assert.Single(vr.CampusInstances);
-        Assert.Equal("ASSIGNED", instance.Status);
-        Assert.Equal(_staffId, instance.CurrentHostUserId);
-        Assert.Equal(_leaderId, instance.DecidedBy);
-        Assert.Equal("STAFF_LEADER", instance.DecisionActorRole);
-        Assert.Equal("INTERNAL_LEADER_ASSIGN", instance.DecisionSource);
-        Assert.Equal(VisitRequestStatuses.Approved, vr.Status);
+        Assert.Equal(HostSelectionModes.Selected, instance.HostSelectionMode);
+        Assert.Equal(_staffId, instance.ProposedHostUserId);
+        // The PROPOSER is recorded separately from the person proposed: it is the proposer whose
+        // authority the activation rests on, and who is recorded as having decided it later.
+        Assert.Equal(_leaderId, instance.ProposedHostByUserId);
+        Assert.Equal(ProposedHostActivationStatuses.Pending, instance.ProposedHostActivationStatus);
+
+        Assert.Equal("WAITING_CONTACT_CONFIRMATION", instance.Status);
+        Assert.Null(instance.CurrentHostUserId);
+        Assert.Null(instance.DecidedBy);
+        Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, vr.Status);
     }
 
     [Fact]
-    public async Task Leader_AssignVisitorAsHost_IsRejected_InvalidCandidate()
+    public async Task Leader_ProposingAVisitorAsHost_IsRejected_InvalidCandidate()
     {
         var name = DelegationPrefix + "Leader bad host " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "ASSIGN_HOST", (ulong?)_visitorId) },
+            new[] { (_campus1Code, "SELECTED", (ulong?)_visitorId) },
             registrantEmailOverride: _leaderEmail);
 
         var response = await LeaderClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
@@ -455,11 +494,13 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     // ── Registrant relation stays read-only ────────────────────────────────
 
     [Fact]
-    public async Task StaffRegistrant_CannotCancel_OwnRegisteredRequest()
+    public async Task StaffRegistrant_CannotCancel_OwnRequestWhileItWaitsForContactConfirmation()
     {
         var name = DelegationPrefix + "Staff no-cancel " + Guid.NewGuid().ToString("N")[..8];
+        // What this test is about is that the registrant relation stays read-only, whatever the
+        // request's gate state — an internal creator never acquires guest-side rights by creating.
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var client = StaffClient();
@@ -477,13 +518,20 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         var cancelResponse = await client.PostAsJsonAsync(
             $"/api/Delegations/{requestId}/cancel",
             new Dictionary<string, object?> { ["cancellationReason"] = "IT registrant must not cancel" });
-        Assert.Equal(HttpStatusCode.Forbidden, cancelResponse.StatusCode);
+
+        // Refused, and the reason is the lifecycle rather than the relation: cancelling is defined
+        // for a request that is pending approval or already approved, and this one is neither — it
+        // is still waiting for somebody on the guest side to confirm they are coming at all.
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, cancelResponse.StatusCode);
 
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var vr = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == requestId);
-            Assert.Equal(VisitRequestStatuses.PendingApproval, vr.Status);
+            var vr = await db.VisitRequests.Include(v => v.CampusInstances)
+                .FirstAsync(v => v.VisitRequestId == requestId);
+            // Nothing moved. A refused cancel must not half-cancel anything.
+            Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, vr.Status);
+            Assert.All(vr.CampusInstances, c => Assert.NotEqual("CANCELLED", c.Status));
         }
     }
 
@@ -492,7 +540,7 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
     {
         var name = DelegationPrefix + "Staff registered tab " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
-            new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) },
+            new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) },
             registrantEmailOverride: _staffEmail);
 
         var client = StaffClient();

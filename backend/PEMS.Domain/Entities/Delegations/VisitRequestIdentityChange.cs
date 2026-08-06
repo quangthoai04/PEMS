@@ -4,11 +4,14 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace PEMS.Domain.Entities.Delegations;
 
 /// <summary>
-/// Current state of a primary-contact INITIAL_CLAIM / TRANSFER (per-campus form v2). This is the
-/// state row, NOT a token store — raw Google id token / OTP / acceptance token are never stored.
-/// The DB has a VIRTUAL <c>pending_guard</c> unique index (one in-flight PENDING per request/relation)
-/// that is intentionally NOT mapped here — EF never reads or writes it. PR-3 only maps/reads these
-/// rows; the claim/transfer WRITE handlers arrive in PR-5.
+/// Current state of ONE campus's operational-contact INITIAL_CONFIRMATION / TRANSFER. This is the
+/// state row, NOT a token store — the single-use hashed acceptance token lives in
+/// <c>email_action_tokens</c>, and raw Google id tokens / OTPs are never stored anywhere.
+///
+/// Scope is a campus, not a request: a person invited to three campuses gets three rows. The DB
+/// enforces that with a composite FK to (visit_request_id, visit_instance_id), so a payload naming
+/// a sibling campus cannot produce a valid row, plus a VIRTUAL <c>pending_guard</c> unique index
+/// (at most one in-flight PENDING per instance) that is intentionally NOT mapped here.
 /// </summary>
 [Table("visit_request_identity_changes")]
 public class VisitRequestIdentityChange
@@ -20,11 +23,20 @@ public class VisitRequestIdentityChange
     [Column("visit_request_id")]
     public ulong VisitRequestId { get; set; }
 
-    [Column("change_kind")]
-    public string ChangeKind { get; set; } = null!; // INITIAL_CLAIM | TRANSFER
+    /// <summary>The campus this invitation belongs to. Never null — there is no request-wide invitation.</summary>
+    [Column("visit_instance_id")]
+    public ulong VisitInstanceId { get; set; }
 
-    [Column("target_relation")]
-    public string TargetRelation { get; set; } = "PRIMARY_CONTACT";
+    [Column("change_kind")]
+    public string ChangeKind { get; set; } = null!; // INITIAL_CONFIRMATION | TRANSFER
+
+    /// <summary>
+    /// Bumped on every resend. Feeds the dispatcher dedupe key
+    /// <c>OP_CONTACT_CONFIRM:{identityChangeId}:{tokenVersion}</c> and lets a resend supersede the
+    /// previous token inside the same transaction.
+    /// </summary>
+    [Column("token_version")]
+    public uint TokenVersion { get; set; } = 1;
 
     [Column("confirmation_method")]
     public string ConfirmationMethod { get; set; } = "GOOGLE_SSO";
@@ -92,6 +104,8 @@ public class VisitRequestIdentityChange
 
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
+
+    public virtual VisitRequestCampus CampusInstance { get; set; } = null!;
 
     public virtual ICollection<VisitRequestIdentityChangeEvent> Events { get; set; }
         = new List<VisitRequestIdentityChangeEvent>();

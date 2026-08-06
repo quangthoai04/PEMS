@@ -55,12 +55,15 @@ public static class V2PendingFormSnapshot
     public static string EffectiveScope(VisitRequestFormDataV2 form)
         => form.CampusVisits.Count > 1 ? VisitScopes.MultiCampus : VisitScopes.SingleCampus;
 
-    /// <summary>v2 canonical fingerprint of the whole form (registrant + primary contact + per-campus core).</summary>
+    /// <summary>
+    /// v2 canonical fingerprint of the whole form (registrant + per-campus core, which now carries
+    /// each campus's operational-contact address — there is no request-level contact).
+    /// </summary>
     public static string Fingerprint(VisitRequestFormDataV2 form)
         => VisitRequestFingerprintBuilder.BuildV2(
             form.Registrant.Email,
-            form.PrimaryContact.Email,
             EffectiveScope(form),
             form.CampusVisits.Select(c =>
-                (c.CampusId, c.PlannedStartAt, c.PlannedEndAt, c.DelegationName, c.VisitType, c.VisitTypeOther)));
+                (c.CampusId, c.PlannedStartAt, c.PlannedEndAt, c.DelegationName, c.VisitType, c.VisitTypeOther,
+                 (string?)c.OperationalContact.Email)));
 }

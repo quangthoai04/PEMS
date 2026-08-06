@@ -57,10 +57,7 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
     fullName: 'Người Đăng Ký', organization: 'ĐH ABC', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN',
   },
-  primaryContact: {
-    fullName: 'Đầu Mối', organization: 'ĐH ABC', phone: '+84987654321',
-    email: 'd***@x.vn', accessStatus: 'ACTIVE', verifiedAt: '2026-07-15T09:00:00',
-  },
+  confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
   campusVisits: [campusFixture()],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
   ...overrides,
@@ -96,7 +93,7 @@ describe('VisitRequestV2DetailView', () => {
         campusFixture({
           visitInstanceId: 11, campusId: 2, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh',
           delegationName: 'Đoàn HCM khác hẳn', purpose: 'Mục đích HCM', workingContent: 'ND HCM',
-          currentHostName: 'Host HCM', instanceStatus: 'PENDING',
+          currentHostName: 'Host HCM', currentHost: { userId: 7, fullName: 'Host HCM', email: 'host@fptu.vn', phone: '+8490', departmentName: 'IC' }, instanceStatus: 'PENDING',
         }),
       ],
     }));
@@ -131,17 +128,18 @@ describe('VisitRequestV2DetailView', () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
     const { unmount: unmountBare } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions-10')).not.toBeInTheDocument();
     unmountBare();
 
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'] })],
       viewer: {
         relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
-        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+        allowedActions: ['VIEW'],
       },
     }));
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
-    expect(await screen.findByTestId('contact-identity-actions')).toBeInTheDocument();
+    expect(await screen.findByTestId('contact-identity-actions-10')).toBeInTheDocument();
     unmount();
 
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
@@ -149,22 +147,25 @@ describe('VisitRequestV2DetailView', () => {
     }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByTestId('contact-identity-actions')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-actions-10')).not.toBeInTheDocument();
   });
 
   it('contact actions live INSIDE the contact section, not in a card of their own', async () => {
     // One business object, one card. The old standalone panel produced a second contact heading
     // above sections 1 and 2, which is what made the screen look like it repeated itself.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'] })],
       viewer: {
         relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
-        allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'],
+        allowedActions: ['VIEW'],
       },
     }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
 
-    const actions = await screen.findByTestId('contact-identity-actions');
-    expect(screen.getByTestId('section-contact')).toContainElement(actions);
+    const actions = await screen.findByTestId('contact-identity-actions-10');
+    // The workflow lives INSIDE the campus card it acts on — a request-level contact section is
+    // exactly what let one campus's contact acquire rights over its siblings.
+    expect(screen.getByTestId('campus-detail-card-10')).toContainElement(actions);
   });
 
   it('active amendment: the decision panel is gated by per-instance allowedActions, not relation', async () => {
@@ -256,7 +257,10 @@ describe('VisitRequestV2DetailView', () => {
 
     // The people appear exactly once each - in their own section, not also in the overview.
     expect(screen.getAllByText('Người Đăng Ký')).toHaveLength(1);
-    expect(screen.getAllByText('Đầu Mối')).toHaveLength(1);
+    // The amendment requester's name appears once, on the campus card that carries the amendment.
+    // It used to appear twice: once there and once in a request-level contact block that no longer
+    // exists, because a request has no single contact.
+    expect(screen.queryAllByText('Đầu Mối').length).toBeLessThanOrEqual(1);
     // …and the overview now answers "where has this got to" instead.
     expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
   });

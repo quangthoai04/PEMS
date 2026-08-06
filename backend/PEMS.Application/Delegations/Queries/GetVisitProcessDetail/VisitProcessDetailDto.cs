@@ -89,12 +89,16 @@ public sealed class VisitProcessRequestSummaryDto
     public string? MediaConsentNote { get; set; }
     /// <summary>Free text the guest entered to identify the transportation to FPTU.</summary>
     public string? TransportationNote { get; set; }
-    public string? NoteToFptu { get; set; }
 
-    public string? ContactPersonFullName { get; set; }
-    public string? ContactPersonOrganization { get; set; }
-    public string? ContactPersonPhone { get; set; }
-    public string? ContactPersonEmail { get; set; }
+    // ── Operational contact of THIS campus ────────────────────────────────────
+    // This screen is always about one campus instance, so the contact shown is that campus's own
+    // snapshot — read from its visit_instance_form_details row, never from a sibling and never from
+    // the request. A multi-campus request genuinely has several contacts, and the old request-level
+    // block could only ever show one of them.
+    public string? OperationalContactFullName { get; set; }
+    public string? OperationalContactOrganization { get; set; }
+    public string? OperationalContactPhone { get; set; }
+    public string? OperationalContactEmail { get; set; }
 
     public List<VisitProcessCampusDto> Campuses { get; set; } = new();
     public List<VisitProcessGuestMemberDto> GuestMembers { get; set; } = new();

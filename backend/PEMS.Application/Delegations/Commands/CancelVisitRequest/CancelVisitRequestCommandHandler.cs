@@ -7,6 +7,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.CancelVisitRequest;
 
 public sealed class CancelVisitRequestCommandHandler
@@ -50,26 +51,33 @@ public sealed class CancelVisitRequestCommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("VisitRequest", request.VisitRequestId);
 
-        var isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == actorId;
+        // Cancelling the WHOLE request belongs to the registrant (plan §2.1). It is not a per-campus
+        // act: it ends every campus at once, including ones run by people who never agreed to that.
+        // A campus's operational contact cancels THEIR campus instead — the instance-scoped path
+        // below — and the DB trigger enforces the same split.
+        //
+        // The old rule asked for the request-level contact and, separately, for the registrant while
+        // that contact was still unclaimed ("exception 3A"). With the contact per campus there is no
+        // request-level owner left for the first half, and the exception it needed disappears with it.
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
 
-        // Exception 3A (plan §16.7): while the v2 initial claim is still unresolved (contact
-        // PENDING_CONFIRMATION, no owner linked), the verified REGISTRANT may cancel a pending
-        // request under the SAME lifecycle rules (24h window, reason required). Once the contact
-        // is ACTIVE this exception vanishes — cancel reverts to the exact owner rule below.
-        var isRegistrantPendingContact = roleCode == RoleCodes.Visitor
-            && visit.RegistrantUserId == actorId
-            && visit.VisitorUserId is null
-            && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.PendingConfirmation;
+        // An INSTANCE-scoped cancel is the campus's own business, so the person running that campus
+        // may do it as well as the registrant. Resolved from the campus named in the request — never
+        // from a sibling, and never left over from a previous call.
+        var scopedInstance = request.VisitInstanceId is { } scopedId
+            ? visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == scopedId)
+            : null;
+        var isGuestSideCanceller = isRegistrant
+            || (scopedInstance is not null
+                && VisitRequestOwnership.IsOperationalContact(scopedInstance, actorId));
 
-        // §1.1/§4.1: the Visitor owner may cancel a request that is still PENDING_APPROVAL. At this
+        // §1.1/§4.1: the guest side may cancel a request that is still PENDING_APPROVAL. At this
         // point NO campus instance has a valid lifecycle yet (they stay WAITING_REQUEST_APPROVAL), so
         // we ONLY flip the parent request to CANCELLED and never touch campus instances / logistics.
-        // The DB trigger trg_visit_requests_cancel_validate_bu (after the lifecycle patch) permits
-        // PENDING→CANCELLED only when the canceller has the VISITOR role — matching this guard.
         if (visit.Status == VisitRequestStatuses.PendingApproval)
         {
-            if (!isVisitorOwner && !isRegistrantPendingContact)
-                throw new ForbiddenException("Chỉ khách sở hữu đơn mới được hủy đơn đang chờ duyệt.");
+            if (!isRegistrant)
+                throw new ForbiddenException("Chỉ người đăng ký mới được hủy đơn đang chờ duyệt.");
 
             // Rule 24h (spec §2.3): the Visitor may only self-cancel while EVERY still-active
             // campus starts ≥ 24h from now. planned_start_at is local wall-clock → VietnamNow.
@@ -100,11 +108,7 @@ public sealed class CancelVisitRequestCommandHandler
             _db.AuditLogs.Add(new AuditLog
             {
                 ActorUserId = actorId,
-                // Exception-3A cancels are auditable as such (plan §23.2): the actor was the
-                // registrant, allowed only because the contact had not claimed yet.
-                Action = isRegistrantPendingContact && !isVisitorOwner
-                    ? "VISIT_REQUEST_CANCELLED_BY_REGISTRANT_PENDING_CONTACT"
-                    : "CANCEL_VISIT_REQUEST",
+                Action = "CANCEL_VISIT_REQUEST",
                 EntityType = "VisitRequest",
                 EntityId = visit.VisitRequestId,
                 VisitRequestId = visit.VisitRequestId,
@@ -235,9 +239,9 @@ public sealed class CancelVisitRequestCommandHandler
         else
         {
             // Request-level cancellation
-            if (isVisitorOwner)
+            if (isGuestSideCanceller)
             {
-                // Rule 1: Visitor cancel at Request level requires ALL active campuses to be >= 24h
+                // Rule 1: a guest-side cancel at request level requires ALL active campuses to be >= 24h
                 var activeInstances = visit.CampusInstances.Where(c =>
                     c.Status != VisitInstanceStatus.Cancelled &&
                     c.Status != VisitInstanceStatus.Rejected).ToList();
@@ -269,7 +273,7 @@ public sealed class CancelVisitRequestCommandHandler
         // Authorization + actor classification.
         string actorType;
         string source;
-        if (isVisitorOwner)
+        if (isGuestSideCanceller)
         {
             actorType = CancellationActorType.Visitor;
             source = CancellationSource.SelfService;
@@ -409,7 +413,7 @@ public sealed class CancelVisitRequestCommandHandler
         // REJECTED instances are terminal and count as "settled" for the rollup; still-pending
         // (WAITING_REQUEST_APPROVAL) instances are cascade-cancelled AFTER the request flips
         // (the campus trigger only allows a pending instance to cancel under a CANCELLED request).
-        var whollyCancellable = request.VisitInstanceId is null && isVisitorOwner
+        var whollyCancellable = request.VisitInstanceId is null && isRegistrant
             && visit.CampusInstances.All(c =>
                 c.Status == VisitInstanceStatus.Cancelled
                 || c.Status == VisitInstanceStatus.Rejected
@@ -454,7 +458,7 @@ public sealed class CancelVisitRequestCommandHandler
         // --- Notifications for AFTER_APPROVAL cancellation ---
         var afterNotifs = new List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
         var hoUsersToNotify = new List<ulong>();
-        if (visit.VisitScope == VisitScopes.MultiCampus && isVisitorOwner)
+        if (visit.VisitScope == VisitScopes.MultiCampus && isGuestSideCanceller)
         {
             hoUsersToNotify = await _db.Users
                 .Where(u => u.Role.RoleCode == "HO" && u.Status == "ACTIVE")
@@ -481,7 +485,7 @@ public sealed class CancelVisitRequestCommandHandler
                 ? leaders
                 : new List<ulong>();
             var actionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
-            if (isVisitorOwner)
+            if (isGuestSideCanceller)
             {
                 if (instance.CurrentHostUserId.HasValue)
                 {
@@ -540,10 +544,12 @@ public sealed class CancelVisitRequestCommandHandler
             }
             else // Host cancelled
             {
-                if (visit.VisitorUserId.HasValue)
+                // A Host cancelled THIS campus: tell the people whose campus it was — its own
+                // operational contact and the registrant. Siblings continue and are not told.
+                foreach (var guestId in VisitRequestOwnership.GuestSideRecipients(visit, instance))
                 {
                     afterNotifs.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                        RecipientUserId: visit.VisitorUserId.Value,
+                        RecipientUserId: guestId,
                         Title: "Lịch thăm quan bị hủy",
                         Message: $"Host đã hủy cơ sở {instance.CampusId} thuộc đơn {visit.RequestCode}.",
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitCancelled,

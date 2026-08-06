@@ -38,7 +38,6 @@ const validValues = (): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [{

@@ -31,8 +31,10 @@ public class VisitSetupProgressRecipientResolverTests
         ScheduleReportTestData.SeedBase(db);
 
         var visit = db.VisitRequests.Single();
-        visit.ContactPersonEmail = contactEmail!;
         visit.RegistrantEmail = registrantEmail!;
+        // The contact is the CAMPUS’s, so it is set on that campus’s form detail.
+        db.VisitInstanceFormDetails.Single(d => d.VisitInstanceId == Instance)
+            .OperationalContactEmail = contactEmail!;
         db.SaveChanges();
 
         return (db, new VisitSetupProgressRecipientResolver(db));

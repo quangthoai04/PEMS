@@ -54,7 +54,7 @@ public sealed class GetVisitInstanceNewsQueryHandler
         {
             // full list
         }
-        else if (actor.IsHo || actor.IsVisitorOwner)
+        else if (actor.IsHo || actor.IsGuestSide)
         {
             query = query.Where(n => n.Status == NewsStatus.Published);
         }
@@ -72,7 +72,7 @@ public sealed class GetVisitInstanceNewsQueryHandler
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
         // HO / Visitor: read-only — no internal workflow fields, no action flags.
-        bool isReadonlyViewer = actor.IsHo || actor.IsVisitorOwner;
+        bool isReadonlyViewer = actor.IsHo || actor.IsGuestSide;
 
         var items = posts.Select(n =>
         {

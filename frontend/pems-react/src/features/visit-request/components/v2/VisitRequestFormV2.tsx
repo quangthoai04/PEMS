@@ -26,7 +26,7 @@ import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
-import type { CampusProcessingChoice } from '../../api/visitRequestApi';
+import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { useAuthContext } from '../../../../shared/auth/AuthContext';
 import { profileApi } from '../../../profile/api/profileApi';
 import { getApiErrorMessage } from '../../../../shared/utils/toast';
@@ -90,9 +90,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   // Keyed by campus CODE, so reordering or removing a card never moves a decision onto another
   // campus. Entries for campuses no longer selected are dropped at submit time, never sent.
-  const [campusProcessing, setCampusProcessing] = useState<Record<string, CampusProcessingChoice>>({});
-  const campusProcessingRef = useRef(campusProcessing);
-  campusProcessingRef.current = campusProcessing;
+  const [campusHostSelections, setCampusHostSelection] = useState<Record<string, CampusHostSelectionChoice>>({});
+  const campusHostSelectionsRef = useRef(campusHostSelections);
+  campusHostSelectionsRef.current = campusHostSelections;
 
   const vm = useVisitRequestFormV2(onSuccess, () => setShowErrors(true), {
     mode,
@@ -101,7 +101,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     // The ceiling is "one card per campus open for registration", read from the backend — not a
     // constant. Retiring or adding a campus changes the form with no code change.
     maxCampuses: campuses.length || undefined,
-    getCampusProcessing: () => {
+    getCampusHostSelections: () => {
       if (!isAuthenticated) return [];
       // A processing intent is only ever valid on a SELF-registration: on a delegated submission the
       // backend refuses the whole payload, so stale choices must never leave the browser. The panel is
@@ -110,7 +110,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       const selected = new Set(
         form.getValues('campusVisits').map(cv => (cv.campus || '').toUpperCase()).filter(Boolean),
       );
-      return Object.values(campusProcessingRef.current).filter(p => selected.has(p.campusId));
+      return Object.values(campusHostSelectionsRef.current).filter(p => selected.has(p.campusId));
     },
   });
   const { form, campusVisitFields } = vm;
@@ -189,7 +189,6 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const { register, formState: { errors } } = form;
   const regErr = errors.registerInfo;
-  const cpErr = errors.contactPoint;
 
   // One card per campus open for registration — the ceiling and the "already taken" set both come
   // from live data, so a campus added or retired in the backend is reflected without a code change.
@@ -215,16 +214,6 @@ export const VisitRequestFormV2: React.FC<Props> = ({
 
   const submitBar = (node: React.ReactNode) =>
     footerSlot ? createPortal(node, footerSlot) : node;
-
-  const syncContactFromRegistrant = () => {
-    const reg = form.getValues('registerInfo');
-    const fields = ['fullName', 'organization', 'phone', 'email'] as const;
-    for (const f of fields) {
-      const path = `contactPoint.${f}` as any;
-      form.setValue(path, reg[f], { shouldDirty: true, shouldTouch: true });
-      form.clearErrors(path);
-    }
-  };
 
   const watchedReg = form.watch('registerInfo');
   const isRegInfoEmpty = !watchedReg?.fullName?.trim() && !watchedReg?.organization?.trim() && !watchedReg?.phone?.trim() && !watchedReg?.email?.trim();
@@ -267,7 +256,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const wasSelfRegistrantRef = useRef(isSelfRegistrant);
   useEffect(() => {
     if (wasSelfRegistrantRef.current && !isSelfRegistrant) {
-      setCampusProcessing(prev => (Object.keys(prev).length === 0 ? prev : {}));
+      setCampusHostSelection(prev => (Object.keys(prev).length === 0 ? prev : {}));
     }
     wasSelfRegistrantRef.current = isSelfRegistrant;
   }, [isSelfRegistrant]);
@@ -497,65 +486,6 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         </div>
       </FormSection>
 
-      {/* ── Request-level: primary contact (the request manager / VISITOR login) ── */}
-      <FormSection
-        id="v2-contact"
-        title={t('visitRequestV2:sections.contact')}
-        description={t('visitRequestV2:sections.contactDesc')}
-        headerRight={
-          <button
-            type="button"
-            data-testid="v2-contact-same-as-registrant"
-            className="rounded-xl border-2 border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-            // An internal member of staff can never be the delegation's contact — the backend rejects it
-            // with INTERNAL_REGISTRANT_CANNOT_BE_CONTACT. Copying their own details in is therefore a dead
-            // end, so the affordance is removed instead of letting them fill the block and fail on submit.
-            disabled={isRegInfoEmpty || (isInternalActor && isSelfRegistrant)}
-            onClick={syncContactFromRegistrant}
-          >
-            {t('visitRequestV2:sections.contactSameAsRegistrant')}
-          </button>
-        }
-      >
-        {isInternalActor && isSelfRegistrant && (
-          <p className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-medium text-slate-600">
-            {t('visitRequestV2:sections.contactInternalNotAllowed')}
-          </p>
-        )}
-        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
-            <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.organization')} required error={cpErr?.organization?.message} showValidIcon={false}>
-            <Controller
-              name="contactPoint.organization"
-              control={form.control}
-              render={({ field }) => (
-                <OrganizationCombobox
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  onBlur={field.onBlur}
-                  hasError={!!cpErr?.organization}
-                  placeholder={t('visitRequestV2:person.organization')}
-                  ariaLabel={t('visitRequestV2:person.organization')}
-                  testId="v2-contact-org"
-                />
-              )}
-            />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:card.phone')} error={cpErr?.phone?.message} showValidIcon={false}>
-            <PhoneField
-              field={register('contactPoint.phone')}
-              hasError={!!cpErr?.phone}
-              error={cpErr?.phone?.message}
-              testId="v2-contact-phone"
-            />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false}>
-            <input type="email" {...register('contactPoint.email')} className={inputCls(!!cpErr?.email, false, false)} />
-          </FormField>
-        </div>
-      </FormSection>
 
       {/* ── Per-campus cards ── */}
       <FormSection
@@ -596,8 +526,8 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   processing={isAuthenticated && isSelfRegistrant ? {
                     role: creatorRole,
                     ownCampusCode: user?.campusCode,
-                    values: campusProcessing,
-                    onChange: next => setCampusProcessing(prev => ({ ...prev, [next.campusId]: next })),
+                    values: campusHostSelections,
+                    onChange: next => setCampusHostSelection(prev => ({ ...prev, [next.campusId]: next })),
                   } : undefined}
                 />
               </div>

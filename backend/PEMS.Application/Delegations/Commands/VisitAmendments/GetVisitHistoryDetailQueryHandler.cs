@@ -12,6 +12,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
 
 /// <summary>
@@ -60,16 +61,20 @@ public sealed class GetVisitHistoryDetailQueryHandler
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
         // ── Scope FIRST (mirrors GetVisitRequestHistoryQueryHandler exactly) ──
-        var isManager = visit.RegistrantUserId == actorId
-            || (visit.VisitorUserId == actorId
-                && visit.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active);
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
+        var operatedInstanceIds = VisitRequestOwnership.OperatedCampuses(visit, actorId)
+            .Select(c => c.VisitInstanceId).ToList();
         var isHo = _currentUser.RoleCode == RoleCodes.Ho;
         List<ulong> visibleInstanceIds;
         var includeRequestLevel = false;
-        if (isManager || isHo)
+        if (isRegistrant || isHo)
         {
             visibleInstanceIds = visit.CampusInstances.Select(c => c.VisitInstanceId).ToList();
             includeRequestLevel = true;
+        }
+        else if (operatedInstanceIds.Count > 0)
+        {
+            visibleInstanceIds = operatedInstanceIds;
         }
         else if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
                  && _currentUser.PrimaryCampusId is { } campusId)

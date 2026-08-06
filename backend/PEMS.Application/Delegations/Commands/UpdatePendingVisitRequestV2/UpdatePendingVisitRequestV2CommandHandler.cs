@@ -14,6 +14,7 @@ using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Policies;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitRequestV2;
 
 public sealed class UpdatePendingVisitRequestV2CommandHandler
@@ -68,14 +69,12 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        // ── Editor policy (plan §6.4): the registrant, or the primary contact once ACTIVE. A contact still
-        //    PENDING_CONFIRMATION has not accepted the request yet and cannot edit it; any other account
-        //    (unrelated visitor, staff, host) is rejected — staff-side changes go through amendments. ──
-        var isRegistrant = visit.RegistrantUserId == actorId;
-        var isActiveContact = visit.VisitorUserId == actorId
-                              && string.Equals(visit.PrimaryContactAccessStatus, "ACTIVE", System.StringComparison.OrdinalIgnoreCase);
-        if (!isRegistrant && !isActiveContact)
-            throw new ForbiddenException("Bạn không có quyền sửa đơn này.");
+        // ── Editor policy (plan §6.4): the REGISTRANT alone. This edit rewrites the request as a
+        //    whole — it can add and drop campuses — so it belongs to the person who owns the request,
+        //    not to somebody who confirmed one of its campuses. A campus holder changes their own
+        //    campus through a safe edit or an amendment. Staff-side changes go through amendments. ──
+        if (!VisitRequestOwnership.IsRegistrant(visit, actorId))
+            throw new ForbiddenException("Chỉ người đăng ký mới được sửa toàn bộ đơn này.");
 
         // ── Editable-lifecycle gate — the SAME policy call the read model made when it decided whether
         //    to offer the button, so a capability can never promise what this refuses. ──

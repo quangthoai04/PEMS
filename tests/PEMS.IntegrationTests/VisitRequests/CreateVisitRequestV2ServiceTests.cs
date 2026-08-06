@@ -16,7 +16,8 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// <summary>
 /// Create-v2 SERVICE tests (Phase B-2): VisitRequestV2CreateService builds the whole per-campus aggregate in
 /// the caller's transaction. Covers the DoD matrix — single / multi-same (mixed=0) / multi-mixed (mixed=1) /
-/// campus+time-only (mixed=0) / member-copy independence / A==B ACTIVE / A!=B PENDING+INITIAL_CLAIM 72h /
+/// campus+time-only (mixed=0) / member-copy independence / A==B self-matched /
+/// A!=B PENDING + INITIAL_CONFIRMATION 72h /
 /// duration 29m59s fail + 30m pass / end=start fail / duplicate campus fail / smallest-campus projection.
 /// Runs against disposable <c>pems_pr3_test</c> (seed campuses HN/HCM/DN each have exactly one valid Staff
 /// Leader), each test in a rolled-back transaction — nothing is committed.
@@ -53,51 +54,69 @@ public sealed class CreateVisitRequestV2ServiceTests
     private static CampusVisitFormDto Campus(
         string code, string delegation = "Đoàn ABC", string type = "MEETING", string purpose = "Thăm",
         int startInDays = 20, int durationMin = 120, IList<VisitorDto>? visitors = null,
-        IList<SupportTeamMemberDto>? support = null)
+        IList<SupportTeamMemberDto>? support = null, string contactEmail = "op@example.com")
     {
         var start = Now.AddDays(startInDays);
         return new CampusVisitFormDto(
             code, start, start.AddMinutes(durationMin), delegation, type, null, purpose, "Nội dung",
             visitors ?? new List<VisitorDto> { V("Guest A") },
             support ?? new List<SupportTeamMemberDto>(),
-            // Fixed operational contact so "same content" tests are genuinely identical — only fields a test
-            // explicitly varies (e.g. delegation) drive has_mixed.
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            // Fixed by default so "same content" tests are genuinely identical — only fields a test
+            // explicitly varies (delegation, contact) drive has_mixed. The ADDRESS is what self-match
+            // is decided against, so a test that cares passes its own.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", contactEmail),
+            "EN", null, "DECLINED", null, null);
     }
 
-    private static VisitRequestFormDataV2 Form(string contactEmail, params CampusVisitFormDto[] campuses)
-        => new(Guid.NewGuid().ToString("N"), Reg("registrant@example.com"), Contact(contactEmail), null, campuses.ToList());
+    /// <summary>
+    /// There is no request-level contact any more, so the payload is registrant + campuses. Callers that
+    /// care about self-match set the address on the CAMPUS via <c>Campus(contactEmail: …)</c>.
+    /// </summary>
+    private static VisitRequestFormDataV2 Form(params CampusVisitFormDto[] campuses)
+        => new(Guid.NewGuid().ToString("N"), Reg("registrant@example.com"), null, campuses.ToList());
 
     // ── Tests ──
 
     /// <summary>
-    /// H-4 regression (caught by the real-stack public-create E2E): the operational contact organization and
-    /// email are OPTIONAL. A blank value must persist as NULL — the DB CHECK (TRIM(x) &lt;&gt; '') rejects an
-    /// empty string, so before the fix a blank operational-contact email produced a 500 at create. Name +
-    /// phone stay required.
+    /// The operational contact ORGANIZATION is still optional and a blank one must persist as NULL — the DB
+    /// CHECK (TRIM(x) &lt;&gt; '') rejects an empty string, so a blank value that reached the column as ""
+    /// used to produce a 500 at create (H-4, caught by the real-stack public-create E2E).
+    ///
+    /// <para>
+    /// The EMAIL is no longer in that group. It is the only thing a per-campus confirmation invitation can
+    /// be bound to, so a campus without one could never leave WAITING_CONTACT_CONFIRMATION: the column is
+    /// NOT NULL now and the service refuses the submit outright. This asserts both halves in one place, so
+    /// "optional" cannot quietly grow back to include the email.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task Blank_operational_contact_org_and_email_persist_as_null_not_a_check_violation()
+    public async Task Blank_operational_contact_org_persists_as_null_but_a_blank_email_is_refused()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
         var start = Now.AddDays(20);
-        var campus = new CampusVisitFormDto(
+
+        CampusVisitFormDto CampusWith(string organization, string email) => new(
             "HN", start, start.AddMinutes(30), "Đoàn Optional Op", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { V("Guest A") }, new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "", "+8410", ""), // blank org + email (name + phone present)
-            "EN", null, "DECLINED", null, null, null);
+            new ContactPointDto("Op Contact", organization, "+8410", email),
+            "EN", null, "DECLINED", null, null);
+
+        var blankEmail = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            Svc(db).CreateV2Async(
+                Form(CampusWith("", "")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+        Assert.Contains("email đầu mối vận hành", blankEmail.Message);
 
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", campus), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(CampusWith("", "op-optional@example.com")),
+            Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         var instance = await db.VisitRequestCampuses.FirstAsync(c => c.VisitRequestId == req.VisitRequestId);
         var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instance.VisitInstanceId);
-        Assert.Null(detail.OperationalContactEmail);         // blank → NULL (CHECK satisfied)
         Assert.Null(detail.OperationalContactOrganization);  // blank → NULL
+        Assert.Equal("op-optional@example.com", detail.OperationalContactEmail);
         Assert.Equal("Op Contact", detail.OperationalContactFullName);
         Assert.Equal("+8410", detail.OperationalContactPhone);
     }
@@ -110,7 +129,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx = await db.Database.BeginTransactionAsync();
 
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         // Pure V2: there is no discriminator to assert. What proves the shape is that the single campus
         // instance owns its OWN form detail — content never lives on the request row.
@@ -138,7 +157,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx = await db.Database.BeginTransactionAsync();
 
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.Equal(VisitScopes.MultiCampus, req.VisitScope);
         Assert.False(req.HasMixedCampusDetails);
@@ -155,7 +174,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx = await db.Database.BeginTransactionAsync();
 
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", delegation: "Đoàn A"), Campus("HCM", delegation: "Đoàn B")),
+            Form(Campus("HN", delegation: "Đoàn A"), Campus("HCM", delegation: "Đoàn B")),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.True(req.HasMixedCampusDetails);
@@ -171,7 +190,7 @@ public sealed class CreateVisitRequestV2ServiceTests
 
         // Same form content everywhere; only the campus code and the schedule differ.
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", startInDays: 20), Campus("HCM", startInDays: 25)),
+            Form(Campus("HN", startInDays: 20), Campus("HCM", startInDays: 25)),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.False(req.HasMixedCampusDetails); // schedule/campus never count toward mixed
@@ -188,7 +207,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         // "Copy from campus A" → same person in both campuses, but independent guest_member_id rows.
         var same = new List<VisitorDto> { V("Nguyen Van A") };
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", visitors: same), Campus("HCM", visitors: same)),
+            Form(Campus("HN", visitors: same), Campus("HCM", visitors: same)),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         var instanceIds = await db.VisitRequestCampuses.Where(c => c.VisitRequestId == req.VisitRequestId)
@@ -207,11 +226,16 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx = await db.Database.BeginTransactionAsync();
 
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(Campus("HN", contactEmail: "registrant@example.com")),
+            Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
-        Assert.Equal("ACTIVE", req.PrimaryContactAccessStatus);
-        Assert.Equal(Registrant, req.VisitorUserId);
-        Assert.NotNull(req.PrimaryContactVerifiedAt);
+        // The CAMPUS is linked, not the request: there is no request-level contact to be ACTIVE.
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitRequestId == req.VisitRequestId);
+        Assert.Equal(Registrant, instance.OperationalContactUserId);
+        Assert.Equal(OperationalContactSources.RegistrantSelfMatch, instance.OperationalContactConfirmationSource);
+        Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, instance.Status);
+        // Every campus self-matched, so the gate never closes.
+        Assert.Equal(VisitRequestStatuses.PendingApproval, req.Status);
         Assert.Equal(0, await db.VisitRequestIdentityChanges.CountAsync(x => x.VisitRequestId == req.VisitRequestId));
         await tx.RollbackAsync();
     }
@@ -224,12 +248,16 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var tx = await db.Database.BeginTransactionAsync();
 
         var req = await Svc(db).CreateV2Async(
-            Form("someone-else@example.com", Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(Campus("HN", contactEmail: "someone-else@example.com")),
+            Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
-        Assert.Equal("PENDING_CONFIRMATION", req.PrimaryContactAccessStatus);
-        Assert.Null(req.VisitorUserId); // no account granted until B claims
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitRequestId == req.VisitRequestId);
+        Assert.Null(instance.OperationalContactUserId); // nobody holds the campus until B accepts
+        Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, instance.Status);
+        Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, req.Status);
         var claim = await db.VisitRequestIdentityChanges.SingleAsync(x => x.VisitRequestId == req.VisitRequestId);
-        Assert.Equal("INITIAL_CLAIM", claim.ChangeKind);
+        Assert.Equal(instance.VisitInstanceId, claim.VisitInstanceId); // bound to the CAMPUS
+        Assert.Equal(IdentityChangeKinds.InitialConfirmation, claim.ChangeKind);
         Assert.Equal("PENDING", claim.Status);
         Assert.Equal(72, Math.Round((claim.ExpiresAt - claim.RequestedAt).TotalHours));
         Assert.DoesNotContain("someone-else@example.com", claim.NewEmailMasked); // masked
@@ -246,12 +274,12 @@ public sealed class CreateVisitRequestV2ServiceTests
 
         // 29 min → fail (start.AddMinutes(29))
         await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", durationMin: 29)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+            Form(Campus("HN", durationMin: 29)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
 
         using var db2 = NewContext();
         using var tx2 = await db2.Database.BeginTransactionAsync();
         var ok = await Svc(db2).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", durationMin: 30)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Form(Campus("HN", durationMin: 30)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
         Assert.All(ok.CampusInstances, c => Assert.NotNull(c.FormDetail));
         await tx2.RollbackAsync();
         await tx.RollbackAsync();
@@ -264,7 +292,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
         await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN", durationMin: 0)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+            Form(Campus("HN", durationMin: 0)), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
         await tx.RollbackAsync();
     }
 
@@ -275,7 +303,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
         await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HN"), Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+            Form(Campus("HN"), Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
         await tx.RollbackAsync();
     }
 
@@ -290,7 +318,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         // elect a representative: the old create service used to snapshot the smallest campus_id onto
         // the request, and this asserts there is nothing of the sort left to snapshot.
         var req = await Svc(db).CreateV2Async(
-            Form("registrant@example.com", Campus("HCM", delegation: "Đoàn HCM"), Campus("HN", delegation: "Đoàn HN")),
+            Form(Campus("HCM", delegation: "Đoàn HCM"), Campus("HN", delegation: "Đoàn HN")),
             Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
 
         Assert.True(req.HasMixedCampusDetails);

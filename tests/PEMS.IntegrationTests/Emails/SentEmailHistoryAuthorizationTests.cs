@@ -51,6 +51,13 @@ public sealed class SentEmailHistoryAuthorizationTests : IDisposable
     private const ulong HoH = Base + 17;
     private const ulong StaffLeaderI = Base + 18;
 
+    /// <summary>
+    /// The guest who submitted the request, and — self-matched — this campus's operational contact.
+    /// Never authenticated as an actor here: the suite is about who may read a message's history, and a
+    /// campus past WAITING_CONTACT_CONFIRMATION is simply not allowed to have a NULL contact.
+    /// </summary>
+    private const ulong RegistrantJ = Base + 19;
+
     private const ulong VisitRequestId = Base + 30;
     private const ulong VisitInstanceId = Base + 31;
     private const ulong ParticipantId = Base + 32;
@@ -119,11 +126,13 @@ public sealed class SentEmailHistoryAuthorizationTests : IDisposable
 
         static string Str(string? v) => v is null ? "NULL" : $"'{v}'";
 
-        async Task User(ulong id, string name, string roleCode, string? subRole, bool inIcDept)
+        // A VISITOR must carry neither a campus nor a department — trg_users_validate_bi refuses both —
+        // so the registrant seeded below asks for no campus at all.
+        async Task User(ulong id, string name, string roleCode, string? subRole, bool inIcDept, bool onCampus = true)
             => await db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO users (user_id, full_name, email, role_id, sub_role, primary_campus_id, "
                 + $"department_id, status) VALUES ({id}, {{0}}, {{1}}, {Role(roleCode)}, {Str(subRole)}, "
-                + $"{CampusId}, {(inIcDept ? IcDeptId.ToString() : "NULL")}, 'ACTIVE')",
+                + $"{(onCampus ? CampusId.ToString() : "NULL")}, {(inIcDept ? IcDeptId.ToString() : "NULL")}, 'ACTIVE')",
                 name, Mail(id));
 
         await User(SenderA, "PEMS G5 A Người gửi", "STAFF", "STAFF", true);
@@ -135,24 +144,28 @@ public sealed class SentEmailHistoryAuthorizationTests : IDisposable
         await User(UnrelatedG, "PEMS G5 G Không liên quan", "STAFF", "STAFF", true);
         await User(HoH, "PEMS G5 H Head Office", "HO", null, false);
         await User(StaffLeaderI, "PEMS G5 I Trưởng bộ phận", "STAFF", "LEADER", true);
+        await User(RegistrantJ, "PEMS G5 J Người đăng ký", "VISITOR", null, false, onCampus: false);
 
         // A visit F hosts, with one participant — the business object a linked message hangs off.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_requests (visit_request_id, request_code, status, created_at, "
-            + "registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, "
-            + "registrant_email, registrant_nationality, contact_person_full_name, "
-            + "contact_person_organization, contact_person_phone, contact_person_email) "
-            + "VALUES ({0}, {1}, 'PENDING_APPROVAL', NOW(), 'G5 Người đăng ký', 'G5 Org', 'G5 Title', "
-            + "'0900000000', {2}, 'Việt Nam', 'G5 Đầu mối', 'G5 Org', '0900000001', {2})",
-            VisitRequestId, "G5A-REQ", MailPrefix + "visitor" + MailDomain);
+            + "registrant_user_id, registrant_full_name, registrant_organization, registrant_job_title, "
+            + "registrant_phone, registrant_email, registrant_nationality) "
+            + $"VALUES ({{0}}, {{1}}, 'PENDING_APPROVAL', NOW(), {RegistrantJ}, 'G5 Người đăng ký', "
+            + "'G5 Org', 'G5 Title', '0900000000', {2}, 'Việt Nam')",
+            VisitRequestId, "G5A-REQ", Mail(RegistrantJ));
 
         // ASSIGNED is the earliest status that may carry a host — and the triggers require the full
-        // decision record alongside it, from a same-campus Staff Leader.
+        // decision record alongside it, from a same-campus Staff Leader. It is also past the
+        // confirmation gate, so the campus must name an operational contact; self-matched here.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, status, "
+            + "operational_contact_user_id, operational_contact_confirmed_at, "
+            + "operational_contact_confirmation_source, "
             + "current_host_user_id, host_assigned_by, host_assigned_at, decided_by, decided_at, "
             + "decision_actor_role, decision_source, planned_start_at, planned_end_at, created_at) "
-            + $"VALUES ({{0}}, {{1}}, {{2}}, 'ASSIGNED', {HostF}, {StaffLeaderI}, NOW(), {StaffLeaderI}, "
+            + $"VALUES ({{0}}, {{1}}, {{2}}, 'ASSIGNED', {RegistrantJ}, NOW(), 'REGISTRANT_SELF_MATCH', "
+            + $"{HostF}, {StaffLeaderI}, NOW(), {StaffLeaderI}, "
             + "NOW(), 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', {3}, {4}, NOW())",
             VisitInstanceId, VisitRequestId, CampusId,
             new DateTime(2026, 8, 12, 9, 0, 0), new DateTime(2026, 8, 12, 11, 30, 0));

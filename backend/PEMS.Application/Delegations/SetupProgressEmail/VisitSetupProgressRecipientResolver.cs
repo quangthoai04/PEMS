@@ -54,12 +54,21 @@ public sealed class VisitSetupProgressRecipientResolver : IVisitSetupProgressRec
 
         // ── Guest side → TO ───────────────────────────────────────────────────
         //
-        // "The guest" here means the two people PEMS actually holds an address for: the current primary
-        // contact and the registrant. visit_guest_members — the named delegation roster — carries name,
-        // organisation, job title and nationality and NO email column, so there is nobody else to write
-        // to. Inventing one from a name is the one thing this resolver must never do.
+        // "The guest" here means the two people PEMS actually holds an address for: THIS campus's
+        // operational contact and the registrant. visit_guest_members — the named delegation roster —
+        // carries name, organisation, job title and nationality and NO email column, so there is
+        // nobody else to write to. Inventing one from a name is the one thing this resolver must
+        // never do.
+        //
+        // The contact comes from this instance's own form detail. A sibling campus's contact is a
+        // different person running a different day, and copying them onto this campus's preparation
+        // update would tell them about a visit that is not theirs.
+        var detail = instance.FormDetail
+            ?? await _db.VisitInstanceFormDetails
+                .FirstOrDefaultAsync(d => d.VisitInstanceId == instance.VisitInstanceId, cancellationToken);
+
         var guests = new List<EmailRecipient>();
-        Add(guests, visit.ContactPersonEmail, visit.ContactPersonFullName);
+        Add(guests, detail?.OperationalContactEmail, detail?.OperationalContactFullName);
         Add(guests, visit.RegistrantEmail, visit.RegistrantFullName);
 
         // ── FPT side → CC ─────────────────────────────────────────────────────
@@ -113,7 +122,7 @@ public sealed class VisitSetupProgressRecipientResolver : IVisitSetupProgressRec
             TakeInto(to, internals[0], seen);
             foreach (var i in internals.Skip(1)) TakeInto(cc, i, seen);
             warnings.Add(
-                "Chưa có địa chỉ email nào của phía khách (đầu mối liên hệ / người đăng ký). " +
+                "Chưa có địa chỉ email nào của phía khách (đầu mối vận hành cơ sở này / người đăng ký). " +
                 "Em đã tạm đặt một thành phần tham gia vào mục Đến — anh/chị vui lòng kiểm tra lại người nhận trước khi gửi.");
         }
         else

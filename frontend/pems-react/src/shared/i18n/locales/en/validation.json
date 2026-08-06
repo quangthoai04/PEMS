@@ -76,6 +76,7 @@
     "workingContent": "Working content",
     "transportationNote": "Transportation description",
     "mediaConsentNote": "Media consent note",
-    "notes": "Note to FPTU"
+    "notes": "Note to FPTU",
+    "operationalJobTitle": "On-site contact job title"
   }
 }

@@ -74,13 +74,11 @@ export interface SaveV2DraftOptions {
 export function hasMeaningfulV2Data(values: Partial<VisitRequestV2Schema> | null | undefined): boolean {
   if (!values) return false;
   const reg = values.registerInfo;
-  const cp = values.contactPoint;
   return Boolean(
     reg?.fullName?.trim() ||
     reg?.organization?.trim() ||
     reg?.email?.trim() ||
     reg?.phone?.trim() ||
-    cp?.fullName?.trim() || cp?.email?.trim() || cp?.phone?.trim() ||
     (values.partnerId !== undefined && values.partnerId !== null) ||
     values.campusVisits?.some(cv =>
       cv.campus?.trim() ||

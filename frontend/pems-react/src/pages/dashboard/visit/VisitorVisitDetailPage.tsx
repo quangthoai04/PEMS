@@ -75,7 +75,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
         {summary && <VisitorRequestInfoSection summary={summary} />}
 
         {/* Thông tin người liên hệ (nếu có) */}
-        {summary?.contactPersonFullName && (
+        {summary?.operationalContactFullName && (
           <VisitorContactPersonSection summary={summary} />
         )}
 
@@ -382,10 +382,10 @@ function VisitorContactPersonSection({ summary }: { summary: any }) {
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
       <SectionTitle>Thông tin người liên hệ</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-        <KV label="Họ và tên" value={summary.contactPersonFullName} />
-        <KV label="Email" value={summary.contactPersonEmail} />
-        <KV label="Số điện thoại" value={summary.contactPersonPhone} />
-        <KV label="Tổ chức" value={summary.contactPersonOrganization} />
+        <KV label="Họ và tên" value={summary.operationalContactFullName} />
+        <KV label="Email" value={summary.operationalContactEmail} />
+        <KV label="Số điện thoại" value={summary.operationalContactPhone} />
+        <KV label="Tổ chức" value={summary.operationalContactOrganization} />
       </div>
     </section>
   );

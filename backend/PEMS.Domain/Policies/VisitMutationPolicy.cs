@@ -94,7 +94,11 @@ public static class VisitMutationPolicy
     /// <summary>Minimum lead time before a campus starts, shared by every self-service mutation.</summary>
     public const int RequiredLeadHours = 6;
 
-    /// <summary>Campus states that are decided and have not started — where post-approval actions live.</summary>
+    /// <summary>Campus states that are decided and have not started — where post-approval actions live.
+    /// Both ASSIGNED (Host named, preparation not started) and BEFORE_VISIT (Host preparing) qualify:
+    /// the actions this governs — a requester-side amendment, a host handover — depend on the campus
+    /// having an owner and a future date, not on preparation being underway. Setup mutations are gated
+    /// separately, on BEFORE_VISIT alone.</summary>
     private static bool IsDecidedNotStarted(string instanceStatus) =>
         instanceStatus is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
 
@@ -108,7 +112,8 @@ public static class VisitMutationPolicy
     /// already receiving its delegation must not have the text under it rewritten.
     /// </summary>
     public static bool RequestLevelScope(string instanceStatus) =>
-        instanceStatus is VisitInstanceStatuses.WaitingRequestApproval
+        instanceStatus is VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval
             or VisitInstanceStatuses.Assigned
             or VisitInstanceStatuses.BeforeVisit;
 

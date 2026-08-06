@@ -40,9 +40,15 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
   decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
   delegationName: delegation, visitType: 'MEETING', visitTypeOther: null, purpose: 'Trao đổi', workingContent: 'ND',
   visitors: [{ guestMemberId: id * 10, memberType: 'VISITOR', fullName: `Khách ${code}`, organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
-  supportMembers: [], operationalContact: { fullName: `OP ${code}`, organization: 'ĐH X', phone: '+84912345678', email: 'op@example.com' },
-  workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: null,
-  formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
+  supportMembers: [],
+  operationalContact: {
+    fullName: `OP ${code}`, organization: 'ĐH X', jobTitle: '',
+    phone: '+84912345678', email: 'op@example.com',
+    confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null,
+  },
+  currentHost: null, proposedHost: null,
+  hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
+  workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null,  formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
   cancellationActorType: null, cancellationSource: null, cancellationReason: null,
 });
@@ -53,7 +59,7 @@ const form = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => 
   createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
   registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN' },
-  primaryContact: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'c@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
+  confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
   campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN')],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
   ...overrides,
@@ -83,7 +89,6 @@ describe('EditVisitRequestV2Page', () => {
     expect(await screen.findByDisplayValue('Đoàn HN')).toBeInTheDocument();
     // Registrant + contact emails are read-only (account-binding, immutable on edit):
     expect((screen.getByDisplayValue('reg@x.vn') as HTMLInputElement).readOnly).toBe(true);
-    expect((screen.getByDisplayValue('c@x.vn') as HTMLInputElement).readOnly).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: /Save changes/ }));
 

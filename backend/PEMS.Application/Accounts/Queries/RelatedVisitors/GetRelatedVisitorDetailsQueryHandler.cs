@@ -42,7 +42,7 @@ public sealed class GetRelatedVisitorDetailsQueryHandler
                         && u.DepartmentId == null
                         && u.SubRole == null)
             .Where(u => RelatedVisitorScope.VisibleInstances(_db, campusId)
-                .Any(vrc => vrc.VisitRequest.VisitorUserId == u.UserId))
+                .Any(vrc => vrc.OperationalContactUserId == u.UserId))
             .Select(u => new
             {
                 u.UserId,
@@ -60,7 +60,7 @@ public sealed class GetRelatedVisitorDetailsQueryHandler
             ?? throw new NotFoundException("Account", request.VisitorUserId);
 
         var relatedRequests = await RelatedVisitorScope.VisibleInstances(_db, campusId)
-            .Where(vrc => vrc.VisitRequest.VisitorUserId == request.VisitorUserId)
+            .Where(vrc => vrc.OperationalContactUserId == request.VisitorUserId)
             .OrderByDescending(vrc => vrc.VisitRequest.SubmittedAt)
             .Select(vrc => new RelatedVisitorRequestDto
             {

@@ -24,8 +24,13 @@ public static class VisitRowLabels
     {
         VisitInstanceStatus.Cancelled => "Đã hủy",
         VisitInstanceStatus.Rejected => "Đã bị từ chối",
+        // Behind the confirmation gate: the campus is waiting for its operational contact to answer,
+        // and until every campus has, no Staff Leader sees the request at all.
+        VisitInstanceStatus.WaitingContactConfirmation => "Chờ đầu mối xác nhận",
         VisitInstanceStatus.WaitingRequestApproval => "Chờ xử lý tại cơ sở",
-        VisitInstanceStatus.Assigned => "Đã duyệt và phân công",
+        // Approved with a person named, and that person has not started preparing yet. "Host" is the
+        // internal word; the reader gets the Vietnamese one, like every other label here.
+        VisitInstanceStatus.Assigned => "Đã phân công người phụ trách",
         VisitInstanceStatus.BeforeVisit => "Đang chuẩn bị",
         VisitInstanceStatus.DuringVisit => "Đang tiếp khách",
         VisitInstanceStatus.AfterVisit => "Chờ đóng đoàn",

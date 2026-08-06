@@ -97,35 +97,50 @@ internal static class V2CreateNotifier
     /// <summary>
     /// Post-commit INITIAL_CLAIM invitation (plan §16.4): when the primary contact is NOT the registrant,
     /// the create transaction stored a PENDING claim — this sends the invitation email with the single-use
-    /// claim token. Only the first successful create reaches here (idempotent replays return earlier), so a
-    /// retry never re-invites. Best-effort: on failure the claim stays PENDING and the registrant can resend.
+    /// campus that needs one. A campus whose contact matched the registrant was linked inside the create
+    /// transaction and has no invitation — nothing is sent for it, by design. Only the first successful
+    /// create reaches here (idempotent replays return earlier), so a retry never re-invites. Best-effort
+    /// PER CAMPUS: one address failing must not deny the others theirs, and any that fails stays PENDING
+    /// for the registrant to resend.
     /// </summary>
-    public static async Task SendContactClaimInvitationAfterCommitAsync(
+    public static async Task SendOperationalContactInvitationsAfterCommitAsync(
         IApplicationDbContext db,
-        IVisitContactClaimService claimService,
+        IOperationalContactInvitationService invitations,
         ILogger logger,
         VisitRequest created,
         CancellationToken cancellationToken)
     {
-        if (created.VisitorUserId is not null)
-            return; // contact == registrant → linked at create; no claim exists
-
+        List<ulong> pending;
         try
         {
-            var claimId = await db.VisitRequestIdentityChanges.AsNoTracking()
+            pending = await db.VisitRequestIdentityChanges.AsNoTracking()
                 .Where(c => c.VisitRequestId == created.VisitRequestId
-                            && c.ChangeKind == IdentityChangeKinds.InitialClaim
+                            && c.ChangeKind == IdentityChangeKinds.InitialConfirmation
                             && c.Status == IdentityChangeStatuses.Pending)
-                .Select(c => (ulong?)c.IdentityChangeId)
-                .FirstOrDefaultAsync(cancellationToken);
-            if (claimId is not null)
-                await claimService.SendInvitationAsync(claimId.Value, cancellationToken);
+                .OrderBy(c => c.VisitInstanceId)
+                .Select(c => c.IdentityChangeId)
+                .ToListAsync(cancellationToken);
         }
         catch (System.Exception ex)
         {
             logger.LogError(ex,
-                "create-v2 post-commit contact-claim invitation failed for visit request {VisitRequestId}",
+                "create-v2 could not read pending operational-contact invitations for visit request {VisitRequestId}",
                 created.VisitRequestId);
+            return;
+        }
+
+        foreach (var id in pending)
+        {
+            try
+            {
+                await invitations.SendInvitationAsync(id, cancellationToken);
+            }
+            catch (System.Exception ex)
+            {
+                logger.LogError(ex,
+                    "create-v2 post-commit operational-contact invitation failed for identity change {IdentityChangeId} of visit request {VisitRequestId}",
+                    id, created.VisitRequestId);
+            }
         }
     }
 }

@@ -31,7 +31,6 @@ public sealed class VisitRequestV2ServiceCampusGuardTests
         => new(
             "SUB-1",
             new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", "+84912345678", "reg@example.com"),
-            new ContactPointDto("ĐM", "ĐH X", "+84987654321", "contact@example.com"),
             null,
             campuses!);
 

@@ -129,7 +129,7 @@ public class AuthorizationPolicyTests
         // These four used to hit `return true` and see every request in the system.
         // Their real visibility comes from the delegation read model, not from here.
         var policy = new RoleAccessPolicy();
-        var request = new VisitRequest { VisitRequestId = 10UL, VisitorUserId = 999UL, VisitScope = "SINGLE_CAMPUS" };
+        var request = new VisitRequest { VisitRequestId = 10UL, RegistrantUserId = 999UL, VisitScope = "SINGLE_CAMPUS" };
 
         Assert.False(policy.CanViewVisitRequest(User(roleCode, subRole, campusId: 1UL), request));
     }
@@ -138,11 +138,32 @@ public class AuthorizationPolicyTests
     public void CanViewVisitRequest_lets_a_Visitor_see_only_their_own_request()
     {
         var policy = new RoleAccessPolicy();
-        var own = new VisitRequest { VisitRequestId = 1UL, VisitorUserId = 1UL, VisitScope = "SINGLE_CAMPUS" };
-        var other = new VisitRequest { VisitRequestId = 2UL, VisitorUserId = 2UL, VisitScope = "SINGLE_CAMPUS" };
+        var own = new VisitRequest { VisitRequestId = 1UL, RegistrantUserId = 1UL, VisitScope = "SINGLE_CAMPUS" };
+        var other = new VisitRequest { VisitRequestId = 2UL, RegistrantUserId = 2UL, VisitScope = "SINGLE_CAMPUS" };
 
         Assert.True(policy.CanViewVisitRequest(User(RoleCode.Visitor, SubRole.None), own));
         Assert.False(policy.CanViewVisitRequest(User(RoleCode.Visitor, SubRole.None), other));
+    }
+
+    /// <summary>
+    /// Holding ONE campus of a request as its confirmed operational contact opens the request. Which
+    /// campuses that person then sees is decided per campus by the read model — this gate only answers
+    /// whether the request is any of their business.
+    /// </summary>
+    [Fact]
+    public void CanViewVisitRequest_lets_an_operational_contact_see_the_request_they_operate()
+    {
+        var policy = new RoleAccessPolicy();
+        var operated = new VisitRequest { VisitRequestId = 3UL, RegistrantUserId = 99UL, VisitScope = "MULTI_CAMPUS" };
+        operated.CampusInstances.Add(new VisitRequestCampus { VisitInstanceId = 1UL, CampusId = 1UL });
+        operated.CampusInstances.Add(new VisitRequestCampus { VisitInstanceId = 2UL, CampusId = 2UL, OperationalContactUserId = 1UL });
+
+        var unconfirmed = new VisitRequest { VisitRequestId = 4UL, RegistrantUserId = 99UL, VisitScope = "MULTI_CAMPUS" };
+        unconfirmed.CampusInstances.Add(new VisitRequestCampus { VisitInstanceId = 3UL, CampusId = 1UL });
+
+        Assert.True(policy.CanViewVisitRequest(User(RoleCode.Visitor, SubRole.None), operated));
+        // Invited but not yet confirmed: operational_contact_user_id is still NULL, so nothing opens.
+        Assert.False(policy.CanViewVisitRequest(User(RoleCode.Visitor, SubRole.None), unconfirmed));
     }
 
     [Fact]

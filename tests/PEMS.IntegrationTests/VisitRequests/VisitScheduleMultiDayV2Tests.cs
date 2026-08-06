@@ -51,13 +51,12 @@ public sealed class VisitScheduleMultiDayV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
 
     private static VisitRequestFormDataV2 Form(params CampusVisitFormDto[] campuses)
         => new(
             Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491111", "registrant@example.com"),
-            new ContactPointDto("Contact Person", "Org", "+8490000", "registrant@example.com"),
             null,
             campuses.ToList());
 
@@ -181,7 +180,7 @@ public sealed class VisitScheduleMultiDayV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", transportation, "AGREED", mediaNote, notes, null);
+            "EN", transportation, "AGREED", mediaNote, null);
 
         var req = await Svc(db).CreateV2Async(
             Form(campus), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
@@ -197,7 +196,6 @@ public sealed class VisitScheduleMultiDayV2Tests
         Assert.Equal(4000, detail.WorkingContent!.Length);
         Assert.Equal(2000, detail.TransportationNote!.Length);
         Assert.Equal(2000, detail.MediaConsentNote!.Length);
-        Assert.Equal(2000, detail.NoteToFptu!.Length);
 
         await tx.RollbackAsync();
     }

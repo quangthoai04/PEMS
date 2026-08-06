@@ -5,7 +5,7 @@ import { parseApiDate } from '../../../shared/utils/vietnamTime';
 export type ValidationTranslator = (key: string, options?: Record<string, unknown>) => string;
 export type CreatorRole = 'VISITOR' | 'STAFF' | 'STAFF_LEADER';
 /**
- * Per-campus form v2 schema (plan §5): the form is `registrant` + `primaryContact`
+ * Per-campus form v2 schema (plan §5): the form is `registrant`
  * request-level, plus `campusVisits[]` where EVERY element is a complete, independent
  * snapshot (schedule + content + people + operational contact + requirements).
  * "Same for all campuses" is a one-time UI copy — never a shared/inherited state.
@@ -157,6 +157,9 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       organization: bounded(
         z.string().trim().min(1, t('requiredField', { field: t('fields.operationalOrganization') })),
         200, t('fields.operationalOrganization'), t),
+      // Optional: the detail screens show a job title, but nobody is blocked from submitting
+      // without one — a contact who has not given theirs is still a usable contact.
+      jobTitle: bounded(z.string(), 150, t('fields.operationalJobTitle'), t).optional(),
       phone: buildPhoneSchema(t, 'operationalPhone'),
       email: buildEmailSchema(t, 'operationalEmail'),
     }),
@@ -233,16 +236,6 @@ export const buildVisitRequestV2Schema = (
       email: buildEmailSchema(t, 'registrantEmail'),
       nationality: bounded(
         z.string().trim().min(1, t('nationalityRequired')), 100, t('fields.registrantNationality'), t),
-    }),
-    contactPoint: z.object({
-      fullName: bounded(
-        z.string().trim().min(1, t('requiredField', { field: t('fields.contactFullName') })),
-        150, t('fields.contactFullName'), t),
-      organization: bounded(
-        z.string().trim().min(1, t('requiredField', { field: t('fields.contactOrganization') })),
-        200, t('fields.contactOrganization'), t),
-      phone: buildPhoneSchema(t, 'contactPhone'),
-      email: buildEmailSchema(t, 'contactEmail'),
     }),
     partnerSelectionMode: z.enum(['EXISTING_PARTNER', 'NEW_ORGANIZATION']).default('NEW_ORGANIZATION'),
     partnerId: z.number().nullable().optional(),

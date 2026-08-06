@@ -89,8 +89,11 @@ public sealed class VisitMultiCampusMutationScopeTests
         => new(code, start, start.AddMinutes(120), "Đoàn Mixed", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, "Ghi chú", null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
 
     private static SubmitVisitSafeEditCommandHandler SafeEdit(ApplicationDbContext db)
         => new(db, new FakeUser { UserId = Registrant }, new FixedClock(), new VisitSafeEditService(db),
@@ -108,14 +111,14 @@ public sealed class VisitMultiCampusMutationScopeTests
         {
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser { UserId = Registrant }, new FixedClock(), new VisitRequestV2CreateService(db),
-                new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
                 new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+                new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
             var form = new VisitRequestFormDataV2(
                 "MC" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                 null, new List<CampusVisitFormDto> { Campus("HN", hnStart), Campus("HCM", ctStart) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
@@ -126,12 +129,13 @@ public sealed class VisitMultiCampusMutationScopeTests
                 .SingleAsync(v => v.VisitRequestId == requestId);
             var ordered = visit.CampusInstances.OrderBy(c => c.CampusId).ToList();
 
+            // Approving always lands on ASSIGNED, whatever the test ultimately wants: BEFORE_VISIT may
+            // only be entered from ASSIGNED and DURING_VISIT only from BEFORE_VISIT, and the DB enforces
+            // both. The steps that follow walk the campus the rest of the way, one save each.
             void Decide(Domain.Entities.Delegations.VisitRequestCampus instance, string status)
             {
                 if (status == VisitInstanceStatuses.WaitingRequestApproval) return;
-                instance.Status = status == VisitInstanceStatuses.DuringVisit
-                    ? VisitInstanceStatuses.Assigned // stepped up after the agenda exists
-                    : status;
+                instance.Status = VisitInstanceStatuses.Assigned;
                 instance.CurrentHostUserId = instance.CoordinatorUserId;
                 instance.HostAssignedBy = instance.CoordinatorUserId;
                 instance.HostAssignedAt = Now;
@@ -148,6 +152,16 @@ public sealed class VisitMultiCampusMutationScopeTests
 
             visit.Status = VisitRequestStatuses.Approved;
             visit.RowVersion += 1;
+            await db.SaveChangesAsync();
+
+            // The Host's own step: ASSIGNED → BEFORE_VISIT, for anything that must end up at or past it.
+            foreach (var (instance, wanted) in new[] { (ordered[0], hnStatus), (ordered[1], ctStatus) })
+            {
+                if (wanted != VisitInstanceStatuses.BeforeVisit && wanted != VisitInstanceStatuses.DuringVisit)
+                    continue;
+                instance.Status = VisitInstanceStatuses.BeforeVisit;
+                instance.RowVersion += 1;
+            }
             await db.SaveChangesAsync();
 
             // DURING_VISIT needs an agenda row before the trigger will admit it.
@@ -224,7 +238,7 @@ public sealed class VisitMultiCampusMutationScopeTests
                     SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                         new VisitRequestSafeEditDto(reqV,
                             new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999"),
-                            null, new List<SafeInstancePatchDto>())), CancellationToken.None));
+                            new List<SafeInstancePatchDto>())), CancellationToken.None));
                 Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex.ErrorCode);
             }
 
@@ -232,7 +246,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             using (var db = NewContext())
             {
                 var res = await SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
-                    new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                     {
                         new(hn, instV[hn], null, "Chuẩn bị phiên dịch.", null, null),
                     })), CancellationToken.None);
@@ -269,7 +283,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             using var db = NewContext();
             var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
                 SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
-                    new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                     {
                         new(ct, instV[ct], null, "Sửa khi đang diễn ra", null, null),
                     })), CancellationToken.None));
@@ -298,7 +312,7 @@ public sealed class VisitMultiCampusMutationScopeTests
                 SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
                         new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84777777"),
-                        null, new List<SafeInstancePatchDto>())), CancellationToken.None));
+                        new List<SafeInstancePatchDto>())), CancellationToken.None));
             Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex.ErrorCode);
         }
         finally { await CleanupAsync(requestId); }
@@ -322,7 +336,7 @@ public sealed class VisitMultiCampusMutationScopeTests
                 SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
                         new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84555555"),
-                        null, new List<SafeInstancePatchDto>())), CancellationToken.None));
+                        new List<SafeInstancePatchDto>())), CancellationToken.None));
             Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
             Assert.NotNull(ex.CampusName);
         }
@@ -381,9 +395,9 @@ public sealed class VisitMultiCampusMutationScopeTests
 
             using (var db = NewContext())
                 await SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
-                    new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                     {
-                        new(hn, instV[hn], "Xe 45 chỗ", null, null, null),
+                        new(hn, instV[hn], null, "Xe 45 chỗ", null, null),
                     })), CancellationToken.None);
 
             using (var db = NewContext())

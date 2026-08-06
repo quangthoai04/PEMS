@@ -75,16 +75,12 @@ public sealed class VisitRequestHistoryV2Tests
         var req = new VisitRequest
         {
             RequestCode = "HIST-" + Guid.NewGuid().ToString("N")[..12],
-            VisitorUserId = VisitorOwner,
             RegistrantUserId = VisitorOwner,
             CreatedSource = "VISITOR_SUBMITTED",
             HasMixedCampusDetails = true,
             RegistrantFullName = "Reg", RegistrantOrganization = "Org", RegistrantJobTitle = "Job",
             RegistrantPhone = "+8490", RegistrantEmail = "reg@example.com", RegistrantNationality = "VN",
             VisitScope = "MULTI_CAMPUS",
-            ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
-            ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-            PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = now,
             Status = "PARTIALLY_APPROVED", SubmittedAt = now, CreatedAt = now,
         };
 
@@ -96,6 +92,12 @@ public sealed class VisitRequestHistoryV2Tests
                 PlannedStartAt = now.AddDays(20),
                 PlannedEndAt = now.AddDays(20).AddHours(2),
                 Status = host is null ? "WAITING_REQUEST_APPROVAL" : "ASSIGNED",
+                // Self-matched: the registrant is each campus's operational contact, so both campuses sit
+                // past the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with no
+                // contact is refused by trg_visit_campuses_op_contact_guard_bi.
+                OperationalContactUserId = VisitorOwner,
+                OperationalContactConfirmedAt = now,
+                OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
                 CurrentHostUserId = host,
                 HostAssignedBy = host is null ? null : SlCampus1,
                 HostAssignedAt = host is null ? null : now,

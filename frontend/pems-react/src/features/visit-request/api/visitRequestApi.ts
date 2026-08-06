@@ -44,11 +44,20 @@ export interface PublicPartnerOptionDto {
 
 // ── Authenticated create (Visitor / IC Staff / Staff Leader) ────────────────
 
-/** Per-campus processing mode for the authenticated create (backend revalidates all). */
-export interface CampusProcessingChoice {
+/**
+ * Per-campus reception-host arrangement chosen on the authenticated create form.
+ *
+ * It records an INTENTION. Nothing here assigns anybody: the backend stores it as a proposal and
+ * activates it — after revalidating it — only when the request's confirmation gate opens. The
+ * backend revalidates the whole choice regardless of what the form allowed the user to click.
+ */
+export interface CampusHostSelectionChoice {
   campusId: string; // campus CODE ("HN", "HCM", ...)
-  mode: 'SEND_FOR_REVIEW' | 'SELF_HOST' | 'ASSIGN_HOST';
-  hostUserId?: number | null;
+  mode: 'SELF' | 'SELECTED' | 'WAIT_FOR_LATER';
+  /** Required for SELECTED only; SELF is resolved from the session server-side. */
+  proposedHostUserId?: number | null;
+  /** Acknowledges the non-blocking schedule-overlap warning for this campus. */
+  confirmedHostConflict?: boolean;
 }
 
 export interface AuthenticatedCreateResponse {

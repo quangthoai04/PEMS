@@ -2,29 +2,34 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../shared/hooks/useAuth';
 import {
-  acceptContactClaim,
-  acceptContactTransfer,
-  declineContactClaim,
-  declineContactTransfer,
-  getContactClaimInfo,
-  getContactTransferInfo,
-  type ContactClaimInfo,
-  type ContactTransferInfo,
+  acceptOperationalContactInvitation,
+  declineOperationalContactInvitation,
+  getOperationalContactInvitationInfo,
+  type OperationalContactInvitationInfo,
 } from '../../features/visit-request/api/visitRequestV2Api';
 
 type InvitationKind = 'claim' | 'transfer';
 
 interface Props {
+  /**
+   * Which wording to lead with. It is a HINT only: the invitation itself knows whether it is an
+   * initial confirmation or a transfer, and the page re-reads that from the loaded record rather
+   * than trusting the route — the same token answered through the wrong URL must still do the right
+   * thing.
+   */
   kind: InvitationKind;
 }
 
-type Info = (ContactClaimInfo | ContactTransferInfo) & { requestedByName?: string | null };
+type Info = OperationalContactInvitationInfo;
 
 /**
- * Landing page for the primary-contact INITIAL_CLAIM (72h) and TRANSFER (24h) email links.
- * The anonymous GET only ever shows MASKED data; opening the link or logging in never applies
- * anything — only the explicit "Đồng ý làm đầu mối" POST does, and the backend requires the
- * logged-in Google account's email to equal the invited email exactly.
+ * Landing page for the per-campus operational-contact invitation links: INITIAL_CONFIRMATION (72h)
+ * and TRANSFER (24h) both arrive here, because a link is a link and the invitation knows which it is.
+ *
+ * The anonymous GET only ever shows MASKED data for ONE campus — never a sibling campus and never
+ * form content. Opening the link or logging in applies nothing: only the explicit "Đồng ý làm đầu
+ * mối" POST does, and the backend requires the signed-in account's email to equal the invited
+ * address exactly. Possession of a token proves nothing on its own.
  */
 export default function VisitContactInvitationPage({ kind }: Props) {
   const { token = '' } = useParams();
@@ -38,9 +43,14 @@ export default function VisitContactInvitationPage({ kind }: Props) {
   const [declineMode, setDeclineMode] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
 
+  // The loaded record is the authority on which kind this is; the route only decides what to show
+  // during the first render, before anything has loaded.
+  const effectiveKind: InvitationKind =
+    info?.kind === 'TRANSFER' ? 'transfer' : info?.kind === 'INITIAL_CONFIRMATION' ? 'claim' : kind;
+
   const labels = useMemo(
     () =>
-      kind === 'claim'
+      effectiveKind === 'claim'
         ? {
             title: 'Lời mời làm đầu mối liên hệ',
             intro: 'Bạn được chỉ định làm đầu mối liên hệ cho đơn đăng ký tham quan dưới đây.',
@@ -54,14 +64,13 @@ export default function VisitContactInvitationPage({ kind }: Props) {
             acceptCta: 'Đồng ý tiếp nhận vai trò',
             windowNote: 'Lời mời có hiệu lực 24 giờ kể từ khi gửi.',
           },
-    [kind],
+    [effectiveKind],
   );
 
   const loadInfo = useCallback(async () => {
     setLoading(true);
     try {
-      const data = kind === 'claim' ? await getContactClaimInfo(token) : await getContactTransferInfo(token);
-      setInfo(data as Info);
+      setInfo(await getOperationalContactInvitationInfo(token));
     } catch {
       setInfo(null);
     } finally {
@@ -76,14 +85,11 @@ export default function VisitContactInvitationPage({ kind }: Props) {
   const act = async (action: 'accept' | 'decline') => {
     setSubmitting(true);
     try {
-      const result =
-        kind === 'claim'
-          ? action === 'accept'
-            ? await acceptContactClaim(token)
-            : await declineContactClaim(token, declineReason || undefined)
-          : action === 'accept'
-            ? await acceptContactTransfer(token)
-            : await declineContactTransfer(token, declineReason || undefined);
+      // One pair of endpoints for both kinds: the invitation decides the effect, not the URL the
+      // recipient happened to be sent.
+      const result = action === 'accept'
+        ? await acceptOperationalContactInvitation(token)
+        : await declineOperationalContactInvitation(token, declineReason || undefined);
       setOutcome({ ok: action === 'accept', message: result.message });
     } catch (err: unknown) {
       const message =
@@ -156,10 +162,12 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                 <dt className="text-gray-500 dark:text-gray-400">Email được mời</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{info.maskedEmail ?? '—'}</dd>
               </div>
-              {'requestedByName' in info && info.requestedByName ? (
+              {/* The campus this invitation is about. It is the whole point of a per-campus
+                  invitation: accepting binds the recipient to THIS campus and no other. */}
+              {info.campusName ? (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500 dark:text-gray-400">Người đề nghị</dt>
-                  <dd className="font-medium text-gray-900 dark:text-gray-100">{info.requestedByName}</dd>
+                  <dt className="text-gray-500 dark:text-gray-400">Cơ sở</dt>
+                  <dd className="font-medium text-gray-900 dark:text-gray-100">{info.campusName}</dd>
                 </div>
               ) : null}
               {info.expiresAt && (

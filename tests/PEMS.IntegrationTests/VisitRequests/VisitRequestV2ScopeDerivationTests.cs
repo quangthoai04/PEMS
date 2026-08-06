@@ -32,7 +32,7 @@ public class VisitRequestV2ScopeDerivationTests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto(opContactName, "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
     }
 
     // ── scope: purely a function of how many DISTINCT campuses ───────────────────
@@ -124,7 +124,7 @@ public class VisitRequestV2ScopeDerivationTests
             },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
 
         Assert.True(VisitRequestV2Canonical.ComputeHasMixed(new List<CampusVisitFormDto> { hn, hcm }));
     }

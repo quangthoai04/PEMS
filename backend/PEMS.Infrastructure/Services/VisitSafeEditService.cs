@@ -64,18 +64,6 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             Diff(changes, VisitFieldClassifier.RegistrantPhone, null,
                 request.RegistrantPhone, Clean(reg.Phone), v => request.RegistrantPhone = v);
         }
-        if (patch.Contact is { } contact)
-        {
-            if (string.IsNullOrWhiteSpace(contact.FullName) || string.IsNullOrWhiteSpace(contact.Phone))
-                throw new BusinessRuleException("Họ tên/điện thoại đầu mối liên hệ không được để trống.",
-                    VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
-            Diff(changes, VisitFieldClassifier.ContactFullName, null,
-                request.ContactPersonFullName, contact.FullName.Trim(), v => request.ContactPersonFullName = v!);
-            Diff(changes, VisitFieldClassifier.ContactOrganization, null,
-                request.ContactPersonOrganization, Clean(contact.Organization), v => request.ContactPersonOrganization = v);
-            Diff(changes, VisitFieldClassifier.ContactPhone, null,
-                request.ContactPersonPhone, contact.Phone.Trim(), v => request.ContactPersonPhone = v!);
-        }
 
         // ── 2. Per-instance safe subset ──
         var touchedInstances = new List<VisitRequestCampus>();
@@ -118,9 +106,23 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             if (ip.TransportationNote is not null)
                 Diff(changes, VisitFieldClassifier.TransportationNote, instance.VisitInstanceId,
                     detail.TransportationNote, Clean(ip.TransportationNote), v => detail.TransportationNote = v);
-            if (ip.NoteToFptu is not null)
-                Diff(changes, VisitFieldClassifier.NoteToFptu, instance.VisitInstanceId,
-                    detail.NoteToFptu, Clean(ip.NoteToFptu), v => detail.NoteToFptu = v);
+            if (ip.OperationalContact is { } contact)
+            {
+                if (string.IsNullOrWhiteSpace(contact.FullName) || string.IsNullOrWhiteSpace(contact.Phone))
+                    throw new BusinessRuleException("Họ tên/điện thoại đầu mối vận hành không được để trống.",
+                        VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+                // Display fields only. The email is what an invitation binds to, so changing it is a
+                // replace/transfer that needs a fresh confirmation — never a safe edit.
+                Diff(changes, VisitFieldClassifier.ContactFullName, instance.VisitInstanceId,
+                    detail.OperationalContactFullName, contact.FullName.Trim(),
+                    v => detail.OperationalContactFullName = v!);
+                Diff(changes, VisitFieldClassifier.ContactOrganization, instance.VisitInstanceId,
+                    detail.OperationalContactOrganization, Clean(contact.Organization),
+                    v => detail.OperationalContactOrganization = v);
+                Diff(changes, VisitFieldClassifier.ContactPhone, instance.VisitInstanceId,
+                    detail.OperationalContactPhone, contact.Phone.Trim(),
+                    v => detail.OperationalContactPhone = v!);
+            }
             if (ip.MediaConsentNote is not null)
                 Diff(changes, VisitFieldClassifier.MediaConsentNote, instance.VisitInstanceId,
                     detail.MediaConsentNote, Clean(ip.MediaConsentNote), v => detail.MediaConsentNote = v);
@@ -307,7 +309,6 @@ internal static class V2CanonicalRefresh
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(contents);
         var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
             VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
-            VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
             scope, contents);
 
         // Pure V2: form content lives ONLY in each campus's visit_instance_form_details. The request row
@@ -340,6 +341,6 @@ internal static class V2CanonicalRefresh
                 d.OperationalContactFullName ?? string.Empty, d.OperationalContactOrganization ?? string.Empty,
                 d.OperationalContactPhone ?? string.Empty, d.OperationalContactEmail ?? string.Empty),
             d.WorkingLanguage ?? "EN", d.TransportationNote, d.MediaConsentStatus ?? "DECLINED", d.MediaConsentNote,
-            d.NoteToFptu, null);
+            null);
     }
 }

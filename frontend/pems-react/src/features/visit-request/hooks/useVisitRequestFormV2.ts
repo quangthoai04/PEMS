@@ -30,7 +30,7 @@ import {
   type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
 import { countFieldErrors } from '../utils/formErrorNavigation';
-import { visitRequestApi, type CampusProcessingChoice } from '../api/visitRequestApi';
+import { visitRequestApi, type CampusHostSelectionChoice } from '../api/visitRequestApi';
 import {
   createVisitRequestV2,
   initiateVisitRequestV2,
@@ -202,7 +202,6 @@ const cloneValues = (value: VisitRequestV2Schema): VisitRequestV2Schema =>
 
 export const DEFAULT_VISIT_REQUEST_V2_VALUES = (): VisitRequestV2Schema => ({
   registerInfo: { fullName: '', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
-  contactPoint: { fullName: '', organization: '', phone: '', email: '' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [createEmptyCampusVisit()],
@@ -214,7 +213,7 @@ export interface UseVisitRequestFormV2Options {
   /** Per-user namespace for the draft storage (required in authenticated mode). */
   draftNamespace?: string;
   /** Supplier of per-campus processing choices (authenticated Staff/Leader only). */
-  getCampusProcessing?: () => CampusProcessingChoice[];
+  getCampusHostSelections?: () => CampusHostSelectionChoice[];
   /**
    * Authenticated mode only: the signed-in user's own email. It decides which submit contract the form
    * uses — the session can only vouch for THIS mailbox, so a form naming anybody else has to prove that
@@ -552,7 +551,7 @@ export const useVisitRequestFormV2 = (
         saveDraftNow({ submissionId });
         const submittedValues = cloneValues(data);
         const payload = buildV2CreatePayload(
-          submittedValues, submissionId, options?.getCampusProcessing?.() ?? []);
+          submittedValues, submissionId, options?.getCampusHostSelections?.() ?? []);
         const result = await createVisitRequestV2(payload);
         submissionIdRef.current = null;
         setPendingOtp(null);
@@ -759,8 +758,7 @@ export const useVisitRequestFormV2 = (
           requestCode: lookup.requestCode ?? '',
           visitScope: (values.campusVisits?.length ?? 0) > 1 ? 'MULTI_CAMPUS' : 'SINGLE_CAMPUS',
           hasMixedCampusDetails: false,
-          primaryContactAccessStatus: '',
-          contactClaimPending: false,
+          pendingConfirmations: 0,
           instances: [],
           idempotent: true,
           status: lookup.status ?? '',

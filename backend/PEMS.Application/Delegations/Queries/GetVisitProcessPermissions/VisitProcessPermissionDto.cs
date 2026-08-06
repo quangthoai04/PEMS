@@ -40,10 +40,17 @@ public sealed class VisitProcessPermissionDto
     public bool CanViewNews { get; set; }
     public bool CanCreateNews { get; set; }
 
+    /// <summary>
+    /// ASSIGNED → BEFORE_VISIT: the current Host may press "Bắt đầu chuẩn bị" and open the setup
+    /// window. True only for the current Host of a live campus that is still ASSIGNED. This and
+    /// <see cref="CanEditBeforeVisit"/> are never both true — that is the whole point of the state.
+    /// </summary>
+    public bool CanStartPreparation { get; set; }
+
     // Operational stage transitions (Host only, live instance):
-    //   CanStartVisit    : ASSIGNED/BEFORE_VISIT → DURING_VISIT (finish preparation)
-    //   CanCompleteVisit : DURING_VISIT          → AFTER_VISIT  (finish the visit)
-    //   CanCloseVisit    : AFTER_VISIT           → CLOSED       (close the delegation)
+    //   CanStartVisit    : BEFORE_VISIT → DURING_VISIT (finish preparation)
+    //   CanCompleteVisit : DURING_VISIT → AFTER_VISIT  (finish the visit)
+    //   CanCloseVisit    : AFTER_VISIT  → CLOSED       (close the delegation)
     public bool CanStartVisit { get; set; }
     public bool CanCompleteVisit { get; set; }
     public bool CanCloseVisit { get; set; }

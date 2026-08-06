@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
-  cancelContactTransfer,
-  getActiveContactTransfer,
-  initiateContactTransfer,
-  replacePendingContact,
-  resendContactClaim,
-  resendContactTransfer,
-  type ContactTransferState,
+  cancelOperationalContactChange,
+  getOperationalContactState,
+  initiateOperationalContactTransfer,
+  replaceOperationalContact,
+  resendOperationalContactConfirmation,
+  type OperationalContactState,
 } from '../api/visitRequestV2Api';
 import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
@@ -18,8 +17,14 @@ import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
 
 interface Props {
   visitRequestId: number;
-  /** ACTIVE | PENDING_CONFIRMATION — describes the contact's state to the reader. */
-  primaryContactAccessStatus: string;
+  /**
+   * The campus this panel acts on. Every action below names it: a contact belongs to ONE campus, and
+   * a request-level version of this panel is exactly how one person used to acquire authority over
+   * campuses they were never invited to.
+   */
+  visitInstanceId: number;
+  /** True once an account actually holds this campus — decides confirmation vs transfer actions. */
+  contactConfirmed: boolean;
   /** The contact's email: shown in the state line, and compared to block a same-address transfer. */
   contactEmail?: string | null;
   /**
@@ -67,13 +72,14 @@ const fieldCls =
  */
 export default function ContactIdentityActions({
   visitRequestId,
-  primaryContactAccessStatus,
+  visitInstanceId,
+  contactConfirmed,
   contactEmail,
   allowedActions,
   onChanged,
 }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'validation']);
-  const isPending = primaryContactAccessStatus === 'PENDING_CONFIRMATION';
+  const isPending = !contactConfirmed;
 
   const can = useMemo(() => ({
     resendClaim: hasAction(allowedActions, VisitV2Action.ResendContactClaim),
@@ -84,7 +90,7 @@ export default function ContactIdentityActions({
   }), [allowedActions]);
   const hasAnyAction = Object.values(can).some(Boolean);
 
-  const [transfer, setTransfer] = useState<ContactTransferState | null>(null);
+  const [transfer, setTransfer] = useState<OperationalContactState | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,7 +105,7 @@ export default function ContactIdentityActions({
     setLoading(true);
     setLoadError(false);
     try {
-      setTransfer(await getActiveContactTransfer(visitRequestId));
+      setTransfer(await getOperationalContactState(visitRequestId, visitInstanceId));
     } catch {
       // NOT "no transfer" — we simply do not know, and saying "none" would be a guess that leads the
       // user into starting a duplicate transfer.
@@ -108,7 +114,7 @@ export default function ContactIdentityActions({
     } finally {
       setLoading(false);
     }
-  }, [visitRequestId, transferRelevant]);
+  }, [visitRequestId, visitInstanceId, transferRelevant]);
 
   useEffect(() => {
     void refreshTransfer();
@@ -149,13 +155,13 @@ export default function ContactIdentityActions({
     setEmailError(null);
     void run(() =>
       mode === 'replace'
-        ? replacePendingContact(visitRequestId, {
+        ? replaceOperationalContact(visitRequestId, visitInstanceId, {
             fullName: form.fullName,
             organization: form.organization,
             phone: form.phone,
             email: form.email,
           })
-        : initiateContactTransfer(visitRequestId, {
+        : initiateOperationalContactTransfer(visitRequestId, visitInstanceId, {
             fullName: form.fullName,
             organization: form.organization,
             phone: form.phone,
@@ -278,10 +284,13 @@ export default function ContactIdentityActions({
     </form>
   );
 
-  const pendingTransfer = transfer?.hasPendingTransfer === true;
+  const pendingTransfer = (transfer?.pendingChangeKind === 'TRANSFER') === true;
 
   return (
-    <div data-testid="contact-identity-actions" className="mt-4 border-t border-slate-200 pt-4">
+    <div
+      data-testid={`contact-identity-actions-${visitInstanceId}`}
+      className="mt-4 border-t border-slate-200 pt-4"
+    >
       <p className="text-xs font-bold uppercase tracking-wide text-[#004c91]">
         {t('visitRequestV2:contact.manageTitle')}
       </p>
@@ -318,7 +327,7 @@ export default function ContactIdentityActions({
       {pendingTransfer && (
         <p className="mt-2 text-sm text-amber-700">
           {t('visitRequestV2:contact.transferPending', {
-            email: transfer?.newEmailMasked ?? '',
+            email: transfer?.pendingEmailMasked ?? '',
             expiresAt: transfer?.expiresAt ? formatVietnamDateTime(transfer.expiresAt) : '',
           })}
         </p>
@@ -338,7 +347,7 @@ export default function ContactIdentityActions({
               disabled={busy}
               data-testid="contact-resend-claim"
               className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
-              onClick={() => void run(() => resendContactClaim(visitRequestId))}
+              onClick={() => void run(() => resendOperationalContactConfirmation(visitRequestId, visitInstanceId))}
             >
               {t('visitRequestV2:contact.resendInvitation')}
             </button>
@@ -359,7 +368,7 @@ export default function ContactIdentityActions({
               disabled={busy}
               data-testid="contact-resend-transfer"
               className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
-              onClick={() => void run(() => resendContactTransfer(visitRequestId))}
+              onClick={() => void run(() => resendOperationalContactConfirmation(visitRequestId, visitInstanceId))}
             >
               {t('visitRequestV2:contact.resendInvitation')}
             </button>
@@ -370,7 +379,7 @@ export default function ContactIdentityActions({
               disabled={busy}
               data-testid="contact-cancel-transfer"
               className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-              onClick={() => void run(() => cancelContactTransfer(visitRequestId))}
+              onClick={() => void run(() => cancelOperationalContactChange(visitRequestId, visitInstanceId))}
             >
               {t('visitRequestV2:contact.cancelTransfer')}
             </button>

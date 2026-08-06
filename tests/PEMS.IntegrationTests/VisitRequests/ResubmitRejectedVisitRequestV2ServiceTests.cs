@@ -45,22 +45,25 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
     }
 
     private static CampusVisitFormDto Campus(string code, string delegation = "Đoàn Base",
-        string visitorName = "Guest A", int startOffsetDays = 20, int durationMinutes = 120)
+        string visitorName = "Guest A", int startOffsetDays = 20, int durationMinutes = 120,
+        // Defaults to the REGISTRANT'S own address so the campus self-matches at submit — confirmed with
+        // no invitation, gate open. The tests here reject and resubmit campuses, and neither is possible
+        // behind the confirmation gate. Cases that need a distinct contact pass one explicitly.
+        string? contactEmail = null)
     {
         var start = Now.AddDays(startOffsetDays);
         return new CampusVisitFormDto(
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", contactEmail ?? V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
     }
 
     private static VisitRequestFormDataV2 CreateForm(params CampusVisitFormDto[] campuses)
         => new(
             Guid.NewGuid().ToString("N"),
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-            new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
 
     private static CampusVisitEditV2Dto Slot(VisitRequestCampus instance, CampusVisitFormDto content, ulong? overrideId = null)
@@ -69,15 +72,13 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote, content.Notes);
+            content.MediaConsentNote);
 
     private static VisitRequestEditV2Dto Edit(VisitRequest request, params CampusVisitEditV2Dto[] campuses)
         => new(request.RowVersion,
             new RegistrantInputV2(request.RegistrantFullName, request.RegistrantNationality ?? "VN",
                 request.RegistrantOrganization, request.RegistrantJobTitle ?? "Job",
                 request.RegistrantPhone ?? "+8491", request.RegistrantEmail),
-            new ContactPointDto(request.ContactPersonFullName, request.ContactPersonOrganization ?? "Org",
-                request.ContactPersonPhone ?? "+8491", request.ContactPersonEmail),
             request.PartnerId, campuses.ToList());
 
     private static VisitRequestCampus InstanceOf(VisitRequest r, string code)
@@ -228,7 +229,7 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
                 new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
                 new List<SupportTeamMemberDto>(),
                 new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-                "EN", null, "DECLINED", null, null);
+                "EN", null, "DECLINED", null);
             var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, Campus("HN")), Slot(hcm, Campus("HCM")), addSlot),
                     Registrant, Now, default));
@@ -328,7 +329,12 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
 
             var bad = Edit(r, Slot(InstanceOf(r, "HN"), Campus("HN"))) with
             {
-                PrimaryContact = new ContactPointDto("Registrant", "Org", "+8491", "swapped@example.com"),
+                CampusVisits = new List<CampusVisitEditV2Dto>
+                {
+                    // A rejected campus keeps the person who confirmed it: resubmitting is a second
+                    // attempt at the same visit, not a way to hand it to a different address.
+                    Slot(InstanceOf(r, "HN"), Campus("HN", contactEmail: "swapped@example.com")),
+                },
             };
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, bad, Registrant, Now, default));

@@ -12,6 +12,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.AgendaTemplates.Commands.ApplyAgendaTemplate;
 
 public sealed class ApplyAgendaTemplateCommandHandler
@@ -50,8 +51,7 @@ public sealed class ApplyAgendaTemplateCommandHandler
             throw new ConflictException("Cơ sở này đã bị hủy nên không thể áp dụng mẫu lịch trình.");
         if (instance.Status == VisitInstanceStatus.Closed)
             throw new ConflictException("Cơ sở này đã đóng đoàn nên không thể áp dụng mẫu lịch trình.");
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể áp dụng mẫu lịch trình trong giai đoạn chuẩn bị (trước tiếp khách).");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "áp dụng mẫu lịch trình");
 
         var template = await _db.AgendaTemplates
             .Include(t => t.Items)

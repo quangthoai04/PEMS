@@ -91,7 +91,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
         string? purpose = detail.Purpose, workingContent = detail.WorkingContent;
         string? workingLanguage = detail.WorkingLanguage;
         string? mediaConsentStatus = detail.MediaConsentStatus, mediaConsentNote = detail.MediaConsentNote;
-        string? transportationNote = detail.TransportationNote, noteToFptu = detail.NoteToFptu;
+        string? transportationNote = detail.TransportationNote;
         var guestMembers = detail.Visitors.Select(MapRow).ToList();
         var externalSupportMembers = detail.SupportMembers.Select(MapRow).ToList();
 
@@ -122,12 +122,11 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             MediaConsentStatus = mediaConsentStatus,
             MediaConsentNote = mediaConsentNote,
             TransportationNote = transportationNote,
-            NoteToFptu = noteToFptu,
 
-            ContactPersonFullName = visit.ContactPersonFullName,
-            ContactPersonOrganization = visit.ContactPersonOrganization,
-            ContactPersonPhone = visit.ContactPersonPhone,
-            ContactPersonEmail = visit.ContactPersonEmail,
+            OperationalContactFullName = detail.OperationalContact.FullName,
+            OperationalContactOrganization = detail.OperationalContact.Organization,
+            OperationalContactPhone = detail.OperationalContact.Phone,
+            OperationalContactEmail = detail.OperationalContact.Email,
 
             Campuses = visit.CampusInstances
                 .OrderBy(c => c.PlannedStartAt)

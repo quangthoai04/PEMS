@@ -20,10 +20,10 @@ namespace PEMS.UnitTests.Delegations.ExportScheduleReport;
 public class ExportScheduleReportPdfQueryHandlerTests
 {
     private static (ScheduleReportTestDbContext Db, ExportScheduleReportPdfQueryHandler Handler, FakeScheduleReportCurrentUser CurrentUser)
-        CreateSut(string instanceStatus = VisitInstanceStatus.BeforeVisit, ulong? partnerId = null, ulong? visitorUserId = null)
+        CreateSut(string instanceStatus = VisitInstanceStatus.BeforeVisit, ulong? partnerId = null, ulong? registrantUserId = null)
     {
         var db = ScheduleReportTestDbContext.Create();
-        ScheduleReportTestData.SeedBase(db, instanceStatus, partnerId, visitorUserId);
+        ScheduleReportTestData.SeedBase(db, instanceStatus, partnerId, registrantUserId);
 
         var currentUser = new FakeScheduleReportCurrentUser();
         var handler = CreateHandler(db, currentUser);
@@ -127,7 +127,7 @@ public class ExportScheduleReportPdfQueryHandlerTests
     [Fact]
     public async Task Handle_allows_the_visitor_owner_to_download()
     {
-        var (db, handler, currentUser) = CreateSut(visitorUserId: 500);
+        var (db, handler, currentUser) = CreateSut(registrantUserId: 500);
         db.Users.Add(ScheduleReportTestData.CreateUser(500, ScheduleReportTestData.VisitorRoleId, null, null));
         db.SaveChanges();
         currentUser.UserId = 500;

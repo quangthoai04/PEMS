@@ -20,8 +20,13 @@ public sealed record CreateVisitRequestV2Response(
     string RequestCode,
     string VisitScope,
     bool HasMixedCampusDetails,
-    string PrimaryContactAccessStatus,
-    bool ContactClaimPending,
+    /// <summary>
+    /// How many campuses still need their operational contact to confirm. Zero means every campus
+    /// self-matched the registrant, so nothing was mailed and the request went straight to its Staff
+    /// Leaders. This replaced the single request-level "contact claim pending" flag, which could not
+    /// describe a request where two of four campuses had confirmed.
+    /// </summary>
+    int PendingContactConfirmations,
     IReadOnlyList<CreateVisitRequestV2CampusRef> Instances,
     bool Idempotent,
     // ── The receipt (plan §15) ──

@@ -9,6 +9,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.CompleteVisitStage;
 
 /// <summary>
@@ -66,7 +67,11 @@ public sealed class CompleteVisitStageCommandHandler
         {
             case VisitStageKeys.Before:
                 // Finish preparation → start the visit.
-                if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
+                if (instance.Status == VisitInstanceStatus.Assigned)
+                    throw new ConflictException(
+                        "Không thể bắt đầu tiếp khách. Bạn chưa bắt đầu giai đoạn chuẩn bị cho cơ sở này.",
+                        VisitRequestErrorCodes.VisitPreparationNotStarted);
+                if (instance.Status != VisitInstanceStatus.BeforeVisit)
                     throw new ConflictException("Không thể bắt đầu tiếp khách. Cơ sở chưa ở giai đoạn chuẩn bị.");
 
                 // Precondition: no mandatory preparation item may still be blocking. Today the only
@@ -245,9 +250,11 @@ public sealed class CompleteVisitStageCommandHandler
         if (newStatus == VisitInstanceStatus.AfterVisit)
         {
             var feedbackUrl = $"/dashboard/visit?visitRequestId={instance.VisitRequestId}&feedbackVisitInstanceId={instance.VisitInstanceId}";
-            var visitorRecipients = new HashSet<ulong>();
-            if (instance.VisitRequest?.VisitorUserId != null) visitorRecipients.Add(instance.VisitRequest.VisitorUserId.Value);
-            if (instance.VisitRequest?.RegistrantUserId != null) visitorRecipients.Add(instance.VisitRequest.RegistrantUserId.Value);
+            // The feedback invitation asks about THIS campus, so it goes to the person who was
+            // here — its operational contact — and to the registrant.
+            var visitorRecipients = instance.VisitRequest is null
+                ? Enumerable.Empty<ulong>()
+                : VisitRequestOwnership.GuestSideRecipients(instance.VisitRequest, instance);
 
             foreach (var recipientId in visitorRecipients)
             {
@@ -290,12 +297,16 @@ public sealed class CompleteVisitStageCommandHandler
             }
         }
 
-        if (newStatus == VisitInstanceStatus.Closed)
+        if (newStatus == VisitInstanceStatus.Closed && instance.VisitRequest is not null)
         {
-            if (instance.VisitRequest?.VisitorUserId != null)
+            // Closing is news about THIS campus, so the campus's contact and the registrant both hear
+            // it. The registrant used to be left out entirely: on a request they submitted for
+            // somebody else, nothing ever told them it had finished.
+            foreach (var recipientId in
+                     VisitRequestOwnership.GuestSideRecipients(instance.VisitRequest, instance))
             {
                 notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                    RecipientUserId: instance.VisitRequest.VisitorUserId.Value,
+                    RecipientUserId: recipientId,
                     Title: "Kết thúc chuyến thăm",
                     Message: $"Chuyến thăm {instance.VisitRequest.RequestCode} của bạn đã hoàn tất. Cảm ơn bạn!",
                     NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitClosed,

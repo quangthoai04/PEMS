@@ -215,6 +215,26 @@ export function VisitProcess() {
 
   // Stage transition (Host only). Only unlocks the next tab AFTER the API confirms the new status.
   const [stageSubmitting, setStageSubmitting] = useState(false);
+  // ASSIGNED → BEFORE_VISIT. Only ever from this click handler: the campus must not start preparing
+  // because the Host opened the page, switched tabs or triggered a refetch.
+  const [startingPreparation, setStartingPreparation] = useState(false);
+  const startPreparation = async () => {
+    if (!perm || startingPreparation) return; // second guard = the double-click guard
+    setStartingPreparation(true);
+    try {
+      await delegationsApi.startPreparation(perm.visitRequestId, perm.visitInstanceId);
+      // Refetch rather than patching local state: the new status is what unlocks every setup
+      // control, and the backend is the only thing entitled to say what it is.
+      await loadPermissions();
+      pushToast('success', 'Đã bắt đầu giai đoạn chuẩn bị.');
+    } catch (e: any) {
+      pushToast('error', apiErrorMessage(e, 'Không thể bắt đầu chuẩn bị. Vui lòng thử lại.'));
+      if (e?.response?.status === 409) { await loadPermissions(); }
+    } finally {
+      setStartingPreparation(false);
+    }
+  };
+
   const advanceStage = async (stage: 'before' | 'during' | 'after') => {
     if (!perm || stageSubmitting) return;
     setStageSubmitting(true);
@@ -941,6 +961,35 @@ export function VisitProcess() {
           {/* Honest notice: the "Thông tin chung" registrant/delegation block is read-only
               reference data (what the guest registered). Lịch trình, thành phần tham gia and
               hậu cần (Chuẩn bị chi tiết) are all wired to real save APIs. */}
+
+          {/* Campus is ASSIGNED: approved and handed to this Host, preparation not opened yet.
+              Everything below renders read-only until they press this. The banner is driven by the
+              backend flag — never by relation/role — so a Staff Leader, HO, the operational contact
+              and the registrant simply never see it. */}
+          {perm?.canStartPreparation && (
+            <div
+              data-testid="start-preparation-banner"
+              className="rounded-[2rem] border border-[#f37021]/30 bg-[#fff7f2] p-6 flex flex-col sm:flex-row sm:items-center gap-4 justify-between"
+            >
+              <div>
+                <h2 className="text-base font-bold text-[#004c91]">Đã phân công Host</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Chuyến thăm chưa bắt đầu giai đoạn chuẩn bị. Bấm “Bắt đầu chuẩn bị” để mở lịch trình,
+                  thành phần tham gia, hậu cần, nhắc lịch và ghi chú chuẩn bị.
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="start-preparation-button"
+                disabled={startingPreparation}
+                onClick={startPreparation}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f37021] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#d95f16] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              >
+                {startingPreparation ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {startingPreparation ? 'Đang bắt đầu...' : 'Bắt đầu chuẩn bị'}
+              </button>
+            </div>
+          )}
 
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">

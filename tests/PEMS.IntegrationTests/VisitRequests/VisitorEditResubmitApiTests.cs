@@ -73,9 +73,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visit = new VisitRequest
         {
             RequestCode = $"UT-RESUBMIT-{Guid.NewGuid().ToString()[..4]}",
-            VisitorUserId = _visitorId,
             RegistrantUserId = _visitorId,
-            PrimaryContactAccessStatus = "ACTIVE",
             RegistrantFullName = "Integration Registrant",
             RegistrantNationality = "VN",
             RegistrantOrganization = "FPT",
@@ -84,10 +82,6 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             RegistrantEmail = _visitorEmail,
             VisitScope = "SINGLE_CAMPUS",
             // Pure V2: delegation name / visit type / purpose live in the campus FormDetail below.
-            ContactPersonFullName = "Integration Contact",
-            ContactPersonOrganization = "Contact Org",
-            ContactPersonPhone = "0888888888",
-            ContactPersonEmail = "contact.integration@example.com",
             Status = status,
             ResubmissionCount = 0,
             CreatedAt = VietnamTime.Now(),
@@ -98,6 +92,12 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
                 {
                     CampusId = _campusId,
                     Status = instanceStatus,
+                    // Self-matched: the visitor who submitted is also this campus's operational contact,
+                    // so the campus is past the confirmation gate. Every status this fixture seeds is
+                    // beyond WAITING_CONTACT_CONFIRMATION, and those may not carry a NULL contact.
+                    OperationalContactUserId = _visitorId,
+                    OperationalContactConfirmedAt = VietnamTime.Now(),
+                    OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
                     PlannedStartAt = VietnamTime.Now().AddDays(7),
                     PlannedEndAt = VietnamTime.Now().AddDays(7).AddHours(4),
                     CreatedAt = VietnamTime.Now(),
@@ -210,7 +210,8 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
         Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
-        Assert.Equal("Integration Contact", visit.ContactPersonFullName);
+        // The contact snapshot lives on the campus, and the edit must not have touched it.
+        Assert.Equal("Edit Operational Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
         Assert.Equal(1u, visit.ResubmissionCount);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
@@ -396,7 +397,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
         Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
-        Assert.Equal("Integration Contact", visit.ContactPersonFullName);
+        Assert.Equal("Edit Operational Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
 
@@ -429,7 +430,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = VisitorClient();
         
-        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["primaryContact"]!["email"] = "hacked.contact@example.com";
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["campusVisits"]![0]!["operationalContact"]!["email"] = "hacked.contact@example.com";
 
         var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
@@ -443,7 +444,9 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
             .FirstAsync(v => v.VisitRequestId == visitId);
 
-        Assert.Equal("contact.integration@example.com", visit.ContactPersonEmail);
+        // The refused edit left the campus’s contact address exactly as it was.
+        Assert.Equal("contact.integration@example.com",
+            visit.CampusInstances.Single().FormDetail!.OperationalContactEmail);
         Assert.Equal(0u, visit.ResubmissionCount);
     }
 
@@ -453,7 +456,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.PendingApproval, VisitInstanceStatuses.WaitingRequestApproval);
         var client = VisitorClient();
         
-        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["primaryContact"]!["email"] = _visitorEmail;
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["campusVisits"]![0]!["operationalContact"]!["email"] = _visitorEmail;
 
         var response = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", command);
 

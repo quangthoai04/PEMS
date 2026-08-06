@@ -130,7 +130,7 @@ public sealed class PublicInitiateVisitRequestV2Tests
     private static VerifyAndCreateVisitRequestV2CommandHandler VerifyHandler(ApplicationDbContext db)
         => new(db, new OtpService(db, new FixedClock(), EmptyConfig), new FakeProvision(),
             new VisitRequestV2CreateService(db), new NoopNotifications(),
-            new CreateVisitRequestV2CommandTests.RecordingClaimService(), new FixedClock(),
+            new CreateVisitRequestV2CommandTests.RecordingInvitationService(), new FixedClock(),
             NullLogger<VerifyAndCreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, new PerCampusFormV2WriteOptions { Enabled = true });
 
@@ -142,11 +142,10 @@ public sealed class PublicInitiateVisitRequestV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(), // zero support — valid under v2
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
         return new VisitRequestFormDataV2(
             submissionId,
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", email),
-            new ContactPointDto("Registrant", "Org", "+8491", email), // contact == registrant → ACTIVE, no claim
             null, new List<CampusVisitFormDto> { campus });
     }
 

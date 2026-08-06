@@ -12,6 +12,7 @@ using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Queries.GetSubmittedVisitRequestFormDetail;
 
 /// <summary>
@@ -152,8 +153,11 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         }
         else if (isVisitor)
         {
-            var owns = visitRequest.VisitorUserId == userId
-                || isRegistrant
+            // The registrant, or somebody who confirmed at least one campus of this request.
+            // Holding one campus is enough to open the request; WHICH campuses they then see is
+            // decided by the visible-instance scoping below.
+            var owns = isRegistrant
+                || VisitRequestOwnership.IsOperationalContactOfAny(visitRequest, userId)
                 || visitRequest.CreatedBy == userId;
             if (!owns)
                 throw new ForbiddenException("Bạn chỉ được xem đơn của chính mình.");
@@ -235,7 +239,6 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         string? mediaConsentStatus = rep.MediaConsentStatus;
         string? mediaConsentNote = rep.MediaConsentNote;
         string? transportationNote = rep.TransportationNote;
-        string? noteToFptu = rep.NoteToFptu;
         List<SubmittedGuestMemberDto> guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
         List<SubmittedGuestMemberDto> externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
 
@@ -284,8 +287,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // approved/partially-approved request that still has an active (ASSIGNED/BEFORE_VISIT)
         // instance. A registrant-only Visitor never gets it. The cancel command re-checks the
         // time window and ownership — UI hint only.
-        if (isVisitor
-            && visitRequest.VisitorUserId == userId
+        // Cancelling the whole request is the registrant’s; a campus holder cancels their campus
+        // from the process screen instead.
+        if (isRegistrant
             && (status == VisitRequestStatuses.Approved || status == VisitRequestStatuses.PartiallyApproved)
             && visibleInstances.Any(c => c.Status == VisitInstanceStatus.Assigned
                 || c.Status == VisitInstanceStatus.BeforeVisit))
@@ -364,19 +368,10 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 Email = visitRequest.RegistrantEmail,
                 Nationality = visitRequest.RegistrantNationality,
             },
-            ContactPerson = new SubmittedContactPersonDto
-            {
-                FullName = visitRequest.ContactPersonFullName,
-                Organization = visitRequest.ContactPersonOrganization,
-                Phone = visitRequest.ContactPersonPhone,
-                Email = visitRequest.ContactPersonEmail,
-            },
-
             WorkingLanguage = workingLanguage,
             MediaConsentStatus = mediaConsentStatus,
             MediaConsentNote = mediaConsentNote,
             TransportationNote = transportationNote,
-            NoteToFptu = noteToFptu,
 
             Campuses = visibleInstances
                 .OrderBy(c => c.PlannedStartAt)
@@ -393,6 +388,9 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                     CurrentHostUserId = c.CurrentHostUserId.HasValue ? (long)c.CurrentHostUserId.Value : null,
                     CurrentHostName = NameOf(c.CurrentHostUserId),
                     IsOwnCampus = primaryCampusId.HasValue && c.CampusId == primaryCampusId.Value,
+                    // Read from THIS campus's own detail row. content[] is keyed by instance, so
+                    // there is no representative campus and no chance of showing a sibling's contact.
+                    OperationalContact = BuildContact(c, content),
                     DecidedByUserId = c.DecidedBy.HasValue ? (long)c.DecidedBy.Value : null,
                     DecidedByName = NameOf(c.DecidedBy),
                     DecidedAt = c.DecidedAt,
@@ -474,4 +472,28 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         Nationality = r.Nationality,
         DisplayOrder = r.DisplayOrder,
     };
+
+    /// <summary>
+    /// One campus's contact: the snapshot from its own detail row, plus whether an account actually
+    /// holds it. A campus with no detail returns an empty snapshot rather than borrowing a sibling's —
+    /// the missing-detail case is already refused upstream, and silently filling it in here would hide
+    /// a repeat of it.
+    /// </summary>
+    private static SubmittedOperationalContactDto BuildContact(
+        Domain.Entities.Delegations.VisitRequestCampus instance,
+        IReadOnlyDictionary<ulong, VisitCampusFormContent> content)
+    {
+        content.TryGetValue(instance.VisitInstanceId, out var detail);
+        return new SubmittedOperationalContactDto
+        {
+            FullName = detail?.OperationalContact.FullName,
+            Organization = detail?.OperationalContact.Organization,
+            JobTitle = detail?.OperationalContact.JobTitle,
+            Phone = detail?.OperationalContact.Phone,
+            Email = detail?.OperationalContact.Email,
+            Confirmed = instance.OperationalContactUserId is not null,
+            ConfirmedAt = instance.OperationalContactConfirmedAt,
+            ConfirmationSource = instance.OperationalContactConfirmationSource,
+        };
+    }
 }

@@ -84,8 +84,12 @@ public sealed class CreateVisitRequestV2CommandTests
             => Task.CompletedTask;
     }
 
-    /// <summary>Records claim-invitation sends; the A==B forms in these tests never create a claim.</summary>
-    internal sealed class RecordingClaimService : IVisitContactClaimService
+    /// <summary>
+    /// Records confirmation-invitation sends. The forms in these tests name the registrant’s own
+    /// verified address as every campus’s contact, so the create path self-matches and this recorder
+    /// should stay empty — which is exactly what makes it worth asserting on.
+    /// </summary>
+    internal sealed class RecordingInvitationService : IOperationalContactInvitationService
     {
         public List<ulong> Invitations { get; } = new();
         public Task<string?> SendInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
@@ -93,16 +97,11 @@ public sealed class CreateVisitRequestV2CommandTests
             Invitations.Add(identityChangeId);
             return Task.FromResult<string?>(null);
         }
-        public Task<string?> SendTransferInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
-            => Task.FromResult<string?>(null);
-        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockClaimAsync(
+        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockChangeAsync(
             ulong identityChangeId, CancellationToken cancellationToken)
             => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
-        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingInitialClaimAsync(
-            ulong visitRequestId, CancellationToken cancellationToken)
-            => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
-        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingChangeAsync(
-            ulong visitRequestId, string? changeKind, CancellationToken cancellationToken)
+        public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockPendingChangeForInstanceAsync(
+            ulong visitInstanceId, CancellationToken cancellationToken)
             => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);
     }
 
@@ -110,10 +109,11 @@ public sealed class CreateVisitRequestV2CommandTests
         ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null)
         => new(db, new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
             notifications ?? new RecordingNotifications(),
-            new RecordingClaimService(), new UserProvisionService(db),
+            new RecordingInvitationService(), new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write },
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
 
     private static VisitRequestFormDataV2 Form(string submissionId)
     {
@@ -122,12 +122,13 @@ public sealed class CreateVisitRequestV2CommandTests
             "HN", start, start.AddMinutes(120), "Đoàn ABC", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            // The registrant’s own verified address — the campus self-matches, so no invitation is
+            // sent and the request opens the gate immediately.
+            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
         return new VisitRequestFormDataV2(
             submissionId,
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)), // A==B → ACTIVE
             null, new List<CampusVisitFormDto> { campus });
     }
 

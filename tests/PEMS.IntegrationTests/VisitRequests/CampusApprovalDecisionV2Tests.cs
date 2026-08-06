@@ -127,14 +127,24 @@ public sealed class CampusApprovalDecisionV2Tests
         => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
             new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()));
 
-    /// <summary>One campus with content that is unique to it, so a leaked sibling value is unmistakable.</summary>
+    /// <summary>
+    /// One campus with content that is unique to it, so a leaked sibling value is unmistakable.
+    ///
+    /// <para>
+    /// The operational contact is the REGISTRANT'S own address, which self-matches at submit: the campus
+    /// is confirmed on the spot with no invitation, and the request opens the confirmation gate
+    /// immediately. That is deliberate — this suite's subject is the Staff Leader decision, which only
+    /// happens after the gate opens, so seeding a contact who still has to confirm would only mean every
+    /// test here spent its first act clearing a gate it is not testing.
+    /// </para>
+    /// </summary>
     private static CampusVisitFormDto Campus(string code, DateTime start, string delegationName)
         => new(code, start, start.AddMinutes(120), delegationName, "MEETING", null,
             $"Mục đích của {delegationName}", $"Nội dung của {delegationName}",
             new List<VisitorDto> { new($"Khách {delegationName}", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
-            "VI", null, "DECLINED", null, null, null);
+            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "VI", null, "DECLINED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
@@ -142,14 +152,14 @@ public sealed class CampusApprovalDecisionV2Tests
         var actor = new FakeUser(Registrant);
         var handler = new CreateVisitRequestV2CommandHandler(
             db, actor, new FixedClock(), new VisitRequestV2CreateService(db),
-            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "AP" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)), // A==B → contact ACTIVE
             null, campuses.ToList());
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
         return created.VisitRequestId;
@@ -304,9 +314,12 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
             {
                 // A campus-scoped audit query is the natural Pure V2 scope; both decisions must answer it.
+                // Filtered to the DECISION source, because a campus instance now also carries the
+                // contact-confirmation audit the self-matched submit files against it.
                 var hn = Assert.Single(await db.AuditLogs.AsNoTracking()
                     .Where(a => a.VisitInstanceId == state[CampusHn].VisitInstanceId
-                                && a.EntityType == "VisitRequestCampus")
+                                && a.EntityType == "VisitRequestCampus"
+                                && a.SourceType == CampusDecisionAudit.SourceType)
                     .ToListAsync());
                 Assert.Equal(CampusHn, hn.CampusId);
                 Assert.Equal(requestId, hn.VisitRequestId);
@@ -316,7 +329,8 @@ public sealed class CampusApprovalDecisionV2Tests
 
                 var hcm = Assert.Single(await db.AuditLogs.AsNoTracking()
                     .Where(a => a.VisitInstanceId == state[CampusHcm].VisitInstanceId
-                                && a.EntityType == "VisitRequestCampus")
+                                && a.EntityType == "VisitRequestCampus"
+                                && a.SourceType == CampusDecisionAudit.SourceType)
                     .ToListAsync());
                 Assert.Equal(CampusHcm, hcm.CampusId);
                 Assert.Equal("REJECT_CAMPUS_INSTANCE", hcm.Action);
@@ -463,8 +477,12 @@ public sealed class CampusApprovalDecisionV2Tests
             {
                 Assert.Single(await db.VisitParticipants.AsNoTracking()
                     .Where(p => p.VisitInstanceId == instanceId).ToListAsync());
+                // Exactly one DECISION audit: the second approve and the reject both refused, so neither
+                // filed one. Scoped to the decision source so the self-matched submit's own
+                // contact-confirmation audit on this instance does not count as a decision.
                 Assert.Single(await db.AuditLogs.AsNoTracking()
-                    .Where(a => a.VisitInstanceId == instanceId && a.EntityType == "VisitRequestCampus")
+                    .Where(a => a.VisitInstanceId == instanceId && a.EntityType == "VisitRequestCampus"
+                                && a.SourceType == CampusDecisionAudit.SourceType)
                     .ToListAsync());
             }
         }

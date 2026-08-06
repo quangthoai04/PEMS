@@ -29,7 +29,7 @@ public class VisitRequestV2ContactGuidanceTests
             new List<VisitorDto> { new("Khách 1", "VN", "GV", organization ?? "ĐH X") },
             new List<SupportTeamMemberDto>(),
             opContact ?? new ContactPointDto("ĐM CS", organization ?? "ĐH X", "+84911111111", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
 
     private static CreateVisitRequestV2Command Command(
         CampusVisitFormDto? campus = null,
@@ -38,7 +38,6 @@ public class VisitRequestV2ContactGuidanceTests
         => new(new VisitRequestFormDataV2(
             "SUB-1",
             new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", registrantPhone, "reg@example.com"),
-            new ContactPointDto("ĐM", "ĐH X", primaryContactPhone, "contact@example.com"),
             null,
             new List<CampusVisitFormDto> { campus ?? Campus() }));
 
@@ -67,12 +66,11 @@ public class VisitRequestV2ContactGuidanceTests
     [Fact]
     public void Every_phone_rejection_names_its_own_field()
     {
-        // Three phones on one form. A shared "invalid phone number" would leave the caller guessing
-        // which of them the server means.
+        // Two phones on one form — the registrant’s and the campus’s operational contact. A shared
+        // "invalid phone number" would leave the caller guessing which of them the server means.
         var messages = MessagesFor(new CreateVisitRequestV2Command(new VisitRequestFormDataV2(
             "SUB-1",
             new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", "abc", "reg@example.com"),
-            new ContactPointDto("ĐM", "ĐH X", "abc", "contact@example.com"),
             null,
             new List<CampusVisitFormDto>
             {
@@ -80,8 +78,10 @@ public class VisitRequestV2ContactGuidanceTests
             })));
 
         Assert.Contains(messages, m => m.Contains("Số điện thoại người đăng ký"));
-        Assert.Contains(messages, m => m.Contains("Số điện thoại đầu mối liên hệ"));
         Assert.Contains(messages, m => m.Contains("Số điện thoại đầu mối phối hợp"));
+        // And nothing still speaks of a request-level contact: that field is gone, so a message
+        // naming it would be describing an input the caller can no longer send.
+        Assert.DoesNotContain(messages, m => m.Contains("Số điện thoại đầu mối liên hệ"));
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public class VisitRequestV2ContactGuidanceTests
         var properties = typeof(ContactPointDto).GetProperties().Select(p => p.Name).ToArray();
         Assert.DoesNotContain("PartnerId", properties);
         Assert.Equal(
-            new[] { "FullName", "Organization", "Phone", "Email" }.OrderBy(x => x),
+            new[] { "FullName", "Organization", "Phone", "Email", "JobTitle" }.OrderBy(x => x),
             properties.OrderBy(x => x));
     }
 
@@ -144,8 +144,7 @@ public class VisitRequestV2ContactGuidanceTests
             RequestCode: "VR2026072629B9DFF",
             VisitScope: "SINGLE_CAMPUS",
             HasMixedCampusDetails: false,
-            PrimaryContactAccessStatus: "ACTIVE",
-            ContactClaimPending: false,
+            PendingContactConfirmations: 0,
             Instances: new List<CreateVisitRequestV2CampusRef>
             {
                 new(11, 1, "WAITING_REQUEST_APPROVAL"),

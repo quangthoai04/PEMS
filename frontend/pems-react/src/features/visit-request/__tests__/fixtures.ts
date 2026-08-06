@@ -34,12 +34,29 @@ export const campusFixture = (overrides: Partial<ResolvedCampusVisit> = {}): Res
     { guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 },
   ],
   supportMembers: [],
-  operationalContact: { fullName: 'Đầu Mối HN', organization: 'ĐH ABC', phone: '+84912345678', email: 'dm@x.vn' },
+  operationalContact: {
+    fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng',
+    phone: '+84912345678', email: 'dm@x.vn',
+    confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION',
+    confirmedAt: '2026-08-01T09:00:00',
+  },
+  // In step with currentHostUserId/currentHostName: the host BLOCK renders from this object, and a
+  // fixture carrying only the flat scalars models a payload the backend no longer sends.
+  currentHost: {
+    userId: 5, fullName: 'Host Hà Nội', email: 'host.hn@fptu.edu.vn',
+    phone: '+84900000005', departmentName: 'Phòng Hợp tác Quốc tế',
+  },
+  proposedHost: null,
+  hostSelection: {
+    canProposeSelfAsHost: false,
+    canProposeOtherHost: false,
+    canWaitForLaterAssignment: false,
+    canUpdateProposedHost: false,
+  },
   workingLanguage: 'VI',
   transportationNote: null,
   mediaConsentStatus: 'DECLINED',
   mediaConsentNote: null,
-  noteToFptu: null,
   formRevision: 2,
   approvalRevision: 1,
   rowVersion: 3,

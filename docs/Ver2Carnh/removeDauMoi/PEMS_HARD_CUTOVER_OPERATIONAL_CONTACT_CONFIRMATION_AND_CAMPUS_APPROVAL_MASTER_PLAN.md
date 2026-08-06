@@ -68,8 +68,9 @@ Trường hợp một campus approved, một campus rejected và không còn cam
 ```text
 WAITING_CONTACT_CONFIRMATION
     -> WAITING_REQUEST_APPROVAL
-    -> BEFORE_VISIT
-    -> DURING_VISIT
+    -> ASSIGNED            (Staff Leader: approve + gán Host trong cùng transaction)
+    -> BEFORE_VISIT        (Current Host: "Bắt đầu chuẩn bị")
+    -> DURING_VISIT        (Current Host: hoàn tất chuẩn bị)
     -> AFTER_VISIT
     -> CLOSED
 
@@ -77,10 +78,41 @@ WAITING_REQUEST_APPROVAL -> REJECTED
 Các trạng thái hợp lệ theo rule riêng -> CANCELLED
 ```
 
+| Bước | Actor | Action |
+|---|---|---|
+| `WAITING_REQUEST_APPROVAL -> ASSIGNED` | Staff Leader đúng campus | Approve + gán Host (cùng transaction) |
+| `ASSIGNED -> BEFORE_VISIT` | Current Host | Bắt đầu chuẩn bị (`POST /api/delegations/{visitRequestId}/campuses/{visitInstanceId}/start-preparation`) |
+| `BEFORE_VISIT -> DURING_VISIT` | Current Host | Hoàn tất chuẩn bị (`complete-before-visit`) |
+
 - Campus tự khớp Registrant được chuyển ngay sang `WAITING_REQUEST_APPROVAL`.
 - Campus khác giữ `WAITING_CONTACT_CONFIRMATION` đến khi accept.
 - Dù một campus đã là `WAITING_REQUEST_APPROVAL`, Staff Leader vẫn chưa thấy nếu request cha còn `PENDING_CONTACT_CONFIRMATION`.
-- `ASSIGNED` bị loại bỏ. Approve phải gán Host trong cùng transaction và chuyển campus sang `BEFORE_VISIT`.
+- Approve **bắt buộc** gán Host trong cùng transaction và **chỉ được** ghi `ASSIGNED`. Cấm ghi thẳng `BEFORE_VISIT`.
+
+> **Quyết định 2026-08-05.** `ASSIGNED` là trạng thái sau khi Staff Leader duyệt và gán Host.
+> Current Host phải thực hiện hành động **Bắt đầu chuẩn bị** để chuyển campus sang `BEFORE_VISIT`.
+> **Chỉ ở `BEFORE_VISIT` các mutation setup mới được phép.**
+>
+> Ý nghĩa hai trạng thái:
+>
+> - `ASSIGNED` — campus đã được duyệt, đã có `current_host_user_id`, Host **chưa** mở giai đoạn
+>   chuẩn bị. Mọi mutation setup (lịch trình, thành phần tham gia, hậu cần, nhắc lịch, ghi chú
+>   chuẩn bị, email tiến độ setup) bị từ chối 409 với mã `VISIT_PREPARATION_NOT_STARTED`.
+> - `BEFORE_VISIT` — Host đã chủ động bắt đầu; toàn bộ chức năng setup mở theo quyền hiện hành.
+>
+> Chuyển trạng thái phải đến từ **hành động nghiệp vụ tường minh**. Mở trang, tải chi tiết, gọi API
+> GET, xem lịch trình/thành phần tham gia, preview email hay refresh dữ liệu **không** được đổi
+> lifecycle. `trg_visit_campuses_assignment_validate_bu` chặn ở tầng DB:
+> `WAITING_REQUEST_APPROVAL -> BEFORE_VISIT` và `ASSIGNED -> DURING_VISIT` đều SIGNAL, nên một lệnh
+> UPDATE lạc (script, import, bug) cũng không nhảy cóc qua bước của Host được.
+>
+> Chuyển Host vẫn cho phép ở **cả** `ASSIGNED` và `BEFORE_VISIT`, và không tự đổi lifecycle: Host mới
+> tiếp nhận đúng trạng thái hiện tại của campus.
+>
+> `ASSIGNED` của `visit_participants.status` và `visit_logistics_items.status` là enum **khác**,
+> nghĩa là "đã phân công người/nhiệm vụ", có transition ra thật (ACCEPTED/DECLINED/IN_PROGRESS) —
+> không đụng tới.
+
 
 ## 3. Luồng xử lý chuẩn
 
@@ -185,7 +217,11 @@ FOREIGN KEY (operational_contact_user_id)
 - Không `UNIQUE` trên `operational_contact_user_id` vì một người có thể phụ trách nhiều campus.
 - Giữ decision, `decided_by`, `decided_at`, `decision_note`, `current_host_user_id` và `row_version` ở cấp instance.
 - Bổ sung `WAITING_CONTACT_CONFIRMATION`, `PARTIALLY_APPROVED` chỉ ở request level và `REJECTED` ở campus level.
-- Xóa `ASSIGNED` khỏi enum/status transition.
+- GIỮ `ASSIGNED` trong enum (xem Mục 2.3): approve ghi `ASSIGNED`; aggregate tính CẢ `ASSIGNED` và
+  `BEFORE_VISIT` là campus đã duyệt; guard host/decision áp từ `ASSIGNED` trở đi; guard chuyển Host
+  áp cho cả hai. Thêm guard transition ở `trg_visit_campuses_assignment_validate_bu`: `ASSIGNED` chỉ
+  đến từ `WAITING_REQUEST_APPROVAL`, `BEFORE_VISIT` chỉ đến từ `ASSIGNED`, `DURING_VISIT` chỉ đến từ
+  `BEFORE_VISIT`.
 
 `visit_instance_form_details`:
 
@@ -227,8 +263,12 @@ PrimaryContact / primaryContact / contactPoint
 request-wide contact claim/transfer
 WAITING_HO_APPROVAL / HO_APPROVED
 HO request approve/reject handlers/routes
-ASSIGNED lifecycle
 ```
+
+> `ASSIGNED lifecycle` KHÔNG còn trong danh sách xoá (xem Mục 2.3): `ASSIGNED` là trạng thái riêng
+> giữa duyệt và chuẩn bị, có actor và action riêng. `visit_participants.status` và
+> `visit_logistics_items.status` cũng có giá trị `ASSIGNED` với nghĩa hoàn toàn khác (đã phân công
+> người/nhiệm vụ) — mọi lần quét phải theo cột/kiểu, không grep chuỗi.
 
 Không tạo migration compatibility, backfill hoặc rollback dữ liệu cũ. Sửa canonical full SQL trực tiếp, cập nhật hash/parity test và recreate fresh database dev sau khi code/schema đã đồng bộ.
 

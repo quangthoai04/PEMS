@@ -191,10 +191,18 @@ public class AuthorizationTests
             "VisitRequestsController.Initiate",              // v1 tombstone, answers 410 Gone
             "VisitRequestsController.Verify",                // v1 tombstone, answers 410 Gone
 
-            // Masked landing summaries behind an emailed token. Accept/decline on these flows
-            // still require a signed-in session whose email matches — see the controller notes.
-            "VisitRequestsController.GetContactClaimInfo",
-            "VisitRequestsController.GetContactTransferInfo",
+            // The masked landing summary behind an emailed confirmation token, for ONE campus.
+            // Anonymous because the invited person may not have an account yet — that is the whole
+            // point of the invitation — and because an unknown token has to answer exactly like an
+            // expired one, or the endpoint would tell a stranger whether an address was invited.
+            // It never mutates. Accepting or declining still requires a signed-in session whose
+            // email matches the invited address; see the controller notes.
+            //
+            // It replaces the two request-level entries (GetContactClaimInfo /
+            // GetContactTransferInfo): one link now resolves an invitation that already knows
+            // whether it is an INITIAL_CONFIRMATION or a TRANSFER, so the kind decides the effect
+            // rather than the URL the recipient happened to receive.
+            "VisitRequestsController.GetOperationalContactConfirmationInfo",
         };
 
         var offenders = Controllers()

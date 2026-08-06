@@ -84,68 +84,68 @@ public class RegistrantIdentityRulesTests
             () => RegistrantIdentityRules.EnsureDirectCreateIsSelfRegistration(null, ""));
     }
 
-    // ── OTP-gated submissions carry no processing intent ─────────────────────────
+    // ── OTP-gated submissions may not name a reception host ──────────────────────
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_allows_a_form_with_no_intent_at_all()
+    public void EnsureNoHostProposalIntent_allows_a_form_with_no_arrangement_at_all()
     {
         var ex = Record.Exception(
-            () => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(Form(Campus("HN", null))));
+            () => RegistrantIdentityRules.EnsureNoHostProposalIntent(Form(Campus("HN", null))));
         Assert.Null(ex);
     }
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_allows_explicit_send_for_review()
+    public void EnsureNoHostProposalIntent_allows_explicit_wait_for_later()
     {
-        // SEND_FOR_REVIEW with no host IS the default routing — it asserts nothing the OTP flow disallows.
-        var form = Form(Campus("HN", new CampusProcessingV2Dto(CampusSubmissionModes.SendForReview, null)));
+        // WAIT_FOR_LATER with nobody named IS what these flows always mean — it asserts nothing.
+        var form = Form(Campus("HN", new CampusHostSelectionV2Dto(HostSelectionModes.WaitForLater, null)));
 
-        Assert.Null(Record.Exception(() => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form)));
+        Assert.Null(Record.Exception(() => RegistrantIdentityRules.EnsureNoHostProposalIntent(form)));
     }
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_rejects_self_host()
+    public void EnsureNoHostProposalIntent_rejects_self()
     {
-        var form = Form(Campus("HN", new CampusProcessingV2Dto(CampusSubmissionModes.SelfHost, null)));
+        var form = Form(Campus("HN", new CampusHostSelectionV2Dto(HostSelectionModes.Self, null)));
 
         var ex = Assert.Throws<BusinessRuleException>(
-            () => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form));
-        Assert.Equal(VisitRequestErrorCodes.InvalidCampusSubmissionMode, ex.ErrorCode);
+            () => RegistrantIdentityRules.EnsureNoHostProposalIntent(form));
+        Assert.Equal(VisitRequestErrorCodes.ProposedHostNotAllowedForRole, ex.ErrorCode);
     }
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_rejects_assign_host()
+    public void EnsureNoHostProposalIntent_rejects_selecting_somebody()
     {
-        var form = Form(Campus("HN", new CampusProcessingV2Dto(CampusSubmissionModes.AssignHost, 42)));
+        var form = Form(Campus("HN", new CampusHostSelectionV2Dto(HostSelectionModes.Selected, 42)));
 
         Assert.Throws<BusinessRuleException>(
-            () => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form));
+            () => RegistrantIdentityRules.EnsureNoHostProposalIntent(form));
     }
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_rejects_a_host_smuggled_under_send_for_review()
+    public void EnsureNoHostProposalIntent_rejects_a_host_smuggled_under_wait_for_later()
     {
-        // The mode reads as the harmless default but a host id is attached — reject on the host alone.
-        var form = Form(Campus("HN", new CampusProcessingV2Dto(CampusSubmissionModes.SendForReview, 42)));
+        // The mode reads as the harmless default but somebody is named — reject on the name alone.
+        var form = Form(Campus("HN", new CampusHostSelectionV2Dto(HostSelectionModes.WaitForLater, 42)));
 
         Assert.Throws<BusinessRuleException>(
-            () => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form));
+            () => RegistrantIdentityRules.EnsureNoHostProposalIntent(form));
     }
 
     [Fact]
-    public void EnsureNoDirectProcessingIntent_rejects_when_only_a_LATER_campus_carries_the_intent()
+    public void EnsureNoHostProposalIntent_rejects_when_only_a_LATER_campus_carries_the_intent()
     {
         var form = Form(
             Campus("HN", null),
-            Campus("HCM", new CampusProcessingV2Dto(CampusSubmissionModes.SelfHost, null)));
+            Campus("HCM", new CampusHostSelectionV2Dto(HostSelectionModes.Self, null)));
 
         Assert.Throws<BusinessRuleException>(
-            () => RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form));
+            () => RegistrantIdentityRules.EnsureNoHostProposalIntent(form));
     }
 
     // ── Fixtures ─────────────────────────────────────────────────────────────────
 
-    private static CampusVisitFormDto Campus(string campusCode, CampusProcessingV2Dto? processing)
+    private static CampusVisitFormDto Campus(string campusCode, CampusHostSelectionV2Dto? hostSelection)
     {
         var start = new DateTime(2026, 9, 1, 9, 0, 0);
         return new CampusVisitFormDto(
@@ -154,14 +154,13 @@ public class RegistrantIdentityRulesTests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null,
-            processing);
+            "EN", null, "DECLINED", null,
+            hostSelection);
     }
 
     private static VisitRequestFormDataV2 Form(params CampusVisitFormDto[] campuses) =>
         new("SUB-1",
             new RegistrantInputV2("Reg", "VN", "Org", "Job", "+8491", "reg@example.com"),
-            new ContactPointDto("Contact", "Org", "+8492", "contact@example.com"),
             null,
             campuses.ToList());
 }

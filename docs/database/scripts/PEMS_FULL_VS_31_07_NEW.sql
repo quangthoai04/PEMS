@@ -211,7 +211,7 @@
 --   - Dates are calculated from CURRENT_DATE/CURRENT_TIMESTAMP at import time.
 --   - Inserts remain manual; no bulk generator or random/id helper commands.
 --   - Status/time alignment:
---       WAITING_REQUEST_APPROVAL / ASSIGNED / BEFORE_VISIT => future planned visits
+--       WAITING_CONTACT_CONFIRMATION / WAITING_REQUEST_APPROVAL / BEFORE_VISIT => future planned visits
 --       DURING_VISIT => current import time is between planned_start_at and planned_end_at
 --       AFTER_VISIT / CLOSED => planned visits in the past
 --       CANCELLED => planned visits remain future-facing so cancellation is before the visit date
@@ -313,7 +313,7 @@
 --   + SINGLE_CAMPUS request tổng chỉ được STAFF_LEADER quyết định.
 --   + MULTI_CAMPUS không còn Staff Leader xử lý tổng; từng campus instance do Staff Leader campus xử lý riêng.
 --   + Campus không còn duyệt/từ chối instance sau khi request tổng được duyệt.
---   + Sau khi request tổng được duyệt, mỗi campus instance chuyển ASSIGNED và có current_host_user_id.
+--   + Sau khi request tổng được duyệt, mỗi campus instance chuyển BEFORE_VISIT và có current_host_user_id.
 --   + Staff Leader approve campus instance thì bắt buộc chọn host ngay; host có thể là IC Staff hoặc chính Staff Leader đang duyệt; không hỗ trợ chuyển host.
 -- =====================================================================
 
@@ -1149,6 +1149,7 @@ CREATE TABLE visit_request_campuses (
   status ENUM(
     'WAITING_CONTACT_CONFIRMATION',
     'WAITING_REQUEST_APPROVAL',
+    'ASSIGNED',
     'BEFORE_VISIT',
     'DURING_VISIT',
     'AFTER_VISIT',
@@ -1156,7 +1157,7 @@ CREATE TABLE visit_request_campuses (
     'CANCELLED',
     'REJECTED'
   ) NOT NULL DEFAULT 'WAITING_CONTACT_CONFIRMATION'
-    COMMENT 'WAITING_CONTACT_CONFIRMATION=đầu mối vận hành campus chưa xác nhận; WAITING_REQUEST_APPROVAL=đã có đầu mối, chờ Staff Leader campus xử lý; BEFORE_VISIT=đã duyệt VÀ đã gán host trong cùng transaction (không còn ASSIGNED); REJECTED=Staff Leader campus từ chối tiếp nhận.',
+    COMMENT 'WAITING_CONTACT_CONFIRMATION=đầu mối vận hành campus chưa xác nhận; WAITING_REQUEST_APPROVAL=đã có đầu mối, chờ Staff Leader campus xử lý; ASSIGNED=Staff Leader đã duyệt và gán Host trong cùng transaction, Host CHƯA bắt đầu chuẩn bị; BEFORE_VISIT=Host đã bấm Bắt đầu chuẩn bị, các thao tác setup mới mở; REJECTED=Staff Leader campus từ chối tiếp nhận.',
 
   -- Đầu mối VẬN HÀNH của campus này, sau khi đã xác nhận. NULL = chưa xác nhận.
   -- KHÔNG UNIQUE: một người có thể phụ trách nhiều campus (kể cả trong cùng request).
@@ -1178,10 +1179,28 @@ CREATE TABLE visit_request_campuses (
   host_assigned_by BIGINT UNSIGNED NULL COMMENT 'Staff Leader approve và gán host chính thức',
   host_assigned_at DATETIME NULL COMMENT 'Thời điểm host chính thức được gán',
 
+  -- ── Host DỰ KIẾN (proposed host) — KHÔNG phải Host chính thức ────────────────────────────────
+  -- Người tạo đơn nội bộ nêu trước ai sẽ tiếp đón campus này. Đây mới chỉ là ĐỀ XUẤT: nó nằm ở
+  -- cột riêng đúng vì current_host_user_id mang nghĩa "đã được phân công chính thức", và ghi đè
+  -- lên đó trước khi cổng xác nhận mở sẽ làm một người chưa ai xác nhận trông như đã nhận việc.
+  -- Chỉ khi đầu mối cuối cùng của REQUEST xác nhận (cổng mở) thì proposal mới được revalidate và
+  -- kích hoạt thành current_host_user_id trong cùng transaction đó.
+  host_selection_mode ENUM('SELF','SELECTED','WAIT_FOR_LATER') NOT NULL DEFAULT 'WAIT_FOR_LATER'
+    COMMENT 'Phương án người phụ trách tiếp đón do người tạo chọn: SELF=tự nhận; SELECTED=Staff Leader chỉ định IC Staff cùng campus; WAIT_FOR_LATER=chờ Staff Leader phân công sau khi cổng mở. KHÔNG phải lifecycle status.',
+  proposed_host_user_id BIGINT UNSIGNED NULL
+    COMMENT 'Host dự kiến của campus này. NULL bắt buộc khi host_selection_mode=WAIT_FOR_LATER. Không bao giờ mang nghĩa đã phân công — xem current_host_user_id.',
+  proposed_host_by_user_id BIGINT UNSIGNED NULL
+    COMMENT 'Người đề xuất Host dự kiến (Staff Leader hoặc chính IC Staff tự nhận). Là actor được preauthorize; khi kích hoạt sẽ trở thành decided_by.',
+  proposed_host_at DATETIME NULL COMMENT 'Thời điểm lưu/cập nhật đề xuất Host dự kiến (giờ VN)',
+  proposed_host_activation_status ENUM('PENDING','ACTIVATED','NEEDS_RESELECTION') NULL
+    COMMENT 'PENDING=đã lưu, chờ cổng xác nhận mở; ACTIVATED=đã kích hoạt thành current host; NEEDS_RESELECTION=cổng đã mở nhưng proposal không còn hợp lệ, Staff Leader phải chọn lại. NULL khi WAIT_FOR_LATER.',
+  proposed_host_activated_at DATETIME NULL
+    COMMENT 'Thời điểm proposal được kích hoạt thành Host chính thức; dùng làm bằng chứng idempotency khi confirmation bị replay.',
+
   decided_by BIGINT UNSIGNED NULL COMMENT 'Người xử lý campus instance (Staff Leader duyệt/từ chối, hoặc IC Staff tự nhận host trong transaction tạo đơn của chính mình)',
   decided_at DATETIME NULL COMMENT 'Thời điểm campus instance được xử lý',
-  decision_actor_role ENUM('STAFF_LEADER','STAFF') NULL COMMENT 'STAFF_LEADER = duyệt chuẩn/gán host/leader self-host; STAFF = IC Staff thường tự nhận host trong transaction TẠO đơn của chính mình (decision_source=INTERNAL_SELF_HOST).',
-  decision_source ENUM('STANDARD_CAMPUS_REVIEW','INTERNAL_SELF_HOST','INTERNAL_LEADER_ASSIGN') NULL COMMENT 'Nguồn quyết định: STANDARD_CAMPUS_REVIEW=Staff Leader duyệt instance pending; INTERNAL_SELF_HOST=người tạo tự nhận host own campus trong create; INTERNAL_LEADER_ASSIGN=Leader gán IC Staff cùng campus trong create.',
+  decision_actor_role ENUM('STAFF_LEADER','STAFF') NULL COMMENT 'STAFF_LEADER = duyệt chuẩn/gán host/leader self-host, hoặc kích hoạt proposal của Leader; STAFF = IC Staff thường tự nhận host qua Host dự kiến trên đơn chính mình đăng ký (decision_source=PREAUTHORIZED_HOST_ACTIVATION).',
+  decision_source ENUM('STANDARD_CAMPUS_REVIEW','PREAUTHORIZED_HOST_ACTIVATION') NULL COMMENT 'Nguồn quyết định: STANDARD_CAMPUS_REVIEW=Staff Leader duyệt instance pending sau khi cổng mở; PREAUTHORIZED_HOST_ACTIVATION=Host dự kiến đã được preauthorize lúc tạo/sửa đơn, được revalidate và kích hoạt tại đúng thời điểm cổng xác nhận đầu mối mở. Hai nguồn cũ INTERNAL_SELF_HOST/INTERNAL_LEADER_ASSIGN đã bỏ cùng direct processing: chúng gán Host TRƯỚC cổng.',
   decision_note TEXT NULL COMMENT 'Ghi chú duyệt hoặc lý do từ chối; REJECTED bắt buộc có lý do',
 
   closed_by BIGINT UNSIGNED NULL,
@@ -1226,8 +1245,31 @@ CREATE TABLE visit_request_campuses (
   KEY idx_visit_instances_op_contact (operational_contact_user_id, visit_instance_id),
   -- Hàng chờ Staff Leader theo campus (plan §4.2).
   KEY idx_visit_instances_leader_queue (campus_id, status, visit_request_id),
+  -- "Những campus nào đang chờ tôi làm Host dự kiến" + quét proposal khi cổng vừa mở.
+  KEY idx_visit_instances_proposed_host (proposed_host_user_id, proposed_host_activation_status),
 
   CHECK (planned_end_at > planned_start_at),
+  -- Mode và người đề xuất phải khớp nhau, nếu không "chờ phân công sau" và "đã chọn ai đó" sẽ
+  -- cùng tồn tại trên một dòng và không đường đọc nào phân biệt được.
+  CONSTRAINT ck_vrc_proposed_host_mode CHECK (
+    (host_selection_mode = 'WAIT_FOR_LATER' AND proposed_host_user_id IS NULL)
+    OR (host_selection_mode IN ('SELF','SELECTED') AND proposed_host_user_id IS NOT NULL)),
+  -- Có Host dự kiến thì phải biết AI đề xuất, LÚC NÀO và proposal đang ở trạng thái nào —
+  -- đó là toàn bộ bằng chứng cho việc kích hoạt sau này (plan §7.1).
+  CONSTRAINT ck_vrc_proposed_host_meta CHECK (
+    (proposed_host_user_id IS NULL
+      AND proposed_host_by_user_id IS NULL
+      AND proposed_host_at IS NULL
+      AND proposed_host_activation_status IS NULL
+      AND proposed_host_activated_at IS NULL)
+    OR (proposed_host_user_id IS NOT NULL
+      AND proposed_host_by_user_id IS NOT NULL
+      AND proposed_host_at IS NOT NULL
+      AND proposed_host_activation_status IS NOT NULL)),
+  -- Chỉ proposal ĐÃ kích hoạt mới có thời điểm kích hoạt.
+  CONSTRAINT ck_vrc_proposed_host_activated_at CHECK (
+    (proposed_host_activation_status = 'ACTIVATED' AND proposed_host_activated_at IS NOT NULL)
+    OR (COALESCE(proposed_host_activation_status,'') <> 'ACTIVATED' AND proposed_host_activated_at IS NULL)),
   -- Minimum visit duration 30 minutes (per-campus form v2, §4.5). The end>start
   -- check above is retained; this adds the named minimum-duration rule.
   CONSTRAINT ck_visit_instance_min_duration_30m
@@ -1254,6 +1296,17 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_host_assigned_by
     FOREIGN KEY (host_assigned_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
+  -- RESTRICT cả hai chiều, không CASCADE và không SET NULL. Hai lý do:
+  --   1. Nghiệp vụ: xóa người đang được đề xuất mà im lặng bỏ proposal sẽ để lại mode SELF/SELECTED
+  --      với proposed_host_user_id NULL — đúng thứ ck_vrc_proposed_host_mode tồn tại để chặn.
+  --   2. MySQL: một cột vừa nằm trong CHECK vừa nằm trong FK có referential action (CASCADE/SET NULL)
+  --      bị từ chối ngay lúc CREATE TABLE (ER_CHECK_CONSTRAINT_CLAUSE_USING_FK_REFER_ACTION_COLUMN).
+  CONSTRAINT fk_visit_instances_proposed_host
+    FOREIGN KEY (proposed_host_user_id) REFERENCES users(user_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
+  CONSTRAINT fk_visit_instances_proposed_host_by
+    FOREIGN KEY (proposed_host_by_user_id) REFERENCES users(user_id)
+    ON UPDATE RESTRICT ON DELETE RESTRICT,
   CONSTRAINT fk_visit_instances_decided_by
     FOREIGN KEY (decided_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -1263,7 +1316,7 @@ CREATE TABLE visit_request_campuses (
   CONSTRAINT fk_visit_instances_cancelled_by
     FOREIGN KEY (cancelled_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Mỗi campus trong request có một instance riêng, mang đầu mối vận hành + quyết định riêng. Staff Leader campus xử lý approve/reject độc lập và CHỈ sau khi mọi đầu mối của request đã xác nhận; approve bắt buộc gán host ngay trong cùng transaction (WAITING_REQUEST_APPROVAL -> BEFORE_VISIT).';
+COMMENT='Mỗi campus trong request có một instance riêng, mang đầu mối vận hành + Host dự kiến + quyết định riêng. Staff Leader campus xử lý approve/reject độc lập và CHỈ sau khi mọi đầu mối của request đã xác nhận. Hai đường tới ASSIGNED: (a) Staff Leader duyệt + gán Host (STANDARD_CAMPUS_REVIEW), (b) Host dự kiến đã preauthorize được revalidate và kích hoạt ngay khi cổng mở (PREAUTHORIZED_HOST_ACTIVATION). ASSIGNED -> BEFORE_VISIT vẫn phải do Host bấm Bắt đầu chuẩn bị.';
 
 CREATE TABLE visit_guest_members (
   guest_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -1446,6 +1499,8 @@ CREATE TABLE visit_instance_form_details (
   operational_contact_full_name VARCHAR(150) NOT NULL COMMENT 'Tên đầu mối làm việc tại cơ sở (snapshot). Tên trùng KHÔNG phải bằng chứng cùng người.',
   operational_contact_organization VARCHAR(255) NULL
     COMMENT 'Optional; blank normalized to NULL by the create/edit service (ck rejects empty string)',
+  operational_contact_job_title VARCHAR(150) NULL
+    COMMENT 'Chức vụ đầu mối (snapshot, optional). Màn chi tiết hiển thị đủ Họ tên/Đơn vị/Chức vụ/SĐT/Email nên chức vụ phải có chỗ lưu; blank normalize thành NULL.',
   operational_contact_phone VARCHAR(50) NOT NULL COMMENT 'SĐT đầu mối (snapshot). SĐT trùng KHÔNG phải bằng chứng cùng người.',
   operational_contact_email VARCHAR(150) NOT NULL
     COMMENT 'BẮT BUỘC. Normalize tại application boundary; là email duy nhất dùng để bind lời mời xác nhận đầu mối cho campus này. Danh tính runtime đọc từ visit_request_campuses.operational_contact_user_id, KHÔNG từ email này.',
@@ -1474,6 +1529,8 @@ CREATE TABLE visit_instance_form_details (
   CONSTRAINT ck_vifd_op_contact_name CHECK (TRIM(operational_contact_full_name) <> ''),
   CONSTRAINT ck_vifd_op_contact_org CHECK (
     operational_contact_organization IS NULL OR TRIM(operational_contact_organization) <> ''),
+  CONSTRAINT ck_vifd_op_contact_job_title CHECK (
+    operational_contact_job_title IS NULL OR TRIM(operational_contact_job_title) <> ''),
   CONSTRAINT ck_vifd_op_contact_phone CHECK (TRIM(operational_contact_phone) <> ''),
   CONSTRAINT ck_vifd_op_contact_email CHECK (TRIM(operational_contact_email) <> ''),
   CONSTRAINT fk_vifd_instance
@@ -6235,7 +6292,7 @@ JOIN (
     'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3003,
-    'Robotics classroom demonstration — single approved instance ASSIGNED campus 1',
+    'Robotics classroom demonstration — single approved instance BEFORE_VISIT campus 1',
     'WORKSHOP',
     NULL,
     'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
@@ -6334,7 +6391,7 @@ JOIN (
     'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3012,
-    'Smart library operations briefing — single approved instance ASSIGNED campus 2',
+    'Smart library operations briefing — single approved instance BEFORE_VISIT campus 2',
     'OTHER',
     'Special protocol rehearsal',
     'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
@@ -6433,7 +6490,7 @@ JOIN (
     'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3021,
-    'AI curriculum benchmarking delegation — single approved instance ASSIGNED campus 3',
+    'AI curriculum benchmarking delegation — single approved instance BEFORE_VISIT campus 3',
     'WORKSHOP',
     NULL,
     'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
@@ -6532,7 +6589,7 @@ JOIN (
     'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3030,
-    'Research collaboration signing day — single approved instance ASSIGNED campus 4',
+    'Research collaboration signing day — single approved instance BEFORE_VISIT campus 4',
     'OTHER',
     'Special protocol rehearsal',
     'Xem xét khả năng hợp tác hospitality, tourism management và mô hình học trải nghiệm tại cơ sở ven biển.',
@@ -6631,7 +6688,7 @@ JOIN (
     'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
     UNION ALL SELECT
     3039,
-    'Career services exchange meeting — single approved instance ASSIGNED campus 5',
+    'Career services exchange meeting — single approved instance BEFORE_VISIT campus 5',
     'WORKSHOP',
     NULL,
     'Thử nghiệm mô hình demo công nghệ trước sinh viên và thu thập phản hồi để xây dựng workshop chính thức.',
@@ -11649,8 +11706,20 @@ SET created_by = CASE visit_request_id
     END
 WHERE visit_request_id IN (3046, 3047, 3048, 3049, 3050);
 
--- 3) Regular IC Staff self-host case: user 4 registered request 3046 and accepts
---    the host role during the same internal-create workflow.
+-- 3) Regular IC Staff self-host case: user 4 registered request 3046, named THEMSELF as the
+--    campus's Host dự kiến, and that proposal was activated when the confirmation gate opened.
+--    Split in two because a decision may never be introduced by the same statement that writes
+--    the proposal it claims to rest on.
+UPDATE visit_request_campuses
+SET host_selection_mode = 'SELF',
+    proposed_host_user_id = 4,
+    proposed_host_by_user_id = 4,
+    proposed_host_at = '2026-07-07 09:00:00',
+    proposed_host_activation_status = 'PENDING'
+WHERE visit_instance_id = 5046
+  AND visit_request_id = 3046
+  AND campus_id = 1;
+
 UPDATE visit_request_campuses
 SET current_host_user_id = 4,
     host_assigned_by = 4,
@@ -11658,8 +11727,10 @@ SET current_host_user_id = 4,
     decided_by = 4,
     decided_at = '2026-07-07 10:00:00',
     decision_actor_role = 'STAFF',
-    decision_source = 'INTERNAL_SELF_HOST',
-    decision_note = 'Seed relation coverage: registering IC Staff HN self-hosts own-campus request during internal creation.',
+    decision_source = 'PREAUTHORIZED_HOST_ACTIVATION',
+    decision_note = 'Seed relation coverage: registering IC Staff HN was the preauthorized proposed host of their own-campus request; activated at gate open.',
+    proposed_host_activation_status = 'ACTIVATED',
+    proposed_host_activated_at = '2026-07-07 10:00:00',
     updated_at = '2026-07-07 10:00:00',
     updated_by = 4
 WHERE visit_instance_id = 5046
@@ -11678,7 +11749,7 @@ INSERT INTO visit_participants
 VALUES
   (7141, 5046, 4, 'IC_HOST', TRUE, 'ASSIGNED',
    4, '2026-07-07 09:00:00', '2026-07-07 09:20:00', 4, '2026-07-07 10:00:00',
-   'Role coverage: STAFF/STAFF registrant self-hosts own request via INTERNAL_SELF_HOST.',
+   'Role coverage: STAFF/STAFF registrant self-hosts own request via an activated proposed host.',
    '2026-07-07 09:00:00', 4, '2026-07-07 10:00:00', 4),
   (7142, 5046, 101, 'IC_SUPPORT', FALSE, 'ACCEPTED',
    4, '2026-07-07 10:05:00', '2026-07-07 10:20:00', NULL, NULL,
@@ -12155,6 +12226,10 @@ FOR EACH ROW
 BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
+  DECLARE v_request_status VARCHAR(40) DEFAULT NULL;
+  DECLARE v_prop_role VARCHAR(30) DEFAULT NULL;
+  DECLARE v_prop_campus BIGINT UNSIGNED DEFAULT NULL;
+  DECLARE v_prop_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.operational_contact_user_id IS NOT NULL THEN
     SELECT COUNT(*), MAX(u.status)
@@ -12185,6 +12260,37 @@ BEGIN
     SIGNAL SQLSTATE '45000'
       SET MESSAGE_TEXT = 'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT';
   END IF;
+
+  -- ── Host DỰ KIẾN: người được đề xuất phải là nhân sự có thật của ĐÚNG campus này ─────────────
+  -- Kiểm ở mức "ai được phép xuất hiện trong ô này", KHÔNG phải eligibility đầy đủ lúc kích hoạt:
+  -- revalidation thật (ACTIVE, đúng phòng IC, chưa có host khác, ...) là việc của application tại
+  -- thời điểm cổng mở (plan §6.2). Nếu DB đòi eligibility đầy đủ ở mọi thời điểm thì một người
+  -- đổi campus sau khi được đề xuất sẽ làm MỌI update lên dòng này thất bại, kể cả hủy campus.
+  IF NEW.proposed_host_user_id IS NOT NULL THEN
+    SELECT r.role_code, u.primary_campus_id, u.status
+      INTO v_prop_role, v_prop_campus, v_prop_status
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.proposed_host_user_id;
+
+    IF v_prop_role IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PROPOSED_HOST_USER_NOT_FOUND';
+    END IF;
+    IF NOT (v_prop_role = 'STAFF' AND v_prop_campus <=> NEW.campus_id AND v_prop_status = 'ACTIVE') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PROPOSED_HOST_MUST_BE_ACTIVE_STAFF_OF_SAME_CAMPUS';
+    END IF;
+  END IF;
+
+  -- Cổng xác nhận là fail-closed cả ở INSERT. Đường ghi bình thường không bao giờ tạo thẳng một
+  -- campus ASSIGNED (proposal được kích hoạt bằng UPDATE sau khi cổng mở), nên nhánh này chỉ bắt
+  -- seed sai/sửa tay — đúng chỗ cần bắt nhất.
+  IF NEW.status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED','REJECTED') THEN
+    SELECT status INTO v_request_status
+    FROM visit_requests WHERE visit_request_id = NEW.visit_request_id;
+
+    IF v_request_status <=> 'PENDING_CONTACT_CONFIRMATION' THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'CONTACT_CONFIRMATION_REQUIRED';
+    END IF;
+  END IF;
 END$$
 
 CREATE TRIGGER trg_visit_campuses_op_contact_guard_bu
@@ -12194,6 +12300,9 @@ BEGIN
   DECLARE v_user_count INT DEFAULT 0;
   DECLARE v_user_status VARCHAR(30) DEFAULT NULL;
   DECLARE v_request_status VARCHAR(40) DEFAULT NULL;
+  DECLARE v_prop_role VARCHAR(30) DEFAULT NULL;
+  DECLARE v_prop_campus BIGINT UNSIGNED DEFAULT NULL;
+  DECLARE v_prop_status VARCHAR(30) DEFAULT NULL;
 
   IF NEW.operational_contact_user_id IS NOT NULL
      AND NOT (NEW.operational_contact_user_id <=> OLD.operational_contact_user_id) THEN
@@ -12225,12 +12334,45 @@ BEGIN
       SET MESSAGE_TEXT = 'CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT';
   END IF;
 
+  -- ── Host DỰ KIẾN: chỉ kiểm khi đề xuất THAY ĐỔI ──────────────────────────
+  -- Kiểm mọi lần update sẽ khóa cứng dòng lại khi người được đề xuất đổi campus/nghỉ việc:
+  -- ngay cả lệnh hủy campus cũng không chạy được. Đề xuất cũ không còn hợp lệ là chuyện bình
+  -- thường và có đường xử lý riêng (NEEDS_RESELECTION), không phải lỗi ghi.
+  IF NEW.proposed_host_user_id IS NOT NULL
+     AND NOT (NEW.proposed_host_user_id <=> OLD.proposed_host_user_id) THEN
+    SELECT r.role_code, u.primary_campus_id, u.status
+      INTO v_prop_role, v_prop_campus, v_prop_status
+    FROM users u JOIN roles r ON r.role_id = u.role_id
+    WHERE u.user_id = NEW.proposed_host_user_id;
+
+    IF v_prop_role IS NULL THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PROPOSED_HOST_USER_NOT_FOUND';
+    END IF;
+    IF NOT (v_prop_role = 'STAFF' AND v_prop_campus <=> NEW.campus_id AND v_prop_status = 'ACTIVE') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PROPOSED_HOST_MUST_BE_ACTIVE_STAFF_OF_SAME_CAMPUS';
+    END IF;
+  END IF;
+
+  -- Sau khi campus đã được quyết định, Host chính thức chỉ đổi qua luồng bàn giao Host riêng.
+  -- Sửa đề xuất ở đây khi đó là thao tác vô nghĩa và dễ bị nhầm là đã đổi người phụ trách.
+  IF OLD.status NOT IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
+     AND (NOT (NEW.proposed_host_user_id <=> OLD.proposed_host_user_id)
+          OR NOT (NEW.host_selection_mode <=> OLD.host_selection_mode)) THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'PROPOSED_HOST_CANNOT_CHANGE_AFTER_CAMPUS_DECIDED';
+  END IF;
+
   -- ── Cổng xác nhận toàn cục ────────────────────────────────────────────────
-  -- Không campus nào được QUYẾT ĐỊNH (approve -> BEFORE_VISIT, hoặc reject) khi request
-  -- cha còn đang chờ xác nhận đầu mối. Fail-closed ở tầng DB; backend vẫn phải validate
-  -- đầy đủ — trigger không thay thế authorization.
-  IF OLD.status = 'WAITING_REQUEST_APPROVAL'
-     AND NEW.status IN ('BEFORE_VISIT','REJECTED') THEN
+  -- Không campus nào được QUYẾT ĐỊNH (approve/kích hoạt Host dự kiến -> ASSIGNED, hoặc reject)
+  -- khi request cha còn đang chờ xác nhận đầu mối. Fail-closed ở tầng DB; backend vẫn phải
+  -- validate đầy đủ — trigger không thay thế authorization.
+  --
+  -- Điều kiện OLD là "chưa được quyết định" chứ KHÔNG phải riêng WAITING_REQUEST_APPROVAL:
+  -- kích hoạt Host dự kiến có thể đi thẳng từ WAITING_CONTACT_CONFIRMATION sang ASSIGNED, và
+  -- liệt kê thiếu một trạng thái nguồn nào cũng mở lại đúng lỗ hổng này (đã từng xảy ra với
+  -- ASSIGNED ở phía NEW).
+  IF OLD.status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
+     AND NEW.status IN ('ASSIGNED','BEFORE_VISIT','REJECTED') THEN
     SELECT status INTO v_request_status
     FROM visit_requests
     WHERE visit_request_id = NEW.visit_request_id;
@@ -12353,9 +12495,10 @@ BEFORE UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   DECLARE v_request_status VARCHAR(40);
+  DECLARE v_registrant_user_id BIGINT UNSIGNED DEFAULT NULL;
 
   IF NEW.status = 'CANCELLED' AND OLD.status <> 'CANCELLED' THEN
-    SELECT status INTO v_request_status
+    SELECT status, registrant_user_id INTO v_request_status, v_registrant_user_id
     FROM visit_requests
     WHERE visit_request_id = NEW.visit_request_id;
 
@@ -12407,11 +12550,14 @@ BEGIN
         SIGNAL SQLSTATE '45000'
           SET MESSAGE_TEXT = 'VISITOR campus cancellation must use SELF_SERVICE source';
       END IF;
-      -- Actor relation hardening: the visitor canceller must be the contact owner
-      -- of the parent request (legacy rows with NULL owner keep old behaviour).
-      IF v_contact_owner_id IS NOT NULL AND NEW.cancelled_by <> v_contact_owner_id THEN
+      -- Actor relation hardening. Guest side of THIS campus = its own operational contact, or the
+      -- request's registrant; a sibling campus's contact is not on this campus's guest side.
+      -- Rows with neither relation recorded keep the old behaviour rather than blocking.
+      IF (v_registrant_user_id IS NOT NULL OR NEW.operational_contact_user_id IS NOT NULL)
+         AND NOT (NEW.cancelled_by <=> v_registrant_user_id)
+         AND NOT (NEW.cancelled_by <=> NEW.operational_contact_user_id) THEN
         SIGNAL SQLSTATE '45000'
-          SET MESSAGE_TEXT = 'VISITOR campus cancellation requires cancelled_by to be the contact owner of the parent request';
+          SET MESSAGE_TEXT = 'VISITOR campus cancellation requires cancelled_by to be the registrant or this campus operational contact';
       END IF;
     ELSEIF NEW.cancellation_actor_type = 'HOST' THEN
       IF OLD.status = 'WAITING_REQUEST_APPROVAL' THEN
@@ -12488,7 +12634,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+  IF NEW.status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
@@ -12498,7 +12644,8 @@ BEGIN
   END IF;
 
   -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
-  -- BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  -- ASSIGNED và BEFORE_VISIT đều chưa bắt buộc agenda: ASSIGNED là Host chưa mở giai đoạn chuẩn bị,
+  -- BEFORE_VISIT là Host đang chuẩn bị agenda.
   IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     SELECT COUNT(*) INTO v_agenda_count
     FROM visit_agendas va
@@ -12519,10 +12666,11 @@ BEGIN
     END IF;
   END IF;
 
-  -- Decision rules: standard review / leader assign need a same-campus Staff Leader.
-  -- INTERNAL_SELF_HOST by a regular IC Staff is ONLY valid at insert time (the create
-  -- transaction of their OWN request): decided_by = host_assigned_by = current_host =
-  -- the request's registrant, ACTIVE STAFF/STAFF of the same campus, actor role 'STAFF'.
+  -- Decision rules: the standard Staff Leader review needs a same-campus Staff Leader.
+  -- decision_actor_role 'STAFF' exists for exactly ONE case — a regular IC Staff who registered
+  -- the request, named THEMSELF as this campus's Host dự kiến, and had that proposal activated
+  -- when the confirmation gate opened. It is bound to the proposal columns below, so it cannot be
+  -- fabricated: without a matching proposal there is nothing to activate.
   IF NEW.decided_by IS NOT NULL THEN
     SET v_source = COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW');
 
@@ -12531,10 +12679,23 @@ BEGIN
     FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.decided_by;
 
-    IF v_source = 'INTERNAL_SELF_HOST' AND NEW.decision_actor_role = 'STAFF' THEN
+    IF v_source = 'PREAUTHORIZED_HOST_ACTIVATION' THEN
+      IF NEW.proposed_host_user_id IS NULL
+         OR NEW.proposed_host_by_user_id IS NULL
+         OR NOT (NEW.proposed_host_activation_status <=> 'ACTIVATED')
+         OR NOT (NEW.current_host_user_id <=> NEW.proposed_host_user_id)
+         OR NOT (NEW.decided_by <=> NEW.proposed_host_by_user_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PREAUTHORIZED_HOST_ACTIVATION requires an ACTIVATED proposal whose proposed host is the current host and whose proposer is the decider';
+      END IF;
+    END IF;
+
+    IF NEW.decision_actor_role = 'STAFF' THEN
+      IF v_source <> 'PREAUTHORIZED_HOST_ACTIVATION' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role STAFF is only valid for PREAUTHORIZED_HOST_ACTIVATION';
+      END IF;
       IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'STAFF'
               AND v_decider_campus_id = NEW.campus_id AND v_decider_status = 'ACTIVE') THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'INTERNAL_SELF_HOST by STAFF requires an ACTIVE regular Staff of the same campus';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PREAUTHORIZED_HOST_ACTIVATION by STAFF requires an ACTIVE regular Staff of the same campus';
       END IF;
       IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
@@ -12545,7 +12706,7 @@ BEGIN
       END IF;
     ELSE
       IF NEW.decision_actor_role <> 'STAFF_LEADER' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless INTERNAL_SELF_HOST by the registering Staff';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless a STAFF proposal is being activated';
       END IF;
       IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
@@ -12557,8 +12718,8 @@ BEGIN
     IF NEW.decided_by IS NOT NULL AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
     END IF;
-    -- Same-person INTERNAL_SELF_HOST STAFF case already fully validated above.
-    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
+    -- Same-person STAFF activation case already fully validated above.
+    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'PREAUTHORIZED_HOST_ACTIVATION'
             AND NEW.decision_actor_role = 'STAFF') THEN
       SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
       FROM users u JOIN roles r ON r.role_id = u.role_id
@@ -12584,7 +12745,8 @@ BEGIN
 END$$
 
 -- A NEW decision appearing on update (OLD.decided_by IS NULL) is always the standard
--- Staff Leader review — STAFF/INTERNAL_SELF_HOST can never be introduced after creation
+-- Staff Leader review, or the activation of a proposal that already existed on the row. A bare
+-- STAFF decision can never be introduced after creation without such a proposal
 -- (a regular Staff must not approve an existing pending request). Rows that already carry
 -- a valid insert-time STAFF self-host decision keep passing consistency checks later.
 CREATE TRIGGER trg_visit_campuses_assignment_validate_bu
@@ -12617,11 +12779,50 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Cannot update campus instance to active status under a cancelled request';
   END IF;
 
+  -- ── Vòng đời campus: mỗi bước phải đến từ đúng bước trước nó ──────────────────────────────
+  -- ASSIGNED và BEFORE_VISIT là hai trạng thái KHÁC nhau, không phải hai tên của một trạng thái:
+  --   WAITING_REQUEST_APPROVAL -> ASSIGNED      : Staff Leader duyệt + gán Host trong cùng transaction
+  --   ASSIGNED                 -> BEFORE_VISIT  : Host bấm "Bắt đầu chuẩn bị" (mở các thao tác setup)
+  --   BEFORE_VISIT             -> DURING_VISIT  : Host hoàn tất chuẩn bị
+  -- Nếu chỉ dựa vào backend để giữ thứ tự này thì một lệnh UPDATE lạc (script, import, bug) có thể
+  -- nhảy cóc và campus vào giai đoạn tiếp khách mà chưa ai chuẩn bị. Guard nằm ở DB nên fail-closed.
+  -- Các nhánh REJECTED / CANCELLED / resubmit không bị đụng tới ở đây.
+  -- ASSIGNED có HAI đường vào hợp lệ, và cả hai đều nằm sau cổng xác nhận (guard cổng ở
+  -- trg_visit_campuses_op_contact_guard_bu):
+  --   WAITING_REQUEST_APPROVAL      -> ASSIGNED : Staff Leader duyệt + gán Host
+  --   WAITING_CONTACT_CONFIRMATION  -> ASSIGNED : Host dự kiến đã preauthorize được kích hoạt
+  --                                               ngay trong transaction đầu mối cuối xác nhận
+  IF NEW.status = 'ASSIGNED' AND OLD.status <> 'ASSIGNED'
+     AND OLD.status NOT IN ('WAITING_REQUEST_APPROVAL','WAITING_CONTACT_CONFIRMATION') THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Campus instance can only enter ASSIGNED from WAITING_REQUEST_APPROVAL or WAITING_CONTACT_CONFIRMATION';
+  END IF;
+
+  -- ... nhưng đường tắt đó CHỈ dành cho kích hoạt proposal. Không có proposal thì cổng mở phải
+  -- dẫn tới WAITING_REQUEST_APPROVAL để Staff Leader chọn Host (plan §2.1 nhánh A/E).
+  IF NEW.status = 'ASSIGNED' AND OLD.status = 'WAITING_CONTACT_CONFIRMATION'
+     AND COALESCE(NEW.decision_source,'') <> 'PREAUTHORIZED_HOST_ACTIVATION' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'WAITING_CONTACT_CONFIRMATION can only reach ASSIGNED by activating a preauthorized host proposal';
+  END IF;
+
+  IF NEW.status = 'BEFORE_VISIT' AND OLD.status <> 'BEFORE_VISIT'
+     AND OLD.status <> 'ASSIGNED' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Campus instance can only enter BEFORE_VISIT from ASSIGNED (Host must start preparation)';
+  END IF;
+
+  IF NEW.status = 'DURING_VISIT' AND OLD.status <> 'DURING_VISIT'
+     AND OLD.status <> 'BEFORE_VISIT' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Campus instance can only enter DURING_VISIT from BEFORE_VISIT';
+  END IF;
+
   -- ── Host handover: a deliberate re-assignment on an already-decided, not-yet-started campus. ──
   IF OLD.current_host_user_id IS NOT NULL
      AND NOT (NEW.current_host_user_id <=> OLD.current_host_user_id)
      AND NEW.current_host_user_id IS NOT NULL
-     AND OLD.status = 'BEFORE_VISIT'
+     AND OLD.status IN ('ASSIGNED','BEFORE_VISIT')
      AND NEW.status = OLD.status
      AND NEW.host_assigned_by IS NOT NULL
      AND NEW.host_assigned_at IS NOT NULL THEN
@@ -12634,11 +12835,32 @@ BEGIN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Official host cannot be changed after first assignment';
   END IF;
 
-  -- A decision introduced AFTER creation must come from the standard campus review.
+  -- A decision introduced AFTER creation is either the standard Staff Leader review, or the
+  -- activation of a host proposal that was authorized BEFORE the gate opened. The second one is
+  -- what makes a regular IC Staff decision legal on an update at all — and it is only legal
+  -- because the proposal columns below pin it to a proposal that already existed.
   IF OLD.decided_by IS NULL AND NEW.decided_by IS NOT NULL THEN
-    IF COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW') <> 'STANDARD_CAMPUS_REVIEW'
-       OR COALESCE(NEW.decision_actor_role,'') <> 'STAFF_LEADER' THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Post-create campus decisions must use STANDARD_CAMPUS_REVIEW by a Staff Leader';
+    IF COALESCE(NEW.decision_source, 'STANDARD_CAMPUS_REVIEW')
+         NOT IN ('STANDARD_CAMPUS_REVIEW','PREAUTHORIZED_HOST_ACTIVATION')
+       OR COALESCE(NEW.decision_actor_role,'') NOT IN ('STAFF_LEADER','STAFF') THEN
+      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Post-create campus decisions must use STANDARD_CAMPUS_REVIEW or PREAUTHORIZED_HOST_ACTIVATION';
+    END IF;
+    -- The proposal must have been on the row BEFORE this statement. Writing the proposal and
+    -- activating it in one UPDATE would let a single write invent its own authorization.
+    IF COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'PREAUTHORIZED_HOST_ACTIVATION' THEN
+      IF OLD.proposed_host_user_id IS NULL
+         OR NOT (OLD.proposed_host_user_id <=> NEW.proposed_host_user_id)
+         OR NOT (OLD.proposed_host_by_user_id <=> NEW.proposed_host_by_user_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PREAUTHORIZED_HOST_ACTIVATION requires a proposal that already existed before this update';
+      END IF;
+      -- Activation means exactly this: the proposed person becomes the host, and the person who
+      -- proposed them is recorded as having decided it. Anything else is a different act wearing
+      -- this source's name.
+      IF NOT (NEW.proposed_host_activation_status <=> 'ACTIVATED')
+         OR NOT (NEW.current_host_user_id <=> NEW.proposed_host_user_id)
+         OR NOT (NEW.decided_by <=> NEW.proposed_host_by_user_id) THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PREAUTHORIZED_HOST_ACTIVATION requires an ACTIVATED proposal whose proposed host is the current host and whose proposer is the decider';
+      END IF;
     END IF;
   END IF;
 
@@ -12663,7 +12885,7 @@ BEGIN
     END IF;
   END IF;
 
-  IF NEW.status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
+  IF NEW.status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     IF NEW.current_host_user_id IS NULL OR NEW.host_assigned_by IS NULL OR NEW.host_assigned_at IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Approved/operational campus instance requires official host assignment';
     END IF;
@@ -12673,7 +12895,8 @@ BEGIN
   END IF;
 
   -- Từ DURING_VISIT trở đi, khách đã/đang được tiếp khách nên campus instance bắt buộc phải có agenda thật.
-  -- BEFORE_VISIT vẫn có thể là giai đoạn Host đang chuẩn bị agenda; backend có thể siết sớm hơn nếu cần.
+  -- ASSIGNED và BEFORE_VISIT đều chưa bắt buộc agenda: ASSIGNED là Host chưa mở giai đoạn chuẩn bị,
+  -- BEFORE_VISIT là Host đang chuẩn bị agenda.
   IF NEW.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED') THEN
     SELECT COUNT(*) INTO v_agenda_count
     FROM visit_agendas va
@@ -12701,10 +12924,10 @@ BEGIN
     FROM users u JOIN roles r ON r.role_id = u.role_id
     WHERE u.user_id = NEW.decided_by;
 
-    IF v_source = 'INTERNAL_SELF_HOST' AND NEW.decision_actor_role = 'STAFF' THEN
-      -- Consistency re-check of an insert-time STAFF self-host on later updates.
+    IF v_source = 'PREAUTHORIZED_HOST_ACTIVATION' AND NEW.decision_actor_role = 'STAFF' THEN
+      -- Consistency re-check of an activated STAFF self-proposal on every later update.
       IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'STAFF' AND v_decider_campus_id = NEW.campus_id) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'INTERNAL_SELF_HOST by STAFF requires a regular Staff of the same campus';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'PREAUTHORIZED_HOST_ACTIVATION by STAFF requires a regular Staff of the same campus';
       END IF;
       IF v_registrant_user_id IS NULL OR v_registrant_user_id <> NEW.decided_by THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'STAFF self-host decision is only valid on a request registered by that same Staff';
@@ -12718,7 +12941,7 @@ BEGIN
       END IF;
     ELSE
       IF NEW.decision_actor_role <> 'STAFF_LEADER' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless INTERNAL_SELF_HOST by the registering Staff';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decision_actor_role must be STAFF_LEADER unless an activated STAFF proposal';
       END IF;
       IF NOT (v_decider_role_code = 'STAFF' AND v_decider_sub_role = 'LEADER' AND v_decider_campus_id = NEW.campus_id) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'decided_by must be Staff Leader of the same campus';
@@ -12734,7 +12957,7 @@ BEGIN
        AND NEW.decided_by <> NEW.host_assigned_by THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'host_assigned_by must match decided_by when approving a campus instance';
     END IF;
-    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'INTERNAL_SELF_HOST'
+    IF NOT (COALESCE(NEW.decision_source,'STANDARD_CAMPUS_REVIEW') = 'PREAUTHORIZED_HOST_ACTIVATION'
             AND NEW.decision_actor_role = 'STAFF'
             AND v_is_host_transfer = 0) THEN
       SELECT r.role_code, u.sub_role, u.primary_campus_id INTO v_assigner_role_code, v_assigner_sub_role, v_assigner_campus_id
@@ -12767,7 +12990,9 @@ AFTER INSERT ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   -- Aggregate theo plan §2.2, BỎ QUA campus đã CANCELLED trong mọi mẫu số.
-  -- 'ASSIGNED' không còn tồn tại: approve chuyển thẳng sang BEFORE_VISIT trong cùng transaction.
+  -- 'ASSIGNED' ĐƯỢC TÍNH LÀ ĐÃ DUYỆT: approve gán Host và dừng ở ASSIGNED; BEFORE_VISIT chỉ đến
+  -- khi Host bấm "Bắt đầu chuẩn bị". Bỏ ASSIGNED khỏi approved_count sẽ làm request tụt về
+  -- PENDING_APPROVAL ngay sau khi vừa duyệt xong.
   -- Nhánh đầu tiên là CỔNG XÁC NHẬN: còn campus active thiếu đầu mối -> toàn request đứng ở
   -- PENDING_CONTACT_CONFIRMATION và không Staff Leader nào thấy đơn.
   UPDATE visit_requests vr
@@ -12776,7 +13001,7 @@ BEGIN
            SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS active_count,
            SUM(CASE WHEN status <> 'CANCELLED' AND operational_contact_user_id IS NULL
                     THEN 1 ELSE 0 END) AS unconfirmed_count,
-           SUM(CASE WHEN status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
+           SUM(CASE WHEN status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
                     THEN 1 ELSE 0 END) AS approved_count,
            SUM(CASE WHEN status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
                     THEN 1 ELSE 0 END) AS pending_count,
@@ -12803,7 +13028,9 @@ AFTER UPDATE ON visit_request_campuses
 FOR EACH ROW
 BEGIN
   -- Aggregate theo plan §2.2, BỎ QUA campus đã CANCELLED trong mọi mẫu số.
-  -- 'ASSIGNED' không còn tồn tại: approve chuyển thẳng sang BEFORE_VISIT trong cùng transaction.
+  -- 'ASSIGNED' ĐƯỢC TÍNH LÀ ĐÃ DUYỆT: approve gán Host và dừng ở ASSIGNED; BEFORE_VISIT chỉ đến
+  -- khi Host bấm "Bắt đầu chuẩn bị". Bỏ ASSIGNED khỏi approved_count sẽ làm request tụt về
+  -- PENDING_APPROVAL ngay sau khi vừa duyệt xong.
   -- Nhánh đầu tiên là CỔNG XÁC NHẬN: còn campus active thiếu đầu mối -> toàn request đứng ở
   -- PENDING_CONTACT_CONFIRMATION và không Staff Leader nào thấy đơn.
   UPDATE visit_requests vr
@@ -12812,7 +13039,7 @@ BEGIN
            SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS active_count,
            SUM(CASE WHEN status <> 'CANCELLED' AND operational_contact_user_id IS NULL
                     THEN 1 ELSE 0 END) AS unconfirmed_count,
-           SUM(CASE WHEN status IN ('BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
+           SUM(CASE WHEN status IN ('ASSIGNED','BEFORE_VISIT','DURING_VISIT','AFTER_VISIT','CLOSED')
                     THEN 1 ELSE 0 END) AS approved_count,
            SUM(CASE WHEN status IN ('WAITING_CONTACT_CONFIRMATION','WAITING_REQUEST_APPROVAL')
                     THEN 1 ELSE 0 END) AS pending_count,
@@ -13634,13 +13861,31 @@ SELECT COUNT(*) AS issue_count FROM (
   HAVING COUNT(*) > 1
 ) dup;
 
--- 12.9 ASSIGNED đã bị loại khỏi vòng đời campus. Expected issue_count: 0.
-SELECT 'campus_status_enum_still_has_assigned' AS check_name,
-       CASE WHEN LOCATE('''ASSIGNED''', column_type) > 0 THEN 1 ELSE 0 END AS issue_count
+-- 12.9 ASSIGNED phải CÓ trong vòng đời campus (Staff Leader duyệt + gán Host, Host chưa bắt đầu
+-- chuẩn bị). Expected issue_count: 0.
+SELECT 'campus_status_enum_missing_assigned' AS check_name,
+       CASE WHEN LOCATE('''ASSIGNED''', column_type) > 0 THEN 0 ELSE 1 END AS issue_count
 FROM information_schema.columns
 WHERE table_schema = DATABASE()
   AND table_name = 'visit_request_campuses'
   AND column_name = 'status';
+
+-- 12.9b Campus ở ASSIGNED nghĩa là Host CHƯA bắt đầu chuẩn bị, nên không được có dữ liệu setup nào.
+-- Một dòng ở đây nghĩa là mutation setup đã lọt qua cổng chuẩn bị. Expected issue_count: 0.
+SELECT 'assigned_campus_with_setup_data' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses c
+WHERE c.status = 'ASSIGNED'
+  AND (EXISTS (SELECT 1 FROM visit_agendas a WHERE a.visit_instance_id = c.visit_instance_id)
+    OR EXISTS (SELECT 1 FROM visit_participants p WHERE p.visit_instance_id = c.visit_instance_id)
+    OR EXISTS (SELECT 1 FROM visit_logistics_items l WHERE l.visit_instance_id = c.visit_instance_id)
+    OR EXISTS (SELECT 1 FROM visit_instance_reminder_settings r WHERE r.visit_instance_id = c.visit_instance_id));
+
+-- 12.9c Campus ở ASSIGNED phải có Host và quyết định — đó chính là nghĩa của trạng thái này.
+-- Expected issue_count: 0.
+SELECT 'assigned_campus_without_host_or_decision' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses
+WHERE status = 'ASSIGNED'
+  AND (current_host_user_id IS NULL OR decided_by IS NULL OR decided_at IS NULL);
 
 -- 12.10 Các cột mô hình đầu mối cấp request phải biến mất hoàn toàn. Expected issue_count: 0.
 SELECT 'request_level_contact_columns_remaining' AS check_name,
@@ -14841,8 +15086,12 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (42012, 41011, 1, CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 3 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Taiwan Smart Campus Working Group; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
   (42013, 41012, 1, CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 20 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Jeju Tourism Technology Delegation; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Jeju Tourism Technology Delegation: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
   (42014, 41013, 1, CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 16 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
-  (42015, 41014, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Temasek Polytechnic Learning Innovation Workshop và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Temasek Polytechnic Learning Innovation Workshop: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
-  (42016, 41015, 1, CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hn, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF', 'INTERNAL_SELF_HOST', 'IC Staff Hà Nội là người đăng ký nội bộ của Porto Data Partnership Delegation và tự nhận làm host; quyết định dùng đúng nguồn INTERNAL_SELF_HOST.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
+  -- 42015/42016: IC Staff Hà Nội tự đăng ký đơn và tự nhận Host. Hai dòng này KHÔNG được chèn
+  -- thẳng ở trạng thái đã có Host: dưới mô hình Host dự kiến, đường đi thật là lưu proposal rồi
+  -- kích hoạt khi cổng xác nhận mở. Chèn ở WAITING_REQUEST_APPROVAL rồi đi đúng ba bước ngay
+  -- dưới INSERT này, để seed cũng phải qua đúng những guard mà runtime phải qua.
+  (42015, 41014, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Temasek Polytechnic Learning Innovation Workshop: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
+  (42016, 41015, 1, CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 12 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
   (42017, 41016, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 12 HOUR), 'REJECTED', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Mục tiêu chuyến thăm chưa đủ rõ và lịch đề xuất trùng kỳ kiểm tra năng lực đầu vào của campus.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
   (42018, 41017, 1, CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 13 DAY + INTERVAL 12 HOUR), 'CANCELLED', @u_staff_hn, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, @u_nvt, CURRENT_TIMESTAMP - INTERVAL 1 DAY, 'VISITOR', 'SELF_SERVICE', 'Đầu mối chính xác nhận chuyển toàn bộ buổi tư vấn sang trực tuyến nên không còn nhu cầu tiếp đón tại campus.', NULL, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
   (42019, 41018, 1, CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 22 DAY + INTERVAL 12 HOUR), 'WAITING_REQUEST_APPROVAL', @u_visitor_main, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
@@ -14858,6 +15107,44 @@ INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_
   (42029, 41027, 1, CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 9 HOUR, (CURRENT_DATE - INTERVAL 25 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho National Chengchi University Partnership Visit; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
   (42030, 41028, 1, CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 24 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_sl_hn, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus Hà Nội cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus Hà Nội.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
   (42031, 41028, 2, CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 9 HOUR, (CURRENT_DATE + INTERVAL 27 DAY + INTERVAL 12 HOUR), 'BEFORE_VISIT', @u_nvt, CURRENT_TIMESTAMP, 'REGISTRANT_SELF_MATCH', @u_sl_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_staff_hcm, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hcm, CURRENT_TIMESTAMP - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW', 'Đã đối chiếu lịch tiếp đón, thành phần và nguồn lực campus TP.HCM cho Asia-Pacific Academic Alliance Mission; campus được phê duyệt và host được xác nhận trong cùng quyết định.', NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 'Checklist chuẩn bị cho Asia-Pacific Academic Alliance Mission: đã rà soát điểm đón, biển tên, phòng làm việc, đầu mối liên hệ và phương án dự phòng tại campus TP.HCM.', 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+
+-- ---------------------------------------------------------------------------
+-- Host dự kiến của IC Staff, đi đúng ba bước của mô hình (42015, 42016).
+-- IC Staff Hà Nội đăng ký đơn của chính mình, chọn "Tôi sẽ là người phụ trách
+-- tiếp đón", đầu mối tự khớp nên cổng mở ngay, proposal được kích hoạt, và Host
+-- bấm "Bắt đầu chuẩn bị". Ba UPDATE chứ không phải một, vì trigger cố ý từ chối
+-- một lệnh vừa tạo proposal vừa kích hoạt nó — nếu không, một lệnh ghi duy nhất
+-- sẽ tự cấp quyền cho chính nó.
+-- ---------------------------------------------------------------------------
+
+-- (1) Lưu Host dự kiến khi tạo đơn. Chưa có Host chính thức, chưa có quyết định.
+UPDATE visit_request_campuses
+SET host_selection_mode = 'SELF',
+    proposed_host_user_id = @u_staff_hn,
+    proposed_host_by_user_id = @u_staff_hn,
+    proposed_host_at = CURRENT_TIMESTAMP - INTERVAL 12 DAY,
+    proposed_host_activation_status = 'PENDING'
+WHERE visit_instance_id IN (42015, 42016);
+
+-- (2) Cổng xác nhận mở (đầu mối tự khớp registrant) -> proposal được revalidate và kích hoạt.
+UPDATE visit_request_campuses
+SET status = 'ASSIGNED',
+    current_host_user_id = @u_staff_hn,
+    host_assigned_by = @u_staff_hn,
+    host_assigned_at = CURRENT_TIMESTAMP - INTERVAL 10 DAY,
+    decided_by = @u_staff_hn,
+    decided_at = CURRENT_TIMESTAMP - INTERVAL 10 DAY,
+    decision_actor_role = 'STAFF',
+    decision_source = 'PREAUTHORIZED_HOST_ACTIVATION',
+    decision_note = 'IC Staff Hà Nội đăng ký đơn nội bộ và đã đăng ký sẵn làm Host dự kiến; đề xuất được kích hoạt khi cổng xác nhận đầu mối mở.',
+    proposed_host_activation_status = 'ACTIVATED',
+    proposed_host_activated_at = CURRENT_TIMESTAMP - INTERVAL 10 DAY
+WHERE visit_instance_id IN (42015, 42016);
+
+-- (3) Host bấm "Bắt đầu chuẩn bị" — ASSIGNED không tự trôi sang BEFORE_VISIT.
+UPDATE visit_request_campuses
+SET status = 'BEFORE_VISIT'
+WHERE visit_instance_id IN (42015, 42016);
 
 -- F. Full per-campus form snapshots with distinct business content
 INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, media_consent_note, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
@@ -15649,7 +15936,7 @@ VALUES
 
   -- 05 one approved + one still pending -> PARTIALLY_APPROVED
   (47108, 47005, 1, CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 9 HOUR,
-   CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   CURRENT_DATE + INTERVAL 12 DAY + INTERVAL 11 HOUR, 'ASSIGNED',
    @op_visitor, @op_now - INTERVAL 12 DAY, 'REGISTRANT_SELF_MATCH',
    @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 10 DAY,
    @u_sl_hn, @op_now - INTERVAL 10 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
@@ -15662,7 +15949,7 @@ VALUES
 
   -- 06 approved + rejected, nothing pending -> aggregate APPROVED
   (47110, 47006, 1, CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 9 HOUR,
-   CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   CURRENT_DATE + INTERVAL 10 DAY + INTERVAL 11 HOUR, 'ASSIGNED',
    @op_visitor, @op_now - INTERVAL 14 DAY, 'REGISTRANT_SELF_MATCH',
    @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 12 DAY,
    @u_sl_hn, @op_now - INTERVAL 12 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',
@@ -15724,7 +16011,7 @@ VALUES
 
   -- 11 HO monitor-only: a live mixed-status request HO can read but never mutate
   (47120, 47011, 1, CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 9 HOUR,
-   CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 11 HOUR, 'BEFORE_VISIT',
+   CURRENT_DATE + INTERVAL 7 DAY + INTERVAL 11 HOUR, 'ASSIGNED',
    @op_visitor, @op_now - INTERVAL 11 DAY, 'REGISTRANT_SELF_MATCH',
    @u_sl_hn, @u_staff_hn, @u_sl_hn, @op_now - INTERVAL 9 DAY,
    @u_sl_hn, @op_now - INTERVAL 9 DAY, 'STAFF_LEADER', 'STANDARD_CAMPUS_REVIEW',

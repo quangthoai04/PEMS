@@ -294,18 +294,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .HasOne(d => d.File).WithMany(f => f.Documents)
             .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.Restrict);
 
-        // VisitRequest → Partner, VisitorUser, CancelledBy
-        // (decision fields moved down to VisitRequestCampus — SQL v10 campus-independent approval)
+        // VisitRequest → Partner, Registrant, CancelledBy.
+        // There is NO request-level contact relation: campus decisions live on VisitRequestCampus and
+        // so does the operational-contact link.
         modelBuilder.Entity<VisitRequest>()
             .HasOne(v => v.Partner).WithMany()
             .HasForeignKey(v => v.PartnerId).OnDelete(DeleteBehavior.SetNull);
-        // SET NULL, matching fk_visit_requests_visitor_user in the canonical schema: deleting the visitor
-        // account detaches the request rather than blocking the delete, and the request survives as a
-        // historical record. Declaring Restrict here made EF refuse deletes the database would have allowed,
-        // so the same operation succeeded or failed depending on whether the graph happened to be tracked.
-        modelBuilder.Entity<VisitRequest>()
-            .HasOne<User>().WithMany()
-            .HasForeignKey(v => v.VisitorUserId).OnDelete(DeleteBehavior.SetNull);
+        // SET NULL matches fk_visit_requests_registrant_user: deleting the account detaches the
+        // request rather than blocking the delete, and the request survives as a historical record.
+        // Declaring Restrict here made EF refuse deletes the database would have allowed, so the same
+        // operation succeeded or failed depending on whether the graph happened to be tracked.
         modelBuilder.Entity<VisitRequest>()
             .HasOne<User>().WithMany()
             .HasForeignKey(v => v.RegistrantUserId).OnDelete(DeleteBehavior.SetNull);
@@ -335,6 +333,24 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
             .HasForeignKey(vc => vc.DecidedBy).OnDelete(DeleteBehavior.SetNull);
+
+        // Operational contact of THIS campus. RESTRICT both ways, matching
+        // fk_visit_instances_operational_contact: an account still holding a campus must not be
+        // deleted or re-keyed out from under it. Deliberately NOT unique — one person may hold many
+        // campuses, including several of the same request.
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne(vc => vc.OperationalContact).WithMany()
+            .HasForeignKey(vc => vc.OperationalContactUserId).OnDelete(DeleteBehavior.Restrict);
+
+        // Proposed host + proposer. RESTRICT to match fk_visit_instances_proposed_host(_by): a
+        // SET NULL here would leave host_selection_mode SELF/SELECTED with no proposed user, which
+        // ck_vrc_proposed_host_mode refuses outright.
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne(vc => vc.ProposedHost).WithMany()
+            .HasForeignKey(vc => vc.ProposedHostUserId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<VisitRequestCampus>()
+            .HasOne<User>().WithMany()
+            .HasForeignKey(vc => vc.ProposedHostByUserId).OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<VisitRequestCampus>()
             .HasOne<User>().WithMany()
@@ -386,19 +402,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             b.HasIndex(l => l.VisitRequestId).HasDatabaseName("idx_vigm_request");
         });
 
-        // visit_request_identity_changes → request (CASCADE) + old/new/requested_by users.
+        // visit_request_identity_changes → CAMPUS INSTANCE via the composite key (CASCADE), plus
+        // old/new/requested_by users. The composite FK is what makes a sibling-campus payload
+        // impossible to persist: (visit_request_id, visit_instance_id) must name the same row.
         modelBuilder.Entity<VisitRequestIdentityChange>(b =>
         {
-            b.HasOne<VisitRequest>().WithMany(v => v.IdentityChanges)
-                .HasForeignKey(c => c.VisitRequestId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(c => c.CampusInstance).WithMany(vc => vc.IdentityChanges)
+                .HasForeignKey(c => new { c.VisitRequestId, c.VisitInstanceId })
+                .HasPrincipalKey(vc => new { vc.VisitRequestId, vc.VisitInstanceId })
+                .OnDelete(DeleteBehavior.Cascade);
             b.HasOne<User>().WithMany()
                 .HasForeignKey(c => c.OldUserId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne<User>().WithMany()
                 .HasForeignKey(c => c.NewUserId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne<User>().WithMany()
                 .HasForeignKey(c => c.RequestedBy).OnDelete(DeleteBehavior.Restrict);
-            b.HasIndex(c => new { c.VisitRequestId, c.TargetRelation, c.Status })
-                .HasDatabaseName("idx_identity_change_request_relation_status");
+            b.HasIndex(c => new { c.VisitInstanceId, c.Status })
+                .HasDatabaseName("idx_identity_change_instance_status");
+            b.HasIndex(c => new { c.VisitRequestId, c.Status })
+                .HasDatabaseName("idx_identity_change_request_status");
         });
 
         // visit_request_pending_forms: standalone pending v2 snapshot store (no FK — it is

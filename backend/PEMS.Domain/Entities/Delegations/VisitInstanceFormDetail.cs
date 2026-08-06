@@ -33,21 +33,30 @@ public class VisitInstanceFormDetail
     [Column("working_content")]
     public string? WorkingContent { get; set; }
 
-    // Per-campus OPERATIONAL contact (đầu mối làm việc tại cơ sở). A snapshot only — it never
-    // grants a login. The request-level PRIMARY contact lives on VisitRequest.ContactPerson*.
+    // Per-campus OPERATIONAL contact SNAPSHOT. Name and phone are display data only: a matching
+    // name or phone is never evidence of the same person. The account that actually operates this
+    // campus is VisitRequestCampus.OperationalContactUserId, set only through confirmation.
     [Column("operational_contact_full_name")]
     public string OperationalContactFullName { get; set; } = null!;
 
-    // Organization + email are OPTIONAL (a coordination snapshot needs name + phone; the rest may be blank).
-    // Stored NULL when blank — the DB CHECK (TRIM(x) <> '') accepts NULL but rejects an empty string.
+    // Organization is optional. Stored NULL when blank — the DB CHECK (TRIM(x) <> '') accepts NULL
+    // but rejects an empty string.
     [Column("operational_contact_organization")]
     public string? OperationalContactOrganization { get; set; }
+
+    // Optional, like organization: the detail screens show the contact's job title, so it needs a
+    // home. Blank normalizes to NULL (the CHECK rejects an empty string).
+    [Column("operational_contact_job_title")]
+    public string? OperationalContactJobTitle { get; set; }
 
     [Column("operational_contact_phone")]
     public string? OperationalContactPhone { get; set; }
 
+    // REQUIRED. The only address a per-campus confirmation invitation is ever bound to. Normalized
+    // at the application boundary. Runtime authority is read from OperationalContactUserId, never
+    // from this string.
     [Column("operational_contact_email")]
-    public string? OperationalContactEmail { get; set; }
+    public string OperationalContactEmail { get; set; } = null!;
 
     [Column("working_language")]
     public string WorkingLanguage { get; set; } = "EN";
@@ -60,9 +69,6 @@ public class VisitInstanceFormDetail
 
     [Column("media_consent_note")]
     public string? MediaConsentNote { get; set; }
-
-    [Column("note_to_fptu")]
-    public string? NoteToFptu { get; set; }
 
     // form_revision bumps on every applied change; approval_revision only when an
     // approval-sensitive amendment is applied. row_version is the manual optimistic token.

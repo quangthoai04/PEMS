@@ -19,23 +19,25 @@ public static class VisitFormActions
     /// <summary>Registrant/ACTIVE contact may apply a safe/privacy edit (v2, request not cancelled).</summary>
     public const string SubmitSafeEdit = "SUBMIT_SAFE_EDIT";
 
-    // ── Primary-contact identity workflow (request-level) ────────────────────
-    // These mirror the guards in the contact-claim / contact-transfer handlers exactly. Before them the
-    // frontend decided from `viewer.relation` alone, so it offered buttons the backend would refuse
-    // (a resend past its cap, a transfer inside the 24h window, a second transfer while one is pending).
-    /// <summary>Registrant may re-send the pending INITIAL_CLAIM invitation (cap 5).</summary>
-    public const string ResendContactClaim = "RESEND_CONTACT_CLAIM";
-    /// <summary>Registrant may correct the invited contact email while it is still unclaimed.</summary>
-    public const string ReplacePendingContact = "REPLACE_PENDING_CONTACT";
-    /// <summary>Registrant / current ACTIVE contact may propose handing the contact role to someone else.</summary>
-    public const string InitiateContactTransfer = "INITIATE_CONTACT_TRANSFER";
-    /// <summary>Registrant / current ACTIVE contact may re-send the pending TRANSFER invitation (cap 5).</summary>
-    public const string ResendContactTransfer = "RESEND_CONTACT_TRANSFER";
-    /// <summary>Registrant / current ACTIVE contact may cancel the pending TRANSFER.</summary>
-    public const string CancelContactTransfer = "CANCEL_CONTACT_TRANSFER";
-
     // ── Per-campus instance ──────────────────────────────────────────────────
-    /// <summary>Requester side may propose an amendment for an ASSIGNED/BEFORE_VISIT instance ≥24h out with no pending amendment.</summary>
+
+    // ── Operational-contact workflow. INSTANCE scope, always ─────────────────
+    // These mirror the guards in the operational-contact handlers exactly. They used to be
+    // request-level, which is what let one answer decide campuses its owner was never invited to;
+    // now every one of them names the campus it acts on, and holding one campus grants nothing on a
+    // sibling. The frontend decided from `viewer.relation` alone before, so it offered buttons the
+    // backend would refuse (a resend past its cap, a transfer inside the lead time, a second change
+    // while one is pending).
+    /// <summary>Registrant may re-send THIS campus's outstanding invitation (cap 5, with cooldown).</summary>
+    public const string ResendOperationalContactConfirmation = "RESEND_OPERATIONAL_CONTACT_CONFIRMATION";
+    /// <summary>Registrant may correct THIS campus's contact outright while the campus is undecided.</summary>
+    public const string ReplaceOperationalContact = "REPLACE_OPERATIONAL_CONTACT";
+    /// <summary>Registrant / this campus's confirmed contact may hand the campus to someone else after its decision.</summary>
+    public const string InitiateOperationalContactTransfer = "INITIATE_OPERATIONAL_CONTACT_TRANSFER";
+    /// <summary>Registrant / this campus's confirmed contact may close the outstanding invitation.</summary>
+    public const string CancelOperationalContactChange = "CANCEL_OPERATIONAL_CONTACT_CHANGE";
+
+    /// <summary>Requester side may propose an amendment for a BEFORE_VISIT instance ≥24h out with no pending amendment.</summary>
     public const string SubmitAmendment = "SUBMIT_AMENDMENT";
     /// <summary>Current campus Staff Leader may approve the instance's pending amendment.</summary>
     public const string ApproveAmendment = "APPROVE_AMENDMENT";

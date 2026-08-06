@@ -299,11 +299,8 @@ public static class CampusUcTestData
         RegistrantJobTitle = "Giám đốc",
         RegistrantPhone = "0912345678",
         RegistrantEmail = "registrant@test.local",
-        // Pure V2: delegation name / purpose live in the per-campus detail, not on the request row.
-        ContactPersonFullName = "Đầu mối",
-        ContactPersonOrganization = "Tổ chức Test",
-        ContactPersonPhone = "0912345678",
-        ContactPersonEmail = "contact@test.local",
+        // Pure V2: delegation name, purpose and the operational contact live in the per-campus
+        // detail, not on the request row.
         Status = VisitRequestStatuses.PendingApproval,
         SubmittedAt = new DateTime(2026, 6, 1),
         CreatedAt = new DateTime(2026, 6, 1),
@@ -330,6 +327,9 @@ public static class CampusUcTestData
             Purpose = "Tham quan",
             OperationalContactFullName = "Đầu mối cơ sở",
             OperationalContactPhone = "0900000002",
+            // NOT NULL since the per-campus cutover: this address is the only thing a campus’s
+            // confirmation invitation can be bound to.
+            OperationalContactEmail = "op@test.local",
             WorkingLanguage = "EN",
             MediaConsentStatus = "AGREED",
             FormRevision = 1,

@@ -51,10 +51,11 @@ public static class VisitNextTaskBuilder
         if (rows.Count == 0) return Array.Empty<VisitNextTaskDto>();
 
         // ── Which extra facts does THIS page actually need? Only fetch those. ──
+        // BEFORE_VISIT only: "is the preparation finished?" is a question about a campus whose
+        // preparation has begun. An ASSIGNED campus has nothing to be incomplete about yet.
         var prepInstanceIds = rows
             .Where(r => r.ViewerIsHost && r.VisitInstanceId is not null
-                        && (r.InstanceStatus == VisitInstanceStatus.Assigned
-                            || r.InstanceStatus == VisitInstanceStatus.BeforeVisit))
+                        && r.InstanceStatus == VisitInstanceStatus.BeforeVisit)
             .Select(r => r.VisitInstanceId!.Value).Distinct().ToList();
 
         var closingInstanceIds = rows
@@ -130,6 +131,13 @@ public static class VisitNextTaskBuilder
         switch (r.InstanceStatus)
         {
             case VisitInstanceStatus.Assigned:
+                // The Host has the campus and has not opened it. There is exactly one thing to do
+                // here, and it is not "finish the preparation" — nothing can be prepared until they
+                // start. Deliberately NOT folded in with BEFORE_VISIT below.
+                return Task(VisitNextTaskCodes.StartPreparation,
+                    "Bắt đầu chuẩn bị cho chuyến thăm",
+                    true, r.PlannedStartAt, VisitListActions.StartPreparation);
+
             case VisitInstanceStatus.BeforeVisit:
                 return preparationIncomplete.Contains(instanceId.Value)
                     ? Task(VisitNextTaskCodes.CompletePreparation,
@@ -316,5 +324,7 @@ public static class VisitListActions
     public const string ApproveAndAssignHost = "APPROVE_AND_ASSIGN_HOST";
     public const string CampusReject = "CAMPUS_REJECT";
     public const string OpenHostProcess = "OPEN_HOST_PROCESS";
+    /// <summary>Current Host opens the preparation window on an ASSIGNED campus (ASSIGNED → BEFORE_VISIT).</summary>
+    public const string StartPreparation = "START_PREPARATION";
     public const string TransferHost = VisitFormActions.TransferHost;
 }

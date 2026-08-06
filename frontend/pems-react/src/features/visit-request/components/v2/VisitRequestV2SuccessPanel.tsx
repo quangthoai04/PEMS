@@ -112,7 +112,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
           <p className="mt-1 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
         )}
 
-        {response.contactClaimPending && (
+        {response.pendingConfirmations > 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <p>{t('visitRequestV2:success.claimPending')}</p>

@@ -64,7 +64,7 @@ public sealed class GetRelatedVisitorsQueryHandler
         var instances = await RelatedVisitorScope.VisibleInstances(_db, campusId)
             .Select(vrc => new InstanceRow
             {
-                VisitorUserId = vrc.VisitRequest.VisitorUserId!.Value,
+                VisitorUserId = vrc.OperationalContactUserId!.Value,
                 VisitRequestId = vrc.VisitRequestId,
                 SubmittedAt = vrc.VisitRequest.SubmittedAt,
                 PlannedStartAt = vrc.PlannedStartAt,

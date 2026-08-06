@@ -86,17 +86,26 @@ public static class VisitRequestFingerprintBuilder
 
     /// <summary>
     /// Per-campus form v2 fingerprint (plan §6.3). Canonical input, in order: version tag, normalized
-    /// registrant email, normalized primary-contact email, effective scope, then each campus (SORTED by campus
-    /// code) as <c>code,start,end,delegationName,visitType,visitTypeOther</c>. Delegation name and visit type
-    /// are PER-CAMPUS in v2 (they are core identity here); purpose/notes/people are still excluded as soft
-    /// content. The version tag guarantees a v2 hash can never collide with a v1 hash for the same core data.
-    /// Only the SHA-256 hex digest is persisted — the canonical string carries PII and must not be stored/logged.
+    /// registrant email, effective scope, then each campus (SORTED by campus code) as
+    /// <c>code,start,end,delegationName,visitType,visitTypeOther,operationalContactEmail</c>.
+    /// Delegation name and visit type are PER-CAMPUS in v2 (they are core identity here);
+    /// purpose/notes/people are still excluded as soft content.
+    ///
+    /// <para>
+    /// The contact address moved INTO the campus tuple with the per-campus cutover. It has to be part
+    /// of the identity: the address decides who is asked to confirm that campus, so a resend that
+    /// silently changed it would otherwise reuse the fingerprint of the form the registrant first
+    /// submitted and look like the same intent.
+    /// </para>
+    ///
+    /// The version tag guarantees a v2 hash can never collide with a v1 hash for the same core data.
+    /// Only the SHA-256 hex digest is persisted — the canonical string carries PII and must not be
+    /// stored or logged.
     /// </summary>
     public static string BuildV2(
         string registrantEmail,
-        string primaryContactEmail,
         string effectiveVisitScope,
-        IEnumerable<(string CampusCode, DateTime Start, DateTime End, string DelegationName, string VisitType, string? VisitTypeOther)> campusVisits)
+        IEnumerable<(string CampusCode, DateTime Start, DateTime End, string DelegationName, string VisitType, string? VisitTypeOther, string? OperationalContactEmail)> campusVisits)
     {
         var campuses = campusVisits
             .Select(c =>
@@ -111,6 +120,7 @@ public static class VisitRequestFingerprintBuilder
                     NormalizeText(c.DelegationName),
                     type,
                     other,
+                    NormalizeEmail(c.OperationalContactEmail),
                 });
             })
             .OrderBy(s => s, StringComparer.Ordinal)
@@ -120,7 +130,6 @@ public static class VisitRequestFingerprintBuilder
         {
             VersionV2,
             NormalizeEmail(registrantEmail),
-            NormalizeEmail(primaryContactEmail),
             NormalizeCode(effectiveVisitScope),
             string.Join(';', campuses),
         });

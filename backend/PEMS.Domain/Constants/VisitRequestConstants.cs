@@ -1,15 +1,25 @@
 namespace PEMS.Domain.Constants;
 
-// Aggregate request status (SQL v10 campus-independent approval).
-// Derived from visit_request_campuses decisions; the real approve/reject decision
+// Aggregate request status. Derived from campus-instance state; the real approve/reject decision
 // lives on each campus instance, never on the request.
 public static class VisitRequestStatuses
 {
+    /// <summary>
+    /// At least one active campus has no confirmed operational contact. This is the GLOBAL GATE:
+    /// while a request is here, NO Staff Leader of ANY campus may see or process it — not even a
+    /// campus whose own contact is already confirmed, and not even when the registrant is that
+    /// campus's own Staff Leader.
+    /// </summary>
+    public const string PendingContactConfirmation = "PENDING_CONTACT_CONFIRMATION";
     public const string PendingApproval          = "PENDING_APPROVAL";
     public const string PartiallyApproved        = "PARTIALLY_APPROVED";
     public const string Approved                 = "APPROVED";
     public const string Rejected                 = "REJECTED";
     public const string Cancelled                = "CANCELLED";
+
+    /// <summary>True while the confirmation gate is shut for the whole request.</summary>
+    public static bool IsBehindContactGate(string? status)
+        => status == PendingContactConfirmation;
 }
 
 public static class VisitScopes
@@ -24,18 +34,39 @@ public static class WorkingLanguages
     public const string English    = "EN";
 }
 
-// Campus instance status (SQL v10 visit_request_campuses.status).
-// No WAITING_HOST_ASSIGNMENT: approve assigns the host in the same action.
+// Campus instance status (visit_request_campuses.status).
+// There is no WAITING_HOST_ASSIGNMENT: approving names the Host in the same transaction and lands the
+// campus on ASSIGNED. Preparation opens only after the Host starts it (ASSIGNED → BEFORE_VISIT).
 public static class VisitInstanceStatuses
 {
+    /// <summary>This campus's operational contact has not confirmed yet; operational_contact_user_id is NULL.</summary>
+    public const string WaitingContactConfirmation = "WAITING_CONTACT_CONFIRMATION";
     public const string WaitingRequestApproval = "WAITING_REQUEST_APPROVAL";
+    /// <summary>Approved by this campus's Staff Leader with the Host named — preparation NOT started yet.</summary>
     public const string Assigned               = "ASSIGNED";
+    /// <summary>The current Host started preparation; setup actions are open only from here.</summary>
     public const string BeforeVisit            = "BEFORE_VISIT";
     public const string DuringVisit            = "DURING_VISIT";
     public const string AfterVisit             = "AFTER_VISIT";
     public const string Closed                 = "CLOSED";
     public const string Cancelled              = "CANCELLED";
     public const string Rejected               = "REJECTED";
+
+    /// <summary>
+    /// Decided by the Staff Leader and not yet started — ASSIGNED (Host named, idle) plus BEFORE_VISIT
+    /// (Host preparing). Use this for things that only need "this campus has an owner and a date":
+    /// host handover, requester-side amendments, cancel-before-start, schedule conflicts.
+    /// Do NOT use it to gate a setup mutation — those are BEFORE_VISIT only.
+    /// </summary>
+    public static readonly string[] DecidedNotStarted = { Assigned, BeforeVisit };
+
+    /// <summary>Statuses that count as approved when aggregating the request status.</summary>
+    public static readonly string[] ApprovedOrBeyond =
+        { Assigned, BeforeVisit, DuringVisit, AfterVisit, Closed };
+
+    /// <summary>Statuses still awaiting a campus decision (either gate stage).</summary>
+    public static readonly string[] AwaitingDecision =
+        { WaitingContactConfirmation, WaitingRequestApproval };
 }
 
 // Per-campus processing mode chosen by an AUTHENTICATED creator (visit-request create).
@@ -75,6 +106,19 @@ public static class VisitRequestErrorCodes
     // Approve must carry the official host in the same action (no WAITING_HOST_ASSIGNMENT).
     public const string HostRequiredOnApproval = "HOST_REQUIRED_ON_APPROVAL";
 
+    // Every campus must name the address that will be asked to run it. The column is NOT NULL and the
+    // confirmation workflow has nowhere to send an invitation without it.
+    public const string OperationalContactEmailRequired = "OPERATIONAL_CONTACT_EMAIL_REQUIRED";
+
+    // ── Preparation lifecycle (ASSIGNED → BEFORE_VISIT) ──
+    // A setup mutation was attempted on a campus the Host has not started preparing. Distinct from a
+    // plain conflict on purpose: this one is recoverable with a single click, so the UI can offer it.
+    public const string VisitPreparationNotStarted = "VISIT_PREPARATION_NOT_STARTED";
+    // Start-preparation was called on a campus already in (or past) BEFORE_VISIT by someone other than
+    // the actor who started it — a genuine conflict rather than an idempotent replay.
+    public const string VisitPreparationAlreadyStarted = "VISIT_PREPARATION_ALREADY_STARTED";
+
+
     // contactEmail belongs to an existing non-VISITOR (internal) account — it must
     // never be repurposed as a Visitor nor have its role changed.
     public const string ContactEmailCannotBeUsedForVisitorAccount =
@@ -113,18 +157,26 @@ public static class VisitRequestErrorCodes
     // The caller must re-submit through the delegated OTP flow (initiate → verify) so the named
     // registrant proves ownership of that mailbox. Nothing is written when this is raised.
     public const string RegistrantEmailVerificationRequired = "REGISTRANT_EMAIL_VERIFICATION_REQUIRED";
-    // A Visitor (or public) payload carried SELF_HOST/ASSIGN_HOST/host metadata.
-    public const string InvalidCampusSubmissionMode = "INVALID_CAMPUS_SUBMISSION_MODE";
-    // Staff tried to direct-process a campus other than their own primary campus.
-    public const string DirectProcessOtherCampusForbidden = "DIRECT_PROCESS_OTHER_CAMPUS_FORBIDDEN";
-    // Regular Staff tried to assign a host other than themself.
+    // ── Reception-host arrangement (Host dự kiến) ──
+    // hostSelectionMode was not one of SELF / SELECTED / WAIT_FOR_LATER, or contradicted itself
+    // (WAIT_FOR_LATER carrying a proposed host).
+    public const string InvalidHostSelectionMode = "INVALID_HOST_SELECTION_MODE";
+    // A Visitor / external payload proposed a reception host. External submits always wait for the
+    // campus Staff Leader to assign; there is no role in which they may name FPTU staff.
+    public const string ProposedHostNotAllowedForRole = "PROPOSED_HOST_NOT_ALLOWED_FOR_ROLE";
+    // Staff tried to propose a host for a campus other than their own primary campus.
+    public const string ProposeHostOtherCampusForbidden = "PROPOSE_HOST_OTHER_CAMPUS_FORBIDDEN";
+    // Regular Staff tried to propose somebody other than themself.
     public const string StaffCannotAssignOtherHost = "STAFF_CANNOT_ASSIGN_OTHER_HOST";
-    // ASSIGN_HOST candidate is invalid (inactive / wrong role / other campus / not IC).
+    // The proposed host is invalid (inactive / wrong role / other campus / not IC).
     public const string InvalidHostCandidate = "INVALID_HOST_CANDIDATE";
-    // Direct mode payload references a campus that is not among the selected campuses.
-    public const string DirectModeCampusNotSelected = "DIRECT_MODE_CAMPUS_NOT_SELECTED";
-    // The acting Staff does not qualify for direct self-host (not ACTIVE IC staff of that campus).
+    // A host arrangement references a campus that is not among the selected campuses.
+    public const string HostSelectionCampusNotSelected = "HOST_SELECTION_CAMPUS_NOT_SELECTED";
+    // The acting Staff does not qualify to host (not ACTIVE IC staff of that campus).
     public const string SelfHostNotEligible = "SELF_HOST_NOT_ELIGIBLE";
+    // A proposed-host update was attempted outside the pre-decision window, on a campus that is
+    // already decided, or by somebody with no proposal rights on it.
+    public const string ProposedHostNotEditable = "PROPOSED_HOST_NOT_EDITABLE";
 
     // ── Per-campus form edit / resubmit (plan §6.4) ──
     // VISIT_REQUEST_NOT_PER_CAMPUS_V2 lived here to reject a v1 request from the v2 edit endpoints. Pure V2

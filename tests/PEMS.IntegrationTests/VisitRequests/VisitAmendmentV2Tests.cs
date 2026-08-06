@@ -98,8 +98,11 @@ public sealed class VisitAmendmentV2Tests
         => new(code, start, start.AddMinutes(120), "Đoàn Amend", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", "Xe 16 chỗ", "AGREED", null, "Ghi chú", null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", "Xe 16 chỗ", "AGREED", null, null);
 
     /// <summary>Creates a committed 2-campus request and drives BOTH instances to ASSIGNED (parent APPROVED)
     /// using the real transition order. Returns (requestId, instanceA=HN, instanceB=HCM).</summary>
@@ -110,14 +113,14 @@ public sealed class VisitAmendmentV2Tests
         {
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
-                new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
                 new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                    new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+                    new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
             var form = new VisitRequestFormDataV2(
                 "AM" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                 null, new List<CampusVisitFormDto> { Campus("HN", start), Campus("HCM", start.AddDays(1)) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
@@ -581,14 +584,14 @@ public sealed class VisitAmendmentV2Tests
             {
                 var handler = new CreateVisitRequestV2CommandHandler(
                     db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
-                    new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                    new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
                     new UserProvisionService(db),
                     NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                    new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+                    new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
                 var form = new VisitRequestFormDataV2(
                     "AM" + Guid.NewGuid().ToString("N"),
                     new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                    new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                     null, new List<CampusVisitFormDto> { Campus("HN", Now.AddDays(20)) });
                 pendingRequest = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
             }

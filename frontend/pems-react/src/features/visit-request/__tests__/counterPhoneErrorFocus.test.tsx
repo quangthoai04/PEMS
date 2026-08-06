@@ -151,7 +151,6 @@ describe('over-limit messages name the field (plan §15)', () => {
         fullName: 'A', organization: 'B', jobTitle: 'C',
         phone: '+84912345678', email: 'a@b.com', nationality: 'VN',
       },
-      contactPoint: { fullName: 'A', organization: 'B', phone: '+84912345678', email: 'a@b.com' },
       partnerSelectionMode: 'NEW_ORGANIZATION',
       partnerId: null,
       campusVisits: [] as unknown[],
@@ -175,8 +174,13 @@ describe('over-limit messages name the field (plan §15)', () => {
 
   it('groups the digits, so 2000 does not read as a year', () => {
     const message = messageFor(
-      v => { (v.contactPoint as Record<string, string>).organization = 'x'.repeat(201); },
-      'contactPoint.organization',
+      v => {
+        // The over-limit field is a CAMPUS contact now — the request-level one it used to be is gone.
+        (v.campusVisits as unknown[]).push({
+          operationalContact: { fullName: 'A', organization: 'x'.repeat(201), phone: '+84912345678', email: 'a@b.com' },
+        });
+      },
+      'campusVisits.0.operationalContact.organization',
     );
     expect(message).toContain('200');
     expect(message).not.toMatch(/^Must not exceed/);
@@ -203,7 +207,6 @@ describe('phone guidance (plan §17, §18)', () => {
         fullName: 'A', organization: 'B', jobTitle: 'C',
         phone: value, email: 'a@b.com', nationality: 'VN',
       },
-      contactPoint: { fullName: 'A', organization: 'B', phone: '+84912345678', email: 'a@b.com' },
       partnerSelectionMode: 'NEW_ORGANIZATION',
       partnerId: null,
       campusVisits: [] as unknown[],

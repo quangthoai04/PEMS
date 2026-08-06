@@ -82,17 +82,28 @@ public sealed class InitiateVisitRequestV2CommandHandler
         // ("I am filling this in for somebody else"). In neither case is the submitter the person the OTP
         // will verify, so a SELF_HOST/ASSIGN_HOST intent can never be honoured. Verify used to drop it
         // silently; rejecting here means a forged payload is refused BEFORE an OTP is ever sent.
-        RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form);
+        RegistrantIdentityRules.EnsureNoHostProposalIntent(form);
 
         var now = _clock.VietnamNow;
         var email = RegistrantIdentityRules.Normalize(form.Registrant.Email);
 
         // ── Fail fast (same depth as v1 initiate): the registrant email links a VISITOR account at verify —
-        //    an internal/inactive email must never enter the public flow; the primary-contact email is what
-        //    becomes the VISITOR login. Reject BEFORE any OTP is sent. ──
+        //    an internal/inactive email must never enter the public flow. Reject BEFORE any OTP is sent. ──
         await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(email, cancellationToken);
-        await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
-            form.PrimaryContact.Email, cancellationToken);
+
+        // EVERY campus's contact address is checked, not one representative: each of them will be
+        // invited independently, so an address that cannot become a Visitor account has to be caught
+        // now — after the OTP is spent, the registrant would be told about it one campus at a time.
+        // De-duplicated because one person legitimately runs several campuses of the same request.
+        foreach (var contactEmail in form.CampusVisits
+                     .Select(c => c.OperationalContact.Email)
+                     .Where(e => !string.IsNullOrWhiteSpace(e))
+                     .Select(RegistrantIdentityRules.Normalize)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
+                contactEmail, cancellationToken);
+        }
 
         // ── Mint the OTP challenge (bound to email + purpose + submissionId). Persists on its own. ──
         var issue = await _otpService.CreateChallengeAsync(

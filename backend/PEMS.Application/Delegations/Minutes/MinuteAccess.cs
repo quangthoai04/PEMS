@@ -4,6 +4,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Minutes;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Minutes;
 
 /// <summary>
@@ -29,10 +30,10 @@ internal static class MinuteAccess
             && string.Equals(user.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && user.PrimaryCampusId == instance.CampusId;
         bool isHo = user.RoleCode == RoleCodes.Ho;
-        bool isVisitorOwner = user.RoleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
+        bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAccepted = acceptedParticipantRole != null;
 
-        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAccepted;
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAccepted;
         bool isLive = instance.Status != VisitInstanceStatus.Closed
             && instance.Status != VisitInstanceStatus.Cancelled
             && visit.Status != VisitRequestStatuses.Cancelled;

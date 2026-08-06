@@ -20,6 +20,10 @@ public class VisitRequestIdentityChangeEvent
     [Column("visit_request_id")]
     public ulong VisitRequestId { get; set; }
 
+    /// <summary>Campus the event belongs to, so audit always resolves back to the right site.</summary>
+    [Column("visit_instance_id")]
+    public ulong VisitInstanceId { get; set; }
+
     [Column("event_type")]
     public string EventType { get; set; } = null!;
 

@@ -20,7 +20,9 @@
     "useMyProfile": "I am the registrant",
     "matchesAccount": "This email matches your signed-in account — no OTP verification needed.",
     "requiresOtp": "The registrant email differs from your signed-in account. An OTP will be sent to that email to verify it before the request is created.",
-    "autofillFailed": "Could not load your profile. Please try again or fill the fields in manually."
+    "autofillFailed": "Could not load your profile. Please try again or fill the fields in manually.",
+    "title": "Registrant information",
+    "label": "Registrant"
   },
   "person": {
     "fullName": "Full name",
@@ -249,7 +251,10 @@
     "colOrganization": "Organisation",
     "colNationality": "Nationality",
     "notProvided": "Not provided",
-    "noMembers": "No members yet."
+    "noMembers": "No members yet.",
+    "contactConfirmation": "Guest delegation contact confirmation",
+    "contactPendingCount": "{{count}} campus(es) awaiting contact confirmation",
+    "contactAllConfirmed": "Every campus has a confirmed contact"
   },
   "amend": {
     "open": "Propose change",
@@ -375,7 +380,18 @@
     "contactAccessStatus": "Confirmation status",
     "contactActive": "Confirmed",
     "contactVerifiedAt": "Confirmed at",
-    "noCampusInScope": "No campus in your viewing scope."
+    "noCampusInScope": "No campus in your viewing scope.",
+    "confirmedCampuses": "Campuses with a confirmed contact"
+  },
+  "preparation": {
+    "hostAssigned": "Host assigned",
+    "startPreparation": "Start preparation",
+    "starting": "Starting...",
+    "inPreparation": "In preparation",
+    "notStarted": "Visit preparation has not started",
+    "startHint": "Press “Start preparation” to open the agenda, participants, logistics, reminders and preparation notes.",
+    "started": "Preparation started.",
+    "startFailed": "Could not start preparation. Please try again."
   },
   "status": {
     "unknown": "Unknown",
@@ -383,8 +399,8 @@
     "incomplete": "Incomplete",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
-      "ASSIGNED": "Approved — reception owner assigned",
-      "BEFORE_VISIT": "Preparing",
+      "ASSIGNED": "Host assigned",
+      "BEFORE_VISIT": "In preparation",
       "DURING_VISIT": "Visit in progress",
       "AFTER_VISIT": "After the visit",
       "CLOSED": "Closed",
@@ -611,5 +627,51 @@
     "statePending": "No request was created — the verification session is still open. Go back to the form and enter the code to finish.",
     "stateFailed": "This submission ended without creating a request. Go back to the form and submit again.",
     "stateNotFound": "No trace of this submission was found. Nothing was created — go back to the form and submit again."
+  },
+  "operationalContact": {
+    "title": "Guest Delegation Coordination Contact at Campus",
+    "fullName": "Full name",
+    "organization": "Organization",
+    "jobTitle": "Job title",
+    "phone": "Phone number",
+    "email": "Email",
+    "confirmationStatus": "Confirmation status",
+    "confirmationSource": "Confirmation source",
+    "confirmedAt": "Confirmed at",
+    "unavailable": "Guest delegation contact information is not available",
+    "status": {
+      "pending": "Pending confirmation",
+      "confirmed": "Confirmed",
+      "declined": "Invitation declined",
+      "expired": "Invitation expired",
+      "transferPending": "Transfer pending"
+    },
+    "source": {
+      "registrantSelfMatch": "Same as registrant",
+      "emailConfirmation": "Confirmed by email",
+      "transfer": "Transfer"
+    }
+  },
+  "receptionHost": {
+    "currentTitle": "Reception Host",
+    "proposedTitle": "Proposed Reception Host",
+    "fullName": "Full name",
+    "department": "Campus / department",
+    "phone": "Phone number",
+    "email": "Email",
+    "proposalStatus": "Status",
+    "waitingForContact": "Waiting for guest delegation contact confirmation",
+    "needsReselection": "Proposed host must be selected again"
+  },
+  "hostSelection": {
+    "legend": "Reception host arrangement",
+    "self": "I will be the reception host",
+    "selectOther": "Select another reception host",
+    "waitForLater": "Assign later",
+    "pickPlaceholder": "Select an IC staff member of this campus",
+    "loadingCandidates": "Loading…",
+    "noCandidates": "This campus has no eligible IC staff",
+    "scheduleWarning": "This person already hosts an overlapping visit. You can still select them.",
+    "saved": "Proposed reception host saved."
   }
 }

@@ -211,22 +211,27 @@ public sealed class FixtureCleanupTests : IDisposable
         var requestId = Base + 30;
         var instanceId = Base + 31;
 
+        // The owner stands in as both registrant and this campus's operational contact (self-match), which
+        // is the shortest shape a campus past WAITING_CONTACT_CONFIRMATION is allowed to have. What this
+        // suite actually exercises is cleanup ordering, so the contact model only has to be valid.
         await db.Database.ExecuteSqlRawAsync(
-            "INSERT INTO visit_requests (visit_request_id, request_code, registrant_full_name, "
-            + "registrant_email, registrant_job_title, registrant_nationality, registrant_organization, "
-            + "contact_person_full_name, contact_person_email, contact_person_organization, status, created_at) "
-            + $"VALUES ({requestId}, 'FIXCLEAN-{requestId}', 'FixtureCleanup', "
-            + "'fixclean-visit@partner.example.com', 'Tester', 'VN', 'FixtureCleanup Org', "
-            + "'FixtureCleanup Contact', 'fixclean-contact@partner.example.com', 'FixtureCleanup Org', "
+            "INSERT INTO visit_requests (visit_request_id, request_code, registrant_user_id, "
+            + "registrant_full_name, registrant_email, registrant_job_title, registrant_nationality, "
+            + "registrant_organization, status, created_at) "
+            + $"VALUES ({requestId}, 'FIXCLEAN-{requestId}', {OwnerId}, 'FixtureCleanup', "
+            + $"'fixclean-{OwnerId}@partner.example.com', 'Tester', 'VN', 'FixtureCleanup Org', "
             + "'PENDING_APPROVAL', NOW())");
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, "
-            + $"planned_start_at, planned_end_at, status) VALUES ({instanceId}, {requestId}, {CampusId}, "
+            + "operational_contact_user_id, operational_contact_confirmed_at, "
+            + "operational_contact_confirmation_source, planned_start_at, planned_end_at, status) "
+            + $"VALUES ({instanceId}, {requestId}, {CampusId}, {OwnerId}, NOW(), 'REGISTRANT_SELF_MATCH', "
             + "DATE_ADD(NOW(), INTERVAL 30 DAY), DATE_ADD(NOW(), INTERVAL 31 DAY), 'WAITING_REQUEST_APPROVAL')");
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, "
-            + $"operational_contact_full_name, purpose) VALUES ({instanceId}, 'FixtureCleanup', "
-            + "'FixtureCleanup Contact', 'FixtureCleanup')");
+            + "operational_contact_full_name, operational_contact_email, purpose) "
+            + $"VALUES ({instanceId}, 'FixtureCleanup', 'FixtureCleanup Contact', "
+            + $"'fixclean-{OwnerId}@partner.example.com', 'FixtureCleanup')");
 
         return (requestId, instanceId);
     }

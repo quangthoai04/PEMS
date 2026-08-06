@@ -22,11 +22,10 @@ public sealed class VisitCampusFormContent
     public string? MediaConsentStatus { get; init; }
     public string? MediaConsentNote { get; init; }
     public string? TransportationNote { get; init; }
-    public string? NoteToFptu { get; init; }
 
     /// <summary>
-    /// This campus's OPERATIONAL contact. Distinct from the request's primary contact, which is a
-    /// request-level relation and must never be substituted here.
+    /// This campus's OPERATIONAL contact — the only contact there is. It grants nothing on a sibling
+    /// campus, and it must never be filled from one.
     /// </summary>
     public VisitFormOperationalContact OperationalContact { get; init; } = new();
 
@@ -42,6 +41,7 @@ public sealed class VisitFormOperationalContact
 {
     public string? FullName { get; init; }
     public string? Organization { get; init; }
+    public string? JobTitle { get; init; }
     public string? Phone { get; init; }
     public string? Email { get; init; }
 }

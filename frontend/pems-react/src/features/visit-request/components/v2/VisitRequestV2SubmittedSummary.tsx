@@ -197,14 +197,12 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               {values.registerInfo.phone} · {values.registerInfo.email}
             </div>
           </Field>
-          <Field label={t('visitRequestV2:summary.primaryContact')}>
-            {person(values.contactPoint)}
-            <div className="text-xs text-slate-500">
-              {values.contactPoint.phone} · {values.contactPoint.email} ·{' '}
-              {response.primaryContactAccessStatus === 'ACTIVE'
-                ? t('visitRequestV2:summary.contactActive')
-                : t('visitRequestV2:summary.contactPending')}
-            </div>
+          {/* No request-level contact any more: each campus names its own, and the only
+              request-level fact is how many of them still have to answer. */}
+          <Field label={t('visitRequestV2:summary.contactConfirmation')}>
+            {response.pendingConfirmations > 0
+              ? t('visitRequestV2:summary.contactPendingCount', { count: response.pendingConfirmations })
+              : t('visitRequestV2:summary.contactAllConfirmed')}
           </Field>
         </dl>
       </section>

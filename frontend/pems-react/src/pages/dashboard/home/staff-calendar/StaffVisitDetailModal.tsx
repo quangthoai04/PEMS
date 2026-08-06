@@ -279,15 +279,15 @@ export function StaffVisitDetailModal({
               )}
 
               {/* Đầu mối liên hệ (nếu khác người đăng ký) */}
-              {(detail.contactPersonFullName || detail.contactPersonEmail) && (
+              {(detail.operationalContactFullName || detail.operationalContactEmail) && (
                 <section>
                   <h4 className="text-xs font-extrabold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                     <Phone className="w-3.5 h-3.5 text-[#f37021]" /> Đầu mối liên hệ
                   </h4>
                   <div className="divide-y divide-slate-100 border-y border-slate-100">
-                    <InfoRow label="Họ tên" value={detail.contactPersonFullName} />
-                    <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.contactPersonPhone} />
-                    <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.contactPersonEmail} />
+                    <InfoRow label="Họ tên" value={detail.operationalContactFullName} />
+                    <InfoRow icon={<Phone className="w-3 h-3" />} label="Điện thoại" value={detail.operationalContactPhone} />
+                    <InfoRow icon={<Mail className="w-3 h-3" />} label="Email" value={detail.operationalContactEmail} />
                   </div>
                 </section>
               )}

@@ -7,6 +7,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.UpdateVisitInstancePreparationNote;
 
 /// <summary>
@@ -45,8 +46,7 @@ public sealed class UpdateVisitInstancePreparationNoteCommandHandler
             throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được sửa ghi chú chung.");
 
         // Editable only during the preparation window.
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể sửa ghi chú chung trong giai đoạn chuẩn bị.");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "sửa ghi chú chung");
 
         var now = _clock.VietnamNow;
         var normalized = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();

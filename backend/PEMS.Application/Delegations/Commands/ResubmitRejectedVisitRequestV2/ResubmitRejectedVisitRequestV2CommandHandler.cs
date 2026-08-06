@@ -14,6 +14,7 @@ using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Policies;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.ResubmitRejectedVisitRequestV2;
 
 public sealed class ResubmitRejectedVisitRequestV2CommandHandler
@@ -68,12 +69,10 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        // ── Editor policy — same as pending-edit v2 (registrant OR ACTIVE primary contact). ──
-        var isRegistrant = visit.RegistrantUserId == actorId;
-        var isActiveContact = visit.VisitorUserId == actorId
-                              && string.Equals(visit.PrimaryContactAccessStatus, "ACTIVE", System.StringComparison.OrdinalIgnoreCase);
-        if (!isRegistrant && !isActiveContact)
-            throw new ForbiddenException("Bạn không có quyền gửi lại đơn này.");
+        // ── Editor policy — same as pending-edit v2: the REGISTRANT alone. Resubmitting revives the
+        //    whole request after every campus rejected it, which is a request-level act. ──
+        if (!VisitRequestOwnership.IsRegistrant(visit, actorId))
+            throw new ForbiddenException("Chỉ người đăng ký mới được gửi lại đơn này.");
 
         // ── Resubmittable gate (pre-check; the service re-checks in-transaction under the row lock) ──
         //    Same policy call the read model made, so RESUBMIT_REJECTED_REQUEST is offered exactly when

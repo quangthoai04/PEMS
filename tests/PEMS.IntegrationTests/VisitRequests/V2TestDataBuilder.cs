@@ -10,13 +10,13 @@ public static class V2TestDataBuilder
         string delegationName = "Default Test Delegation",
         string registrantEmail = "registrant@integration.test",
         string contactEmail = "contact@integration.test",
-        params (string CampusCode, string ProcessingMode, ulong? HostUserId)[] campuses)
+        params (string CampusCode, string HostSelectionMode, ulong? ProposedHostUserId)[] campuses)
     {
         var start = DateTime.Now.AddDays(10).Date.AddHours(9);
         var campusVisits = new List<Dictionary<string, object?>>();
         var offsetDays = 0;
 
-        foreach (var (code, mode, hostId) in campuses)
+        foreach (var (code, mode, proposedHostId) in campuses)
         {
             var s = start.AddDays(offsetDays++);
             campusVisits.Add(new Dictionary<string, object?>
@@ -42,11 +42,13 @@ public static class V2TestDataBuilder
                 ["transportationNote"] = null,
                 ["mediaConsentStatus"] = "DECLINED",
                 ["mediaConsentNote"] = null,
-                ["notes"] = null,
-                ["processing"] = new Dictionary<string, object?>
+                // The reception-host ARRANGEMENT. Omitted entirely when the caller names no mode,
+                // because the backend REFUSES an external submit that carries one — a placeholder
+                // would fail the whole request rather than being ignored.
+                ["hostSelection"] = mode is null ? null : new Dictionary<string, object?>
                 {
                     ["mode"] = mode,
-                    ["hostUserId"] = hostId,
+                    ["proposedHostUserId"] = proposedHostId,
                     ["confirmedHostConflict"] = false,
                 }
             });
@@ -63,13 +65,6 @@ public static class V2TestDataBuilder
                 ["jobTitle"] = "Staff",
                 ["phone"] = "0912345678",
                 ["email"] = registrantEmail,
-            },
-            ["primaryContact"] = new Dictionary<string, object?>
-            {
-                ["fullName"] = "IT Primary Contact",
-                ["organization"] = "Test Organization",
-                ["phone"] = "0987654321",
-                ["email"] = contactEmail,
             },
             ["partnerId"] = null,
             ["campusVisits"] = campusVisits,
@@ -113,8 +108,7 @@ public static class V2TestDataBuilder
                 ["workingLanguage"] = "VI",
                 ["transportationNote"] = null,
                 ["mediaConsentStatus"] = "DECLINED",
-                ["mediaConsentNote"] = null,
-                ["notes"] = null
+                ["mediaConsentNote"] = null
             });
         }
 
@@ -129,13 +123,6 @@ public static class V2TestDataBuilder
                 ["jobTitle"] = "Staff",
                 ["phone"] = "0999999999",
                 ["email"] = registrantEmail,
-            },
-            ["primaryContact"] = new Dictionary<string, object?>
-            {
-                ["fullName"] = "Integration Contact",
-                ["organization"] = "FPT",
-                ["phone"] = "0999999999",
-                ["email"] = contactEmail,
             },
             ["partnerId"] = null,
             ["campusVisits"] = campusVisits,

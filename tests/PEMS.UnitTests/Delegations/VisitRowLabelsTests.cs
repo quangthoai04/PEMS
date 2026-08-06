@@ -15,8 +15,11 @@ namespace PEMS.UnitTests.Delegations;
 public class VisitRowLabelsTests
 {
     [Theory]
+    [InlineData(VisitInstanceStatus.WaitingContactConfirmation, "Chờ đầu mối xác nhận")]
     [InlineData(VisitInstanceStatus.WaitingRequestApproval, "Chờ xử lý tại cơ sở")]
-    [InlineData(VisitInstanceStatus.Assigned, "Đã duyệt và phân công")]
+    // ASSIGNED and BEFORE_VISIT are different steps and must read differently: the first says a
+    // person has the campus, the second says they have started on it.
+    [InlineData(VisitInstanceStatus.Assigned, "Đã phân công người phụ trách")]
     [InlineData(VisitInstanceStatus.BeforeVisit, "Đang chuẩn bị")]
     [InlineData(VisitInstanceStatus.DuringVisit, "Đang tiếp khách")]
     [InlineData(VisitInstanceStatus.AfterVisit, "Chờ đóng đoàn")]
@@ -84,7 +87,8 @@ public class VisitRowLabelsTests
 
         string[] campusStatuses =
         {
-            VisitInstanceStatus.WaitingRequestApproval, VisitInstanceStatus.Assigned,
+            VisitInstanceStatus.WaitingContactConfirmation, VisitInstanceStatus.WaitingRequestApproval,
+            VisitInstanceStatus.Assigned,
             VisitInstanceStatus.BeforeVisit, VisitInstanceStatus.DuringVisit,
             VisitInstanceStatus.AfterVisit, VisitInstanceStatus.Closed,
             VisitInstanceStatus.Cancelled, VisitInstanceStatus.Rejected,

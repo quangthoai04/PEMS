@@ -43,7 +43,6 @@ public class VisitRequestV2LengthAndScheduleTests
         string? workingContent = null,
         string? transportationNote = null,
         string? mediaConsentNote = null,
-        string? notes = null,
         IList<VisitorDto>? visitors = null,
         IList<SupportTeamMemberDto>? support = null,
         ContactPointDto? opContact = null)
@@ -54,16 +53,14 @@ public class VisitRequestV2LengthAndScheduleTests
             visitors ?? new List<VisitorDto> { Guest() },
             support ?? new List<SupportTeamMemberDto>(),
             opContact ?? OpContact(),
-            "EN", transportationNote, "DECLINED", mediaConsentNote, notes, null);
+            "EN", transportationNote, "DECLINED", mediaConsentNote, null);
 
     private static CreateVisitRequestV2Command Command(
         CampusVisitFormDto? campus = null,
-        RegistrantInputV2? registrant = null,
-        ContactPointDto? primaryContact = null)
+        RegistrantInputV2? registrant = null)
         => new(new VisitRequestFormDataV2(
             "SUB-1",
             registrant ?? new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", "+84912345678", "reg@example.com"),
-            primaryContact ?? new ContactPointDto("ĐM", "ĐH X", "+84987654321", "contact@example.com"),
             null,
             new List<CampusVisitFormDto> { campus ?? Campus() }));
 
@@ -106,10 +103,6 @@ public class VisitRequestV2LengthAndScheduleTests
     [Fact]
     public void Media_consent_note_is_bounded_at_2000()
         => AssertBoundary(2000, v => Command(Campus(mediaConsentNote: v)), "MediaConsentNote");
-
-    [Fact]
-    public void Notes_are_bounded_at_2000()
-        => AssertBoundary(2000, v => Command(Campus(notes: v)), "Notes");
 
     // ── People ───────────────────────────────────────────────────────────────
 
@@ -158,15 +151,11 @@ public class VisitRequestV2LengthAndScheduleTests
     [Fact]
     public void An_over_long_phone_is_rejected_by_name_rather_than_by_the_column()
     {
-        // registrant_phone / contact_person_phone / operational_contact_phone are all VARCHAR(50).
+        // registrant_phone and operational_contact_phone are both VARCHAR(50).
         var digits = "+84" + new string('9', 60);
 
         Assert.Contains(ErrorsFor(Command(
                 registrant: new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", digits, "reg@example.com"))),
-            p => p.Contains("Phone"));
-
-        Assert.Contains(ErrorsFor(Command(
-                primaryContact: new ContactPointDto("ĐM", "ĐH X", digits, "contact@example.com"))),
             p => p.Contains("Phone"));
 
         Assert.Contains(ErrorsFor(Command(Campus(opContact: OpContact(phone: digits)))),
@@ -184,7 +173,8 @@ public class VisitRequestV2LengthAndScheduleTests
     {
         // FluentValidation's untranslated default ("The length of ... must be ...") sitting next to
         // Vietnamese required-messages on the same field is what this rules out.
-        var messages = MessagesFor(Command(Campus(delegationName: Of(201), purpose: Of(2001), notes: Of(2001))));
+        var messages = MessagesFor(Command(Campus(
+            delegationName: Of(201), purpose: Of(2001), mediaConsentNote: Of(2001))));
 
         Assert.NotEmpty(messages);
         Assert.All(messages, m => Assert.DoesNotContain("The length of", m, StringComparison.OrdinalIgnoreCase));

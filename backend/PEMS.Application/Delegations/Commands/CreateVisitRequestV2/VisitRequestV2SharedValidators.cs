@@ -47,35 +47,16 @@ public sealed class RegistrantInputV2Validator : AbstractValidator<RegistrantInp
 }
 
 /// <summary>
-/// The request-level primary-contact rules (the VISITOR account managing the request), shared by
-/// create-v2, pending-edit-v2 and resubmit-v2. All four fields are required — a request contact who
-/// cannot be phoned or emailed is not a usable contact — and the phone goes through the same rule as
-/// everywhere else so a direct API call cannot store a non-number.
-/// </summary>
-public sealed class PrimaryContactV2Validator : AbstractValidator<ContactPointDto>
-{
-    public PrimaryContactV2Validator()
-    {
-        RuleFor(x => x.FullName)
-            .NotEmpty().WithMessage("Họ tên đầu mối liên hệ không được để trống.")
-            .MaximumLength(150).WithMessage(TooLong("Họ tên đầu mối liên hệ", 150));
-        RuleFor(x => x.Organization)
-            .NotEmpty().WithMessage("Đơn vị công tác đầu mối liên hệ không được để trống.")
-            .MaximumLength(200).WithMessage(TooLong("Đơn vị công tác đầu mối liên hệ", 200));
-        RuleFor(x => x.Phone)
-            .MaximumLength(50).WithMessage(TooLong("Số điện thoại đầu mối liên hệ", 50))
-            .MustBeAPhoneNumber("Số điện thoại đầu mối liên hệ không hợp lệ.");
-        RuleFor(x => x.Email)
-            .NotEmpty().WithMessage("Email đầu mối liên hệ không được để trống.")
-            .EmailAddress().WithMessage("Email đầu mối liên hệ không đúng định dạng.")
-            .MaximumLength(150).WithMessage(TooLong("Email đầu mối liên hệ", 150));
-    }
-}
-
-/// <summary>
-/// The per-campus operational (working) contact — the person a campus actually calls on the day.
-/// All four fields are required, shared by create-v2 and the amendment path. Distinct from the
-/// primary contact (a login account); this is a snapshot, never a login.
+/// The per-campus operational contact — the person a campus actually calls on the day, and the only
+/// contact a request has. All four fields are required, shared by create-v2, pending-edit-v2,
+/// resubmit-v2 and the amendment path, so the write paths cannot drift.
+///
+/// <para>
+/// The email matters most: it is the ONLY address the confirmation invitation for this campus is ever
+/// bound to, and the column behind it is NOT NULL. The name and phone are a display snapshot — a
+/// matching name is never evidence of the same person, and runtime authority is read from
+/// <c>operational_contact_user_id</c> rather than from anything validated here.
+/// </para>
 /// </summary>
 public sealed class OperationalContactV2Validator : AbstractValidator<ContactPointDto>
 {

@@ -32,7 +32,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
     private readonly IUserProvisionService _userProvisionService;
     private readonly IVisitRequestV2CreateService _createService;
     private readonly INotificationService _notificationService;
-    private readonly IVisitContactClaimService _contactClaimService;
+    private readonly IOperationalContactInvitationService _contactInvitations;
     private readonly IDateTimeService _clock;
     private readonly ILogger<VerifyAndCreateVisitRequestV2CommandHandler> _logger;
     private readonly PerCampusFormV2Options _readFlag;
@@ -44,7 +44,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         IUserProvisionService userProvisionService,
         IVisitRequestV2CreateService createService,
         INotificationService notificationService,
-        IVisitContactClaimService contactClaimService,
+        IOperationalContactInvitationService contactInvitations,
         IDateTimeService clock,
         ILogger<VerifyAndCreateVisitRequestV2CommandHandler> logger,
         PerCampusFormV2Options readFlag,
@@ -55,7 +55,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         _userProvisionService = userProvisionService;
         _createService = createService;
         _notificationService = notificationService;
-        _contactClaimService = contactClaimService;
+        _contactInvitations = contactInvitations;
         _clock = clock;
         _logger = logger;
         _readFlag = readFlag;
@@ -80,7 +80,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         // Defence in depth: initiate already refuses a direct processing intent, but a snapshot could only
         // ever have been bound without one — so a verify-time form carrying one is a forged retry. Reject
         // before the OTP is consumed rather than dropping the intent silently.
-        RegistrantIdentityRules.EnsureNoDirectProcessingIntent(form);
+        RegistrantIdentityRules.EnsureNoHostProposalIntent(form);
 
         var now = _clock.VietnamNow;
         var email = RegistrantIdentityRules.Normalize(form.Registrant.Email);
@@ -157,16 +157,18 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             // ── 3. Duplicate guard (business fingerprint): another submit intent with the same core visit
             //       identity committed within 15 mins → consume OTP/snapshot and throw 409 DUPLICATE_VISIT_REQUEST. ──
             var boundRegistrantEmail = VisitRequestFingerprintBuilder.NormalizeEmail(boundForm.Registrant.Email);
-            var boundContactEmail = VisitRequestFingerprintBuilder.NormalizeEmail(boundForm.PrimaryContact.Email);
             var campusCount = boundForm.CampusVisits
                 .Select(c => c.CampusId?.Trim().ToUpperInvariant() ?? string.Empty)
                 .Where(c => c.Length > 0)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
             var boundScope = campusCount > 1 ? VisitScopes.MultiCampus : VisitScopes.SingleCampus;
+            // Each campus contributes its own contact address to the identity — see BuildV2.
             var fingerprint = VisitRequestFingerprintBuilder.BuildV2(
-                boundRegistrantEmail, boundContactEmail, boundScope,
-                boundForm.CampusVisits.Select(cv => (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther)));
+                boundRegistrantEmail, boundScope,
+                boundForm.CampusVisits.Select(cv =>
+                    (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther,
+                     (string?)cv.OperationalContact.Email)));
 
             var duplicateWindowStart = now.AddMinutes(-15);
 
@@ -245,8 +247,8 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         // ── 7. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
-        await V2CreateNotifier.SendContactClaimInvitationAfterCommitAsync(
-            _db, _contactClaimService, _logger, created, cancellationToken);
+        await V2CreateNotifier.SendOperationalContactInvitationsAfterCommitAsync(
+            _db, _contactInvitations, _logger, created, cancellationToken);
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false,
             "Đơn đăng ký thăm quan đã được gửi thành công và đang chờ phê duyệt.");
@@ -282,21 +284,22 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
     {
         var head = await _db.VisitRequests.AsNoTracking()
             .Where(v => v.VisitRequestId == visitRequestId)
-            .Select(v => new
-            {
-                v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.PrimaryContactAccessStatus,
-                v.VisitorUserId, v.Status, v.SubmittedAt,
-            })
+            .Select(v => new { v.RequestCode, v.VisitScope, v.HasMixedCampusDetails, v.Status, v.SubmittedAt })
             .FirstAsync(ct);
-        var instances = await _db.VisitRequestCampuses.AsNoTracking()
+        var rows = await _db.VisitRequestCampuses.AsNoTracking()
             .Where(c => c.VisitRequestId == visitRequestId)
             .OrderBy(c => c.CampusId)
-            .Select(c => new CreateVisitRequestV2CampusRef(c.VisitInstanceId, c.CampusId, c.Status))
+            .Select(c => new { c.VisitInstanceId, c.CampusId, c.Status, c.OperationalContactUserId })
             .ToListAsync(ct);
+        var instances = rows
+            .Select(c => new CreateVisitRequestV2CampusRef(c.VisitInstanceId, c.CampusId, c.Status))
+            .ToList();
+        var pendingConfirmations = rows.Count(c =>
+            c.Status != VisitInstanceStatuses.Cancelled && c.OperationalContactUserId is null);
+
         return new VerifyAndCreateVisitRequestV2Response(
             visitRequestId, head.RequestCode ?? string.Empty, head.VisitScope, head.HasMixedCampusDetails,
-            head.PrimaryContactAccessStatus,
-            ContactClaimPending: head.VisitorUserId is null,
+            pendingConfirmations,
             instances, idempotent, message,
             head.Status, head.SubmittedAt.ToString("yyyy-MM-ddTHH:mm:ss"), instances.Count);
     }

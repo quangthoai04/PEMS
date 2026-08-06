@@ -281,27 +281,23 @@ public static class ScheduleReportTestData
     };
 
     public static VisitRequest CreateVisitRequest(
-        ulong visitRequestId = VisitRequestId, ulong? partnerId = null, ulong? visitorUserId = null) => new()
+        ulong visitRequestId = VisitRequestId, ulong? partnerId = null, ulong? registrantUserId = null) => new()
     {
         VisitRequestId = visitRequestId,
         RequestCode = $"VR-{visitRequestId}",
+        RegistrantUserId = registrantUserId,
         RegistrantFullName = "Nguyễn Văn Khách",
         RegistrantNationality = "VN",
         RegistrantOrganization = "Đối tác",
         RegistrantJobTitle = "Trưởng đoàn",
         RegistrantPhone = "0900000000",
         RegistrantEmail = "guest@test.local",
-        // Pure V2: delegation name and purpose are per campus and live on VisitInstanceFormDetail (see
-        // CreateVisitInstance). The request row keeps only the PRIMARY contact — a request-level relation,
-        // distinct from each campus's operational contact.
+        // Pure V2: delegation name, purpose AND the operational contact are per campus and live on
+        // VisitInstanceFormDetail (see CreateVisitInstance). The request row keeps identity, scope and
+        // lifecycle only — there is no request-level contact.
         HasMixedCampusDetails = false,
-        ContactPersonFullName = "Đầu mối",
-        ContactPersonOrganization = "Đối tác",
-        ContactPersonPhone = "0900000001",
-        ContactPersonEmail = "contact@test.local",
         Status = "APPROVED",
         PartnerId = partnerId,
-        VisitorUserId = visitorUserId,
         SubmittedAt = new DateTime(2026, 6, 1),
         CreatedAt = new DateTime(2026, 6, 1),
     };
@@ -336,6 +332,8 @@ public static class ScheduleReportTestData
             Purpose = purpose,
             OperationalContactFullName = "Đầu mối cơ sở",
             OperationalContactPhone = "0900000002",
+            // NOT NULL since the per-campus cutover, and what the setup-progress mail addresses.
+            OperationalContactEmail = "contact@test.local",
             WorkingLanguage = "VI",
             MediaConsentStatus = "AGREED",
             CreatedAt = new DateTime(2026, 6, 1),
@@ -426,7 +424,7 @@ public static class ScheduleReportTestData
     /// campus 1) and the visit request + instance hosted by them.</summary>
     public static (VisitRequestCampus Instance, User Host) SeedBase(
         ScheduleReportTestDbContext db, string instanceStatus = VisitInstanceStatus.BeforeVisit,
-        ulong? partnerId = null, ulong? visitorUserId = null)
+        ulong? partnerId = null, ulong? registrantUserId = null)
     {
         db.Campuses.Add(CreateCampus());
         db.Roles.AddRange(
@@ -441,7 +439,7 @@ public static class ScheduleReportTestData
         var host = CreateUser(HostUserId, StaffRoleId, UserSubRoles.Staff, icDept.DepartmentId);
         db.Users.Add(host);
 
-        db.VisitRequests.Add(CreateVisitRequest(partnerId: partnerId, visitorUserId: visitorUserId));
+        db.VisitRequests.Add(CreateVisitRequest(partnerId: partnerId, registrantUserId: registrantUserId));
         var instance = CreateVisitInstance(status: instanceStatus);
         db.VisitRequestCampuses.Add(instance);
         db.SaveChanges();

@@ -131,7 +131,7 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
     private static VerifyAndCreateVisitRequestV2CommandHandler VerifyHandler(ApplicationDbContext db)
         => new(db, new OtpService(db, new FixedClock(), EmptyConfig), new FakeProvision(),
             new VisitRequestV2CreateService(db), new NoopNotifications(),
-            new CreateVisitRequestV2CommandTests.RecordingClaimService(), new FixedClock(),
+            new CreateVisitRequestV2CommandTests.RecordingInvitationService(), new FixedClock(),
             NullLogger<VerifyAndCreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, new PerCampusFormV2WriteOptions { Enabled = true });
 
@@ -139,7 +139,7 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
     private static VisitRequestFormDataV2 Form(
         string submissionId,
         string registrantEmail,
-        CampusProcessingV2Dto? processing = null,
+        CampusHostSelectionV2Dto? processing = null,
         string delegationName = "Đoàn Delegated V2")
     {
         var start = Now.AddDays(20);
@@ -148,24 +148,27 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, processing);
+            "EN", null, "DECLINED", null, processing);
         return new VisitRequestFormDataV2(
             submissionId,
             new RegistrantInputV2("Delegated Registrant", "VN", "Org", "Job", "+8491", registrantEmail),
-            new ContactPointDto("Delegated Registrant", "Org", "+8491", registrantEmail),
             null, new List<CampusVisitFormDto> { campus });
     }
 
     private static string NewEmail() => $"delegatedv2_{Guid.NewGuid():N}@example.com".ToLowerInvariant();
 
-    // ── A delegated submission may not carry a processing intent ────────────────────
+    // ── A delegated submission may not name a reception host ───────────────────────
+    //
+    // Proposing a host is a right that comes from being internal staff of that campus. The person
+    // these submissions register on behalf of is not, so a payload that names anybody is REFUSED
+    // rather than silently downgraded — a forged payload must be distinguishable from a clean one.
 
     [Theory]
-    [InlineData(CampusSubmissionModes.SelfHost, null)]
-    [InlineData(CampusSubmissionModes.AssignHost, 9UL)]
-    [InlineData(CampusSubmissionModes.SendForReview, 9UL)] // host smuggled under the harmless mode
-    public async Task Initiate_rejects_a_direct_processing_intent_without_sending_an_otp(
-        string mode, ulong? hostUserId)
+    [InlineData(HostSelectionModes.Self, null)]
+    [InlineData(HostSelectionModes.Selected, 9UL)]
+    [InlineData(HostSelectionModes.WaitForLater, 9UL)] // host smuggled under the harmless mode
+    public async Task Initiate_rejects_a_host_proposal_without_sending_an_otp(
+        string mode, ulong? proposedHostUserId)
     {
         RequireDb();
         using var db = NewContext();
@@ -176,10 +179,16 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
             InitiateHandler(db, mail).Handle(
                 new InitiateVisitRequestV2Command(
-                    Form(submissionId, email, new CampusProcessingV2Dto(mode, hostUserId))),
+                    Form(submissionId, email, new CampusHostSelectionV2Dto(mode, proposedHostUserId))),
                 CancellationToken.None));
 
-        Assert.Equal(VisitRequestErrorCodes.InvalidCampusSubmissionMode, ex.ErrorCode);
+        // WAIT_FOR_LATER carrying a host is a contradiction before it is a permission question, so
+        // it answers with the shape code; the other two answer with the role code.
+        Assert.Contains(ex.ErrorCode, new[]
+        {
+            VisitRequestErrorCodes.ProposedHostNotAllowedForRole,
+            VisitRequestErrorCodes.InvalidHostSelectionMode,
+        });
         // Refused BEFORE the OTP primitive and BEFORE the snapshot binding — nothing to clean up, and no
         // mail lands in a third party's inbox because of a forged payload.
         Assert.Equal(0, mail.SendCount);
@@ -189,7 +198,7 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
     }
 
     [Fact]
-    public async Task Initiate_allows_explicit_send_for_review_and_sends_the_otp()
+    public async Task Initiate_allows_explicit_wait_for_later_and_sends_the_otp()
     {
         RequireDb();
         using var db = NewContext();
@@ -199,17 +208,18 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
 
         var result = await InitiateHandler(db, mail).Handle(
             new InitiateVisitRequestV2Command(
-                Form(submissionId, email, new CampusProcessingV2Dto(CampusSubmissionModes.SendForReview, null))),
+                Form(submissionId, email, new CampusHostSelectionV2Dto(HostSelectionModes.WaitForLater, null))),
             CancellationToken.None);
 
-        // SEND_FOR_REVIEW with no host IS the default routing — it asserts nothing delegation disallows.
+        // WAIT_FOR_LATER with nobody named IS what a delegated submission always means — it asserts
+        // nothing that delegation disallows.
         Assert.False(string.IsNullOrWhiteSpace(result.SessionToken));
         Assert.Equal(1, mail.SendCount);
         Assert.True(await db.VisitRequestPendingForms.AnyAsync(p => p.SubmissionId == submissionId));
     }
 
     [Fact]
-    public async Task Verify_rejects_a_processing_intent_smuggled_in_after_a_clean_initiate()
+    public async Task Verify_rejects_a_host_proposal_smuggled_in_after_a_clean_initiate()
     {
         RequireDb();
         using var db = NewContext();
@@ -223,11 +233,11 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
         var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
             VerifyHandler(db).Handle(
                 new VerifyAndCreateVisitRequestV2Command(
-                    Form(submissionId, email, new CampusProcessingV2Dto(CampusSubmissionModes.SelfHost, null)),
+                    Form(submissionId, email, new CampusHostSelectionV2Dto(HostSelectionModes.Self, null)),
                     mail.LastCode!, issued.SessionToken),
                 CancellationToken.None));
 
-        Assert.Equal(VisitRequestErrorCodes.InvalidCampusSubmissionMode, ex.ErrorCode);
+        Assert.Equal(VisitRequestErrorCodes.ProposedHostNotAllowedForRole, ex.ErrorCode);
         // The OTP is NOT burned by a payload we refused to look at, and no request was created.
         Assert.False(await db.VisitRequests.AnyAsync(v => v.SubmissionId == submissionId));
         var pending = await db.VisitRequestPendingForms.AsNoTracking()
@@ -267,7 +277,9 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
             {
                 Assert.Null(i.CurrentHostUserId);
                 Assert.Null(i.DecidedBy);
-                Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, i.Status);
+                // The contact here is not the registrant, so each campus starts by waiting for its own
+                // operational contact to confirm — one step earlier than WAITING_REQUEST_APPROVAL.
+                Assert.Equal(VisitInstanceStatus.WaitingContactConfirmation, i.Status);
             });
             Assert.False(await db.VisitParticipants.AnyAsync(
                 p => instances.Select(i => i.VisitInstanceId).Contains(p.VisitInstanceId) && p.IsHost));

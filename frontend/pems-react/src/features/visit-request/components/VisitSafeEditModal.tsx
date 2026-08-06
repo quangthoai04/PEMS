@@ -17,7 +17,7 @@ interface Props {
 }
 
 /**
- * Safe / privacy-urgent edit (plan §16.5). Apply-now corrections: registrant + primary-contact
+ * Safe / privacy-urgent edit (plan §16.5). Apply-now corrections: the registrant snapshot, plus each
  * presentation fields and per-instance transportation / note / media consent. Media DECLINED applies
  * immediately even <24h (backend authority). Optimistic concurrency via row versions → a stable 409
  * shows a steady message and a reload; the proposal is never presented as an approval-pending amendment.
@@ -30,11 +30,6 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     organization: form.registrant.organization,
     jobTitle: form.registrant.jobTitle,
     phone: form.registrant.phone,
-  });
-  const [contact, setContact] = useState({
-    fullName: form.primaryContact.fullName,
-    organization: form.primaryContact.organization,
-    phone: form.primaryContact.phone,
   });
   // ONLY the campuses the backend says are editable right now. A campus that is under way, finished,
   // or inside its window used to appear here as a normal editable block — the user would type into it
@@ -54,8 +49,12 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
       visitInstanceId: c.visitInstanceId,
       expectedRowVersion: c.rowVersion,
       campusName: c.campusName,
+      contact: {
+        fullName: c.operationalContact.fullName,
+        organization: c.operationalContact.organization,
+        phone: c.operationalContact.phone,
+      },
       transportationNote: c.transportationNote ?? '',
-      noteToFptu: c.noteToFptu ?? '',
       mediaConsentStatus: c.mediaConsentStatus,
       mediaConsentNote: c.mediaConsentNote ?? '',
     })),
@@ -72,7 +71,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     setBusy(true);
     setError(null);
     setConflict(false);
-    const payload = buildChangedOnlyPayload(form, registrant, contact, instances);
+    const payload = buildChangedOnlyPayload(form, registrant, instances);
     if (payload === null) {
       setError(t('visitRequestV2:safeEdit.noChanges'));
       setBusy(false);
@@ -139,15 +138,6 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 <input className={field} value={registrant.jobTitle} onChange={e => setRegistrant({ ...registrant, jobTitle: e.target.value })} />
               </div>
             </fieldset>
-            <fieldset className="mb-3" disabled={!canEditShared}>
-              <legend className="mb-1 text-sm font-bold text-slate-700">{t('visitRequestV2:summary.primaryContact')}</legend>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <input className={field} value={contact.fullName} onChange={e => setContact({ ...contact, fullName: e.target.value })} />
-                <input className={field} value={contact.phone} onChange={e => setContact({ ...contact, phone: e.target.value })} />
-                <input className={field} value={contact.organization} onChange={e => setContact({ ...contact, organization: e.target.value })} />
-              </div>
-              <p className="mt-1 text-[11px] text-slate-500">{t('visitRequestV2:safeEdit.emailImmutable')}</p>
-            </fieldset>
             {!canEditShared && (
               <p
                 data-testid="safe-edit-shared-locked"
@@ -163,10 +153,34 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.transportation')}</span>
                   <input data-testid={`safe-edit-transportation-${i.visitInstanceId}`} className={field} value={i.transportationNote} onChange={e => setInstance(i.visitInstanceId, { transportationNote: e.target.value })} />
                 </label>
-                <label className="mt-2 block text-sm">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.campusNote')}</span>
-                  <input className={field} value={i.noteToFptu} onChange={e => setInstance(i.visitInstanceId, { noteToFptu: e.target.value })} />
-                </label>
+                {/* The contact belongs to THIS campus. It used to live in the shared block above,
+                    which meant correcting one campus's contact name rewrote every sibling's. */}
+                <div className="mt-3 rounded-lg bg-slate-50 p-2">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">
+                    {t('visitRequestV2:operationalContact.title')}
+                  </span>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <input
+                      data-testid={`safe-edit-contact-name-${i.visitInstanceId}`}
+                      className={field}
+                      value={i.contact.fullName}
+                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, fullName: e.target.value } })}
+                    />
+                    <input
+                      data-testid={`safe-edit-contact-phone-${i.visitInstanceId}`}
+                      className={field}
+                      value={i.contact.phone}
+                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, phone: e.target.value } })}
+                    />
+                    <input
+                      data-testid={`safe-edit-contact-org-${i.visitInstanceId}`}
+                      className={field}
+                      value={i.contact.organization}
+                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, organization: e.target.value } })}
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-500">{t('visitRequestV2:safeEdit.emailImmutable')}</p>
+                </div>
                 <label className="mt-2 block text-sm">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.mediaConsent')}</span>
                   <select data-testid={`safe-edit-media-${i.visitInstanceId}`} className={field} value={i.mediaConsentStatus} onChange={e => setInstance(i.visitInstanceId, { mediaConsentStatus: e.target.value })}>

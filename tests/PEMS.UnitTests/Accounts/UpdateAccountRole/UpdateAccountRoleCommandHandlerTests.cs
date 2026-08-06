@@ -1306,7 +1306,7 @@ public class UpdateAccountRoleCommandHandlerTests
     [Fact]
     public async Task StaffLeader_CannotRoleChangeAVisitor()
     {
-        // Visitor → internal needs its own flow (contact ownership, visitor_user_id, DB triggers).
+        // Visitor → internal needs its own flow (operational-contact ownership per campus, DB triggers).
         // Refused in the backend, not merely hidden in the UI (spec §3.4).
         var h = CreateHarness();
         h.Db.Roles.Add(Uc106TestData.CreateRole(9, RoleCodes.Visitor));

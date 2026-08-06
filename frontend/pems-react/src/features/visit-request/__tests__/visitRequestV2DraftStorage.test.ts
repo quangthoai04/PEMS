@@ -16,7 +16,6 @@ const v2Data = (): Partial<VisitRequestV2Schema> => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: '', phone: '+84987654321', email: 'c@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [

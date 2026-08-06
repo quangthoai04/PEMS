@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.IO;
-using System.Linq;
 using MySql.Data.MySqlClient;
 using PEMS.IntegrationTests.TestInfrastructure;
 using Xunit;
@@ -10,7 +8,7 @@ using Xunit;
 namespace PEMS.IntegrationTests.Database;
 
 /// <summary>
-/// The primary-contact guards, exercised from the application's own MySQL client rather than from
+/// The operational-contact guards, exercised from the application's own MySQL client rather than from
 /// inside the import script (G12 / R-DB-CONTACT-GUARD).
 ///
 /// <para>
@@ -22,6 +20,16 @@ namespace PEMS.IntegrationTests.Database;
 /// comparison against '45000' evaluated to UNKNOWN. A self-test that can be wrong in that direction —
 /// reporting failure where the database is sound — can equally be wrong in the other, so the guards
 /// are asserted here too, through a different mechanism, where an exception is an exception.
+/// </para>
+///
+/// <para>
+/// Rewritten for the hard cutover to per-campus operational contacts. The subject changed shape, not
+/// just names: the contact now lives on <c>visit_request_campuses.operational_contact_user_id</c>, one
+/// per campus, and the request-level <c>visitor_user_id</c> / <c>primary_contact_access_status</c> pair
+/// the previous version of this file drove no longer exists. Two rules were deliberately dropped with
+/// it and are asserted here as POSITIVES so a future "restoration" of the old guard cannot pass
+/// unnoticed: an operational contact is <em>not</em> forced to hold the VISITOR role, and changing that
+/// account's role does <em>not</em> disturb the campus it is contact for.
 /// </para>
 ///
 /// <para>
@@ -52,11 +60,22 @@ public sealed class ContactGuardTests : IClassFixture<ContactGuardTests.GuardDat
         public string ConnectionString { get; private set; } = "";
         public string? Failure { get; private set; }
 
-        /// <summary>A user who is an ACTIVE VISITOR and is the primary contact of a live request.</summary>
-        public long LinkedVisitorUserId { get; private set; }
+        /// <summary>A live campus instance that has a confirmed operational contact.</summary>
+        public long LiveInstanceId { get; private set; }
 
-        /// <summary>That live request.</summary>
+        /// <summary>That campus's parent request.</summary>
         public long LiveRequestId { get; private set; }
+
+        /// <summary>The account confirmed as that campus's operational contact.</summary>
+        public long LinkedContactUserId { get; private set; }
+
+        /// <summary>A campus still waiting for its own contact to confirm, and its parent request.</summary>
+        public long GatedInstanceId { get; private set; }
+
+        public long GatedRequestId { get; private set; }
+
+        /// <summary>A campus that is past the gate but whose parent request is still behind it.</summary>
+        public long ConfirmedBehindGateInstanceId { get; private set; }
 
         /// <summary>A user who is NOT a VISITOR — any internal account will do.</summary>
         public long InternalUserId { get; private set; }
@@ -106,17 +125,45 @@ public sealed class ContactGuardTests : IClassFixture<ContactGuardTests.GuardDat
         /// </summary>
         private void ResolveFixtureIds()
         {
-            LiveRequestId = ScalarLong(@"
-SELECT MIN(visit_request_id) FROM visit_requests
-WHERE visitor_user_id IS NOT NULL
-  AND primary_contact_access_status = 'ACTIVE'
-  AND status <> 'CANCELLED'");
+            LiveInstanceId = ScalarLong(@"
+SELECT MIN(vrc.visit_instance_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND vrc.status NOT IN ('CANCELLED','REJECTED','CLOSED')
+  AND vr.status <> 'CANCELLED'");
 
-            LinkedVisitorUserId = ScalarLong(
-                $"SELECT visitor_user_id FROM visit_requests WHERE visit_request_id = {LiveRequestId}");
+            LiveRequestId = ScalarLong(
+                $"SELECT visit_request_id FROM visit_request_campuses WHERE visit_instance_id = {LiveInstanceId}");
+
+            LinkedContactUserId = ScalarLong(
+                "SELECT operational_contact_user_id FROM visit_request_campuses " +
+                $"WHERE visit_instance_id = {LiveInstanceId}");
+
+            // A campus still behind the gate. Its parent request is PENDING_CONTACT_CONFIRMATION by
+            // construction — the aggregate trigger cannot leave it anywhere else.
+            GatedInstanceId = ScalarLong(@"
+SELECT MIN(vrc.visit_instance_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE vrc.status = 'WAITING_CONTACT_CONFIRMATION'
+  AND vr.status = 'PENDING_CONTACT_CONFIRMATION'");
+
+            GatedRequestId = ScalarLong(
+                $"SELECT visit_request_id FROM visit_request_campuses WHERE visit_instance_id = {GatedInstanceId}");
+
+            // The interesting shape for the decision guard: this campus has confirmed, a SIBLING has not,
+            // so the request as a whole is still behind the gate. Nothing may be decided here yet.
+            ConfirmedBehindGateInstanceId = ScalarLong(@"
+SELECT MIN(vrc.visit_instance_id)
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE vrc.status = 'WAITING_REQUEST_APPROVAL'
+  AND vr.status = 'PENDING_CONTACT_CONFIRMATION'");
 
             InternalUserId = ScalarLong(@"
-SELECT MIN(u.user_id) FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r.role_code <> 'VISITOR'");
+SELECT MIN(u.user_id) FROM users u JOIN roles r ON r.role_id = u.role_id
+WHERE r.role_code <> 'VISITOR' AND u.status = 'ACTIVE'");
 
             VisitorRoleId = ScalarLong("SELECT role_id FROM roles WHERE role_code = 'VISITOR'");
         }
@@ -134,9 +181,10 @@ SELECT MIN(u.user_id) FROM users u JOIN roles r ON r.role_id = u.role_id WHERE r
         public void Require()
         {
             Assert.True(DatabaseName is not null, "Could not build the contact-guard database. " + Failure);
-            Assert.True(LiveRequestId > 0, "The canonical import carries no live request with an ACTIVE primary contact.");
-            Assert.True(LinkedVisitorUserId > 0, "Could not resolve the linked VISITOR.");
-            Assert.True(InternalUserId > 0, "The canonical import carries no non-VISITOR account.");
+            Assert.True(LiveInstanceId > 0, "The canonical import carries no live campus with a confirmed operational contact.");
+            Assert.True(LinkedContactUserId > 0, "Could not resolve the linked operational contact.");
+            Assert.True(GatedInstanceId > 0, "The canonical import carries no campus still awaiting contact confirmation.");
+            Assert.True(InternalUserId > 0, "The canonical import carries no active non-VISITOR account.");
             Assert.True(VisitorRoleId > 0, "The canonical import carries no VISITOR role.");
         }
 
@@ -279,26 +327,14 @@ DELIMITER ;").Execute();
         public void Dispose() => Cleanup();
     }
 
-    private const string PendingVisitorInsert = @"
+    /// <summary>A standalone account, created in whatever state the case needs.</summary>
+    private const string ProbeUserInsert = @"
 INSERT INTO users (user_id, role_id, sub_role, email, password_hash, full_name, status,
                    primary_campus_id, department_id, created_at, updated_at)
 VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NOW(), NULL)";
 
     /// <summary>MySQL's error number for a user SIGNAL whose SQLSTATE is not one it maps itself.</summary>
     private const int ErSignalException = 1644;
-
-    /// <summary>
-    /// Promotes the linked VISITOR to STAFF while satisfying every OTHER rule on the users table —
-    /// department and campus included. Without them, <c>trg_users_validate_bu</c> runs first (it is
-    /// action_order 1) and refuses with "STAFF/DEPARTMENT must have department_id", so the test would
-    /// be measuring an unrelated validator and would still have looked like a pass on SQLSTATE alone.
-    /// </summary>
-    private string PromoteLinkedVisitorToStaff =>
-        "UPDATE users SET role_id = (SELECT role_id FROM roles WHERE role_code = 'STAFF'), " +
-        "sub_role = 'STAFF', " +
-        "department_id = (SELECT MIN(department_id) FROM departments), " +
-        "primary_campus_id = (SELECT MIN(campus_id) FROM campuses) " +
-        $"WHERE user_id = {_db.LinkedVisitorUserId}";
 
     private void AssertGuardRejected(MySqlException? ex, string expectedMessage, string what)
     {
@@ -311,12 +347,13 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
         Assert.Equal(expectedMessage, ex.Message);
     }
 
-    // ── The five guards must exist, on the right table, at the right time ────────────────────────
+    // ── The guards must exist, on the right table, at the right time ─────────────────────────────
 
     [Theory]
-    [InlineData("trg_visit_requests_primary_contact_guard_bi")]
-    [InlineData("trg_visit_requests_primary_contact_guard_bu")]
-    [InlineData("trg_users_protect_active_primary_contact_bu")]
+    [InlineData("trg_visit_campuses_op_contact_guard_bi")]
+    [InlineData("trg_visit_campuses_op_contact_guard_bu")]
+    [InlineData("trg_visit_requests_contact_gate_guard_bu")]
+    [InlineData("trg_users_protect_operational_contact_bu")]
     [InlineData("trg_visit_request_identity_changes_user_guard_bi")]
     [InlineData("trg_visit_request_identity_changes_user_guard_bu")]
     public void Guard_trigger_is_installed(string triggerName)
@@ -325,16 +362,16 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
     }
 
     /// <summary>
-    /// The three body properties that G12 fixed, asserted as properties of the installed trigger. A
-    /// database restored from a pre-G12 dump would still pass every behavioural test whose account
-    /// happens to be ACTIVE, and fail only on the one state this checks for.
+    /// The two body properties G12 fixed, asserted as properties of the installed trigger. A database
+    /// restored from a pre-G12 dump would still pass every behavioural test whose account happens to be
+    /// ACTIVE, and fail only on the one state this checks for.
     /// </summary>
     [Theory]
-    [InlineData("trg_visit_requests_primary_contact_guard_bi")]
-    [InlineData("trg_visit_requests_primary_contact_guard_bu")]
+    [InlineData("trg_visit_campuses_op_contact_guard_bi")]
+    [InlineData("trg_visit_campuses_op_contact_guard_bu")]
     [InlineData("trg_visit_request_identity_changes_user_guard_bi")]
     [InlineData("trg_visit_request_identity_changes_user_guard_bu")]
-    public void Visitor_guard_reads_status_into_a_wide_enough_variable(string triggerName)
+    public void Contact_guard_reads_status_into_a_wide_enough_variable(string triggerName)
     {
         var body = _db.TriggerBody(triggerName);
 
@@ -343,56 +380,46 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
         Assert.Contains("v_user_status VARCHAR(30)", body);
         Assert.DoesNotContain("v_user_status VARCHAR(20)", body);
 
-        // An inner join reported "user not found" for a user that exists but whose role cannot be read.
-        Assert.Contains("LEFT JOIN roles", body);
-
-        // NULL <> 'VISITOR' is UNKNOWN, and IF treats UNKNOWN as false.
+        // NULL <> 'ACTIVE' is UNKNOWN, and IF treats UNKNOWN as false.
         Assert.Contains("<=>", body);
     }
 
-    [Fact]
-    public void Users_guard_counts_the_role_it_looked_up()
-    {
-        var body = _db.TriggerBody("trg_users_protect_active_primary_contact_bu");
-
-        // A bare SELECT ... INTO over zero rows leaves the variable NULL and the guard stopped guarding.
-        Assert.Contains("v_new_role_count", body);
-        Assert.Contains("<=>", body);
-    }
-
-    // ── visit_requests: who may be the primary contact ──────────────────────────────────────────
+    // ── visit_request_campuses: status and contact must agree ───────────────────────────────────
 
     [Fact]
-    public void Internal_account_cannot_become_the_primary_contact()
+    public void A_campus_still_awaiting_confirmation_must_not_carry_a_contact()
     {
         var ex = _db.AttemptRolledBack(
-            $"UPDATE visit_requests SET visitor_user_id = {_db.InternalUserId}, " +
-            $"primary_contact_access_status = 'ACTIVE' WHERE visit_request_id = {_db.LiveRequestId}");
+            $"UPDATE visit_request_campuses SET operational_contact_user_id = {_db.InternalUserId} " +
+            $"WHERE visit_instance_id = {_db.GatedInstanceId}");
 
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR", "internal account as primary contact");
+        AssertGuardRejected(ex,
+            "WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT",
+            "contact set while the campus is still WAITING_CONTACT_CONFIRMATION");
     }
 
     [Fact]
-    public void Updating_visitor_user_id_alone_is_still_guarded()
+    public void A_campus_past_confirmation_must_keep_a_contact()
     {
-        // The access status is deliberately NOT written here. A guard keyed on that column alone
-        // would let an internal account in through this path.
         var ex = _db.AttemptRolledBack(
-            $"UPDATE visit_requests SET visitor_user_id = {_db.InternalUserId} " +
-            $"WHERE visit_request_id = {_db.LiveRequestId}");
+            "UPDATE visit_request_campuses SET operational_contact_user_id = NULL " +
+            $"WHERE visit_instance_id = {_db.LiveInstanceId}");
 
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR", "visitor_user_id-only update");
+        AssertGuardRejected(ex,
+            "CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT",
+            "clearing the contact of a campus past the gate");
     }
 
     [Fact]
-    public void Non_existent_user_cannot_become_the_primary_contact()
+    public void Non_existent_user_cannot_become_the_operational_contact()
     {
         var ex = _db.AttemptRolledBack(
-            $"UPDATE visit_requests SET visitor_user_id = 99999999 WHERE visit_request_id = {_db.LiveRequestId}");
+            "UPDATE visit_request_campuses SET operational_contact_user_id = 99999999 " +
+            $"WHERE visit_instance_id = {_db.LiveInstanceId}");
 
         // The guard must answer before the foreign key does, or the caller gets a constraint error
         // instead of something they can map to a message.
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_USER_NOT_FOUND", "non-existent user as primary contact");
+        AssertGuardRejected(ex, "OPERATIONAL_CONTACT_USER_NOT_FOUND", "non-existent user as operational contact");
     }
 
     /// <summary>
@@ -400,110 +427,133 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
     /// ordinary state, and it used to surface as 22001 "Data too long for column 'v_user_status'".
     /// </summary>
     [Fact]
-    public void Unconfirmed_visitor_is_refused_with_the_business_code_not_a_storage_error()
+    public void Unconfirmed_account_is_refused_with_the_business_code_not_a_storage_error()
     {
         var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99795, _db.VisitorRoleId,
+            string.Format(ProbeUserInsert, 99795, _db.VisitorRoleId,
                           "guard.it.pending@example.test", "PENDING_EMAIL_CONFIRMATION"),
-            $"UPDATE visit_requests SET visitor_user_id = 99795 WHERE visit_request_id = {_db.LiveRequestId}");
+            "UPDATE visit_request_campuses SET operational_contact_user_id = 99795 " +
+            $"WHERE visit_instance_id = {_db.LiveInstanceId}");
 
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE", "unconfirmed visitor as primary contact");
+        AssertGuardRejected(ex, "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE", "unconfirmed account as operational contact");
         Assert.DoesNotContain("Data too long", ex!.Message);
     }
 
     [Fact]
-    public void Inactive_visitor_cannot_become_the_primary_contact()
+    public void Inactive_account_cannot_become_the_operational_contact()
     {
         var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99796, _db.VisitorRoleId,
+            string.Format(ProbeUserInsert, 99796, _db.VisitorRoleId,
                           "guard.it.inactive@example.test", "INACTIVE"),
-            $"UPDATE visit_requests SET visitor_user_id = 99796 WHERE visit_request_id = {_db.LiveRequestId}");
+            "UPDATE visit_request_campuses SET operational_contact_user_id = 99796 " +
+            $"WHERE visit_instance_id = {_db.LiveInstanceId}");
 
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE", "inactive visitor as primary contact");
+        AssertGuardRejected(ex, "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE", "inactive account as operational contact");
     }
 
+    // ── The global confirmation gate ────────────────────────────────────────────────────────────
+
     [Fact]
-    public void Active_access_status_requires_a_visitor_user()
+    public void A_request_cannot_leave_the_gate_while_a_campus_is_unconfirmed()
     {
         var ex = _db.AttemptRolledBack(
-            $"UPDATE visit_requests SET visitor_user_id = NULL WHERE visit_request_id = {_db.LiveRequestId}");
+            "UPDATE visit_requests SET status = 'PENDING_APPROVAL' " +
+            $"WHERE visit_request_id = {_db.GatedRequestId}");
 
-        AssertGuardRejected(ex, "ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER", "ACTIVE without a visitor");
+        AssertGuardRejected(ex, "CONTACT_CONFIRMATION_REQUIRED", "request leaving the gate with a campus unconfirmed");
+    }
+
+    /// <summary>
+    /// The decision guard, driven through the transition approval actually produces.
+    ///
+    /// <para>
+    /// A campus whose own contact has confirmed sits at WAITING_REQUEST_APPROVAL even while a SIBLING
+    /// campus is still unconfirmed — so the parent request is behind the gate and no campus may be
+    /// decided yet (plan §3.4: "cổng xác nhận vẫn mở" is a precondition of approve). Approving now lands
+    /// on ASSIGNED, so ASSIGNED is the transition this guard has to cover; checking only BEFORE_VISIT
+    /// leaves the whole approve path unguarded, because approve no longer produces BEFORE_VISIT.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_campus_cannot_be_approved_while_the_request_is_behind_the_gate()
+    {
+        Assert.True(_db.ConfirmedBehindGateInstanceId > 0,
+            "The canonical import carries no confirmed campus under a request that is still behind the gate.");
+
+        var ex = _db.AttemptRolledBack(
+            "UPDATE visit_request_campuses SET status = 'ASSIGNED' " +
+            $"WHERE visit_instance_id = {_db.ConfirmedBehindGateInstanceId}");
+
+        AssertGuardRejected(ex, "CONTACT_CONFIRMATION_REQUIRED", "approving a campus while the request is behind the gate");
     }
 
     [Fact]
-    public void Pending_confirmation_must_not_carry_a_visitor_user()
+    public void A_campus_cannot_be_rejected_while_the_request_is_behind_the_gate()
+    {
+        Assert.True(_db.ConfirmedBehindGateInstanceId > 0,
+            "The canonical import carries no confirmed campus under a request that is still behind the gate.");
+
+        var ex = _db.AttemptRolledBack(
+            "UPDATE visit_request_campuses SET status = 'REJECTED' " +
+            $"WHERE visit_instance_id = {_db.ConfirmedBehindGateInstanceId}");
+
+        AssertGuardRejected(ex, "CONTACT_CONFIRMATION_REQUIRED", "rejecting a campus while the request is behind the gate");
+    }
+
+    // ── users: a linked contact may not be switched off ─────────────────────────────────────────
+
+    [Fact]
+    public void Linked_operational_contact_cannot_be_deactivated()
     {
         var ex = _db.AttemptRolledBack(
-            "UPDATE visit_requests SET primary_contact_access_status = 'PENDING_CONFIRMATION' " +
-            $"WHERE visit_request_id = {_db.LiveRequestId}");
+            $"UPDATE users SET status = 'INACTIVE' WHERE user_id = {_db.LinkedContactUserId}");
 
-        AssertGuardRejected(ex, "PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER", "PENDING with a visitor");
+        AssertGuardRejected(ex, "LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED", "deactivating a linked contact");
     }
 
-    // ── users: a linked contact may not be converted or switched off ────────────────────────────
+    // ── visit_request_identity_changes: the confirmation/transfer target ────────────────────────
 
     [Fact]
-    public void Linked_primary_contact_cannot_be_converted_to_an_internal_role()
+    public void Identity_change_cannot_target_a_non_existent_account()
     {
-        var ex = _db.AttemptRolledBack(PromoteLinkedVisitorToStaff);
+        var ex = _db.AttemptRolledBack(IdentityChangeInsert(99797, newUserId: "99999999"));
 
-        AssertGuardRejected(ex, "LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE", "role change on a linked contact");
+        AssertGuardRejected(ex, "OPERATIONAL_CONTACT_USER_NOT_FOUND", "identity change to a non-existent account");
     }
 
     [Fact]
-    public void Linked_primary_contact_cannot_be_deactivated()
-    {
-        var ex = _db.AttemptRolledBack(
-            $"UPDATE users SET status = 'INACTIVE' WHERE user_id = {_db.LinkedVisitorUserId}");
-
-        AssertGuardRejected(ex, "LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED", "deactivating a linked contact");
-    }
-
-    // ── visit_request_identity_changes: the claim/transfer target ───────────────────────────────
-
-    [Fact]
-    public void Identity_change_cannot_target_an_internal_account()
+    public void Identity_change_cannot_target_an_unconfirmed_account()
     {
         var ex = _db.AttemptRolledBack(
-            "INSERT INTO visit_request_identity_changes " +
-            "(identity_change_id, visit_request_id, change_kind, target_relation, confirmation_method, " +
-            " old_user_id, new_user_id, old_email_normalized, new_email_normalized, new_email_masked, " +
-            " pending_snapshot_json, status, expected_request_row_version, requested_by, requested_at, " +
-            " expires_at, applied_at, reason, resend_count, created_at, updated_at) VALUES " +
-            $"(99797, {_db.LiveRequestId}, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', " +
-            $" {_db.LinkedVisitorUserId}, {_db.InternalUserId}, 'old@example.test', 'new@example.test', " +
-            "  'n***@example.test', JSON_OBJECT('probe','it'), 'APPLIED', 0, " +
-            $" {_db.LinkedVisitorUserId}, NOW(), NOW(), NOW(), 'integration probe', 0, NOW(), NOW())");
-
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR", "identity change to an internal account");
-    }
-
-    [Fact]
-    public void Identity_change_cannot_target_an_unconfirmed_visitor()
-    {
-        var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99798, _db.VisitorRoleId,
+            string.Format(ProbeUserInsert, 99798, _db.VisitorRoleId,
                           "guard.it.transfer@example.test", "PENDING_EMAIL_CONFIRMATION"),
-            "INSERT INTO visit_request_identity_changes " +
-            "(identity_change_id, visit_request_id, change_kind, target_relation, confirmation_method, " +
-            " old_user_id, new_user_id, old_email_normalized, new_email_normalized, new_email_masked, " +
-            " pending_snapshot_json, status, expected_request_row_version, requested_by, requested_at, " +
-            " expires_at, applied_at, reason, resend_count, created_at, updated_at) VALUES " +
-            $"(99799, {_db.LiveRequestId}, 'TRANSFER', 'PRIMARY_CONTACT', 'GOOGLE_SSO', " +
-            $" {_db.LinkedVisitorUserId}, 99798, 'old@example.test', 'guard.it.transfer@example.test', " +
-            "  'g***@example.test', JSON_OBJECT('probe','it'), 'APPLIED', 0, " +
-            $" {_db.LinkedVisitorUserId}, NOW(), NOW(), NOW(), 'integration probe', 0, NOW(), NOW())");
+            IdentityChangeInsert(99799, newUserId: "99798"));
 
-        AssertGuardRejected(ex, "PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE", "identity change to an unconfirmed visitor");
+        AssertGuardRejected(ex, "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE", "identity change to an unconfirmed account");
         Assert.DoesNotContain("Data too long", ex!.Message);
     }
+
+    /// <summary>
+    /// A TRANSFER row on the live campus, already APPLIED so it does not collide with the
+    /// one-PENDING-per-campus unique key, and always naming the contact it takes the role from —
+    /// <c>trg_identity_changes_transfer_bi</c> requires <c>old_user_id</c> on a TRANSFER.
+    /// </summary>
+    private string IdentityChangeInsert(long id, string newUserId) =>
+        "INSERT INTO visit_request_identity_changes " +
+        "(identity_change_id, visit_request_id, visit_instance_id, change_kind, token_version, " +
+        " confirmation_method, old_user_id, new_user_id, old_email_normalized, new_email_normalized, " +
+        " new_email_masked, pending_snapshot_json, status, expected_request_row_version, requested_by, " +
+        " requested_at, expires_at, applied_at, reason, resend_count, created_at, updated_at) VALUES " +
+        $"({id}, {_db.LiveRequestId}, {_db.LiveInstanceId}, 'TRANSFER', 1, 'GOOGLE_SSO', " +
+        $" {_db.LinkedContactUserId}, {newUserId}, 'old@example.test', 'new@example.test', " +
+        "  'n***@example.test', JSON_OBJECT('probe','it'), 'APPLIED', 0, " +
+        $" {_db.LinkedContactUserId}, NOW(), NOW(), NOW(), 'integration probe', 0, NOW(), NOW())";
 
     // ── The other half: valid relations must NOT be refused ─────────────────────────────────────
     // A guard that rejects everything passes every negative test and is still useless.
 
     [Fact]
-    public void A_valid_active_visitor_relation_is_accepted()
+    public void A_valid_confirmed_contact_relation_is_accepted()
     {
         var ex = _db.AttemptRolledBack(
             $"UPDATE visit_requests SET updated_at = NOW() WHERE visit_request_id = {_db.LiveRequestId}");
@@ -511,22 +561,52 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
         Assert.Null(ex);
     }
 
+    /// <summary>
+    /// The deliberate behaviour change of this cutover, asserted as a positive so a re-introduced
+    /// "must be a VISITOR" rule cannot slip back in unnoticed: an internal account is allowed to be a
+    /// campus's operational contact, as long as it is ACTIVE (plan §1.7).
+    /// </summary>
     [Fact]
-    public void Swapping_in_another_active_visitor_is_accepted()
+    public void An_internal_account_may_be_the_operational_contact()
     {
         var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99800, _db.VisitorRoleId,
-                          "guard.it.replacement@example.test", "ACTIVE"),
-            $"UPDATE visit_requests SET visitor_user_id = 99800 WHERE visit_request_id = {_db.LiveRequestId}");
+            $"UPDATE visit_request_campuses SET operational_contact_user_id = {_db.InternalUserId} " +
+            $"WHERE visit_instance_id = {_db.LiveInstanceId}");
+
+        Assert.Null(ex);
+    }
+
+    /// <summary>
+    /// The second dropped rule. The old model pinned the contact's ROLE, because request-level access
+    /// was derived from it; per-campus access is read from operational_contact_user_id, so a role change
+    /// no longer threatens anything and must not be refused.
+    /// </summary>
+    [Fact]
+    public void A_linked_contacts_role_may_change()
+    {
+        var ex = _db.AttemptRolledBack(
+            "UPDATE users SET role_id = (SELECT role_id FROM roles WHERE role_code = 'STAFF'), " +
+            "sub_role = 'STAFF', " +
+            "department_id = (SELECT MIN(department_id) FROM departments), " +
+            "primary_campus_id = (SELECT MIN(campus_id) FROM campuses) " +
+            $"WHERE user_id = {_db.LinkedContactUserId}");
 
         Assert.Null(ex);
     }
 
     [Fact]
-    public void A_visitor_linked_to_nothing_may_be_deactivated()
+    public void Identity_change_may_target_an_active_internal_account()
+    {
+        var ex = _db.AttemptRolledBack(IdentityChangeInsert(99803, newUserId: _db.InternalUserId.ToString()));
+
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void An_account_linked_to_nothing_may_be_deactivated()
     {
         var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99801, _db.VisitorRoleId,
+            string.Format(ProbeUserInsert, 99801, _db.VisitorRoleId,
                           "guard.it.unlinked@example.test", "ACTIVE"),
             "UPDATE users SET status = 'INACTIVE' WHERE user_id = 99801");
 
@@ -534,23 +614,29 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
     }
 
     /// <summary>
-    /// The documented exclusion: a cancelled request does not pin its contact's account forever.
-    /// The probe asserts the fixture really was linked to a CANCELLED request, so it cannot pass by
-    /// quietly deactivating a visitor who was linked to nothing.
+    /// The documented exclusion: a campus that is over does not pin its contact's account forever.
+    /// The probe asserts the fixture really was linked to such a campus, so it cannot pass by quietly
+    /// deactivating an account that was linked to nothing.
     /// </summary>
     [Fact]
-    public void A_visitor_linked_only_to_a_cancelled_request_may_be_deactivated()
+    public void An_account_linked_only_to_a_finished_campus_may_be_deactivated()
     {
-        var cancelled = _db.Count(
-            "SELECT COUNT(*) FROM visit_requests WHERE status = 'CANCELLED' AND primary_contact_access_status = 'ACTIVE'");
-        Assert.True(cancelled > 0, "The canonical import carries no cancelled request with an ACTIVE primary contact.");
+        var overCampuses = _db.Count(@"
+SELECT COUNT(*) FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND (vrc.status IN ('CANCELLED','REJECTED','CLOSED') OR vr.status = 'CANCELLED')");
+        Assert.True(overCampuses > 0, "The canonical import carries no finished campus with an operational contact.");
 
+        // The campus is moved out from under the guard first — CLOSED campuses are outside its scope —
+        // and only then is the account switched off.
         var ex = _db.AttemptRolledBack(
-            string.Format(PendingVisitorInsert, 99802, _db.VisitorRoleId,
-                          "guard.it.cancelled@example.test", "ACTIVE"),
-            "UPDATE visit_requests SET visitor_user_id = 99802 WHERE visit_request_id = " +
-            "(SELECT r FROM (SELECT MIN(visit_request_id) AS r FROM visit_requests " +
-            " WHERE status = 'CANCELLED' AND primary_contact_access_status = 'ACTIVE') t)",
+            string.Format(ProbeUserInsert, 99802, _db.VisitorRoleId,
+                          "guard.it.finished@example.test", "ACTIVE"),
+            "UPDATE visit_request_campuses SET operational_contact_user_id = 99802 " +
+            "WHERE visit_instance_id = (SELECT i FROM (SELECT MIN(vrc.visit_instance_id) AS i " +
+            " FROM visit_request_campuses vrc WHERE vrc.status IN ('CANCELLED','REJECTED','CLOSED') " +
+            " AND vrc.operational_contact_user_id IS NOT NULL) t)",
             "UPDATE users SET status = 'INACTIVE' WHERE user_id = 99802");
 
         Assert.Null(ex);
@@ -596,42 +682,47 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
     {
         var cases = new (string What, string ExpectedMessage, string[] Statements)[]
         {
-            ("internal account as contact", "PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR", new[]
+            ("non-existent user", "OPERATIONAL_CONTACT_USER_NOT_FOUND", new[]
             {
-                $"UPDATE visit_requests SET visitor_user_id = {_db.InternalUserId} WHERE visit_request_id = {_db.LiveRequestId}",
+                "UPDATE visit_request_campuses SET operational_contact_user_id = 99999999 " +
+                $"WHERE visit_instance_id = {_db.LiveInstanceId}",
             }),
-            ("non-existent user", "PRIMARY_CONTACT_USER_NOT_FOUND", new[]
+            ("unconfirmed account", "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE", new[]
             {
-                $"UPDATE visit_requests SET visitor_user_id = 99999999 WHERE visit_request_id = {_db.LiveRequestId}",
-            }),
-            ("unconfirmed visitor", "PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE", new[]
-            {
-                string.Format(PendingVisitorInsert, 99810, _db.VisitorRoleId,
+                string.Format(ProbeUserInsert, 99810, _db.VisitorRoleId,
                               "guard.ss.pending@example.test", "PENDING_EMAIL_CONFIRMATION"),
-                $"UPDATE visit_requests SET visitor_user_id = 99810 WHERE visit_request_id = {_db.LiveRequestId}",
+                "UPDATE visit_request_campuses SET operational_contact_user_id = 99810 " +
+                $"WHERE visit_instance_id = {_db.LiveInstanceId}",
             }),
-            ("inactive visitor", "PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE", new[]
+            ("inactive account", "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE", new[]
             {
-                string.Format(PendingVisitorInsert, 99811, _db.VisitorRoleId,
+                string.Format(ProbeUserInsert, 99811, _db.VisitorRoleId,
                               "guard.ss.inactive@example.test", "INACTIVE"),
-                $"UPDATE visit_requests SET visitor_user_id = 99811 WHERE visit_request_id = {_db.LiveRequestId}",
+                "UPDATE visit_request_campuses SET operational_contact_user_id = 99811 " +
+                $"WHERE visit_instance_id = {_db.LiveInstanceId}",
             }),
-            ("ACTIVE without a visitor", "ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER", new[]
+            ("contact on a campus still behind the gate", "WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT", new[]
             {
-                $"UPDATE visit_requests SET visitor_user_id = NULL WHERE visit_request_id = {_db.LiveRequestId}",
+                $"UPDATE visit_request_campuses SET operational_contact_user_id = {_db.InternalUserId} " +
+                $"WHERE visit_instance_id = {_db.GatedInstanceId}",
             }),
-            ("PENDING with a visitor", "PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER", new[]
+            ("campus past the gate with no contact", "CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT", new[]
             {
-                "UPDATE visit_requests SET primary_contact_access_status = 'PENDING_CONFIRMATION' " +
-                $"WHERE visit_request_id = {_db.LiveRequestId}",
+                "UPDATE visit_request_campuses SET operational_contact_user_id = NULL " +
+                $"WHERE visit_instance_id = {_db.LiveInstanceId}",
             }),
-            ("role change on a linked contact", "LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE", new[]
+            ("request leaving the gate early", "CONTACT_CONFIRMATION_REQUIRED", new[]
             {
-                PromoteLinkedVisitorToStaff,
+                $"UPDATE visit_requests SET status = 'PENDING_APPROVAL' WHERE visit_request_id = {_db.GatedRequestId}",
             }),
-            ("deactivating a linked contact", "LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED", new[]
+            ("campus approved behind the gate", "CONTACT_CONFIRMATION_REQUIRED", new[]
             {
-                $"UPDATE users SET status = 'INACTIVE' WHERE user_id = {_db.LinkedVisitorUserId}",
+                "UPDATE visit_request_campuses SET status = 'ASSIGNED' " +
+                $"WHERE visit_instance_id = {_db.ConfirmedBehindGateInstanceId}",
+            }),
+            ("deactivating a linked contact", "LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED", new[]
+            {
+                $"UPDATE users SET status = 'INACTIVE' WHERE user_id = {_db.LinkedContactUserId}",
             }),
         };
 
@@ -649,24 +740,44 @@ VALUES ({0}, {1}, NULL, '{2}', 'x', 'Contact Guard Probe', '{3}', NULL, NULL, NO
 
     /// <summary>Every stable code the guards signal must still be reachable in an installed body.</summary>
     [Theory]
-    [InlineData("PRIMARY_CONTACT_USER_NOT_FOUND")]
-    [InlineData("PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR")]
-    [InlineData("PRIMARY_CONTACT_VISITOR_ACCOUNT_INACTIVE")]
-    [InlineData("ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER")]
-    [InlineData("PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER")]
-    [InlineData("LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE")]
-    [InlineData("LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED")]
+    [InlineData("OPERATIONAL_CONTACT_USER_NOT_FOUND")]
+    [InlineData("OPERATIONAL_CONTACT_ACCOUNT_INACTIVE")]
+    [InlineData("WAITING_CONTACT_CONFIRMATION_MUST_NOT_HAVE_OPERATIONAL_CONTACT")]
+    [InlineData("CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT")]
+    [InlineData("CONTACT_CONFIRMATION_REQUIRED")]
+    [InlineData("LINKED_OPERATIONAL_CONTACT_CANNOT_BE_DEACTIVATED")]
     public void Stable_code_is_signalled_by_at_least_one_guard(string code)
     {
         var guards = new[]
         {
-            "trg_visit_requests_primary_contact_guard_bi",
-            "trg_visit_requests_primary_contact_guard_bu",
-            "trg_users_protect_active_primary_contact_bu",
+            "trg_visit_campuses_op_contact_guard_bi",
+            "trg_visit_campuses_op_contact_guard_bu",
+            "trg_visit_requests_contact_gate_guard_bu",
+            "trg_users_protect_operational_contact_bu",
             "trg_visit_request_identity_changes_user_guard_bi",
             "trg_visit_request_identity_changes_user_guard_bu",
         };
 
         Assert.Contains(guards, g => _db.TriggerBody(g).Contains(code, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The old model's stable codes must be gone from every installed trigger. They named a
+    /// request-level relation that no longer exists, and a body still signalling them would mean a
+    /// pre-cutover dump had been restored under a post-cutover application.
+    /// </summary>
+    [Theory]
+    [InlineData("PRIMARY_CONTACT_USER_MUST_BE_ACTIVE_VISITOR")]
+    [InlineData("ACTIVE_PRIMARY_CONTACT_REQUIRES_VISITOR_USER")]
+    [InlineData("PENDING_PRIMARY_CONTACT_MUST_NOT_HAVE_VISITOR_USER")]
+    [InlineData("LINKED_PRIMARY_CONTACT_ROLE_CANNOT_CHANGE")]
+    [InlineData("LINKED_PRIMARY_CONTACT_CANNOT_BE_DEACTIVATED")]
+    public void Retired_code_is_signalled_by_no_trigger(string code)
+    {
+        var count = _db.Count(
+            "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE() " +
+            $"AND action_statement LIKE '%{code}%'");
+
+        Assert.Equal(0, count);
     }
 }

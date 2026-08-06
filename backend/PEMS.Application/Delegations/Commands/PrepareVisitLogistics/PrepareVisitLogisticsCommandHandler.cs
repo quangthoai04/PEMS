@@ -16,6 +16,7 @@ using PEMS.Domain.Entities.Notifications;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.PrepareVisitLogistics;
 
 /// <summary>
@@ -81,8 +82,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
         // Host-only, prep window.
         if (instance.CurrentHostUserId != actorId)
             throw new ForbiddenException("Chỉ Host phụ trách cơ sở này mới được gửi yêu cầu hậu cần.");
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể gửi yêu cầu hậu cần trong giai đoạn chuẩn bị.");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "gửi yêu cầu hậu cần");
 
         var mode = string.IsNullOrWhiteSpace(request.CoordinationMode)
             ? LogisticsCoordinationModes.SystemRequest

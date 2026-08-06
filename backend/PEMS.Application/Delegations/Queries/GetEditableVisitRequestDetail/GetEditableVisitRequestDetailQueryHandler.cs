@@ -11,6 +11,7 @@ using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Queries.GetEditableVisitRequestDetail;
 
 public sealed class GetEditableVisitRequestDetailQueryHandler
@@ -36,9 +37,10 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
     {
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
             throw new ForbiddenException();
-        if (_currentUser.RoleCode != RoleCodes.Visitor)
-            throw new ForbiddenException("Chỉ khách (Visitor) mới được sửa/gửi lại đơn đăng ký tham quan.");
 
+        // No role gate. A registrant may be a VISITOR, STAFF or STAFF LEADER account (plan §2.1), and
+        // the edit/resubmit commands this screen feeds authorize on the registrant relation alone —
+        // a role check here would 403 a staff registrant out of a request the backend would accept.
         var userId = _currentUser.UserId.Value;
 
         var visit = await _context.VisitRequests
@@ -48,8 +50,9 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, cancellationToken)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        if (visit.VisitorUserId != userId)
-            throw new ForbiddenException("Bạn chỉ được sửa đơn của chính mình.");
+        // The editor screen mirrors the edit/resubmit commands, which are registrant-only.
+        if (!VisitRequestOwnership.IsRegistrant(visit, userId))
+            throw new ForbiddenException("Chỉ người đăng ký mới được sửa đơn này.");
 
         var instances = visit.CampusInstances;
         // planned_start_at is local wall-clock DATETIME → compare against VietnamNow.
@@ -106,9 +109,9 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             }
         }
 
-        // ── Pure V2. This is a Visitor-owner-only, single-form editor, so the owner sees every campus;
-        // FORM CONTENT comes from the per-campus detail, while Registrant / primary Contact / Partner
-        // stay request-level relations. ──
+        // ── Pure V2. This is a registrant-only, single-form editor, so the registrant sees every
+        // campus; FORM CONTENT comes from each campus's own detail (including its own operational
+        // contact), while Registrant and Partner stay request-level. ──
 
         // The flat single-form editor cannot represent a request whose campuses hold DIFFERENT content —
         // that needs the per-campus editor. Guard it with a stable coded 409.
@@ -138,7 +141,6 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
         string? transportationNote = rep.TransportationNote;
         string? mediaConsentStatus = rep.MediaConsentStatus;
         string? mediaConsentNote = rep.MediaConsentNote;
-        string? noteToFptu = rep.NoteToFptu;
         List<EditableGuestMemberDto> visitorMembers = rep.Visitors.Select(MapRow).ToList();
         List<EditableGuestMemberDto> supportMembers = rep.SupportMembers.Select(MapRow).ToList();
 
@@ -165,11 +167,6 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             Purpose = purpose,
             WorkingContent = workingContent,
 
-            ContactPersonFullName = visit.ContactPersonFullName,
-            ContactPersonOrganization = visit.ContactPersonOrganization,
-            ContactPersonPhone = visit.ContactPersonPhone,
-            ContactPersonEmail = visit.ContactPersonEmail,
-
             WorkingLanguage = workingLanguage,
             TransportationNote = transportationNote,
             MediaConsentStatus = mediaConsentStatus,
@@ -178,7 +175,6 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             PartnerName = partnerName,
             PartnerIsActive = partnerIsActive,
             PartnerProfileStatus = partnerProfileStatus,
-            NoteToFptu = noteToFptu,
 
             CampusVisits = instances
                 .OrderBy(i => i.PlannedStartAt)
@@ -191,6 +187,14 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
                     PlannedStartAt = i.PlannedStartAt,
                     PlannedEndAt = i.PlannedEndAt,
                     InstanceStatus = i.Status,
+                    // The editor loads each campus's OWN contact. Prefilling every campus from a
+                    // representative one is how an edit used to overwrite a sibling's contact with a
+                    // value its owner never entered.
+                    OperationalContactFullName = ContactOf(i, content)?.FullName ?? "",
+                    OperationalContactOrganization = ContactOf(i, content)?.Organization ?? "",
+                    OperationalContactPhone = ContactOf(i, content)?.Phone ?? "",
+                    OperationalContactEmail = ContactOf(i, content)?.Email ?? "",
+                    ContactConfirmed = i.OperationalContactUserId is not null,
                 })
                 .ToList(),
 
@@ -233,4 +237,10 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
         JobTitle = r.JobTitle,
         Nationality = r.Nationality,
     };
+
+    /// <summary>This campus's own contact snapshot; null when its detail row is missing.</summary>
+    private static VisitFormOperationalContact? ContactOf(
+        Domain.Entities.Delegations.VisitRequestCampus instance,
+        IReadOnlyDictionary<ulong, VisitCampusFormContent> content)
+        => content.TryGetValue(instance.VisitInstanceId, out var d) ? d.OperationalContact : null;
 }

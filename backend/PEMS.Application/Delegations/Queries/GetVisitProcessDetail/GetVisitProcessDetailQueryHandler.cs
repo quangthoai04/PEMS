@@ -59,17 +59,17 @@ public sealed class GetVisitProcessDetailQueryHandler
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && _currentUser.PrimaryCampusId == instance.CampusId;
         bool isHo = roleCode == RoleCodes.Ho;
-        bool isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
+        bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAcceptedParticipant = acceptedParticipantRole != null;
 
-        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAcceptedParticipant;
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAcceptedParticipant;
         if (!inScope)
             throw new ForbiddenException("Bạn không có quyền truy cập trang thông tin này.");
 
         var relation = isHost ? "HOST"
             : isStaffLeaderOfCampus ? "STAFF_LEADER"
             : isHo ? "HO"
-            : isVisitorOwner ? "VISITOR_OWNER"
+            : isGuestSide ? VisitInstanceAccess.OperationalContact
             : acceptedParticipantRole switch
             {
                 ParticipantRoles.IcSupport => "IC_SUPPORT",
@@ -80,8 +80,10 @@ public sealed class GetVisitProcessDetailQueryHandler
 
         bool isLive = instance.Status != VisitInstanceStatus.Closed
             && instance.Status != VisitInstanceStatus.Cancelled;
+        // BEFORE_VISIT only. At ASSIGNED the Host owns the campus but has not started preparing, so
+        // the tab renders read-only until they do (see StartVisitPreparationCommand).
         bool canEditBefore = isHost && isLive
-            && (instance.Status == VisitInstanceStatus.Assigned || instance.Status == VisitInstanceStatus.BeforeVisit);
+            && instance.Status == VisitInstanceStatus.BeforeVisit;
 
         var campusName = await _db.Campuses
             .Where(c => c.CampusId == instance.CampusId)
@@ -169,7 +171,7 @@ public sealed class GetVisitProcessDetailQueryHandler
         string? purpose = d.Purpose, workingContent = d.WorkingContent;
         string? workingLanguage = d.WorkingLanguage;
         string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
-        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        string? transportationNote = d.TransportationNote;
         List<VisitProcessGuestMemberDto> guestMembers = d.Visitors.Select(MapRow).ToList();
         List<VisitProcessGuestMemberDto> externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
 
@@ -201,12 +203,11 @@ public sealed class GetVisitProcessDetailQueryHandler
             MediaConsentStatus = mediaConsentStatus,
             MediaConsentNote = mediaConsentNote,
             TransportationNote = transportationNote,
-            NoteToFptu = noteToFptu,
 
-            ContactPersonFullName = visit.ContactPersonFullName,
-            ContactPersonOrganization = visit.ContactPersonOrganization,
-            ContactPersonPhone = visit.ContactPersonPhone,
-            ContactPersonEmail = visit.ContactPersonEmail,
+            OperationalContactFullName = d.OperationalContact.FullName,
+            OperationalContactOrganization = d.OperationalContact.Organization,
+            OperationalContactPhone = d.OperationalContact.Phone,
+            OperationalContactEmail = d.OperationalContact.Email,
 
             Campuses = visit.CampusInstances
                 .OrderBy(c => c.PlannedStartAt)

@@ -14,13 +14,18 @@ namespace PEMS.Application.Common.DTOs;
 // NULL now means "not part of this edit". To CLEAR a nullable field, send an empty string.
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// <summary>Request-level safe subset: registrant display snapshot (no email) + contact snapshot (no email).</summary>
+/// <summary>The only request-level safe subset left: the registrant's display snapshot (no email).</summary>
 public sealed record SafeRegistrantPatchDto(
     string FullName,
     string? Organization,
     string? JobTitle,
     string? Phone);
 
+/// <summary>
+/// The display half of ONE campus's operational-contact snapshot. Email is absent on purpose: it is
+/// what an invitation binds to, so changing it is a replace/transfer (a re-confirmation), never a
+/// quick correction of a typo in a name.
+/// </summary>
 public sealed record SafeContactPatchDto(
     string FullName,
     string? Organization,
@@ -29,19 +34,20 @@ public sealed record SafeContactPatchDto(
 /// <summary>
 /// Per-instance safe subset, sparse: null = this field is not part of the edit, "" = clear it.
 /// A campus that changed nothing must not appear in <see cref="VisitRequestSafeEditDto.Instances"/> at all.
+/// The contact snapshot lives HERE rather than on the request: each campus has its own, and correcting
+/// one campus's contact name must not rewrite its siblings'.
 /// </summary>
 public sealed record SafeInstancePatchDto(
     ulong VisitInstanceId,
     int ExpectedRowVersion,
+    SafeContactPatchDto? OperationalContact,   // null = this campus's contact snapshot untouched
     string? TransportationNote,
-    string? NoteToFptu,
     string? MediaConsentStatus,   // AGREED | DECLINED | null = unchanged
     string? MediaConsentNote);
 
 public sealed record VisitRequestSafeEditDto(
     int ExpectedRequestRowVersion,
     SafeRegistrantPatchDto? Registrant,   // null = request-level registrant fields untouched
-    SafeContactPatchDto? Contact,         // null = contact snapshot untouched
     System.Collections.Generic.IList<SafeInstancePatchDto>? Instances); // null/empty = no instance-level safe edits
 
 /// <summary>One applied field-level change (stable path; values masked where policy requires).</summary>

@@ -225,15 +225,37 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         </section>
       )}
 
-      {/* Đầu mối liên hệ (Chỉ IC role xem) */}
-      {canSeeRegistrantInfo && (
+      {/* Đầu mối đoàn khách phối hợp tại cơ sở — PER CAMPUS (Chỉ IC role xem).
+          One block per campus rather than one for the request: a mixed request has a different
+          coordinator at each campus, and rendering the first one as "the" contact told the reader
+          somebody was coordinating a campus they had never heard of. */}
+      {canSeeRegistrantInfo && data.campuses.length > 0 && (
         <section>
-          <SectionTitle index={++sectionCounter}>Đầu mối liên hệ</SectionTitle>
-          <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
-            <KV label="Họ và tên" value={data.contactPerson.fullName} />
-            <KV label="Đơn vị công tác" value={data.contactPerson.organization} />
-            <KV label="Số điện thoại" value={data.contactPerson.phone} />
-            <KV label="Email" value={data.contactPerson.email} />
+          <SectionTitle index={++sectionCounter}>
+            Đầu mối đoàn khách phối hợp tại cơ sở
+          </SectionTitle>
+          <div className="space-y-4">
+            {data.campuses.map(campus => (
+              <div
+                key={campus.visitInstanceId}
+                data-testid={`submitted-operational-contact-${campus.visitInstanceId}`}
+              >
+                {data.campuses.length > 1 && (
+                  <p className="mb-1 text-sm font-semibold text-[#004c91]">{campus.campusName}</p>
+                )}
+                <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+                  <KV label="Họ và tên" value={campus.operationalContact?.fullName} />
+                  <KV label="Đơn vị công tác" value={campus.operationalContact?.organization} />
+                  <KV label="Chức vụ" value={campus.operationalContact?.jobTitle} />
+                  <KV label="Số điện thoại" value={campus.operationalContact?.phone} />
+                  <KV label="Email" value={campus.operationalContact?.email} />
+                  <KV
+                    label="Trạng thái xác nhận"
+                    value={campus.operationalContact?.confirmed ? 'Đã xác nhận' : 'Chờ xác nhận'}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       )}

@@ -2,12 +2,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 
 vi.mock('../api/visitRequestV2Api', () => ({
-  getActiveContactTransfer: vi.fn(),
-  resendContactClaim: vi.fn(),
-  replacePendingContact: vi.fn(),
-  initiateContactTransfer: vi.fn(),
-  resendContactTransfer: vi.fn(),
-  cancelContactTransfer: vi.fn(),
+  getOperationalContactState: vi.fn(),
+  resendOperationalContactConfirmation: vi.fn(),
+  replaceOperationalContact: vi.fn(),
+  initiateOperationalContactTransfer: vi.fn(),
+  cancelOperationalContactChange: vi.fn(),
 }));
 
 const showSuccessToast = vi.fn();
@@ -20,15 +19,19 @@ vi.mock('../../../shared/utils/toast', () => ({
 
 import ContactIdentityActions from '../components/ContactIdentityActions';
 import {
-  getActiveContactTransfer,
-  resendContactClaim,
-  cancelContactTransfer,
-  initiateContactTransfer,
+  getOperationalContactState,
+  resendOperationalContactConfirmation,
+  cancelOperationalContactChange,
+  initiateOperationalContactTransfer,
 } from '../api/visitRequestV2Api';
 
+/** A campus whose contact is settled and has no invitation in flight. */
 const noTransfer = {
-  visitRequestId: 1, hasPendingTransfer: false, identityChangeId: null,
-  status: null, newEmailMasked: null, expiresAt: null, resendCount: 0,
+  visitRequestId: 1, visitInstanceId: 10, campusStatus: 'WAITING_REQUEST_APPROVAL',
+  contactConfirmed: true, confirmedEmailMasked: 'o***@example.com', confirmedAt: '2026-08-01T09:00:00',
+  confirmationSource: 'EMAIL_CONFIRMATION',
+  pendingChangeKind: null, pendingChangeStatus: null, pendingEmailMasked: null,
+  expiresAt: null, resendCount: 0, tokenVersion: 1,
 };
 
 /** The action sets the backend emits for the states this panel can be in. */
@@ -40,7 +43,8 @@ const renderActions = (props: Partial<React.ComponentProps<typeof ContactIdentit
   render(
     <ContactIdentityActions
       visitRequestId={1}
-      primaryContactAccessStatus="ACTIVE"
+      visitInstanceId={10}
+      contactConfirmed
       contactEmail="owner@example.com"
       allowedActions={ACTIVE_ACTIONS}
       {...props}
@@ -56,7 +60,7 @@ const fillTransferForm = () => {
 describe('ContactIdentityActions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(getActiveContactTransfer).mockResolvedValue(noTransfer);
+    vi.mocked(getOperationalContactState).mockResolvedValue(noTransfer);
   });
 
   // ── Permission comes from the backend, never from the relation ─────────────
@@ -64,7 +68,7 @@ describe('ContactIdentityActions', () => {
   it('renders nothing when the backend granted no contact action', () => {
     const { container } = renderActions({ allowedActions: ['VIEW'] });
     expect(container).toBeEmptyDOMElement();
-    expect(getActiveContactTransfer).not.toHaveBeenCalled();
+    expect(getOperationalContactState).not.toHaveBeenCalled();
   });
 
   it('renders nothing for a viewer with no actions at all (HO, host, scoped leader)', () => {
@@ -74,7 +78,7 @@ describe('ContactIdentityActions', () => {
 
   it('shows exactly the buttons whose action codes were granted', async () => {
     const { unmount } = renderActions({
-      primaryContactAccessStatus: 'PENDING_CONFIRMATION', allowedActions: CLAIM_ACTIONS,
+      contactConfirmed: false, allowedActions: CLAIM_ACTIONS,
     });
     expect(screen.getByTestId('contact-resend-claim')).toBeInTheDocument();
     expect(screen.getByTestId('contact-replace-open')).toBeInTheDocument();
@@ -89,7 +93,6 @@ describe('ContactIdentityActions', () => {
   it('drops the resend button when the backend withheld it at the cap', () => {
     // The handler answers CLAIM_RESEND_LIMIT past five sends, so the code is simply absent.
     renderActions({
-      primaryContactAccessStatus: 'PENDING_CONFIRMATION',
       allowedActions: ['VIEW', 'REPLACE_PENDING_CONTACT'],
     });
     expect(screen.getByTestId('contact-replace-open')).toBeInTheDocument();
@@ -97,8 +100,8 @@ describe('ContactIdentityActions', () => {
   });
 
   it('never offers a second transfer while one is pending', async () => {
-    vi.mocked(getActiveContactTransfer).mockResolvedValue({
-      ...noTransfer, hasPendingTransfer: true, newEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
+    vi.mocked(getOperationalContactState).mockResolvedValue({
+      ...noTransfer, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING', pendingEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
     });
     renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
 
@@ -138,7 +141,7 @@ describe('ContactIdentityActions', () => {
     fireEvent.click(screen.getByTestId('contact-form-cancel'));
 
     expect(screen.queryByTestId('contact-form-transfer')).not.toBeInTheDocument();
-    expect(initiateContactTransfer).not.toHaveBeenCalled();
+    expect(initiateOperationalContactTransfer).not.toHaveBeenCalled();
     // Reopening starts clean — the abandoned draft of this form is not carried over.
     fireEvent.click(screen.getByTestId('contact-transfer-open'));
     expect((screen.getByLabelText(/Email/i) as HTMLInputElement).value).toBe('');
@@ -155,14 +158,14 @@ describe('ContactIdentityActions', () => {
 
     fireEvent.click(screen.getByTestId('contact-form-submit'));
 
-    expect(initiateContactTransfer).not.toHaveBeenCalled();
+    expect(initiateOperationalContactTransfer).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeInTheDocument();   // inline, next to the field
     expect(showErrorToast).not.toHaveBeenCalled();            // a field problem is not a toast
   });
 
   it('cannot be submitted twice while the first invitation is in flight', async () => {
     let resolveIt: (v: { message: string }) => void = () => {};
-    vi.mocked(initiateContactTransfer).mockReturnValue(
+    vi.mocked(initiateOperationalContactTransfer).mockReturnValue(
       new Promise(res => { resolveIt = res as (v: { message: string }) => void; }) as never,
     );
     renderActions();
@@ -174,7 +177,7 @@ describe('ContactIdentityActions', () => {
     fireEvent.click(submit);
     fireEvent.click(submit);
 
-    expect(initiateContactTransfer).toHaveBeenCalledTimes(1);
+    expect(initiateOperationalContactTransfer).toHaveBeenCalledTimes(1);
     expect(submit).toBeDisabled();
 
     resolveIt({ message: 'Đã gửi lời mời chuyển giao.' });
@@ -182,13 +185,14 @@ describe('ContactIdentityActions', () => {
   });
 
   it('reports a successful mutation through the shared toast, not an inline message', async () => {
-    vi.mocked(resendContactClaim).mockResolvedValue({
-      visitRequestId: 1, primaryContactAccessStatus: 'PENDING_CONFIRMATION',
-      claimStatus: 'PENDING', resendCount: 1, message: 'Đã gửi lại lời mời.',
+    vi.mocked(resendOperationalContactConfirmation).mockResolvedValue({
+      ...noTransfer, contactConfirmed: false, requestStatus: 'PENDING_CONTACT_CONFIRMATION',
+      pendingChangeKind: 'INITIAL_CONFIRMATION', pendingChangeStatus: 'PENDING',
+      resendCount: 1, message: 'Đã gửi lại lời mời.',
     });
     const onChanged = vi.fn();
     renderActions({
-      primaryContactAccessStatus: 'PENDING_CONFIRMATION', allowedActions: CLAIM_ACTIONS, onChanged,
+      contactConfirmed: false, allowedActions: CLAIM_ACTIONS, onChanged,
     });
 
     fireEvent.click(screen.getByTestId('contact-resend-claim'));
@@ -198,8 +202,8 @@ describe('ContactIdentityActions', () => {
   });
 
   it('reports a failed mutation through the shared error toast', async () => {
-    vi.mocked(resendContactClaim).mockRejectedValue(new Error('boom'));
-    renderActions({ primaryContactAccessStatus: 'PENDING_CONFIRMATION', allowedActions: CLAIM_ACTIONS });
+    vi.mocked(resendOperationalContactConfirmation).mockRejectedValue(new Error('boom'));
+    renderActions({ contactConfirmed: false, allowedActions: CLAIM_ACTIONS });
 
     fireEvent.click(screen.getByTestId('contact-resend-claim'));
 
@@ -210,14 +214,14 @@ describe('ContactIdentityActions', () => {
   it('surfaces a transfer-state load failure with a retry instead of claiming there is none', async () => {
     // Swallowing this into "no pending transfer" invited the user to start a SECOND transfer while
     // one was already in flight.
-    vi.mocked(getActiveContactTransfer).mockRejectedValueOnce(new Error('network'));
+    vi.mocked(getOperationalContactState).mockRejectedValueOnce(new Error('network'));
     renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
 
     const retry = await screen.findByTestId('contact-transfer-retry');
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    vi.mocked(getActiveContactTransfer).mockResolvedValueOnce({
-      ...noTransfer, hasPendingTransfer: true, newEmailMasked: 'n***@x.vn',
+    vi.mocked(getOperationalContactState).mockResolvedValueOnce({
+      ...noTransfer, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING', pendingEmailMasked: 'n***@x.vn',
     });
     fireEvent.click(retry);
 
@@ -226,12 +230,12 @@ describe('ContactIdentityActions', () => {
   });
 
   it('cancels a pending transfer through the shared toast', async () => {
-    vi.mocked(getActiveContactTransfer).mockResolvedValue({
-      ...noTransfer, hasPendingTransfer: true, newEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
+    vi.mocked(getOperationalContactState).mockResolvedValue({
+      ...noTransfer, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING', pendingEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
     });
-    vi.mocked(cancelContactTransfer).mockResolvedValue({
-      visitRequestId: 1, transferStatus: 'CANCELLED', newEmailMasked: null,
-      expiresAt: null, resendCount: 0, message: 'Đã hủy lời mời chuyển giao.',
+    vi.mocked(cancelOperationalContactChange).mockResolvedValue({
+      ...noTransfer, requestStatus: 'PENDING_APPROVAL', pendingChangeStatus: 'CANCELLED',
+      message: 'Đã hủy lời mời chuyển giao.',
     });
     renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
 

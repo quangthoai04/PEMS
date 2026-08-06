@@ -5,6 +5,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Queries.GetVisitProcessPermissions;
 
 public sealed class GetVisitProcessPermissionsQueryHandler
@@ -51,17 +52,17 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && _currentUser.PrimaryCampusId == instance.CampusId;
         bool isHo = roleCode == RoleCodes.Ho;
-        bool isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
+        bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAcceptedParticipant = acceptedParticipantRole != null;
 
-        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAcceptedParticipant;
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAcceptedParticipant;
         if (!inScope)
             throw new ForbiddenException("Bạn không có quyền truy cập trang thông tin này.");
 
         var relation = isHost ? "HOST"
             : isStaffLeaderOfCampus ? "STAFF_LEADER"
             : isHo ? "HO"
-            : isVisitorOwner ? "VISITOR_OWNER"
+            : isGuestSide ? VisitInstanceAccess.OperationalContact
             : acceptedParticipantRole switch
             {
                 ParticipantRoles.IcSupport => "IC_SUPPORT",
@@ -79,11 +80,18 @@ public sealed class GetVisitProcessPermissionsQueryHandler
         // Only the Host edits the operational tabs (Trước/Trong/Sau), and only while the visit is live.
         bool hostCanEdit = isHost && isLive;
         // Rule (đặc tả 1.5 / 8.4): ONLY the "Trước tiếp khách" tab locks once preparation is done.
-        // It is editable while ASSIGNED/BEFORE_VISIT; the moment the instance advances to
-        // DURING_VISIT (or beyond) the prep tab becomes read-only — while Trong/Sau stay editable
-        // until the instance is CLOSED (handled by isLive). We never lock all three tabs at once.
-        bool beforeTabOpen = instance.Status == VisitInstanceStatus.Assigned
-            || instance.Status == VisitInstanceStatus.BeforeVisit;
+        // It is editable while BEFORE_VISIT; the moment the instance advances to DURING_VISIT (or
+        // beyond) the prep tab becomes read-only — while Trong/Sau stay editable until the instance
+        // is CLOSED (handled by isLive). We never lock all three tabs at once.
+        //
+        // ASSIGNED is NOT open either, and that is the newer half of the rule: the campus has a Host
+        // but preparation has not begun, so the tab renders read-only until that Host presses
+        // "Bắt đầu chuẩn bị". CanStartPreparation below is what offers them that button, and the two
+        // flags are mutually exclusive by construction.
+        bool beforeTabOpen = instance.Status == VisitInstanceStatus.BeforeVisit;
+        bool canStartPreparation = isHost && isLive
+            && instance.Status == VisitInstanceStatus.Assigned
+            && hostAssigned;
         // Minutes: Host OR an accepted (IC/Dept/Student) participant — never Visitor/HO/Staff Leader.
         bool minutesEditor = (isHost || isAcceptedParticipant) && isLive;
         // News: Host, accepted IC Staff, or accepted Student. Department participant does NOT create news.
@@ -97,7 +105,7 @@ public sealed class GetVisitProcessPermissionsQueryHandler
         // Internal roles (Host / Staff Leader / HO / accepted participant) keep read-only visibility
         // to review what had been prepared before the cancellation.
         bool internalViewer = isHost || isStaffLeaderOfCampus || isHo || isAcceptedParticipant;
-        bool visitorInternalBlocked = isVisitorOwner && !internalViewer && isCancelled;
+        bool visitorInternalBlocked = isGuestSide && !internalViewer && isCancelled;
         bool canViewInternalTabs = !visitorInternalBlocked;
 
         return new VisitProcessPermissionDto
@@ -135,9 +143,13 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanViewNews = true,
             CanCreateNews = newsCreator,
 
+            // ASSIGNED → BEFORE_VISIT, current Host only (see StartVisitPreparationCommand).
+            CanStartPreparation = canStartPreparation,
+
             // Operational stage transitions — Host only, live instance (see CompleteVisitStageCommand).
+            // BEFORE_VISIT only: "finish preparation" presupposes preparation started.
             CanStartVisit = isHost && isLive
-                && (instance.Status == VisitInstanceStatus.Assigned || instance.Status == VisitInstanceStatus.BeforeVisit),
+                && instance.Status == VisitInstanceStatus.BeforeVisit,
             CanCompleteVisit = isHost && isLive && instance.Status == VisitInstanceStatus.DuringVisit,
             // Đóng đoàn nằm ở tab "Sau tiếp khách": Host đóng khi đoàn đã kết thúc (AFTER_VISIT).
             CanCloseVisit = isHost && isLive && instance.Status == VisitInstanceStatus.AfterVisit,

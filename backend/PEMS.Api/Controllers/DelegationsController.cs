@@ -6,6 +6,7 @@ using PEMS.Application.Common.Security;
 using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.CompleteVisitStage;
+using PEMS.Application.Delegations.Commands.StartVisitPreparation;
 using PEMS.Application.Delegations.Commands.RejectCampusInstance;
 using PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
@@ -170,7 +171,7 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        // Approve the campus instance: WAITING_REQUEST_APPROVAL → ASSIGNED with the mandatory
+        // Approve the campus instance: WAITING_REQUEST_APPROVAL → BEFORE_VISIT with the mandatory
         // official host (IC Staff of the campus, or the approving Staff Leader themself).
         // "assign-host" is kept as a legacy alias of the same action.
         [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/approve")]
@@ -494,6 +495,28 @@ namespace PEMS.Api.Controllers
         {
             var result = await _mediator.Send(
                 new SaveVisitLogisticsHandoverDocumentCommand { LogisticsItemId = logisticsItemId, HandoverType = handoverType },
+                cancellationToken);
+            return Ok(result);
+        }
+
+        // ── Start preparation (Host only): ASSIGNED → BEFORE_VISIT ───────────
+        // The one action that opens the setup window. Deliberately its own POST: no GET, no screen
+        // load and no unrelated save may advance the campus. Body is optional — send { rowVersion }
+        // to have a stale view rejected with 409 instead of silently winning.
+        public sealed class StartPreparationRequest
+        {
+            public int? RowVersion { get; set; }
+        }
+
+        [HttpPost("{visitRequestId}/campuses/{visitInstanceId}/start-preparation")]
+        public async Task<IActionResult> StartPreparation(
+            ulong visitRequestId,
+            ulong visitInstanceId,
+            [FromBody] StartPreparationRequest? body,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(
+                new StartVisitPreparationCommand(visitRequestId, visitInstanceId, body?.RowVersion),
                 cancellationToken);
             return Ok(result);
         }

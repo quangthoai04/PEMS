@@ -39,7 +39,10 @@ public sealed class GetPendingFeedbackNotificationsQueryHandler
             join fd in _db.VisitInstanceFormDetails.AsNoTracking() on i.VisitInstanceId equals fd.VisitInstanceId into fdGroup
             from fd in fdGroup.DefaultIfEmpty()
             where eligibleStatuses.Contains(i.Status)
-                  && (i.CurrentHostUserId == userId || r.VisitorUserId == userId)
+                  // Guest side of THIS campus: its confirmed contact, or the registrant.
+                  && (i.CurrentHostUserId == userId
+                      || i.OperationalContactUserId == userId
+                      || r.RegistrantUserId == userId)
             orderby i.PlannedStartAt descending
             select new
             {

@@ -8,7 +8,11 @@ export interface SafeEditRegistrantDraft {
   phone: string;
 }
 
-/** The primary-contact fields the safe-edit form manages. */
+/**
+ * The display half of ONE campus's operational-contact snapshot, as the safe-edit form manages it.
+ * Email is deliberately absent: it is what an invitation binds to, so changing it is a replace or a
+ * transfer — a re-confirmation, not a typo fix.
+ */
 export interface SafeEditContactDraft {
   fullName: string;
   organization: string;
@@ -20,8 +24,9 @@ export interface SafeEditInstanceDraft {
   visitInstanceId: number;
   expectedRowVersion: number;
   campusName: string;
+  /** This campus's own contact snapshot — never shared with a sibling campus. */
+  contact: SafeEditContactDraft;
   transportationNote: string;
-  noteToFptu: string;
   mediaConsentStatus: string;
   mediaConsentNote: string;
 }
@@ -49,13 +54,11 @@ const changed = (before: string | null | undefined, after: string): boolean => n
 export function buildChangedOnlyPayload(
   form: ResolvedVisitForm,
   registrant: SafeEditRegistrantDraft,
-  contact: SafeEditContactDraft,
   instances: SafeEditInstanceDraft[],
 ): SafeEditPayload | null {
   const payload: SafeEditPayload = {
     expectedRequestRowVersion: form.rowVersion,
     registrant: null,
-    contact: null,
     instances: [],
   };
 
@@ -72,19 +75,6 @@ export function buildChangedOnlyPayload(
       organization: norm(registrant.organization) || null,
       jobTitle: norm(registrant.jobTitle) || null,
       phone: norm(registrant.phone) || null,
-    };
-  }
-
-  // ── Contact. Same reasoning: name and phone are both required, so both travel together. ──
-  const contactChanged =
-    changed(form.primaryContact.fullName, contact.fullName)
-    || changed(form.primaryContact.organization, contact.organization)
-    || changed(form.primaryContact.phone, contact.phone);
-  if (contactChanged) {
-    payload.contact = {
-      fullName: norm(contact.fullName),
-      organization: norm(contact.organization) || null,
-      phone: norm(contact.phone),
     };
   }
 
@@ -105,8 +95,18 @@ export function buildChangedOnlyPayload(
       patch.transportationNote = norm(draft.transportationNote);
       touched = true;
     }
-    if (changed(current.noteToFptu, draft.noteToFptu)) {
-      patch.noteToFptu = norm(draft.noteToFptu);
+    // Contact: name and phone are both required by the backend, so once ANY of the three changed
+    // the block carries all of them — a partial patch would read as a request to blank the rest.
+    const contactChanged =
+      changed(current.operationalContact.fullName, draft.contact.fullName)
+      || changed(current.operationalContact.organization, draft.contact.organization)
+      || changed(current.operationalContact.phone, draft.contact.phone);
+    if (contactChanged) {
+      patch.operationalContact = {
+        fullName: norm(draft.contact.fullName),
+        organization: norm(draft.contact.organization) || null,
+        phone: norm(draft.contact.phone),
+      };
       touched = true;
     }
     if (changed(current.mediaConsentNote, draft.mediaConsentNote)) {
@@ -121,7 +121,6 @@ export function buildChangedOnlyPayload(
     if (touched) payload.instances!.push(patch);
   }
 
-  const nothingChanged =
-    payload.registrant === null && payload.contact === null && payload.instances!.length === 0;
+  const nothingChanged = payload.registrant === null && payload.instances!.length === 0;
   return nothingChanged ? null : payload;
 }

@@ -2,6 +2,7 @@ using System.Linq;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Domain.Constants;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 
@@ -48,26 +49,25 @@ public static class RegistrantIdentityRules
     }
 
     /// <summary>
-    /// Guards every NON-direct submission (public visitor submit and the authenticated delegated OTP flow):
-    /// a form that is not self-registration may not carry an internal processing intent. The verify path used
-    /// to drop <c>Processing</c> silently, which made a forged payload indistinguishable from a clean one —
-    /// it is now rejected so the client learns the intent was refused rather than assuming it applied.
+    /// Guards every NON-self submission (public visitor submit and the authenticated delegated OTP flow):
+    /// a form that is not self-registration may not name a reception host. Proposing a host is a right
+    /// that comes from being internal staff of that campus, and the person these payloads register on
+    /// behalf of is neither. It is REJECTED rather than silently dropped, so a forged payload is
+    /// distinguishable from a clean one and the client learns the intent did not apply.
     /// </summary>
-    public static void EnsureNoDirectProcessingIntent(VisitRequestFormDataV2 form)
+    public static void EnsureNoHostProposalIntent(VisitRequestFormDataV2 form)
     {
-        var carriesDirectMode = form.CampusVisits.Any(cv =>
+        var carriesProposal = form.CampusVisits.Any(cv =>
         {
-            var mode = cv.Processing?.Mode?.Trim().ToUpperInvariant();
-            var hasHost = cv.Processing?.HostUserId is not null;
-            return hasHost
-                || (mode is not null && mode.Length > 0 && mode != CampusSubmissionModes.SendForReview);
+            var mode = cv.HostSelection?.Mode?.Trim().ToUpperInvariant();
+            return cv.HostSelection?.ProposedHostUserId is not null
+                || (!string.IsNullOrEmpty(mode) && mode != HostSelectionModes.WaitForLater);
         });
 
-        if (!carriesDirectMode) return;
+        if (!carriesProposal) return;
 
         throw new BusinessRuleException(
-            "Đơn tạo hộ người khác luôn chờ Staff Leader của từng cơ sở xử lý — "
-            + "không thể tự nhận host hoặc gán host trong đơn này.",
-            VisitRequestErrorCodes.InvalidCampusSubmissionMode);
+            "Đơn tạo hộ người khác luôn chờ Staff Leader của từng cơ sở phân công người phụ trách tiếp đón.",
+            VisitRequestErrorCodes.ProposedHostNotAllowedForRole);
     }
 }

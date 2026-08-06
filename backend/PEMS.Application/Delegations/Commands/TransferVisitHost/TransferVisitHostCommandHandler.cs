@@ -215,7 +215,7 @@ public sealed class TransferVisitHostCommandHandler
         await tx.CommitAsync(ct);
 
         await NotifyAfterCommitAsync(
-            visit.VisitRequestId, visit.RequestCode, visit.VisitorUserId, instance.VisitInstanceId,
+            visit.VisitRequestId, visit.RequestCode, instance.OperationalContactUserId, instance.VisitInstanceId,
             instance.CampusId, campusName, previousHostId, previousHostName,
             command.NewHostUserId, newHost.FullName, reason, actorId, ct);
 
@@ -228,7 +228,8 @@ public sealed class TransferVisitHostCommandHandler
     /// <summary>
     /// Post-commit, best-effort. Four audiences, each told the part that concerns them: the outgoing
     /// Host (you are no longer running this), the incoming Host (you now are — action required), the
-    /// visitor (the name you were given has changed), and the campus's other Staff Leaders.
+    /// campus's operational contact (the name you were given has changed — a sibling campus's contact
+    /// is untouched by this and is not told), and the campus's other Staff Leaders.
     /// A transfer that committed must never be undone because a notification failed.
     /// </summary>
     private async Task NotifyAfterCommitAsync(

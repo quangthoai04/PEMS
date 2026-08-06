@@ -36,7 +36,6 @@ public sealed class SubmittedVisitRequestFormDetailDto
     public string? WorkingContent { get; set; }
 
     public SubmittedRegistrantDto Registrant { get; set; } = new();
-    public SubmittedContactPersonDto ContactPerson { get; set; } = new();
 
     // ── Requirements & confirmations (all guest-entered) ──
     public string? WorkingLanguage { get; set; }
@@ -45,7 +44,6 @@ public sealed class SubmittedVisitRequestFormDetailDto
     /// <summary>Free text the guest entered to identify the transportation to FPTU
     /// (replaces the old transportation type enum + detail).</summary>
     public string? TransportationNote { get; set; }
-    public string? NoteToFptu { get; set; }
 
     public List<SubmittedCampusScheduleDto> Campuses { get; set; } = new();
     /// <summary>Per-campus decision counters (campus-independent approval).</summary>
@@ -110,12 +108,22 @@ public sealed class SubmittedRegistrantDto
     public string? Nationality { get; set; }
 }
 
-public sealed class SubmittedContactPersonDto
+/// <summary>
+/// The operational-contact snapshot of ONE campus, plus whether that campus has actually been
+/// confirmed. Name, organization and phone are display data; the account that holds the campus is
+/// decided by <c>operational_contact_user_id</c>, which is what <see cref="Confirmed"/> reports.
+/// </summary>
+public sealed class SubmittedOperationalContactDto
 {
     public string? FullName { get; set; }
     public string? Organization { get; set; }
+    public string? JobTitle { get; set; }
     public string? Phone { get; set; }
     public string? Email { get; set; }
+    public bool Confirmed { get; set; }
+    public DateTime? ConfirmedAt { get; set; }
+    /// <summary>REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER.</summary>
+    public string? ConfirmationSource { get; set; }
 }
 
 public sealed class SubmittedCampusScheduleDto
@@ -132,6 +140,13 @@ public sealed class SubmittedCampusScheduleDto
     public string? CurrentHostName { get; set; }
     /// <summary>True for the campus instance that belongs to the calling Staff Leader's campus.</summary>
     public bool IsOwnCampus { get; set; }
+
+    /// <summary>
+    /// THIS campus's operational contact. It lives on the campus row because the request does not
+    /// have one: two campuses of the same request are routinely run by two different people, and a
+    /// single request-level block could only ever name one of them.
+    /// </summary>
+    public SubmittedOperationalContactDto OperationalContact { get; set; } = new();
 
     // ── Per-campus decision info (campus-independent approval) ──
     public long? DecidedByUserId { get; set; }

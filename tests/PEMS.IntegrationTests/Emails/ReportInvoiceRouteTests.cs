@@ -56,6 +56,13 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
     private const ulong LogisticsItemId = Base + 11;
 
     /// <summary>
+    /// The guest who submitted the request. This suite is about invoice routing, not about the
+    /// confirmation gate, so the campus is seeded self-matched (registrant = operational contact) and
+    /// therefore already past the gate.
+    /// </summary>
+    private const ulong RegistrantId = Base + 13;
+
+    /// <summary>
     /// Session ids created alongside the seeded users. The API requires a live session, not just
     /// claims, so every authenticated client carries one.
     /// </summary>
@@ -197,16 +204,19 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
         // sub_role is only for STAFF/DEPARTMENT; HO leaves it NULL.
         static string Sub(string? v) => v is null ? "NULL" : $"'{v}'";
 
-        async Task User(ulong id, string name, string roleCode, string? subRole, ulong campusId, ulong? deptId)
+        // primary_campus_id is nullable because a VISITOR must not carry one — trg_users_validate_bi
+        // refuses it, and the registrant seeded below is a VISITOR.
+        async Task User(ulong id, string name, string roleCode, string? subRole, ulong? campusId, ulong? deptId)
             => await db.Database.ExecuteSqlRawAsync(
                 "INSERT INTO users (user_id, full_name, email, role_id, sub_role, primary_campus_id, department_id, status) "
-                + $"VALUES ({id}, {{0}}, {{1}}, {Role(roleCode)}, {Sub(subRole)}, {campusId}, {Num(deptId)}, 'ACTIVE')",
+                + $"VALUES ({id}, {{0}}, {{1}}, {Role(roleCode)}, {Sub(subRole)}, {Num(campusId)}, {Num(deptId)}, 'ACTIVE')",
                 name, Mail(id));
 
         await User(StaffLeaderId, "PEMS B9fix Staff Leader", RoleCode.Staff, SubRole.Leader, CampusId, IcDeptId);
         await User(DeptLeaderId, "PEMS B9fix Trưởng phòng", RoleCode.Department, SubRole.Leader, CampusId, DeptId);
         await User(DeptStaffId, "PEMS B9fix Nhân sự phòng", RoleCode.Department, SubRole.Staff, CampusId, DeptId);
         await User(HoId, "PEMS B9fix Head Office", RoleCode.Ho, null, CampusId, null);
+        await User(RegistrantId, "PEMS B9fix Người đăng ký", RoleCode.Visitor, null, null, null);
 
         // A live session per actor: the API authenticates the session, not just the claims.
         _sessions.Clear();
@@ -228,19 +238,22 @@ public sealed class ReportInvoiceRouteTests : IClassFixture<PemsWebApplicationFa
         // One priced line for both directions.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_requests (visit_request_id, request_code, status, created_at, "
-            + "registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, "
-            + "registrant_email, registrant_nationality, contact_person_full_name, "
-            + "contact_person_organization, contact_person_phone, contact_person_email) "
-            + "VALUES ({0}, {1}, 'PENDING_APPROVAL', NOW(), 'B9fix Người đăng ký', 'B9fix Org', 'B9fix Title', "
-            + "'0900000000', {2}, 'Việt Nam', 'B9fix Đầu mối', 'B9fix Org', '0900000001', {2})",
-            VisitRequestId, "B9FIX-REQ", MailPrefix + "visitor" + MailDomain);
+            + "registrant_user_id, registrant_full_name, registrant_organization, registrant_job_title, "
+            + "registrant_phone, registrant_email, registrant_nationality) "
+            + "VALUES ({0}, {1}, 'PENDING_APPROVAL', NOW(), {3}, 'B9fix Người đăng ký', 'B9fix Org', "
+            + "'B9fix Title', '0900000000', {2}, 'Việt Nam')",
+            VisitRequestId, "B9FIX-REQ", Mail(RegistrantId), RegistrantId);
 
+        // Self-matched contact: the registrant is this campus's operational contact, so the campus sits
+        // past the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with a NULL
+        // operational_contact_user_id is refused by trg_visit_campuses_op_contact_guard_bi.
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_request_campuses (visit_instance_id, visit_request_id, campus_id, status, "
+            + "operational_contact_user_id, operational_contact_confirmed_at, operational_contact_confirmation_source, "
             + "planned_start_at, planned_end_at, created_at) "
-            + "VALUES ({0}, {1}, {2}, 'WAITING_REQUEST_APPROVAL', {3}, {4}, NOW())",
+            + "VALUES ({0}, {1}, {2}, 'WAITING_REQUEST_APPROVAL', {5}, NOW(), 'REGISTRANT_SELF_MATCH', {3}, {4}, NOW())",
             VisitInstanceId, VisitRequestId, CampusId,
-            new DateTime(2026, 7, 10, 9, 0, 0), new DateTime(2026, 7, 10, 11, 30, 0));
+            new DateTime(2026, 7, 10, 9, 0, 0), new DateTime(2026, 7, 10, 11, 30, 0), RegistrantId);
 
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_logistics_items (logistics_item_id, visit_instance_id, title, item_type, "

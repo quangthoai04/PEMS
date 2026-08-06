@@ -260,7 +260,7 @@ export function VisitContributionPage() {
               <Field label="Loại chuyến thăm" value={visitType} />
               <Field label="Mục đích" value={req.purpose} />
               <Field label="Ngôn ngữ làm việc" value={req.workingLanguage} />
-              <Field label="Người liên hệ" value={req.contactPersonFullName} />
+              <Field label="Người liên hệ" value={req.operationalContactFullName} />
             </div>
             {req.workingContent && (
               <div className="mt-2 pt-2 border-t border-slate-100">

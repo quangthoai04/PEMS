@@ -62,14 +62,13 @@ public sealed class VisitSubmissionResultLookupV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
     }
 
     private static VisitRequestFormDataV2 Form(string submissionId, params CampusVisitFormDto[] campuses)
         => new(
             submissionId,
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491111", "registrant@example.com"),
-            new ContactPointDto("Contact Person", "Org", "+8490000", "registrant@example.com"),
             null,
             campuses.ToList());
 

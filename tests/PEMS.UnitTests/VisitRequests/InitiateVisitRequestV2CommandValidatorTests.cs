@@ -27,13 +27,12 @@ public class InitiateVisitRequestV2CommandValidatorTests
             new List<VisitorDto> { new("Nguyễn Khách", "Việt Nam", "Giảng viên", "ĐH ABC") },
             support ?? new List<SupportTeamMemberDto>(),
             new ContactPointDto("Đầu Mối", "ĐH ABC", "+84912345678", "op@example.com"),
-            "VI", null, "DECLINED", null, null, null);
+            "VI", null, "DECLINED", null, null);
 
     private static InitiateVisitRequestV2Command Command(params CampusVisitFormDto[] campuses)
         => new(new VisitRequestFormDataV2(
             Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Người Đăng Ký", "Việt Nam", "ĐH ABC", "Trưởng phòng", "+84912345678", "reg@example.com"),
-            new ContactPointDto("Đầu Mối", "ĐH ABC", "+84987654321", "contact@example.com"),
             null,
             campuses.ToList()));
 
@@ -102,7 +101,6 @@ public class InitiateVisitRequestV2CommandValidatorTests
         var cmd = new InitiateVisitRequestV2Command(new VisitRequestFormDataV2(
             Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Người ĐK", "Việt Nam", "ĐH ABC", "TP", "+84912345678", "not-an-email"),
-            new ContactPointDto("Đầu Mối", "ĐH ABC", "+84987654321", "contact@example.com"),
             null,
             new List<CampusVisitFormDto> { Campus("HN", Base, TimeSpan.FromHours(3)) }));
         var result = _validator.TestValidate(cmd);

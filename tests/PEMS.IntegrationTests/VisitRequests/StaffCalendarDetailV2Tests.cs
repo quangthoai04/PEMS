@@ -104,10 +104,10 @@ public sealed class StaffCalendarDetailV2Tests
         var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, StaffLeader(StaffC1, Campus1), inst[0].VisitInstanceId);
 
-        Assert.Equal("Op-A", dto.ContactPersonFullName);
-        Assert.Equal("op-a@example.com", dto.ContactPersonEmail);
-        Assert.NotEqual("Primary Contact", dto.ContactPersonFullName);
-        Assert.NotEqual("contact@example.com", dto.ContactPersonEmail);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);
+        Assert.Equal("op-a@example.com", dto.OperationalContactEmail);
+        Assert.NotEqual("Primary Contact", dto.OperationalContactFullName);
+        Assert.NotEqual("contact@example.com", dto.OperationalContactEmail);
 
         // Everything the old global projection used to supply now comes from the campus detail.
         Assert.Equal("MEETING", dto.VisitType);
@@ -128,8 +128,8 @@ public sealed class StaffCalendarDetailV2Tests
 
         Assert.Equal("V2-DELEG", dto.DelegationName);
         Assert.NotEqual("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("Op-A", dto.ContactPersonFullName);            // per-campus operational contact
-        Assert.Equal("op-a@example.com", dto.ContactPersonEmail);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);            // per-campus operational contact
+        Assert.Equal("op-a@example.com", dto.OperationalContactEmail);
         Assert.Equal(1, dto.GuestCount);                            // only this instance's linked member
         await tx.RollbackAsync();
     }
@@ -161,8 +161,8 @@ public sealed class StaffCalendarDetailV2Tests
 
         Assert.Equal("DELEG-A", dto.DelegationName);                // 200 with target A (NOT 409-upgrade)
         Assert.Equal("PURPOSE-A", dto.Purpose);
-        Assert.Equal("Op-A", dto.ContactPersonFullName);
-        Assert.Equal("op-a@example.com", dto.ContactPersonEmail);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);
+        Assert.Equal("op-a@example.com", dto.OperationalContactEmail);
         await tx.RollbackAsync();
     }
 
@@ -178,8 +178,8 @@ public sealed class StaffCalendarDetailV2Tests
 
         Assert.Equal("DELEG-B", dto.DelegationName);                // 200 with target B
         Assert.Equal("PURPOSE-B", dto.Purpose);
-        Assert.Equal("Op-B", dto.ContactPersonFullName);
-        Assert.Equal("op-b@example.com", dto.ContactPersonEmail);
+        Assert.Equal("Op-B", dto.OperationalContactFullName);
+        Assert.Equal("op-b@example.com", dto.OperationalContactEmail);
         Assert.NotEqual("DELEG-A", dto.DelegationName);             // no sibling A leak
         await tx.RollbackAsync();
     }
@@ -277,7 +277,6 @@ public sealed class StaffCalendarDetailV2Tests
     private static VisitRequest NewRequest(byte schemaVersion, string scope, bool mixed) => new()
     {
         RequestCode = "SCD-" + Guid.NewGuid().ToString("N")[..12],
-        VisitorUserId = 8,
         RegistrantUserId = 8,
         CreatedSource = "VISITOR_SUBMITTED",
         HasMixedCampusDetails = mixed,
@@ -286,9 +285,6 @@ public sealed class StaffCalendarDetailV2Tests
         VisitScope = scope,
         // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
         // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
-        ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
-        ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };
 
@@ -298,6 +294,12 @@ public sealed class StaffCalendarDetailV2Tests
         PlannedStartAt = DateTime.Now.AddDays(20),
         PlannedEndAt = DateTime.Now.AddDays(20).AddHours(2),
         Status = "WAITING_REQUEST_APPROVAL",
+        // Self-matched: the registrant is this campus's operational contact, so the campus sits
+        // past the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with no
+        // contact is refused by trg_visit_campuses_op_contact_guard_bi.
+        OperationalContactUserId = 8,
+        OperationalContactConfirmedAt = DateTime.Now,
+        OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
         CreatedAt = DateTime.Now,
     };
 

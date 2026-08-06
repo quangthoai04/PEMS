@@ -92,8 +92,11 @@ public sealed class VisitHostTransferV2Tests
         => new(code, start, start.AddMinutes(120), "Đoàn Host", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
 
     /// <summary>Creates a request and drives every campus to ASSIGNED with the campus leader self-hosting.</summary>
     private static async Task<(ulong RequestId, ulong InstanceId, ulong LeaderId)> CreateApprovedAsync(DateTime start)
@@ -103,14 +106,14 @@ public sealed class VisitHostTransferV2Tests
         {
             var handler = new CreateVisitRequestV2CommandHandler(
                 db, new FakeUser { UserId = Registrant }, new FixedClock(), new VisitRequestV2CreateService(db),
-                new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+                new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
                 new UserProvisionService(db),
                 NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-                new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+                new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
             var form = new VisitRequestFormDataV2(
                 "HT" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
                 null, new List<CampusVisitFormDto> { Campus("HN", start) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }

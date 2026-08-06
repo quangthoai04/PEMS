@@ -2,6 +2,9 @@ import React from 'react';
 import { Building2, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ResolvedCampusVisit } from '../../api/visitRequestV2Api';
+import ContactIdentityActions from '../ContactIdentityActions';
+import OperationalContactReadOnly from './OperationalContactReadOnly';
+import ReceptionHostReadOnly from './ReceptionHostReadOnly';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
 import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid, type InfoRow } from './shared/ReadOnlyInfoGrid';
@@ -10,6 +13,13 @@ import { resolveCampusRevisionState } from './shared/campusRevisionState';
 
 interface Props {
   campus: ResolvedCampusVisit;
+  /**
+   * Enables the per-campus contact workflow (resend / replace / transfer). Omitted on read-only
+   * surfaces — a card with no request id renders the contact as information and nothing else.
+   */
+  visitRequestId?: number;
+  /** Called after a contact mutation so the caller can refetch. */
+  onContactChanged?: () => void;
   /** Optional slot rendered under the decision block (e.g. the pending-amendment panel). */
   children?: React.ReactNode;
 }
@@ -23,7 +33,9 @@ interface Props {
  * Everything a reader needs is on the page: the people lists are no longer hidden behind a
  * collapsed toggle, because "who is coming" is the first thing anyone opens this card for.
  */
-export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => {
+export const CampusVisitDetailCard: React.FC<Props> = ({
+  campus, visitRequestId, onContactChanged, children,
+}) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
 
   const visitTypeLabel = campus.visitType === 'OTHER' && campus.visitTypeOther
@@ -48,11 +60,6 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
       : campus.instanceStatus === 'CANCELLED' ? t('visitRequestV2:detail.decisionNoteCancelled')
         : t('visitRequestV2:detail.decisionNoteApproved');
 
-  const contact = campus.operationalContact;
-  const contactSummary = contact?.fullName
-    ? [contact.fullName, contact.organization, contact.phone, contact.email].filter(Boolean).join(' · ')
-    : null;
-
   const rows: InfoRow[] = [
     { label: t('visitRequestV2:card.delegationName'), value: campus.delegationName },
     { label: t('visitRequestV2:card.visitType'), value: visitTypeLabel },
@@ -69,10 +76,8 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
         : t('visitRequestV2:card.mediaDeclined'),
     },
     { label: t('visitRequestV2:card.transportationNote'), value: campus.transportationNote },
-    { label: t('visitRequestV2:card.operationalContact'), value: contactSummary },
     { label: t('visitRequestV2:card.purpose'), value: campus.purpose, multiline: true },
     { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent, multiline: true },
-    { label: t('visitRequestV2:card.notes'), value: campus.noteToFptu, multiline: true },
   ];
 
   return (
@@ -133,13 +138,45 @@ export const CampusVisitDetailCard: React.FC<Props> = ({ campus, children }) => 
           emptyMessage={t('visitRequestV2:person.noSupport')}
         />
 
-        {/* Decision / host / revision — who decided what, in plain language. The technical
-            decision_source is deliberately not surfaced: it is an audit discriminator, not
-            something a reader of this screen can act on. */}
+        {/* ── The three people of this campus, as three separate blocks (plan §12.2) ──
+            The guest-side coordinator, the intended host while the gate is shut, and the official
+            host once there is one. They can be three different people, so they never share a block
+            and the contact is never rendered as one joined string: a screen that merges them puts
+            the wrong phone number under the wrong heading, which is how somebody ends up ringing a
+            guest to ask about room bookings. */}
+        <div>
+          <OperationalContactReadOnly
+            contact={campus.operationalContact}
+            visitInstanceId={campus.visitInstanceId}
+            showSource
+          />
+          {/* The resend / replace / transfer workflow belongs to THIS campus's contact, so it lives
+              in this card rather than in a request-level panel — which is exactly how one campus's
+              contact used to acquire rights over its siblings. Which actions exist is the backend's
+              call, passed straight through; the panel renders nothing when none were granted. */}
+          {visitRequestId != null && (
+            <ContactIdentityActions
+              visitRequestId={visitRequestId}
+              visitInstanceId={campus.visitInstanceId}
+              contactConfirmed={campus.operationalContact.confirmationStatus === 'CONFIRMED'}
+              contactEmail={campus.operationalContact.email || null}
+              allowedActions={campus.allowedActions}
+              onChanged={onContactChanged}
+            />
+          )}
+        </div>
+        <ReceptionHostReadOnly
+          currentHost={campus.currentHost}
+          proposedHost={campus.proposedHost}
+          visitInstanceId={campus.visitInstanceId}
+        />
+
+        {/* Decision / revision — who decided what, in plain language. The technical decision_source
+            is deliberately not surfaced: it is an audit discriminator, not something a reader of
+            this screen can act on. The host lives in its own block above. */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <ReadOnlyInfoGrid
             rows={[
-              { label: t('visitRequestV2:detail.host'), value: campus.currentHostName },
               { label: t('visitRequestV2:detail.decidedBy'), value: campus.decidedByName },
               {
                 label: t('visitRequestV2:detail.decidedAt'),

@@ -61,9 +61,10 @@ public sealed class GetAgendaSetupForInstanceQueryHandler
         string visitType = content[instance.VisitInstanceId].VisitType!;
 
         bool isLive = instance.Status != VisitInstanceStatus.Cancelled && instance.Status != VisitInstanceStatus.Closed;
-        // Applying/editing the agenda is the host's job during the preparation window only.
+        // Applying/editing the agenda is the host's job during the preparation window only, and the
+        // window opens when THEY open it: an ASSIGNED campus has a Host but no preparation yet.
         bool canApply = isHost && isLive
-            && (instance.Status == VisitInstanceStatus.Assigned || instance.Status == VisitInstanceStatus.BeforeVisit);
+            && instance.Status == VisitInstanceStatus.BeforeVisit;
 
         var (defaultTemplateId, defaultScope) = await AgendaDefaultResolver.ResolveAsync(
             _db, instance.CampusId, visitType, cancellationToken);

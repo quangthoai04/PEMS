@@ -94,9 +94,15 @@ export interface StaffCalendarDetail {
   registrantNationality: string | null;
   registrantPhone: string | null;
   registrantEmail: string | null;
-  contactPersonFullName: string | null;
-  contactPersonPhone: string | null;
-  contactPersonEmail: string | null;
+  /**
+   * The guest-side coordinator of THIS campus instance — never the registrant and never the
+   * reception host. Three independent relations that can be three different people.
+   */
+  operationalContactFullName: string | null;
+  operationalContactOrganization: string | null;
+  operationalContactJobTitle: string | null;
+  operationalContactPhone: string | null;
+  operationalContactEmail: string | null;
   purpose: string | null;
   workingContent: string | null;
   visitType: string | null;

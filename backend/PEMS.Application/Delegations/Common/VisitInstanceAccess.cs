@@ -10,15 +10,24 @@ namespace PEMS.Application.Delegations.Common;
 
 /// <summary>
 /// Resolves the calling user's relation to a campus instance — the single rule used by every
-/// visit-process read/write handler so the meaning of "HOST / STAFF_LEADER / HO / VISITOR_OWNER /
-/// IC_SUPPORT / DEPT_SUPPORT / STUDENT / NONE" never drifts between endpoints.
+/// visit-process read/write handler so the meaning of "HOST / STAFF_LEADER / HO / OPERATIONAL_CONTACT /
+/// REGISTRANT / IC_SUPPORT / DEPT_SUPPORT / STUDENT / NONE" never drifts between endpoints.
+///
+/// <para>
+/// The single string is for DISPLAY and telemetry. It is a summary of the strongest relation, not an
+/// authorization input: a user can be several of these at once (a registrant who also hosts one of
+/// their own campuses), and capabilities are unioned by the callers rather than selected here.
+/// </para>
 /// </summary>
 public static class VisitInstanceAccess
 {
     public const string Host = "HOST";
     public const string StaffLeader = "STAFF_LEADER";
     public const string Ho = "HO";
-    public const string VisitorOwner = "VISITOR_OWNER";
+    /// <summary>Confirmed operational contact of THIS campus — replaces the old request-wide VISITOR_OWNER.</summary>
+    public const string OperationalContact = "OPERATIONAL_CONTACT";
+    /// <summary>Submitter of the request. Sees every campus; operates none of them by itself.</summary>
+    public const string Registrant = "REGISTRANT";
     public const string IcSupport = "IC_SUPPORT";
     public const string DeptSupport = "DEPT_SUPPORT";
     public const string Student = "STUDENT";
@@ -49,8 +58,14 @@ public static class VisitInstanceAccess
         if (roleCode == RoleCodes.Ho)
             return Ho;
 
-        if (roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId)
-            return VisitorOwner;
+        // Campus-level before request-level: holding THIS campus says more about what the caller may
+        // do here than having submitted the request does. Neither is role-gated — a registrant or a
+        // contact may be a VISITOR, STAFF or STAFF LEADER account.
+        if (VisitRequestOwnership.IsOperationalContact(instance, userId))
+            return OperationalContact;
+
+        if (VisitRequestOwnership.IsRegistrant(visit, userId))
+            return Registrant;
 
         // Supporting participant (only an ACCEPTED, non-host row grants a relation).
         var acceptedRole = await db.VisitParticipants

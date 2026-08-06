@@ -85,10 +85,10 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     typeRegistrantEmail(STAFF_HN.email);
     selectFirstCampus('HN');
 
-    expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
-    expect(screen.getByTestId('campus-processing-SEND_FOR_REVIEW-HN')).toBeTruthy();
+    expect(screen.getByTestId('campus-host-selection-SELF-HN')).toBeTruthy();
+    expect(screen.getByTestId('campus-host-selection-WAIT_FOR_LATER-HN')).toBeTruthy();
     // Assigning someone else is a Leader-only capability.
-    expect(screen.queryByTestId('campus-processing-ASSIGN_HOST-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELECTED-HN')).toBeNull();
   });
 
   it('offers a Staff Leader the assign option too', () => {
@@ -98,7 +98,7 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     typeRegistrantEmail(LEADER_HN.email);
     selectFirstCampus('HN');
 
-    expect(screen.getByTestId('campus-processing-ASSIGN_HOST-HN')).toBeTruthy();
+    expect(screen.getByTestId('campus-host-selection-SELECTED-HN')).toBeTruthy();
   });
 
   it('recognises the signed-in account regardless of case and padding', () => {
@@ -109,7 +109,7 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     selectFirstCampus('HN');
 
     expect(screen.getByTestId('v2-registrant-self')).toBeTruthy();
-    expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
+    expect(screen.getByTestId('campus-host-selection-SELF-HN')).toBeTruthy();
   });
 
   it('locks a campus outside the creator scope to a read-only routed notice', () => {
@@ -119,8 +119,8 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     typeRegistrantEmail(LEADER_HN.email);
     selectFirstCampus('HCM');
 
-    expect(screen.getByTestId('campus-processing-readonly-HCM')).toBeTruthy();
-    expect(screen.queryByTestId('campus-processing-SELF_HOST-HCM')).toBeNull();
+    expect(screen.getByTestId('campus-host-selection-readonly-HCM')).toBeTruthy();
+    expect(screen.queryByTestId('campus-host-selection-SELF-HCM')).toBeNull();
     expect(getCreateHostCandidates).not.toHaveBeenCalled();
   });
 
@@ -132,15 +132,15 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
 
     typeRegistrantEmail(LEADER_HN.email);
     selectFirstCampus('HN');
-    expect(screen.getByTestId('campus-processing-SELF_HOST-HN')).toBeTruthy();
+    expect(screen.getByTestId('campus-host-selection-SELF-HN')).toBeTruthy();
 
     // The Leader retypes the registrant as an external guest — this is now a delegated submission.
     typeRegistrantEmail('guest@partner.example.com');
 
-    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
-    expect(screen.queryByTestId('campus-processing-ASSIGN_HOST-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELF-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELECTED-HN')).toBeNull();
     // Not even the read-only routed notice: the whole panel belongs to self-registration.
-    expect(screen.queryByTestId('campus-processing-readonly-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-readonly-HN')).toBeNull();
     expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
   });
 
@@ -154,7 +154,7 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     selectFirstCampus('HN');
 
     expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
-    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELF-HN')).toBeNull();
   });
 
   it('never renders internal processing on the PUBLIC form', () => {
@@ -163,9 +163,9 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
 
     selectFirstCampus('HN');
 
-    expect(screen.queryByTestId('campus-processing-HN')).toBeNull();
-    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
-    expect(screen.queryByTestId('campus-processing-readonly-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELF-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-readonly-HN')).toBeNull();
   });
 
   it('never renders internal processing for an authenticated Visitor', () => {
@@ -176,7 +176,7 @@ describe('VisitRequestFormV2 — per-campus processing wiring', () => {
     typeRegistrantEmail(VISITOR.email);
     selectFirstCampus('HN');
 
-    expect(screen.queryByTestId('campus-processing-SELF_HOST-HN')).toBeNull();
-    expect(screen.queryByTestId('campus-processing-readonly-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-SELF-HN')).toBeNull();
+    expect(screen.queryByTestId('campus-host-selection-readonly-HN')).toBeNull();
   });
 });

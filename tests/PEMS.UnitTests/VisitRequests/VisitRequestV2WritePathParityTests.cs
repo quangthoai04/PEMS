@@ -36,16 +36,14 @@ public class VisitRequestV2WritePathParityTests
             new List<VisitorDto> { new("Khách 1", "VN", "GV", "ĐH X") },
             support ?? new List<SupportTeamMemberDto>(),
             op ?? Op(),
-            "EN", null, "DECLINED", null, null);
+            "EN", null, "DECLINED", null);
 
     private static VisitRequestEditV2Dto Edit(
         CampusVisitEditV2Dto? campus = null,
-        RegistrantInputV2? registrant = null,
-        ContactPointDto? primaryContact = null)
+        RegistrantInputV2? registrant = null)
         => new(
             0,
             registrant ?? new RegistrantInputV2("Người ĐK", "VN", "ĐH X", "TP", "+84912345678", "reg@example.com"),
-            primaryContact ?? new ContactPointDto("ĐM", "ĐH X", "+84987654321", "contact@example.com"),
             null,
             new List<CampusVisitEditV2Dto> { campus ?? EditCampus() });
 
@@ -136,16 +134,20 @@ public class VisitRequestV2WritePathParityTests
             ResubmitErrors(Edit(registrant: new RegistrantInputV2("Người ĐK", "", "ĐH X", "TP", "+84912345678", "reg@example.com"))),
             p => p.Contains("Nationality"));
 
+    /// <summary>
+    /// The contact rules now belong to each campus, so both edit paths must enforce them THERE. A
+    /// request-level check would have passed a payload whose campus named an unusable contact.
+    /// </summary>
     [Fact]
-    public void Resubmit_requires_a_primary_contact_organization()
+    public void Resubmit_requires_an_operational_contact_organization()
         => Assert.Contains(
-            ResubmitErrors(Edit(primaryContact: new ContactPointDto("ĐM", "", "+84987654321", "contact@example.com"))),
+            ResubmitErrors(Edit(EditCampus(op: Op(org: "")))),
             p => p.Contains("Organization"));
 
     [Fact]
-    public void Pending_edit_rejects_a_non_phone_primary_contact()
+    public void Pending_edit_rejects_a_non_phone_operational_contact()
         => Assert.Contains(
-            EditErrors(PendingEdit, Edit(primaryContact: new ContactPointDto("ĐM", "ĐH X", "090abc123", "contact@example.com"))),
+            EditErrors(PendingEdit, Edit(EditCampus(op: Op(phone: "090abc123")))),
             p => p.Contains("Phone"));
 
     // ── Support rows: optional list, complete rows ───────────────────────────

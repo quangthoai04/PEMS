@@ -47,7 +47,6 @@ const validValues = (): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [{
@@ -78,9 +77,8 @@ const createResponse = (visitRequestId = 2003) => ({
   requestCode: 'VR-MC-HN-0003',
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
-  primaryContactAccessStatus: 'ACTIVE',
-  contactClaimPending: false,
   instances: [{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }],
+  pendingConfirmations: 0,
   idempotent: false,
   status: 'WAITING_REQUEST_APPROVAL',
   submittedAt: '2026-07-31T09:30:00',

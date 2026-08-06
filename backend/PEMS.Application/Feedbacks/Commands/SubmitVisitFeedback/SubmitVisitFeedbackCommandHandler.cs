@@ -91,7 +91,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
                     item.TargetLogisticsItemId, item.TargetHandoverId, item.TargetDepartmentId)))
                 throw new ConflictException("Bạn đã đánh giá mục này rồi.");
 
-            var (targetName, targetRole, targetContext) = ResolveTarget(item, visitRequest, effectiveDelegationName, lookups);
+            var (targetName, targetRole, targetContext) = ResolveTarget(item, visitRequest, instance, effectiveDelegationName, lookups);
 
             toAdd.Add(new Feedback
             {
@@ -282,6 +282,7 @@ public sealed class SubmitVisitFeedbackCommandHandler
     private (string Name, string? Role, string Context) ResolveTarget(
         SubmitVisitFeedbackItem item,
         Domain.Entities.Delegations.VisitRequest visitRequest,
+        Domain.Entities.Delegations.VisitRequestCampus instance,
         string effectiveDelegationName,
         TargetLookups lookups)
     {
@@ -322,7 +323,10 @@ public sealed class SubmitVisitFeedbackCommandHandler
                 if (!lookups.Users.TryGetValue(item.TargetUserId!.Value, out var userName))
                     throw new BusinessRuleException("Người được đánh giá không tồn tại.");
                 // A USER target must relate to this visit: the request creator or an internal participant.
-                var isCreator = visitRequest.VisitorUserId == item.TargetUserId;
+                // “Creator” here means the guest side of the visit being rated: this campus’s
+                // operational contact, or the registrant who submitted the request.
+                var isCreator = instance.OperationalContactUserId == item.TargetUserId
+                    || visitRequest.RegistrantUserId == item.TargetUserId;
                 var isParticipant = lookups.InstanceParticipantUserIds.Contains(item.TargetUserId!.Value);
                 if (!isCreator && !isParticipant)
                     throw new BusinessRuleException("Người được đánh giá không liên quan đến chuyến thăm này.");

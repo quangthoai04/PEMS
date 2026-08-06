@@ -26,19 +26,14 @@ public class VisitRequest
     [Column("business_fingerprint")]
     public string? BusinessFingerprint { get; set; }
 
-    // PRIMARY CONTACT owner (đầu mối chính quản lý yêu cầu). Always a VISITOR account.
-    // NULL until contact B claims the request (PrimaryContactAccessStatus = PENDING_CONFIRMATION).
-    // Once the contact is ACTIVE this is the cancel owner. It is NO LONGER the sole form editor:
-    // per-campus form v2 makes the registrant a co-editor (see RegistrantUserId). Every mutation
-    // still re-checks the relation from the DB at request time — never from a cached JWT claim.
-    [Column("visitor_user_id")]
-    public ulong? VisitorUserId { get; set; }
-
-    // REGISTRANT (người đăng ký / submitter). NOT read-only under per-campus form v2: a co-editor
-    // together with the primary contact for form edit / resubmit / safe-edit / amendment (enforced
-    // per lifecycle by the write handlers in PR-4+). May also cancel under exception 3A while the
-    // initial contact is still PENDING_CONFIRMATION (DB trigger enforces it). May be a VISITOR or an
-    // internal STAFF/STAFF LEADER account.
+    // REGISTRANT (người đăng ký / submitter) — the ONLY request-level owner. Sees every campus,
+    // edits the request-level part, replaces contacts, and is the sole actor allowed to cancel the
+    // whole request (DB trigger enforces it). May be a VISITOR, STAFF or STAFF LEADER; the creator's
+    // role never bypasses the contact confirmation gate.
+    //
+    // Per-campus operating rights are NOT here — they live on
+    // VisitRequestCampus.OperationalContactUserId. Every mutation re-checks the relation from the DB
+    // at request time, never from a cached JWT claim.
     [Column("registrant_user_id")]
     public ulong? RegistrantUserId { get; set; }
 
@@ -73,41 +68,26 @@ public class VisitRequest
 
     // ── PURE V2 ────────────────────────────────────────────────────────────────
     // Delegation name, visit type, purpose, working content, operational contact, language,
-    // transportation, media consent and note-to-FPTU are per campus and live ONLY in
-    // VisitInstanceFormDetail. The 10 global-form columns no longer exist in the schema; read form
-    // content through IVisitFormReadService, never from the request row.
+    // transportation and media consent are per campus and live ONLY in VisitInstanceFormDetail.
+    // The global-form columns no longer exist in the schema; read form content through
+    // IVisitFormReadService, never from the request row.
     [Column("visit_scope")]
     public string VisitScope { get; set; } = "SINGLE_CAMPUS";
 
-    // PRIMARY CONTACT snapshot (đầu mối chính) at REQUEST level — the email used to link/claim the
-    // VISITOR account (see VisitorUserId + PrimaryContactAccessStatus). This is NOT a campus
-    // operational contact; each campus keeps its own in VisitInstanceFormDetail.OperationalContact*.
-    [Column("contact_person_full_name")]
-    public string ContactPersonFullName { get; set; } = null!;
+    // Global confirmation-gate revision. Bumped in the SAME transaction that opens the gate (the
+    // last operational contact confirms) and again whenever the gate closes (a confirmed contact is
+    // replaced before any campus decision). Used as the approval-notification dedupe key
+    // APPROVAL_READY:{requestId}:{visitInstanceId}:{gateRevision} so re-opening the gate can send
+    // again while a retry inside one opening cannot.
+    [Column("contact_gate_revision")]
+    public uint ContactGateRevision { get; set; }
 
-    [Column("contact_person_organization")]
-    public string ContactPersonOrganization { get; set; } = null!;
-
-    [Column("contact_person_phone")]
-    public string? ContactPersonPhone { get; set; }
-
-    [Column("contact_person_email")]
-    public string ContactPersonEmail { get; set; } = null!;
-
-    // Primary-contact claim state (per-campus form v2). PENDING_CONFIRMATION = contact B has not
-    // claimed the request yet; ACTIVE = contact owner confirmed. Backfilled ACTIVE where
-    // VisitorUserId IS NOT NULL. See PrimaryContactAccessStatuses.
-    [Column("primary_contact_access_status")]
-    public string PrimaryContactAccessStatus { get; set; } = "PENDING_CONFIRMATION";
-
-    [Column("primary_contact_verified_at")]
-    public DateTime? PrimaryContactVerifiedAt { get; set; }
-
-    // Aggregate status only (PENDING_APPROVAL/PARTIALLY_APPROVED/APPROVED/REJECTED/CANCELLED),
-    // derived from campus-instance decisions. The real approve/reject decision fields
-    // (decided_by/decided_at/decision_actor_role/decision_note) live on VisitRequestCampus.
+    // Aggregate status only (PENDING_CONTACT_CONFIRMATION/PENDING_APPROVAL/PARTIALLY_APPROVED/
+    // APPROVED/REJECTED/CANCELLED), derived from campus-instance state. The real approve/reject
+    // decision fields live on VisitRequestCampus. While this is PENDING_CONTACT_CONFIRMATION no
+    // Staff Leader may see or process ANY campus of the request.
     [Column("status")]
-    public string Status { get; set; } = "PENDING_APPROVAL";
+    public string Status { get; set; } = "PENDING_CONTACT_CONFIRMATION";
 
     [Column("submitted_at")]
     public DateTime SubmittedAt { get; set; }
@@ -157,7 +137,9 @@ public class VisitRequest
     public virtual ICollection<VisitRequestCampus> CampusInstances { get; set; } = new List<VisitRequestCampus>();
     public virtual ICollection<VisitGuestMember> GuestMembers { get; set; } = new List<VisitGuestMember>();
 
-    // Per-campus form v2 navigations.
-    public virtual ICollection<VisitRequestIdentityChange> IdentityChanges { get; set; } = new List<VisitRequestIdentityChange>();
+    // Contact confirmation invitations hang off the CAMPUS, not the request — see
+    // VisitRequestCampus.IdentityChanges. Exposing a request-level collection here would let a
+    // caller treat one campus's invitation as if it governed the whole request, which is exactly
+    // the model this cutover removed.
     public virtual ICollection<VisitRequestRevisionHistory> RevisionHistory { get; set; } = new List<VisitRequestRevisionHistory>();
 }

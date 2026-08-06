@@ -97,22 +97,25 @@ public sealed class VisitSafeEditV2Tests
         => new(code, start, start.AddMinutes(120), "Đoàn Safe", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", "Xe 16 chỗ", media, null, "Ghi chú", null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", "Xe 16 chỗ", media, null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
         using var db = NewContext();
         var handler = new CreateVisitRequestV2CommandHandler(
             db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
-            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "SE" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)), // A==B → ACTIVE
             null, campuses.ToList());
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
         return created.VisitRequestId;
@@ -241,12 +244,11 @@ public sealed class VisitSafeEditV2Tests
                     new VisitRequestSafeEditDto(
                         reqV,
                         new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999"), // phone changed
-                        null,
                         new List<SafeInstancePatchDto>
                         {
                             // Only the transport note is sent — the sparse patch carries what changed
                             // and nothing else, so campus B is absent from the payload entirely.
-                            new(instanceA, instV[instanceA], "Xe 45 chỗ", null, null, null),
+                            new(instanceA, instV[instanceA], null, "Xe 45 chỗ", null, null),
                         })), CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPhone);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.TransportationNote
@@ -296,7 +298,7 @@ public sealed class VisitSafeEditV2Tests
             var (reqV, instV) = await VersionsAsync(requestId);
             var instance = instV.Keys.Single();
             var patch = new VisitRequestSafeEditDto(reqV,
-                new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84000001"), null, null);
+                new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84000001"), null);
 
             // Unrelated visitor → 403.
             using (var db = NewContext())
@@ -316,9 +318,9 @@ public sealed class VisitSafeEditV2Tests
             {
                 var ex = await Assert.ThrowsAsync<ConflictException>(() =>
                     Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
-                        new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                         {
-                            new(instance, instV[instance] + 5, "Xe khác", "Ghi chú", "AGREED", null),
+                            new(instance, instV[instance] + 5, null, "Xe khác", "AGREED", null),
                         })), CancellationToken.None));
                 Assert.Equal(VisitFormV2ErrorCodes.VisitFormConcurrencyConflict, ex.ErrorCode);
             }
@@ -349,9 +351,9 @@ public sealed class VisitSafeEditV2Tests
             {
                 var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
                     Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
-                        new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                         {
-                            new(instance, instV[instance], "Xe khác", "Ghi chú", null, null),
+                            new(instance, instV[instance], null, "Xe khác", null, null),
                         })), CancellationToken.None));
                 Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
                 Assert.NotNull(ex.CampusName);
@@ -367,7 +369,7 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
             {
                 var res = await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
-                    new VisitRequestSafeEditDto(reqV, null, null, new List<SafeInstancePatchDto>
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                     {
                         new(instance, instV[instance], null, null, "DECLINED", "Rút quyền hình ảnh"),
                     })), CancellationToken.None);

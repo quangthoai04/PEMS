@@ -51,8 +51,7 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
         if (!VisitReminderAccess.CanConfigure(_currentUser, instance))
             throw new ForbiddenException("Bạn không có quyền cập nhật cảnh báo.");
 
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể cấu hình cảnh báo trong giai đoạn chuẩn bị.");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "cấu hình cảnh báo");
 
         var now = _clock.VietnamNow;
         // scheduled_at is Vietnam wall-clock (derived from planned_start_at) — validate "in the past"

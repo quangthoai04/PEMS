@@ -55,6 +55,13 @@ public sealed class PerCampusFormV2ReadTests
         Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable — import the PR-2 master into it to run these tests.");
     }
 
+    /// <summary>
+    /// Every contact action names a campus, so they are carried by the campus rows rather than by
+    /// the request-level viewer block. Flattened here because these tests seed a single campus.
+    /// </summary>
+    private static List<string> CampusActions(ResolvedVisitFormDto resolved)
+        => resolved.CampusVisits.SelectMany(c => c.AllowedActions).ToList();
+
     private static VisitFormReadService Resolver(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, NullLogger<VisitFormReadService>.Instance);
 
@@ -63,7 +70,6 @@ public sealed class PerCampusFormV2ReadTests
     private static VisitRequest NewRequest(byte schemaVersion, string scope, bool mixed = false) => new()
     {
         RequestCode = "PR3-" + Guid.NewGuid().ToString("N")[..12],
-        VisitorUserId = VisitorOwner,
         RegistrantUserId = VisitorOwner,
         CreatedSource = "VISITOR_SUBMITTED",
         HasMixedCampusDetails = mixed,
@@ -72,9 +78,6 @@ public sealed class PerCampusFormV2ReadTests
         VisitScope = scope,
         // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
         // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
-        ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
-        ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };
 
@@ -84,6 +87,13 @@ public sealed class PerCampusFormV2ReadTests
         PlannedStartAt = DateTime.Now.AddDays(20),
         PlannedEndAt = DateTime.Now.AddDays(20).AddHours(2),
         Status = hostUserId is null ? "WAITING_REQUEST_APPROVAL" : "ASSIGNED",
+        // Self-matched: the registrant is this campus's operational contact, so the campus sits past
+        // the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with no contact is
+        // refused by trg_visit_campuses_op_contact_guard_bi. Tests that need the gate SHUT call
+        // MakeContactUnconfirmedAsync, which puts the campus back.
+        OperationalContactUserId = VisitorOwner,
+        OperationalContactConfirmedAt = DateTime.Now,
+        OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
         CurrentHostUserId = hostUserId,
         HostAssignedBy = hostUserId is null ? null : SlCampus1,
         HostAssignedAt = hostUserId is null ? null : DateTime.Now,
@@ -173,8 +183,8 @@ public sealed class PerCampusFormV2ReadTests
         });
         db.VisitRequestIdentityChanges.Add(new VisitRequestIdentityChange
         {
-            VisitRequestId = req.VisitRequestId, ChangeKind = IdentityChangeKinds.InitialClaim,
-            TargetRelation = IdentityChangeTargetRelations.PrimaryContact, NewEmailMasked = "n***@e.com",
+            VisitRequestId = req.VisitRequestId, VisitInstanceId = instances[0].VisitInstanceId,
+            ChangeKind = IdentityChangeKinds.InitialConfirmation, NewEmailMasked = "n***@e.com",
             Status = IdentityChangeStatuses.Pending, ExpectedRequestRowVersion = 0,
             RequestedBy = VisitorOwner, RequestedAt = DateTime.Now, ExpiresAt = DateTime.Now.AddHours(72),
             CreatedAt = DateTime.Now,
@@ -491,31 +501,35 @@ public sealed class PerCampusFormV2ReadTests
 
     private static readonly string[] ContactActionCodes =
     {
-        VisitFormActions.ResendContactClaim, VisitFormActions.ReplacePendingContact,
-        VisitFormActions.InitiateContactTransfer, VisitFormActions.ResendContactTransfer,
-        VisitFormActions.CancelContactTransfer,
+        VisitFormActions.ResendOperationalContactConfirmation, VisitFormActions.ReplaceOperationalContact,
+        VisitFormActions.InitiateOperationalContactTransfer, VisitFormActions.ResendOperationalContactConfirmation,
+        VisitFormActions.CancelOperationalContactChange,
     };
 
-    private static async Task MakeContactUnclaimedAsync(ApplicationDbContext db, VisitRequest req)
+    /// <summary>Takes the campus back to "nobody has confirmed it", which is what re-shuts the gate.</summary>
+    private static async Task MakeContactUnconfirmedAsync(ApplicationDbContext db, ulong visitInstanceId)
     {
-        var tracked = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == req.VisitRequestId);
-        tracked.PrimaryContactAccessStatus = PrimaryContactAccessStatuses.PendingConfirmation;
-        tracked.VisitorUserId = null;
-        tracked.PrimaryContactVerifiedAt = null;
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == visitInstanceId);
+        instance.OperationalContactUserId = null;
+        instance.OperationalContactConfirmedAt = null;
+        instance.OperationalContactConfirmationSource = null;
+        instance.Status = VisitInstanceStatuses.WaitingContactConfirmation;
         await db.SaveChangesAsync();
     }
 
     private static async Task SeedPendingIdentityChangeAsync(
-        ApplicationDbContext db, ulong visitRequestId, string kind, uint resendCount, DateTime expiresAt)
+        ApplicationDbContext db, ulong visitRequestId, ulong visitInstanceId,
+        string kind, uint resendCount, DateTime expiresAt)
     {
         db.VisitRequestIdentityChanges.Add(new VisitRequestIdentityChange
         {
             VisitRequestId = visitRequestId,
+            // An invitation belongs to ONE campus; the composite FK refuses it otherwise.
+            VisitInstanceId = visitInstanceId,
             ChangeKind = kind,
-            TargetRelation = IdentityChangeTargetRelations.PrimaryContact,
             NewEmailMasked = "n***@e.com",
             // A TRANSFER always captures the owner it is taking the role from — the DB enforces it,
-            // exactly as InitiateVisitContactTransferCommandHandler does.
+            // exactly as InitiateOperationalContactTransferCommandHandler does.
             OldUserId = kind == IdentityChangeKinds.Transfer ? VisitorOwner : null,
             Status = IdentityChangeStatuses.Pending,
             ExpectedRequestRowVersion = 0,
@@ -528,23 +542,39 @@ public sealed class PerCampusFormV2ReadTests
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// The two ways a campus's contact can change are windowed by the campus DECISION, not by whether
+    /// somebody holds the role: before a decision the registrant simply REPLACEs the contact, and once
+    /// the campus has been decided the seat is handed over by TRANSFER, which the new holder has to
+    /// accept. Both sides of that boundary are asserted here so it cannot drift.
+    /// </summary>
     [Fact]
-    public async Task An_established_contact_offers_only_the_transfer_initiation()
+    public async Task Replace_is_offered_before_the_decision_and_transfer_after_it()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        // Seed default: contact ACTIVE and linked, earliest start +20d, nothing pending.
-        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
-        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
+        // Seed default: contact confirmed, campus NOT yet decided, earliest start +20d, nothing pending.
+        var (undecided, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var beforeDecision = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(undecided.VisitRequestId, CancellationToken.None));
 
-        Assert.Contains(VisitFormActions.InitiateContactTransfer, actions);
-        // The claim workflow is over — resending or re-entering the invitation would 409.
-        Assert.DoesNotContain(VisitFormActions.ResendContactClaim, actions);
-        Assert.DoesNotContain(VisitFormActions.ReplacePendingContact, actions);
-        Assert.DoesNotContain(VisitFormActions.CancelContactTransfer, actions);
+        Assert.Contains(VisitFormActions.ReplaceOperationalContact, beforeDecision);
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, beforeDecision);
+        Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, beforeDecision);
+        Assert.DoesNotContain(VisitFormActions.CancelOperationalContactChange, beforeDecision);
+
+        // host0 drives the campus to ASSIGNED — decided, Host has not started preparation.
+        var (decided, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        var afterDecision = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(decided.VisitRequestId, CancellationToken.None));
+
+        Assert.Contains(VisitFormActions.InitiateOperationalContactTransfer, afterDecision);
+        // Replace is over: the campus has a decision, so the seat can only be handed over.
+        Assert.DoesNotContain(VisitFormActions.ReplaceOperationalContact, afterDecision);
+        Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, afterDecision);
+        Assert.DoesNotContain(VisitFormActions.CancelOperationalContactChange, afterDecision);
         await tx.RollbackAsync();
     }
 
@@ -555,17 +585,18 @@ public sealed class PerCampusFormV2ReadTests
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
-        await MakeContactUnclaimedAsync(db, req);
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        await MakeContactUnconfirmedAsync(db, instances[0].VisitInstanceId);
         await SeedPendingIdentityChangeAsync(
-            db, req.VisitRequestId, IdentityChangeKinds.InitialClaim, resendCount: 4, DateTime.Now.AddHours(72));
+            db, req.VisitRequestId, instances[0].VisitInstanceId,
+            IdentityChangeKinds.InitialConfirmation, resendCount: 4, DateTime.Now.AddHours(72));
 
-        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
-        Assert.Contains(VisitFormActions.ReplacePendingContact, actions);
-        Assert.Contains(VisitFormActions.ResendContactClaim, actions);
+        var actions = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+        Assert.Contains(VisitFormActions.ReplaceOperationalContact, actions);
+        Assert.Contains(VisitFormActions.ResendOperationalContactConfirmation, actions);
         // An unclaimed contact cannot be transferred — that is the claim workflow's job.
-        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, actions);
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, actions);
 
         // One more resend and the handler answers CLAIM_RESEND_LIMIT; the button must go before that.
         var claim = await db.VisitRequestIdentityChanges
@@ -573,10 +604,10 @@ public sealed class PerCampusFormV2ReadTests
         claim.ResendCount = 5;
         await db.SaveChangesAsync();
 
-        var atCap = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
-        Assert.DoesNotContain(VisitFormActions.ResendContactClaim, atCap);
-        Assert.Contains(VisitFormActions.ReplacePendingContact, atCap); // replace has no cap
+        var atCap = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+        Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, atCap);
+        Assert.Contains(VisitFormActions.ReplaceOperationalContact, atCap); // replace has no cap
         await tx.RollbackAsync();
     }
 
@@ -587,22 +618,30 @@ public sealed class PerCampusFormV2ReadTests
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
         await SeedPendingIdentityChangeAsync(
-            db, req.VisitRequestId, IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
+            db, req.VisitRequestId, instances[0].VisitInstanceId,
+            IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
 
-        var actions = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
+        var actions = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
 
-        Assert.Contains(VisitFormActions.ResendContactTransfer, actions);
-        Assert.Contains(VisitFormActions.CancelContactTransfer, actions);
+        Assert.Contains(VisitFormActions.ResendOperationalContactConfirmation, actions);
+        Assert.Contains(VisitFormActions.CancelOperationalContactChange, actions);
         // A second transfer is refused by the one-pending-change guard, so it is never offered.
-        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, actions);
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, actions);
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// The 24h lead time gates STARTING a handover, and nothing else. An invitation already in flight
+    /// can still be chased (resend) or closed (cancel) inside the window — that is what
+    /// <c>ResendOperationalContactConfirmationCommandHandler</c> and
+    /// <c>CancelOperationalContactChangeCommandHandler</c> do, neither calling
+    /// <c>EnsureTransferWindowOpen</c> — so offering those two buttons is not a button that 409s.
+    /// </summary>
     [Fact]
-    public async Task Inside_the_24h_window_a_transfer_cannot_start_or_resend_but_can_still_be_cancelled()
+    public async Task Inside_the_24h_window_a_transfer_cannot_start_but_one_in_flight_can_be_chased_or_cancelled()
     {
         RequireDb();
         using var db = NewContext();
@@ -614,19 +653,20 @@ public sealed class PerCampusFormV2ReadTests
         instance.PlannedEndAt = DateTime.Now.AddHours(8);
         await db.SaveChangesAsync();
 
-        var beforeTransfer = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
-        Assert.DoesNotContain(VisitFormActions.InitiateContactTransfer, beforeTransfer);
+        var beforeTransfer = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, beforeTransfer);
 
         await SeedPendingIdentityChangeAsync(
-            db, req.VisitRequestId, IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
-        var withTransfer = (await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None))
-            .Viewer.AllowedActions;
+            db, req.VisitRequestId, instances[0].VisitInstanceId,
+            IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
+        var withTransfer = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
 
-        Assert.DoesNotContain(VisitFormActions.ResendContactTransfer, withTransfer);
-        // Cancel is NOT gated on the window: closing an invitation stays possible after it passes,
-        // and CancelVisitContactTransferCommandHandler does not call EnsureTransferLifecycleOpen.
-        Assert.Contains(VisitFormActions.CancelContactTransfer, withTransfer);
+        // Neither resend nor cancel is gated on the window; only starting a new handover is.
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, withTransfer);
+        Assert.Contains(VisitFormActions.ResendOperationalContactConfirmation, withTransfer);
+        Assert.Contains(VisitFormActions.CancelOperationalContactChange, withTransfer);
         await tx.RollbackAsync();
     }
 

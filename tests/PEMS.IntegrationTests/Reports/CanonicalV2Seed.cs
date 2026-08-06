@@ -62,9 +62,13 @@ internal static class CanonicalV2Seed
         db.ChangeTracker.Clear();
     }
 
+    /// <summary>The one guest account this world uses: registrant of every request, contact of every campus.</summary>
+    private const ulong RegistrantUserId = 2;
+
     public static void SeedOrganisation(ApplicationDbContext db)
     {
         db.Roles.Add(new Role { RoleId = 1, RoleCode = "STAFF", Name = "Staff", Status = "ACTIVE", CreatedAt = PeriodStart });
+        db.Roles.Add(new Role { RoleId = 2, RoleCode = "VISITOR", Name = "Visitor", Status = "ACTIVE", CreatedAt = PeriodStart });
 
         db.Campuses.Add(NewCampus(1, "HN", "Hoa Lac"));
         db.Campuses.Add(NewCampus(2, "HCM", "Ho Chi Minh"));
@@ -77,6 +81,20 @@ internal static class CanonicalV2Seed
             RoleId = 1,
             SubRole = "LEADER",
             PrimaryCampusId = 1,
+            Status = "ACTIVE",
+            CreatedAt = PeriodStart,
+        });
+
+        // The guest who submitted every request in this world, and — self-matched — the operational
+        // contact of every campus in it. A campus past WAITING_CONTACT_CONFIRMATION may not have a NULL
+        // contact, and these campuses are CLOSED; the reports under test never read the contact, so one
+        // shared registrant is enough and keeps the fixture small.
+        db.Users.Add(new User
+        {
+            UserId = RegistrantUserId,
+            FullName = "Registrant",
+            Email = "registrant.canonical@example.test",
+            RoleId = 2,
             Status = "ACTIVE",
             CreatedAt = PeriodStart,
         });
@@ -126,6 +144,7 @@ internal static class CanonicalV2Seed
             VisitRequestId = requestId,
             RequestCode = $"REQ-{requestId:D4}",
             HasMixedCampusDetails = hasMixedCampusDetails,
+            RegistrantUserId = RegistrantUserId,
             RegistrantFullName = "Registrant",
             RegistrantNationality = "VN",
             RegistrantOrganization = "Org",
@@ -134,12 +153,8 @@ internal static class CanonicalV2Seed
             RegistrantEmail = $"registrant{requestId}@example.test",
             VisitScope = campusDetails.Count > 1 ? "MULTI_CAMPUS" : "SINGLE_CAMPUS",
             // Pure V2: delegation name / visit type / purpose / language / media consent are per campus and
-            // live in visit_instance_form_details below. The request row keeps only the PRIMARY contact,
-            // which is a request-level relation and NOT a campus operational contact.
-            ContactPersonFullName = "Contact",
-            ContactPersonOrganization = "Contact Org",
-            ContactPersonPhone = "0900000001",
-            ContactPersonEmail = $"contact{requestId}@example.test",
+            // live in visit_instance_form_details below. The request row carries no contact at all — the
+            // operational contact is a per-campus relation, set on each instance.
             Status = VisitRequestStatus.Approved,
             SubmittedAt = PeriodStart.AddDays(1),
             CreatedAt = PeriodStart,
@@ -155,6 +170,9 @@ internal static class CanonicalV2Seed
                 PlannedStartAt = PlannedStart,
                 PlannedEndAt = PlannedEnd,
                 Status = VisitInstanceStatus.Closed,
+                OperationalContactUserId = RegistrantUserId,
+                OperationalContactConfirmedAt = PeriodStart,
+                OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
                 CreatedAt = PeriodStart,
             });
 
@@ -167,6 +185,7 @@ internal static class CanonicalV2Seed
                     VisitType = canonicalVisitType ?? CanonicalVisitType,
                     Purpose = "Canonical purpose",
                     OperationalContactFullName = "Operational contact",
+                    OperationalContactEmail = "registrant.canonical@example.test",
                     OperationalContactPhone = "0900000002",
                     WorkingLanguage = "EN",
                     MediaConsentStatus = "DECLINED",

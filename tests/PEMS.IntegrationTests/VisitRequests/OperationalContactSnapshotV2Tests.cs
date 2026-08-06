@@ -51,14 +51,13 @@ public sealed class OperationalContactSnapshotV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", operationalOrganization, "+84911111111", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            "EN", null, "DECLINED", null, null);
     }
 
     private static VisitRequestFormDataV2 Form(ulong? partnerId, params CampusVisitFormDto[] campuses)
         => new(
             Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+84912345678", "registrant@example.com"),
-            new ContactPointDto("Contact Person", "Org", "+84987654321", "contact@example.com"),
             partnerId,
             campuses.ToList());
 

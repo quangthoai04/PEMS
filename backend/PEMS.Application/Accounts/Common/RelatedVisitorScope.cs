@@ -51,8 +51,14 @@ internal static class RelatedVisitorScope
 
     /// <summary>
     /// The campus instances of <paramref name="campusId"/> that make their Visitor related to this
-    /// campus. Each row also has a non-null <c>VisitRequest.VisitorUserId</c> (AF-05: requests
-    /// without a Visitor account have nothing to show on Account Management).
+    /// campus. Each row has a confirmed <c>operational_contact_user_id</c> (AF-05: a campus nobody
+    /// has confirmed yet has no account to show on Account Management).
+    ///
+    /// <para>
+    /// The relation is the CAMPUS's contact, not a request-level owner. A Staff Leader is entitled to
+    /// see the people who actually run visits at their campus; somebody who confirmed a sibling
+    /// campus of the same request never set foot here and is not theirs to see.
+    /// </para>
     ///
     /// This is the ONE predicate list, nationalities and detail all share — a second definition
     /// anywhere would let the three drift apart.
@@ -60,5 +66,5 @@ internal static class RelatedVisitorScope
     public static IQueryable<VisitRequestCampus> VisibleInstances(IApplicationDbContext db, ulong campusId)
         => db.VisitRequestCampuses.Where(vrc =>
             vrc.CampusId == campusId
-            && vrc.VisitRequest.VisitorUserId != null);
+            && vrc.OperationalContactUserId != null);
 }

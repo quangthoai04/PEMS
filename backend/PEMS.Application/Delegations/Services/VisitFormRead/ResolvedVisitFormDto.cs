@@ -32,7 +32,13 @@ public sealed class ResolvedVisitFormDto
     public string? CancellationReason { get; init; }
 
     public ResolvedRegistrantDto Registrant { get; init; } = new();
-    public ResolvedPrimaryContactDto PrimaryContact { get; init; } = new();
+
+    /// <summary>
+    /// How far the request is through the confirmation gate, counted over the campuses the caller may
+    /// see. There is no request-level contact to report any more — each campus has its own, and the
+    /// only request-level fact about them is how many have answered.
+    /// </summary>
+    public ResolvedConfirmationSummaryDto ConfirmationSummary { get; init; } = new();
 
     /// <summary>Only the campus instances the caller may view, ordered by planned start.</summary>
     public List<ResolvedCampusVisitDto> CampusVisits { get; init; } = new();
@@ -55,15 +61,21 @@ public sealed class ResolvedRegistrantDto
     public string Nationality { get; init; } = "";
 }
 
-public sealed class ResolvedPrimaryContactDto
+/// <summary>
+/// Confirmation-gate progress across the visible campuses (plan §5.2). Counts only — never an address
+/// and never a token, so it is safe for anybody who may read the request at all.
+/// </summary>
+public sealed class ResolvedConfirmationSummaryDto
 {
-    public string FullName { get; init; } = "";
-    public string Organization { get; init; } = "";
-    public string Phone { get; init; } = "";
-    public string Email { get; init; } = "";
-    /// <summary>PENDING_CONFIRMATION or ACTIVE.</summary>
-    public string AccessStatus { get; init; } = "";
-    public DateTime? VerifiedAt { get; init; }
+    /// <summary>Visible campuses that are not cancelled — the denominator of the gate.</summary>
+    public int Total { get; init; }
+    public int Confirmed { get; init; }
+    /// <summary>Campuses whose contact has neither confirmed nor refused yet.</summary>
+    public int Pending { get; init; }
+    public int Declined { get; init; }
+    public int Expired { get; init; }
+    /// <summary>True while the whole request is held at the gate (no Staff Leader may see it).</summary>
+    public bool GateOpen { get; init; }
 }
 
 public sealed class ResolvedViewerContextDto
@@ -127,6 +139,24 @@ public sealed class ResolvedCampusVisitDto
     public string InstanceStatus { get; init; } = "";
     public long? CurrentHostUserId { get; init; }
     public string? CurrentHostName { get; init; }
+
+    /// <summary>
+    /// The three people of this campus are three separate objects on purpose (plan §1.1): the
+    /// registrant (request-level), the guest-side operational contact, and the FPTU reception host.
+    /// They can be three different people, and collapsing any two of them has repeatedly produced
+    /// screens that show the wrong person's phone number beside the wrong label.
+    /// Null while nobody has been assigned — never "the proposed host, close enough".
+    /// </summary>
+    public ResolvedCurrentHostDto? CurrentHost { get; init; }
+
+    /// <summary>The intended host while the gate is shut, or the record of one that fell through.</summary>
+    public ResolvedProposedHostDto? ProposedHost { get; init; }
+
+    /// <summary>
+    /// What the CALLER may do about this campus's reception host, decided by the backend. The
+    /// frontend renders the create/edit controls from this rather than re-deriving them from a role.
+    /// </summary>
+    public ResolvedHostSelectionCapabilitiesDto HostSelection { get; init; } = new();
     public long? DecidedByUserId { get; init; }
     public string? DecidedByName { get; init; }
     public DateTime? DecidedAt { get; init; }
@@ -157,7 +187,12 @@ public sealed class ResolvedCampusVisitDto
     public string? TransportationNote { get; init; }
     public string MediaConsentStatus { get; init; } = "";
     public string? MediaConsentNote { get; init; }
-    public string? NoteToFptu { get; init; }
+
+    /// <summary>
+    /// Where THIS campus stands in the confirmation workflow. Per campus because the workflow is:
+    /// one campus can be confirmed and running while its sibling is still waiting for an answer.
+    /// </summary>
+    public ResolvedCampusContactStateDto ContactState { get; init; } = new();
 
     public uint FormRevision { get; init; }
     public uint ApprovalRevision { get; init; }
@@ -193,12 +228,104 @@ public sealed class ResolvedMemberDto
     public int DisplayOrder { get; init; }
 }
 
+/// <summary>
+/// "Đầu mối đoàn khách phối hợp tại cơ sở" — the guest-side person who coordinates THIS campus with
+/// FPTU. Per campus, always: two campuses of one request routinely have two different people, and
+/// there is no request-level contact to fall back on.
+///
+/// <para>
+/// This is NOT the reception host and must never be rendered under a host label. It is also not the
+/// registrant: the person who filled the form may be a third party who never attends.
+/// </para>
+///
+/// <para>
+/// Every field can be empty while the invitation is still outstanding — the block is still worth
+/// rendering, because the email and the confirmation status are exactly what the reader wants then.
+/// </para>
+/// </summary>
 public sealed class ResolvedOperationalContactDto
 {
     public string FullName { get; init; } = "";
     public string Organization { get; init; } = "";
+    public string JobTitle { get; init; } = "";
     public string Phone { get; init; } = "";
     public string Email { get; init; } = "";
+
+    /// <summary>
+    /// PENDING / CONFIRMED / DECLINED / EXPIRED / TRANSFER_PENDING, mirroring
+    /// <see cref="ResolvedCampusVisitDto.ContactState"/> so a caller rendering only this object still
+    /// knows whether to trust the name beside it.
+    /// </summary>
+    public string ConfirmationStatus { get; init; } = "PENDING";
+    /// <summary>REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER — null until confirmed.</summary>
+    public string? ConfirmationSource { get; init; }
+    public DateTime? ConfirmedAt { get; init; }
+}
+
+/// <summary>
+/// "Host dự kiến" — somebody an internal creator named as the intended reception host BEFORE the
+/// confirmation gate opened. Present only while it still matters: once the proposal is activated the
+/// person appears as <see cref="ResolvedCampusVisitDto.CurrentHost"/> instead, and the UI must not
+/// show both at once.
+/// </summary>
+public sealed class ResolvedProposedHostDto
+{
+    public long? UserId { get; init; }
+    public string FullName { get; init; } = "";
+    /// <summary>Campus or department, whichever identifies them to a reader of this screen.</summary>
+    public string OrganizationOrDepartment { get; init; } = "";
+    /// <summary>SELF | SELECTED | WAIT_FOR_LATER.</summary>
+    public string SelectionMode { get; init; } = "WAIT_FOR_LATER";
+    /// <summary>PENDING | ACTIVATED | NEEDS_RESELECTION.</summary>
+    public string? ProposalStatus { get; init; }
+    public DateTime? ProposedAt { get; init; }
+}
+
+/// <summary>
+/// "Người phụ trách tiếp đón" — the OFFICIAL reception host, set only after the gate opened. Null
+/// means nobody has been assigned yet, which is a different fact from "a host was proposed".
+/// </summary>
+public sealed class ResolvedCurrentHostDto
+{
+    public long UserId { get; init; }
+    public string FullName { get; init; } = "";
+    public string Email { get; init; } = "";
+    public string Phone { get; init; } = "";
+    public string DepartmentName { get; init; } = "";
+}
+
+/// <summary>
+/// One campus's operational-contact confirmation state. Addresses are MASKED even for the registrant:
+/// the API says whether an invitation is outstanding, not who exactly it went to — the full address is
+/// something the registrant typed, not something the system reads back out.
+/// </summary>
+public sealed class ResolvedCampusContactStateDto
+{
+    /// <summary>An account actually holds this campus (operational_contact_user_id is set).</summary>
+    public bool Confirmed { get; init; }
+    public DateTime? ConfirmedAt { get; init; }
+    /// <summary>REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER.</summary>
+    public string? ConfirmationSource { get; init; }
+    /// <summary>True when the actor is the confirmed contact of THIS campus.</summary>
+    public bool IsCurrentUser { get; init; }
+
+    /// <summary>INITIAL_CONFIRMATION | TRANSFER, when an invitation is outstanding for this campus.</summary>
+    public string? PendingChangeKind { get; init; }
+    public string? PendingEmailMasked { get; init; }
+    public DateTime? PendingExpiresAt { get; init; }
+    public uint PendingResendCount { get; init; }
+}
+
+/// <summary>
+/// Backend verdict on what the caller may do about this campus's reception host. Mirrors §3.4's
+/// capability names. A capability is a rendering hint, never a token: every handler re-authorizes.
+/// </summary>
+public sealed class ResolvedHostSelectionCapabilitiesDto
+{
+    public bool CanProposeSelfAsHost { get; init; }
+    public bool CanProposeOtherHost { get; init; }
+    public bool CanWaitForLaterAssignment { get; init; }
+    public bool CanUpdateProposedHost { get; init; }
 }
 
 public sealed class ResolvedActiveAmendmentDto

@@ -148,14 +148,15 @@ describe('quick-filling the operational contact (plan §11–§13)', () => {
     await i18n.changeLanguage('en');
   });
 
-  it('keeps both buttons off until their source has something worth copying', async () => {
+  it('keeps the button off until the registrant block has something worth copying', async () => {
+    // Only ONE source is left: the request-level contact block it used to offer as a second option
+    // no longer exists, because a request has no single contact to copy from.
     renderForm();
     expect(screen.getByTestId('campus-opcontact-use-registrant-0')).toBeDisabled();
-    expect(screen.getByTestId('campus-opcontact-use-contact-0')).toBeDisabled();
+    expect(screen.queryByTestId('campus-opcontact-use-contact-0')).not.toBeInTheDocument();
 
     await fillRegistrant();
     expect(screen.getByTestId('campus-opcontact-use-registrant-0')).toBeEnabled();
-    expect(screen.getByTestId('campus-opcontact-use-contact-0')).toBeDisabled();
   });
 
   it('copies exactly the four contact fields from the registrant', async () => {
@@ -168,18 +169,6 @@ describe('quick-filling the operational contact (plan §11–§13)', () => {
     expect(orgText()).toContain('ĐH Nguồn');
     expect(opPhone().value).toBe('0912345678');
     expect(opEmail(container).value).toBe('reg@example.com');
-  });
-
-  it('copies the four fields from the primary contact instead when asked', async () => {
-    const { container } = renderForm();
-    await fillPrimaryContact(container);
-
-    await act(async () => { fireEvent.click(screen.getByTestId('campus-opcontact-use-contact-0')); });
-
-    expect(opName().value).toBe('Đầu Mối Chính');
-    expect(orgText()).toContain('Tổ Chức Đầu Mối');
-    expect(opPhone().value).toBe('0987654321');
-    expect(opEmail(container).value).toBe('contact@example.com');
   });
 
   it('touches only the campus whose button was pressed', async () => {

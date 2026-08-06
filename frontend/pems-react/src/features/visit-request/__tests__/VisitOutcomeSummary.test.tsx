@@ -24,10 +24,7 @@ const form = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => 
     fullName: 'Người Đăng Ký', organization: 'ĐH ABC', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN',
   },
-  primaryContact: {
-    fullName: 'Đầu Mối', organization: 'ĐH ABC', phone: '+84987654321',
-    email: 'd***@x.vn', accessStatus: 'ACTIVE', verifiedAt: null,
-  },
+  confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
   campusVisits: [campusFixture()],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
   ...overrides,

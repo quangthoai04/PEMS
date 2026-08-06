@@ -28,10 +28,6 @@ const validValues = () => ({
     fullName: 'Người Đăng Ký', organization: 'Công ty X', jobTitle: 'TP',
     phone: '+84912345678', email: 'a@example.com', nationality: 'Việt Nam',
   },
-  contactPoint: {
-    fullName: 'Đầu Mối', organization: 'Công ty X',
-    phone: '+84912345678', email: 'b@example.com',
-  },
   partnerSelectionMode: 'NEW_ORGANIZATION' as const,
   partnerId: null,
   campusVisits: [{

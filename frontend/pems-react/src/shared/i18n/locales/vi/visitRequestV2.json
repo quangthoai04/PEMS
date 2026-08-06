@@ -20,7 +20,9 @@
     "useMyProfile": "Tôi là người đăng ký",
     "matchesAccount": "Email trùng với tài khoản đang đăng nhập — không cần xác minh OTP.",
     "requiresOtp": "Email người đăng ký khác tài khoản đang đăng nhập. Hệ thống sẽ gửi mã OTP tới email này để xác minh trước khi tạo đơn.",
-    "autofillFailed": "Không lấy được thông tin hồ sơ của bạn. Vui lòng thử lại hoặc nhập thủ công."
+    "autofillFailed": "Không lấy được thông tin hồ sơ của bạn. Vui lòng thử lại hoặc nhập thủ công.",
+    "title": "Thông tin người đăng ký",
+    "label": "Người đăng ký"
   },
   "person": {
     "fullName": "Họ và tên",
@@ -249,7 +251,10 @@
     "colOrganization": "Đơn vị công tác",
     "colNationality": "Quốc tịch",
     "notProvided": "Chưa cung cấp",
-    "noMembers": "Chưa có thành viên nào."
+    "noMembers": "Chưa có thành viên nào.",
+    "contactConfirmation": "Xác nhận đầu mối đoàn khách",
+    "contactPendingCount": "Còn {{count}} cơ sở chờ đầu mối xác nhận",
+    "contactAllConfirmed": "Tất cả cơ sở đã có đầu mối xác nhận"
   },
   "amend": {
     "open": "Đề xuất thay đổi",
@@ -375,7 +380,18 @@
     "contactAccessStatus": "Trạng thái xác nhận",
     "contactActive": "Đã xác nhận",
     "contactVerifiedAt": "Xác nhận lúc",
-    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem."
+    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem.",
+    "confirmedCampuses": "Cơ sở đã có đầu mối xác nhận"
+  },
+  "preparation": {
+    "hostAssigned": "Đã phân công Host",
+    "startPreparation": "Bắt đầu chuẩn bị",
+    "starting": "Đang bắt đầu...",
+    "inPreparation": "Đang chuẩn bị",
+    "notStarted": "Chuyến thăm chưa bắt đầu giai đoạn chuẩn bị",
+    "startHint": "Bấm “Bắt đầu chuẩn bị” để mở lịch trình, thành phần tham gia, hậu cần, nhắc lịch và ghi chú chuẩn bị.",
+    "started": "Đã bắt đầu giai đoạn chuẩn bị.",
+    "startFailed": "Không thể bắt đầu chuẩn bị. Vui lòng thử lại."
   },
   "status": {
     "unknown": "Không xác định",
@@ -383,7 +399,7 @@
     "incomplete": "Chưa hoàn tất",
     "instance": {
       "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
-      "ASSIGNED": "Đã duyệt và phân công người phụ trách",
+      "ASSIGNED": "Đã phân công Host",
       "BEFORE_VISIT": "Đang chuẩn bị",
       "DURING_VISIT": "Đang tiếp khách",
       "AFTER_VISIT": "Sau tiếp khách",
@@ -611,5 +627,51 @@
     "statePending": "Đơn chưa được tạo — phiên xác minh vẫn còn hiệu lực. Anh/chị có thể quay lại form và nhập mã để hoàn tất.",
     "stateFailed": "Phiên gửi đơn này đã kết thúc mà không tạo được đơn. Vui lòng quay lại form và gửi lại.",
     "stateNotFound": "Không tìm thấy dấu vết của lần gửi này. Đơn chưa được tạo — anh/chị có thể quay lại form và gửi lại."
+  },
+  "operationalContact": {
+    "title": "Đầu mối đoàn khách phối hợp tại cơ sở",
+    "fullName": "Họ và tên",
+    "organization": "Đơn vị / tổ chức",
+    "jobTitle": "Chức vụ",
+    "phone": "Số điện thoại",
+    "email": "Email",
+    "confirmationStatus": "Trạng thái xác nhận",
+    "confirmationSource": "Nguồn xác nhận",
+    "confirmedAt": "Xác nhận lúc",
+    "unavailable": "Chưa có thông tin đầu mối đoàn khách",
+    "status": {
+      "pending": "Chờ xác nhận",
+      "confirmed": "Đã xác nhận",
+      "declined": "Đã từ chối lời mời",
+      "expired": "Lời mời đã hết hạn",
+      "transferPending": "Đang chờ chuyển giao"
+    },
+    "source": {
+      "registrantSelfMatch": "Trùng người đăng ký",
+      "emailConfirmation": "Xác nhận qua email",
+      "transfer": "Chuyển giao"
+    }
+  },
+  "receptionHost": {
+    "currentTitle": "Người phụ trách tiếp đón",
+    "proposedTitle": "Host dự kiến",
+    "fullName": "Họ và tên",
+    "department": "Cơ sở / phòng ban",
+    "phone": "Số điện thoại",
+    "email": "Email",
+    "proposalStatus": "Trạng thái",
+    "waitingForContact": "Chờ đầu mối đoàn khách xác nhận",
+    "needsReselection": "Host dự kiến cần được chọn lại"
+  },
+  "hostSelection": {
+    "legend": "Phương án người phụ trách tiếp đón",
+    "self": "Tôi sẽ là người phụ trách tiếp đón",
+    "selectOther": "Chọn người phụ trách khác",
+    "waitForLater": "Chờ phân công sau",
+    "pickPlaceholder": "Chọn IC Staff của cơ sở",
+    "loadingCandidates": "Đang tải danh sách…",
+    "noCandidates": "Cơ sở này chưa có IC Staff phù hợp",
+    "scheduleWarning": "Người này đã có lịch tiếp đón trùng khung giờ. Vẫn có thể chọn.",
+    "saved": "Đã lưu người phụ trách tiếp đón dự kiến."
   }
 }

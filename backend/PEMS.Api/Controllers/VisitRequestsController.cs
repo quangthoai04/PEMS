@@ -282,179 +282,175 @@ public sealed class VisitRequestsController : ControllerBase
         return StatusCode(StatusCodes.Status410Gone, new { errorCode = "VISIT_FORM_V1_RETIRED", message = "Phiên bản biểu mẫu cũ không còn được hỗ trợ." });
     }
 
-    // ── Per-campus v2 primary-contact INITIAL_CLAIM (plan §16.4) ─────────────────────────────
-    // The generic /api/public/email-actions handler REJECTS the claim context: possession of the
-    // email link alone never applies a claim. The landing page is anonymous + masked-only; accept
-    // and decline require a logged-in session whose email matches the invitation.
+    // ── Per-campus operational-contact confirmation and transfer (plan §3.2, §3.3, §5.2) ─────
+    // Every mutation names BOTH the request and the campus, and the handler proves the campus
+    // belongs to that request before touching anything: there is no request-wide contact action.
+    //
+    // The generic /api/public/email-actions handler REJECTS these contexts on purpose. Taking on a
+    // campus is a grant of authority, so possession of the link is never enough — the landing page
+    // is anonymous and masked-only, and accept/decline require a signed-in session whose address
+    // matches the invitation.
 
-    /// <summary>Anonymous masked landing summary for a contact-claim link.</summary>
-    [HttpGet("/api/public/visit-contact-claims/{token}")]
+    /// <summary>Anonymous masked landing summary for a confirmation link (either kind).</summary>
+    [HttpGet("/api/public/operational-contact-confirmations/{token}")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetContactClaimInfo(string token, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetOperationalContactConfirmationInfo(
+        string token, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactClaim.GetVisitContactClaimInfoQuery(token),
+            new PEMS.Application.Delegations.Commands.OperationalContact.GetOperationalContactConfirmationInfoQuery(token),
             cancellationToken);
         return Ok(result);
     }
 
-    /// <summary>The invited contact (logged in with the matching Google account) ACCEPTS the claim:
-    /// visitor_user_id is linked and the contact becomes ACTIVE in one transaction.</summary>
-    [HttpPost("/api/v2/visit-contact-claims/{token}/accept")]
+    /// <summary>The invited person takes on ONE campus. Requires a session matching the invited address.</summary>
+    [HttpPost("/api/operational-contact-confirmations/{token}/accept")]
     [Authorize]
-    public async Task<IActionResult> AcceptContactClaim(string token, CancellationToken cancellationToken)
+    public async Task<IActionResult> AcceptOperationalContactConfirmation(
+        string token, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactClaim.AcceptVisitContactClaimCommand(token),
+            new PEMS.Application.Delegations.Commands.OperationalContact.AcceptOperationalContactConfirmationCommand(token),
             cancellationToken);
         return Ok(result);
     }
 
-    /// <summary>The invited contact DECLINES the claim. The request is not cancelled.</summary>
-    [HttpPost("/api/v2/visit-contact-claims/{token}/decline")]
+    /// <summary>The invited person declines ONE campus. Same authentication bar as accepting.</summary>
+    [HttpPost("/api/operational-contact-confirmations/{token}/decline")]
     [Authorize]
-    public async Task<IActionResult> DeclineContactClaim(
+    public async Task<IActionResult> DeclineOperationalContactConfirmation(
         string token,
-        [FromBody] DeclineContactClaimBody? body,
+        [FromBody] DeclineOperationalContactRequest? body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactClaim.DeclineVisitContactClaimCommand(
-                token, body?.Reason),
+            new PEMS.Application.Delegations.Commands.OperationalContact.DeclineOperationalContactConfirmationCommand(token, body?.Reason),
             cancellationToken);
         return Ok(result);
     }
 
-    public sealed record DeclineContactClaimBody(string? Reason);
-
-    /// <summary>Registrant re-sends the pending contact invitation (old links die, 72h restarts).</summary>
-    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-claim/resend")]
+    /// <summary>Current contact + in-flight invitation of ONE campus (masked).</summary>
+    [HttpGet("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact")]
     [Authorize]
-    public async Task<IActionResult> ResendContactClaim(ulong visitRequestId, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetOperationalContactState(
+        ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactClaim.ResendVisitContactClaimCommand(visitRequestId),
+            new PEMS.Application.Delegations.Commands.OperationalContact.GetOperationalContactStateQuery(visitRequestId, visitInstanceId),
             cancellationToken);
         return Ok(result);
     }
 
-    /// <summary>Registrant replaces the still-unclaimed pending contact (typo fix): supersedes the old
-    /// invitation and either links the registrant (same email) or invites the new email.</summary>
-    [HttpPut("/api/v2/visit-requests/{visitRequestId}/contact-claim")]
+    /// <summary>Re-sends ONE campus's pending invitation. Old link dies first; token version bumps.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact-confirmation/resend")]
     [Authorize]
-    public async Task<IActionResult> ReplacePendingContact(
+    public async Task<IActionResult> ResendOperationalContactConfirmation(
+        ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.ResendOperationalContactConfirmationCommand(visitRequestId, visitInstanceId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Changes ONE campus's operational contact BEFORE that campus is decided. A new address clears
+    /// the campus relation and re-closes the global confirmation gate until it is answered.
+    /// </summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact")]
+    [Authorize]
+    public async Task<IActionResult> ReplaceOperationalContact(
         ulong visitRequestId,
-        [FromBody] ReplacePendingContactBody body,
+        ulong visitInstanceId,
+        [FromBody] OperationalContactPayload body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactClaim.ReplacePendingVisitContactCommand(
-                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email),
+            new PEMS.Application.Delegations.Commands.OperationalContact.ReplaceOperationalContactCommand(
+                visitRequestId, visitInstanceId,
+                body.FullName, body.Organization, body.Phone, body.Email),
             cancellationToken);
         return Ok(result);
     }
 
-    public sealed record ReplacePendingContactBody(string FullName, string Organization, string Phone, string Email);
-
-    // ── Per-campus v2 primary-contact TRANSFER, 24h (plan §16.4/§4.4, D-4) ───────────────────
-    // The current ACTIVE owner keeps every right until the invited person logs in with the matching
-    // Google account and explicitly accepts. The generic anonymous email-action handler rejects
-    // the transfer context; the anonymous landing below is masked-only and mutation-free.
-
-    /// <summary>Registrant or current ACTIVE contact proposes handing the contact role to a new email.</summary>
-    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    /// <summary>
+    /// Proposes handing ONE decided campus to a new address. Nothing moves until that person accepts.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact/transfer")]
     [Authorize]
-    public async Task<IActionResult> InitiateContactTransfer(
+    public async Task<IActionResult> InitiateOperationalContactTransfer(
         ulong visitRequestId,
-        [FromBody] InitiateContactTransferBody body,
+        ulong visitInstanceId,
+        [FromBody] OperationalContactTransferPayload body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.InitiateVisitContactTransferCommand(
-                visitRequestId, body.FullName, body.Organization, body.Phone, body.Email, body.Reason),
+            new PEMS.Application.Delegations.Commands.OperationalContact.InitiateOperationalContactTransferCommand(
+                visitRequestId, visitInstanceId,
+                body.FullName, body.Organization, body.Phone, body.Email, body.Reason),
             cancellationToken);
         return Ok(result);
     }
 
-    public sealed record InitiateContactTransferBody(
-        string FullName, string Organization, string Phone, string Email, string? Reason);
-
-    /// <summary>Owner-side state of the pending transfer (masked email only).</summary>
-    [HttpGet("/api/v2/visit-requests/{visitRequestId}/contact-transfer")]
+    /// <summary>Closes ONE campus's in-flight invitation without changing who holds the campus.</summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact/cancel")]
     [Authorize]
-    public async Task<IActionResult> GetActiveContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
-    {
-        var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetActiveVisitContactTransferQuery(visitRequestId),
-            cancellationToken);
-        return Ok(result);
-    }
-
-    /// <summary>Re-sends the pending transfer invitation (old links die, 24h restarts).</summary>
-    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/resend")]
-    [Authorize]
-    public async Task<IActionResult> ResendContactTransfer(ulong visitRequestId, CancellationToken cancellationToken)
-    {
-        var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.ResendVisitContactTransferCommand(visitRequestId),
-            cancellationToken);
-        return Ok(result);
-    }
-
-    /// <summary>Cancels the pending transfer; the current owner stays ACTIVE.</summary>
-    [HttpPost("/api/v2/visit-requests/{visitRequestId}/contact-transfer/cancel")]
-    [Authorize]
-    public async Task<IActionResult> CancelContactTransfer(
+    public async Task<IActionResult> CancelOperationalContactChange(
         ulong visitRequestId,
-        [FromBody] CancelContactTransferBody? body,
+        ulong visitInstanceId,
+        [FromBody] DeclineOperationalContactRequest? body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.CancelVisitContactTransferCommand(
-                visitRequestId, body?.Reason),
+            new PEMS.Application.Delegations.Commands.OperationalContact.CancelOperationalContactChangeCommand(visitRequestId, visitInstanceId, body?.Reason),
             cancellationToken);
         return Ok(result);
     }
 
-    public sealed record CancelContactTransferBody(string? Reason);
-
-    /// <summary>Anonymous masked landing summary for a contact-transfer link.</summary>
-    [HttpGet("/api/public/visit-contact-transfers/{token}")]
-    [AllowAnonymous]
-    public async Task<IActionResult> GetContactTransferInfo(string token, CancellationToken cancellationToken)
-    {
-        var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.GetVisitContactTransferInfoQuery(token),
-            cancellationToken);
-        return Ok(result);
-    }
-
-    /// <summary>The invited person (logged in with the matching Google account) ACCEPTS the transfer:
-    /// visitor_user_id + the contact snapshot swap in one transaction; the old account stays ACTIVE.</summary>
-    [HttpPost("/api/v2/visit-contact-transfers/{token}/accept")]
+    /// <summary>
+    /// Sets, changes or clears ONE campus's PROPOSED reception host ("Host dự kiến") while the
+    /// request is still pre-decision.
+    ///
+    /// <para>
+    /// Campus-scoped, and it never touches the current host: a campus that already has one refuses
+    /// this call and points at the handover flow. Storing a proposal is not an assignment — it is
+    /// activated, and revalidated, only when the confirmation gate opens.
+    /// </para>
+    /// </summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/campuses/{visitInstanceId}/proposed-host")]
     [Authorize]
-    public async Task<IActionResult> AcceptContactTransfer(string token, CancellationToken cancellationToken)
-    {
-        var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.AcceptVisitContactTransferCommand(token),
-            cancellationToken);
-        return Ok(result);
-    }
-
-    /// <summary>The invited person DECLINES the transfer. The current owner keeps everything.</summary>
-    [HttpPost("/api/v2/visit-contact-transfers/{token}/decline")]
-    [Authorize]
-    public async Task<IActionResult> DeclineContactTransfer(
-        string token,
-        [FromBody] DeclineContactClaimBody? body,
+    public async Task<IActionResult> UpdateProposedHost(
+        ulong visitRequestId,
+        ulong visitInstanceId,
+        [FromBody] ProposedHostPayload body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.VisitContactTransfer.DeclineVisitContactTransferCommand(
-                token, body?.Reason),
+            new PEMS.Application.Delegations.Commands.UpdateProposedHost.UpdateProposedHostCommand(
+                visitRequestId, visitInstanceId,
+                body.HostSelectionMode, body.ProposedHostUserId, body.RowVersion),
             cancellationToken);
         return Ok(result);
     }
+
+    /// <summary>
+    /// The reception-host arrangement of one campus. <c>hostSelectionMode</c> is
+    /// SELF | SELECTED | WAIT_FOR_LATER; <c>proposedHostUserId</c> is required for SELECTED, ignored
+    /// for SELF (resolved from the session) and must be absent for WAIT_FOR_LATER.
+    /// </summary>
+    public sealed record ProposedHostPayload(
+        string HostSelectionMode, ulong? ProposedHostUserId, int RowVersion);
+
+    /// <summary>Optional free-text reason for declining or cancelling an invitation.</summary>
+    public sealed record DeclineOperationalContactRequest(string? Reason);
+
+    /// <summary>The contact details written onto ONE campus. Organization is optional.</summary>
+    public sealed record OperationalContactPayload(
+        string FullName, string? Organization, string Phone, string Email);
+
+    /// <summary>A transfer proposal: the same details, plus why the campus is changing hands.</summary>
+    public sealed record OperationalContactTransferPayload(
+        string FullName, string? Organization, string Phone, string Email, string? Reason);
 
     // ── Per-campus v2 safe edit + amendments (plan §16.6, Phase E) ───────────────────────────
     // The backend classifier is the only authority: the safe endpoint fails closed on anything

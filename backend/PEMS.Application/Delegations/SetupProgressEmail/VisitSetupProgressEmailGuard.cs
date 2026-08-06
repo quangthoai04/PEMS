@@ -67,8 +67,9 @@ public static class VisitSetupProgressEmailGuard
 
         // Same window as CanEditBeforeVisit: once the visit is under way the "chuẩn bị" the mail reports
         // on is no longer something the host can revise, so sending an update on it would misdescribe it.
-        bool prepWindowOpen = instance.Status == VisitInstanceStatus.Assigned
-            || instance.Status == VisitInstanceStatus.BeforeVisit;
+        // ASSIGNED is deliberately NOT open: the Host has the campus but has not started preparing,
+        // so there is no progress to report yet.
+        bool prepWindowOpen = instance.Status == VisitInstanceStatus.BeforeVisit;
         if (!prepWindowOpen)
             throw new ConflictException(
                 "Chuyến thăm đã qua giai đoạn chuẩn bị — không thể gửi cập nhật chuẩn bị.");

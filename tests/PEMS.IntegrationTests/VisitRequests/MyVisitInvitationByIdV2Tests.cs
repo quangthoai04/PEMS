@@ -234,7 +234,6 @@ public sealed class MyVisitInvitationByIdV2Tests
     private static VisitRequest NewRequest(byte schemaVersion, string scope, bool mixed) => new()
     {
         RequestCode = "MYI-" + Guid.NewGuid().ToString("N")[..12],
-        VisitorUserId = Owner,
         RegistrantUserId = Owner,
         CreatedSource = "VISITOR_SUBMITTED",
         HasMixedCampusDetails = mixed,
@@ -243,9 +242,6 @@ public sealed class MyVisitInvitationByIdV2Tests
         VisitScope = scope,
         // Pure V2: form content is per campus (see the detail builder). The request row keeps only the
         // PRIMARY contact — a request-level relation, distinct from each campus's operational contact.
-        ContactPersonFullName = "Primary Contact", ContactPersonOrganization = "COrg",
-        ContactPersonPhone = "+8491", ContactPersonEmail = "contact@example.com",
-        PrimaryContactAccessStatus = "ACTIVE", PrimaryContactVerifiedAt = DateTime.Now,
         Status = "PENDING_APPROVAL", SubmittedAt = DateTime.Now, CreatedAt = DateTime.Now,
     };
 
@@ -255,6 +251,12 @@ public sealed class MyVisitInvitationByIdV2Tests
         PlannedStartAt = DateTime.Now.AddDays(20),
         PlannedEndAt = DateTime.Now.AddDays(20).AddHours(2),
         Status = "WAITING_REQUEST_APPROVAL",
+        // Self-matched: the registrant is this campus's operational contact, so the campus sits
+        // past the confirmation gate. A campus beyond WAITING_CONTACT_CONFIRMATION with no
+        // contact is refused by trg_visit_campuses_op_contact_guard_bi.
+        OperationalContactUserId = Owner,
+        OperationalContactConfirmedAt = DateTime.Now,
+        OperationalContactConfirmationSource = "REGISTRANT_SELF_MATCH",
         CreatedAt = DateTime.Now,
     };
 

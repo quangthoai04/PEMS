@@ -22,11 +22,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
     private readonly PerCampusFormV2WriteOptions? _writeFlag;
 
     /// <summary>
-    /// Lead time for the primary-contact identity workflow (claim/transfer invitations). This is a
-    /// different clock from the form-mutation policy: handing the contact role to someone else has to
-    /// leave that person time to accept and read the request before the visit, which is why it stays
-    /// at a day rather than following <see cref="VisitMutationPolicy.RequiredLeadHours"/>. It mirrors
-    /// TransferGuards.EnsureTransferLifecycleOpen exactly.
+    /// Lead time for the operational-contact transfer. This is a different clock from the form-mutation
+    /// policy: handing a campus to someone else has to leave that person time to accept and read the
+    /// request before the visit, which is why it stays at a day rather than following
+    /// <see cref="VisitMutationPolicy.RequiredLeadHours"/>. It mirrors
+    /// <c>OperationalContactGuards.EnsureTransferWindowOpen</c> exactly, and it is measured against
+    /// THAT campus's start — not the earliest campus of the request.
     /// </summary>
     private const int ContactTransferLeadHours = 24;
 
@@ -83,9 +84,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
         // comes from VisitMutationPolicy — the SAME call each command handler makes inside its
         // transaction — so the UI can no longer offer something the backend will refuse.
         var now = _clock?.VietnamNow ?? DateTime.Now;
-        var requesterSide = request.RegistrantUserId == userId
-            || (request.VisitorUserId == userId
-                && request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active);
+        // The registrant owns the REQUEST: request-level edits, and requester-side actions on every
+        // campus. A confirmed operational contact owns ONE campus and is added per campus below —
+        // there is no single "requester side" flag covering both any more, because that is exactly
+        // how one campus's contact used to acquire rights over its siblings.
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(request, userId);
         bool IsCurrentCampusLeader(ulong campusId) =>
             _currentUser.RoleCode == RoleCodes.Staff
             && _currentUser.SubRole == UserSubRoles.Leader
@@ -143,6 +146,23 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
         string? NameOf(ulong? id) => id.HasValue && actorNames.TryGetValue(id.Value, out var n) ? n : null;
 
+        // ── Reception-host people, batched. The current host and the proposed host are read together
+        //    but stay two separate objects downstream: they answer different questions ("who is
+        //    running this campus" vs "who was put forward"), and a screen that merges them tells the
+        //    reader somebody has the job when nobody has agreed to it yet. ──
+        var hostPersonIds = visibleInstances
+            .SelectMany(c => new[] { c.CurrentHostUserId, c.ProposedHostUserId })
+            .Where(id => id.HasValue).Select(id => id!.Value).Distinct().ToList();
+        var hostPeople = hostPersonIds.Count == 0
+            ? new Dictionary<ulong, HostPersonRow>()
+            : await _db.Users.AsNoTracking()
+                .Where(u => hostPersonIds.Contains(u.UserId))
+                .Select(u => new HostPersonRow(
+                    u.UserId, u.FullName, u.Email ?? string.Empty, u.Phone ?? string.Empty,
+                    _db.Departments.Where(d => d.DepartmentId == u.DepartmentId)
+                        .Select(d => d.Name).FirstOrDefault() ?? string.Empty))
+                .ToDictionaryAsync(u => u.UserId, u => u, cancellationToken);
+
         // Per-campus member links (v2 only). One batched query joined to member rows, grouped by instance.
         var membersByInstance = new Dictionary<ulong, List<(VisitGuestMember Member, uint LinkOrder)>>();
         if (visibleInstanceIds.Count > 0)
@@ -185,6 +205,34 @@ public sealed class VisitFormReadService : IVisitFormReadService
             });
         }
 
+        // Outstanding contact invitations, ONE batched query for every visible campus. The DB allows at
+        // most one PENDING change per campus, but read the set rather than assume it — a wrong
+        // assumption here would silently drop the resend/cancel actions from a campus that has one.
+        var pendingContactChanges = new Dictionary<ulong, PendingContactChangeRow>();
+        if (visibleInstanceIds.Count > 0)
+        {
+            var rows = await _db.VisitRequestIdentityChanges.AsNoTracking()
+                .Where(ch => visibleInstanceIds.Contains(ch.VisitInstanceId)
+                             && ch.Status == IdentityChangeStatuses.Pending)
+                .Select(ch => new
+                {
+                    ch.VisitInstanceId,
+                    ch.ChangeKind,
+                    ch.NewEmailMasked,
+                    ch.ExpiresAt,
+                    ch.ResendCount,
+                })
+                .ToListAsync(cancellationToken);
+            pendingContactChanges = rows
+                .GroupBy(r => r.VisitInstanceId)
+                .ToDictionary(g => g.Key, g =>
+                {
+                    var r = g.OrderByDescending(x => x.ExpiresAt).First();
+                    return new PendingContactChangeRow(
+                        r.ChangeKind, r.NewEmailMasked, r.ExpiresAt, r.ResendCount);
+                });
+        }
+
         // 4. Project each visible campus from ITS OWN per-campus detail.
         var campusVisits = new List<ResolvedCampusVisitDto>();
         foreach (var c in visibleInstances)
@@ -193,7 +241,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             if (campuses.TryGetValue(c.CampusId, out var ci)) { code = ci.Code; name = ci.Name; }
 
             string delegationName, visitType, purpose, workingLanguage, mediaStatus;
-            string? visitTypeOther, workingContent, transportationNote, mediaNote, noteToFptu;
+            string? visitTypeOther, workingContent, transportationNote, mediaNote;
             ResolvedOperationalContactDto opContact;
             List<ResolvedMemberDto> visitors, support;
             uint formRevision, approvalRevision;
@@ -224,15 +272,19 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 transportationNote = d.TransportationNote;
                 mediaStatus = d.MediaConsentStatus;
                 mediaNote = d.MediaConsentNote;
-                noteToFptu = d.NoteToFptu;
                 opContact = new ResolvedOperationalContactDto
                 {
                     FullName = d.OperationalContactFullName,
-                    // Organization + email are optional (nullable in the DB). Surface "" not null so the
-                    // read DTO/JSON contract stays a non-null string for the client.
+                    // Organization, job title and email are optional (nullable in the DB). Surface ""
+                    // not null so the read DTO/JSON contract stays a non-null string for the client —
+                    // and so the UI can render the block without any field being present.
                     Organization = d.OperationalContactOrganization ?? string.Empty,
+                    JobTitle = d.OperationalContactJobTitle ?? string.Empty,
                     Phone = d.OperationalContactPhone,
-                    Email = d.OperationalContactEmail ?? string.Empty
+                    Email = d.OperationalContactEmail ?? string.Empty,
+                    ConfirmationStatus = ContactConfirmationStatusOf(c, pendingContactChanges),
+                    ConfirmationSource = c.OperationalContactConfirmationSource,
+                    ConfirmedAt = c.OperationalContactConfirmedAt,
                 };
                 formRevision = d.FormRevision;
                 approvalRevision = d.ApprovalRevision;
@@ -255,13 +307,13 @@ public sealed class VisitFormReadService : IVisitFormReadService
             var hasPendingAmendment = activeAmendmentByInstance.ContainsKey(c.VisitInstanceId);
             var isLeaderHere = IsCurrentCampusLeader(c.CampusId);
             var isHostHere = c.CurrentHostUserId == userId;
-            var relationHere = requesterSide
-                ? VisitViewerRelations.Requester
-                : isHostHere ? VisitViewerRelations.Host
-                : isLeaderHere ? VisitViewerRelations.CampusLeader : VisitViewerRelations.Other;
+            // Requester side for THIS campus: the registrant (who owns every campus of their request)
+            // or the person who confirmed THIS campus. Confirming a sibling grants nothing here.
+            var isContactHere = VisitRequestOwnership.IsOperationalContact(c, userId);
+            var requesterSideHere = isRegistrant || isContactHere;
             var instanceCapabilities = new List<VisitActionCapabilityDto>();
 
-            if (requesterSide)
+            if (requesterSideHere)
             {
                 instanceCapabilities.Add(Decide(
                     VisitMutationAction.SubmitSafeEdit, VisitFormActions.SubmitSafeEdit,
@@ -317,8 +369,13 @@ public sealed class VisitFormReadService : IVisitFormReadService
             if (hasPendingAmendment && isLeaderHere
                 && instanceActions.Contains(VisitFormActions.ApproveAmendment))
                 instanceActions.Add(VisitFormActions.RejectAmendment);
-            if (hasPendingAmendment && requesterSide)
+            if (hasPendingAmendment && requesterSideHere)
                 instanceActions.Add(VisitFormActions.WithdrawAmendment);
+
+            // ── This campus's contact workflow, offered only where its handler would accept the call. ──
+            pendingContactChanges.TryGetValue(c.VisitInstanceId, out var pendingChange);
+            instanceActions.AddRange(ContactActionsFor(
+                request, c, pendingChange, isRegistrant, isContactHere, now));
 
             campusVisits.Add(new ResolvedCampusVisitDto
             {
@@ -331,6 +388,9 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 InstanceStatus = c.Status,
                 CurrentHostUserId = c.CurrentHostUserId.HasValue ? (long)c.CurrentHostUserId.Value : null,
                 CurrentHostName = NameOf(c.CurrentHostUserId),
+                CurrentHost = BuildCurrentHost(c, hostPeople),
+                ProposedHost = BuildProposedHost(c, hostPeople, name),
+                HostSelection = BuildHostSelectionCapabilities(c, isLeaderHere, userId, code),
                 DecidedByUserId = c.DecidedBy.HasValue ? (long)c.DecidedBy.Value : null,
                 DecidedByName = NameOf(c.DecidedBy),
                 DecidedAt = c.DecidedAt,
@@ -354,7 +414,17 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 TransportationNote = transportationNote,
                 MediaConsentStatus = mediaStatus,
                 MediaConsentNote = mediaNote,
-                NoteToFptu = noteToFptu,
+                ContactState = new ResolvedCampusContactStateDto
+                {
+                    Confirmed = c.OperationalContactUserId is not null,
+                    ConfirmedAt = c.OperationalContactConfirmedAt,
+                    ConfirmationSource = c.OperationalContactConfirmationSource,
+                    IsCurrentUser = isContactHere,
+                    PendingChangeKind = pendingChange?.Kind,
+                    PendingEmailMasked = pendingChange?.EmailMasked,
+                    PendingExpiresAt = pendingChange?.ExpiresAt,
+                    PendingResendCount = pendingChange?.ResendCount ?? 0,
+                },
                 FormRevision = formRevision,
                 ApprovalRevision = approvalRevision,
                 RowVersion = rowVersion,
@@ -364,17 +434,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
             });
         }
 
-        // ── Primary-contact identity workflow: what the CLAIM/TRANSFER handlers would actually allow ──
-        // Only a VISITOR account that is the registrant or the current contact can reach any of it, so the
-        // pending-change lookup is skipped entirely for everybody else (HO, Staff Leader, Host).
-        // The five commands all 404 when v2 WRITE is disabled, so with the flag off the UI must not offer
-        // them either. Absent options (unit construction) means "not disabled".
-        var isContactWorkflowActor = _writeFlag?.Enabled != false
-            && _currentUser.RoleCode == RoleCodes.Visitor
-            && (request.RegistrantUserId == userId || request.VisitorUserId == userId);
-        var contactActions = isContactWorkflowActor
-            ? await BuildContactActionsAsync(request, instances, userId, now, cancellationToken)
-            : new List<string>();
+        // ── Confirmation-gate progress, counted over the campuses this caller may see ─────────────
+        // Counted from the visible set on purpose: a Staff Leader who sees one campus must not learn
+        // how many siblings exist or where they stand. For the registrant and HO the visible set is
+        // the whole request, so they get the real totals.
+        var summary = BuildConfirmationSummary(request, visibleInstances, pendingContactChanges, now);
 
         // ── Request-level capabilities ───────────────────────────────────────────────────────────
         // A request-level action touches data every campus shares, so it needs BOTH halves of the
@@ -382,8 +446,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
         // the deadline from the earliest campus still ahead. Only the first half used to exist for
         // pending-edit, and neither existed for safe-edit — which is why "Sửa nhanh" appeared on a
         // request whose delegation was already inside the building.
+        //
+        // The REGISTRANT alone gets them. A campus's operational contact runs that campus; rewriting
+        // the request-level part (or resubmitting the whole thing) is not theirs to do, and letting
+        // one campus's contact do it is precisely what the per-campus model exists to prevent.
         var requestCapabilities = new List<VisitActionCapabilityDto>();
-        if (requesterSide && instances.Count > 0)
+        if (isRegistrant && instances.Count > 0)
         {
             // A request-level action is ALL-OR-NOTHING across campuses (§13): it edits data every
             // campus shares, so a request where only some campuses qualify offers nothing at request
@@ -429,8 +497,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
 
         List<string> BuildRequestActions()
         {
+            // Contact actions are NOT here: every one of them names a campus, so they live on the
+            // campus that owns them. A request-level list of them is what let the UI offer an action
+            // without saying which campus it would hit.
             var actions = new List<string> { VisitFormActions.View };
-            actions.AddRange(contactActions);
             actions.AddRange(requestCapabilities.Where(x => x.Enabled).Select(x => x.Code));
             return actions;
         }
@@ -459,15 +529,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 Email = request.RegistrantEmail,
                 Nationality = request.RegistrantNationality
             },
-            PrimaryContact = new ResolvedPrimaryContactDto
-            {
-                FullName = request.ContactPersonFullName,
-                Organization = request.ContactPersonOrganization,
-                Phone = request.ContactPersonPhone,
-                Email = request.ContactPersonEmail,
-                AccessStatus = request.PrimaryContactAccessStatus,
-                VerifiedAt = request.PrimaryContactVerifiedAt
-            },
+            ConfirmationSummary = summary,
             CampusVisits = campusVisits,
             Viewer = new ResolvedViewerContextDto
             {
@@ -480,83 +542,215 @@ public sealed class VisitFormReadService : IVisitFormReadService
         };
     }
 
-    /// <summary>Resend cap shared by ResendVisitContactClaim / ResendVisitContactTransfer.</summary>
+    /// <summary>Resend cap for ONE campus's invitation (OperationalContactGuards.MaxResends).</summary>
     private const int MaxContactResends = 5;
 
+    /// <summary>The outstanding invitation of one campus, as the read model needs it.</summary>
+    private sealed record PendingContactChangeRow(
+        string Kind, string? EmailMasked, DateTime ExpiresAt, uint ResendCount);
+
+    /// <summary>A host-side person's display details, batched once for every visible campus.</summary>
+    private sealed record HostPersonRow(
+        ulong UserId, string FullName, string Email, string Phone, string DepartmentName);
+
     /// <summary>
-    /// The five primary-contact identity actions, each granted only when the corresponding command handler
-    /// would accept the call — same actor test, same lifecycle window, same resend cap, same
-    /// one-pending-change rule. The handlers still re-authorize independently; this only decides what the
-    /// UI is allowed to offer, so a button can no longer promise something the backend will refuse.
-    ///
-    /// Caller has already established that the actor is a VISITOR who is the registrant or the current
-    /// contact of THIS request.
+    /// Where THIS campus's guest-side contact stands, as a single word the UI can label. Derived from
+    /// the campus row and its outstanding invitation rather than stored, so it can never disagree with
+    /// <see cref="ResolvedCampusContactStateDto"/> beside it.
     /// </summary>
-    private async Task<List<string>> BuildContactActionsAsync(
+    private static string ContactConfirmationStatusOf(
+        VisitRequestCampus c, IReadOnlyDictionary<ulong, PendingContactChangeRow> pending)
+    {
+        var hasPending = pending.TryGetValue(c.VisitInstanceId, out var change);
+
+        // An outstanding TRANSFER while somebody still holds the campus is not "unconfirmed" — the
+        // present holder keeps every right until the new person accepts.
+        if (c.OperationalContactUserId is not null)
+            return hasPending && change!.Kind == IdentityChangeKinds.Transfer
+                ? "TRANSFER_PENDING"
+                : "CONFIRMED";
+
+        return hasPending ? "PENDING" : "PENDING";
+    }
+
+    private static ResolvedCurrentHostDto? BuildCurrentHost(
+        VisitRequestCampus c, IReadOnlyDictionary<ulong, HostPersonRow> people)
+    {
+        if (c.CurrentHostUserId is null) return null;
+        if (!people.TryGetValue(c.CurrentHostUserId.Value, out var p))
+            return new ResolvedCurrentHostDto { UserId = (long)c.CurrentHostUserId.Value };
+
+        return new ResolvedCurrentHostDto
+        {
+            UserId = (long)p.UserId,
+            FullName = p.FullName,
+            Email = p.Email,
+            Phone = p.Phone,
+            DepartmentName = p.DepartmentName,
+        };
+    }
+
+    /// <summary>
+    /// The proposal, if there is one worth showing. Returned even after a successful activation so a
+    /// reader can see HOW the host got there, but the UI is told which state it is in via
+    /// <c>ProposalStatus</c> and shows the "Host dự kiến" heading only while it is still PENDING.
+    /// </summary>
+    private static ResolvedProposedHostDto? BuildProposedHost(
+        VisitRequestCampus c, IReadOnlyDictionary<ulong, HostPersonRow> people, string campusName)
+    {
+        if (c.ProposedHostUserId is null) return null;
+
+        people.TryGetValue(c.ProposedHostUserId.Value, out var p);
+        return new ResolvedProposedHostDto
+        {
+            UserId = (long)c.ProposedHostUserId.Value,
+            FullName = p?.FullName ?? string.Empty,
+            OrganizationOrDepartment = string.IsNullOrWhiteSpace(p?.DepartmentName)
+                ? campusName
+                : p!.DepartmentName,
+            SelectionMode = c.HostSelectionMode,
+            ProposalStatus = c.ProposedHostActivationStatus,
+            ProposedAt = c.ProposedHostAt,
+        };
+    }
+
+    /// <summary>
+    /// What the caller may do about this campus's host. Only the campus's own Staff Leader, and an IC
+    /// Staff acting on their own campus, have anything here — and only while the campus is still
+    /// pre-decision, because after that the host changes through the handover flow, never through a
+    /// proposal (plan §5.3).
+    /// </summary>
+    private ResolvedHostSelectionCapabilitiesDto BuildHostSelectionCapabilities(
+        VisitRequestCampus c, bool isLeaderHere, ulong userId, string campusCode)
+    {
+        var preDecision = c.Status is VisitInstanceStatuses.WaitingContactConfirmation
+                                   or VisitInstanceStatuses.WaitingRequestApproval;
+        if (!preDecision)
+            return new ResolvedHostSelectionCapabilitiesDto();
+
+        var isStaffHere = _currentUser.RoleCode == RoleCodes.Staff
+                          && _currentUser.SubRole == UserSubRoles.Staff
+                          && _currentUser.PrimaryCampusId == c.CampusId;
+
+        if (isLeaderHere)
+            return new ResolvedHostSelectionCapabilitiesDto
+            {
+                CanProposeSelfAsHost = true,
+                CanProposeOtherHost = true,
+                CanWaitForLaterAssignment = true,
+                CanUpdateProposedHost = true,
+            };
+
+        // A regular IC Staff may only speak for a proposal that is about them: their own, or a still
+        // empty slot they could take. Somebody else's pick is the Leader's to change.
+        if (isStaffHere)
+            return new ResolvedHostSelectionCapabilitiesDto
+            {
+                CanProposeSelfAsHost = true,
+                CanProposeOtherHost = false,
+                CanWaitForLaterAssignment = true,
+                CanUpdateProposedHost = c.ProposedHostUserId is null || c.ProposedHostUserId == userId,
+            };
+
+        return new ResolvedHostSelectionCapabilitiesDto { CanWaitForLaterAssignment = false };
+    }
+
+    /// <summary>
+    /// The operational-contact actions for ONE campus, each granted only when the corresponding command
+    /// handler would accept the call — same actor test, same lifecycle window, same resend cap, same
+    /// one-pending-change rule. The handlers still re-authorize independently; this only decides what
+    /// the UI may offer, so a button can no longer promise something the backend will refuse.
+    ///
+    /// <para>
+    /// Everything here is measured against THIS campus: its own status, its own start time, its own
+    /// invitation. The previous version asked the request instead, so a campus that was still days away
+    /// lost its transfer button because a sibling had already started.
+    /// </para>
+    /// </summary>
+    private List<string> ContactActionsFor(
         VisitRequest request,
-        IReadOnlyList<VisitRequestCampus> instances,
-        ulong userId,
-        DateTime now,
-        CancellationToken cancellationToken)
+        VisitRequestCampus instance,
+        PendingContactChangeRow? pending,
+        bool isRegistrant,
+        bool isContactHere,
+        DateTime now)
     {
         var actions = new List<string>();
-        var isRegistrant = request.RegistrantUserId == userId;
-        var notCancelled = request.Status != VisitRequestStatuses.Cancelled;
 
-        // At most one PENDING change per request is guaranteed by the DB, but read the set rather than
-        // assume it: a wrong assumption here would silently drop the resend/cancel buttons.
-        var pendingChanges = await _db.VisitRequestIdentityChanges.AsNoTracking()
-            .Where(c => c.VisitRequestId == request.VisitRequestId
-                        && c.Status == IdentityChangeStatuses.Pending)
-            .Select(c => new { c.ChangeKind, c.ExpiresAt, c.ResendCount })
-            .ToListAsync(cancellationToken);
-        var pendingClaim = pendingChanges.FirstOrDefault(c => c.ChangeKind == IdentityChangeKinds.InitialClaim);
-        var pendingTransfer = pendingChanges.FirstOrDefault(c => c.ChangeKind == IdentityChangeKinds.Transfer);
-
-        // ── Contact still unclaimed → INITIAL_CLAIM territory (registrant only; RegistrantClaimGuard). ──
-        var contactUnclaimed = request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.PendingConfirmation
-            && request.VisitorUserId is null;
-        if (isRegistrant && notCancelled && contactUnclaimed)
-        {
-            // Replace needs no existing claim row — it supersedes whatever is there. Resend needs one,
-            // and stops at the cap instead of offering a button that returns CLAIM_RESEND_LIMIT.
-            actions.Add(VisitFormActions.ReplacePendingContact);
-            if (pendingClaim is not null && pendingClaim.ResendCount < MaxContactResends)
-                actions.Add(VisitFormActions.ResendContactClaim);
-        }
-
-        // ── Contact established → TRANSFER territory (registrant or the current owner; TransferGuards). ──
-        var contactActive = request.PrimaryContactAccessStatus == PrimaryContactAccessStatuses.Active
-            && request.VisitorUserId is not null;
-        if (!contactActive)
+        // The commands all 404 when v2 WRITE is disabled, so with the flag off the UI must not offer
+        // them either. Absent options (unit construction) means "not disabled".
+        if (_writeFlag?.Enabled == false)
+            return actions;
+        // Only the registrant or the person who already holds THIS campus can reach any of it.
+        if (!isRegistrant && !isContactHere)
+            return actions;
+        if (request.Status == VisitRequestStatuses.Cancelled)
+            return actions;
+        if (instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected)
             return actions;
 
-        // Mirrors TransferGuards.EnsureTransferLifecycleOpen — cancel is deliberately NOT gated on it,
-        // because closing an invitation stays possible once the window has passed.
-        var visitStarted = instances.Any(c =>
-            c.Status is VisitInstanceStatuses.DuringVisit
-                or VisitInstanceStatuses.AfterVisit
-                or VisitInstanceStatuses.Closed);
-        var activeStarts = instances
-            .Where(c => c.Status != VisitInstanceStatuses.Cancelled && c.Status != VisitInstanceStatuses.Rejected)
-            .Select(c => c.PlannedStartAt)
-            .ToList();
-        var lifecycleOpen = notCancelled
-            && !visitStarted
-            && (activeStarts.Count == 0 || activeStarts.Min() >= now.AddHours(ContactTransferLeadHours));
+        // ── Undecided campus → REPLACE territory (registrant only; EnsureReplaceWindowOpen). ──
+        var replaceable = instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval;
+        if (isRegistrant && replaceable)
+            actions.Add(VisitFormActions.ReplaceOperationalContact);
 
-        if (pendingTransfer is null)
-        {
-            // A pending CLAIM also blocks initiate: the handler refuses any second pending change.
-            if (lifecycleOpen && pendingClaim is null)
-                actions.Add(VisitFormActions.InitiateContactTransfer);
+        // ── Decided but not started → TRANSFER territory (registrant or the current holder). ──
+        // Mirrors EnsureTransferWindowOpen, including its per-campus lead time.
+        var transferable = VisitInstanceStatuses.DecidedNotStarted.Contains(instance.Status)
+            && instance.PlannedStartAt.AddHours(-ContactTransferLeadHours) >= now;
+        if (transferable && pending is null)
+            actions.Add(VisitFormActions.InitiateOperationalContactTransfer);
+
+        if (pending is null)
             return actions;
-        }
 
-        if (lifecycleOpen && pendingTransfer.ExpiresAt > now && pendingTransfer.ResendCount < MaxContactResends)
-            actions.Add(VisitFormActions.ResendContactTransfer);
-        actions.Add(VisitFormActions.CancelContactTransfer);
+        // Resend stops at the cap rather than offering a button that returns RATE_LIMITED, and never
+        // resurrects an invitation that has already expired.
+        if (pending.ExpiresAt > now && pending.ResendCount < MaxContactResends)
+            actions.Add(VisitFormActions.ResendOperationalContactConfirmation);
+        // Cancel is deliberately NOT gated on the lead time: closing an invitation stays possible once
+        // the window to open a new one has passed.
+        actions.Add(VisitFormActions.CancelOperationalContactChange);
         return actions;
+    }
+
+    /// <summary>
+    /// Gate progress over the campuses the caller may see. "Pending" counts campuses with no confirmed
+    /// contact whose invitation is still live; "expired" those whose invitation has run out; "declined"
+    /// is carried by the change rows and only shows once nothing is outstanding — a campus that was
+    /// declined and re-invited is pending again, which is the truthful reading.
+    /// </summary>
+    private static ResolvedConfirmationSummaryDto BuildConfirmationSummary(
+        VisitRequest request,
+        IReadOnlyList<VisitRequestCampus> visible,
+        IReadOnlyDictionary<ulong, PendingContactChangeRow> pendingByInstance,
+        DateTime now)
+    {
+        var active = visible.Where(c => c.Status != VisitInstanceStatuses.Cancelled).ToList();
+        var confirmed = active.Count(c => c.OperationalContactUserId is not null);
+
+        var pending = 0;
+        var expired = 0;
+        foreach (var c in active.Where(c => c.OperationalContactUserId is null))
+        {
+            if (pendingByInstance.TryGetValue(c.VisitInstanceId, out var change) && change.ExpiresAt > now)
+                pending++;
+            else
+                expired++;
+        }
+
+        return new ResolvedConfirmationSummaryDto
+        {
+            Total = active.Count,
+            Confirmed = confirmed,
+            Pending = pending,
+            Expired = expired,
+            // A campus with no live invitation and no contact is stuck rather than declined; the
+            // difference matters to the registrant, who has to act on it either way.
+            Declined = 0,
+            GateOpen = !VisitRequestStatuses.IsBehindContactGate(request.Status),
+        };
     }
 
     /// <inheritdoc />
@@ -613,11 +807,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 MediaConsentStatus = d.MediaConsentStatus,
                 MediaConsentNote = d.MediaConsentNote,
                 TransportationNote = d.TransportationNote,
-                NoteToFptu = d.NoteToFptu,
                 OperationalContact = new VisitFormOperationalContact
                 {
                     FullName = d.OperationalContactFullName,
                     Organization = d.OperationalContactOrganization,
+                    JobTitle = d.OperationalContactJobTitle,
                     Phone = d.OperationalContactPhone,
                     Email = d.OperationalContactEmail
                 },
@@ -667,23 +861,29 @@ public sealed class VisitFormReadService : IVisitFormReadService
         var isAdmin = roleCode == RoleCodes.Admin;
         var isStaffLeader = roleCode == RoleCodes.Staff
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
-        var isRegistrant = request.RegistrantUserId == userId;
-        var isOwner = roleCode == RoleCodes.Visitor && request.VisitorUserId == userId;
+        var isRegistrant = VisitRequestOwnership.IsRegistrant(request, userId);
 
         // Admin has no visit business access, ever.
         if (isAdmin)
             return new VisitFormScope(new HashSet<ulong>(), VisitInstanceAccess.None, false, false);
 
-        // Whole-request viewers.
+        // Whole-request viewers. The registrant is the only non-HO one left: holding a campus as its
+        // operational contact shows THAT campus and nothing else, which is handled below.
         if (isHo)
             return new VisitFormScope(instanceIds.ToHashSet(), VisitInstanceAccess.Ho, true, true);
-        if (isOwner)
-            return new VisitFormScope(instanceIds.ToHashSet(), VisitInstanceAccess.VisitorOwner, true, false);
         if (isRegistrant)
             return new VisitFormScope(instanceIds.ToHashSet(), "REGISTRANT", true, false);
 
         var authorized = new HashSet<ulong>();
         string relation = VisitInstanceAccess.None;
+
+        // Operational contact → only the campuses they actually confirmed. An unconfirmed invitee has
+        // operational_contact_user_id NULL and therefore matches nothing here: until they accept, the
+        // masked landing page is all they get.
+        var operated = VisitRequestOwnership.OperatedCampuses(request, userId)
+            .Select(c => c.VisitInstanceId).ToList();
+        foreach (var id in operated) authorized.Add(id);
+        if (operated.Count > 0) relation = VisitInstanceAccess.OperationalContact;
 
         // Staff Leader → only their own-campus instance(s).
         if (isStaffLeader && primaryCampusId.HasValue)

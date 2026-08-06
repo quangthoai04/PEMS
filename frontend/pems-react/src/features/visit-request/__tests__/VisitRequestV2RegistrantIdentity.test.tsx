@@ -151,19 +151,6 @@ describe('VisitRequestFormV2 — registrant identity', () => {
 
   // ── Primary contact copy rule (plan §7) ──────────────────────────────────────
 
-  it('blocks an internal member of staff from copying themselves into the contact block', async () => {
-    authUser.mockReturnValue(STAFF);
-    getMyProfile.mockResolvedValue(STAFF_PROFILE);
-
-    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-
-    await waitFor(() => expect(screen.getByTestId('v2-registrant-self')).toBeTruthy());
-    const copyButton = screen.getByTestId('v2-contact-same-as-registrant') as HTMLButtonElement;
-    expect(copyButton.disabled).toBe(true);
-    expect(screen.getByText('visitRequestV2:sections.contactInternalNotAllowed')).toBeTruthy();
-  });
-
   it('keeps the copy button for a staff member who is registering somebody else', async () => {
     // The rule is about the internal user being the CONTACT of their own delegation. Once the
     // registrant is an external guest, copying that guest's details across is legitimate.
@@ -172,8 +159,10 @@ describe('VisitRequestFormV2 — registrant identity', () => {
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
     fireEvent.change(registrantEmail(), { target: { value: 'guest@partner.example.com' } });
 
-    const copyButton = screen.getByTestId('v2-contact-same-as-registrant') as HTMLButtonElement;
-    expect(copyButton.disabled).toBe(false);
+    // The per-campus copy button follows whether the REGISTRANT block is usable — this test only
+    // sets the email, so it stays off until a name is entered too.
+    const copyButton = screen.getByTestId('campus-opcontact-use-registrant-0') as HTMLButtonElement;
+    expect(copyButton.disabled).toBe(true);
     expect(screen.queryByText('visitRequestV2:sections.contactInternalNotAllowed')).toBeNull();
   });
 
@@ -185,6 +174,6 @@ describe('VisitRequestFormV2 — registrant identity', () => {
     fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
 
     await waitFor(() => expect(screen.getByTestId('v2-registrant-self')).toBeTruthy());
-    expect((screen.getByTestId('v2-contact-same-as-registrant') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('campus-opcontact-use-registrant-0') as HTMLButtonElement).disabled).toBe(false);
   });
 });

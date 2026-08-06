@@ -265,8 +265,16 @@ export interface VisitProcessPermission {
   canViewNews: boolean;
   canCreateNews: boolean;
 
+  /**
+   * ASSIGNED → BEFORE_VISIT. True only for the current Host of a live campus still at ASSIGNED —
+   * the Staff Leader approved it and named them, and they have not opened preparation yet. This and
+   * `canEditBeforeVisit` are never both true; render the "Bắt đầu chuẩn bị" button from this flag
+   * and never from `relation === 'HOST'`.
+   */
+  canStartPreparation: boolean;
+
   // Operational stage transitions (Host only, live instance).
-  canStartVisit: boolean;     // ASSIGNED/BEFORE_VISIT → DURING_VISIT
+  canStartVisit: boolean;     // BEFORE_VISIT → DURING_VISIT
   canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
   canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
 
@@ -471,10 +479,16 @@ export interface VisitProcessRequestSummary {
   transportationNote?: string | null;
   noteToFptu?: string | null;
 
-  contactPersonFullName?: string | null;
-  contactPersonOrganization?: string | null;
-  contactPersonPhone?: string | null;
-  contactPersonEmail?: string | null;
+  /**
+   * "Đầu mối đoàn khách phối hợp tại cơ sở" — this instance's OWN guest-side coordinator. The old
+   * contactPerson* names described a request-level relation that no longer exists; the backend has
+   * sent per-campus operationalContact* for a while, so those fields simply rendered blank.
+   */
+  operationalContactFullName?: string | null;
+  operationalContactOrganization?: string | null;
+  operationalContactJobTitle?: string | null;
+  operationalContactPhone?: string | null;
+  operationalContactEmail?: string | null;
 
   campuses: VisitProcessCampus[];
   guestMembers: VisitProcessGuestMember[];
@@ -1110,11 +1124,21 @@ export interface SubmittedRegistrant {
   nationality?: string | null;
 }
 
-export interface SubmittedContactPerson {
+/**
+ * ONE campus's guest-side coordinator, as the submitted-detail screen reads it. Per campus — the
+ * request-level SubmittedContactPerson it replaces is what let a mixed request show one campus's
+ * contact as if it spoke for all of them.
+ */
+export interface SubmittedOperationalContact {
   fullName?: string | null;
   organization?: string | null;
+  jobTitle?: string | null;
   phone?: string | null;
   email?: string | null;
+  confirmed: boolean;
+  confirmedAt?: string | null;
+  /** REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER. */
+  confirmationSource?: string | null;
 }
 
 export interface SubmittedCampusSchedule {
@@ -1129,6 +1153,9 @@ export interface SubmittedCampusSchedule {
   currentHostUserId?: number | null;
   currentHostName?: string | null;
   isOwnCampus: boolean;
+
+  /** This campus's OWN guest-side coordinator — never a sibling's, never a request-level stand-in. */
+  operationalContact: SubmittedOperationalContact;
 
   // Per-campus decision info (campus-independent approval).
   decidedByUserId?: number | null;
@@ -1182,7 +1209,6 @@ export interface SubmittedVisitRequestFormDetail {
   workingContent?: string | null;
 
   registrant: SubmittedRegistrant;
-  contactPerson: SubmittedContactPerson;
 
   // "Yêu cầu & Xác nhận bổ sung" — guest-entered.
   workingLanguage?: string | null;

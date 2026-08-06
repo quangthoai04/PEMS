@@ -434,8 +434,86 @@ public static class CanonicalSqlScript
     /// security notes and sender cards are built from variables every one of those templates already
     /// declared. This is also what closes the declared-but-unused sender variables: the thirteen bodies
     /// that declared the <c>{{sender*}}</c> group without printing it now carry the sender card.
+    ///
+    /// Bumped again on 2026-08-05 for the HARD CUTOVER to per-campus operational-contact
+    /// confirmation. This one DOES change schema, and it is the largest bump in this file's history:
+    ///   • <c>visit_requests</c> loses the entire request-level contact model — <c>visitor_user_id</c>,
+    ///     the four <c>contact_person_*</c> columns, <c>primary_contact_access_status</c>,
+    ///     <c>primary_contact_verified_at</c>, their FK, three CHECKs, three indexes, and those columns
+    ///     inside <c>ft_visit_requests_frontend_search</c>. It gains
+    ///     <c>PENDING_CONTACT_CONFIRMATION</c> and <c>contact_gate_revision</c>.
+    ///   • <c>visit_request_campuses</c> gains <c>operational_contact_user_id</c> (+ confirmed_at,
+    ///     confirmation_source) and <c>WAITING_CONTACT_CONFIRMATION</c>.
+    ///   • <c>visit_instance_form_details.operational_contact_email</c> becomes NOT NULL;
+    ///     <c>note_to_fptu</c> is dropped.
+    ///   • <c>visit_request_identity_changes</c> is re-scoped to one campus (<c>visit_instance_id</c> +
+    ///     composite FK), <c>INITIAL_CLAIM</c> becomes <c>INITIAL_CONFIRMATION</c>,
+    ///     <c>target_relation</c> is gone and <c>token_version</c> is added.
+    /// Trigger count moves 32 → 33 (see <c>DisposableDatabaseManager.ExpectedTriggerCount</c>);
+    /// ExpectedBaseTableCount stays 81 — no table was added or removed. Verified on real MySQL 8.0.46
+    /// by a fresh disposable import: guard self-tests 0/0 failures and
+    /// <c>sp_pems_assert_pure_v2_only</c> raises nothing.
+    ///
+    /// Bumped again on 2026-08-05 for the campus <c>ASSIGNED</c> state. It is NOT a second name for
+    /// <c>BEFORE_VISIT</c> — the two are different steps with different actors, and the schema now
+    /// enforces the difference rather than trusting the application to:
+    ///   • the enum carries <c>ASSIGNED</c> between <c>WAITING_REQUEST_APPROVAL</c> and
+    ///     <c>BEFORE_VISIT</c>, and the host/decision guard requires a Host and a decision from
+    ///     <c>ASSIGNED</c> onward — approving is what produces it;
+    ///   • <c>trg_visit_campuses_assignment_validate_bu</c> gained a transition guard: <c>ASSIGNED</c>
+    ///     may only be entered from <c>WAITING_REQUEST_APPROVAL</c>, <c>BEFORE_VISIT</c> only from
+    ///     <c>ASSIGNED</c> (the Host's explicit "start preparation"), and <c>DURING_VISIT</c> only from
+    ///     <c>BEFORE_VISIT</c>. A stray UPDATE can no longer skip the Host's step;
+    ///   • the aggregate triggers count <c>ASSIGNED</c> as an approved campus;
+    ///   • the host-handover window covers <c>ASSIGNED</c> as well as <c>BEFORE_VISIT</c>;
+    ///   • three §4.4 scenario campuses (47108/47110/47120) now stop at <c>ASSIGNED</c>. They are the
+    ///     only approved seed rows with no agenda, participant, logistics, reminder or prep note, so
+    ///     they are the only ones that can honestly mean "approved, Host has not started";
+    ///   • check 12.9 is inverted (the enum must CARRY the value) and joined by 12.9b — an
+    ///     <c>ASSIGNED</c> campus holding any setup data means a mutation slipped past the preparation
+    ///     gate — and 12.9c — an <c>ASSIGNED</c> campus must have a Host and a decision.
+    /// Still 81 tables and 33 triggers (the guard is new code inside an existing trigger). Verified by
+    /// a fresh disposable import: all five Phase-2 gates green, and the two illegal jumps
+    /// (<c>WAITING_REQUEST_APPROVAL → BEFORE_VISIT</c>, <c>ASSIGNED → DURING_VISIT</c>) are refused by
+    /// the DB while <c>ASSIGNED → BEFORE_VISIT</c> is accepted.
+    ///
+    /// Bumped again on 2026-08-06 to close a hole the ASSIGNED step opened in the confirmation gate.
+    /// <c>trg_visit_campuses_op_contact_guard_bu</c> refuses a campus decision taken while the parent
+    /// request is still <c>PENDING_CONTACT_CONFIRMATION</c>, but it tested
+    /// <c>NEW.status IN ('BEFORE_VISIT','REJECTED')</c> — and approving stopped producing BEFORE_VISIT
+    /// when ASSIGNED was introduced, so the entire approve path passed the guard untouched. Reachable
+    /// whenever one campus has confirmed and a sibling has not: that campus sits at
+    /// WAITING_REQUEST_APPROVAL under a request behind the gate, and a direct approve call was accepted.
+    /// <c>ASSIGNED</c> is now in the list. Two aggregate-trigger comments that still asserted "ASSIGNED
+    /// không còn tồn tại" — directly contradicting the CASE beneath them, and the likely reason the
+    /// guard was written the way it was — were corrected in the same pass. No schema change: still
+    /// 81 tables and 33 triggers.
+    ///
+    /// Same pass, second repair: <c>trg_visit_campuses_cancel_validate_bu</c> referenced
+    /// <c>v_contact_owner_id</c>, whose DECLARE and its <c>SELECT … visitor_user_id INTO …</c> were
+    /// removed with the request-level contact model but whose USE was left behind. MySQL only resolves
+    /// a trigger body when it runs, so the script imported cleanly and every VISITOR campus
+    /// cancellation then failed with <c>Unknown column 'v_contact_owner_id' in 'field list'</c> instead
+    /// of the business refusal. Restored in per-campus terms: the guest-side canceller must be the
+    /// request's registrant or THIS campus's operational contact — a sibling campus's contact is not on
+    /// this campus's guest side. Still no schema change.
+    // Repinned for the per-campus operational-contact visibility + proposed-host activation cutover.
+    // What changed in the script, and why the pin had to move rather than the script:
+    //   • visit_request_campuses gained host_selection_mode + proposed_host_user_id /
+    //     _by_user_id / _at / _activation_status / _activated_at, with the two CHECKs that keep mode
+    //     and person consistent. A proposal needs its own columns because current_host_user_id means
+    //     "assigned", and writing an intention there is how somebody nobody has confirmed ends up
+    //     looking like the person running the visit.
+    //   • decision_source dropped INTERNAL_SELF_HOST / INTERNAL_LEADER_ASSIGN and gained
+    //     PREAUTHORIZED_HOST_ACTIVATION. The two old values existed only for direct processing,
+    //     which named a host BEFORE the confirmation gate — the one thing the gate exists to stop.
+    //   • The lifecycle guard now admits WAITING_CONTACT_CONFIRMATION -> ASSIGNED, but ONLY for an
+     //    activation, and the gate guard fires on every pre-decision source rather than just
+    //     WAITING_REQUEST_APPROVAL.
+    //   • visit_instance_form_details gained operational_contact_job_title (the detail screens show
+    //     a job title, so it needs somewhere to live).
     public const string ExpectedSha256 =
-        "a60e00ebeacae17bedb7482d111428772c89b2637e4ca0d53193cb09180719b8";
+        "c8268bc9240cb805320c9bf9fcd6462eb7909135a0bdc966145595c9bd0ec081";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

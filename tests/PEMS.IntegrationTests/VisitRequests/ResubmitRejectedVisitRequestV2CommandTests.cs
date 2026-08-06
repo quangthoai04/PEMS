@@ -96,8 +96,10 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
             "HN", start, start.AddMinutes(120), "Đoàn Resubmit", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            // The registrant's own address, so the campus self-matches at submit and the request opens the
+            // confirmation gate immediately — this suite is about the resubmit gates, not that one.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
     }
 
     private static async Task<VisitRequestEditV2Dto> PayloadAsync(ulong requestId)
@@ -113,13 +115,11 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote, content.Notes)).ToList();
+            content.MediaConsentNote)).ToList();
         return new VisitRequestEditV2Dto(
             r.RowVersion,
             new RegistrantInputV2(r.RegistrantFullName, r.RegistrantNationality ?? "VN", r.RegistrantOrganization,
                 r.RegistrantJobTitle ?? "Job", r.RegistrantPhone ?? "+8491", r.RegistrantEmail),
-            new ContactPointDto(r.ContactPersonFullName, r.ContactPersonOrganization ?? "Org",
-                r.ContactPersonPhone ?? "+8491", r.ContactPersonEmail),
             r.PartnerId, slots);
     }
 
@@ -135,8 +135,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
             var created = await new VisitRequestV2CreateService(db).CreateV2Async(
                 new VisitRequestFormDataV2(
                     Guid.NewGuid().ToString("N"),
-                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "registrant@example.com"),
-                    new ContactPointDto("Registrant", "Org", "+8491", "registrant@example.com"),
+                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
                     null, new List<CampusVisitFormDto> { CampusContent() }),
                 Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
             await tx.CommitAsync();

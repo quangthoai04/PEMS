@@ -11,7 +11,6 @@ import {
   type ResolvedVisitForm,
 } from '../../api/visitRequestV2Api';
 import { CampusVisitDetailCard } from './CampusVisitDetailCard';
-import ContactIdentityActions from '../ContactIdentityActions';
 import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
@@ -229,42 +228,29 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         />
       </VisitSectionCard>
 
-      {/* ── ② Primary contact ── */}
+      {/* ── ② Confirmation-gate progress ──
+          There is no request-level contact section any more. Each campus names its OWN operational
+          contact and shows it on its own card below; the only request-level fact about them is how
+          many have answered, which is what decides whether any Staff Leader can act at all. */}
       <VisitSectionCard
         step={2}
-        title={t('visitRequestV2:sections.contact')}
+        title={t('visitRequestV2:summary.contactConfirmation')}
         readOnlyLabel={t('visitRequestV2:detail.readOnly')}
-        data-testid="section-contact"
+        data-testid="section-contact-summary"
       >
         <ReadOnlyInfoGrid
           rows={[
-            { label: t('visitRequestV2:person.fullName'), value: data.primaryContact.fullName },
-            { label: t('visitRequestV2:person.organization'), value: data.primaryContact.organization },
-            { label: t('visitRequestV2:card.phone'), value: data.primaryContact.phone },
-            { label: t('visitRequestV2:card.email'), value: data.primaryContact.email },
             {
-              label: t('visitRequestV2:detail.contactAccessStatus'),
-              value: data.primaryContact.accessStatus === 'ACTIVE'
-                ? t('visitRequestV2:detail.contactActive')
-                : t('visitRequestV2:detail.contactPending'),
+              label: t('visitRequestV2:summary.contactConfirmation'),
+              value: data.confirmationSummary.pending > 0
+                ? t('visitRequestV2:summary.contactPendingCount', { count: data.confirmationSummary.pending })
+                : t('visitRequestV2:summary.contactAllConfirmed'),
             },
             {
-              label: t('visitRequestV2:detail.contactVerifiedAt'),
-              value: data.primaryContact.verifiedAt ? formatVietnamDateTime(data.primaryContact.verifiedAt) : null,
+              label: t('visitRequestV2:detail.confirmedCampuses'),
+              value: `${data.confirmationSummary.confirmed}/${data.confirmationSummary.total}`,
             },
           ]}
-        />
-
-        {/* The claim/transfer workflow belongs to THIS contact, so it lives in this section rather
-            than in a card of its own above — splitting one business object across two cards is what
-            produced the duplicated contact block. Which of its actions exist is the backend's call,
-            passed straight through; the panel renders nothing at all when none were granted. */}
-        <ContactIdentityActions
-          visitRequestId={data.visitRequestId}
-          primaryContactAccessStatus={data.primaryContact.accessStatus}
-          contactEmail={data.primaryContact.email || null}
-          allowedActions={viewer.allowedActions}
-          onChanged={() => void load()}
         />
       </VisitSectionCard>
 
@@ -293,7 +279,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               const amendCap = capabilityFor(cv.capabilities, VisitV2Action.SubmitAmendment);
               const transferCap = capabilityFor(cv.capabilities, VisitV2Action.TransferHost);
               return (
-                <CampusVisitDetailCard key={cv.visitInstanceId} campus={cv}>
+                <CampusVisitDetailCard
+                  key={cv.visitInstanceId}
+                  campus={cv}
+                  visitRequestId={data.visitRequestId}
+                  onContactChanged={() => void load()}
+                >
                   {cv.activeAmendment && (canDecide || canWithdraw) && (
                     <VisitAmendmentPanel
                       visitRequestId={data.visitRequestId}

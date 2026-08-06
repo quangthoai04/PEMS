@@ -111,8 +111,11 @@ public sealed class ConfirmFaceTagsScopeV2Tests
             $"Mục đích {delegationName}", $"Nội dung {delegationName}",
             new List<VisitorDto> { new(guestName, "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
-            "VI", null, "AGREED", null, null, null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "VI", null, "AGREED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
@@ -120,14 +123,14 @@ public sealed class ConfirmFaceTagsScopeV2Tests
         var actor = new FakeUser(Registrant, RoleCodes.Visitor);
         var handler = new CreateVisitRequestV2CommandHandler(
             db, actor, new FixedClock(), new VisitRequestV2CreateService(db),
-            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new SilentNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "FT" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }

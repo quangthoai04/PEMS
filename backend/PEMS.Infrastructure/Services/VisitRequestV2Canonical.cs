@@ -61,15 +61,18 @@ public static class VisitRequestV2Canonical
         {
             N(cv.DelegationName), C(cv.VisitType), N(cv.VisitTypeOther), N(cv.Purpose), N(cv.WorkingContent),
             N(cv.OperationalContact.FullName), N(cv.OperationalContact.Organization), C(cv.OperationalContact.Phone), E(cv.OperationalContact.Email),
-            C(cv.WorkingLanguage), N(cv.TransportationNote), C(cv.MediaConsentStatus), N(cv.MediaConsentNote), N(cv.Notes),
+            C(cv.WorkingLanguage), N(cv.TransportationNote), C(cv.MediaConsentStatus), N(cv.MediaConsentNote),
             $"V[{visitors}]", $"S[{support}]",
         });
     }
 
-    /// <summary>Version-tagged canonical fingerprint over registrant/contact email, scope and per-campus core identity.</summary>
+    /// <summary>Version-tagged canonical fingerprint over registrant email, scope and per-campus core identity
+    /// (which now carries the operational contact — there is no request-level contact address).</summary>
     public static string BuildFingerprint(
-        string registrantEmailNorm, string contactEmailNorm, string scope, IEnumerable<CampusVisitFormDto> campuses)
+        string registrantEmailNorm, string scope, IEnumerable<CampusVisitFormDto> campuses)
         => VisitRequestFingerprintBuilder.BuildV2(
-            registrantEmailNorm, contactEmailNorm, scope,
-            campuses.Select(cv => (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther)));
+            registrantEmailNorm, scope,
+            campuses.Select(cv =>
+                (cv.CampusId, cv.PlannedStartAt, cv.PlannedEndAt, cv.DelegationName, cv.VisitType, cv.VisitTypeOther,
+                 cv.OperationalContact.Email)));
 }

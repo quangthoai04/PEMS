@@ -25,6 +25,8 @@ export interface V2ContactPointDto {
   organization: string;
   phone: string;
   email: string;
+  /** Optional — the detail screens show it, but nothing forces it to be filled in. */
+  jobTitle?: string | null;
 }
 
 /** One fully-resolved campus snapshot — "same for all campuses" is a one-time UI copy, never inheritance. */
@@ -44,8 +46,22 @@ export interface V2CampusVisitForm {
   transportationNote?: string | null;
   mediaConsentStatus: string;
   mediaConsentNote?: string | null;
-  notes?: string | null;
-  processing?: { mode: string; hostUserId?: number | null } | null;
+  /**
+   * "Phương án người phụ trách tiếp đón" — an INTENTION, not an assignment. Omit it entirely for a
+   * Visitor/external submit: the backend forces WAIT_FOR_LATER and REFUSES a payload that names
+   * anybody, so sending one is a failed request rather than a silently ignored field.
+   */
+  hostSelection?: V2HostSelectionDto | null;
+}
+
+/** SELF | SELECTED | WAIT_FOR_LATER. */
+export type V2HostSelectionMode = 'SELF' | 'SELECTED' | 'WAIT_FOR_LATER';
+
+export interface V2HostSelectionDto {
+  mode: V2HostSelectionMode;
+  /** Required for SELECTED; resolved server-side for SELF; must be absent for WAIT_FOR_LATER. */
+  proposedHostUserId?: number | null;
+  confirmedHostConflict?: boolean;
 }
 
 export interface V2CreatePayload {
@@ -58,8 +74,8 @@ export interface V2CreatePayload {
     phone: string;
     email: string;
   };
-  primaryContact: V2ContactPointDto;
   partnerId?: number | null;
+  /** Every campus names its OWN operational contact — there is no request-level contact. */
   campusVisits: V2CampusVisitForm[];
 }
 
@@ -74,8 +90,8 @@ export interface V2CreateResponse {
   requestCode: string;
   visitScope: string;
   hasMixedCampusDetails: boolean;
-  primaryContactAccessStatus: string; // ACTIVE | PENDING_CONFIRMATION
-  contactClaimPending: boolean;
+  /** Campuses still waiting for their own operational contact to answer. 0 = the gate is open. */
+  pendingConfirmations: number;
   instances: V2CampusRef[];
   idempotent: boolean;
   /** Request status straight from the committed row — never inferred client-side. */
@@ -161,6 +177,44 @@ export interface ResolvedMember {
   displayOrder: number;
 }
 
+export interface ResolvedOperationalContact {
+  fullName: string;
+  organization: string;
+  jobTitle: string;
+  phone: string;
+  email: string;
+  /** PENDING | CONFIRMED | DECLINED | EXPIRED | TRANSFER_PENDING. */
+  confirmationStatus: string;
+  /** REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER — null until confirmed. */
+  confirmationSource: string | null;
+  confirmedAt: string | null;
+}
+
+export interface ResolvedProposedHost {
+  userId: number | null;
+  fullName: string;
+  organizationOrDepartment: string;
+  selectionMode: V2HostSelectionMode;
+  /** PENDING | ACTIVATED | NEEDS_RESELECTION. */
+  proposalStatus: string | null;
+  proposedAt: string | null;
+}
+
+export interface ResolvedCurrentHost {
+  userId: number;
+  fullName: string;
+  email: string;
+  phone: string;
+  departmentName: string;
+}
+
+export interface ResolvedHostSelectionCapabilities {
+  canProposeSelfAsHost: boolean;
+  canProposeOtherHost: boolean;
+  canWaitForLaterAssignment: boolean;
+  canUpdateProposedHost: boolean;
+}
+
 export interface ResolvedCampusVisit {
   visitInstanceId: number;
   campusId: number;
@@ -191,12 +245,23 @@ export interface ResolvedCampusVisit {
   workingContent: string | null;
   visitors: ResolvedMember[];
   supportMembers: ResolvedMember[];
-  operationalContact: V2ContactPointDto;
+  /**
+   * "Đầu mối đoàn khách phối hợp tại cơ sở" — the guest-side coordinator of THIS campus. Never the
+   * host and never the registrant; two campuses of one request routinely have two different people.
+   * Fields can be empty while the invitation is outstanding — render the block anyway, because the
+   * email and the status are exactly what the reader needs then.
+   */
+  operationalContact: ResolvedOperationalContact;
+  /** "Người phụ trách tiếp đón" — the OFFICIAL host. null = nobody assigned yet. */
+  currentHost: ResolvedCurrentHost | null;
+  /** "Host dự kiến" — the intended host while the gate is shut, or a record of one that fell through. */
+  proposedHost: ResolvedProposedHost | null;
+  /** What the CALLER may do about this campus's host. Backend verdict; never re-derived from a role. */
+  hostSelection: ResolvedHostSelectionCapabilities;
   workingLanguage: string;
   transportationNote: string | null;
   mediaConsentStatus: string;
   mediaConsentNote: string | null;
-  noteToFptu: string | null;
   formRevision: number;
   approvalRevision: number;
   rowVersion: number;
@@ -258,13 +323,19 @@ export interface ResolvedVisitForm {
     email: string;
     nationality: string;
   };
-  primaryContact: {
-    fullName: string;
-    organization: string;
-    phone: string;
-    email: string;
-    accessStatus: string; // PENDING_CONFIRMATION | ACTIVE
-    verifiedAt: string | null;
+  /**
+   * How far the request is through the confirmation gate, counted over the campuses this caller may
+   * see. There is no request-level contact to report: each campus has its own, and the only
+   * request-level fact about them is how many have answered.
+   */
+  confirmationSummary: {
+    total: number;
+    confirmed: number;
+    pending: number;
+    declined: number;
+    expired: number;
+    /** True while the whole request is held at the gate — no Staff Leader may act on it. */
+    gateOpen: boolean;
   };
   campusVisits: ResolvedCampusVisit[];
   viewer: {
@@ -289,11 +360,11 @@ export interface V2CampusVisitEdit extends V2CampusVisitForm {
 }
 
 /** Mirrors backend `VisitRequestEditV2Dto` — the edit payload carries the request-level
- * snapshot too (registrant/primaryContact/partnerId), not just the campus list. */
+ * snapshot too (registrant/partnerId), not just the campus list. The reception-host arrangement
+ * is NOT part of an edit: it has its own campus-scoped endpoint (updateProposedHost). */
 export interface V2EditPayload {
   expectedRequestRowVersion: number;
   registrant: V2CreatePayload['registrant'];
-  primaryContact: V2ContactPointDto;
   partnerId?: number | null;
   campusVisits: V2CampusVisitEdit[];
 }
@@ -314,115 +385,130 @@ export const updatePendingVisitRequestV2 = (visitRequestId: number, edit: V2Edit
 export const resubmitVisitRequestV2 = (visitRequestId: number, edit: V2EditPayload) =>
   httpClient.post<V2EditResponse>(`/v2/visit-requests/${visitRequestId}/resubmit`, edit).then(r => r.data);
 
-// ── Identity: INITIAL_CLAIM (72h) ────────────────────────────────────────────
+// ── Per-campus operational contact: confirmation (72h) and transfer (24h) ────
+//
+// Every action names BOTH the request and the campus. There is no request-wide contact action:
+// the old request-level workflow could hand one person authority over campuses they were never
+// invited to, which is exactly the hole this cutover closes.
 
-export interface ContactClaimInfo {
-  status: string; // PENDING | APPLIED | DECLINED | EXPIRED | CANCELLED | SUPERSEDED | INVALID
-  actionable: boolean;
-  maskedEmail: string | null;
-  delegationName: string | null;
-  requestCode: string | null;
-  registrantFullName: string | null;
-  expiresAt: string | null;
-  requiresGoogleLoginEmailMatch: boolean;
-}
-
-export interface ContactClaimActionResponse {
-  visitRequestId: number;
-  requestCode: string;
-  claimStatus: string;
-  primaryContactAccessStatus: string;
-  message: string;
-}
-
-export const getContactClaimInfo = (token: string) =>
-  httpClient.get<ContactClaimInfo>(`/public/visit-contact-claims/${encodeURIComponent(token)}`).then(r => r.data);
-
-export const acceptContactClaim = (token: string) =>
-  httpClient.post<ContactClaimActionResponse>(`/v2/visit-contact-claims/${encodeURIComponent(token)}/accept`).then(r => r.data);
-
-export const declineContactClaim = (token: string, reason?: string) =>
-  httpClient.post<ContactClaimActionResponse>(`/v2/visit-contact-claims/${encodeURIComponent(token)}/decline`, { reason }).then(r => r.data);
-
-export interface ContactClaimManageResponse {
-  visitRequestId: number;
-  primaryContactAccessStatus: string;
-  claimStatus: string | null;
-  resendCount: number;
-  message: string;
-}
-
-export const resendContactClaim = (visitRequestId: number) =>
-  httpClient.post<ContactClaimManageResponse>(`/v2/visit-requests/${visitRequestId}/contact-claim/resend`).then(r => r.data);
-
-export const replacePendingContact = (
-  visitRequestId: number,
-  body: { fullName: string; organization: string; phone: string; email: string },
-) => httpClient.put<ContactClaimManageResponse>(`/v2/visit-requests/${visitRequestId}/contact-claim`, body).then(r => r.data);
-
-// ── Identity: TRANSFER (24h) — old owner keeps rights until explicit accept ──
-
-export interface ContactTransferInfo {
+/** What an anonymous holder of an invitation link may see. Masked address, ONE campus, no form content. */
+export interface OperationalContactInvitationInfo {
+  /** PENDING | APPLIED | DECLINED | EXPIRED | CANCELLED | SUPERSEDED | INVALID. */
   status: string;
   actionable: boolean;
+  /** INITIAL_CONFIRMATION | TRANSFER — the link itself knows which; the URL does not decide. */
+  kind: string | null;
   maskedEmail: string | null;
-  delegationName: string | null;
   requestCode: string | null;
-  requestedByName: string | null;
+  campusName: string | null;
+  delegationName: string | null;
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
   expiresAt: string | null;
   requiresGoogleLoginEmailMatch: boolean;
 }
 
-export interface ContactTransferState {
+/** The outcome for the ONE campus that was answered. */
+export interface OperationalContactActionResponse {
   visitRequestId: number;
-  hasPendingTransfer: boolean;
-  identityChangeId: number | null;
-  status: string | null;
-  newEmailMasked: string | null;
-  expiresAt: string | null;
-  resendCount: number;
-}
-
-export interface ContactTransferManageResponse {
-  visitRequestId: number;
-  transferStatus: string | null;
-  newEmailMasked: string | null;
-  expiresAt: string | null;
-  resendCount: number;
-  message: string;
-}
-
-export interface ContactTransferActionResponse {
-  visitRequestId: number;
+  visitInstanceId: number;
   requestCode: string;
-  transferStatus: string;
-  primaryContactAccessStatus: string;
+  kind: string;
+  changeStatus: string;
+  campusStatus: string;
+  /** Included because answering the LAST outstanding campus is what opens the global gate. */
+  requestStatus: string;
   idempotent: boolean;
   message: string;
 }
 
-export const getContactTransferInfo = (token: string) =>
-  httpClient.get<ContactTransferInfo>(`/public/visit-contact-transfers/${encodeURIComponent(token)}`).then(r => r.data);
+/** Owner-side view of ONE campus's contact state. Masked address only — never read back in full. */
+export interface OperationalContactState {
+  visitRequestId: number;
+  visitInstanceId: number;
+  campusStatus: string;
+  contactConfirmed: boolean;
+  confirmedEmailMasked: string | null;
+  confirmedAt: string | null;
+  confirmationSource: string | null;
+  pendingChangeKind: string | null;
+  pendingChangeStatus: string | null;
+  pendingEmailMasked: string | null;
+  expiresAt: string | null;
+  resendCount: number;
+  tokenVersion: number;
+}
 
-export const acceptContactTransfer = (token: string) =>
-  httpClient.post<ContactTransferActionResponse>(`/v2/visit-contact-transfers/${encodeURIComponent(token)}/accept`).then(r => r.data);
+export interface OperationalContactManageResponse extends OperationalContactState {
+  requestStatus: string;
+  message: string;
+}
 
-export const declineContactTransfer = (token: string, reason?: string) =>
-  httpClient.post<ContactTransferActionResponse>(`/v2/visit-contact-transfers/${encodeURIComponent(token)}/decline`, { reason }).then(r => r.data);
+export interface OperationalContactInput {
+  fullName: string;
+  organization?: string | null;
+  phone: string;
+  email: string;
+}
 
-export const initiateContactTransfer = (
-  visitRequestId: number,
-  body: { fullName: string; organization: string; phone: string; email: string; reason?: string },
-) => httpClient.post<ContactTransferManageResponse>(`/v2/visit-requests/${visitRequestId}/contact-transfer`, body).then(r => r.data);
+export const getOperationalContactInvitationInfo = (token: string) =>
+  httpClient
+    .get<OperationalContactInvitationInfo>(
+      `/public/operational-contact-confirmations/${encodeURIComponent(token)}`)
+    .then(r => r.data);
 
-export const getActiveContactTransfer = (visitRequestId: number) =>
-  httpClient.get<ContactTransferState>(`/v2/visit-requests/${visitRequestId}/contact-transfer`).then(r => r.data);
+export const acceptOperationalContactInvitation = (token: string) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/operational-contact-confirmations/${encodeURIComponent(token)}/accept`)
+    .then(r => r.data);
 
-export const resendContactTransfer = (visitRequestId: number) =>
-  httpClient.post<ContactTransferManageResponse>(`/v2/visit-requests/${visitRequestId}/contact-transfer/resend`).then(r => r.data);
+export const declineOperationalContactInvitation = (token: string, reason?: string) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/operational-contact-confirmations/${encodeURIComponent(token)}/decline`, { reason })
+    .then(r => r.data);
 
-export const cancelContactTransfer = (visitRequestId: number, reason?: string) =>
-  httpClient.post<ContactTransferManageResponse>(`/v2/visit-requests/${visitRequestId}/contact-transfer/cancel`, { reason }).then(r => r.data);
+export const getOperationalContactState = (visitRequestId: number, visitInstanceId: number) =>
+  httpClient
+    .get<OperationalContactState>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact`)
+    .then(r => r.data);
+
+export const resendOperationalContactConfirmation = (visitRequestId: number, visitInstanceId: number) =>
+  httpClient
+    .post<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact-confirmation/resend`)
+    .then(r => r.data);
+
+/** Change WHO is invited, before the campus is decided. Re-closes the global gate until answered. */
+export const replaceOperationalContact = (
+  visitRequestId: number, visitInstanceId: number, body: OperationalContactInput,
+) =>
+  httpClient
+    .put<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact`, body)
+    .then(r => r.data);
+
+/** Hand a DECIDED campus to a new address. Nothing moves until that person accepts. */
+export const initiateOperationalContactTransfer = (
+  visitRequestId: number, visitInstanceId: number, body: OperationalContactInput & { reason?: string },
+) =>
+  httpClient
+    .post<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact/transfer`, body)
+    .then(r => r.data);
+
+/** Close an in-flight invitation without changing who holds the campus. */
+export const cancelOperationalContactChange = (
+  visitRequestId: number, visitInstanceId: number, reason?: string,
+) =>
+  httpClient
+    .post<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact/cancel`,
+      { reason })
+    .then(r => r.data);
+
 
 // ── Safe edit (apply-now fields; backend classifier is authoritative) ────────
 
@@ -437,12 +523,16 @@ export const cancelContactTransfer = (visitRequestId: number, reason?: string) =
 export interface SafeEditPayload {
   expectedRequestRowVersion: number;
   registrant?: { fullName: string; organization?: string | null; jobTitle?: string | null; phone?: string | null } | null;
-  contact?: { fullName: string; organization?: string | null; phone: string } | null;
   instances?: Array<{
     visitInstanceId: number;
     expectedRowVersion: number;
+    /**
+     * The DISPLAY half of this campus's contact snapshot. Email is absent on purpose: it is what an
+     * invitation binds to, so changing it is a replace/transfer, never a quick typo fix. Per campus,
+     * because correcting one campus's contact name must not rewrite its siblings'.
+     */
+    operationalContact?: { fullName: string; organization?: string | null; phone: string } | null;
     transportationNote?: string | null;
-    noteToFptu?: string | null;
     /** AGREED | DECLINED, or omitted when unchanged. DECLINED applies even inside the cutoff. */
     mediaConsentStatus?: string | null;
     mediaConsentNote?: string | null;
@@ -638,3 +728,40 @@ export interface VisitRequestHistory {
 
 export const getVisitRequestHistory = (visitRequestId: number) =>
   httpClient.get<VisitRequestHistory>(`/v2/visit-requests/${visitRequestId}/history`).then(r => r.data);
+
+// ── Reception host: proposal before the gate, assignment after it ─────────────
+
+export interface UpdateProposedHostPayload {
+  hostSelectionMode: V2HostSelectionMode;
+  /** Required for SELECTED; ignored for SELF; omit for WAIT_FOR_LATER. */
+  proposedHostUserId?: number | null;
+  /** The campus instance's rowVersion as last read. Mismatch → 409, never a silent overwrite. */
+  rowVersion: number;
+}
+
+export interface UpdateProposedHostResponse {
+  visitRequestId: number;
+  visitInstanceId: number;
+  hostSelectionMode: V2HostSelectionMode;
+  proposedHostUserId: number | null;
+  proposedHostName: string | null;
+  proposalStatus: string | null;
+  rowVersion: number;
+  message: string;
+}
+
+/**
+ * Sets, changes or clears ONE campus's proposed reception host. Campus-scoped, and refused once the
+ * campus is decided — after that the host moves through the handover flow, never through a proposal.
+ */
+export const updateProposedHost = (
+  visitRequestId: number,
+  visitInstanceId: number,
+  payload: UpdateProposedHostPayload,
+) =>
+  httpClient
+    .put<UpdateProposedHostResponse>(
+      `/v2/visit-requests/${visitRequestId}/campuses/${visitInstanceId}/proposed-host`,
+      payload,
+    )
+    .then(r => r.data);

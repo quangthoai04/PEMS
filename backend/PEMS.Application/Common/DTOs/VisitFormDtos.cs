@@ -25,11 +25,18 @@ public record SupportTeamMemberDto(
     string Organization,
     string Nationality);
 
+/// <summary>
+/// One person's contact details as typed on the form — a SNAPSHOT, never a login. Identity at
+/// runtime is decided by <c>visit_request_campuses.operational_contact_user_id</c>, never by a name,
+/// phone or email stored here.
+/// </summary>
 public record ContactPointDto(
     string FullName,
     string Organization,
     string? Phone,
-    string Email);
+    string Email,
+    // Optional; trailing so existing call sites keep compiling and older payloads stay valid.
+    string? JobTitle = null);
 
 /// <summary>
 /// The complete visit-request form payload. Carried by the frontend between the

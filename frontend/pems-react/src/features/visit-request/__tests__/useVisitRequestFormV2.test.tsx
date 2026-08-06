@@ -36,7 +36,6 @@ const validValues = (): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [{
@@ -58,9 +57,8 @@ const mockCreateResponse = {
   requestCode: 'VR-001',
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
-  primaryContactAccessStatus: 'PENDING_CONFIRMATION',
-  contactClaimPending: true,
   instances: [{ visitInstanceId: 10, campusId: 1, status: 'PENDING' }],
+  pendingConfirmations: 0,
   idempotent: false,
 };
 
@@ -195,7 +193,7 @@ describe('useVisitRequestFormV2', () => {
     expect(payload.submissionId).toBe(submissionId); // same intent across initiate → verify (binding key)
     expect(payload.campusVisits[0].campusId).toBe('HN');
     expect(payload.campusVisits[0].visitors[0].fullName).toBe('Khách 1');
-    expect(payload.campusVisits[0].processing).toBeNull();
+    expect(payload.campusVisits[0].hostSelection).toBeNull();
     expect(onSuccess).toHaveBeenCalledWith(mockCreateResponse, expect.anything());
   });
 
@@ -217,7 +215,6 @@ describe('useVisitRequestFormV2', () => {
     const [payload] = vi.mocked(createVisitRequestV2).mock.calls[0];
     expect(payload.registrant.email).toBe('reg@example.com');
     expect(payload.campusVisits[0].delegationName).toBe('Đoàn A');
-    expect(payload.primaryContact.email).toBe('contact@example.com');
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
@@ -272,7 +269,7 @@ describe('useVisitRequestFormV2', () => {
 
     const [payload] = vi.mocked(verifyAndCreateVisitRequestV2).mock.calls[0];
     // The backend rejects a delegated payload that carries one, so it must never be built.
-    expect(payload.campusVisits[0].processing).toBeNull();
+    expect(payload.campusVisits[0].hostSelection).toBeNull();
     expect(onSuccess).toHaveBeenCalledWith(mockCreateResponse, expect.anything());
   });
 

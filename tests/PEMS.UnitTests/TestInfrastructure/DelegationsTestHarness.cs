@@ -348,11 +348,8 @@ public static class DelegationsTestData
         RegistrantJobTitle = "Trưởng đoàn",
         RegistrantPhone = "0900000000",
         RegistrantEmail = "guest@test.local",
-        // Pure V2: delegation name / purpose live in the per-campus detail, not on the request row.
-        ContactPersonFullName = "Đầu mối",
-        ContactPersonOrganization = "Đối tác",
-        ContactPersonPhone = "0900000001",
-        ContactPersonEmail = "contact@test.local",
+        // Pure V2: delegation name, purpose and the operational contact live in the per-campus
+        // detail, not on the request row.
         Status = "APPROVED",
         SubmittedAt = new DateTime(2026, 6, 1),
         CreatedAt = new DateTime(2026, 6, 1),

@@ -181,7 +181,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
         string? purpose = d.Purpose, workingContent = d.WorkingContent;
         string? workingLanguage = d.WorkingLanguage;
         string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
-        string? transportationNote = d.TransportationNote, noteToFptu = d.NoteToFptu;
+        string? transportationNote = d.TransportationNote;
         var guestMembers = d.Visitors.Select(MapRow).ToList();
         var externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
 
@@ -212,12 +212,11 @@ public sealed class GetVisitInstanceContributionQueryHandler
             MediaConsentStatus = mediaConsentStatus,
             MediaConsentNote = mediaConsentNote,
             TransportationNote = transportationNote,
-            NoteToFptu = noteToFptu,
 
-            ContactPersonFullName = visit.ContactPersonFullName,
-            ContactPersonOrganization = visit.ContactPersonOrganization,
-            ContactPersonPhone = visit.ContactPersonPhone,
-            ContactPersonEmail = visit.ContactPersonEmail,
+            OperationalContactFullName = d.OperationalContact.FullName,
+            OperationalContactOrganization = d.OperationalContact.Organization,
+            OperationalContactPhone = d.OperationalContact.Phone,
+            OperationalContactEmail = d.OperationalContact.Email,
 
             Campuses = visit.CampusInstances
                 .OrderBy(c => c.PlannedStartAt)

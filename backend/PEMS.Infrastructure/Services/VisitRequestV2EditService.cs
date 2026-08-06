@@ -107,7 +107,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 throw new ConflictException(
                     "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
                     VisitRequestErrorCodes.InstanceVersionConflict);
-            if (instance.Status != VisitInstanceStatuses.WaitingRequestApproval)
+            if (!IsPreDecision(instance.Status))
                 throw new BusinessRuleException(
                     "Đơn đã có cơ sở được xử lý (duyệt/từ chối/hủy) nên không thể sửa.",
                     VisitRequestErrorCodes.VisitRequestNotEditable);
@@ -214,6 +214,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                     NewValueText = $"form_revision={detail.FormRevision + 1}",
                     CreatedAt = now,
                 });
+                EnsureContactEmailUnchanged(detail, content.OperationalContact);
                 VisitRequestV2EditOps.ApplyFormDetail(detail, content, now, actorId);
                 // Full-replace THIS instance's members only; legacy shared rows survive via copy-on-write.
                 newMembers = VisitRequestV2EditOps.StageReplaceMembers(
@@ -261,17 +262,37 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         }
 
         // ── 10. Added campuses: new instance + form detail + independent members, routed to the
-        //        campus Staff Leader, WAITING_REQUEST_APPROVAL. ──
+        //        campus Staff Leader.
+        //
+        //        A campus added by a pending edit starts exactly where one added at submit does (§3.1
+        //        step 4): if its operational contact is the registrant's own verified address it is
+        //        linked here and goes straight to WAITING_REQUEST_APPROVAL; otherwise it has no contact
+        //        yet, starts at WAITING_CONTACT_CONFIRMATION and holds the request behind the gate until
+        //        the invited person confirms. Hard-coding WAITING_REQUEST_APPROVAL — which is what this
+        //        did — produced a campus past the gate with no contact, which the DB refuses outright
+        //        (CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT), so adding a campus during a
+        //        pending edit could not succeed at all. ──
+        var registrantEmailForMatch = VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail);
+        var registrantIsVerified = request.RegistrantUserId is not null && request.EmailVerifiedAt is not null;
+
         var addedStaging = new List<(VisitRequestCampus Instance, CampusVisitEditV2Dto Content, List<VisitGuestMember> Members)>();
         foreach (var a in added)
         {
             var snapshot = addedSnapshots[a.CampusId.Trim().ToUpperInvariant()];
+            var addedSelfMatch = registrantIsVerified
+                && VisitRequestFingerprintBuilder.NormalizeEmail(a.OperationalContact.Email) == registrantEmailForMatch;
             var instance = new VisitRequestCampus
             {
                 CampusId = snapshot.CampusId,
                 PlannedStartAt = a.PlannedStartAt,
                 PlannedEndAt = a.PlannedEndAt,
-                Status = VisitInstanceStatuses.WaitingRequestApproval,
+                Status = addedSelfMatch
+                    ? VisitInstanceStatuses.WaitingRequestApproval
+                    : VisitInstanceStatuses.WaitingContactConfirmation,
+                OperationalContactUserId = addedSelfMatch ? request.RegistrantUserId : null,
+                OperationalContactConfirmedAt = addedSelfMatch ? now : null,
+                OperationalContactConfirmationSource =
+                    addedSelfMatch ? OperationalContactSources.RegistrantSelfMatch : null,
                 CoordinatorUserId = snapshot.ValidStaffLeaderUserId,
                 CoordinatorAssignedBy = actorId,
                 CoordinatorAssignedAt = now,
@@ -317,9 +338,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var scope = VisitRequestV2Canonical.ScopeOf(finalContents.Count);
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(finalContents);
         var registrantEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail);
-        var contactEmailNorm = VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail);
         var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
-            registrantEmailNorm, contactEmailNorm, scope, finalContents);
+            registrantEmailNorm, scope, finalContents);
 
         // Pure V2: each campus's content was already written to its own visit_instance_form_details.
         // The request row keeps identity, scope and lifecycle only — no compatibility projection.
@@ -541,7 +561,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var hasMixed = VisitRequestV2Canonical.ComputeHasMixed(finalContents);
         var fingerprint = VisitRequestV2Canonical.BuildFingerprint(
             VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
-            VisitRequestFingerprintBuilder.NormalizeEmail(request.ContactPersonEmail),
             scope, finalContents);
 
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
@@ -567,6 +586,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members)>();
         foreach (var (content, instance) in pairs)
         {
+            EnsureContactEmailUnchanged(instance.FormDetail!, content.OperationalContact);
             VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
             var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
                 _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
@@ -683,37 +703,49 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             throw new BusinessRuleException(
                 "Thông tin người đăng ký không được phép thay đổi.", "IMMUTABLE_REGISTRANT_INFO");
         }
-        if (!string.Equals(request.ContactPersonEmail, edit.PrimaryContact.Email, StringComparison.OrdinalIgnoreCase))
+        // The contact EMAIL is checked per campus by EnsureContactEmailUnchanged, called from both
+        // apply paths — there is no request-level address left to compare here.
+    }
+
+    /// <summary>
+    /// A campus's operational-contact email is immutable in a form edit.
+    ///
+    /// <para>
+    /// That address is the only thing this campus's confirmation invitation is bound to, and the
+    /// person behind it has either already accepted or is being asked to. Letting a form edit swap it
+    /// would hand the campus to a different address with nobody confirming anything — the exact hole
+    /// the per-campus confirmation exists to close. Changing it is a replace (before the decision) or
+    /// a transfer (after it), both of which re-open the confirmation.
+    /// </para>
+    ///
+    /// <para>
+    /// Name, organization and phone ARE editable here: they are display data, and correcting a typo
+    /// in a contact's name is not a change of who runs the campus.
+    /// </para>
+    /// </summary>
+    private static void EnsureContactEmailUnchanged(
+        VisitInstanceFormDetail detail, ContactPointDto incomingContact)
+    {
+        var current = VisitRequestFingerprintBuilder.NormalizeEmail(detail.OperationalContactEmail);
+        var incoming = VisitRequestFingerprintBuilder.NormalizeEmail(incomingContact.Email);
+        if (!string.Equals(current, incoming, StringComparison.Ordinal))
         {
             throw new BusinessRuleException(
-                "Không được phép thay đổi email của đầu mối liên hệ.", "IMMUTABLE_CONTACT_IDENTITY");
+                "Không được phép thay đổi email đầu mối vận hành của cơ sở. " +
+                "Hãy dùng chức năng đổi/chuyển giao đầu mối để người mới xác nhận.",
+                "IMMUTABLE_CONTACT_IDENTITY");
         }
     }
 
-    /// <summary>Applies the mutable request-level contact fields; returns whether anything changed.</summary>
+    /// <summary>
+    /// Request-level mutable fields. There are none left: the contact snapshot moved onto each campus
+    /// and is written by <c>VisitRequestV2EditOps.ApplyFormDetail</c> along with the rest of that
+    /// campus’s content, so an edit that only changes a contact name shows up as a change to THAT
+    /// campus rather than to the request. Kept as a named no-op so the two call sites keep reading in
+    /// the same shape as the instance loop beside them.
+    /// </summary>
     private static bool ApplyCommonFields(VisitRequest request, VisitRequestEditV2Dto edit, AuditLog audit, DateTime now)
-    {
-        var c = edit.PrimaryContact;
-        var changed = false;
-        void Apply(string field, string? oldValue, string? newValue, Action set)
-        {
-            if (string.Equals(oldValue, newValue, StringComparison.Ordinal)) return;
-            audit.Changes.Add(new AuditLogChange
-            {
-                FieldName = field, OldValueText = oldValue, NewValueText = newValue, CreatedAt = now,
-            });
-            set();
-            changed = true;
-        }
-        Apply("contact_person_full_name", request.ContactPersonFullName, c.FullName, () => request.ContactPersonFullName = c.FullName);
-        Apply("contact_person_organization", request.ContactPersonOrganization, c.Organization, () => request.ContactPersonOrganization = c.Organization);
-        // Store the contact phone as E.164, like create — and normalize the stored side of the diff
-        // too, so re-saving an unchanged national-format number does not log a spurious change.
-        var contactPhone = PhoneNumber.NormalizeOrOriginal(c.Phone);
-        Apply("contact_person_phone", PhoneNumber.NormalizeOrOriginal(request.ContactPersonPhone), contactPhone,
-            () => request.ContactPersonPhone = contactPhone);
-        return changed;
-    }
+        => false;
 
     /// <summary>Rebuilds the CURRENT canonical content of one instance (detail + linked members) for change detection.</summary>
     private static CampusVisitFormDto CurrentContentOf(
@@ -733,10 +765,28 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 .Select(m => new VisitorDto(m.FullName, m.Nationality ?? string.Empty, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty)).ToList(),
             linked.Where(m => m.MemberType == "EXTERNAL_SUPPORT")
                 .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
-            new ContactPointDto(d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail),
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote, d.NoteToFptu,
-            Processing: null);
+            new ContactPointDto(d.OperationalContactFullName, d.OperationalContactOrganization,
+                d.OperationalContactPhone, d.OperationalContactEmail, d.OperationalContactJobTitle),
+            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
+            HostSelection: null);
     }
+
+    /// <summary>
+    /// The two states a campus can be in before any Staff Leader has decided it: still waiting for its own
+    /// operational contact to confirm, and waiting for the campus decision once they have.
+    ///
+    /// <para>
+    /// Both are "the registrant may still edit this". The checks here used to name
+    /// <c>WAITING_REQUEST_APPROVAL</c> alone, which was complete before the confirmation gate existed and
+    /// silently stopped being so afterwards: a request whose contact has not confirmed yet — the ordinary
+    /// state for the first 72 hours of most requests — could not be edited or have a campus removed at
+    /// all, and the refusal claimed the campus had been "processed (approved/rejected/cancelled)" when in
+    /// fact it had not yet reached the point where anyone could process it.
+    /// </para>
+    /// </summary>
+    private static bool IsPreDecision(string status)
+        => status is VisitInstanceStatuses.WaitingContactConfirmation
+                  or VisitInstanceStatuses.WaitingRequestApproval;
 
     /// <summary>
     /// A campus can only be dropped by a pending edit while its instance is still WAITING and carries no
@@ -745,7 +795,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </summary>
     private async Task EnsureInstanceRemovableAsync(VisitRequestCampus gone, CancellationToken ct)
     {
-        if (gone.Status != VisitInstanceStatuses.WaitingRequestApproval)
+        if (!IsPreDecision(gone.Status))
             throw new BusinessRuleException(
                 "Không thể bỏ cơ sở đã được xử lý (duyệt/từ chối/hủy).",
                 VisitRequestErrorCodes.InstanceNotRemovable);

@@ -11,6 +11,7 @@ using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.SaveVisitAgenda;
 
 public sealed class SaveVisitAgendaCommandHandler
@@ -51,8 +52,7 @@ public sealed class SaveVisitAgendaCommandHandler
             throw new ConflictException("Cơ sở này đã bị hủy nên không thể chỉnh sửa lịch trình.");
         if (instance.Status == VisitInstanceStatus.Closed)
             throw new ConflictException("Cơ sở này đã đóng đoàn nên không thể chỉnh sửa lịch trình.");
-        if (instance.Status != VisitInstanceStatus.Assigned && instance.Status != VisitInstanceStatus.BeforeVisit)
-            throw new ConflictException("Chỉ có thể chỉnh sửa lịch trình trong giai đoạn chuẩn bị (trước tiếp khách).");
+        VisitPreparationGate.EnsurePreparationOpen(instance.Status, "chỉnh sửa lịch trình");
 
         // Mirrors the DB CHECK constraints on visit_request_campuses (planned_end_at > planned_start_at,
         // duration >= 30 minutes) so a bad edit fails with a friendly message here instead of a raw

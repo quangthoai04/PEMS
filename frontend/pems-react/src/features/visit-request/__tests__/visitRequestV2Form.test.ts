@@ -43,7 +43,6 @@ const values = (campusVisits: CampusVisitSchema[]): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'Đầu Mối', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits,
@@ -124,13 +123,12 @@ describe('buildV2CreatePayload', () => {
 
     expect(payload.submissionId).toBe('sub-1');
     expect(payload.registrant.email).toBe('reg@example.com');
-    expect(payload.primaryContact.email).toBe('contact@example.com');
     expect(payload.campusVisits).toHaveLength(1);
     const cv = payload.campusVisits[0];
     expect(cv.campusId).toBe('HN'); // normalized code
     expect(cv.plannedStartAt).toBe('2026-08-01T09:00');
     expect(cv.visitTypeOther).toBeNull(); // not OTHER → null
-    expect(cv.processing).toBeNull(); // public: never sends processing
+    expect(cv.hostSelection).toBeNull(); // public: never names a reception host
     expect(payload).not.toHaveProperty('visitScope');
     expect(payload).not.toHaveProperty('hasMixedCampusDetails');
     expect(payload).not.toHaveProperty('sameForAll');
@@ -140,10 +138,10 @@ describe('buildV2CreatePayload', () => {
     const payload = buildV2CreatePayload(
       values([filledCampus('a', 'HN'), filledCampus('b', 'HCM')]),
       'sub-2',
-      [{ campusId: 'HCM', mode: 'SELF_HOST', hostUserId: null }],
+      [{ campusId: 'HCM', mode: 'SELF', proposedHostUserId: null }],
     );
-    expect(payload.campusVisits[0].processing).toBeNull();
-    expect(payload.campusVisits[1].processing).toEqual({ mode: 'SELF_HOST', hostUserId: null });
+    expect(payload.campusVisits[0].hostSelection).toBeNull();
+    expect(payload.campusVisits[1].hostSelection).toEqual({ mode: 'SELF', proposedHostUserId: null, confirmedHostConflict: false });
   });
 
   it('sends partnerId only in EXISTING_PARTNER mode', () => {
@@ -163,7 +161,6 @@ describe('buildV2EditPayload', () => {
 
     expect(payload.expectedRequestRowVersion).toBe(9);
     expect(payload.registrant.email).toBe('reg@example.com');
-    expect(payload.primaryContact.fullName).toBe('Đầu Mối');
     expect(payload.campusVisits[0].visitInstanceId).toBe(11);
     expect(payload.campusVisits[0].expectedRowVersion).toBe(4);
     expect(payload.campusVisits[1].visitInstanceId).toBeNull();
@@ -185,7 +182,8 @@ describe('mapServerFieldPathToFormPath', () => {
     expect(mapServerFieldPathToFormPath('Form.CampusVisits[0].OperationalContact.FullName'))
       .toBe('campusVisits.0.operationalContact.fullName');
     expect(mapServerFieldPathToFormPath('Form.Registrant.Email')).toBe('registerInfo.email');
-    expect(mapServerFieldPathToFormPath('Form.PrimaryContact.Phone')).toBe('contactPoint.phone');
+    // PrimaryContact is not a server path any more: there is no request-level contact to map.
+    expect(mapServerFieldPathToFormPath('Form.PrimaryContact.Phone')).toBeNull();
   });
 
   it('returns null for unmappable paths (they stay on the generic banner)', () => {
@@ -208,7 +206,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     partnerId: 3,
     cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
     registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+8491', email: 'reg@x.vn', nationality: 'VN' },
-    primaryContact: { fullName: 'ĐM', organization: 'ĐH X', phone: '+8492', email: 'c@x.vn', accessStatus: 'ACTIVE', verifiedAt: null },
+    confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
     campusVisits: [
       {
         visitInstanceId: 10, campusId: 1, campusCode: 'HN', campusName: 'FPTU HN',
@@ -217,9 +215,10 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
         delegationName: 'Đoàn HN', visitType: 'MEETING', visitTypeOther: null, purpose: 'MĐ HN', workingContent: 'ND HN',
         visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách HN', organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
-        supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', phone: '+8493', email: 'op@x.vn' },
-        workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null, noteToFptu: 'ghi chú HN',
-        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
+        supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', jobTitle: '', phone: '+8493', email: 'op@x.vn', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
+        currentHost: null, proposedHost: null,
+        hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
+        workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null,        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
         cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
         cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
@@ -231,9 +230,10 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         delegationName: 'Đoàn HCM', visitType: 'WORKSHOP', visitTypeOther: null, purpose: 'MĐ HCM', workingContent: null,
         visitors: [{ guestMemberId: 2, memberType: 'VISITOR', fullName: 'Khách HCM', organization: 'ĐH Y', jobTitle: 'TS', nationality: 'VN', displayOrder: 1 }],
         supportMembers: [{ guestMemberId: 3, memberType: 'SUPPORT', fullName: 'HT HCM', organization: 'ĐH Y', jobTitle: 'TL', nationality: 'VN', displayOrder: 1 }],
-        operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', phone: '+8494', email: '' },
-        workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok', noteToFptu: null,
-        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
+        operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', jobTitle: '', phone: '+8494', email: '', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
+        currentHost: null, proposedHost: null,
+        hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
+        workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok',        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
         cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
         cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
@@ -259,7 +259,9 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     expect(hn.delegationName).toBe('Đoàn HN');
     expect(hn.startDatetime).toBe('2026-08-01T09:00'); // datetime-local (16 chars)
     expect(hn.workingLanguage).toBe('VI');
-    expect(hn.notes).toBe('ghi chú HN');
+    // noteToFptu left the read model with the request-level contact, so a hydrated campus has no
+    // note to start from. The field itself stays on the form.
+    expect(hn.notes).toBe('');
     expect(hcm.campus).toBe('HCM');
     expect(hcm.delegationName).toBe('Đoàn HCM');
     expect(hcm.visitType).toBe('WORKSHOP');
@@ -271,12 +273,11 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     expect(hcm.visitors[0].fullName).toBe('Khách HCM');
   });
 
-  it('maps partner + registrant/contact request-level once', () => {
+  it('maps partner + registrant request-level once', () => {
     const { values } = resolvedFormToV2Schema(resolved());
     expect(values.partnerSelectionMode).toBe('EXISTING_PARTNER');
     expect(values.partnerId).toBe(3);
     expect(values.registerInfo.email).toBe('reg@x.vn');
-    expect(values.contactPoint.email).toBe('c@x.vn');
 
     const noPartner = resolvedFormToV2Schema(resolved({ partnerId: null }));
     expect(noPartner.values.partnerSelectionMode).toBe('NEW_ORGANIZATION');

@@ -5,6 +5,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Queries.ExportScheduleReport;
 
 /// <summary>
@@ -70,10 +71,10 @@ public sealed class ExportScheduleReportPdfQueryHandler : IRequestHandler<Export
             && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
             && _currentUser.PrimaryCampusId == instance.CampusId;
         bool isHo = roleCode == RoleCodes.Ho;
-        bool isVisitorOwner = roleCode == RoleCodes.Visitor && visit.VisitorUserId == userId;
+        bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAcceptedParticipant = acceptedParticipantRole != null;
 
-        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isVisitorOwner || isAcceptedParticipant;
+        bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAcceptedParticipant;
         if (!inScope)
             throw new ForbiddenException("Bạn không có quyền tải báo cáo lịch trình của chuyến thăm này.");
 

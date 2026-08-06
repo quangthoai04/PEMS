@@ -18,7 +18,6 @@ const values = (): VisitRequestV2Schema => ({
     fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
     phone: '+84912345678', email: 'reg@example.com', nationality: 'VN',
   },
-  contactPoint: { fullName: 'ĐM', organization: 'ĐH X', phone: '+84987654321', email: 'contact@example.com' },
   partnerSelectionMode: 'NEW_ORGANIZATION',
   partnerId: null,
   campusVisits: [{
@@ -40,9 +39,8 @@ const response = (over: Partial<V2CreateResponse> = {}): V2CreateResponse => ({
   requestCode: 'VR-MC-HN-HCM-0003',
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
-  primaryContactAccessStatus: 'ACTIVE',
-  contactClaimPending: false,
   instances: [{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }],
+  pendingConfirmations: 0,
   idempotent: false,
   status: 'WAITING_REQUEST_APPROVAL',
   submittedAt: '2026-07-31T09:30:00',
@@ -98,7 +96,8 @@ describe('the success screen (plan §8)', () => {
   });
 
   it('says when the response was an idempotent replay rather than a fresh create', () => {
-    render(<VisitRequestV2SuccessPanel response={response({ idempotent: true })} values={values()} />);
+    render(<VisitRequestV2SuccessPanel response={response({ pendingConfirmations: 0,
+ idempotent: true })} values={values()} />);
     expect(screen.getByText(/already recorded|đã được ghi nhận/i)).toBeInTheDocument();
   });
 

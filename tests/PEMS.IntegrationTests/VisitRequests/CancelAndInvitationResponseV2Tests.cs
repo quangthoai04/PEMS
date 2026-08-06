@@ -10,6 +10,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
+using PEMS.Application.Delegations.Commands.StartVisitPreparation;
 using PEMS.Application.Delegations.Commands.CancelVisitRequest;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
@@ -130,8 +131,11 @@ public sealed class CancelAndInvitationResponseV2Tests
             $"Mục đích {delegationName}", $"Nội dung {delegationName}",
             new List<VisitorDto> { new($"Khách {delegationName}", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
-            "VI", null, "DECLINED", null, null, null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "VI", null, "DECLINED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
@@ -139,14 +143,14 @@ public sealed class CancelAndInvitationResponseV2Tests
         var actor = new FakeUser(Registrant);
         var handler = new CreateVisitRequestV2CommandHandler(
             db, actor, new FixedClock(), new VisitRequestV2CreateService(db),
-            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new RecordingNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "CX" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
         return created.VisitRequestId;
@@ -190,6 +194,18 @@ public sealed class CancelAndInvitationResponseV2Tests
     }
 
     /// <summary>Seeds a pending invitation for <paramref name="userId"/> on one instance.</summary>
+    /// <summary>
+    /// The Host's own step: ASSIGNED → BEFORE_VISIT. Approving assigns the Host and stops there;
+    /// inviting is a setup action, so an invitation can only exist on a campus the Host has opened.
+    /// </summary>
+    private static async Task StartPreparationAsync(ulong requestId, ulong instanceId, ulong hostId, ulong campusId)
+    {
+        using var db = NewContext();
+        var actor = new FakeUser(hostId, RoleCodes.Staff, UserSubRoles.Staff, campusId);
+        await new StartVisitPreparationCommandHandler(db, actor, new FixedClock())
+            .Handle(new StartVisitPreparationCommand(requestId, instanceId), CancellationToken.None);
+    }
+
     private static async Task<ulong> InviteAsync(ulong instanceId, ulong userId, string role)
     {
         using var db = NewContext();
@@ -435,7 +451,9 @@ public sealed class CancelAndInvitationResponseV2Tests
                 Campus("HCM", start.AddDays(1), "Đoàn mời HCM"));
             var instances = await InstanceIdsByCampusAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], IcStaffHn, CampusHn);
             await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, IcStaffHcm);
+            await StartPreparationAsync(requestId, instances[CampusHcm], IcStaffHcm, CampusHcm);
 
             var hnInvite = await InviteAsync(instances[CampusHn], IcStaffHn2, ParticipantRoles.IcSupport);
             var hcmInvite = await InviteAsync(instances[CampusHcm], IcStaffHcm2, ParticipantRoles.IcSupport);
@@ -507,6 +525,7 @@ public sealed class CancelAndInvitationResponseV2Tests
             requestId = await CreateAsync(Campus("HN", Now.AddDays(34), "Đoàn từ chối lời mời"));
             var instances = await InstanceIdsByCampusAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], IcStaffHn, CampusHn);
             var invite = await InviteAsync(instances[CampusHn], IcStaffHn2, ParticipantRoles.IcSupport);
 
             using (var db = NewContext())
@@ -552,7 +571,9 @@ public sealed class CancelAndInvitationResponseV2Tests
                 Campus("HCM", start.AddDays(1), "Đoàn hủy lời mời HCM"));
             var instances = await InstanceIdsByCampusAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, IcStaffHn);
+            await StartPreparationAsync(requestId, instances[CampusHn], IcStaffHn, CampusHn);
             await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, IcStaffHcm);
+            await StartPreparationAsync(requestId, instances[CampusHcm], IcStaffHcm, CampusHcm);
 
             var hnInvite = await InviteAsync(instances[CampusHn], IcStaffHn2, ParticipantRoles.IcSupport);
             var hcmInvite = await InviteAsync(instances[CampusHcm], IcStaffHn2, ParticipantRoles.IcSupport);

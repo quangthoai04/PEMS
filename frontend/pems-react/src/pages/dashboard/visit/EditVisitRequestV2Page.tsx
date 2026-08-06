@@ -250,7 +250,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
 
   const { register, formState: { errors } } = form;
   const regErr = errors.registerInfo;
-  const cpErr = errors.contactPoint;
   const allowAddRemove = mode === 'edit'; // resubmit keeps the campus set fixed
 
   return (
@@ -292,27 +291,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
           </div>
         </FormSection>
 
-        <FormSection id="v2e-contact" title={t('visitRequestV2:sections.contact')} description={t('visitRequestV2:edit.contactImmutable')}>
-          <div className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-2">
-            <FormField label={t('visitRequestV2:person.fullName')} required error={cpErr?.fullName?.message} showValidIcon={false}>
-              <input {...register('contactPoint.fullName')} className={inputCls(!!cpErr?.fullName, false, false)} />
-            </FormField>
-            <FormField label={t('visitRequestV2:person.organization')} error={cpErr?.organization?.message} showValidIcon={false}>
-              <input {...register('contactPoint.organization')} className={inputCls(!!cpErr?.organization, false, false)} />
-            </FormField>
-            <FormField label={t('visitRequestV2:card.phone')} required error={cpErr?.phone?.message} showValidIcon={false}>
-              <PhoneField
-                field={register('contactPoint.phone')}
-                hasError={!!cpErr?.phone}
-                error={cpErr?.phone?.message}
-                testId="v2e-contact-phone"
-              />
-            </FormField>
-            <FormField label={t('visitRequestV2:card.email')} required error={cpErr?.email?.message} showValidIcon={false} subtitle={t('visitRequestV2:edit.emailImmutable')}>
-              <input type="email" readOnly aria-readonly {...register('contactPoint.email')} className={`${inputCls(!!cpErr?.email, false, false)} bg-slate-50`} />
-            </FormField>
-          </div>
-        </FormSection>
 
         <FormSection id="v2e-campuses" title={t('visitRequestV2:sections.campuses')} description={allowAddRemove ? t('visitRequestV2:sections.campusesDesc') : t('visitRequestV2:edit.resubmitCampusFixed')}>
           <div className="space-y-4">

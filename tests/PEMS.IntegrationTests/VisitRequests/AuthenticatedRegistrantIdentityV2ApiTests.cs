@@ -127,7 +127,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var name = NewDelegationName("exact");
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: _visitorEmail, contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -141,7 +141,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: _visitorEmail.ToUpperInvariant(),
             contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -155,7 +155,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: "  " + _visitorEmail + "  ",
             contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -170,7 +170,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var name = NewDelegationName("staff delegated");
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: UniqueForeignEmail(), contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -186,7 +186,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var name = NewDelegationName("visitor delegated");
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: UniqueForeignEmail(), contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await VisitorClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -198,12 +198,12 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
     [Fact]
     public async Task Staff_DifferentRegistrantEmail_WithForgedSelfHost_IsRejected_AndWritesNothing()
     {
-        // Journey E: identity is checked BEFORE the processing matrix, so a forged SELF_HOST attached to a
+        // Journey E: identity is checked BEFORE the host-proposal matrix, so a forged SELF attached to a
         // delegated submission can never create a half-written request with the caller already the host.
         var name = NewDelegationName("forged self-host");
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: UniqueForeignEmail(), contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SELF_HOST", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "SELF", (ulong?)null) });
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 
@@ -228,7 +228,7 @@ public sealed class AuthenticatedRegistrantIdentityV2ApiTests : IAsyncLifetime
         var name = NewDelegationName("alias");
         var payload = V2TestDataBuilder.BuildCreatePayload(
             delegationName: name, registrantEmail: aliased, contactEmail: UniqueContactEmail(),
-            campuses: new[] { (_campus1Code, "SEND_FOR_REVIEW", (ulong?)null) });
+            campuses: new[] { (_campus1Code, "WAIT_FOR_LATER", (ulong?)null) });
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
 

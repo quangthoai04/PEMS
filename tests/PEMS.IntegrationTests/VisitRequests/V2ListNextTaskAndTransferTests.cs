@@ -90,8 +90,11 @@ public sealed class V2ListNextTaskAndTransferTests
         => new(code, start, start.AddMinutes(120), delegationName, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
-            "EN", null, "DECLINED", null, null, null);
+            // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
+            // with no invitation, and the request is past the confirmation gate from the start. This suite
+            // does not test that gate, and a campus behind it can be neither decided nor moved forward.
+            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            "EN", null, "DECLINED", null, null);
 
     /// <summary>A committed 2-campus request, left fully PENDING (every campus WAITING_REQUEST_APPROVAL).</summary>
     private static async Task<ulong> CreatePendingAsync(DateTime start, string tag)
@@ -99,14 +102,14 @@ public sealed class V2ListNextTaskAndTransferTests
         using var db = NewContext();
         var handler = new CreateVisitRequestV2CommandHandler(
             db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
-            new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingClaimService(),
+            new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
-            new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db));
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "NT" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
             null,
             new List<CampusVisitFormDto>
             {
@@ -123,6 +126,9 @@ public sealed class V2ListNextTaskAndTransferTests
         using var db = NewContext();
         var visit = await db.VisitRequests.Include(v => v.CampusInstances)
             .SingleAsync(v => v.VisitRequestId == requestId);
+        // Stops at ASSIGNED, which is exactly what approving produces: the Host is named and has not yet
+        // pressed "start preparation". Several tests here are about that state specifically — the next
+        // task offered to a Host who has not started, and the handover window that stays open across it.
         foreach (var instance in visit.CampusInstances)
         {
             instance.Status = VisitInstanceStatuses.Assigned;
@@ -237,7 +243,7 @@ public sealed class V2ListNextTaskAndTransferTests
     // ── §16.3 the Host is told to prepare ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task Host_of_an_assigned_campus_is_told_to_finish_the_preparation()
+    public async Task Host_of_an_assigned_campus_is_told_to_start_the_preparation()
     {
         RequireDb();
         ulong requestId = 0;
@@ -257,11 +263,12 @@ public sealed class V2ListNextTaskAndTransferTests
             var row = res.Items.Single(i => i.VisitInstanceId == hn.InstanceId);
 
             Assert.True(row.CurrentUserIsHost);
-            // No agenda rows exist, which is precisely what CompleteVisitStage(before) refuses on — so the
-            // task is "finish preparing", not "confirm it is done".
-            Assert.Equal(VisitNextTaskCodes.CompletePreparation, row.NextTask!.Code);
-            Assert.Equal("OPEN_HOST_PROCESS", row.NextTask.ActionCode);
-            Assert.Equal("Đã duyệt và phân công", row.StatusLabel);
+            // The campus is ASSIGNED: the Host holds it and has not opened it. The one thing to do is
+            // START, not "finish preparing" — nothing can be prepared before the Host's own step, and
+            // every setup mutation refuses until then.
+            Assert.Equal(VisitNextTaskCodes.StartPreparation, row.NextTask!.Code);
+            Assert.Equal("START_PREPARATION", row.NextTask.ActionCode);
+            Assert.Equal("Đã phân công người phụ trách", row.StatusLabel);
             Assert.Equal("Bạn phụ trách tiếp đón", row.RelationLabel);
         }
         finally { await CleanupAsync(requestId); }
@@ -396,10 +403,10 @@ public sealed class V2ListNextTaskAndTransferTests
             var hn = facts[0];
             var code = await RequestCodeAsync(requestId);
 
-            // Before: the leader (also the Host here) is asked to prepare.
+            // Before: the leader (also the Host here) is asked to open the campus.
             var before = await ListAsync(
                 new FakeUser(hn.LeaderId, RoleCodes.Staff, UserSubRoles.Leader, hn.CampusId), code);
-            Assert.Equal(VisitNextTaskCodes.CompletePreparation,
+            Assert.Equal(VisitNextTaskCodes.StartPreparation,
                 before.Items.Single(i => i.VisitInstanceId == hn.InstanceId).NextTask!.Code);
 
             using (var db = NewContext())

@@ -31,7 +31,6 @@ public class SetupProgressEmailPermissionTests
         handler.Handle(new GetVisitProcessPermissionsQuery(ScheduleReportTestData.VisitInstanceId), default);
 
     [Theory]
-    [InlineData(VisitInstanceStatus.Assigned)]
     [InlineData(VisitInstanceStatus.BeforeVisit)]
     public async Task The_current_host_may_send_while_the_preparation_tab_is_open(string status)
     {

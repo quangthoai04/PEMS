@@ -452,6 +452,28 @@ export const delegationsApi = {
   },
 
   /**
+   * ASSIGNED → BEFORE_VISIT: the current Host opens the preparation window.
+   *
+   * Call this ONLY from an explicit user action. Never on mount, never on tab change, never as part
+   * of a refetch — a campus must not start preparing because somebody looked at it. The backend
+   * re-checks host scope (403) and status (409), and treats a repeat by the same Host as an
+   * idempotent success (`alreadyStarted: true`) so a double-click is not an error.
+   *
+   * Pass `rowVersion` when the caller has one on screen: a stale value is then refused with 409
+   * instead of quietly winning over a concurrent change.
+   */
+  async startPreparation(
+    visitRequestId: number | string,
+    visitInstanceId: number | string,
+    rowVersion?: number,
+  ): Promise<any> {
+    const { data } = await httpClient.post<any>(
+      API_ENDPOINTS.delegations.startPreparation(visitRequestId, visitInstanceId),
+      rowVersion === undefined ? {} : { rowVersion });
+    return data;
+  },
+
+  /**
    * Operational reception stage transitions (Host only). Each advances the campus instance one
    * stage: complete-before → DURING_VISIT, complete-during → AFTER_VISIT, complete-after → CLOSED.
    * The backend re-validates status (409) and host scope (403); callers should refetch the

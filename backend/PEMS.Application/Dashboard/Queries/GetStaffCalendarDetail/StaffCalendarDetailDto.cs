@@ -45,10 +45,14 @@ public sealed class StaffCalendarDetailDto
     public string? RegistrantPhone { get; set; }
     public string? RegistrantEmail { get; set; }
 
-    // ── Đầu mối liên hệ ──
-    public string? ContactPersonFullName { get; set; }
-    public string? ContactPersonPhone { get; set; }
-    public string? ContactPersonEmail { get; set; }
+    // ── Đầu mối đoàn khách phối hợp tại cơ sở (per-campus, snapshot của ĐÚNG instance này) ──
+    // Không phải người đăng ký và không phải người phụ trách tiếp đón: ba quan hệ độc lập, có thể
+    // là ba người khác nhau. Tên field mang đúng nghĩa đó thay vì "contact person" chung chung.
+    public string? OperationalContactFullName { get; set; }
+    public string? OperationalContactOrganization { get; set; }
+    public string? OperationalContactJobTitle { get; set; }
+    public string? OperationalContactPhone { get; set; }
+    public string? OperationalContactEmail { get; set; }
 
     // ── Nội dung chuyến thăm ──
     public string? Purpose { get; set; }
@@ -61,7 +65,6 @@ public sealed class StaffCalendarDetailDto
     public string? MediaConsentNote { get; set; }
     /// <summary>Free text the guest entered to identify the transportation to FPTU.</summary>
     public string? TransportationNote { get; set; }
-    public string? NoteToFptu { get; set; }
 
     // ── Host hiện tại ──
     public ulong? CurrentHostUserId { get; set; }
