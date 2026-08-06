@@ -184,9 +184,12 @@ export const API_ENDPOINTS = {
     list: '/public/faqs',
     // Every faq_type (all 7, including zero-count ones) with its PUBLISHED question count.
     typeCounts: '/public/faqs/type-counts',
+    // One PUBLISHED FAQ in one language, for the /faq?faqId= deep link — a search hit must open its
+    // own accordion even when the FAQ sits on another pagination page. 404 when hidden or untranslated.
+    detail: (faqId: string | number) => `/public/faqs/${faqId}`,
   },
-  // Site-wide keyword search across published news, approved+public partners, published faqs,
-  // and active campuses — powers the Header's SearchPopup.
+  // Site-wide keyword search across published news, approved+public partners, public gallery items
+  // and published faqs — powers the Header's SearchPopup.
   publicSearch: {
     search: '/public/search',
   },

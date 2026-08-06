@@ -38,7 +38,8 @@
     "retry": "Try again",
     "noResultTitle": "No matching questions found",
     "noResultMsg": "Try a different keyword or contact Intl. Relations Dept.",
-    "clearFilter": "Clear filter"
+    "clearFilter": "Clear filter",
+    "deepLinkMissing": "The question you are looking for is no longer publicly available."
   },
   "cta": {
     "title": "Still need help?",

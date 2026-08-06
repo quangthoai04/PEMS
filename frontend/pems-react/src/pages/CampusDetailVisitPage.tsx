@@ -1109,6 +1109,9 @@ export function CampusDetailVisitPage() {
   // The list (gallery item ids) + position the modal was opened from → drives its prev/next footer.
   const [detailItems, setDetailItems] = useState<number[]>([]);
   const [detailPos, setDetailPos] = useState(0);
+  // Set only for an item opened from the URL, so its campus/location ownership is verified once the
+  // detail response arrives. Cleared after that check; items opened by clicking never need it.
+  const [deepLinkItemId, setDeepLinkItemId] = useState<number | null>(null);
   const [selectedGalleryItemId, setSelectedGalleryItemId] = useState<number | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
@@ -1494,28 +1497,37 @@ export function CampusDetailVisitPage() {
       setShowcaseData(null); // drop the previous location's items so nothing stale flashes while loading
       setActiveMediaIndex(0);
       setActiveDelegationIndex(0);
+      // Publish the location and drop any item from the previous one: an itemId only ever means
+      // something inside the location it belongs to.
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("locationId", String(locationId));
+          next.delete("itemId");
+          return next;
+        },
+        { replace: true },
+      );
     },
-    [areas, flatLocations],
+    [areas, flatLocations, setSearchParams],
   );
-
-  // Deep-link / reload: ?locationId opens that location's Location Showcase.
-  useEffect(() => {
-    if (isNavLoading || !hasContent || deepLinkHandled.current) return;
-    const locParam = Number(searchParams.get("locationId"));
-    const loc = locParam ? findLocation(locParam) : null;
-    if (locParam && loc) {
-      deepLinkHandled.current = true;
-      setIsSidebarOpen(true);
-      openLocationShowcase(locParam);
-    }
-  }, [isNavLoading, hasContent, searchParams, findLocation, openLocationShowcase]);
 
   const closeLocationShowcase = useCallback(() => {
     setLocationShowcaseId(null);
     setShowcaseData(null);
     setActiveMediaIndex(0);
     setActiveDelegationIndex(0);
-  }, []);
+    // Leaving the location leaves the item with it (§21.3).
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("locationId");
+        next.delete("itemId");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   // Prev/next location within the SAME area (loops), background + lists reload via the fetch effect.
   const stepLocationShowcase = useCallback(
@@ -1551,10 +1563,20 @@ export function CampusDetailVisitPage() {
   );
 
   // Open the detail modal for a clicked MEDIA / "Đoàn khách" gallery item (fetch its full media set).
+  // Mirrors the id into ?itemId so the open modal is a shareable/reloadable URL (§21.3) — locationId
+  // is left alone, since the item lives inside that location.
   const openItemDetail = useCallback((galleryItemId: number) => {
     setDetailItemId(galleryItemId);
     setDetailData(null);
     setItemDetailNotFound(false);
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("itemId", String(galleryItemId));
+        return next;
+      },
+      { replace: true },
+    );
     const reqId = ++itemDetailRequestId.current;
     setIsItemDetailLoading(true);
     publicVisitFptuApi
@@ -1571,13 +1593,22 @@ export function CampusDetailVisitPage() {
       .finally(() => {
         if (reqId === itemDetailRequestId.current) setIsItemDetailLoading(false);
       });
-  }, []);
+  }, [setSearchParams]);
 
   const closeItemDetail = useCallback(() => {
     setDetailItemId(null);
     setDetailData(null);
     setItemDetailNotFound(false);
-  }, []);
+    // Drop itemId, keep locationId: closing the item returns to the location, not out of it (§21.3).
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("itemId");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   // Open the modal from a specific list (MEDIA or delegation) at a position → enables its prev/next footer.
   const openItemDetailAt = useCallback(
@@ -1600,6 +1631,47 @@ export function CampusDetailVisitPage() {
     },
     [detailItems, openItemDetail],
   );
+
+  /**
+   * Deep link / reload: ?locationId opens that Location Showcase, and ?itemId then opens that item's
+   * detail modal on top of it — the URL the search popup produces for a gallery hit.
+   *
+   * The location id is validated against this campus's navigation before anything opens, so editing
+   * the query string by hand cannot pull up a location from another campus; the item is checked the
+   * same way once its detail arrives (next effect), because only the response says which location it
+   * belongs to. Runs once per load — afterwards the UI owns the URL and re-running would fight the user.
+   */
+  useEffect(() => {
+    if (isNavLoading || !hasContent || deepLinkHandled.current) return;
+    const locParam = Number(searchParams.get("locationId"));
+    const loc = locParam ? findLocation(locParam) : null;
+    if (locParam && loc) {
+      deepLinkHandled.current = true;
+      setIsSidebarOpen(true);
+      openLocationShowcase(locParam);
+
+      const itemParam = Number(searchParams.get("itemId"));
+      if (itemParam) {
+        setDeepLinkItemId(itemParam);
+        openItemDetail(itemParam);
+      }
+    }
+  }, [isNavLoading, hasContent, searchParams, findLocation, openLocationShowcase, openItemDetail]);
+
+  /**
+   * An item reached by URL must actually belong to the location in that URL. A mismatch closes the
+   * modal and leaves the (valid) location open, rather than showing content from somewhere else.
+   * An item that is no longer public fails its fetch instead and is handled by the modal's own
+   * not-found state, which is why this only inspects a detail that did arrive.
+   */
+  useEffect(() => {
+    if (deepLinkItemId == null || detailData == null) return;
+    if (detailData.galleryItem.galleryItemId !== deepLinkItemId) return;
+    setDeepLinkItemId(null);
+    if (locationShowcaseId != null && detailData.location.locationId !== locationShowcaseId) {
+      closeItemDetail();
+    }
+  }, [deepLinkItemId, detailData, locationShowcaseId, closeItemDetail]);
 
   // Fetch MEDIA + delegation items whenever the shown location changes (stale-response guarded, AC-RELOAD-01).
   useEffect(() => {
