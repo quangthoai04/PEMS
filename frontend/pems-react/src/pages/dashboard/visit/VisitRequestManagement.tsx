@@ -2168,7 +2168,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                       <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
                       <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
-                      {!isHO && row.visitScope !== 'MULTI_CAMPUS' && rowTab(row) !== 'attending' && (
+                      {/* A row that IS one campus always names its own reception host and campus.
+                          Suppressing that for every MULTI_CAMPUS request also took it away from the
+                          campus actors whose row it is — a Staff Leader's row is a single instance
+                          even when the request spans three campuses. Only the request-level SUMMARY
+                          row (no instance of its own) has no single host or campus to name. */}
+                      {!isHO && (row.visitInstanceId != null || row.visitScope !== 'MULTI_CAMPUS') && rowTab(row) !== 'attending' && (
                         <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
                           <span className="text-slate-400">{tt('visitRequestV2:list.row.hostLabel')}</span> {row.host || (row.campusStatus === 'WAITING_REQUEST_APPROVAL' ? tt('visitRequestV2:list.row.notAssignedYet') : '-')}
                           <span className="mx-1 text-slate-300">|</span>
@@ -2261,7 +2266,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                         })()}
                       </span>
                     </div>
-                    {!isHO && row.visitScope !== 'MULTI_CAMPUS' && rowTab(row) !== 'attending' && (
+                    {/* Same rule as the desktop row: an instance-level row names its own host. */}
+                    {!isHO && (row.visitInstanceId != null || row.visitScope !== 'MULTI_CAMPUS') && rowTab(row) !== 'attending' && (
                       <>
                         <div className="flex items-center gap-2 mt-0.5"><Users className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">{tt('visitRequestV2:list.row.hostLabel')}</span> {row.host || (row.requestStatus === 'APPROVED' && isVisitor ? tt('visitRequestV2:list.row.assigning') : tt('visitRequestV2:list.row.notAssignedYet'))}</span></div>
                         <div className="flex items-center gap-2 mt-0.5"><MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" /><span className="truncate"><span className="text-slate-400">{tt('visitRequestV2:list.row.campusLabel')}</span> {row.campus || '-'}</span></div>

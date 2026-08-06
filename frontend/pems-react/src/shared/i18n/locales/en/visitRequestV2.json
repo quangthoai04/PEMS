@@ -70,7 +70,7 @@
     "operationalContact": "Working contact at this campus",
     "operationalContactHint": "Coordination only at this campus — never a login account",
     "quickFillRegistrant": "Use registrant",
-    "quickFillPrimaryContact": "Use the registrant details",
+    "quickFillPrimaryContact": "Use the guest-side contact",
     "quickFillCopiedRegistrant": "Copied the registrant's details.",
     "quickFillCopiedContact": "Copied the registrant details.",
     "quickFillIndependent": "These details are now edited independently — later changes to the source do not flow back here.",

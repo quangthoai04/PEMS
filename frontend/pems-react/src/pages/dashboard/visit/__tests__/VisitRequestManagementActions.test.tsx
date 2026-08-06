@@ -213,6 +213,22 @@ describe('terminology: the reader sees "người phụ trách tiếp đón", the
     expect(desktop().queryByText(/gán host/i)).not.toBeInTheDocument();
   });
 
+  it('still names the reception host on a campus row of a MULTI_CAMPUS request', async () => {
+    // Merge regression: the incoming list rewrite hid the host/campus line whenever the REQUEST was
+    // multi-campus. That also hid it from the campus actors whose row it is — a Staff Leader's row is
+    // a single instance even when the request spans three campuses. Only the request-level SUMMARY
+    // row (visitInstanceId === null) has no single host to name.
+    renderList([instanceRow({ visitScope: 'MULTI_CAMPUS' })]);
+    expect(await waitFor(() => desktop().getByText(/Người phụ trách tiếp đón:/))).toBeInTheDocument();
+    expect(desktop().getByText(/IC Staff Hà Nội/)).toBeInTheDocument();
+  });
+
+  it('omits the host line on the request-level summary row, which has no single host', async () => {
+    renderList([summaryRow()]);
+    await waitFor(() => desktop().getByTestId('next-task-4001'));
+    expect(desktop().queryByText(/Người phụ trách tiếp đón:/)).not.toBeInTheDocument();
+  });
+
   it('keeps the technical action CODE unchanged so the backend contract still matches', async () => {
     const { VISIT_ALLOWED_ACTIONS } = await import('../../../../features/delegations/types/delegations.types');
     expect(VISIT_ALLOWED_ACTIONS.TRANSFER_HOST).toBe('TRANSFER_HOST');

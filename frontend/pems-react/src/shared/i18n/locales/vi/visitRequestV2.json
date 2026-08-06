@@ -70,7 +70,7 @@
     "operationalContact": "Đầu mối phối hợp tại cơ sở",
     "operationalContactHint": "Chỉ dùng để phối hợp tại cơ sở này — không phải tài khoản đăng nhập",
     "quickFillRegistrant": "Dùng người đăng ký",
-    "quickFillPrimaryContact": "Dùng thông tin người đăng ký",
+    "quickFillPrimaryContact": "Dùng đầu mối đoàn khách",
     "quickFillCopiedRegistrant": "Đã sao chép thông tin người đăng ký.",
     "quickFillCopiedContact": "Đã sao chép thông tin người đăng ký.",
     "quickFillIndependent": "Sau khi sao chép, thông tin này chỉnh sửa độc lập — sửa nguồn về sau không cập nhật lại đây.",
