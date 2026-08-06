@@ -144,17 +144,33 @@ jobs:
           dups=$(q "SELECT COUNT(*) FROM (SELECT template_code FROM $DB.email_templates GROUP BY template_code HAVING COUNT(*)>1) d")
           echo "tables=$tables triggers=$triggers fks=$fks templates=$templates duplicate_codes=$dups"
 
-          # 81/32/250, measured by a fresh import of the canonical script into a disposable database on
-          # MySQL 8.0.46 — the same numbers DisposableDatabaseManager.ExpectedBaseTableCount and the
-          # script's own merged_runtime_table_count assertion now require.
+          # 81/33/252, measured by a fresh import of the canonical script into a disposable database on
+          # MySQL 8.0.46 — the same numbers DisposableDatabaseManager.ExpectedBaseTableCount and
+          # ExpectedTriggerCount, and the script's own merged_runtime_table_count assertion, now require.
           #
-          # Down from 83/255 for two reasons at once. Three tables and five foreign keys went with the
-          # email draft schema (email_drafts, email_draft_recipients, email_draft_attachments): the
-          # composer holds a message in the browser until it is sent, so nothing half-written is stored.
+          # The table count came down from 83 for two reasons at once. Three tables and five foreign keys
+          # went with the email draft schema (email_drafts, email_draft_recipients, email_draft_attachments):
+          # the composer holds a message in the browser until it is sent, so nothing half-written is stored.
           # The other table is an off-by-one this line inherited — it asserted 83 while a fresh import
           # produced 84, so it had been passing only because CI never reached a state where it mattered.
-          # Both counts are now measured rather than reasoned about.
-          [ "$tables" -eq 81 ] && [ "$triggers" -eq 32 ] && [ "$fks" -eq 250 ] && [ "$dups" -eq 0 ]
+          #
+          # Triggers then moved 32 → 33 and foreign keys 250 → 252 with the per-campus operational-contact
+          # cutover, which on both counts is a replacement rather than an addition. Three request-level
+          # guards (trg_visit_requests_primary_contact_guard_bi/_bu, trg_users_protect_active_primary_contact_bu)
+          # gave way to four per-campus ones (trg_visit_campuses_op_contact_guard_bi/_bu,
+          # trg_visit_requests_contact_gate_guard_bu, trg_users_protect_operational_contact_bu): net +1.
+          # Two foreign keys went — visit_requests.fk_visit_requests_visitor, the request-level contact
+          # itself, and visit_request_identity_changes.fk_identity_change_request, superseded by a composite
+          # key — while four arrived on visit_request_campuses and visit_request_identity_changes
+          # (fk_visit_instances_operational_contact, fk_visit_instances_proposed_host,
+          # fk_visit_instances_proposed_host_by, fk_identity_change_instance): net +2.
+          #
+          # These literals stayed at 32/250 through that cutover while ExpectedTriggerCount was bumped to
+          # 33, so the two copies of this contract silently disagreed. Nothing here caught it: the push
+          # triggers above never name Cảnh-Iter1, so the job had never run against the branch that changed
+          # the schema. Every number is measured, not reasoned about — a fresh import of Dev's script still
+          # produces exactly 250/32, which is what these literals were describing.
+          [ "$tables" -eq 81 ] && [ "$triggers" -eq 33 ] && [ "$fks" -eq 252 ] && [ "$dups" -eq 0 ]
 
   integration:
     name: integration tests
