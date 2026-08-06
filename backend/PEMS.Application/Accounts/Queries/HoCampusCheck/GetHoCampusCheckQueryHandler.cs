@@ -7,9 +7,9 @@ using PEMS.Domain.Constants;
 namespace PEMS.Application.Accounts.Queries.HoCampusCheck;
 
 /// <summary>
-/// UC-96 — HO campus pre-check. HO-only; campus is whatever HO picked in the modal. Delegates the
-/// case-matrix evaluation to <see cref="HoCampusAvailability"/> so the hint can never disagree
-/// with the write-side check in CreateAccount.
+/// UC-96 — HO campus pre-check. HO or ADMIN only; campus is whatever the caller picked in the
+/// modal. Delegates the case-matrix evaluation to <see cref="HoCampusAvailability"/> so the hint
+/// can never disagree with the write-side check in CreateAccount.
 /// </summary>
 public sealed class GetHoCampusCheckQueryHandler
     : IRequestHandler<GetHoCampusCheckQuery, HoCampusCheckDto>
@@ -25,9 +25,10 @@ public sealed class GetHoCampusCheckQueryHandler
 
     public async Task<HoCampusCheckDto> Handle(GetHoCampusCheckQuery request, CancellationToken cancellationToken)
     {
-        // Only HO creates HO accounts, so only HO needs this pre-check (spec §11.1).
-        if (_currentUser.RoleCode != RoleCodes.Ho)
-            throw new ForbiddenException("Chỉ Head Office mới được kiểm tra khả năng tạo tài khoản HO.");
+        // HO creates HO accounts for its own campus; ADMIN may do the same for any campus
+        // (Admin create-account flow). Nobody else needs this pre-check (spec §11.1).
+        if (_currentUser.RoleCode != RoleCodes.Ho && _currentUser.RoleCode != RoleCodes.Admin)
+            throw new ForbiddenException("Chỉ Head Office hoặc Admin mới được kiểm tra khả năng tạo tài khoản HO.");
 
         if (request.CampusId == 0)
             throw new ValidationException("Vui lòng chọn cơ sở.");

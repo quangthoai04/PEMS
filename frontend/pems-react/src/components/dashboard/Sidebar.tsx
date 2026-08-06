@@ -273,7 +273,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
               {!collapsed && (
                 <>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[17px] font-bold text-[#004c91] truncate tracking-tight">
+                    <p className="text-[17px] font-bold text-[#004c91] break-words leading-snug tracking-tight">
                       {displayName}
                     </p>
                     {/* Visitor is an external guest, not tied to any campus — showing "Campus

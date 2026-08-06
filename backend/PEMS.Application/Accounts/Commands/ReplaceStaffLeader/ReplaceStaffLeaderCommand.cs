@@ -3,7 +3,7 @@ using MediatR;
 namespace PEMS.Application.Accounts.Commands.ReplaceStaffLeader;
 
 /// <summary>
-/// Replace the Staff Leader (Trưởng phòng IC) of a campus (HO only). Two modes:
+/// Replace the Staff Leader (Trưởng phòng IC) of a campus (HO or ADMIN only). Two modes:
 /// EXISTING_USER promotes an existing IC Staff; CREATE_NEW_USER creates a fresh Staff Leader.
 /// The old leader is always demoted to STAFF/STAFF (status preserved). See REPLACE_STAFF_LEADER spec.
 /// </summary>

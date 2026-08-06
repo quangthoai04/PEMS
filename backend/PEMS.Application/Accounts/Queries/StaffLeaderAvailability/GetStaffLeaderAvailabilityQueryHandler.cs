@@ -9,9 +9,9 @@ using AvailabilityResolver = PEMS.Application.Accounts.Common.StaffLeaderAvailab
 namespace PEMS.Application.Accounts.Queries.StaffLeaderAvailability;
 
 /// <summary>
-/// UC-96 — Staff Leader availability pre-check. HO-only; campus is whatever HO picked in the
-/// modal. Delegates the case-matrix evaluation to <see cref="StaffLeaderAvailability"/> so the
-/// hint can never disagree with the write-side check in CreateAccount.
+/// UC-96 — Staff Leader availability pre-check. HO or ADMIN only; campus is whatever the caller
+/// picked in the modal. Delegates the case-matrix evaluation to <see cref="StaffLeaderAvailability"/>
+/// so the hint can never disagree with the write-side check in CreateAccount.
 /// </summary>
 public sealed class GetStaffLeaderAvailabilityQueryHandler
     : IRequestHandler<GetStaffLeaderAvailabilityQuery, StaffLeaderAvailabilityDto>
@@ -28,9 +28,10 @@ public sealed class GetStaffLeaderAvailabilityQueryHandler
     public async Task<StaffLeaderAvailabilityDto> Handle(
         GetStaffLeaderAvailabilityQuery request, CancellationToken cancellationToken)
     {
-        // Only HO creates Staff Leaders, so only HO needs this pre-check (BR-SL-01/22).
-        if (_currentUser.RoleCode != RoleCodes.Ho)
-            throw new ForbiddenException("Chỉ Head Office mới được kiểm tra khả năng tạo Trưởng phòng IC.");
+        // HO creates Staff Leaders for its own campus; ADMIN may do the same for any campus
+        // (Admin create-account flow). Nobody else needs this pre-check (BR-SL-01/22).
+        if (_currentUser.RoleCode != RoleCodes.Ho && _currentUser.RoleCode != RoleCodes.Admin)
+            throw new ForbiddenException("Chỉ Head Office hoặc Admin mới được kiểm tra khả năng tạo Trưởng phòng IC.");
 
         if (request.CampusId == 0)
             throw new ValidationException("Vui lòng chọn cơ sở.");

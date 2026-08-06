@@ -155,6 +155,71 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                 _db, request.RoleCode, subRole, request.PrimaryCampusId, departmentId,
                 privileged, actorCampus, cancellationToken);
         }
+        else if (_currentUser.RoleCode == RoleCodes.Admin)
+        {
+            // ── Admin scope: ADMIN / HO / STAFF / STUDENT / VISITOR, for any campus. STAFF and HO
+            //    reuse the exact same safe case-matrix HO's own flow uses (single Trưởng phòng IC /
+            //    single HO per campus). DEPARTMENT is intentionally out of scope here — that shape
+            //    is created by a Staff Leader for their own campus. ──
+            if (targetRole == RoleCodes.Department)
+            {
+                throw new ForbiddenException("Admin không tạo tài khoản Trưởng phòng ban qua chức năng này.");
+            }
+            else if (targetRole == RoleCodes.Staff)
+            {
+                if (request.PrimaryCampusId is null)
+                    throw new ValidationException("Vui lòng chọn cơ sở.");
+
+                var requestedSubRole = (request.SubRole ?? string.Empty).Trim().ToUpperInvariant();
+                if (requestedSubRole == UserSubRoles.Leader)
+                {
+                    var availability = await StaffLeaderAvailability.ResolveAsync(
+                        _db, request.PrimaryCampusId.Value, cancellationToken);
+                    var resolvedIcDeptId = StaffLeaderAvailability.EnsureCanCreate(availability);
+
+                    subRole = UserSubRoles.Leader;
+                    departmentId = resolvedIcDeptId;
+                    assignsCampusIcHead = true;
+                    icCampusId = request.PrimaryCampusId.Value;
+                    icDepartmentId = resolvedIcDeptId;
+                }
+                else if (requestedSubRole == UserSubRoles.Staff)
+                {
+                    subRole = UserSubRoles.Staff;
+                    departmentId = await AccountProvisioningRules.FindActiveIcDepartmentAsync(
+                        _db, request.PrimaryCampusId.Value, cancellationToken);
+                }
+                else
+                {
+                    throw new ValidationException(
+                        "Vui lòng chọn chức vụ (Trưởng phòng IC hoặc Nhân viên IC) cho vai trò STAFF.");
+                }
+            }
+            else if (targetRole == RoleCodes.Ho)
+            {
+                if (request.PrimaryCampusId is null)
+                    throw new ValidationException("Vui lòng chọn cơ sở.");
+
+                var hoAvailability = await HoCampusAvailability.ResolveAsync(
+                    _db, request.PrimaryCampusId.Value, cancellationToken);
+                HoCampusAvailability.EnsureCanCreate(hoAvailability);
+
+                subRole = null;
+                departmentId = null;
+                enforcesUniqueHoPerCampus = true;
+                hoCampusId = request.PrimaryCampusId.Value;
+            }
+            else
+            {
+                // ADMIN / STUDENT / VISITOR — plain shape, no sub-role or department.
+                subRole = null;
+                departmentId = null;
+            }
+
+            shape = await AccountProvisioningRules.ResolveAsync(
+                _db, request.RoleCode, subRole, request.PrimaryCampusId, departmentId,
+                privileged, actorCampus, cancellationToken);
+        }
         else if (isStaffLeaderCaller)
         {
             // ── UC-96-SL Staff Leader scope: campus is forced to the leader's own campus,

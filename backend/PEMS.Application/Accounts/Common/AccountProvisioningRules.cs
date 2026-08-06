@@ -26,6 +26,24 @@ internal static class AccountProvisioningRules
         => roleCode == RoleCodes.Admin || roleCode == RoleCodes.Ho;
 
     /// <summary>
+    /// Finds the single ACTIVE IC department of <paramref name="campusId"/> — used when ADMIN
+    /// creates/edits a "Nhân viên IC" (STAFF/STAFF) account for a chosen campus, a shape that does
+    /// not touch the campus/department Head slot and so does not need the full
+    /// <see cref="StaffLeaderAvailability"/> case matrix (that one is for the LEADER seat only).
+    /// </summary>
+    public static async Task<ulong> FindActiveIcDepartmentAsync(
+        IApplicationDbContext db, ulong campusId, CancellationToken cancellationToken)
+    {
+        var ic = await db.Departments.AsNoTracking()
+            .Where(d => d.CampusId == campusId && d.DepartmentType == "IC" && d.Status == EntityStatuses.Active)
+            .Select(d => new { d.DepartmentId })
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ValidationException(
+                "Cơ sở được chọn chưa có Phòng Hợp tác Quốc tế đang hoạt động.");
+        return ic.DepartmentId;
+    }
+
+    /// <summary>
     /// Resolves the account shape for a Staff Leader create/update-role action (UC-96-SL /
     /// UC-100-SL). Staff Leaders may only target STAFF/STAFF (auto IC department),
     /// DEPARTMENT/LEADER (optional GENERAL department in their campus) or STUDENT, and the

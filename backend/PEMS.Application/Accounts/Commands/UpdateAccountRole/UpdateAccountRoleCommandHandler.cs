@@ -168,12 +168,17 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             }
         }
 
+        var isAdminCaller = _currentUser.RoleCode == RoleCodes.Admin;
+
         var shape = isStaffLeaderCaller
             ? await AccountProvisioningRules.ResolveStaffLeaderTargetAsync(
                 _db, request.NewRoleCode, request.DepartmentId, actorCampus!.Value, cancellationToken)
-            : await AccountProvisioningRules.ResolveAsync(
-                _db, request.NewRoleCode, request.SubRole, request.PrimaryCampusId, request.DepartmentId,
-                privileged, actorCampus, cancellationToken);
+            : isAdminCaller
+                ? await ResolveAdminRoleEditAsync(
+                    request.NewRoleCode, request.PrimaryCampusId, request.DepartmentId, actorCampus, cancellationToken)
+                : await AccountProvisioningRules.ResolveAsync(
+                    _db, request.NewRoleCode, request.SubRole, request.PrimaryCampusId, request.DepartmentId,
+                    privileged, actorCampus, cancellationToken);
 
         // ── student_code (MSSV), Staff Leader flow only ──────────────────────────────────────
         // STUDENT requires a trimmed, ≤30-char code; any other role clears the code so a promoted
@@ -667,6 +672,44 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         // Flushed inside the transaction so the dependency check below reads the NEW head. Still
         // atomic: a later refusal rolls the whole transaction back, handover included.
         await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Admin's role-edit shape for ADMIN / HO / STAFF / STUDENT / VISITOR. STAFF always resolves to
+    /// the "Nhân viên IC" shape (STAFF/STAFF, auto-assigned to the chosen campus' IC department) —
+    /// never LEADER: that shape repoints <c>campuses.ic_head_user_id</c> /
+    /// <c>departments.head_user_id</c>, which this generic role-edit does not manage, so appointing
+    /// a NEW campus IC head goes through the dedicated "Thay thế Staff Leader" flow instead, which
+    /// keeps those references consistent. DEPARTMENT is intentionally out of scope here — that
+    /// shape is managed by a Staff Leader for their own campus.
+    /// </summary>
+    private async Task<AccountProvisioningRules.ResolvedShape> ResolveAdminRoleEditAsync(
+        string roleCode, ulong? primaryCampusId, ulong? departmentId, ulong? actorCampusId,
+        CancellationToken cancellationToken)
+    {
+        var targetRole = (roleCode ?? string.Empty).Trim().ToUpperInvariant();
+        string? subRole = null;
+
+        if (targetRole == RoleCodes.Department)
+        {
+            throw new ForbiddenException("Admin không quản lý vai trò Trưởng phòng ban qua chức năng này.");
+        }
+        else if (targetRole == RoleCodes.Staff)
+        {
+            if (primaryCampusId is null)
+                throw new ValidationException("Vui lòng chọn cơ sở.");
+            subRole = UserSubRoles.Staff;
+            departmentId = await AccountProvisioningRules.FindActiveIcDepartmentAsync(
+                _db, primaryCampusId.Value, cancellationToken);
+        }
+        else
+        {
+            departmentId = null;
+        }
+
+        return await AccountProvisioningRules.ResolveAsync(
+            _db, roleCode, subRole, primaryCampusId, departmentId,
+            actorIsPrivileged: true, actorCampusId, cancellationToken);
     }
 
     /// <summary>
