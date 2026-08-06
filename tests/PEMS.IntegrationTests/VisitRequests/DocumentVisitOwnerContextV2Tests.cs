@@ -96,7 +96,7 @@ public sealed class DocumentVisitOwnerContextV2Tests
             $"Mục đích {delegationName}", $"Nội dung {delegationName}",
             new List<VisitorDto> { new($"Khách {delegationName}", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "VI", null, "DECLINED", null, null);
 
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)

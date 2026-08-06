@@ -147,7 +147,7 @@ public sealed class AuthenticatedDelegatedOtpV2Tests
             "HN", start, start.AddHours(2), delegationName, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null, processing);
         return new VisitRequestFormDataV2(
             submissionId,

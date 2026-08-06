@@ -171,7 +171,6 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
         {summary?.transportationNote?.trim() && <Field label="Nhận diện phương tiện di chuyển" value={summary.transportationNote} multiline />}
         {summary?.mediaConsentNote?.trim() && <Field label="Ghi chú hình ảnh" value={summary.mediaConsentNote} multiline />}
-        {summary?.noteToFptu?.trim() && <Field label="Ghi chú của khách" value={summary.noteToFptu} multiline />}
       </div>
 
       <div>

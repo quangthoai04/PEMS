@@ -116,7 +116,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
                         Purpose = "Integration Purpose",
                         WorkingContent = "Integration Content",
                         OperationalContactFullName = "Integration Contact",
-                        OperationalContactOrganization = "FPT",
+                        OperationalContactOrganization = "FPT", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
                         OperationalContactPhone = "0999999999",
                         OperationalContactEmail = "contact.integration@example.com",
                         WorkingLanguage = "VI",

@@ -44,11 +44,14 @@ public class VisitInstanceFormDetail
     [Column("operational_contact_organization")]
     public string? OperationalContactOrganization { get; set; }
 
-    // Optional, like organization: the detail screens show the contact's job title, so it needs a
-    // home. Blank normalizes to NULL (the CHECK rejects an empty string).
+    // REQUIRED, like name and phone. It reads as decoration next to them, but it is what tells a
+    // campus whether the person on the other end of the phone can settle a schedule or has to go
+    // and ask — and every detail screen already reserves a row for it.
     [Column("operational_contact_job_title")]
-    public string? OperationalContactJobTitle { get; set; }
+    public string OperationalContactJobTitle { get; set; } = null!;
 
+    // Optional, like organization. The column is nullable and its CHECK accepts NULL but rejects an
+    // empty string, so blank is normalized to NULL on the way in.
     [Column("operational_contact_phone")]
     public string? OperationalContactPhone { get; set; }
 

@@ -1,15 +1,16 @@
 namespace PEMS.Application.Common.DTOs;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Nested input records for the UC-17 visit-request form.
+// Nested input records for the visit-request form.
 // SQL v8.3 has no pending_visit_requests table: the draft is held by the frontend
 // (sessionStorage) and resubmitted at the verify step; only the OTP lives server-side.
+//
+// The request-level V1 shapes that used to live here (VisitRequestFormData, VisitSlotDto,
+// IVisitRequestFormCommand and its validator) are gone. Every submit is per-campus now:
+// see VisitFormV2Dtos.cs. They were unreachable from any endpoint and referenced only by
+// tests of themselves, and their `ContactPerson` was the single request-level contact whose
+// removal this cutover is about.
 // ──────────────────────────────────────────────────────────────────────────────
-
-public record VisitSlotDto(
-    string CampusId,   // campus CODE (e.g. "HN", "HCM"); resolved to campus_id on create
-    DateTime StartDatetime,
-    DateTime EndDatetime);
 
 // Guest member fields mirror visit_guest_members in pems_full(3).sql — there is no
 // passport/identity column, so none is collected or sent.
@@ -30,48 +31,18 @@ public record SupportTeamMemberDto(
 /// runtime is decided by <c>visit_request_campuses.operational_contact_user_id</c>, never by a name,
 /// phone or email stored here.
 /// </summary>
+/// <remarks>
+/// Job title used to be an optional trailing parameter, which meant the create form never asked for
+/// one and every detail screen rendered a labelled blank — the field was declared, stored, read and
+/// displayed, and only never filled. It is now required and in reading order, so a call site that
+/// omits it does not compile.
+///
+/// The phone stays OPTIONAL: a contact who gives an email and no number is still a usable contact,
+/// and the column behind it is nullable to match.
+/// </remarks>
 public record ContactPointDto(
     string FullName,
     string Organization,
+    string JobTitle,
     string? Phone,
-    string Email,
-    // Optional; trailing so existing call sites keep compiling and older payloads stay valid.
-    string? JobTitle = null);
-
-/// <summary>
-/// The complete visit-request form payload. Carried by the frontend between the
-/// initiate (OTP) and verify (create) steps — never persisted before verification.
-/// </summary>
-public record VisitRequestFormData(
-    // ── Registration info ────────────────────────────────
-    string RegistrantFullName,
-    string RegistrantNationality,
-    string RegistrantOrganization,
-    string RegistrantPosition,
-    string? RegistrantPhone,
-    string RegistrantEmail,
-
-    // ── Visit info ───────────────────────────────────────
-    string DelegationName,
-    string VisitScope,               // SINGLE_CAMPUS | MULTI_CAMPUS
-    string VisitType,
-    string? VisitTypeOther,
-    IList<VisitSlotDto> CampusVisits,
-    string Purpose,
-    string? WorkingContent,
-
-    // ── Attendees ────────────────────────────────────────
-    IList<VisitorDto> Visitors,
-    IList<SupportTeamMemberDto> SupportMembers,
-
-    // ── Contact ──────────────────────────────────────────
-    ContactPointDto ContactPerson,
-    bool IsContactSelf,              // true → contact email = register email
-
-    // ── Additional ───────────────────────────────────────
-    string WorkingLanguage,          // EN | VI
-    string? TransportationNote,      // free text identifying the transport to FPTU
-    string MediaConsentStatus,
-    string? MediaConsentNote,
-    ulong? PartnerId,
-    string? Notes);
+    string Email);

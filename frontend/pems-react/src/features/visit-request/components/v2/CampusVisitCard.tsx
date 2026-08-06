@@ -30,7 +30,7 @@ const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', '
  * is filled and different people a week later, so keeping them in sync would silently undo an
  * edit somebody made deliberately (plan §12).
  */
-const QUICK_FILL_FIELDS = ['fullName', 'organization', 'phone', 'email'] as const;
+const QUICK_FILL_FIELDS = ['fullName', 'organization', 'jobTitle', 'phone', 'email'] as const;
 /** The only block left to copy a campus contact from: there is no request-level contact any more. */
 type QuickFillSource = 'registrant';
 
@@ -209,9 +209,13 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   const quickFillValues = (_kind: QuickFillSource = 'registrant') => {
     const src = watchedRegistrant;
+    // A real copy into this campus's own five fields, not a display fallback: the snapshot must be
+    // complete on its own, because the registrant can change theirs afterwards and the contact this
+    // campus agreed with must not change with it.
     return {
       fullName: src?.fullName ?? '',
       organization: src?.organization ?? '',
+      jobTitle: src?.jobTitle ?? '',
       phone: src?.phone ?? '',
       email: src?.email ?? '',
     };
@@ -977,7 +981,28 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
+            {/* Required like the rest: it is what tells the campus whether the person on the other
+                end of the phone can settle a schedule or has to go and ask. Every detail screen has
+                always had a row for it, and the row was blank on every request because this field
+                did not exist. */}
+            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.jobTitle')} required error={fieldError('operationalContact.jobTitle')} showValidIcon={false}>
+              <Controller
+                name={`${base}.operationalContact.jobTitle`}
+                control={control}
+                render={({ field }) => (
+                  <AutoGrowTextField
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    hasError={!!fieldError('operationalContact.jobTitle')}
+                    maxLength={MAX.contactName}
+                    ariaLabel={t('visitRequestV2:person.jobTitle')}
+                    testId="campus-opcontact-jobtitle"
+                  />
+                )}
+              />
+            </FormField>
+            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <PhoneField
                 field={register(`${base}.operationalContact.phone`)}
                 hasError={!!fieldError('operationalContact.phone')}
@@ -985,7 +1010,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 testId={`campus-opcontact-phone-${index}`}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
               <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />
             </FormField>
           </div>

@@ -337,6 +337,22 @@ export interface ResolvedVisitForm {
     /** True while the whole request is held at the gate — no Staff Leader may act on it. */
     gateOpen: boolean;
   };
+  /**
+   * The verdict on the WHOLE request, counted by the backend over every campus. **null** whenever
+   * the caller does not see every campus — and that null is load-bearing: the campusVisits below are
+   * permission-scoped, so no request-level claim may be derived from them.
+   */
+  requestOutcome: {
+    /** ALL_CANCELLED | ALL_REJECTED | ALL_WAITING | MIXED | IN_PROGRESS | NO_CAMPUS */
+    code: string;
+    total: number;
+    accepted: number;
+    inProgress: number;
+    waiting: number;
+    rejected: number;
+    cancelled: number;
+    closed: number;
+  } | null;
   campusVisits: ResolvedCampusVisit[];
   viewer: {
     relation: string; // HOST | STAFF_LEADER | HO | VISITOR_OWNER | REGISTRANT | IC_SUPPORT | DEPT_SUPPORT | STUDENT | NONE

@@ -48,8 +48,9 @@ public sealed class RegistrantInputV2Validator : AbstractValidator<RegistrantInp
 
 /// <summary>
 /// The per-campus operational contact — the person a campus actually calls on the day, and the only
-/// contact a request has. All four fields are required, shared by create-v2, pending-edit-v2,
-/// resubmit-v2 and the amendment path, so the write paths cannot drift.
+/// contact a request has. Name, organization, job title and email are required and the phone is
+/// optional; shared by create-v2, pending-edit-v2, resubmit-v2 and the amendment path, so the write
+/// paths cannot drift.
 ///
 /// <para>
 /// The email matters most: it is the ONLY address the confirmation invitation for this campus is ever
@@ -68,6 +69,11 @@ public sealed class OperationalContactV2Validator : AbstractValidator<ContactPoi
         RuleFor(x => x.Organization)
             .NotEmpty().WithMessage("Đơn vị công tác đầu mối phối hợp không được để trống.")
             .MaximumLength(200).WithMessage(TooLong("Đơn vị công tác đầu mối phối hợp", 200));
+        RuleFor(x => x.JobTitle)
+            .NotEmpty().WithMessage("Chức vụ đầu mối phối hợp không được để trống.")
+            .MaximumLength(150).WithMessage(TooLong("Chức vụ đầu mối phối hợp", 150));
+        // Phone is OPTIONAL — blank submits. MustBeAPhoneNumber passes blank on purpose, and blank
+        // normalizes to NULL on the way to a nullable column.
         RuleFor(x => x.Phone)
             .MaximumLength(50).WithMessage(TooLong("Số điện thoại đầu mối phối hợp", 50))
             .MustBeAPhoneNumber("Số điện thoại đầu mối phối hợp không hợp lệ.");

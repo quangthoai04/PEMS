@@ -26,7 +26,7 @@ public class InitiateVisitRequestV2CommandValidatorTests
             code, start, start.Add(duration), "Đoàn ABC", visitType, visitTypeOther, "Trao đổi hợp tác", "Nội dung",
             new List<VisitorDto> { new("Nguyễn Khách", "Việt Nam", "Giảng viên", "ĐH ABC") },
             support ?? new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Đầu Mối", "ĐH ABC", "+84912345678", "op@example.com"),
+            new ContactPointDto("Đầu Mối", "ĐH ABC", "Trưởng phòng Hợp tác", "+84912345678", "op@example.com"),
             "VI", null, "DECLINED", null, null);
 
     private static InitiateVisitRequestV2Command Command(params CampusVisitFormDto[] campuses)

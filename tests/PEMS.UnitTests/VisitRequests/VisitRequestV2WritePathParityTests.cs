@@ -21,8 +21,9 @@ public class VisitRequestV2WritePathParityTests
 {
     private static readonly DateTime Start = DateTime.Now.AddDays(20);
 
-    private static ContactPointDto Op(string org = "ĐH X", string phone = "+84911111111", string email = "op@example.com")
-        => new("ĐM CS", org, phone, email);
+    private static ContactPointDto Op(string org = "ĐH X", string phone = "+84911111111", string email = "op@example.com",
+        string jobTitle = "Trưởng phòng Hợp tác")
+        => new("ĐM CS", org, jobTitle, phone, email);
 
     private static CampusVisitEditV2Dto EditCampus(
         string? workingContent = "Nội dung làm việc",

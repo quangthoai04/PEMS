@@ -606,6 +606,7 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
                 WorkingContent = "Nội dung",
                 OperationalContactFullName = "Đầu mối cơ sở",
                 OperationalContactOrganization = "Đối tác",
+                OperationalContactJobTitle = "Trưởng phòng Hợp tác",
                 OperationalContactPhone = "0900000002",
                 OperationalContactEmail = "reminder-op@partner.example.com",
                 WorkingLanguage = "EN",

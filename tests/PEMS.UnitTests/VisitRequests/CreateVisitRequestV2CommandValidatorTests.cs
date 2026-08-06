@@ -30,7 +30,7 @@ public class CreateVisitRequestV2CommandValidatorTests
             "Đoàn A", "MEETING", null, "Trao đổi", workingContent,
             new List<VisitorDto> { Guest() },
             support ?? new List<SupportTeamMemberDto>(),
-            opContact ?? new ContactPointDto("ĐM CS", "ĐH X", "+84911111111", "op@example.com"),
+            opContact ?? new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", "+84911111111", "op@example.com"),
             "EN", null, "DECLINED", null, null);
 
     private static CreateVisitRequestV2Command Command(CampusVisitFormDto? campus = null,
@@ -81,7 +81,7 @@ public class CreateVisitRequestV2CommandValidatorTests
     [InlineData("ĐH X", "   ")]
     public void All_four_operational_contact_fields_are_required(string org, string email)
         => Assert.NotEmpty(ErrorsFor(Command(Campus(
-            opContact: new ContactPointDto("ĐM CS", org, "+84911111111", email)))));
+            opContact: new ContactPointDto("ĐM CS", org, "Trưởng phòng Hợp tác", "+84911111111", email)))));
 
     // ── Phone: the biggest bypass — the API only checked length ──────────────
 
@@ -90,30 +90,42 @@ public class CreateVisitRequestV2CommandValidatorTests
     [InlineData("+84912345678")]
     public void A_real_phone_number_is_accepted(string phone)
         => Assert.True(_validator.Validate(Command(Campus(
-            opContact: new ContactPointDto("ĐM CS", "ĐH X", phone, "op@example.com")))).IsValid);
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", phone, "op@example.com")))).IsValid);
 
     [Theory]
     [InlineData("123")]
     [InlineData("090abc123")]
     public void A_value_that_is_not_a_phone_number_is_rejected(string phone)
         => Assert.Contains(ErrorsFor(Command(Campus(
-            opContact: new ContactPointDto("ĐM CS", "ĐH X", phone, "op@example.com")))),
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", phone, "op@example.com")))),
             p => p.Contains("Phone"));
 
     /// <summary>
-    /// Blank is NOT a malformed number — the phone is optional on every contact of a visit request, so
-    /// leaving it out has to submit. <c>MustBeAPhoneNumber</c> passes blank on purpose and none of the
-    /// three contact validators chains <c>.NotEmpty()</c> before it; a required field would say so
-    /// there, in the validator, rather than here. Kept as its own case because the previous version of
-    /// this test asserted the opposite and contradicted the shipped rule in both directions.
+    /// Blank is NOT a malformed number — the phone is optional on the operational contact, so leaving
+    /// it out has to submit. <c>MustBeAPhoneNumber</c> passes blank on purpose and nothing chains
+    /// <c>.NotEmpty()</c> before it; the column is nullable and its CHECK accepts NULL, so a blank
+    /// normalizes away rather than becoming a constraint violation.
     /// </summary>
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void A_blank_phone_is_accepted_because_the_field_is_optional(string phone)
         => Assert.DoesNotContain(ErrorsFor(Command(Campus(
-            opContact: new ContactPointDto("ĐM CS", "ĐH X", phone, "op@example.com")))),
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", phone, "op@example.com")))),
             p => p.Contains("Phone"));
+
+    /// <summary>
+    /// The job title, unlike the phone, IS required — it is what tells a campus whether the person
+    /// answering can decide anything. It was optional and the create form never asked, so the column
+    /// was NULL on every request and every detail screen rendered a labelled blank.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_blank_operational_contact_job_title_is_refused(string jobTitle)
+        => Assert.Contains(ErrorsFor(Command(Campus(
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", jobTitle, "+84911111111", "op@example.com")))),
+            p => p.Contains("JobTitle"));
 
     [Fact]
     public void A_fifty_character_string_is_no_longer_a_valid_phone_number()
@@ -121,7 +133,7 @@ public class CreateVisitRequestV2CommandValidatorTests
         // The old rule was MaximumLength(50), so this passed.
         var junk = new string('9', 50);
         Assert.Contains(ErrorsFor(Command(Campus(
-            opContact: new ContactPointDto("ĐM CS", "ĐH X", junk, "op@example.com")))),
+            opContact: new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", junk, "op@example.com")))),
             p => p.Contains("Phone"));
     }
 

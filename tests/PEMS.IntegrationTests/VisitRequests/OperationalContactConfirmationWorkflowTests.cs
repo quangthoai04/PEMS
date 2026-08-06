@@ -195,7 +195,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             "Đoàn xác nhận", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Đầu mối " + campusCode, "OrgB", "+8492", contactEmail),
+            new ContactPointDto("Đầu mối " + campusCode, "OrgB", "Trưởng phòng Hợp tác", "+8492", contactEmail),
             "EN", null, "DECLINED", null, null);
     }
 
@@ -708,7 +708,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             {
                 await ReplaceHandler(db, Registrant, new FakeEmail()).Handle(
                     new ReplaceOperationalContactCommand(
-                        requestId, instanceId, "Đầu mối mới", "OrgC", "+8493", newEmail),
+                        requestId, instanceId, "Đầu mối mới", "OrgC", "Điều phối viên", "+8493", newEmail),
                     CancellationToken.None);
             }
 
@@ -759,7 +759,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             {
                 await ReplaceHandler(db, Registrant, new FakeEmail()).Handle(
                     new ReplaceOperationalContactCommand(
-                        requestId, firstInstance, "Đầu mối mới", "OrgC", "+8493", "brand-new@example.com"),
+                        requestId, firstInstance, "Đầu mối mới", "OrgC", "Điều phối viên", "+8493", "brand-new@example.com"),
                     CancellationToken.None);
             }
 
@@ -794,7 +794,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             {
                 await ReplaceHandler(db, Registrant, new FakeEmail()).Handle(
                     new ReplaceOperationalContactCommand(
-                        requestId, instanceId, "Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
+                        requestId, instanceId, "Registrant", "Org", "Trưởng phòng Hợp tác", "+8491", V2SeedActor.Email(Registrant)),
                     CancellationToken.None);
             }
 

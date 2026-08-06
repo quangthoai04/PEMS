@@ -98,7 +98,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
             new List<SupportTeamMemberDto>(),
             // The registrant's own address, so the campus self-matches at submit and the request opens the
             // confirmation gate immediately — this suite is about the resubmit gates, not that one.
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
     }
 

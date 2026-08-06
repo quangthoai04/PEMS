@@ -381,6 +381,7 @@ public static class DelegationsTestData
             WorkingContent = "Nội dung kiểm thử",
             OperationalContactFullName = "Đầu mối cơ sở",
             OperationalContactOrganization = "Đối tác",
+            OperationalContactJobTitle = "Trưởng phòng Hợp tác",
             OperationalContactPhone = "0900000002",
             OperationalContactEmail = "op@test.local",
             WorkingLanguage = "EN",

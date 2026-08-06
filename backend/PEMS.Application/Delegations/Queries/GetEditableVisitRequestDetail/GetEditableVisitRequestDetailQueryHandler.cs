@@ -192,6 +192,7 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
                     // value its owner never entered.
                     OperationalContactFullName = ContactOf(i, content)?.FullName ?? "",
                     OperationalContactOrganization = ContactOf(i, content)?.Organization ?? "",
+                    OperationalContactJobTitle = ContactOf(i, content)?.JobTitle ?? "",
                     OperationalContactPhone = ContactOf(i, content)?.Phone ?? "",
                     OperationalContactEmail = ContactOf(i, content)?.Email ?? "",
                     ContactConfirmed = i.OperationalContactUserId is not null,

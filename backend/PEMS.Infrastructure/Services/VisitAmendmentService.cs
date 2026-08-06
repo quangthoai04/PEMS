@@ -205,7 +205,8 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 case VisitFieldClassifier.WorkingLanguage: detail.WorkingLanguage = FromJson<string>(change.NewValueJson); break;
                 case VisitFieldClassifier.OperationalContactFullName: detail.OperationalContactFullName = FromJson<string>(change.NewValueJson); break;
                 case VisitFieldClassifier.OperationalContactOrganization: detail.OperationalContactOrganization = FromJson<string>(change.NewValueJson); break;
-                case VisitFieldClassifier.OperationalContactPhone: detail.OperationalContactPhone = FromJson<string>(change.NewValueJson); break;
+                case VisitFieldClassifier.OperationalContactJobTitle: detail.OperationalContactJobTitle = FromJson<string>(change.NewValueJson)!; break;
+                case VisitFieldClassifier.OperationalContactPhone: detail.OperationalContactPhone = FromJson<string>(change.NewValueJson)!; break;
                 case VisitFieldClassifier.OperationalContactEmail: detail.OperationalContactEmail = FromJson<string>(change.NewValueJson); break;
                 case VisitFieldClassifier.PlannedStartAt: instance.PlannedStartAt = FromJson<DateTime>(change.NewValueJson); break;
                 case VisitFieldClassifier.PlannedEndAt: instance.PlannedEndAt = FromJson<DateTime>(change.NewValueJson); break;
@@ -444,6 +445,7 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.WorkingLanguage, detail.WorkingLanguage, p.WorkingLanguage?.Trim());
         Add(VisitFieldClassifier.OperationalContactFullName, detail.OperationalContactFullName, Clean(p.OperationalContact?.FullName));
         Add(VisitFieldClassifier.OperationalContactOrganization, detail.OperationalContactOrganization, Clean(p.OperationalContact?.Organization));
+        Add(VisitFieldClassifier.OperationalContactJobTitle, detail.OperationalContactJobTitle, Clean(p.OperationalContact?.JobTitle));
         Add(VisitFieldClassifier.OperationalContactPhone,
             PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
             p.OperationalContact?.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null);

@@ -31,7 +31,7 @@ const filledCampus = (key: string, code: string): CampusVisitSchema =>
     workingContent: `Nội dung ${code}`,
     visitors: [{ fullName: `Khách ${code}`, jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
     supportTeam: [{ fullName: `HT ${code}`, jobTitle: '', organization: '', nationality: '' }],
-    operationalContact: { fullName: `ĐM ${code}`, organization: 'ĐH X', phone: '+84912345678', email: '' },
+    operationalContact: { fullName: `ĐM ${code}`, organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: '' },
     workingLanguage: 'EN',
     mediaConsentStatus: 'AGREED',
     mediaConsentNote: 'note',
@@ -207,6 +207,10 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
     registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+8491', email: 'reg@x.vn', nationality: 'VN' },
     confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+
+    // Full-request scope in this fixture, so the backend sends the request-wide verdict.
+
+    requestOutcome: { code: 'ALL_WAITING', total: 1, accepted: 0, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
     campusVisits: [
       {
         visitInstanceId: 10, campusId: 1, campusCode: 'HN', campusName: 'FPTU HN',
@@ -215,7 +219,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
         delegationName: 'Đoàn HN', visitType: 'MEETING', visitTypeOther: null, purpose: 'MĐ HN', workingContent: 'ND HN',
         visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách HN', organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
-        supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', jobTitle: '', phone: '+8493', email: 'op@x.vn', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
+        supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+8493', email: 'op@x.vn', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
         currentHost: null, proposedHost: null,
         hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
         workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null,        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
@@ -230,7 +234,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         delegationName: 'Đoàn HCM', visitType: 'WORKSHOP', visitTypeOther: null, purpose: 'MĐ HCM', workingContent: null,
         visitors: [{ guestMemberId: 2, memberType: 'VISITOR', fullName: 'Khách HCM', organization: 'ĐH Y', jobTitle: 'TS', nationality: 'VN', displayOrder: 1 }],
         supportMembers: [{ guestMemberId: 3, memberType: 'SUPPORT', fullName: 'HT HCM', organization: 'ĐH Y', jobTitle: 'TL', nationality: 'VN', displayOrder: 1 }],
-        operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', jobTitle: '', phone: '+8494', email: '', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
+        operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', jobTitle: 'Trưởng phòng Hợp tác', phone: '+8494', email: '', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
         currentHost: null, proposedHost: null,
         hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
         workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok',        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,

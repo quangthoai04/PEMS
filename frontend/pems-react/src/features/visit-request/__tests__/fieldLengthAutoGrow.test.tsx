@@ -43,7 +43,7 @@ const validValues = () => ({
     visitors: [person()],
     supportTeam: [],
     operationalContact: {
-      fullName: 'ĐM', organization: 'Org', phone: '+84912345678', email: 'c@example.com',
+      fullName: 'ĐM', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: 'c@example.com',
     },
     workingLanguage: 'VI' as const,
     transportationNote: '',

@@ -46,7 +46,7 @@ public sealed class CreateVisitRequestV2ServiceTests
     private static readonly DateTime Now = DateTime.Now;
 
     // ── Builders ──
-    private static ContactPointDto Contact(string email) => new("Contact Person", "Org", "+8490000", email);
+    private static ContactPointDto Contact(string email) => new("Contact Person", "Org", "Trưởng phòng Hợp tác", "+8490000", email);
     private static RegistrantInputV2 Reg(string email) => new("Registrant", "VN", "Org", "Job", "+8491111", email);
     private static VisitorDto V(string name) => new(name, "VN", "Guest", "GuestOrg");
     private static SupportTeamMemberDto S(string name) => new(name, "Support", "SupOrg", "VN");
@@ -64,7 +64,7 @@ public sealed class CreateVisitRequestV2ServiceTests
             // Fixed by default so "same content" tests are genuinely identical — only fields a test
             // explicitly varies (delegation, contact) drive has_mixed. The ADDRESS is what self-match
             // is decided against, so a test that cares passes its own.
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", contactEmail),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", contactEmail),
             "EN", null, "DECLINED", null, null);
     }
 
@@ -101,7 +101,7 @@ public sealed class CreateVisitRequestV2ServiceTests
         CampusVisitFormDto CampusWith(string organization, string email) => new(
             "HN", start, start.AddMinutes(30), "Đoàn Optional Op", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { V("Guest A") }, new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", organization, "+8410", email),
+            new ContactPointDto("Op Contact", organization, "Trưởng phòng Hợp tác", "+8410", email),
             "EN", null, "DECLINED", null, null);
 
         var blankEmail = await Assert.ThrowsAsync<BusinessRuleException>(() =>

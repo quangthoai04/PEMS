@@ -65,7 +65,7 @@ function campusBlock(code: string, dayOffset: number, delegation: string, tag: s
     workingContent: `Noi dung lam viec ${tag}`,
     visitors: [{ fullName: `Guest ${tag}`, nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
     externalSupportMembers: [],
-    operationalContact: { fullName: 'Op Contact', organization: 'Org', phone: '+84900000001', email: 'op@example.com' },
+    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op@example.com' },
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',
@@ -87,7 +87,6 @@ async function createMixedRequest(request: APIRequestContext, tag: string, hnNam
     data: {
       submissionId: `WF${tag}`,
       registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'visitor@example.com' },
-      primaryContact: { fullName: 'Owner E2E', organization: 'Org', phone: '+84900000000', email: 'visitor@example.com' },
       partnerId: null,
       campusVisits: [campusBlock('HN', 0, hnName, tag), campusBlock('HCM', 1, hcmName, tag)],
     },
@@ -190,7 +189,6 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
       data: {
         expectedRequestRowVersion: before.rowVersion,
         registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'visitor@example.com' },
-        primaryContact: { fullName: 'Owner E2E', organization: 'Org', phone: '+84900000000', email: 'visitor@example.com' },
         partnerId: null,
         campusVisits: [
           editBlock('HN', 0, newHn, hnBefore.visitInstanceId, hnBefore.rowVersion),

@@ -35,6 +35,7 @@ public static class V2TestDataBuilder
                 {
                     ["fullName"] = "IT Operational Contact",
                     ["organization"] = "Test Organization",
+                    ["jobTitle"] = "Trưởng phòng Hợp tác",
                     ["phone"] = "0987654321",
                     ["email"] = contactEmail,
                 },
@@ -102,6 +103,7 @@ public static class V2TestDataBuilder
                 {
                     ["fullName"] = "Edit Operational Contact",
                     ["organization"] = "FPT",
+                    ["jobTitle"] = "Trưởng phòng Hợp tác",
                     ["phone"] = "0999999999",
                     ["email"] = contactEmail,
                 },

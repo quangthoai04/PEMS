@@ -85,7 +85,8 @@ public sealed record ReplaceOperationalContactCommand(
     ulong VisitInstanceId,
     string FullName,
     string? Organization,
-    string Phone,
+    string JobTitle,
+    string? Phone,
     string Email) : IRequest<OperationalContactManageResponse>;
 
 /// <summary>
@@ -98,7 +99,8 @@ public sealed record InitiateOperationalContactTransferCommand(
     ulong VisitInstanceId,
     string FullName,
     string? Organization,
-    string Phone,
+    string JobTitle,
+    string? Phone,
     string Email,
     string? Reason) : IRequest<OperationalContactManageResponse>;
 
@@ -148,8 +150,11 @@ public sealed class ReplaceOperationalContactCommandValidator
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành không được để trống.").MaximumLength(150);
         RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.JobTitle)
+            .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
+        // Phone is OPTIONAL — an email is what an invitation binds to.
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại đầu mối vận hành không được để trống.").MaximumLength(50);
+            .MaximumLength(50);
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành không đúng định dạng.")
@@ -165,8 +170,11 @@ public sealed class InitiateOperationalContactTransferCommandValidator
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành mới không được để trống.").MaximumLength(150);
         RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.JobTitle)
+            .NotEmpty().WithMessage("Chức vụ đầu mối vận hành mới không được để trống.").MaximumLength(150);
+        // Phone is OPTIONAL — an email is what an invitation binds to.
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại đầu mối vận hành mới không được để trống.").MaximumLength(50);
+            .MaximumLength(50);
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành mới không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành mới không đúng định dạng.")

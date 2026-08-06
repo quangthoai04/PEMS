@@ -103,10 +103,11 @@ internal static class VisitRequestV2EditOps
         detail.Purpose = content.Purpose;
         detail.WorkingContent = content.WorkingContent;
         detail.OperationalContactFullName = content.OperationalContact.FullName;
-        // Org + email are optional — blank normalizes to NULL (the DB CHECK rejects an empty string).
+        // Org is optional — blank normalizes to NULL (the DB CHECK rejects an empty string).
         detail.OperationalContactOrganization = Clean(content.OperationalContact.Organization);
+        detail.OperationalContactJobTitle = content.OperationalContact.JobTitle.Trim();
         detail.OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone);
-        detail.OperationalContactEmail = Clean(content.OperationalContact.Email);
+        detail.OperationalContactEmail = Clean(content.OperationalContact.Email)!;
         detail.WorkingLanguage = content.WorkingLanguage;
         detail.TransportationNote = Clean(content.TransportationNote);
         detail.MediaConsentStatus = content.MediaConsentStatus;
@@ -129,8 +130,9 @@ internal static class VisitRequestV2EditOps
             WorkingContent = content.WorkingContent,
             OperationalContactFullName = content.OperationalContact.FullName,
             OperationalContactOrganization = Clean(content.OperationalContact.Organization),
+            OperationalContactJobTitle = content.OperationalContact.JobTitle.Trim(),
             OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone),
-            OperationalContactEmail = Clean(content.OperationalContact.Email),
+            OperationalContactEmail = Clean(content.OperationalContact.Email)!,
             WorkingLanguage = content.WorkingLanguage,
             TransportationNote = Clean(content.TransportationNote),
             MediaConsentStatus = content.MediaConsentStatus,
@@ -147,7 +149,8 @@ internal static class VisitRequestV2EditOps
         => JsonSerializer.Serialize(new
         {
             d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
-            d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail,
+            d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactJobTitle,
+            d.OperationalContactPhone, d.OperationalContactEmail,
             d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
             Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
         }, Json);

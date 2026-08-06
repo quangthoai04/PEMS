@@ -177,6 +177,7 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             Purpose = "Kiểm thử tính nguyên tử của phân công",
             WorkingContent = "Nội dung làm việc",
             OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactJobTitle = "Trưởng phòng Hợp tác",
             OperationalContactPhone = "0900000002",
             OperationalContactEmail = "it-assign-dept-staff-op@pems.test",
             WorkingLanguage = "VI",

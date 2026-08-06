@@ -94,10 +94,10 @@ public sealed class RequestDetailV2Tests
         var (_, items) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
         var dto = await Run(db, items[0]);
 
-        Assert.Equal("Op-A", dto.ContactPersonFullName);
-        Assert.Equal("+8410", dto.ContactPersonPhone);
-        Assert.NotEqual("Primary Contact", dto.ContactPersonFullName);
-        Assert.NotEqual("+8491", dto.ContactPersonPhone);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);
+        Assert.Equal("+8410", dto.OperationalContactPhone);
+        Assert.NotEqual("Primary Contact", dto.OperationalContactFullName);
+        Assert.NotEqual("+8491", dto.OperationalContactPhone);
 
         // Registrant identity is genuinely request-level and must still come through unchanged — the rule
         // is "no fallback", not "ignore the request row".
@@ -117,8 +117,8 @@ public sealed class RequestDetailV2Tests
 
         Assert.Equal("V2-DELEG", dto.DelegationName);
         Assert.NotEqual("GLOBAL-DELEG", dto.DelegationName);
-        Assert.Equal("Op-A", dto.ContactPersonFullName);   // per-campus operational contact
-        Assert.Equal("+8410", dto.ContactPersonPhone);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);   // per-campus operational contact
+        Assert.Equal("+8410", dto.OperationalContactPhone);
         Assert.Equal("Reg", dto.RegistrantFullName);       // registrant unchanged
         await tx.RollbackAsync();
     }
@@ -134,7 +134,7 @@ public sealed class RequestDetailV2Tests
         var dto = await Run(db, items[0]);
 
         Assert.Equal("V2-DELEG", dto.DelegationName);   // shared v2 content, 200 (not 409)
-        Assert.Equal("Op-A", dto.ContactPersonFullName);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);
         await tx.RollbackAsync();
     }
 
@@ -151,7 +151,7 @@ public sealed class RequestDetailV2Tests
         Assert.Equal("DELEG-A", dto.DelegationName);   // 200 with target A (NOT 409-upgrade)
         Assert.Equal("PURPOSE-A", dto.Purpose);
         Assert.Equal("CONTENT-A", dto.WorkingContent);
-        Assert.Equal("Op-A", dto.ContactPersonFullName);
+        Assert.Equal("Op-A", dto.OperationalContactFullName);
         await tx.RollbackAsync();
     }
 
@@ -167,9 +167,9 @@ public sealed class RequestDetailV2Tests
 
         Assert.Equal("DELEG-B", dto.DelegationName);   // 200 with target B
         Assert.Equal("PURPOSE-B", dto.Purpose);
-        Assert.Equal("Op-B", dto.ContactPersonFullName);
+        Assert.Equal("Op-B", dto.OperationalContactFullName);
         Assert.NotEqual("DELEG-A", dto.DelegationName); // no sibling A leak
-        Assert.NotEqual("Op-A", dto.ContactPersonFullName);
+        Assert.NotEqual("Op-A", dto.OperationalContactFullName);
         await tx.RollbackAsync();
     }
 
@@ -258,7 +258,7 @@ public sealed class RequestDetailV2Tests
         VisitType = "MEETING",
         Purpose = perCampus ? $"PURPOSE-{tag}" : "V2-PURPOSE",
         WorkingContent = perCampus ? $"CONTENT-{tag}" : "V2-CONTENT",
-        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}",
+        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag.ToLowerInvariant()}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,

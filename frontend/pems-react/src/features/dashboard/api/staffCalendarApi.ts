@@ -113,7 +113,6 @@ export interface StaffCalendarDetail {
   mediaConsentNote: string | null;
   /** Free text nhận diện phương tiện di chuyển tới FPTU (SQL v10). */
   transportationNote: string | null;
-  noteToFptu: string | null;
   currentHostUserId: number | null;
   currentHostName: string | null;
   currentHostEmail: string | null;

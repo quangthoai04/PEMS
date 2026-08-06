@@ -50,7 +50,7 @@ const validValues = (): VisitRequestV2Schema => ({
     purpose: 'Trao đổi',
     workingContent: 'Nội dung làm việc',
     visitors: [{ fullName: 'Khách 1', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
-    operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', phone: '+84911111111', email: 'dmcs@example.com' },
+    operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84911111111', email: 'dmcs@example.com' },
   }],
 });
 

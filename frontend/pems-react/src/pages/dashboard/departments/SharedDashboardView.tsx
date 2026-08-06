@@ -62,7 +62,7 @@ interface Event {
   checklist: string[];
   purpose?: string;       // Mục đích đón tiếp
   vipLevel?: string;      // Phân cấp VIP
-  contactPerson?: string; // Điều phối viên phụ trách
+  coordinatorName?: string; // Điều phối viên phụ trách (KHÔNG phải đầu mối đoàn khách)
   hotelInfo?: string;     // Khách sạn lưu trú
   bannerText?: string;    // Băng rôn LED
   carBooking?: string;    // Xe đưa đón
@@ -154,7 +154,7 @@ const INITIAL_EVENTS: Event[] = [
     checklist: [],
     purpose: 'Trân trọng kính mời anh/chị tham gia tiếp đón và giao lưu cùng đoàn đối tác từ Nhật Bản.\n\nVui lòng chuẩn bị tài liệu liên quan để trao đổi hợp tác.',
     vipLevel: 'Standard',
-    contactPerson: 'Nguyễn Văn A'
+    coordinatorName: 'Nguyễn Văn A'
   },
   {
     id: 'safuri-car-event',
@@ -170,7 +170,7 @@ const INITIAL_EVENTS: Event[] = [
     checklist: ['Kiểm tra xe bảo dưỡng', 'Cử tài xế túc trực', 'Hoàn tất biên bản bàn giao'],
     purpose: 'Mượn xe điện phục vụ di chuyển đoàn khách Safuri tham quan doanh nghiệp và campus.',
     vipLevel: 'VIP',
-    contactPerson: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
+    coordinatorName: 'Trần Văn Tuyến (Điều hành xe - 0914.555.666)'
   }];
 
 /** Dòng key-value gọn cho khối thông tin — thay cho các "khung" bento to trước đây. */
@@ -643,7 +643,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               guests: item.delegationName || item.title,
               purpose: itemStatus === 'CANCELLED' ? `Đơn yêu cầu / thư mời đã bị hủy do đoàn khách hủy.${item.cancelReason ? ` Lý do: ${item.cancelReason}` : ''}` : item.title || '',
               vipLevel: 'Standard',
-              contactPerson: item.relatedUserName || 'N/A',
+              coordinatorName: item.relatedUserName || 'N/A',
               relatedUserId: item.relatedUserId,
               checklist: []
             };
@@ -2612,14 +2612,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       </div>
 
                       {/* Contact Person Details */}
-                      {activePopoverEvent.contactPerson && (
+                      {activePopoverEvent.coordinatorName && (
                         <div className="flex gap-3 pb-3 border-b border-slate-100">
                           <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
                             <Users className="w-4 h-4" />
                           </div>
                           <div>
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Cán bộ điều phối liên hệ</span>
-                            <p className="font-bold text-emerald-700 mt-0.5">{activePopoverEvent.contactPerson}</p>
+                            <p className="font-bold text-emerald-700 mt-0.5">{activePopoverEvent.coordinatorName}</p>
                           </div>
                         </div>
                       )}

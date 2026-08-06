@@ -355,6 +355,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 {
                     instance.FormDetail!.OperationalContactFullName,
                     instance.FormDetail!.OperationalContactOrganization,
+                    instance.FormDetail!.OperationalContactJobTitle,
                     instance.FormDetail!.OperationalContactPhone,
                     email = contactEmailNorm,
                 }, Json),

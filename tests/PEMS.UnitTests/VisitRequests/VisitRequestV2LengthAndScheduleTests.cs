@@ -30,8 +30,10 @@ public class VisitRequestV2LengthAndScheduleTests
         => new(fullName ?? "Khách 1", nationality ?? "VN", jobTitle ?? "GV", organization ?? "ĐH X");
 
     private static ContactPointDto OpContact(
-        string? fullName = null, string? organization = null, string? phone = null, string? email = null)
-        => new(fullName ?? "ĐM CS", organization ?? "ĐH X", phone ?? "+84911111111", email ?? "op@example.com");
+        string? fullName = null, string? organization = null, string? phone = null, string? email = null,
+        string? jobTitle = null)
+        => new(fullName ?? "ĐM CS", organization ?? "ĐH X", jobTitle ?? "Trưởng phòng Hợp tác",
+            phone ?? "+84911111111", email ?? "op@example.com");
 
     private static CampusVisitFormDto Campus(
         DateTime? start = null,

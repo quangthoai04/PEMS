@@ -56,7 +56,7 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", contactEmail ?? V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", contactEmail ?? V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
     }
 
@@ -228,7 +228,7 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
                 "Đoàn Base", "MEETING", null, "Thăm", "Nội dung",
                 new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
                 new List<SupportTeamMemberDto>(),
-                new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
+                new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
                 "EN", null, "DECLINED", null);
             var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, Campus("HN")), Slot(hcm, Campus("HCM")), addSlot),

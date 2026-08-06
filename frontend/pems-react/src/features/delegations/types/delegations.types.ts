@@ -477,7 +477,8 @@ export interface VisitProcessRequestSummary {
   mediaConsentNote?: string | null;
   /** Free text the guest entered to identify the transportation to FPTU. */
   transportationNote?: string | null;
-  noteToFptu?: string | null;
+  // noteToFptu is gone: no backend DTO has emitted it since the per-campus cutover, so every screen
+  // that rendered it rendered undefined. It survives only in retired migration scripts.
 
   /**
    * "Đầu mối đoàn khách phối hợp tại cơ sở" — this instance's OWN guest-side coordinator. The old
@@ -1216,7 +1217,7 @@ export interface SubmittedVisitRequestFormDetail {
   mediaConsentNote?: string | null;
   /** Free text the guest entered to identify the transportation to FPTU. */
   transportationNote?: string | null;
-  noteToFptu?: string | null;
+  // noteToFptu is gone — see the note on VisitProcessRequestSummary above.
 
   campuses: SubmittedCampusSchedule[];
   /** Per-campus decision counters (campus-independent approval). */

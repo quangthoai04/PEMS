@@ -331,6 +331,7 @@ public static class ScheduleReportTestData
             VisitType = "MEETING",
             Purpose = purpose,
             OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactJobTitle = "Trưởng phòng Hợp tác",
             OperationalContactPhone = "0900000002",
             // NOT NULL since the per-campus cutover, and what the setup-progress mail addresses.
             OperationalContactEmail = "contact@test.local",

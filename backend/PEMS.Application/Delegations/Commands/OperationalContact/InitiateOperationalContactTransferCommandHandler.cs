@@ -129,7 +129,8 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                 {
                     fullName = request.FullName.Trim(),
                     organization = string.IsNullOrWhiteSpace(request.Organization) ? null : request.Organization.Trim(),
-                    phone = request.Phone.Trim(),
+                    jobTitle = request.JobTitle.Trim(),
+                    phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
                     email = newEmail,
                 }, Json),
                 Status = IdentityChangeStatuses.Pending,

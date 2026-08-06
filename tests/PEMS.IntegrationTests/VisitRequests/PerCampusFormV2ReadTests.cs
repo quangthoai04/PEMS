@@ -108,7 +108,7 @@ public sealed class PerCampusFormV2ReadTests
     {
         DelegationName = $"DELEG-{tag}", VisitType = "MEETING", Purpose = $"PURPOSE-{tag}",
         WorkingContent = $"CONTENT-{tag}",
-        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}",
+        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag}@example.com",
         WorkingLanguage = tag == "B" ? "VI" : "EN", MediaConsentStatus = "AGREED",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
@@ -351,6 +351,50 @@ public sealed class PerCampusFormV2ReadTests
         var dtoB = await Resolver(db, StaffLeader(SlCampus2, Campus2)).ResolveAsync(req.VisitRequestId, CancellationToken.None);
         var b = Assert.Single(dtoB.CampusVisits);
         Assert.Equal((long)Campus2, b.CampusId);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The request-wide verdict goes ONLY to a caller who can see the whole request.
+    ///
+    /// This is the shape that produced the contradiction on screen: campus 1 REJECTED, campus 2 still
+    /// WAITING. The Staff Leader of campus 1 receives exactly one campus, and every campus they can
+    /// see is rejected — so anything counting their own payload concludes the request is dead. The
+    /// backend must not hand them a request-level verdict at all, and must give the registrant one
+    /// that counts BOTH campuses.
+    /// </summary>
+    [Fact]
+    public async Task RequestOutcome_is_withheld_from_a_scoped_caller_and_counts_every_campus_for_the_registrant()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1, Campus2 }, mixed: true);
+        var first = instances.Single(i => i.CampusId == Campus1);
+        first.Status = VisitInstanceStatuses.Rejected;
+        first.DecidedBy = SlCampus1;
+        first.DecidedAt = DateTime.Now;
+        first.DecisionActorRole = "STAFF_LEADER";
+        first.DecisionNote = "Trùng lịch sự kiện cấp campus.";
+        instances.Single(i => i.CampusId == Campus2).Status = VisitInstanceStatuses.WaitingRequestApproval;
+        await db.SaveChangesAsync();
+
+        var scoped = await Resolver(db, StaffLeader(SlCampus1, Campus1)).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var onlyCampus = Assert.Single(scoped.CampusVisits);
+        Assert.Equal(VisitInstanceStatuses.Rejected, onlyCampus.InstanceStatus);
+        Assert.False(scoped.Viewer.CanViewAllCampuses);
+        // Everything they can see is rejected — and they are still told nothing about the request.
+        Assert.Null(scoped.RequestOutcome);
+
+        var full = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.True(full.Viewer.CanViewAllCampuses);
+        Assert.NotNull(full.RequestOutcome);
+        var outcome = full.RequestOutcome!;
+        Assert.Equal(2, outcome.Total);
+        Assert.Equal(1, outcome.Rejected);
+        Assert.Equal(1, outcome.Waiting);
+        Assert.Equal("MIXED", outcome.Code);   // NOT ALL_REJECTED
         await tx.RollbackAsync();
     }
 

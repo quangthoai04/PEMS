@@ -149,74 +149,11 @@ public static class Uc17TestData
             .Skip(1)
             .FirstAsync();
 
-    /// <summary>
-    /// Full valid single-campus verify payload (camelCase JSON via anonymous object).
-    /// Datetimes are sent WITHOUT offset (wall-clock) so no timezone conversion happens
-    /// in model binding and two calls with the same strings share one fingerprint.
-    /// </summary>
-    public static Dictionary<string, object?> VerifyPayload(
-        string email,
-        string submissionId,
-        string sessionToken,
-        string otpCode,
-        string campusCode,
-        string delegationName,
-        DateTime start,
-        DateTime end)
-        => new()
-        {
-            ["registrantFullName"] = "IT UC17 Người đăng ký",
-            ["registrantNationality"] = "Việt Nam",
-            ["registrantOrganization"] = "Công ty Kiểm Thử UC17",
-            ["registrantPosition"] = "QA",
-            ["registrantPhone"] = "0912345678",
-            ["registrantEmail"] = email,
-            ["delegationName"] = delegationName,
-            ["visitScope"] = "SINGLE_CAMPUS",
-            ["visitType"] = "CAMPUS_TOUR",
-            ["visitTypeOther"] = null,
-            ["campusVisits"] = new[]
-            {
-                new Dictionary<string, object?>
-                {
-                    ["campusId"] = campusCode,
-                    ["startDatetime"] = start.ToString("yyyy-MM-dd'T'HH:mm:ss"),
-                    ["endDatetime"] = end.ToString("yyyy-MM-dd'T'HH:mm:ss"),
-                }
-            },
-            ["purpose"] = "Tham quan và trao đổi hợp tác (integration test)",
-            ["workingContent"] = null,
-            ["visitors"] = Array.Empty<object>(),
-            ["supportMembers"] = Array.Empty<object>(),
-            ["contactPerson"] = new Dictionary<string, object?>
-            {
-                ["fullName"] = "IT UC17 Người đăng ký",
-                ["organization"] = "Công ty Kiểm Thử UC17",
-                ["phone"] = "0912345678",
-                ["email"] = email,
-            },
-            ["isContactSelf"] = true,
-            ["workingLanguage"] = "VI",
-            ["transportationNote"] = null,
-            ["mediaConsentStatus"] = "DECLINED",
-            ["mediaConsentNote"] = null,
-            ["partnerId"] = null,
-            ["notes"] = null,
-            ["otpCode"] = otpCode,
-            ["submissionId"] = submissionId,
-            ["sessionToken"] = sessionToken,
-        };
+    // The V1 VerifyPayload / InitiatePayload builders lived here. They built the request-level shape
+    // (registrantPosition, contactPerson, isContactSelf, primaryContact) for an endpoint that is gone,
+    // nothing called them, and they were the last place those legacy contract names appeared in a
+    // payload. Every submit is per-campus: see the V2 builders below.
 
-    /// <summary>Initiate payload = verify payload minus otpCode/sessionToken.</summary>
-    public static Dictionary<string, object?> InitiatePayload(
-        string email, string submissionId, string campusCode, string delegationName,
-        DateTime start, DateTime end)
-    {
-        var payload = VerifyPayload(email, submissionId, "unused", "000000", campusCode, delegationName, start, end);
-        payload.Remove("otpCode");
-        payload.Remove("sessionToken");
-        return payload;
-    }
 
     // ── V2 per-campus payload builders ────────────────────────────────────────
 
@@ -244,13 +181,6 @@ public static class Uc17TestData
                 ["phone"] = "0912345678",
                 ["email"] = email,
             },
-            ["primaryContact"] = new Dictionary<string, object?>
-            {
-                ["fullName"] = "IT UC17 Người đăng ký",
-                ["organization"] = "Công ty Kiểm Thử UC17",
-                ["phone"] = "0912345678",
-                ["email"] = email,
-            },
             ["partnerId"] = null,
             ["campusVisits"] = new[]
             {
@@ -270,6 +200,7 @@ public static class Uc17TestData
                     {
                         ["fullName"] = "IT UC17 Người đăng ký",
                         ["organization"] = "Công ty Kiểm Thử UC17",
+                        ["jobTitle"] = "Trưởng phòng Hợp tác",
                         ["phone"] = "0912345678",
                         ["email"] = email,
                     },

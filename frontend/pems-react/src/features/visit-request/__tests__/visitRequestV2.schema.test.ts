@@ -28,7 +28,7 @@ const validCampus = (campus = 'HN', startOffsetMs = 0, durationMs = 3 * 3600 * 1
   visitors: [{ fullName: 'Nguyễn Văn A', jobTitle: 'Giảng viên', organization: 'ĐH ABC', nationality: 'Việt Nam' }],
   // All four operational-contact fields are required — this is the person the campus calls on the day.
   operationalContact: {
-    fullName: 'Trần B', organization: 'ĐH ABC', phone: '+84912345678', email: 'tranb@example.com',
+    fullName: 'Trần B', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: 'tranb@example.com',
   },
 });
 

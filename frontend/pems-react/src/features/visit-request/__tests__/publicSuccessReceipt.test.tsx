@@ -60,7 +60,7 @@ const values = (delegationName = 'Đoàn Nhận Biên Lai'): VisitRequestV2Schem
     purpose: 'Trao đổi hợp tác',
     workingContent: 'Nội dung làm việc',
     visitors: [{ fullName: 'Khách Một', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
-    operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', phone: '+84911111111', email: 'op@example.com' },
+    operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84911111111', email: 'op@example.com' },
   }],
 });
 

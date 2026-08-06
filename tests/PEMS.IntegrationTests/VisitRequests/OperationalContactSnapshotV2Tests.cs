@@ -50,7 +50,7 @@ public sealed class OperationalContactSnapshotV2Tests
             code, start, start.AddMinutes(120), "Đoàn Snapshot", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", operationalOrganization, "+84911111111", "op@example.com"),
+            new ContactPointDto("Op Contact", operationalOrganization, "Trưởng phòng Hợp tác", "+84911111111", "op@example.com"),
             "EN", null, "DECLINED", null, null);
     }
 

@@ -56,7 +56,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, purpose, "Nội dung",
             new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto(contactName, "OpOrg", contactPhone, contactEmail),
+            new ContactPointDto(contactName, "OpOrg", "Trưởng phòng Hợp tác", contactPhone, contactEmail),
             "EN", null, "DECLINED", null, null);
     }
 

@@ -576,7 +576,10 @@
     "cancellationReason": "Reason",
     "latestRejection": "Latest rejection",
     "rejectedBy": "Decided by",
-    "rejectionReason": "Reason"
+    "rejectionReason": "Reason",
+    "scopedRejected": "Campus {{campuses}} rejected this request.",
+    "scopedCancelled": "Campus {{campuses}} cancelled this visit.",
+    "scopeNote": "Counted over the {{count}} campus(es) in your viewing scope; any other campus is not shown here."
   },
   "schedule": {
     "legend": "Visit schedule",

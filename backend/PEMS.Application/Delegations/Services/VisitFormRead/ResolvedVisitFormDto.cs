@@ -40,6 +40,15 @@ public sealed class ResolvedVisitFormDto
     /// </summary>
     public ResolvedConfirmationSummaryDto ConfirmationSummary { get; init; } = new();
 
+    /// <summary>
+    /// The verdict on the WHOLE request. NULL for any caller who does not see every campus, and that
+    /// null is the point: a Staff Leader scoped to one rejected campus was being shown "rejected at
+    /// every campus" because the only collection the page had was their own slice of it, and a slice
+    /// where everything is rejected looks exactly like a request where everything is rejected.
+    /// Counted here, over every campus, so the claim is only ever made by somebody who can see them.
+    /// </summary>
+    public ResolvedRequestOutcomeDto? RequestOutcome { get; init; }
+
     /// <summary>Only the campus instances the caller may view, ordered by planned start.</summary>
     public List<ResolvedCampusVisitDto> CampusVisits { get; init; } = new();
 
@@ -76,6 +85,28 @@ public sealed class ResolvedConfirmationSummaryDto
     public int Expired { get; init; }
     /// <summary>True while the whole request is held at the gate (no Staff Leader may see it).</summary>
     public bool GateOpen { get; init; }
+}
+
+/// <summary>
+/// Request-wide outcome, counted over EVERY campus of the request. Sent only to a caller with
+/// full-request scope (registrant, request owner, HO); everyone else gets null and must describe
+/// what they can see instead.
+/// </summary>
+public sealed class ResolvedRequestOutcomeDto
+{
+    /// <summary>
+    /// ALL_CANCELLED — the request itself was cancelled · ALL_REJECTED — every campus refused ·
+    /// ALL_WAITING — every campus still deciding · MIXED — campuses ended differently ·
+    /// IN_PROGRESS — nothing refused, at least one campus under way · NO_CAMPUS.
+    /// </summary>
+    public string Code { get; init; } = "";
+    public int Total { get; init; }
+    public int Accepted { get; init; }
+    public int InProgress { get; init; }
+    public int Waiting { get; init; }
+    public int Rejected { get; init; }
+    public int Cancelled { get; init; }
+    public int Closed { get; init; }
 }
 
 public sealed class ResolvedViewerContextDto

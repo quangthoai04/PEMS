@@ -28,7 +28,7 @@ public class VisitRequestV2ContactGuidanceTests
             "HN", Start, Start.AddHours(2), "Đoàn A", "MEETING", null, "Trao đổi", "Nội dung làm việc",
             new List<VisitorDto> { new("Khách 1", "VN", "GV", organization ?? "ĐH X") },
             new List<SupportTeamMemberDto>(),
-            opContact ?? new ContactPointDto("ĐM CS", organization ?? "ĐH X", "+84911111111", "op@example.com"),
+            opContact ?? new ContactPointDto("ĐM CS", organization ?? "ĐH X", "Trưởng phòng Hợp tác", "+84911111111", "op@example.com"),
             "EN", null, "DECLINED", null, null);
 
     private static CreateVisitRequestV2Command Command(
@@ -74,7 +74,7 @@ public class VisitRequestV2ContactGuidanceTests
             null,
             new List<CampusVisitFormDto>
             {
-                Campus(new ContactPointDto("ĐM CS", "ĐH X", "abc", "op@example.com")),
+                Campus(new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", "abc", "op@example.com")),
             })));
 
         Assert.Contains(messages, m => m.Contains("Số điện thoại người đăng ký"));
@@ -105,8 +105,8 @@ public class VisitRequestV2ContactGuidanceTests
     [Fact]
     public void Operational_organization_is_bounded_at_the_same_200_as_the_form()
     {
-        var at = Command(Campus(new ContactPointDto("ĐM CS", new string('x', 200), "+84911111111", "op@example.com")));
-        var over = Command(Campus(new ContactPointDto("ĐM CS", new string('x', 201), "+84911111111", "op@example.com")));
+        var at = Command(Campus(new ContactPointDto("ĐM CS", new string('x', 200), "Trưởng phòng Hợp tác", "+84911111111", "op@example.com")));
+        var over = Command(Campus(new ContactPointDto("ĐM CS", new string('x', 201), "Trưởng phòng Hợp tác", "+84911111111", "op@example.com")));
 
         Assert.True(IsValid(at));
         Assert.False(IsValid(over));
@@ -119,7 +119,7 @@ public class VisitRequestV2ContactGuidanceTests
         // The combobox may offer organizations already on file, but this column is a SNAPSHOT with
         // no relation to a partner record — a name nobody has typed before is perfectly valid.
         Assert.True(IsValid(Command(Campus(
-            new ContactPointDto("ĐM CS", "Một Tổ Chức Chưa Từng Có", "+84911111111", "op@example.com")))));
+            new ContactPointDto("ĐM CS", "Một Tổ Chức Chưa Từng Có", "Trưởng phòng Hợp tác", "+84911111111", "op@example.com")))));
     }
 
     [Fact]

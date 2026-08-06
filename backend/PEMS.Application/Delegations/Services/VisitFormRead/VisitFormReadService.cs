@@ -440,6 +440,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
         // the whole request, so they get the real totals.
         var summary = BuildConfirmationSummary(request, visibleInstances, pendingContactChanges, now);
 
+        // ── Request-wide outcome, for full-scope callers ONLY ────────────────────────────────────
+        // Counted over EVERY campus, and withheld from anyone who cannot see every campus. A scoped
+        // caller has no way to tell their own slice apart from the whole request, so handing them a
+        // slice-derived verdict is how "this campus refused" became "every campus refused".
+        var outcome = scope.CanViewAllCampuses ? BuildRequestOutcome(request, instances) : null;
+
         // ── Request-level capabilities ───────────────────────────────────────────────────────────
         // A request-level action touches data every campus shares, so it needs BOTH halves of the
         // multi-campus rule: refuse outright if any campus has passed the point of no return, and take
@@ -530,6 +536,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 Nationality = request.RegistrantNationality
             },
             ConfirmationSummary = summary,
+            RequestOutcome = outcome,
             CampusVisits = campusVisits,
             Viewer = new ResolvedViewerContextDto
             {
@@ -721,6 +728,46 @@ public sealed class VisitFormReadService : IVisitFormReadService
     /// is carried by the change rows and only shows once nothing is outstanding — a campus that was
     /// declined and re-invited is pending again, which is the truthful reading.
     /// </summary>
+    /// <summary>
+    /// The request-wide verdict, over EVERY campus. Only ever called for a caller with full-request
+    /// scope — see <see cref="ResolvedVisitFormDto.RequestOutcome"/> for why that matters.
+    /// </summary>
+    private static ResolvedRequestOutcomeDto BuildRequestOutcome(
+        VisitRequest request, IReadOnlyList<VisitRequestCampus> all)
+    {
+        int Count(params string[] statuses) => all.Count(c => statuses.Contains(c.Status));
+        var accepted = Count(VisitInstanceStatuses.Assigned);
+        var inProgress = Count(
+            VisitInstanceStatuses.BeforeVisit, VisitInstanceStatuses.DuringVisit, VisitInstanceStatuses.AfterVisit);
+        // A campus still at the contact gate has not been put to a Staff Leader yet, but from the
+        // request's point of view it is the same answer: nobody has decided it.
+        var waiting = Count(
+            VisitInstanceStatuses.WaitingContactConfirmation, VisitInstanceStatuses.WaitingRequestApproval);
+        var rejected = Count(VisitInstanceStatuses.Rejected);
+        var cancelled = Count(VisitInstanceStatuses.Cancelled);
+        var closed = Count(VisitInstanceStatuses.Closed);
+
+        string code;
+        if (all.Count == 0) code = "NO_CAMPUS";
+        else if (request.Status == VisitRequestStatuses.Cancelled) code = "ALL_CANCELLED";
+        else if (rejected == all.Count) code = "ALL_REJECTED";
+        else if (waiting == all.Count) code = "ALL_WAITING";
+        else if (rejected + cancelled > 0) code = "MIXED";
+        else code = "IN_PROGRESS";
+
+        return new ResolvedRequestOutcomeDto
+        {
+            Code = code,
+            Total = all.Count,
+            Accepted = accepted,
+            InProgress = inProgress,
+            Waiting = waiting,
+            Rejected = rejected,
+            Cancelled = cancelled,
+            Closed = closed,
+        };
+    }
+
     private static ResolvedConfirmationSummaryDto BuildConfirmationSummary(
         VisitRequest request,
         IReadOnlyList<VisitRequestCampus> visible,

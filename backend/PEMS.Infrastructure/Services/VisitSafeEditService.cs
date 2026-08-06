@@ -119,6 +119,10 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                 Diff(changes, VisitFieldClassifier.ContactOrganization, instance.VisitInstanceId,
                     detail.OperationalContactOrganization, Clean(contact.Organization),
                     v => detail.OperationalContactOrganization = v);
+                if (!string.IsNullOrWhiteSpace(contact.JobTitle))
+                    Diff(changes, VisitFieldClassifier.OperationalContactJobTitle, instance.VisitInstanceId,
+                        detail.OperationalContactJobTitle, contact.JobTitle.Trim(),
+                        v => detail.OperationalContactJobTitle = v!);
                 Diff(changes, VisitFieldClassifier.ContactPhone, instance.VisitInstanceId,
                     detail.OperationalContactPhone, contact.Phone.Trim(),
                     v => detail.OperationalContactPhone = v!);
@@ -338,8 +342,8 @@ internal static class V2CanonicalRefresh
             members.Where(m => m.MemberType == "EXTERNAL_SUPPORT")
                 .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
             new ContactPointDto(
-                d.OperationalContactFullName ?? string.Empty, d.OperationalContactOrganization ?? string.Empty,
-                d.OperationalContactPhone ?? string.Empty, d.OperationalContactEmail ?? string.Empty),
+                d.OperationalContactFullName, d.OperationalContactOrganization ?? string.Empty,
+                d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
             d.WorkingLanguage ?? "EN", d.TransportationNote, d.MediaConsentStatus ?? "DECLINED", d.MediaConsentNote,
             null);
     }

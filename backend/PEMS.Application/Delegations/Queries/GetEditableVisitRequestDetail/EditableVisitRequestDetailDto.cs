@@ -81,6 +81,7 @@ public sealed class EditableCampusSlotDto
     // ── This campus's operational contact (its own snapshot, never a sibling's) ──
     public string OperationalContactFullName { get; set; } = "";
     public string OperationalContactOrganization { get; set; } = "";
+    public string OperationalContactJobTitle { get; set; } = "";
     public string OperationalContactPhone { get; set; } = "";
     public string OperationalContactEmail { get; set; } = "";
     /// <summary>

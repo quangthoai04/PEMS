@@ -125,6 +125,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
 
             OperationalContactFullName = detail.OperationalContact.FullName,
             OperationalContactOrganization = detail.OperationalContact.Organization,
+            OperationalContactJobTitle = detail.OperationalContact.JobTitle,
             OperationalContactPhone = detail.OperationalContact.Phone,
             OperationalContactEmail = detail.OperationalContact.Email,
 

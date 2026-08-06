@@ -157,9 +157,12 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       organization: bounded(
         z.string().trim().min(1, t('requiredField', { field: t('fields.operationalOrganization') })),
         200, t('fields.operationalOrganization'), t),
-      // Optional: the detail screens show a job title, but nobody is blocked from submitting
-      // without one — a contact who has not given theirs is still a usable contact.
-      jobTitle: bounded(z.string(), 150, t('fields.operationalJobTitle'), t).optional(),
+      // Required, like the rest. It tells the campus whether the person answering the phone can
+      // settle a schedule or has to go and ask, and the detail screens have always reserved a row
+      // for it — a row that was blank on every request, because the form never asked.
+      jobTitle: bounded(
+        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalJobTitle') })),
+        150, t('fields.operationalJobTitle'), t),
       phone: buildPhoneSchema(t, 'operationalPhone'),
       email: buildEmailSchema(t, 'operationalEmail'),
     }),

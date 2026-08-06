@@ -277,7 +277,7 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         <div className="mt-1.5 space-y-1.5">
           <KVBlock label="Nhận diện phương tiện di chuyển tới FPTU" value={data.transportationNote} />
           {data.mediaConsentNote ? <KVBlock label="Ghi chú về sử dụng hình ảnh" value={data.mediaConsentNote} /> : null}
-          <KVBlock label="Nội dung biên bản &amp; ghi chú cho FPTU" value={data.noteToFptu || data.workingContent} />
+          <KVBlock label="Nội dung biên bản &amp; ghi chú cho FPTU" value={data.workingContent} />
         </div>
       </section>
     </div>

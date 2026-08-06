@@ -264,7 +264,7 @@ public sealed class AgendaSetupForInstanceV2Tests
         VisitType = perCampus ? TypeByTag[index] : V2NonMixedType,
         Purpose = "V2-PURPOSE",
         WorkingContent = "V2-CONTENT",
-        OperationalContactFullName = "Op", OperationalContactOrganization = "OpOrg",
+        OperationalContactFullName = "Op", OperationalContactOrganization = "OpOrg", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = "op@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,

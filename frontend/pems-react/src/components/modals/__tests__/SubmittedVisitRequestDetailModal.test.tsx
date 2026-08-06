@@ -22,7 +22,7 @@ import type { SubmittedVisitRequestFormDetail } from '../../../features/delegati
 const flat = (overrides: Partial<SubmittedVisitRequestFormDetail> = {}): SubmittedVisitRequestFormDetail =>
   ({
     visitRequestId: 7, requestCode: 'VR-7', requestStatus: 'PENDING_APPROVAL', visitScope: 'SINGLE_CAMPUS',
-    delegationName: 'Đoàn', registrant: {} as never, contactPerson: {} as never,
+    delegationName: 'Đoàn', registrant: {} as never,
     campuses: [], guestMembers: [], externalSupportMembers: [],
     canApprove: false, canReject: false, canCancel: false,
     ...overrides,

@@ -100,6 +100,7 @@ async function fillCampusBody(page: Page, delegation: string, dayOffset = 16) {
 async function fillOperationalContactByHand(page: Page) {
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
   await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-jobtitle').fill('Trưởng phòng Hợp tác');
   await page.getByTestId('campus-opcontact-phone-0').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
@@ -188,6 +189,7 @@ test.describe('Real-stack: the public receipt and the per-campus contact', () =>
     // Now REPLACE the organization through the combobox — the destination has data, so the second
     // half of §13 applies: the user is asked before anything is overwritten.
     await fillOperationalOrganization(page, 0, 'Ban Hợp Tác Quốc Tế');
+  await page.getByTestId('campus-opcontact-jobtitle').fill('Trưởng phòng Hợp tác');
 
     await submit(page);
     await expect(otpInput(page)).toBeVisible({ timeout: 20_000 });

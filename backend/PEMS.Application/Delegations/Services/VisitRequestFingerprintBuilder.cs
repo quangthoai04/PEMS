@@ -26,28 +26,6 @@ public static class VisitRequestFingerprintBuilder
 {
     public const string Version = "v1";
 
-    /// <summary>Builds the v1 fingerprint from the shared UC-17 form command shape.</summary>
-    public static string BuildFromForm(IVisitRequestFormCommand form)
-    {
-        var registrantEmail = NormalizeEmail(form.RegistrantEmail);
-        var contactEmail = form.IsContactSelf
-            ? registrantEmail
-            : NormalizeEmail(form.ContactPerson?.Email ?? string.Empty);
-
-        var effectiveScope = form.VisitScope == VisitScopes.MultiCampus
-            ? VisitScopes.MultiCampus
-            : VisitScopes.SingleCampus;
-
-        return Build(
-            registrantEmail,
-            contactEmail,
-            form.DelegationName,
-            effectiveScope,
-            form.VisitType,
-            form.VisitTypeOther,
-            form.CampusVisits.Select(s => (s.CampusId, s.StartDatetime, s.EndDatetime)));
-    }
-
     /// <summary>Builds the v1 fingerprint from already-extracted core fields.</summary>
     public static string Build(
         string registrantEmail,

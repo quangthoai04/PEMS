@@ -325,7 +325,6 @@ export function StaffVisitDetailModal({
                     label="Nhận diện phương tiện"
                     value={detail.transportationNote}
                   />
-                  <InfoRow icon={<MessageSquare className="w-3 h-3" />} label="Ghi chú gửi FPTU" value={detail.noteToFptu} />
                 </div>
               </section>
 

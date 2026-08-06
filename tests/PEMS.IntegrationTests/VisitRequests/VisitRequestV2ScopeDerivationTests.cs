@@ -31,7 +31,7 @@ public class VisitRequestV2ScopeDerivationTests
             delegationName, "MEETING", null, purpose, "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto(opContactName, "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto(opContactName, "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null, null);
     }
 
@@ -123,7 +123,7 @@ public class VisitRequestV2ScopeDerivationTests
                 new("Guest B", "VN", "Guest", "GuestOrg"),
             },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null, null);
 
         Assert.True(VisitRequestV2Canonical.ComputeHasMixed(new List<CampusVisitFormDto> { hn, hcm }));

@@ -326,6 +326,7 @@ public static class CampusUcTestData
             VisitType = "MEETING",
             Purpose = "Tham quan",
             OperationalContactFullName = "Đầu mối cơ sở",
+            OperationalContactJobTitle = "Trưởng phòng Hợp tác",
             OperationalContactPhone = "0900000002",
             // NOT NULL since the per-campus cutover: this address is the only thing a campus’s
             // confirmation invitation can be bound to.

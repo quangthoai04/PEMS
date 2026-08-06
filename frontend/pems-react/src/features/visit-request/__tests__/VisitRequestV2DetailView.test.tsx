@@ -58,6 +58,10 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
     phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN',
   },
   confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+
+  // Full-request scope in this fixture, so the backend sends the request-wide verdict.
+
+  requestOutcome: { code: 'ALL_WAITING', total: 1, accepted: 0, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
   campusVisits: [campusFixture()],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
   ...overrides,
@@ -294,6 +298,50 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText(/dauMoi@|d@x\.vn/)).not.toBeInTheDocument();
     // …and the raw status transition never reaches the reader either.
     expect(screen.queryByText(/PENDING|APPLIED|CLAIM_APPLIED/)).not.toBeInTheDocument();
+  });
+
+  // ── The confirmation roll-up must not repeat what the campus card already says ────────────────
+  // On an instance-scoped page with one confirmed campus it rendered a heading over "1/1", directly
+  // above the block that names that very contact and shows the same confirmed state.
+
+  it('drops the confirmation roll-up when one confirmed campus in scope already shows its contact', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      confirmationSummary: { total: 1, confirmed: 1, pending: 0, declined: 0, expired: 0, gateOpen: true },
+      campusVisits: [campusFixture({ instanceStatus: 'ASSIGNED' })],
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByTestId('section-contact-summary')).toBeNull();
+    // The detailed per-campus block is the one that stays.
+    expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(1);
+  });
+
+  it('keeps the roll-up for a full-request view, several campuses, or an answer still missing', async () => {
+    const cases: Array<[string, Partial<ResolvedVisitForm>]> = [
+      ['full-request scope', {
+        confirmationSummary: { total: 1, confirmed: 1, pending: 0, declined: 0, expired: 0, gateOpen: true },
+        viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+      }],
+      ['more than one campus', {
+        confirmationSummary: { total: 2, confirmed: 2, pending: 0, declined: 0, expired: 0, gateOpen: true },
+        campusVisits: [campusFixture(), campusFixture({ visitInstanceId: 11, campusCode: 'HCM' })],
+        viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      }],
+      ['a contact has not answered', {
+        confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+        viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      }],
+    ];
+
+    for (const [label, overrides] of cases) {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture(overrides));
+      const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+      expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+      expect(screen.queryByTestId('section-contact-summary'), label).not.toBeNull();
+      unmount();
+    }
   });
 
   it('flag OFF / not found → stable friendly message, no silent v1 fallback fetch', async () => {

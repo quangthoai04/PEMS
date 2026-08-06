@@ -45,6 +45,7 @@ public static class VisitFieldClassifier
     public const string WorkingLanguage = "instance.workingLanguage";
     public const string OperationalContactFullName = "instance.operationalContact.fullName";
     public const string OperationalContactOrganization = "instance.operationalContact.organization";
+    public const string OperationalContactJobTitle = "instance.operationalContact.jobTitle";
     public const string OperationalContactPhone = "instance.operationalContact.phone";
     public const string OperationalContactEmail = "instance.operationalContact.email";
     public const string Visitors = "instance.members.visitors";
@@ -76,6 +77,7 @@ public static class VisitFieldClassifier
         [WorkingLanguage] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactFullName] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactOrganization] = AmendmentChangeClasses.ApprovalSensitive,
+        [OperationalContactJobTitle] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactPhone] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactEmail] = AmendmentChangeClasses.ApprovalSensitive,
         [Visitors] = AmendmentChangeClasses.ApprovalSensitive,

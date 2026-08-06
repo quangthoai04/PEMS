@@ -78,7 +78,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
             not gated on the name, because a contact who has been invited but has not confirmed yet
             has an address and no name, and hiding the block is how the guest loses track of whom
             they nominated. */}
-        {summary && <VisitorContactPersonSection summary={summary} />}
+        {summary && <VisitorOperationalContactSection summary={summary} />}
 
         {/* 7. Danh sách thành viên đoàn */}
         {summary?.guestMembers && summary.guestMembers.length > 0 && (
@@ -327,7 +327,6 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
           <div className="mt-1.5 space-y-1.5">
             <KVBlock label="Mục đích tham quan" value={summary.purpose} />
             <KVBlock label="Nội dung làm việc" value={summary.workingContent} />
-            <KVBlock label="Ghi chú thêm" value={summary.noteToFptu} />
           </div>
         </div>
 
@@ -378,7 +377,7 @@ function VisitorGuestMembersSection({ members }: { members: any[] }) {
   );
 }
 
-function VisitorContactPersonSection({ summary }: { summary: any }) {
+function VisitorOperationalContactSection({ summary }: { summary: any }) {
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
       <SectionTitle>Đầu mối đoàn khách phối hợp tại cơ sở</SectionTitle>

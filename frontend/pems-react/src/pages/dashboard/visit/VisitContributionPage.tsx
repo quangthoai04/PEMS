@@ -260,13 +260,28 @@ export function VisitContributionPage() {
               <Field label="Loại chuyến thăm" value={visitType} />
               <Field label="Mục đích" value={req.purpose} />
               <Field label="Ngôn ngữ làm việc" value={req.workingLanguage} />
-              <Field label="Người liên hệ" value={req.operationalContactFullName} />
             </div>
             {req.workingContent && (
               <div className="mt-2 pt-2 border-t border-slate-100">
                 <Field label="Nội dung làm việc" value={req.workingContent} />
               </div>
             )}
+            {/* The OPERATIONAL contact of THIS campus, under its own heading and in full. It used to
+                be one unlabelled "Người liên hệ" line carrying a name, sitting among the delegation's
+                fields — which read as the registrant, and gave a contributor no way to reach anyone.
+                Registrant and contact are different people and are now visibly different blocks. */}
+            <div className="mt-2 pt-2 border-t border-slate-100">
+              <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[#004c91]">
+                Đầu mối đoàn khách phối hợp tại cơ sở
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+                <Field label="Họ và tên" value={req.operationalContactFullName} />
+                <Field label="Đơn vị công tác" value={req.operationalContactOrganization} />
+                <Field label="Chức vụ" value={req.operationalContactJobTitle} />
+                <Field label="Số điện thoại" value={req.operationalContactPhone} />
+                <Field label="Email" value={req.operationalContactEmail} />
+              </div>
+            </div>
           </Section>
         )}
 

@@ -29,6 +29,7 @@ public sealed record SafeRegistrantPatchDto(
 public sealed record SafeContactPatchDto(
     string FullName,
     string? Organization,
+    string? JobTitle,
     string Phone);
 
 /// <summary>

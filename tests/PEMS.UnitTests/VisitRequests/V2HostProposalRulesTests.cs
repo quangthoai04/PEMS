@@ -51,7 +51,7 @@ public class V2HostProposalRulesTests
             "Đoàn ABC", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null,
             selection);
     }
@@ -109,7 +109,7 @@ public class V2HostProposalRulesTests
             "", start, start.AddHours(2), "Đoàn", "MEETING", null, "Thăm", null,
             new List<VisitorDto> { new("G", "VN", "G", "O") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null,
             new CampusHostSelectionV2Dto(HostSelectionModes.Self, null));
 

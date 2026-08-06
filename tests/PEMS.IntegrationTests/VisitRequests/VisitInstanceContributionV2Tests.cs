@@ -272,7 +272,7 @@ public sealed class VisitInstanceContributionV2Tests
         VisitType = "MEETING",
         Purpose = perCampus ? $"PURPOSE-{tag}" : "V2-PURPOSE",
         WorkingContent = perCampus ? $"CONTENT-{tag}" : "V2-CONTENT",
-        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}",
+        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,

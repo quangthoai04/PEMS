@@ -101,7 +101,7 @@ public sealed class VisitAmendmentV2Tests
             // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
             // with no invitation, and the request is past the confirmation gate from the start. This suite
             // does not test that gate, and a campus behind it can be neither decided nor moved forward.
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", "Xe 16 chỗ", "AGREED", null, null);
 
     /// <summary>Creates a committed 2-campus request and drives BOTH instances to ASSIGNED (parent APPROVED)
@@ -182,7 +182,7 @@ public sealed class VisitAmendmentV2Tests
             instance.RowVersion, d.FormRevision, d.ApprovalRevision, "Cập nhật theo yêu cầu đoàn.",
             b.DelegationName, d.VisitType ?? "MEETING", d.VisitTypeOther, b.Purpose, b.WorkingContent,
             d.WorkingLanguage ?? "EN",
-            new ContactPointDto(d.OperationalContactFullName ?? "", d.OperationalContactOrganization ?? "",
+            new ContactPointDto(d.OperationalContactFullName ?? "", d.OperationalContactOrganization ?? "", "Trưởng phòng Hợp tác",
                 d.OperationalContactPhone ?? "", d.OperationalContactEmail ?? ""),
             b.Visitors,
             new List<SupportTeamMemberDto>(),

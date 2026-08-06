@@ -50,7 +50,7 @@ public sealed class VisitScheduleMultiDayV2Tests
             code, start, end, delegation, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null, null);
 
     private static VisitRequestFormDataV2 Form(params CampusVisitFormDto[] campuses)
@@ -179,7 +179,7 @@ public sealed class VisitScheduleMultiDayV2Tests
             "HN", start, start.AddHours(2), "Đoàn Dài Chữ", "MEETING", null, purpose, workingContent,
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", "op@example.com"),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", transportation, "AGREED", mediaNote, null);
 
         var req = await Svc(db).CreateV2Async(

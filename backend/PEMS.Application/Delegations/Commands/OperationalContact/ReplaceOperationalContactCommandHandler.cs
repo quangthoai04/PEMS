@@ -129,7 +129,8 @@ public sealed class ReplaceOperationalContactCommandHandler
             detail.OperationalContactFullName = request.FullName.Trim();
             detail.OperationalContactOrganization =
                 string.IsNullOrWhiteSpace(request.Organization) ? null : request.Organization.Trim();
-            detail.OperationalContactPhone = request.Phone.Trim();
+            detail.OperationalContactJobTitle = request.JobTitle.Trim();
+            detail.OperationalContactPhone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
             detail.OperationalContactEmail = newEmail;
 
             var registrantEmail = VisitRequestFingerprintBuilder.NormalizeEmail(visit.RegistrantEmail);
@@ -175,6 +176,7 @@ public sealed class ReplaceOperationalContactCommandHandler
                     {
                         fullName = detail.OperationalContactFullName,
                         organization = detail.OperationalContactOrganization,
+                        jobTitle = detail.OperationalContactJobTitle,
                         phone = detail.OperationalContactPhone,
                         email = newEmail,
                     }, Json),

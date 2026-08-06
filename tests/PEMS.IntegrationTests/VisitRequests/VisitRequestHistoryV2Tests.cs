@@ -112,6 +112,7 @@ public sealed class VisitRequestHistoryV2Tests
                     DelegationName = $"DELEG-{campusId}", VisitType = "MEETING", Purpose = "P",
                     WorkingContent = "C",
                     OperationalContactFullName = "Op", OperationalContactOrganization = "OpOrg",
+                    OperationalContactJobTitle = "Trưởng phòng Hợp tác",
                     OperationalContactPhone = "+8410", OperationalContactEmail = "op@example.com",
                     WorkingLanguage = "VI", MediaConsentStatus = "AGREED",
                     FormRevision = 1, ApprovalRevision = 1, CreatedAt = now,

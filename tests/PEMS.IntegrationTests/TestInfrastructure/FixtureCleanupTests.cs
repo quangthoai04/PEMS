@@ -229,8 +229,8 @@ public sealed class FixtureCleanupTests : IDisposable
             + "DATE_ADD(NOW(), INTERVAL 30 DAY), DATE_ADD(NOW(), INTERVAL 31 DAY), 'WAITING_REQUEST_APPROVAL')");
         await db.Database.ExecuteSqlRawAsync(
             "INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, "
-            + "operational_contact_full_name, operational_contact_email, purpose) "
-            + $"VALUES ({instanceId}, 'FixtureCleanup', 'FixtureCleanup Contact', "
+            + "operational_contact_full_name, operational_contact_job_title, operational_contact_email, purpose) "
+            + $"VALUES ({instanceId}, 'FixtureCleanup', 'FixtureCleanup Contact', 'Trưởng phòng Hợp tác', "
             + $"'fixclean-{OwnerId}@partner.example.com', 'FixtureCleanup')");
 
         return (requestId, instanceId);

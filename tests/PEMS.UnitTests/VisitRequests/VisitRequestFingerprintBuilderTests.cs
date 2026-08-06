@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using PEMS.Application.Common.DTOs;
-using PEMS.Application.Delegations.Commands;
 using PEMS.Application.Delegations.Services;
 using Xunit;
 
@@ -79,21 +78,8 @@ public class VisitRequestFingerprintBuilderTests
             Build(scope: "MULTI_CAMPUS", slots: slotsB));
     }
 
-    // ── §30.3: soft content (purpose/notes/guests/support/…) is excluded ───────────
-
-    [Fact]
-    public void SoftContent_DoesNotAffectFingerprint_ViaFormCommand()
-    {
-        var a = VisitRequestFingerprintBuilder.BuildFromForm(FakeForm(purpose: "Tham quan", notes: null));
-        var b = VisitRequestFingerprintBuilder.BuildFromForm(FakeForm(
-            purpose: "Một mục đích hoàn toàn khác",
-            notes: "ghi chú thêm",
-            workingContent: "nội dung làm việc khác",
-            transportationNote: "xe 45 chỗ",
-            mediaConsent: "AGREED",
-            visitors: new List<VisitorDto> { new("Khách A", "Việt Nam", "GĐ", "Cty A") }));
-        Assert.Equal(a, b);
-    }
+    // §30.3 (soft content is excluded) no longer needs a test: soft content is not a parameter
+    // of Build at all now that the V1 form shape is gone, so there is nothing left to exclude it from.
 
     // ── §30.4: every core field change produces a different fingerprint ────────────
 
@@ -166,76 +152,6 @@ public class VisitRequestFingerprintBuilderTests
             Build(slots: new[] { ("HN", utc, End) }));
     }
 
-    // ── IsContactSelf uses the registrant email as effective contact ───────────────
-
-    [Fact]
-    public void IsContactSelf_UsesRegistrantEmail_AsEffectiveContact()
-    {
-        var self = VisitRequestFingerprintBuilder.BuildFromForm(
-            FakeForm(isContactSelf: true, contactEmail: "ignored@example.com"));
-        var explicitSame = VisitRequestFingerprintBuilder.BuildFromForm(
-            FakeForm(isContactSelf: false, contactEmail: "anna@example.com"));
-        Assert.Equal(self, explicitSame);
-    }
-
-    // ── Test double for the shared UC-17 form shape ────────────────────────────────
-
-    private static IVisitRequestFormCommand FakeForm(
-        string purpose = "Tham quan",
-        string? notes = null,
-        string? workingContent = null,
-        string? transportationNote = null,
-        string mediaConsent = "DECLINED",
-        bool isContactSelf = false,
-        string contactEmail = "anna@example.com",
-        List<VisitorDto>? visitors = null)
-        => new FakeVisitRequestForm(
-            RegistrantFullName: "Anna Nguyễn",
-            RegistrantNationality: "Việt Nam",
-            RegistrantOrganization: "Cty ABC",
-            RegistrantPosition: "Giám đốc",
-            RegistrantPhone: "0912345678",
-            RegistrantEmail: "anna@example.com",
-            DelegationName: "Đoàn Đại học ABC",
-            VisitScope: "SINGLE_CAMPUS",
-            VisitType: "CAMPUS_TOUR",
-            VisitTypeOther: null,
-            CampusVisits: new List<VisitSlotDto> { new("HN", Start, End) },
-            Purpose: purpose,
-            WorkingContent: workingContent,
-            Visitors: visitors ?? new List<VisitorDto>(),
-            SupportMembers: new List<SupportTeamMemberDto>(),
-            ContactPerson: new ContactPointDto("Anna Nguyễn", "Cty ABC", "0912345678", contactEmail),
-            IsContactSelf: isContactSelf,
-            WorkingLanguage: "VI",
-            TransportationNote: transportationNote,
-            MediaConsentStatus: mediaConsent,
-            MediaConsentNote: null,
-            PartnerId: null,
-            Notes: notes);
-
-    private sealed record FakeVisitRequestForm(
-        string RegistrantFullName,
-        string RegistrantNationality,
-        string RegistrantOrganization,
-        string RegistrantPosition,
-        string RegistrantPhone,
-        string RegistrantEmail,
-        string DelegationName,
-        string VisitScope,
-        string VisitType,
-        string? VisitTypeOther,
-        IList<VisitSlotDto> CampusVisits,
-        string Purpose,
-        string? WorkingContent,
-        IList<VisitorDto> Visitors,
-        IList<SupportTeamMemberDto> SupportMembers,
-        ContactPointDto ContactPerson,
-        bool IsContactSelf,
-        string WorkingLanguage,
-        string? TransportationNote,
-        string MediaConsentStatus,
-        string? MediaConsentNote,
-        ulong? PartnerId,
-        string? Notes) : IVisitRequestFormCommand;
+    // The IsContactSelf test and its form double went with the V1 shape: there is no request-level
+    // contact to be "self" any more, and each campus carries its own.
 }

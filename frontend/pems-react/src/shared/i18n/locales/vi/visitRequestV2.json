@@ -576,7 +576,10 @@
     "cancellationReason": "Lý do",
     "latestRejection": "Từ chối gần nhất",
     "rejectedBy": "Người xử lý",
-    "rejectionReason": "Lý do"
+    "rejectionReason": "Lý do",
+    "scopedRejected": "Cơ sở {{campuses}} đã từ chối yêu cầu này.",
+    "scopedCancelled": "Cơ sở {{campuses}} đã hủy chuyến thăm này.",
+    "scopeNote": "Chỉ tính {{count}} cơ sở thuộc phạm vi bạn được xem; các cơ sở khác (nếu có) không hiển thị ở đây."
   },
   "schedule": {
     "legend": "Thời gian tham quan",
@@ -631,7 +634,7 @@
   "operationalContact": {
     "title": "Đầu mối đoàn khách phối hợp tại cơ sở",
     "fullName": "Họ và tên",
-    "organization": "Đơn vị / tổ chức",
+    "organization": "Đơn vị công tác",
     "jobTitle": "Chức vụ",
     "phone": "Số điện thoại",
     "email": "Email",

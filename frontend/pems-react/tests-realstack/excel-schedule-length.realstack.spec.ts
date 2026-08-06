@@ -97,6 +97,7 @@ async function fillCampusBody(page: Page, delegation: string) {
   await formField(page, 'Nội dung làm việc').locator('textarea').fill('Nội dung làm việc thực tế của đoàn');
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
   await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-jobtitle').fill('Trưởng phòng Hợp tác');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }

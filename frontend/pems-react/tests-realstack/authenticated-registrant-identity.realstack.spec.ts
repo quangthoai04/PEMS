@@ -104,6 +104,7 @@ async function fillCampus0(page: Page, delegation: string) {
 
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
   await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
+  await page.getByTestId('campus-opcontact-jobtitle').fill('Trưởng phòng Hợp tác');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
@@ -238,10 +239,6 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
         jobTitle: 'Trưởng đoàn', phone: '+84912345678',
         email: `e2e_forged_${Date.now()}@example.com`,   // NOT the signed-in Leader
       },
-      primaryContact: {
-        fullName: 'Đầu Mối Đoàn', organization: 'ĐH Đối Tác',
-        phone: '+84987654321', email: `e2e_forged_contact_${Date.now()}@example.com`,
-      },
       partnerId: null,
       campusVisits: [{
         campusId: 'HN', plannedStartAt: fmt(start), plannedEndAt: fmt(end),
@@ -249,7 +246,8 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
         purpose: 'Mục đích', workingContent: 'Nội dung làm việc',
         visitors: [], externalSupportMembers: [],
         operationalContact: {
-          fullName: 'Đầu Mối CS', organization: 'Đơn vị', phone: '+84912345678', email: 'op@example.com',
+          fullName: 'Đầu Mối CS', organization: 'Đơn vị', jobTitle: 'Trưởng phòng Hợp tác',
+          phone: '+84912345678', email: 'op@example.com',
         },
         workingLanguage: 'VI', transportationNote: null,
         mediaConsentStatus: 'DECLINED', mediaConsentNote: null, notes: null,

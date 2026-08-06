@@ -28,7 +28,7 @@ const campus = (over: Partial<CampusVisitSchema>): CampusVisitSchema => ({
   workingContent: '',
   visitors: [{ fullName: 'Visitor A', jobTitle: 'Dean', organization: 'Univ A', nationality: 'US' }],
   supportTeam: [],
-  operationalContact: { fullName: 'Op A', organization: 'OrgA', phone: '+84900000001', email: 'op-a@example.com' },
+  operationalContact: { fullName: 'Op A', organization: 'OrgA', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op-a@example.com' },
   workingLanguage: 'EN',
   transportationNote: '',
   mediaConsentStatus: 'DECLINED',
@@ -103,7 +103,7 @@ describe('VisitRequestV2SubmittedSummary', () => {
 
   it('renders a blank optional operational contact org/email without crashing', () => {
     const cvs = [campus({ clientKey: 'a', campus: 'HN',
-      operationalContact: { fullName: 'Op Only', organization: '', phone: '+84900000009', email: '' } })];
+      operationalContact: { fullName: 'Op Only', organization: '', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000009', email: '' } })];
     render(<VisitRequestV2SubmittedSummary
       response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }], false)}
       values={values(cvs)} />);

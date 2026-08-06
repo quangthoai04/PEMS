@@ -92,7 +92,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
             // with no invitation, and the request is past the confirmation gate from the start. This suite
             // does not test that gate, and a campus behind it can be neither decided nor moved forward.
-            new ContactPointDto("Op Contact", "OpOrg", "+8410", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
 
     private static SubmitVisitSafeEditCommandHandler SafeEdit(ApplicationDbContext db)

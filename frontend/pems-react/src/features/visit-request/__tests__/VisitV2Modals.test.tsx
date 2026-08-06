@@ -25,6 +25,10 @@ const form = (): ResolvedVisitForm => ({
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
   registrant: { fullName: 'Reg', organization: 'Org', jobTitle: 'Head', phone: '+84900000001', email: 'r@x.vn', nationality: 'VN' },
   confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+
+  // Full-request scope in this fixture, so the backend sends the request-wide verdict.
+
+  requestOutcome: { code: 'ALL_WAITING', total: 1, accepted: 0, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
   campusVisits: [campusFixture()],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW', 'SUBMIT_SAFE_EDIT'] },
 });

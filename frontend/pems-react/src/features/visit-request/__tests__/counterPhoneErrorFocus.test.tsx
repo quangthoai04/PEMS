@@ -177,7 +177,7 @@ describe('over-limit messages name the field (plan §15)', () => {
       v => {
         // The over-limit field is a CAMPUS contact now — the request-level one it used to be is gone.
         (v.campusVisits as unknown[]).push({
-          operationalContact: { fullName: 'A', organization: 'x'.repeat(201), phone: '+84912345678', email: 'a@b.com' },
+          operationalContact: { fullName: 'A', organization: 'x'.repeat(201), jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: 'a@b.com' },
         });
       },
       'campusVisits.0.operationalContact.organization',

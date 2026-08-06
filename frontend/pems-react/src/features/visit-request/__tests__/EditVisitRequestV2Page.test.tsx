@@ -42,7 +42,7 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
   visitors: [{ guestMemberId: id * 10, memberType: 'VISITOR', fullName: `Khách ${code}`, organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
   supportMembers: [],
   operationalContact: {
-    fullName: `OP ${code}`, organization: 'ĐH X', jobTitle: '',
+    fullName: `OP ${code}`, organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
     phone: '+84912345678', email: 'op@example.com',
     confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null,
   },
@@ -60,6 +60,10 @@ const form = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => 
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
   registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN' },
   confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+
+  // Full-request scope in this fixture, so the backend sends the request-wide verdict.
+
+  requestOutcome: { code: 'ALL_WAITING', total: 1, accepted: 0, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
   campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN')],
   viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
   ...overrides,

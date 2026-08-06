@@ -215,6 +215,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
 
             OperationalContactFullName = d.OperationalContact.FullName,
             OperationalContactOrganization = d.OperationalContact.Organization,
+            OperationalContactJobTitle = d.OperationalContact.JobTitle,
             OperationalContactPhone = d.OperationalContact.Phone,
             OperationalContactEmail = d.OperationalContact.Email,
 

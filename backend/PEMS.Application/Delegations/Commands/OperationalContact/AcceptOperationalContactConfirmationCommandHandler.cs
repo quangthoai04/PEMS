@@ -297,6 +297,9 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
         {
             detail.OperationalContactFullName = snapshot?.FullName ?? actor.FullName;
             detail.OperationalContactOrganization = snapshot?.Organization;
+            // Keep whatever the campus already had when the snapshot is unreadable: the columns are
+            // NOT NULL, and an accepted transfer must not fail on a field nobody disputed.
+            detail.OperationalContactJobTitle = snapshot?.JobTitle ?? detail.OperationalContactJobTitle;
             detail.OperationalContactPhone = snapshot?.Phone ?? detail.OperationalContactPhone;
             detail.OperationalContactEmail = change.NewEmailNormalized!;
         }
@@ -413,6 +416,7 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
     {
         public string? FullName { get; set; }
         public string? Organization { get; set; }
+        public string? JobTitle { get; set; }
         public string? Phone { get; set; }
         public string? Email { get; set; }
     }

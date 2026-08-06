@@ -185,6 +185,7 @@ internal static class CanonicalV2Seed
                     VisitType = canonicalVisitType ?? CanonicalVisitType,
                     Purpose = "Canonical purpose",
                     OperationalContactFullName = "Operational contact",
+                    OperationalContactJobTitle = "Trưởng phòng Hợp tác",
                     OperationalContactEmail = "registrant.canonical@example.test",
                     OperationalContactPhone = "0900000002",
                     WorkingLanguage = "EN",

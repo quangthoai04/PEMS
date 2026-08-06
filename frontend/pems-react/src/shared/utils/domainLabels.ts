@@ -106,6 +106,10 @@ export const formatLogisticsStatus = (v: unknown) => labelFrom(LOGISTICS_STATUS,
 
 // ── Visit instance status ────────────────────────────────────────────────────
 const VISIT_STATUS: Record<string, string> = {
+  // The campus is still behind the confirmation gate: its guest-side contact has not answered yet,
+  // so no Staff Leader can act on the request at all.
+  WAITING_CONTACT_CONFIRMATION: 'Chờ đầu mối xác nhận',
+  PENDING_CONTACT_CONFIRMATION: 'Chờ đầu mối xác nhận',
   WAITING_REQUEST_APPROVAL: 'Chờ duyệt yêu cầu',
   PENDING_APPROVAL: 'Chờ duyệt',
   APPROVED: 'Đã duyệt',

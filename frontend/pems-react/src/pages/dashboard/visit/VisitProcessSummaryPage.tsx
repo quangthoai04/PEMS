@@ -22,6 +22,7 @@ import { delegationsApi } from '../../../features/delegations/api/delegationsApi
 import type { ProcessSummaryPage, ContributionSectionStatus } from '../../../features/delegations/types/delegations.types';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { formatVisitStatus } from '../../../shared/utils/domainLabels';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -35,17 +36,15 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const getStatusText = (status: string) => {
-  switch (status) {
-    case 'ASSIGNED': return 'Đã phân công người phụ trách';
-    case 'BEFORE_VISIT': return 'Trước tiếp khách';
-    case 'DURING_VISIT': return 'Đang tiếp khách';
-    case 'AFTER_VISIT': return 'Sau tiếp khách';
-    case 'CLOSED': return 'Đã đóng đoàn';
-    case 'CANCELLED': return 'Đã hủy';
-    default: return status;
-  }
-};
+/**
+ * The shared map, not a local copy of it.
+ *
+ * The local one covered six of the nine campus statuses and its default was `return status`, so a
+ * campus still waiting for its Staff Leader put the literal WAITING_REQUEST_APPROVAL in the page
+ * header. A reader met a database enum where a sentence belonged, and every status the cutover added
+ * would have done the same.
+ */
+const getStatusText = (status: string) => formatVisitStatus(status);
 
 function SectionCard({ title, icon: Icon, children, isExpanded, onToggle, canView = true }: any) {
   if (!canView) {

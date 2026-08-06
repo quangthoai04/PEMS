@@ -766,7 +766,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             linked.Where(m => m.MemberType == "EXTERNAL_SUPPORT")
                 .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
             new ContactPointDto(d.OperationalContactFullName, d.OperationalContactOrganization,
-                d.OperationalContactPhone, d.OperationalContactEmail, d.OperationalContactJobTitle),
+                d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
             d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
             HostSelection: null);
     }

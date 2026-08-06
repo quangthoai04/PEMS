@@ -519,8 +519,21 @@ public static class CanonicalSqlScript
     // across them. The invitation service had already started supplying both variables, and the
     // renderer refuses a variable a template does not declare — so on a fresh database EVERY
     // invitation failed to render and no contact was ever sent a link. Data-only: no schema change.
+    //
+    // Repinned again for the required operational contact and a seed that contradicted itself:
+    //   • operational_contact_job_title is NOT NULL with TRIM(x) <> '', and every write path supplies
+    //     it. Optional meant the create form never asked, so the column was NULL on all 96 seeded
+    //     rows and every detail screen rendered a labelled blank. All five contact fields are now
+    //     required in the same place: schema, DTO, validator, form.
+    //   • operational_contact_phone is declared NULLable at the CREATE TABLE, where its CHECK already
+    //     said so, instead of NOT NULL undone by a late ALTER 5,700 lines further down. The phone
+    //     stays OPTIONAL: a contact with an email and no number is still a usable contact.
+    //   • The seed wrote visit_requests.status and visit_request_campuses.status by hand and the two
+    //     drifted on 14 requests: 2002 said PENDING_APPROVAL over two REJECTED campuses. A closing
+    //     UPDATE now recomputes the request status with the same rule (and the same precedence) as
+    //     VisitRequestAggregateStatusService.Compute, so the seed cannot disagree with the app.
     public const string ExpectedSha256 =
-        "7a283dacb2a2cd41da3cca4d277cd566f05befe0b3e7a0f32c420b87208713c7";
+        "ecc8758cd3edab38ebde07c0ca32ab1ec864b0c54644a3a915a278212945c5a9";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

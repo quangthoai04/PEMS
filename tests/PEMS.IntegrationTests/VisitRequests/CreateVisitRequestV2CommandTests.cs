@@ -124,7 +124,7 @@ public sealed class CreateVisitRequestV2CommandTests
             new List<SupportTeamMemberDto>(),
             // The registrant’s own verified address — the campus self-matches, so no invitation is
             // sent and the request opens the gate immediately.
-            new ContactPointDto("Registrant", "Org", "+8491", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Registrant", "Org", "Trưởng phòng Hợp tác", "+8491", V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
         return new VisitRequestFormDataV2(
             submissionId,

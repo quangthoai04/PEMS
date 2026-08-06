@@ -369,7 +369,7 @@ public sealed class VisitRequestsController : ControllerBase
         var result = await _mediator.Send(
             new PEMS.Application.Delegations.Commands.OperationalContact.ReplaceOperationalContactCommand(
                 visitRequestId, visitInstanceId,
-                body.FullName, body.Organization, body.Phone, body.Email),
+                body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email),
             cancellationToken);
         return Ok(result);
     }
@@ -388,7 +388,7 @@ public sealed class VisitRequestsController : ControllerBase
         var result = await _mediator.Send(
             new PEMS.Application.Delegations.Commands.OperationalContact.InitiateOperationalContactTransferCommand(
                 visitRequestId, visitInstanceId,
-                body.FullName, body.Organization, body.Phone, body.Email, body.Reason),
+                body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email, body.Reason),
             cancellationToken);
         return Ok(result);
     }
@@ -447,11 +447,11 @@ public sealed class VisitRequestsController : ControllerBase
 
     /// <summary>The contact details written onto ONE campus. Organization is optional.</summary>
     public sealed record OperationalContactPayload(
-        string FullName, string? Organization, string Phone, string Email);
+        string FullName, string? Organization, string JobTitle, string? Phone, string Email);
 
     /// <summary>A transfer proposal: the same details, plus why the campus is changing hands.</summary>
     public sealed record OperationalContactTransferPayload(
-        string FullName, string? Organization, string Phone, string Email, string? Reason);
+        string FullName, string? Organization, string JobTitle, string? Phone, string Email, string? Reason);
 
     // ── Per-campus v2 safe edit + amendments (plan §16.6, Phase E) ───────────────────────────
     // The backend classifier is the only authority: the safe endpoint fails closed on anything

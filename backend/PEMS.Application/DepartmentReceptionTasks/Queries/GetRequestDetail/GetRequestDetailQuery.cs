@@ -86,8 +86,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string RegistrantJobTitle { get; set; }
         public string Purpose { get; set; }
         public string WorkingContent { get; set; }
-        public string ContactPersonFullName { get; set; }
-        public string ContactPersonPhone { get; set; }
+        // The OPERATIONAL contact of THIS campus, all five fields. They used to be named
+        // ContactPerson*, after the request-level contact that no longer exists, and carried only
+        // name and phone — so a department read the right person under the wrong name and could not
+        // tell whether they were talking to somebody who could decide.
+        public string OperationalContactFullName { get; set; }
+        public string OperationalContactOrganization { get; set; }
+        public string OperationalContactJobTitle { get; set; }
+        public string OperationalContactPhone { get; set; }
+        public string OperationalContactEmail { get; set; }
 
         // Assignment history from visit_logistics_assignment_attempts
         public List<AssignmentAttemptDto> AssignmentHistory { get; set; } = new();
@@ -237,8 +244,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             string purpose = d.Purpose ?? "";
             string workingContent = d.WorkingContent ?? "";
             // OPERATIONAL contact of this campus — deliberately NOT the request-level primary contact.
-            string contactPersonFullName = d.OperationalContact.FullName ?? "";
-            string contactPersonPhone = d.OperationalContact.Phone ?? "";
+            var opContact = d.OperationalContact;
 
             return new RequestDetailDto
             {
@@ -294,8 +300,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 RegistrantJobTitle = camp.VisitRequest.RegistrantJobTitle ?? "",
                 Purpose = purpose,
                 WorkingContent = workingContent,
-                ContactPersonFullName = contactPersonFullName,
-                ContactPersonPhone = contactPersonPhone,
+                OperationalContactFullName = opContact.FullName ?? "",
+                OperationalContactOrganization = opContact.Organization ?? "",
+                OperationalContactJobTitle = opContact.JobTitle ?? "",
+                OperationalContactPhone = opContact.Phone ?? "",
+                OperationalContactEmail = opContact.Email ?? "",
 
                 AssignmentHistory = historyDtos,
                 LatestAttemptStatus = latestAttemptStatus
