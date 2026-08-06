@@ -86,7 +86,9 @@ async function fillHeader(page: Page, email: string) {
   await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
   await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
   await page.locator('input[name="registerInfo.email"]').fill(email);
-  await page.getByRole('button', { name: /Dùng thông tin người đăng ký/ }).click();
+  // The button's real label (card.quickFillRegistrant). The old pattern here matched no button at
+  // all, so the click simply waited out the test timeout with nothing to point at.
+  await page.getByRole('button', { name: /Dùng người đăng ký/ }).click();
 }
 
 /** Everything on the campus card except the guest list and the schedule. */

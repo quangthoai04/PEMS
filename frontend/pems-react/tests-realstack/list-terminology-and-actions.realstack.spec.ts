@@ -211,12 +211,14 @@ test.describe('Real-stack FULL-DOM: list terminology, next task and scoped hando
       await context.close();
     }
 
-    // ASSIGNED (self-hosted by the leader) → the work moves to preparing it.
+    // ASSIGNED = approved with a person named, preparation NOT started. The next task is therefore to
+    // START preparing, not to complete it: the ASSIGNED → BEFORE_VISIT step is the Host's own explicit
+    // "Bắt đầu chuẩn bị", and setup work stays shut until they take it.
     await approveCampus(request, requestId, hnInstance, 'campus_leader_hn', HN_HOST_USER_ID);
     const assigned = (await listRow(request, 'campus_leader_hn', requestCode))
       .find(r => r.visitInstanceId === hnInstance)!;
-    expect(assigned.nextTask.code).toBe('COMPLETE_PREPARATION');
-    expect(assigned.statusLabel).toBe('Đã duyệt và phân công');
+    expect(assigned.nextTask.code).toBe('START_PREPARATION');
+    expect(assigned.statusLabel).toBe('Đã phân công người phụ trách');
     expect(assigned.relationLabel).toBe('Bạn phụ trách tiếp đón');
   });
 

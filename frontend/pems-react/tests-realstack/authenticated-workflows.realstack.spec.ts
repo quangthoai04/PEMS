@@ -65,7 +65,9 @@ function campusBlock(code: string, dayOffset: number, delegation: string, tag: s
     workingContent: `Noi dung lam viec ${tag}`,
     visitors: [{ fullName: `Guest ${tag}`, nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
     externalSupportMembers: [],
-    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op@example.com' },
+    // Matches the registrant below, so the campus self-confirms at create and the confirmation gate
+    // is already open when these journeys approve it — see FIXTURE_REGISTRANT_EMAIL in realstackHelpers.
+    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'visitor@example.com' },
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',

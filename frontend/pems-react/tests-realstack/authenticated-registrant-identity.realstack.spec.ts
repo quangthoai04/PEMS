@@ -128,22 +128,9 @@ async function completeRegistrantGaps(page: Page) {
   if (!(await fullName.inputValue())) await fullName.fill('Staff Leader HN');
 }
 
-/** The primary contact is always an EXTERNAL guest — the backend refuses an internal one. */
-async function fillExternalContact(page: Page, email: string) {
-  await page.locator('input[name="contactPoint.fullName"]').fill('Đầu Mối Đoàn');
-  // The contact's organization is the shared searchable combobox, not a bare text box — react-select
-  // owns the input, so it is reached through the wrapper's test id. Filling by field name matched
-  // nothing and simply waited, which is why both journeys here failed on the 120s test timeout with
-  // no assertion error to point at: the form stayed invalid and Submit never posted.
-  const org = page.getByTestId('v2-contact-org');
-  const orgInput = org.locator('input').first();
-  await orgInput.click();
-  await orgInput.fill('ĐH Đối Tác');
-  await orgInput.blur();
-  await expect(org).toContainText('ĐH Đối Tác');
-  await page.locator('input[name="contactPoint.phone"]').fill('+84987654321');
-  await page.locator('input[name="contactPoint.email"]').fill(email);
-}
+// There is no request-level contact to fill any more. The guest-side contact is per campus, and
+// fillCampus0 above already supplies it (campusVisits.0.operationalContact.*) — which is also what
+// keeps the internal registrant from being their own contact, something the backend refuses outright.
 
 test.describe('Real-stack: registrant identity on the authenticated create', () => {
   test('Journey A — a Leader registering themself submits directly, with the campus processing choice', async ({ browser }) => {
@@ -159,11 +146,13 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
       // Identity matches the session → the no-OTP state, and the campus choice becomes available.
       await expect(page.getByTestId('v2-registrant-self')).toBeVisible();
       await completeRegistrantGaps(page);
-      await fillExternalContact(page, `e2e_contact_${Date.now()}@example.com`);
       await fillCampus0(page, 'Đoàn Chính Chủ E2E');
-      await expect(page.getByTestId('campus-processing-SELF_HOST-HN')).toBeVisible();
-      // A Leader may also hand the campus to one of their IC Staff.
-      await expect(page.getByTestId('campus-processing-ASSIGN_HOST-HN')).toBeVisible();
+      // Per-campus host PROPOSAL, not the old request-level SELF_HOST/ASSIGN_HOST processing choice:
+      // nothing here names a Current Host, it only records what this campus intends.
+      await expect(page.getByTestId('campus-host-selection-SELF-HN')).toBeVisible();
+      // A Leader may also hand the campus to one of their IC Staff, or defer the decision entirely.
+      await expect(page.getByTestId('campus-host-selection-SELECTED-HN')).toBeVisible();
+      await expect(page.getByTestId('campus-host-selection-WAIT_FOR_LATER-HN')).toBeVisible();
 
       // Submit → real POST /v2/visit-requests. No OTP challenge is minted at all.
       const createResponse = page.waitForResponse(
@@ -191,15 +180,15 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
       await expect(page.getByTestId('v2-registrant-email')).toHaveValue(LEADER_HN_EMAIL, { timeout: 15_000 });
       await completeRegistrantGaps(page);
       await fillCampus0(page, 'Đoàn Tạo Hộ E2E');
-      await expect(page.getByTestId('campus-processing-SELF_HOST-HN')).toBeVisible();
+      await expect(page.getByTestId('campus-host-selection-SELF-HN')).toBeVisible();
 
-      // …then retype the registrant as an external guest. The choice must vanish, not merely be ignored.
+      // …then retype the registrant as an external guest. The choice must vanish, not merely be ignored:
+      // proposing a host is an internal act, so the whole panel goes with the internal registrant.
       await page.getByTestId('v2-registrant-email').fill(guestEmail);
       await expect(page.getByTestId('v2-registrant-delegated')).toBeVisible();
-      await expect(page.getByTestId('campus-processing-SELF_HOST-HN')).toHaveCount(0);
-      await expect(page.getByTestId('campus-processing-ASSIGN_HOST-HN')).toHaveCount(0);
-
-      await fillExternalContact(page, guestEmail);
+      await expect(page.getByTestId('campus-host-selection-SELF-HN')).toHaveCount(0);
+      await expect(page.getByTestId('campus-host-selection-SELECTED-HN')).toHaveCount(0);
+      await expect(page.getByTestId('campus-host-selection-WAIT_FOR_LATER-HN')).toHaveCount(0);
 
       // Submit → OTP challenge addressed to the GUEST, not to the signed-in Leader.
       await page.getByTestId('v2-submit').click();

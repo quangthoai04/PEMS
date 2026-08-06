@@ -18,7 +18,7 @@
 import { test, expect } from '@playwright/test';
 import {
   API_BASE, authedPage, meUser, hdr, wallClock,
-  createMixedRequest, approveCampus, CAMPUS_HN, HN_HOST_USER_ID,
+  createMixedRequest, approveCampus, startPreparation, CAMPUS_HN, HN_HOST_USER_ID,
 } from './realstackHelpers';
 import {
   DEPT_FACILITIES, apiGet, apiPost, apiStatus, expectRefusal, queryDb, scalar, sinkSize, waitForEmail, uniq,
@@ -55,6 +55,8 @@ async function approvedHnInstance(request: Parameters<typeof createMixedRequest>
   const created = await createMixedRequest(request, tag, `Doan LG ${tag}`, `Doan LG HCM ${tag}`);
   const hn = created.instances.find(i => i.campusId === CAMPUS_HN)!;
   await approveCampus(request, created.requestId, hn.visitInstanceId, HOST_KEY, HN_HOST_USER_ID);
+  // Logistics is SETUP work, and setup stays shut at ASSIGNED until the Host starts preparing.
+  await startPreparation(request, created.requestId, hn.visitInstanceId, HOST_KEY);
   return { requestId: created.requestId, instanceId: hn.visitInstanceId };
 }
 

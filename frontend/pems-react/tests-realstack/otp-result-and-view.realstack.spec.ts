@@ -67,7 +67,9 @@ async function fillWholeForm(page: Page, email: string, delegation: string, dayO
   await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
   await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
   await page.locator('input[name="registerInfo.email"]').fill(email);
-  await page.getByRole('button', { name: /Dùng thông tin người đăng ký/ }).click();
+  // Per-campus quick-fill (campus 0). The old request-level "same as registrant" control went away
+  // with the request-level contact, so the previous label regex matched no button and simply waited.
+  await page.getByTestId('campus-opcontact-use-registrant-0').click();
 
   const start = new Date();
   start.setDate(start.getDate() + dayOffset);

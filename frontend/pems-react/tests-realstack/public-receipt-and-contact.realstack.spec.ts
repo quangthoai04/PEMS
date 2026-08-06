@@ -74,7 +74,9 @@ async function fillHeader(page: Page, email: string) {
   await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
   await page.getByTestId('v2-registrant-phone').fill('+84912345678');
   await page.locator('input[name="registerInfo.email"]').fill(email);
-  await page.getByRole('button', { name: /Dùng thông tin người đăng ký/ }).first().click();
+  // Per-campus quick-fill (campus 0). The old request-level "same as registrant" control went away
+  // with the request-level contact, so the previous label regex matched no button and simply waited.
+  await page.getByTestId('campus-opcontact-use-registrant-0').click();
 }
 
 /** Everything on campus card 0 except the operational contact, which each journey drives itself. */

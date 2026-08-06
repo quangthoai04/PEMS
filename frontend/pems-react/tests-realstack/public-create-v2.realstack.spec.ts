@@ -101,8 +101,10 @@ test.describe('Real-stack: public per-campus v2 create', () => {
     await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
     await page.locator('input[name="registerInfo.email"]').fill(email);
 
-    // Primary contact = registrant (one click), so the request stays ACTIVE (no INITIAL_CLAIM).
-    await page.getByRole('button', { name: /Dùng thông tin người đăng ký/ }).click();
+    // Per-campus quick-fill (campus 0): copies the registrant into THIS campus's operational contact.
+    // The old request-level "same as registrant" control went away with the request-level contact, so
+    // the previous label regex matched no button and simply waited out the timeout.
+    await page.getByTestId('campus-opcontact-use-registrant-0').click();
 
     await fillCampus0(page, 'Đoàn Real Stack');
 

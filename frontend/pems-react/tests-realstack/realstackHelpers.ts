@@ -109,6 +109,20 @@ export async function fillOperationalOrganization(page: Page, cardIndex: number,
   await expect(combobox).toContainText(text);
 }
 
+/**
+ * The registrant email these fixtures create under. The operational contact deliberately MATCHES it
+ * so the campus self-confirms at create (VisitRequestV2CreateService: selfMatch → the campus opens at
+ * WAITING_REQUEST_APPROVAL with the contact already recorded).
+ *
+ * Without this the request lands behind the per-campus confirmation gate and the very next thing these
+ * journeys do — approve the campus — is refused by ApproveCampusInstanceCommandHandler's gate check.
+ * The gate is not what these journeys are testing: they are about amendments, approval, hand-over and
+ * logistics, and a registrant who is also their own campus contact is an ordinary, supported case
+ * (confirmation source REGISTRANT_SELF_MATCH). The gate itself is covered by the contact journeys,
+ * which drive their own distinct contact.
+ */
+export const FIXTURE_REGISTRANT_EMAIL = 'visitor@example.com';
+
 /** A campus visit block for the v2 create payload (schedule well past the 24h/30-min rules). */
 export function campusBlock(code: string, dayOffset: number, delegation: string, tag: string) {
   const start = new Date();
@@ -127,7 +141,8 @@ export function campusBlock(code: string, dayOffset: number, delegation: string,
     workingContent: `Noi dung lam viec ${tag}`,
     visitors: [{ fullName: `Guest ${tag}`, nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
     externalSupportMembers: [],
-    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op@example.com' },
+    // Self-matching contact — see FIXTURE_REGISTRANT_EMAIL for why.
+    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: FIXTURE_REGISTRANT_EMAIL },
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',
@@ -180,6 +195,25 @@ export async function approveCampus(
     headers: hdr(leaderKey), data: { hostUserId, decisionNote: 'assign' },
   });
   expect(res.ok(), `campus approve failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+  return res.json();
+}
+
+/**
+ * Precondition: the campus's CURRENT HOST starts preparation (ASSIGNED → BEFORE_VISIT).
+ *
+ * ASSIGNED means approved with a person named and nothing started yet, so every setup mutation
+ * (agenda, logistics, setup progress) is refused there with VISIT_PREPARATION_NOT_STARTED. Journeys
+ * whose subject is the setup work itself have to take this step first — it is the Host's own
+ * "Bắt đầu chuẩn bị", and only they may take it.
+ */
+export async function startPreparation(
+  request: APIRequestContext, requestId: number, instanceId: number, hostKey: string,
+) {
+  const res = await request.post(
+    `${API_BASE}/delegations/${requestId}/campuses/${instanceId}/start-preparation`,
+    { headers: hdr(hostKey), data: {} },
+  );
+  expect(res.ok(), `start preparation failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   return res.json();
 }
 
