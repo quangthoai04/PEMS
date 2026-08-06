@@ -7,6 +7,13 @@ import { createEmptyCampusVisit } from '../utils/visitRequestV2Form';
 import type { V2CreateResponse } from '../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 
+vi.mock('../hooks/useRegistrationCampuses', () => ({
+  useRegistrationCampuses: () => ({
+    campuses: [{ campusId: 1, campusCode: 'HN', campusName: 'FPT Hà Nội', city: null }],
+    loading: false,
+  }),
+}));
+
 /**
  * Plan §16 items 8–12. The receipt is a SCREEN, not a toast: the request code is the only handle
  * the user has on what they just filed, and a notification that disappears after four seconds is
@@ -60,6 +67,8 @@ describe('the success screen (plan §8)', () => {
     expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
     // Rendered through the wall-clock formatter — never through the viewer's own timezone.
     expect(screen.getByTestId('v2-success-submitted-at')).toHaveTextContent('31/07/2026 09:30');
+    // Campus names, not a bare count.
+    expect(screen.getByTestId('v2-success-campuses')).toHaveTextContent('FPT Hà Nội');
   });
 
   it('renders an unmapped status as itself rather than as a blank or a raw key', () => {
@@ -100,6 +109,24 @@ describe('the success screen (plan §8)', () => {
   it('says when the response was an idempotent replay rather than a fresh create', () => {
     render(<VisitRequestV2SuccessPanel response={response({ idempotent: true })} values={values()} />);
     expect(screen.getByText(/already recorded|đã được ghi nhận/i)).toBeInTheDocument();
+  });
+
+  it('always tells the visitor how to track status, even with no contact claim pending', () => {
+    render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(/sign in with Google/i);
+    expect(notice).toHaveTextContent('reg@example.com');
+    // No contact-differs-from-registrant bullet when nothing is pending.
+    expect(notice).not.toHaveTextContent(/differs from the contact person/i);
+  });
+
+  it('adds the claim-pending bullet ahead of the tracking bullet when the contact must confirm', () => {
+    render(<VisitRequestV2SuccessPanel response={response({ contactClaimPending: true })} values={values()} />);
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(/differs from the contact person/i);
+    expect(notice).toHaveTextContent('contact@example.com');
+    expect(notice).toHaveTextContent(/also check your own email/i);
+    expect(notice).toHaveTextContent('reg@example.com');
   });
 
   it('drops the per-campus summary for a receipt rebuilt from the lookup', () => {
