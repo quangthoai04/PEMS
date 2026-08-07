@@ -1020,6 +1020,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         isOpen={submittedVisitRequestId != null}
         visitRequestId={submittedVisitRequestId}
         onClose={() => setSubmittedVisitRequestId(null)}
+        hideOperationalContact
       />
       <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
 

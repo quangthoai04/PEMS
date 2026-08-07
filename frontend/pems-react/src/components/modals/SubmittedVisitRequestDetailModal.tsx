@@ -31,6 +31,8 @@ interface Props {
   onApprove?: (data: SubmittedVisitRequestFormDetail) => void;
   onReject?: (data: SubmittedVisitRequestFormDetail) => void;
   onAssignHost?: (data: SubmittedVisitRequestFormDetail) => void;
+  /** Passed straight through to SubmittedVisitRequestInfoPanel — see its doc for why. */
+  hideOperationalContact?: boolean;
 }
 
 const formatDateTime = (value?: string | null) => {
@@ -65,7 +67,7 @@ const headerTitle = (status?: string, customTitle?: string) => {
 };
 
 export function SubmittedVisitRequestDetailModal({
-  isOpen, visitRequestId, title, onClose, onApprove, onReject, onAssignHost,
+  isOpen, visitRequestId, title, onClose, onApprove, onReject, onAssignHost, hideOperationalContact,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -248,7 +250,7 @@ export function SubmittedVisitRequestDetailModal({
                       />
                     ))}
 
-                <SubmittedVisitRequestInfoPanel data={data} />
+                <SubmittedVisitRequestInfoPanel data={data} hideOperationalContact={hideOperationalContact} />
               </div>
             ) : null}
           </div>

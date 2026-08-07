@@ -3169,111 +3169,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                       </div>
 
-                      {/* Đầu mối đoàn khách phối hợp tại cơ sở */}
-                      <div className="p-5 border-b border-orange-100">
-                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '3' : '2'}</span>
-                          Đầu mối đoàn khách phối hợp tại cơ sở
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Thông tin liên hệ đầu mối phía đoàn khách phối hợp tại campus này</p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
-                          <div>
-                            <p className="text-slate-500 mb-1">Họ và tên</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactFullName || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Đơn vị công tác</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactOrganization || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Chức vụ</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactJobTitle || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Số điện thoại</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactPhone || '—'}</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-1">Email</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactEmail || '—'}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Setup */}
-                      <div className="p-5 border-b border-orange-100">
-                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '4' : '3'}</span>
-                          Setup
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
-                        <div className="bg-slate-50 p-4 rounded-xl text-xs space-y-4">
-                          <div>
-                            <p className="text-slate-500 mb-1">Loại hình tham quan</p>
-                            <p className="font-bold text-slate-800">Đón tiếp đoàn khách quốc tế và sự kiện</p>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-2 font-bold">Agenda chi tiết</p>
-                            <table className="w-full text-left bg-white border border-slate-200 rounded-lg overflow-hidden">
-                              <thead className="bg-[#004c91] text-white">
-                                <tr>
-                                  <th className="p-2 w-1/4">Khung Giờ</th>
-                                  <th className="p-2">Khung nội dung chi tiết đón tiếp & tham quan dự kiến</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr className="border-b"><td className="p-2 font-bold">18:00 - 18:15</td><td className="p-2">Tập trung phái đoàn, đón tiếp xã giao sảnh Alpha, chụp hình lưu niệm check-in.</td></tr>
-                                <tr className="border-b"><td className="p-2 font-bold">18:15 - 19:30</td><td className="p-2">Làm việc trao đổi học thuật, thảo luận chi tiết hợp tác hành chính tại phòng họp VIP sảnh Alpha.</td></tr>
-                                <tr><td className="p-2 font-bold">19:30 - 22:00</td><td className="p-2">Campus Tour: Di chuyển bằng xe điện tham quan khu phát triển công nghệ cao, Thư viện số và chào tạm biệt đoàn.</td></tr>
-                              </tbody>
-                            </table>
-                          </div>
-                          <div>
-                            <p className="text-slate-500 mb-2 font-bold">Thành phần tham gia</p>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Host</p><p className="font-bold">Nguyễn Văn A</p></div>
-                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Người hỗ trợ bên IC</p><p className="font-bold">Nguyễn Văn B</p></div>
-                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Người thuộc phòng ban khác</p><p className="font-bold">Nguyễn Văn C</p></div>
-                              <div className="bg-white p-2 rounded border"><p className="text-[10px] text-slate-400">Sinh viên hỗ trợ</p><p className="font-bold">Nguyễn Văn D</p></div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Detail setup */}
-                      <div className="p-5 bg-orange-50/50">
-                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '5' : '4'}</span>
-                          Detail setup
-                        </h4>
-                        <p className="text-xs text-slate-500 mb-4">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
-                        <div className="space-y-4">
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs">
-                            <h5 className="font-bold text-slate-800 border-b pb-2 mb-2 text-[13px]">Mục 1: Trình chiếu khẩu hiệu LED</h5>
-                            <p className="mb-1"><span className="font-bold text-[#0aa14f]">Có sử dụng</span> <span className="text-slate-500">(Hiển thị chạy tự động dọc theo màn hình LED lớn sảnh chính đón khách)</span></p>
-                            <p className="bg-slate-100 p-2 rounded text-[#f37021] font-bold text-center border border-slate-200 mt-2">"FPT UNIVERSITY LUNAR NEW YEAR EVE CELEBRATION FOR INTERNATIONALS"</p>
-                          </div>
-
-                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs">
-                            <h5 className="font-bold text-slate-800 border-b pb-2 mb-3 text-[13px]">Mục 2: Chuẩn bị cho Campus Tour</h5>
-                            <div className="space-y-3">
-                              <div>
-                                <p className="font-bold text-[#004c91] mb-1">Phần 1: Người dẫn</p>
-                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Bố trí 02 Đại sứ sinh viên xuất sắc hướng dẫn dẫn đoàn và thuyết minh lưu loát bằng tiếng Anh/Việt.</p>
-                              </div>
-                              <div>
-                                <p className="font-bold text-[#004c91] mb-1">Phần 2: Xe điện</p>
-                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Chuẩn bị sẵn 01 xe điện sạc đầy pin 100%, bảo dưỡng lốp, lau dọn khu vực ghế tươm tất.</p>
-                              </div>
-                              <div>
-                                <p className="font-bold text-[#004c91] mb-1">Phần 3: Người lái</p>
-                                <p className="text-slate-700 bg-slate-50 p-2 rounded border border-slate-100">Cử cán bộ lái xe điện chuyên trách túc trực, trang phục lịch thiệp, an toàn.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
                     </div>
                   )}
                 </div>
@@ -3298,7 +3193,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <Clock className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                         </div>
-                        <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
+                        {/* InvitationDetailDto.InvitedAt (visit_participants.invited_at) — NOT requestedAt,
+                            which only exists on the logistics-request DTO below. */}
+                        <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.invitedAt)}</div>
                       </div>
 
                       <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
@@ -3644,36 +3541,6 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </div>
                           </div>
 
-                        </div>
-
-                        {/* Đầu mối đoàn khách phối hợp tại cơ sở — Request detail */}
-                        <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default mt-4">
-                          <div className="flex items-center gap-2 text-gray-400 mb-3">
-                            <User className="w-4 h-4" />
-                            <span className="text-[11px] font-bold uppercase tracking-wider">Đầu mối đoàn khách phối hợp tại cơ sở</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Họ và tên</p>
-                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactFullName || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Đơn vị công tác</p>
-                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactOrganization || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Chức vụ</p>
-                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactJobTitle || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Số điện thoại</p>
-                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactPhone || '—'}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Email</p>
-                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactEmail || '—'}</p>
-                            </div>
-                          </div>
                         </div>
 
                         <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">

@@ -110,7 +110,18 @@ const CREATED_SOURCE_LABELS: Record<string, string> = {
   INTERNAL_CREATED: 'Nội bộ tạo đơn',
 };
 
-export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitRequestFormDetail }) {
+export function SubmittedVisitRequestInfoPanel({
+  data,
+  hideOperationalContact = false,
+}: {
+  data: SubmittedVisitRequestFormDetail;
+  /**
+   * Department reception staff/leader must not see who the guest side coordinates with at the
+   * campus — that contact is confidential to IC. Every other viewer (HO, campus Staff Leader,
+   * host, the visitor themselves) keeps seeing it, so this defaults to false everywhere.
+   */
+  hideOperationalContact?: boolean;
+}) {
   const scopeLabel = VISIT_SCOPE_LABELS[data.visitScope] ?? data.visitScope;
   const visitTypeValue =
     data.visitType === 'OTHER' && data.visitTypeOther 
@@ -235,8 +246,12 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
           (GetSubmittedVisitRequestFormDetailQueryHandler: HO global read-only, Staff Leader own
           campus, Visitor own request, everyone else refused), so a second guess on the client could
           only ever disagree with it — as it did: the registrant, who nominated these people, was the
-          one being shown nothing. */}
-      {data.campuses.length > 0 && (
+          one being shown nothing.
+
+          The one deliberate exception is `hideOperationalContact`: reception department staff/leader
+          ARE authorized to open this detail (they were assigned a logistics item or invited as a
+          participant), but who the guest coordinates with at the campus is IC's business, not theirs. */}
+      {!hideOperationalContact && data.campuses.length > 0 && (
         <section>
           <SectionTitle index={++sectionCounter}>
             Đầu mối đoàn khách phối hợp tại cơ sở

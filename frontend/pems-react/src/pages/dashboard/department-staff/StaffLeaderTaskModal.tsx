@@ -680,6 +680,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
         isOpen={detailVisitRequestId != null}
         visitRequestId={detailVisitRequestId}
         onClose={() => setDetailVisitRequestId(null)}
+        hideOperationalContact
       />
     </>
   );

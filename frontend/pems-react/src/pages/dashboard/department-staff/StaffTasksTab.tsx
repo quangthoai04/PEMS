@@ -360,6 +360,7 @@ export function StaffTasksTab({ user, tasks, totalTasks, tasksLoading, attention
         isOpen={submittedVisitRequestId != null}
         visitRequestId={submittedVisitRequestId}
         onClose={() => setSubmittedVisitRequestId(null)}
+        hideOperationalContact
       />
     </div>
   );
