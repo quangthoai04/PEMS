@@ -200,12 +200,17 @@ public static class VisitSetupEmailHtml
             CloseTable(sb);
         }
 
+        // The timestamp, and nothing about an attachment.
+        //
+        // These two sentences used to end with "the attached Schedule Report is generated from this same
+        // snapshot", which was a promise this text is in no position to make: the report is a DEFAULT
+        // attachment the Host may remove before sending, and it is not produced at all when file storage
+        // is unreachable. A body that states an attachment which is not there is worse than a body that
+        // does not mention it — the recipient goes looking for a file, and the sender is told off by a
+        // guest for an omission the system chose.
         sb.Append($"<p style=\"color:{Muted};font-size:12px;margin-top:16px\">")
           .Append(en ? "Data updated at: " : "Dữ liệu được cập nhật lúc: ")
-          .Append("<strong>").Append(Esc(s.GeneratedAt.ToString("HH:mm dd/MM/yyyy"))).Append("</strong>. ")
-          .Append(en
-              ? "The attached Schedule Report is generated from this same snapshot."
-              : "Báo cáo Lịch trình đính kèm được tạo từ đúng dữ liệu này.")
+          .Append("<strong>").Append(Esc(s.GeneratedAt.ToString("HH:mm dd/MM/yyyy"))).Append("</strong>.")
           .Append("</p>");
 
         return sb.ToString();

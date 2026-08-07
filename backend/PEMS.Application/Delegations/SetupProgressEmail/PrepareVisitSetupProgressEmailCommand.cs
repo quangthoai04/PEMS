@@ -11,7 +11,14 @@ namespace PEMS.Application.Delegations.SetupProgressEmail;
 
 /// <summary>
 /// Opens the Host's "Gửi cập nhật chuẩn bị" composer: renders the message, resolves the default
-/// recipients, and generates the Schedule Report that goes with it.
+/// recipients, and — when file storage allows — generates the Schedule Report that goes with it.
+///
+/// <para>
+/// The report is a DEFAULT attachment, not a required one. Producing it is the last thing this does and
+/// the only part that can fail without failing the operation: a message the Host can read, edit and send
+/// is what "prepare" means, and a PDF that could not be archived does not take that away. See
+/// <see cref="IVisitSetupProgressComposer"/>.
+/// </para>
 ///
 /// <para>
 /// Nothing is saved. This used to create an <c>email_drafts</c> row (with its recipients and its
@@ -40,9 +47,23 @@ public sealed class PrepareVisitSetupProgressEmailResponse
     /// <summary>vi | en — the language BOTH the message and the attached report were produced in.</summary>
     public string LanguageCode { get; init; } = "vi";
 
-    /// <summary>The mandatory Schedule Report, so the composer can mark it undeletable.</summary>
-    public ulong ReportFileId { get; init; }
-    public string ReportFileName { get; init; } = string.Empty;
+    /// <summary>
+    /// The Schedule Report, attached by DEFAULT — null when it could not be produced.
+    ///
+    /// <para>
+    /// Null is a normal answer, not an error the caller must handle as one: the composer opens either way,
+    /// with the report already in its attachment list when there is one and with a warning when there is
+    /// not. It used to be non-nullable and the report used to be mandatory, which made an expired Google
+    /// Drive grant the end of the whole flow — the Host could not compose, let alone send, a message whose
+    /// text does not depend on the PDF at all.
+    /// </para>
+    /// <para>
+    /// Absence is expressed as null in both fields rather than as <c>0</c> and <c>""</c>, so a client
+    /// cannot accidentally attach file id zero or render a nameless chip.
+    /// </para>
+    /// </summary>
+    public ulong? ReportFileId { get; init; }
+    public string? ReportFileName { get; init; }
 
     /// <summary>Vietnam wall-clock moment the report — and the body's tables — were built from.</summary>
     public string ReportGeneratedAt { get; init; } = string.Empty;
@@ -54,8 +75,9 @@ public sealed class PrepareVisitSetupProgressEmailResponse
     public List<SetupProgressRecipientDto> Recipients { get; init; } = new();
 
     /// <summary>
-    /// Things the Host should read before sending — a missing guest address, a fallback recipient. These
-    /// are informational: whether the message can be sent is decided by its TO group, not by this list.
+    /// Things the Host should read before sending — a missing guest address, a fallback recipient, a
+    /// Schedule Report that could not be produced. These are informational: whether the message can be
+    /// sent is decided by its TO group, not by this list.
     /// </summary>
     public List<string> Warnings { get; init; } = new();
 }
@@ -103,6 +125,13 @@ public sealed class PrepareVisitSetupProgressEmailCommandHandler
 
         var envelope = await _recipients.ResolveAsync(instance, cancellationToken);
 
+        // A missing report joins the envelope's own notices rather than getting a channel of its own:
+        // the composer already shows this list above the form, and "the report is not attached" is the
+        // same kind of thing as "the guest has no address on file" — something to read before sending,
+        // not something that decides whether sending is possible.
+        var warnings = envelope.Warnings.ToList();
+        if (composed.ReportWarning is { } reportWarning) warnings.Add(reportWarning);
+
         return new PrepareVisitSetupProgressEmailResponse
         {
             Subject = composed.Subject,
@@ -112,7 +141,7 @@ public sealed class PrepareVisitSetupProgressEmailCommandHandler
             ReportFileName = composed.ReportFileName,
             ReportGeneratedAt = composed.GeneratedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
             Recipients = Flatten(envelope).ToList(),
-            Warnings = envelope.Warnings.ToList(),
+            Warnings = warnings,
         };
     }
 

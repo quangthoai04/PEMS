@@ -175,7 +175,8 @@ export const delegationsApi = {
 
   /**
    * Opens the Host's "Gửi cập nhật chuẩn bị" composer. The backend renders the message, resolves the
-   * default recipients and generates the mandatory Schedule Report — the client sends only the language.
+   * default recipients and — when file storage allows — generates the Schedule Report that is attached by
+   * default. The client sends only the language.
    *
    * Nothing is saved: the message comes back and the composer holds it. There is no draft id to fetch,
    * to reuse, or to fail to find.
@@ -210,8 +211,10 @@ export const delegationsApi = {
 
   /**
    * Sends the setup-progress message through its own endpoint, which re-checks host and stage at send
-   * time and requires the Schedule Report among the attachments. The generic send would accept it on
-   * "you are signed in" alone.
+   * time. The generic send would accept it on "you are signed in" alone.
+   *
+   * The attachment list is whatever the composer is holding, including none: the Schedule Report is a
+   * default attachment the Host may remove, and an email without it is a complete message.
    *
    * The `Idempotency-Key` is required, not optional: with no draft row to claim DRAFT → SENT, the
    * reservation behind this header is the only thing standing between a double click and a delegation's

@@ -63,8 +63,15 @@ public sealed class SendVisitSetupProgressEmailCommand
     public List<EmailComposeRecipientInput> Recipients { get; set; } = new();
 
     /// <summary>
-    /// Every file to attach, the mandatory Schedule Report among them. The report is identified by
-    /// <c>documents</c>, not by its position or its name — see <see cref="SetupProgressReport"/>.
+    /// Every file to attach, as the composer is holding them — possibly none.
+    ///
+    /// <para>
+    /// The Schedule Report is attached by default and the Host may remove it, so an empty list is a valid
+    /// message rather than an incomplete one. When the report IS here it is still identified by
+    /// <c>documents</c> rather than by its position or its name (see <see cref="SetupProgressReport"/>) —
+    /// not to enforce its presence, but so the extra readability check below is applied to the real report
+    /// and not to any file that happens to be named like one.
+    /// </para>
     /// </summary>
     public List<EmailComposeAttachmentInput> Attachments { get; set; } = new();
 }
@@ -87,8 +94,21 @@ public sealed class SendVisitSetupProgressEmailResponse : IEmailSendResult
 /// The generic send asks one question — are you signed in — and that can be true of a message that must no
 /// longer go out. Between opening the composer and pressing send, the campus can be cancelled, the visit
 /// can start, or the delegation can be handed to a different host. So the visit guards run again here,
-/// against the database, at the moment of sending; and the message must still carry the report, because the
-/// body tells the guest a schedule report is attached.
+/// against the database, at the moment of sending.
+/// </para>
+/// <para>
+/// What this no longer does is require the Schedule Report. It used to refuse any send whose attachments
+/// did not include one, on the reasoning that the body told the guest a report was attached — so the body
+/// stopped saying that, and the report became what it always should have been: something prepared for the
+/// Host and offered to them, which they may remove. The refusal cost more than it protected. It fired on
+/// the Host who deliberately deleted the PDF, and it fired on the Host who never had one because Google
+/// Drive was unreachable, and in both cases it blocked a message whose actual content was complete.
+/// </para>
+/// <para>
+/// Nothing about attachment SECURITY changed with it. Every attached file still goes through
+/// <c>EmailComposeWriter.ValidateAndLoadFilesAsync</c> (the file must exist and must belong to the sender)
+/// and <c>DirectEmailSender</c>'s fail-closed readability check, so a crafted request naming somebody
+/// else's file is refused exactly as before — those rules never depended on this one.
 /// </para>
 /// </summary>
 public sealed class SendVisitSetupProgressEmailCommandHandler
@@ -125,23 +145,27 @@ public sealed class SendVisitSetupProgressEmailCommandHandler
         var instance = await VisitSetupProgressEmailGuard.ResolveHostInstanceAsync(
             _db, request.VisitRequestId, request.VisitInstanceId, userId, cancellationToken);
 
-        var report = await FindMandatoryReportAsync(request, instance.VisitRequestId, cancellationToken);
-
-        // Having the file id is not having the FILE. The attachment loader refuses an unreadable file for
-        // every attachment, but this one earns its own message: the body promises a schedule report, so the
-        // useful answer names the report and points at the button that rebuilds it.
-        //
-        // Refused rather than regenerated. Regenerating here would attach a report built from setup data
-        // newer than the tables already in this body, so the message would describe one state and carry
-        // another — the exact contradiction "Đồng bộ dữ liệu mới nhất" exists to prevent by rebuilding both
-        // halves together.
-        var probe = await StoredFileProbe.ProbeAsync(
-            _db, _storage, _drive, report.FileId, cancellationToken);
-        if (!probe.IsAvailable)
-            throw new ValidationException(
-                $"Không gửi được: {StoredFileProbe.Describe(probe.Availability)}. "
-                + "Bấm “Đồng bộ dữ liệu mới nhất” để tạo lại Báo cáo Lịch trình, rồi gửi lại. "
-                + $"(Mã lỗi: {probe.ErrorCode})");
+        // The report, IF the Host kept it. No report is a complete message, so there is nothing to check.
+        if (await FindAttachedReportAsync(request, instance.VisitRequestId, cancellationToken) is { } report)
+        {
+            // Having the file id is not having the FILE. DirectEmailSender refuses an unreadable file for
+            // every attachment, but this one earns its own message: it is the attachment this screen
+            // generated and offers to rebuild, so the useful answer names it and points at that button
+            // rather than at a file the Host has never heard of.
+            //
+            // Refused rather than regenerated. Regenerating here would attach a report built from setup
+            // data newer than the tables already in this body, so the message would describe one state and
+            // carry another — the exact contradiction "Đồng bộ dữ liệu mới nhất" exists to prevent by
+            // rebuilding both halves together.
+            var probe = await StoredFileProbe.ProbeAsync(
+                _db, _storage, _drive, report.FileId, cancellationToken);
+            if (!probe.IsAvailable)
+                throw new ValidationException(
+                    $"Không gửi được: {StoredFileProbe.Describe(probe.Availability)}. "
+                    + "Bấm “Đồng bộ dữ liệu mới nhất” để tạo lại Báo cáo Lịch trình, "
+                    + "hoặc gỡ tệp báo cáo ra khỏi email rồi gửi lại. "
+                    + $"(Mã lỗi: {probe.ErrorCode})");
+        }
 
         var result = await _sender.SendAsync(
             new DirectEmailRequest(
@@ -165,15 +189,20 @@ public sealed class SendVisitSetupProgressEmailCommandHandler
     }
 
     /// <summary>
-    /// The Schedule Report among the attachments, or a refusal.
+    /// This visit's Schedule Report among the attachments, or null when the message carries none.
     ///
     /// <para>
-    /// Every attached file is offered to <see cref="SetupProgressReport.FindReportAsync"/>, which answers
-    /// from <c>documents</c> — so the report cannot be satisfied by a file the Host uploaded and named to
-    /// look like one, and cannot be satisfied by a genuine report belonging to a DIFFERENT delegation.
+    /// Each attached file is offered to <see cref="SetupProgressReport.FindReportAsync"/>, which answers
+    /// from <c>documents</c>. Null therefore covers three different messages — the Host removed the
+    /// report, the report was never produced, the attached file merely looks like one — and treats them
+    /// identically, which is correct now that none of them is a reason to refuse. What the identification
+    /// still buys is the targeted readability check above: a file the Host uploaded and named
+    /// <c>PEMS_Schedule_Report_….pdf</c>, or a genuine report belonging to a DIFFERENT delegation, does not
+    /// get the "bấm Đồng bộ dữ liệu mới nhất" advice, because rebuilding this visit's report would do
+    /// nothing for it. It is still validated as an ordinary attachment by the shared sender.
     /// </para>
     /// </summary>
-    private async Task<SetupProgressReportAttachment> FindMandatoryReportAsync(
+    private async Task<SetupProgressReportAttachment?> FindAttachedReportAsync(
         SendVisitSetupProgressEmailCommand request, ulong visitRequestId, CancellationToken cancellationToken)
     {
         foreach (var attachment in request.Attachments ?? new List<EmailComposeAttachmentInput>())
@@ -184,8 +213,6 @@ public sealed class SendVisitSetupProgressEmailCommandHandler
             if (found is { } report) return report;
         }
 
-        throw new ValidationException(
-            "Email này bắt buộc phải đính kèm Báo cáo Lịch trình của chuyến thăm. "
-            + "Bấm “Đồng bộ dữ liệu mới nhất” để tạo lại báo cáo, rồi gửi lại.");
+        return null;
     }
 }

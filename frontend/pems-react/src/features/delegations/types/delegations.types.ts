@@ -314,14 +314,23 @@ export interface SetupProgressEmailMessage {
   bodyHtml: string;
   /** vi | en — the language BOTH the message and the attached report were produced in. */
   languageCode: string;
-  /** The mandatory Schedule Report; the composer marks this attachment undeletable. */
-  reportFileId: number;
-  reportFileName: string;
+  /**
+   * The Schedule Report, which the composer attaches by DEFAULT — null when it could not be produced.
+   *
+   * Null is a normal outcome rather than an error: the PDF lives on Google Drive, the message does not,
+   * and a storage failure no longer takes the whole flow down with it. The composer opens either way,
+   * the reason appears in `warnings`, and the Host may remove the report even when it IS there.
+   */
+  reportFileId: number | null;
+  reportFileName: string | null;
   /** Vietnam wall-clock moment the report — and the body's tables — were built from. */
   reportGeneratedAt: string;
   /** The default envelope, derived from the instance. The Host may change it. */
   recipients: SetupProgressEmailRecipient[];
-  /** Informational — a missing guest address, a fallback recipient. Not a send gate. */
+  /**
+   * Informational — a missing guest address, a fallback recipient, a report that could not be generated.
+   * Not a send gate.
+   */
   warnings: string[];
 }
 
@@ -332,8 +341,15 @@ export interface SetupProgressEmailMessage {
  * `reportGeneratedAt` is the moment that snapshot was taken and is stated in the body too.
  */
 export interface SetupProgressEmailRefresh {
-  reportFileId: number;
-  reportFileName: string;
+  /**
+   * The rebuilt report — null when the body was rebuilt but the PDF could not be stored.
+   *
+   * That combination is why this is nullable rather than the call simply failing: the composer's body now
+   * describes a NEWER moment than the report it was carrying, so the old file is no longer the current
+   * snapshot and must be dropped rather than left on screen looking like one.
+   */
+  reportFileId: number | null;
+  reportFileName: string | null;
   reportGeneratedAt: string;
   languageCode: string;
   subject: string;
@@ -341,6 +357,8 @@ export interface SetupProgressEmailRefresh {
   bodyHtml: string;
   /** Always true; stated explicitly so a client cannot mistake the rebuild for an additive update. */
   bodyRewritten: boolean;
+  /** Why the report is missing, when it is. Empty on a clean refresh. */
+  warnings: string[];
 }
 
 /** The whole message, as the setup-progress send endpoint takes it. */

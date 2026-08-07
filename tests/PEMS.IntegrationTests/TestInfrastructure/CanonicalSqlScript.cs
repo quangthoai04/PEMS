@@ -596,8 +596,25 @@ public static class CanonicalSqlScript
     // contact_guard_positive_failures 0, merged_runtime_table_count 0), curated_seed_quality_gate PASS.
     // On the changed table: `notes` present, `media_consent_note` absent from the WHOLE schema
     // (information_schema count 0, not merely 0 on this table), 96 form-detail rows, 32 carrying a note.
+    //
+    // Repinned for the Schedule Report becoming a DEFAULT attachment rather than a required one. One
+    // sentence in one template, in both languages, and nothing else in the entire script:
+    //
+    //   • VISIT_SETUP_PROGRESS_UPDATE's body said "Báo cáo Lịch trình đính kèm được tạo từ đúng dữ liệu
+    //     trong các bảng trên" / "The attached Schedule Report is generated from the same data as the
+    //     tables above". Both now describe the DATA rather than an attachment.
+    //
+    // The claim had to go because it stopped being reliably true: the Host may now remove the report
+    // before sending, and it is not produced at all when Google Drive is unreachable — so the body was
+    // capable of promising the guest a file that was not there. `variables_text` is untouched (no
+    // placeholder was added or removed), `email-template-defaults.json` carries the identical rewrite so
+    // EmailTemplateDefaultsParityTests stays green, and 02_sync_templates.sql carries it too so a re-run
+    // of the sync cannot restore the old sentence.
+    //
+    // No DDL: no table, column, index, constraint, trigger or seed row differs. Still 81 base tables,
+    // 33 triggers, 252 foreign keys, 31 email templates.
     public const string ExpectedSha256 =
-        "4bac899e639c50ea0c17966fed29576d0b028aa2b8e23da96b99c7b5fe6274eb";
+        "3e1caf55b934e3aac3b6e35f22e1357d9bf59c466890f10382e3ab65f40805cb";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

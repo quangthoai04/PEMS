@@ -7,7 +7,7 @@ using PEMS.Application.Common.Interfaces;
 
 namespace PEMS.Application.Delegations.SetupProgressEmail;
 
-/// <summary>The mandatory Schedule Report carried by a setup-progress email.</summary>
+/// <summary>The Schedule Report carried by a setup-progress email, when it carries one.</summary>
 public readonly record struct SetupProgressReportAttachment(
     ulong FileId, string FileName, DateTime GeneratedAt);
 
@@ -18,8 +18,14 @@ public readonly record struct SetupProgressReportAttachment(
 /// It has to be a fact rather than a naming convention, because the send is told which files to attach by
 /// the browser. The report is the file archived under THIS delegation with category
 /// <c>SCHEDULE_REPORT</c> — read from <c>documents</c>, so a Host who uploads their own
-/// <c>PEMS_Schedule_Report_….pdf</c> does not thereby satisfy the mandatory attachment, and the real
-/// report is still recognised if its display name is edited.
+/// <c>PEMS_Schedule_Report_….pdf</c> is not mistaken for the generated one, and the real report is still
+/// recognised if its display name is edited.
+/// </para>
+/// <para>
+/// The question this answers used to be "may this send proceed"; it is now "is this the file this screen
+/// generated", which is what decides whether a send-time storage failure gets the message about rebuilding
+/// it. Carrying the report is no longer a condition of sending — see
+/// <see cref="SendVisitSetupProgressEmailCommandHandler"/>.
 /// </para>
 /// <para>
 /// This used to look the answer up by joining <c>email_draft_attachments</c>: "which attachment of this
@@ -41,8 +47,8 @@ public static class SetupProgressReport
     ///
     /// <para>
     /// Null is the answer for BOTH "no such document row" and "a document belonging to another visit", and
-    /// deliberately so: the caller's only correct response to either is to refuse the send, and telling the
-    /// two apart in a message would confirm the existence of a file the caller may not see.
+    /// deliberately so: neither is this visit's generated report, and telling the two apart in a message
+    /// would confirm the existence of a file the caller may not see.
     /// </para>
     /// </summary>
     public static async Task<SetupProgressReportAttachment?> FindReportAsync(

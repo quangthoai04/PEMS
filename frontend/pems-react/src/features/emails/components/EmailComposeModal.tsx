@@ -67,6 +67,17 @@ export interface ComposeRecipientPayload {
   displayOrder: number;
 }
 
+/**
+ * One already-stored file a caller wants the composer to open with. `fileId` is a real row in the file
+ * store — the composer does not upload these, it carries them.
+ */
+export interface InitialComposeAttachment {
+  fileId: number;
+  name: string;
+  size?: number | null;
+  mimeType?: string | null;
+}
+
 /** Everything a caller needs to send this message its own way. */
 export interface ComposePayload {
   subject: string;
@@ -109,8 +120,26 @@ interface Props {
   /**
    * Attachments the author may not remove, by file id. Shown with a "Bắt buộc" tag and no delete button.
    * Enforced again server-side — this only stops the accident, not a crafted request.
+   *
+   * The setup-progress flow no longer uses this: its Schedule Report is a DEFAULT attachment the Host may
+   * take off. Kept for callers whose attachment genuinely is a condition of the message.
    */
   lockedAttachmentFileIds?: number[];
+
+  /**
+   * Files to open the composer WITH, already stored and already the caller's to attach.
+   *
+   * <b>Why this exists at all.</b> `lockedAttachmentFileIds` names ids; it does not put anything in the
+   * attachment list. The setup-progress flow passed its report id there and nothing else, so the composer
+   * opened holding a lock on a file it was not carrying: the strip showed "Chưa có tệp đính kèm", the send
+   * payload went out with `attachments: []`, and the backend then refused the message for not attaching the
+   * report the screen had said was attached. Seeding the list is what makes "attached by default" true.
+   *
+   * These behave as ordinary attachments once seeded — removable, previewable, sent from the same state as
+   * anything the author adds. Treated as GENERATED, which only matters to
+   * {@link Props.onRefreshRequiredAttachment}: a sync replaces them and leaves the author's own files alone.
+   */
+  initialAttachments?: InitialComposeAttachment[];
 
   /**
    * Replaces the generic send for this composer. The setup-progress flow passes its own endpoint, which
@@ -123,8 +152,8 @@ interface Props {
     => Promise<{ success: boolean; message?: string }>;
 
   /**
-   * Rebuilds the locked attachment — and, when the backend returns one, the body — from current data.
-   * When supplied, the composer offers a "đồng bộ" control next to the attachment.
+   * Rebuilds the generated attachment — and, when the backend returns one, the body — from current data.
+   * When supplied, the composer offers a "đồng bộ" control next to the attachments.
    *
    * `bodyHtml` in the result is the whole point of the operation for the setup-progress flow: the PDF and
    * the tables in the body are two renderings of ONE snapshot, so refreshing only the file would attach a
@@ -133,15 +162,25 @@ interface Props {
    * Because the returned body REPLACES what is in the editor, the composer asks first whenever the author
    * has typed into it since the last generation — an unannounced overwrite of someone's own paragraphs is
    * not an acceptable cost of pressing a sync button.
+   *
+   * <b>`fileId: null` is a real answer</b>, not a failure to report: it means the data WAS re-read and the
+   * body rebuilt, but the file could not be produced this time. The composer then drops the generated file
+   * it was holding, because that file describes an older moment than the body now does and leaving it in
+   * place would present it as the current one. `warnings` says why, and the author's own attachments are
+   * untouched either way.
    */
   onRefreshRequiredAttachment?: () => Promise<{
-    fileId: number;
-    name: string;
+    fileId: number | null;
+    name?: string | null;
     generatedAt?: string;
     bodyHtml?: string;
+    warnings?: string[];
   }>;
 
-  /** Notices to show above the form (a missing guest address). Display only. */
+  /**
+   * Notices to show above the form (a missing guest address, an attachment that could not be generated).
+   * Display only. A sync replaces them with its own, so the panel always describes the latest attempt.
+   */
   notices?: string[];
 }
 
@@ -184,6 +223,22 @@ function seedEnvelopeFromString(raw: string): RecipientEnvelope {
  * means, and the caller of this component builds the list from its own backend response, so an
  * unrecognised value is a contract mismatch rather than something a sender mistyped.
  */
+/**
+ * Copies the caller's seed list into this component's own state.
+ *
+ * A copy, per item, deliberately: the array and its objects belong to the caller — in the setup-progress
+ * flow they are derived from state that outlives this modal — and removing an attachment or replacing a
+ * regenerated one must not reach back and edit the caller's data.
+ */
+function seedAttachments(rows?: InitialComposeAttachment[]): FileAttachment[] {
+  return (rows ?? []).map(row => ({
+    fileId: row.fileId,
+    name: row.name,
+    size: row.size ?? null,
+    mimeType: row.mimeType ?? null,
+  }));
+}
+
 function seedEnvelopeFromGroups(rows: ComposeRecipientPayload[]): RecipientEnvelope {
   const envelope = emptyEnvelope();
   for (const row of [...rows].sort((a, b) => a.displayOrder - b.displayOrder)) {
@@ -199,7 +254,7 @@ export function EmailComposeModal({
   open, onClose, onSent, pushToast,
   relatedType, relatedId, emailTemplateId,
   initialSubject = '', initialBodyHtml = '', initialRecipients = '', initialEnvelope,
-  lockedTemplate = false, contextTitle, lockedAttachmentFileIds, onSend,
+  lockedTemplate = false, contextTitle, lockedAttachmentFileIds, initialAttachments, onSend,
   onRefreshRequiredAttachment, notices,
 }: Props) {
   const [envelope, setEnvelope] = useState<RecipientEnvelope>(() => seedEnvelopeFromString(initialRecipients));
@@ -212,7 +267,7 @@ export function EmailComposeModal({
   const [formError, setFormError] = useState<string | null>(null);
   const [subject, setSubject] = useState(initialSubject);
   const [bodyHtml, setBodyHtml] = useState(initialBodyHtml);
-  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [attachments, setAttachments] = useState<FileAttachment[]>(() => seedAttachments(initialAttachments));
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -242,6 +297,24 @@ export function EmailComposeModal({
    */
   const [lockedFileIds, setLockedFileIds] = useState<number[]>(lockedAttachmentFileIds ?? []);
   const isLocked = useCallback((fileId: number) => lockedFileIds.includes(fileId), [lockedFileIds]);
+
+  /**
+   * Which attachments this composer produced rather than the author.
+   *
+   * The distinction is only ever used by the sync, and it is the whole reason the sync is safe: it drops
+   * exactly these and keeps everything the author added. It cannot be inferred from the lock (the report is
+   * no longer locked), from the position (the author can add files before syncing), or from the file name
+   * (a Host may upload a PDF called anything).
+   */
+  const [generatedFileIds, setGeneratedFileIds] = useState<number[]>(
+    () => (initialAttachments ?? []).map(a => a.fileId));
+
+  /**
+   * The notice panel's current contents. Seeded from the prop and replaced by a sync, so what is on screen
+   * always describes the most recent attempt — a stale "báo cáo chưa được tạo" sitting above a composer
+   * that has just successfully generated one is its own kind of wrong.
+   */
+  const [activeNotices, setActiveNotices] = useState<string[]>(notices ?? []);
 
   /**
    * The body exactly as the backend last generated it. Compared against the editor's current value to
@@ -292,7 +365,11 @@ export function EmailComposeModal({
     setSubject(initialSubject);
     setBodyHtml(initialBodyHtml);
     generatedBodyRef.current = initialBodyHtml;
-    setAttachments([]);
+    // A new session starts on the caller's seed and nothing else: a file the previous session's author
+    // uploaded must not survive into a message about something else.
+    setAttachments(seedAttachments(initialAttachments));
+    setGeneratedFileIds((initialAttachments ?? []).map(a => a.fileId));
+    setActiveNotices(notices ?? []);
     setPreview(null);
     setSelectedTemplateId(emailTemplateId || null);
     setLockedFileIds(lockedAttachmentFileIds ?? []);
@@ -535,27 +612,54 @@ export function EmailComposeModal({
   }, [sending, envelope, subject, buildPayload, toSendPayload, validateRecipients, mapServerError, pushToast, onSent, onClose, onSend]);
 
   /**
-   * Rebuilds the locked attachment, and the body with it when the backend returns one. The new file id
-   * takes over the lock so the replacement is protected and the replaced one is not. Recipients and
+   * Rebuilds the generated attachment, and the body with it when the backend returns one. Recipients and
    * subject are left alone.
+   *
+   * The attachment list is rewritten as "everything the author added, plus whatever this rebuild produced":
+   * the previous generated file goes whether or not a new one arrives, so a second sync cannot leave two
+   * reports side by side and a failed one cannot leave a stale report passing for the current snapshot.
+   * Pressing this button is also read as an explicit request for a fresh file, so a report the author had
+   * deleted comes back — they can delete it again, which is a cheaper mistake than silently sending an
+   * update with no schedule after asking for one.
    */
   const runRefreshRequiredAttachment = useCallback(async () => {
     if (!onRefreshRequiredAttachment) return;
     setRefreshingAttachment(true);
     try {
       const fresh = await onRefreshRequiredAttachment();
+      const replacement: FileAttachment[] = fresh.fileId != null
+        ? [{
+            fileId: fresh.fileId,
+            name: fresh.name || 'attachment',
+            size: null,
+            mimeType: 'application/pdf',
+          }]
+        : [];
+
       setAttachments(prev => [
-        { fileId: fresh.fileId, name: fresh.name, size: null, mimeType: 'application/pdf' },
-        ...prev.filter(a => !isLocked(a.fileId)),
+        ...replacement,
+        ...prev.filter(a => !generatedFileIds.includes(a.fileId) && a.fileId !== fresh.fileId),
       ]);
-      setLockedFileIds([fresh.fileId]);
+      setGeneratedFileIds(replacement.map(a => a.fileId));
+      // The lock, if this caller uses one, follows the file it protects rather than staying on the id that
+      // is no longer attached.
+      setLockedFileIds(prev => (prev.length > 0 ? replacement.map(a => a.fileId) : prev));
+      setActiveNotices(fresh.warnings ?? []);
 
       if (typeof fresh.bodyHtml === 'string' && fresh.bodyHtml.length > 0) {
         setBodyHtml(fresh.bodyHtml);
         generatedBodyRef.current = fresh.bodyHtml;
-        pushToast?.('success', 'Đã đồng bộ nội dung email và tệp báo cáo từ dữ liệu setup mới nhất.');
+      }
+
+      if (fresh.fileId != null) {
+        pushToast?.('success', typeof fresh.bodyHtml === 'string' && fresh.bodyHtml.length > 0
+          ? 'Đã đồng bộ nội dung email và tệp báo cáo từ dữ liệu setup mới nhất.'
+          : 'Đã tạo lại tệp đính kèm từ dữ liệu mới nhất.');
       } else {
-        pushToast?.('success', 'Đã tạo lại tệp đính kèm từ dữ liệu mới nhất.');
+        // Not an error — the body IS up to date. What the author needs to know is that the file is not.
+        pushToast?.('warning', fresh.warnings?.[0]
+          ?? 'Đã cập nhật nội dung email, nhưng chưa tạo lại được tệp báo cáo. '
+             + 'Anh/chị vẫn có thể gửi email mà không đính kèm.');
       }
       markDirty();
     } catch (e: any) {
@@ -563,7 +667,7 @@ export function EmailComposeModal({
     } finally {
       setRefreshingAttachment(false);
     }
-  }, [onRefreshRequiredAttachment, isLocked, pushToast, markDirty]);
+  }, [onRefreshRequiredAttachment, generatedFileIds, pushToast, markDirty]);
 
   /**
    * Asks before syncing when the author has typed into the body, because the sync replaces it. The check
@@ -756,11 +860,12 @@ export function EmailComposeModal({
         ) : (
           <>
             <div className="space-y-4 overflow-y-auto px-6 py-4">
-              {/* Caller-supplied notices (a missing guest address). Display only — what makes the message
-                  sendable is its TO group, not the absence of these. */}
-              {notices && notices.length > 0 && (
+              {/* Notices (a missing guest address, an attachment that could not be generated). Display
+                  only — what makes the message sendable is its TO group, not the absence of these.
+                  Rendered from state rather than straight from the prop so a sync can update them. */}
+              {activeNotices.length > 0 && (
                 <div data-testid="compose-notices" className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
-                  {notices.map((notice, i) => (
+                  {activeNotices.map((notice, i) => (
                     <p key={i} className="text-xs font-medium text-amber-800">{notice}</p>
                   ))}
                 </div>

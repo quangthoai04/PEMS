@@ -815,3 +815,79 @@ describe('EmailRichTextEditor space runs', () => {
     expect(warningsOf(onNotice)).toHaveLength(0);
   });
 });
+
+/**
+ * Only a person's edit counts as an edit.
+ *
+ * <b>What this protects.</b> The editor is CONTROLLED: every render feeds Quill the current `value` via
+ * `setContents()`, and Quill answers that with a change event of its own. `react-quill-new` does not tell
+ * that echo apart from a keystroke, so it used to reach the host as `onChange` — and because Quill's
+ * reparse is never byte-identical to what was fed in, the emitted html became the next `value`, which
+ * reparsed to a third spelling, and so on. Two notations for the same content traded places forever,
+ * pinning a CPU core the moment an editor opened on any template with a multi-declaration inline style.
+ *
+ * The fix is to filter on Quill's own `source`, and it is filtering on the ONE signal that cannot mistake
+ * an echo for an edit. It is also invisible: nothing on screen shows whether a change was attributed to
+ * `'user'` or `'api'`, so a future contributor "simplifying" the handler back to `onChange(html)` would
+ * see every test still pass and every screen still work — until an operator's fan spun up. Hence these.
+ *
+ * Written against the REAL Quill, like the rest of this file: `source` is Quill's own concept, and a
+ * mocked editor asserting it would only be asserting the mock.
+ */
+describe('EmailRichTextEditor change attribution', () => {
+  it('reports a change the person typed', async () => {
+    const { container, emitted } = setup({ value: '<p>xin chào</p>' });
+    const before = emitted().length;
+    const q = quillOf(container);
+
+    await act(async () => {
+      q.insertText(q.getLength() - 1, ' anh Nam', 'user');
+    });
+
+    expect(emitted().length).toBeGreaterThan(before);
+    // Asserted on the words rather than on the spacing: Quill writes a typed space as `&nbsp;`, so
+    // matching "anh Nam" literally would be testing its entity spelling, not that the edit was reported.
+    expect(emitted().at(-1)).toContain('Nam');
+  });
+
+  it('stays silent for a programmatic change', async () => {
+    const { container, emitted } = setup({ value: '<p>xin chào</p>' });
+    const before = emitted().length;
+    const q = quillOf(container);
+
+    // Exactly what a controlled re-feed looks like from Quill's side, and what the composer's
+    // "Đồng bộ dữ liệu mới nhất" does when it replaces the body: content written BY the application.
+    // The document really does change — it simply was not the author who changed it.
+    await act(async () => {
+      q.insertText(q.getLength() - 1, ' (tự động)', 'api');
+    });
+
+    expect(q.getText()).toContain('(tự động)');
+    expect(emitted().length).toBe(before);
+  });
+
+  it('stays silent for a silent change', async () => {
+    const { container, emitted } = setup({ value: '<p>xin chào</p>' });
+    const before = emitted().length;
+    const q = quillOf(container);
+
+    await act(async () => {
+      q.insertText(q.getLength() - 1, ' im lặng', 'silent');
+    });
+
+    expect(emitted().length).toBe(before);
+  });
+
+  /**
+   * The symptom as an operator met it: opening a document emitted nothing at all, so no host screen was
+   * ever handed a "change" it had not been given by a person. A count that grows here is the loop.
+   */
+  it('emits nothing merely from opening a document', async () => {
+    const { emitted } = setup({
+      value: '<p style="color:#334155;font-size:14px;line-height:1.65">Kính gửi Quý vị,</p>',
+    });
+
+    await waitFor(() => expect(document.querySelector('.ql-editor')).toBeTruthy());
+    expect(emitted()).toHaveLength(0);
+  });
+});

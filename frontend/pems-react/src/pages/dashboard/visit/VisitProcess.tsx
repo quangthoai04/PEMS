@@ -324,11 +324,14 @@ export function VisitProcess() {
   };
 
   // ── "Gửi cập nhật chuẩn bị" (Host only) ────────────────────────────────────
-  // The backend renders the whole message: subject, body, default recipients and the mandatory
-  // Schedule Report. This screen only asks for a language, opens the composer on what it gets back,
-  // and lets the Host edit everything before previewing and sending. The button is rendered from the
-  // backend flag alone — never from roleCode, because Staff Leader and HO read this same page and can
-  // pull the same report without being allowed to write to the guest as its host.
+  // The backend renders the whole message: subject, body, default recipients and — when file storage
+  // allows — the Schedule Report. This screen only asks for a language, opens the composer on what it
+  // gets back, and lets the Host edit everything before previewing and sending. The button is rendered
+  // from the backend flag alone — never from roleCode, because Staff Leader and HO read this same page
+  // and can pull the same report without being allowed to write to the guest as its host.
+  //
+  // The report is attached by DEFAULT and the Host may remove it, so `reportFileId` can be null and a
+  // composer with no attachment is a normal, sendable message.
   //
   // Nothing is persisted between the two steps: the message is held by the composer and posted whole.
   const [setupEmail, setSetupEmail] = useState<{
@@ -336,7 +339,16 @@ export function VisitProcess() {
     preparing: boolean;
     error: string | null;
     message: SetupProgressEmailMessage | null;
-  }>({ picking: false, preparing: false, error: null, message: null });
+    /**
+     * One number per opening of the composer, and what its React key is built from.
+     *
+     * It used to be keyed on the report's file id, which meant a sync — whose whole job is to produce a
+     * NEW file id — remounted the composer: the freshly synced body and attachment were thrown away and
+     * the modal came back holding the message the prepare had returned, along with anything the Host had
+     * typed. Keying on the session makes a remount mean what it should: a different message.
+     */
+    session: number;
+  }>({ picking: false, preparing: false, error: null, message: null, session: 0 });
 
   const prepareSetupProgressEmail = async (language: 'vi' | 'en') => {
     if (!perm || setupEmail.preparing) return;
@@ -344,7 +356,9 @@ export function VisitProcess() {
     try {
       const message = await delegationsApi.prepareSetupProgressEmail(
         perm.visitRequestId, perm.visitInstanceId, language);
-      setSetupEmail({ picking: false, preparing: false, error: null, message });
+      setSetupEmail(prev => ({
+        picking: false, preparing: false, error: null, message, session: prev.session + 1,
+      }));
     } catch (e: any) {
       setSetupEmail(prev => ({
         ...prev,
@@ -360,7 +374,9 @@ export function VisitProcess() {
   };
 
   const closeSetupEmail = () =>
-    setSetupEmail({ picking: false, preparing: false, error: null, message: null });
+    setSetupEmail(prev => ({
+      picking: false, preparing: false, error: null, message: null, session: prev.session,
+    }));
 
   // ── Real before-visit setup data (agenda). Loaded from the process-detail API; the Host edits
   // and saves it independently of the still-prototype sections (this is a genuine real slice). ──
@@ -2089,11 +2105,12 @@ export function VisitProcess() {
       )}
 
       {/* Step 2: the shared composer, opened on the message the backend just rendered. Keyed by the
-          report's file id so a re-prepare (a language change, a retry) mounts a fresh composer rather
-          than leaving the previous message's form state behind. */}
+          composer SESSION so a re-prepare (a language change, a retry) mounts a fresh composer rather
+          than leaving the previous message's form state behind — and so a sync, which changes the
+          report's file id, does not. */}
       {perm && setupEmail.message && (
         <EmailComposeModal
-          key={`setup-progress-${setupEmail.message.reportFileId}`}
+          key={`setup-progress-${setupEmail.session}`}
           open
           onClose={closeSetupEmail}
           onSent={closeSetupEmail}
@@ -2113,21 +2130,39 @@ export function VisitProcess() {
           relatedType="VISIT_INSTANCE"
           relatedId={Number(perm.visitInstanceId)}
           lockedTemplate
-          lockedAttachmentFileIds={[setupEmail.message.reportFileId]}
+          // The Schedule Report is attached by DEFAULT, not locked: it is in the list from the moment the
+          // composer opens, and the Host may take it off. Passing only `lockedAttachmentFileIds` — which
+          // names an id without attaching anything — is what produced a composer that claimed to carry a
+          // report it never held, and a send the backend then refused for not carrying it.
+          //
+          // Absent when the backend could not produce one; the reason is in `warnings` below, and the
+          // message is sendable without it.
+          initialAttachments={setupEmail.message.reportFileId != null
+            ? [{
+                fileId: setupEmail.message.reportFileId,
+                name: setupEmail.message.reportFileName ?? 'PEMS_Schedule_Report.pdf',
+                mimeType: 'application/pdf',
+                size: null,
+              }]
+            : undefined}
           notices={setupEmail.message.warnings}
           onRefreshRequiredAttachment={async () => {
             const language = setupEmail.message?.languageCode === 'en' ? 'en' : 'vi';
             const fresh = await delegationsApi.refreshSetupProgressEmail(
               perm.visitRequestId, perm.visitInstanceId, language);
-            setSetupEmail(prev => prev.message
-              ? { ...prev, message: { ...prev.message, reportFileId: fresh.reportFileId, reportFileName: fresh.reportFileName, reportGeneratedAt: fresh.reportGeneratedAt } }
-              : prev);
+            // Nothing is written back into this screen's state: from the moment it opens, the composer
+            // owns the message. Copying the new file id up here used to change the composer's key and
+            // remount it, throwing away the very sync that produced it.
+            //
             // The body comes back too: it and the PDF are one snapshot, so the composer replaces both.
+            // A null file id means the body was rebuilt but the PDF could not be stored — the composer
+            // then drops the report it was holding rather than passing an older one off as the latest.
             return {
-              fileId: fresh.reportFileId,
-              name: fresh.reportFileName,
+              fileId: fresh.reportFileId ?? null,
+              name: fresh.reportFileName ?? null,
               generatedAt: fresh.reportGeneratedAt,
               bodyHtml: fresh.bodyHtml,
+              warnings: fresh.warnings ?? [],
             };
           }}
           onSend={(payload, idempotencyKey) =>

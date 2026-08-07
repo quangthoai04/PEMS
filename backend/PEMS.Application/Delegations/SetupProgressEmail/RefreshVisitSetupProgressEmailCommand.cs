@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -34,12 +35,27 @@ public sealed record RefreshVisitSetupProgressEmailCommand(
 
 public sealed class RefreshVisitSetupProgressEmailResponse
 {
-    public ulong ReportFileId { get; init; }
-    public string ReportFileName { get; init; } = string.Empty;
+    /// <summary>
+    /// The rebuilt Schedule Report, or null when it could not be archived this time.
+    ///
+    /// <para>
+    /// Null here is the case that most needs stating, because the body WAS rebuilt: the composer is now
+    /// holding a message describing a newer moment than the report it was carrying, so the previous PDF is
+    /// not the latest one and must not be presented as though it were. The client's part is to drop the
+    /// report it had and show <see cref="Warnings"/> — see the composer's refresh handler.
+    /// </para>
+    /// </summary>
+    public ulong? ReportFileId { get; init; }
+    public string? ReportFileName { get; init; }
 
     /// <summary>The moment BOTH the body and the PDF were built from — one read, one timestamp.</summary>
     public string ReportGeneratedAt { get; init; } = string.Empty;
     public string LanguageCode { get; init; } = "vi";
+
+    /// <summary>
+    /// Why the report is missing, when it is. Empty on a clean refresh.
+    /// </summary>
+    public List<string> Warnings { get; init; } = new();
 
     /// <summary>The freshly rendered body, which REPLACES what the composer was holding.</summary>
     public string BodyHtml { get; init; } = string.Empty;
@@ -91,6 +107,7 @@ public sealed class RefreshVisitSetupProgressEmailCommandHandler
             ReportGeneratedAt = composed.GeneratedAt.ToString("yyyy-MM-ddTHH:mm:ss"),
             LanguageCode = composed.LanguageCode,
             BodyRewritten = true,
+            Warnings = composed.ReportWarning is { } w ? new List<string> { w } : new List<string>(),
         };
     }
 }

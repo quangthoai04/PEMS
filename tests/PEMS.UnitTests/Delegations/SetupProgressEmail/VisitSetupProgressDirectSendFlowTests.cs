@@ -36,12 +36,17 @@ namespace PEMS.UnitTests.Delegations.SetupProgressEmail;
 /// so there is no server-side draft to reopen, to guess the id of, or to own.
 /// </para>
 /// <para>
-/// The important consequence is that the send guards had to get STRICTER, not weaker, and that is what
-/// the send section below pins down. When the server owned the draft it could trust the attachment
-/// list it had written; now the client sends the attachment list, so the report is re-identified from
-/// <c>documents</c> on every send. A file the Host uploaded and named to look like a report, or a
-/// genuine report belonging to a different delegation, is refused here — the two cases that replace
-/// "an ordinary draft cannot be pushed through this route".
+/// The send guards are re-run against the database on every send, because the client now supplies the
+/// whole message: who the host is, what stage the visit is at, and whether the attached report is real.
+/// </para>
+/// <para>
+/// <b>What the report is, and is not.</b> It is a DEFAULT attachment: prepared for the Host, attached by
+/// the composer, removable by them, and simply absent when file storage could not produce it. It is not a
+/// condition of sending, and this file pins both halves of that — a Drive failure costs the report and
+/// nothing else (the prepare section), and a message carrying no report is sent (the send section). The
+/// identification from <c>documents</c> survives the change with a narrower job: it decides which
+/// attachment gets the report-specific "rebuild it" advice when its bytes have gone, not whether the
+/// message may go out.
 /// </para>
 /// <para>
 /// The report artifact service is the one thing stubbed: rendering a genuine PDF and pushing it
@@ -104,6 +109,101 @@ public class VisitSetupProgressDirectSendFlowTests
         // A blind copy on a message to a guest would be an internal address the guest cannot see and
         // did not consent to. There is never one here.
         Assert.DoesNotContain(result.Recipients, r => r.RecipientType == "BCC");
+    }
+
+    /// <summary>
+    /// The failure this whole change is about.
+    ///
+    /// <para>
+    /// The Schedule Report lives on Google Drive; the message does not. When the grant has expired, the
+    /// Host used to get nothing at all — no composer, no subject, no body, no way to write to the guest —
+    /// because the LAST step of building an OPTIONAL attachment threw and took the operation with it. The
+    /// message is what "prepare" produces, and it does not depend on the PDF.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(GoogleDriveErrorCodes.TokenExpired)]
+    [InlineData(GoogleDriveErrorCodes.AuthFailed)]
+    [InlineData(GoogleDriveErrorCodes.ConfigMissing)]
+    [InlineData(GoogleDriveErrorCodes.Unavailable)]
+    [InlineData(GoogleDriveErrorCodes.FolderNotFoundOrNoPermission)]
+    public async Task A_drive_failure_costs_the_report_and_nothing_else(string errorCode)
+    {
+        var sut = CreateSut();
+        sut.Reports.StoreFailure = new BusinessRuleException("Google Drive nói không.", errorCode);
+
+        var result = await PrepareAsync(sut);
+
+        // The composer opens on a complete message.
+        Assert.NotEmpty(result.Subject);
+        Assert.NotEmpty(result.BodyHtml);
+        Assert.NotEmpty(result.Recipients);
+
+        // …carrying no report, said as null rather than as a file id of 0 or a nameless attachment.
+        Assert.Null(result.ReportFileId);
+        Assert.Null(result.ReportFileName);
+
+        // …and a reason the Host can act on.
+        Assert.Contains(result.Warnings, w => w.Contains("Báo cáo Lịch trình"));
+    }
+
+    /// <summary>
+    /// An expired grant and a bad minute at Google need different things from different people: one is
+    /// repaired by an administrator reconnecting the account, the other by waiting. The Host is told which.
+    /// </summary>
+    [Fact]
+    public async Task A_grant_that_needs_reconnecting_says_so_rather_than_inviting_a_retry()
+    {
+        var expired = CreateSut();
+        expired.Reports.StoreFailure = new BusinessRuleException(
+            "hết hạn", GoogleDriveErrorCodes.TokenExpired);
+
+        var outage = CreateSut();
+        outage.Reports.StoreFailure = new BusinessRuleException(
+            "tạm thời", GoogleDriveErrorCodes.Unavailable);
+
+        var expiredWarning = Assert.Single((await PrepareAsync(expired)).Warnings);
+        var outageWarning = Assert.Single((await PrepareAsync(outage)).Warnings);
+
+        Assert.Contains("xác thực lại", expiredWarning);
+        Assert.NotEqual(expiredWarning, outageWarning);
+
+        // And neither of them repeats the old advice, which named the one control on screen that has
+        // nothing to do with the cause.
+        Assert.DoesNotContain("ngôn ngữ", expiredWarning);
+        Assert.DoesNotContain("ngôn ngữ", outageWarning);
+    }
+
+    /// <summary>
+    /// A failed archive must leave nothing behind that a later reader would take for a real report — the
+    /// state that makes a delegation list a Schedule Report which cannot be opened.
+    /// </summary>
+    [Fact]
+    public async Task A_failed_archive_records_no_report()
+    {
+        var sut = CreateSut();
+        sut.Reports.StoreFailure = new BusinessRuleException(
+            "Google Drive nói không.", GoogleDriveErrorCodes.TokenExpired);
+
+        await PrepareAsync(sut);
+
+        Assert.False(await sut.Db.Documents.AnyAsync(
+            d => d.DocumentCategory == SetupProgressReport.ReportDocumentCategory));
+        Assert.False(await sut.Db.Files.AnyAsync());
+    }
+
+    /// <summary>
+    /// Rendering is NOT best-effort, and the asymmetry is deliberate. The report's data is what the body's
+    /// own tables are built from, so a failure there is a failure to obtain the email's content — the one
+    /// thing this operation cannot do without. Storage is the only part that talks to a third party.
+    /// </summary>
+    [Fact]
+    public async Task A_failure_to_build_the_report_data_still_fails_the_whole_prepare()
+    {
+        var sut = CreateSut();
+        sut.Reports.RenderFailure = new ValidationException("Không dựng được dữ liệu báo cáo.");
+
+        await Assert.ThrowsAsync<ValidationException>(() => PrepareAsync(sut));
     }
 
     [Fact]
@@ -232,6 +332,42 @@ public class VisitSetupProgressDirectSendFlowTests
         Assert.Equal("en", sut.Reports.LastLanguage);
     }
 
+    /// <summary>
+    /// A refresh whose data read succeeded but whose upload did not. The body IS newer than it was, so the
+    /// call must NOT be reported as a failure — but it must also not pretend a report was produced, because
+    /// the client's correct response is to drop the one it was holding.
+    /// </summary>
+    [Fact]
+    public async Task Refreshing_updates_the_body_even_when_the_report_cannot_be_stored()
+    {
+        var sut = CreateSut();
+        await PrepareAsync(sut);
+        sut.Reports.StoreFailure = new BusinessRuleException(
+            "Google Drive nói không.", GoogleDriveErrorCodes.TokenExpired);
+
+        var refreshed = await sut.Refresh.Handle(
+            new RefreshVisitSetupProgressEmailCommand(Request, Instance, "vi"), default);
+
+        Assert.NotEmpty(refreshed.BodyHtml);
+        Assert.True(refreshed.BodyRewritten);
+        Assert.Null(refreshed.ReportFileId);
+        Assert.Null(refreshed.ReportFileName);
+        Assert.NotEmpty(refreshed.Warnings);
+    }
+
+    [Fact]
+    public async Task A_clean_refresh_carries_no_warnings()
+    {
+        var sut = CreateSut();
+        await PrepareAsync(sut);
+
+        var refreshed = await sut.Refresh.Handle(
+            new RefreshVisitSetupProgressEmailCommand(Request, Instance, "vi"), default);
+
+        Assert.NotNull(refreshed.ReportFileId);
+        Assert.Empty(refreshed.Warnings);
+    }
+
     [Fact]
     public async Task Someone_who_is_not_the_host_cannot_refresh()
     {
@@ -268,8 +404,8 @@ public class VisitSetupProgressDirectSendFlowTests
 
         // Between composing and sending, the archived report becomes unreadable. Every row is still
         // there, so nothing structural stops the send — and the guest would otherwise receive a message
-        // announcing an attachment that was silently dropped on the way out.
-        sut.Storage.Unreadable.Add(prepared.ReportFileId);
+        // whose attachment was silently dropped on the way out.
+        sut.Storage.Unreadable.Add(prepared.ReportFileId!.Value);
 
         var ex = await Assert.ThrowsAsync<ValidationException>(() => SendAsync(sut, prepared));
 
@@ -360,29 +496,60 @@ public class VisitSetupProgressDirectSendFlowTests
     }
 
     /// <summary>
-    /// The body tells the guest a schedule report is attached, so a send carrying no report is refused
-    /// rather than delivered bare.
+    /// A message with no attachment at all is a COMPLETE message.
+    ///
+    /// <para>
+    /// This is the inversion of the rule this file used to pin. The send refused any attachment list not
+    /// containing a Schedule Report, on the reasoning that the body announced one — so the body stopped
+    /// announcing one, and the report became a default the Host may decline. The refusal was reachable in
+    /// two ordinary situations and neither was an error: the Host deleted the PDF on purpose, or Google
+    /// Drive was unreachable when the composer opened and there had never been one to delete.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task A_message_that_lost_its_report_is_refused_rather_than_sent_bare()
+    public async Task A_message_the_host_stripped_of_its_report_is_sent()
     {
         var sut = CreateSut();
         var prepared = await PrepareAsync(sut);
 
-        var ex = await Assert.ThrowsAsync<ValidationException>(
-            () => SendAsync(sut, prepared, attachments: new List<EmailComposeAttachmentInput>()));
+        var result = await SendAsync(sut, prepared, attachments: new List<EmailComposeAttachmentInput>());
 
-        Assert.Contains("Báo cáo Lịch trình", ex.Message);
-        Assert.Empty(sut.Sender.Sent);
+        Assert.True(result.Success);
+        var sent = Assert.Single(sut.Sender.Sent);
+        Assert.Empty(sent.Attachments!);
+    }
+
+    /// <summary>The composer that never had a report to offer: prepare degraded, and the send is normal.</summary>
+    [Fact]
+    public async Task A_message_composed_while_drive_was_down_is_sent()
+    {
+        var sut = CreateSut();
+        sut.Reports.StoreFailure = new BusinessRuleException(
+            "Google Drive nói không.", GoogleDriveErrorCodes.TokenExpired);
+        var prepared = await PrepareAsync(sut);
+
+        Assert.Null(prepared.ReportFileId);
+
+        var result = await SendAsync(sut, prepared, attachments: new List<EmailComposeAttachmentInput>());
+
+        Assert.True(result.Success);
+        Assert.Single(sut.Sender.Sent);
     }
 
     /// <summary>
-    /// The client now supplies the attachment list, so "there is a file attached" is not the question —
-    /// "is that file the Schedule Report of THIS visit" is. A file the Host uploaded themselves cannot
-    /// satisfy it, however it is named.
+    /// The send-time readability check is about THE report — the file this screen generated and offers to
+    /// rebuild. A file the Host uploaded and named to look like one is not it, however convincing the name,
+    /// so it must not collect the "bấm Đồng bộ dữ liệu mới nhất" advice: rebuilding this visit's report
+    /// would do nothing for it.
+    ///
+    /// <para>
+    /// It is not thereby unchecked. Ownership, size, extension and readability are applied to EVERY
+    /// attachment by <c>EmailComposeWriter</c> and <c>DirectEmailSender</c>, which this fixture stands in
+    /// for — see that suite. What this pins is only that the identification still tells the two apart.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task A_file_the_host_uploaded_and_named_like_a_report_does_not_satisfy_the_requirement()
+    public async Task A_file_the_host_uploaded_and_named_like_a_report_is_not_mistaken_for_the_generated_one()
     {
         var sut = CreateSut();
         var prepared = await PrepareAsync(sut);
@@ -399,21 +566,25 @@ public class VisitSetupProgressDirectSendFlowTests
         });
         await sut.Db.SaveChangesAsync();
 
-        await Assert.ThrowsAsync<ValidationException>(() => SendAsync(sut, prepared,
+        // Unreadable, so IF it were taken for the report the send would be refused naming the report.
+        sut.Storage.Unreadable.Add(60001);
+
+        var result = await SendAsync(sut, prepared,
             attachments: new List<EmailComposeAttachmentInput>
             {
                 new() { FileId = 60001, DisplayName = "PEMS_Schedule_Report_VR-1_20260801_1430.pdf" },
-            }));
+            });
 
-        Assert.Empty(sut.Sender.Sent);
+        Assert.True(result.Success);
+        Assert.Single(sut.Sender.Sent);
     }
 
     /// <summary>
-    /// A genuine Schedule Report, archived by this very code — but for a different delegation. It is
-    /// refused, because the report is matched on the visit it belongs to and not merely on its category.
+    /// A genuine Schedule Report archived by this very code — but for a different delegation. Still not
+    /// this visit's report, because the match is on the visit it belongs to and not merely on its category.
     /// </summary>
     [Fact]
-    public async Task A_genuine_report_belonging_to_another_delegation_does_not_satisfy_the_requirement()
+    public async Task A_genuine_report_belonging_to_another_delegation_is_not_this_visits_report()
     {
         var sut = CreateSut();
         var prepared = await PrepareAsync(sut);
@@ -440,11 +611,30 @@ public class VisitSetupProgressDirectSendFlowTests
             CreatedBy = Host,
         });
         await sut.Db.SaveChangesAsync();
+        sut.Storage.Unreadable.Add(60002);
 
-        await Assert.ThrowsAsync<ValidationException>(() => SendAsync(sut, prepared,
-            attachments: new List<EmailComposeAttachmentInput> { new() { FileId = 60002 } }));
+        var result = await SendAsync(sut, prepared,
+            attachments: new List<EmailComposeAttachmentInput> { new() { FileId = 60002 } });
 
-        Assert.Empty(sut.Sender.Sent);
+        Assert.True(result.Success);
+        Assert.Single(sut.Sender.Sent);
+    }
+
+    /// <summary>
+    /// The readability refusal follows the ATTACHMENT, not the visit: a report that has become unreadable
+    /// stops nothing once it is no longer attached, which is the whole point of being allowed to remove it.
+    /// </summary>
+    [Fact]
+    public async Task An_unreadable_report_that_is_not_attached_stops_nothing()
+    {
+        var sut = CreateSut();
+        var prepared = await PrepareAsync(sut);
+        sut.Storage.Unreadable.Add(prepared.ReportFileId!.Value);
+
+        var result = await SendAsync(sut, prepared, attachments: new List<EmailComposeAttachmentInput>());
+
+        Assert.True(result.Success);
+        Assert.Single(sut.Sender.Sent);
     }
 
     // ── Fixture ─────────────────────────────────────────────────────────────
@@ -497,7 +687,8 @@ public class VisitSetupProgressDirectSendFlowTests
         var sender = new RecordingDirectEmailSender();
         var composer = new VisitSetupProgressComposer(
             db, renderer, reports, formRead,
-            new PEMS.UnitTests.TestInfrastructure.StubEmailSenderVariableResolver());
+            new PEMS.UnitTests.TestInfrastructure.StubEmailSenderVariableResolver(),
+            NullLogger<VisitSetupProgressComposer>.Instance);
 
         return new Sut
         {
@@ -518,8 +709,9 @@ public class VisitSetupProgressDirectSendFlowTests
         => sut.Prepare.Handle(new PrepareVisitSetupProgressEmailCommand(Request, Instance, language), default);
 
     /// <summary>
-    /// Sends the message the composer would be holding: the prepared subject, body, envelope and the
-    /// mandatory report, exactly as the browser posts them.
+    /// Sends the message the composer would be holding: the prepared subject, body, envelope and — by
+    /// default, as the composer does — the report, exactly as the browser posts them. Pass an explicit
+    /// list to model a Host who removed it, or a prepare that never produced one.
     /// </summary>
     private static Task<SendVisitSetupProgressEmailResponse> SendAsync(
         Sut sut,
@@ -538,10 +730,12 @@ public class VisitSetupProgressDirectSendFlowTests
                     Email = r.Email, Name = r.Name, RecipientType = r.RecipientType,
                 })
                 .ToList(),
-            Attachments = attachments ?? new List<EmailComposeAttachmentInput>
-            {
-                new() { FileId = prepared.ReportFileId, DisplayName = prepared.ReportFileName },
-            },
+            Attachments = attachments ?? (prepared.ReportFileId is { } fileId
+                ? new List<EmailComposeAttachmentInput>
+                {
+                    new() { FileId = fileId, DisplayName = prepared.ReportFileName },
+                }
+                : new List<EmailComposeAttachmentInput>()),
         }, default);
 
     /// <summary>
@@ -574,10 +768,14 @@ public class VisitSetupProgressDirectSendFlowTests
         public int StoreCount { get; private set; }
         public string? LastLanguage { get; private set; }
 
+        /// <summary>Makes the report's DATA unbuildable — the half that is NOT best-effort.</summary>
+        public Exception? RenderFailure { get; set; }
+
         public Task<ScheduleReportArtifact> RenderAsync(
             VisitRequestCampus instance, string? languageCode, CancellationToken ct)
         {
             RenderCount++;
+            if (RenderFailure is not null) throw RenderFailure;
             LastLanguage = string.Equals(languageCode, "en", StringComparison.OrdinalIgnoreCase) ? "en" : "vi";
             var suffix = LastLanguage == "en" ? "_EN" : "";
             // Data must be carried: it is what the body's HTML tables are rendered from, and the
@@ -602,10 +800,19 @@ public class VisitSetupProgressDirectSendFlowTests
 
         public ScheduleReportTestDbContext? Db { get; set; }
 
+        /// <summary>
+        /// Makes archiving fail the way Drive does. Set to the exception the real
+        /// <c>ScheduleReportArtifactService.StoreAsync</c> would let escape — a
+        /// <see cref="BusinessRuleException"/> carrying a <see cref="GoogleDriveErrorCodes"/> value, or one
+        /// of its own <see cref="ValidationException"/>s.
+        /// </summary>
+        public Exception? StoreFailure { get; set; }
+
         public async Task<ulong> StoreAsync(
             ScheduleReportArtifact artifact, VisitRequestCampus instance, ulong actorUserId, CancellationToken ct)
         {
             StoreCount++;
+            if (StoreFailure is not null) throw StoreFailure;
             var fileId = ++_nextFileId;
 
             // The real service uploads the bytes and inserts a files row BEFORE recording the document,

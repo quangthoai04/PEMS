@@ -30,11 +30,15 @@ vi.mock('../../../../features/delegations/api/delegationsApi', () => ({
 
 // The composer has its own suite; here it only has to announce that it opened, and on what.
 vi.mock('../../../../features/emails/components/EmailComposeModal', () => ({
-  EmailComposeModal: ({ initialSubject, initialEnvelope, lockedAttachmentFileIds, lockedTemplate }: any) => (
+  EmailComposeModal: ({
+    initialSubject, initialEnvelope, initialAttachments, lockedAttachmentFileIds, lockedTemplate, notices,
+  }: any) => (
     <div data-testid="compose-modal"
       data-subject={initialSubject}
       data-envelope={JSON.stringify(initialEnvelope)}
-      data-locked-files={JSON.stringify(lockedAttachmentFileIds)}
+      data-initial-attachments={JSON.stringify(initialAttachments ?? null)}
+      data-locked-files={JSON.stringify(lockedAttachmentFileIds ?? null)}
+      data-notices={JSON.stringify(notices)}
       data-locked-template={String(lockedTemplate)} />
   ),
 }));
@@ -178,7 +182,15 @@ describe('Gửi cập nhật chuẩn bị', () => {
     const modal = await screen.findByTestId('compose-modal');
     expect(modal.getAttribute('data-subject')).toBe(PREPARED.subject);
     expect(modal.getAttribute('data-locked-template')).toBe('true');
-    expect(modal.getAttribute('data-locked-files')).toBe('[900]');
+
+    // The report is handed over as an ATTACHMENT, not as a locked id. Passing only the id named a file
+    // the composer was not carrying: its strip said "chưa có tệp đính kèm", the payload went out empty,
+    // and the send was refused for omitting the very report the screen said was mandatory.
+    expect(JSON.parse(modal.getAttribute('data-initial-attachments') ?? 'null')).toEqual([
+      { fileId: 900, name: 'PEMS_Schedule_Report_VR-9001.pdf', mimeType: 'application/pdf', size: null },
+    ]);
+    // And it is NOT locked: the Host may take it off.
+    expect(JSON.parse(modal.getAttribute('data-locked-files') ?? 'null')).toBeNull();
 
     // The envelope is passed through GROUPED. The screen never assembles it from what it happens to
     // have loaded, and a CC the backend chose has to stay a CC.
@@ -198,6 +210,35 @@ describe('Gửi cập nhật chuẩn bị', () => {
     await user.click(screen.getByRole('button', { name: 'English' }));
 
     await waitFor(() => expect(prepareSetupProgressEmail).toHaveBeenCalledWith(9001, 501, 'en'));
+  });
+
+  /**
+   * Google Drive being unavailable costs the report and nothing else.
+   *
+   * This is the situation the whole change is about. The backend used to fail the entire prepare when the
+   * PDF could not be archived, so an expired Drive grant meant the Host could not compose — let alone
+   * send — a message whose text does not depend on the PDF at all. It now answers with the message, a
+   * null report, and a reason.
+   */
+  it('opens the composer with no attachment when the backend produced no report', async () => {
+    const user = userEvent.setup();
+    prepareSetupProgressEmail.mockResolvedValue({
+      ...PREPARED,
+      reportFileId: null,
+      reportFileName: null,
+      warnings: ['Kết nối Google Drive cần được xác thực lại. Báo cáo Lịch trình chưa được đính kèm.'],
+    });
+
+    render(<VisitProcess />);
+    await waitFor(() => expect(screen.getByTestId('send-setup-progress-email')).toBeTruthy());
+    await user.click(screen.getByTestId('send-setup-progress-email'));
+    await user.click(screen.getByRole('button', { name: 'Tiếng Việt' }));
+
+    const modal = await screen.findByTestId('compose-modal');
+    // No fabricated attachment: not file id 0, not an empty name — nothing.
+    expect(JSON.parse(modal.getAttribute('data-initial-attachments') ?? 'null')).toBeNull();
+    expect(modal.getAttribute('data-subject')).toBe(PREPARED.subject);
+    expect(JSON.parse(modal.getAttribute('data-notices') ?? '[]')[0]).toContain('xác thực lại');
   });
 
   it('reports a failed preparation and lets the host try again', async () => {
