@@ -82,9 +82,9 @@
     "workingLanguage": "Working language",
     "languageVi": "Vietnamese",
     "languageEn": "English",
-    "mediaConsent": "Media consent",
-    "mediaAgreed": "Photography/recording allowed",
-    "mediaDeclined": "Not allowed",
+    "mediaConsent": "Media coverage",
+    "mediaAgreed": "Agreed",
+    "mediaDeclined": "Declined",
     "transportationNote": "Transportation identification",
     "notes": "Notes",
     "addCampus": "Add campus ({{count}}/{{max}})"

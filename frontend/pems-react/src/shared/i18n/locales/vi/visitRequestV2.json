@@ -82,9 +82,9 @@
     "workingLanguage": "Ngôn ngữ làm việc",
     "languageVi": "Tiếng Việt",
     "languageEn": "Tiếng Anh",
-    "mediaConsent": "Đồng ý truyền thông",
-    "mediaAgreed": "Đồng ý ghi hình/chụp ảnh",
-    "mediaDeclined": "Không đồng ý",
+    "mediaConsent": "Truyền thông",
+    "mediaAgreed": "Đồng ý",
+    "mediaDeclined": "Từ chối",
     "transportationNote": "Nhận diện phương tiện di chuyển",
     "notes": "Ghi chú",
     "addCampus": "Thêm cơ sở ({{count}}/{{max}})"
