@@ -214,7 +214,9 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),
                     MediaConsentStatus = cv.MediaConsentStatus,
-                    MediaConsentNote = cv.MediaConsentNote,
+                    // Clean() so a blank/whitespace note lands as NULL, not as a row that reads
+                    // "has a note" to every screen and diff downstream.
+                    Notes = Clean(cv.Notes),
                     FormRevision = 1,
                     ApprovalRevision = 1,
                     RowVersion = 0,
@@ -422,7 +424,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
     {
         d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
         d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail,
-        d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
+        d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,
         Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
     };
 

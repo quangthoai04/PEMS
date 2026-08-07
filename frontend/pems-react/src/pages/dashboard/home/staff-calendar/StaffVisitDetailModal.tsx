@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   X, Loader2, MapPin, Clock, Users, User, Phone, Mail, Globe, Car, Camera,
   FileText, AlertCircle, Check, UserCheck, MessageSquare, Ban, Settings, UserPlus,
+  StickyNote,
 } from 'lucide-react';
 import {
   staffCalendarApi,
@@ -317,13 +318,18 @@ export function StaffVisitDetailModal({
                     icon={<Camera className="w-3 h-3" />}
                     label="Ghi hình / media"
                     value={detail.mediaConsentStatus
-                      ? (MEDIA_CONSENT_LABELS[detail.mediaConsentStatus] || detail.mediaConsentStatus) + (detail.mediaConsentNote ? ` — ${detail.mediaConsentNote}` : '')
+                      ? MEDIA_CONSENT_LABELS[detail.mediaConsentStatus] || detail.mediaConsentStatus
                       : null}
                   />
                   <InfoRow
                     icon={<Car className="w-3 h-3" />}
                     label="Nhận diện phương tiện"
                     value={detail.transportationNote}
+                  />
+                  <InfoRow
+                    icon={<StickyNote className="w-3 h-3" />}
+                    label="Ghi chú gửi FPTU"
+                    value={detail.notes}
                   />
                 </div>
               </section>

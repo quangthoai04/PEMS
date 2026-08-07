@@ -8,7 +8,7 @@ import { EXCEL_COLUMN_MAX_LENGTH } from '../components/ExcelUpload/excelValidato
 
 /**
  * Plan §24. Four `.max()` rules shipped with NO message (delegationName, visitTypeOther,
- * mediaConsentNote, notes), so a Vietnamese user who pasted too much got Zod's English default
+ * notes), so a Vietnamese user who pasted too much got Zod's English default
  * — and the Excel importer checked no lengths at all, so a sheet could import cleanly and then
  * be refused by the server.
  */
@@ -48,7 +48,6 @@ const validValues = () => ({
     workingLanguage: 'VI' as const,
     transportationNote: '',
     mediaConsentStatus: 'DECLINED' as const,
-    mediaConsentNote: '',
     notes: '',
   }],
 });
@@ -72,7 +71,6 @@ describe('length rules carry a real message (plan §18)', () => {
     ['campusVisits.0.purpose', 2000, (v, s) => { v.campusVisits[0].purpose = s; }],
     ['campusVisits.0.workingContent', 4000, (v, s) => { v.campusVisits[0].workingContent = s; }],
     ['campusVisits.0.transportationNote', 2000, (v, s) => { v.campusVisits[0].transportationNote = s; }],
-    ['campusVisits.0.mediaConsentNote', 2000, (v, s) => { v.campusVisits[0].mediaConsentNote = s; }],
     ['campusVisits.0.notes', 2000, (v, s) => { v.campusVisits[0].notes = s; }],
     ['registerInfo.fullName', 150, (v, s) => { v.registerInfo.fullName = s; }],
     ['registerInfo.organization', 200, (v, s) => { v.registerInfo.organization = s; }],

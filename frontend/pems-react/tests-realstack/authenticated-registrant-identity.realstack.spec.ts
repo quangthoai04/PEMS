@@ -239,7 +239,7 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
           phone: '+84912345678', email: 'op@example.com',
         },
         workingLanguage: 'VI', transportationNote: null,
-        mediaConsentStatus: 'DECLINED', mediaConsentNote: null, notes: null,
+        mediaConsentStatus: 'DECLINED', notes: null,
         processing: { mode: 'SELF_HOST', hostUserId: null, confirmedHostConflict: false },
       }],
     };

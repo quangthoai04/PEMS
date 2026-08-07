@@ -251,7 +251,6 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
                 {cv.mediaConsentStatus === 'AGREED'
                   ? t('visitRequestV2:summary.mediaAgreed')
                   : t('visitRequestV2:summary.mediaDeclined')}
-                {cv.mediaConsentNote ? ` — ${cv.mediaConsentNote}` : ''}
               </Field>
               <div className="sm:col-span-2">
                 <Field label={t('visitRequestV2:summary.purpose')}>{cv.purpose || none}</Field>
@@ -275,7 +274,10 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               />
               <div className="sm:col-span-2">
                 <Field label={t('visitRequestV2:summary.operationalContact')}>
-                  {[cv.operationalContact.fullName, cv.operationalContact.organization]
+                  {/* Job title is part of what the form asks for, and it is the line that tells the
+                      campus whether the person on the other end can settle a schedule or has to go
+                      and ask. It was collected and then dropped from this post-submit summary. */}
+                  {[cv.operationalContact.fullName, cv.operationalContact.jobTitle, cv.operationalContact.organization]
                     .filter((x) => x && x.trim())
                     .join(' — ')}
                   <div className="text-xs text-slate-500">

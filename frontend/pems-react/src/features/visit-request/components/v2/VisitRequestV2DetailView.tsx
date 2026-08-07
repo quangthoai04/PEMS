@@ -142,19 +142,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const safeEditCap = capabilityFor(viewer.capabilities, VisitV2Action.SubmitSafeEdit);
   const editPendingCap = capabilityFor(viewer.capabilities, VisitV2Action.EditPendingRequest);
 
-  // The confirmation roll-up (section ②) earns its place only when it says something the per-campus
-  // cards below do not: a whole-request view, several campuses to track at once, or an answer still
-  // outstanding. On one confirmed campus in scope it was a heading over "1/1" above the card that
-  // names that very contact.
-  const unresolvedConfirmation =
-    data.confirmationSummary.pending > 0
-    || data.confirmationSummary.declined > 0
-    || data.confirmationSummary.expired > 0;
-  const showConfirmationSummary =
-    viewer.canViewAllCampuses || data.campusVisits.length > 1 || unresolvedConfirmation;
-  // The step numbers are what the reader counts through, so they close up when a section is not
-  // rendered — a page that ran 1, 3, 4 would read as if section 2 had failed to load.
-  const step = { registrant: 1, confirmation: 2, campuses: showConfirmationSummary ? 3 : 2, timeline: showConfirmationSummary ? 4 : 3 };
+  // There is no request-level confirmation roll-up. It counted campuses ("1/1", "còn N cơ sở chờ")
+  // directly above the very cards that name each contact and show that contact's own state, so it
+  // never told the reader anything the section below it did not — on one campus it was a heading
+  // over its own answer. The workflow itself is untouched: it lives per campus, where the contact
+  // does. See the campus cards in section ② for the full per-campus contact block.
 
   return (
     <div className="space-y-4">
@@ -225,7 +217,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
 
       {/* ── ① Registrant ── */}
       <VisitSectionCard
-        step={step.registrant}
+        step={1}
         title={t('visitRequestV2:sections.registrant')}
         readOnlyLabel={t('visitRequestV2:detail.readOnly')}
         data-testid="section-registrant"
@@ -242,43 +234,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         />
       </VisitSectionCard>
 
-      {/* ── ② Confirmation-gate progress ──
-          There is no request-level contact section any more. Each campus names its OWN operational
-          contact and shows it on its own card below; the only request-level fact about them is how
-          many have answered, which is what decides whether any Staff Leader can act at all.
-
-          Which is exactly why it does not always earn a section of its own. On a single-campus,
-          instance-scoped page the card below already names the contact and shows that they have
-          confirmed — so this became a second heading saying "1/1", above a block that says the same
-          thing with the person's name on it. It stays when it carries something that card cannot:
-          a whole-request view, more than one campus to keep track of, or an answer still missing. */}
-      {showConfirmationSummary && (
-        <VisitSectionCard
-          step={step.confirmation}
-          title={t('visitRequestV2:summary.contactConfirmation')}
-          readOnlyLabel={t('visitRequestV2:detail.readOnly')}
-          data-testid="section-contact-summary"
-        >
-          <ReadOnlyInfoGrid
-            rows={[
-              {
-                label: t('visitRequestV2:summary.contactConfirmation'),
-                value: data.confirmationSummary.pending > 0
-                  ? t('visitRequestV2:summary.contactPendingCount', { count: data.confirmationSummary.pending })
-                  : t('visitRequestV2:summary.contactAllConfirmed'),
-              },
-              {
-                label: t('visitRequestV2:detail.confirmedCampuses'),
-                value: `${data.confirmationSummary.confirmed}/${data.confirmationSummary.total}`,
-              },
-            ]}
-          />
-        </VisitSectionCard>
-      )}
-
-      {/* ── ③ Per-campus cards: ONLY the campuses the backend returned for this caller ── */}
+      {/* ── ② Per-campus cards: ONLY the campuses the backend returned for this caller ──
+          Each card carries its OWN operational contact in full — name, organisation, job title,
+          email, phone, confirmation state and who/when decided — which is what the removed
+          request-level roll-up was counting. */}
       <VisitSectionCard
-        step={step.campuses}
+        step={2}
         title={t('visitRequestV2:sections.campuses')}
         headerExtra={
           <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
@@ -354,9 +315,9 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         )}
       </VisitSectionCard>
 
-      {/* ── ④ Scoped, masked history ── */}
+      {/* ── ③ Scoped, masked history ── */}
       <VisitSectionCard
-        step={step.timeline}
+        step={3}
         title={t('visitRequestV2:detail.historyTitle')}
         readOnlyLabel={t('visitRequestV2:detail.readOnly')}
         data-testid="section-history"

@@ -101,3 +101,32 @@ describe('CampusVisitDetailCard', () => {
     expect(screen.getByText('Thăm phòng lab')).toBeInTheDocument();
   });
 });
+
+// ── One note, one consent answer ─────────────────────────────────────────────
+/**
+ * The consent row used to append the media note after an em dash — "Agreed — <note>" — which read
+ * as a single fact. They were always two, and only one of them survived the business change: the
+ * consent answer stands alone, and the guest's general note ("Ghi chú gửi FPTU") is its own row.
+ */
+describe('CampusVisitDetailCard — media consent and the general note are separate rows', () => {
+  it('renders the guest note on its own, whatever the consent answer is', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({
+      mediaConsentStatus: 'AGREED',
+      notes: 'Đoàn có hai khách lớn tuổi, mong hỗ trợ xe điện.',
+    })} />);
+
+    expect(screen.getByText('Đoàn có hai khách lớn tuổi, mong hỗ trợ xe điện.')).toBeInTheDocument();
+    // Not glued onto the consent answer, and no leftover media-note label.
+    expect(screen.queryByText(/Agreed —/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Media note/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a declined consent and a note together — the two do not gate each other', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({
+      mediaConsentStatus: 'DECLINED',
+      notes: 'Cần phiên dịch Anh - Việt buổi chiều.',
+    })} />);
+
+    expect(screen.getByText('Cần phiên dịch Anh - Việt buổi chiều.')).toBeInTheDocument();
+  });
+});

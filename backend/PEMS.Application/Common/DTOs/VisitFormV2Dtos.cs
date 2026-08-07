@@ -65,7 +65,7 @@ public record CampusVisitFormDto(
     string WorkingLanguage,          // EN | VI
     string? TransportationNote,
     string MediaConsentStatus,       // AGREED | DECLINED
-    string? MediaConsentNote,
+    string? Notes,                   // "Ghi chú gửi FPTU" — one general remark, independent of consent
 
     // ── Reception-host arrangement (authenticated create only; forced to WAIT_FOR_LATER otherwise) ──
     CampusHostSelectionV2Dto? HostSelection);

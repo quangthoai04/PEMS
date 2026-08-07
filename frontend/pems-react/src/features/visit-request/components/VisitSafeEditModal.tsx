@@ -56,7 +56,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
       },
       transportationNote: c.transportationNote ?? '',
       mediaConsentStatus: c.mediaConsentStatus,
-      mediaConsentNote: c.mediaConsentNote ?? '',
+      notes: c.notes ?? '',
     })),
   );
   const [busy, setBusy] = useState(false);

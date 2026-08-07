@@ -24,14 +24,17 @@ public class CreateVisitRequestV2CommandValidatorTests
     private static CampusVisitFormDto Campus(
         string? workingContent = "Nội dung làm việc",
         ContactPointDto? opContact = null,
-        IList<SupportTeamMemberDto>? support = null)
+        IList<SupportTeamMemberDto>? support = null,
+        IList<VisitorDto>? visitors = null,
+        string mediaConsentStatus = "DECLINED",
+        string? notes = null)
         => new(
             "HN", Start, Start.AddHours(2),
             "Đoàn A", "MEETING", null, "Trao đổi", workingContent,
-            new List<VisitorDto> { Guest() },
+            visitors ?? new List<VisitorDto> { Guest() },
             support ?? new List<SupportTeamMemberDto>(),
             opContact ?? new ContactPointDto("ĐM CS", "ĐH X", "Trưởng phòng Hợp tác", "+84911111111", "op@example.com"),
-            "EN", null, "DECLINED", null, null);
+            "EN", null, mediaConsentStatus, notes, null);
 
     private static CreateVisitRequestV2Command Command(CampusVisitFormDto? campus = null,
         RegistrantInputV2? registrant = null)
@@ -137,6 +140,43 @@ public class CreateVisitRequestV2CommandValidatorTests
             p => p.Contains("Phone"));
     }
 
+    // ── Guests: at least one per campus ──────────────────────────────────────
+    // Unlike the support team, the delegation is the reason the campus is receiving anybody. The
+    // form has always required one; the server only null-checked the list, so a direct call could
+    // store a campus whose guest list was empty and the detail screen showed a delegation of nobody.
+    // These run against the SHARED CampusVisitFormDtoValidator, which pending-edit and resubmit
+    // reuse through ToFormDto — so one rule covers every write path.
+
+    // `with` rather than the helper: the helper coalesces null to the default roster, which is the
+    // whole point of a default — so a null has to be written onto the DTO itself.
+    [Fact]
+    public void A_null_guest_list_is_rejected()
+        => Assert.Contains(
+            ErrorsFor(Command(Campus() with { Visitors = null! })),
+            p => p.Contains("Visitors"));
+
+    [Fact]
+    public void An_empty_guest_list_is_rejected()
+        => Assert.Contains(
+            ErrorsFor(Command(Campus(visitors: new List<VisitorDto>()))),
+            p => p.Contains("Visitors"));
+
+    [Fact]
+    public void One_guest_is_enough()
+        => Assert.True(_validator.Validate(Command(Campus(
+            visitors: new List<VisitorDto> { Guest() }))).IsValid);
+
+    [Fact]
+    public void Exactly_the_two_hundred_guest_ceiling_is_accepted()
+        => Assert.True(_validator.Validate(Command(Campus(
+            visitors: Enumerable.Range(0, 200).Select(_ => Guest()).ToList()))).IsValid);
+
+    [Fact]
+    public void More_than_two_hundred_guests_is_rejected()
+        => Assert.Contains(
+            ErrorsFor(Command(Campus(visitors: Enumerable.Range(0, 201).Select(_ => Guest()).ToList()))),
+            p => p.Contains("Visitors"));
+
     // ── Support members: optional list, mandatory columns ────────────────────
 
     [Fact]
@@ -170,4 +210,37 @@ public class CreateVisitRequestV2CommandValidatorTests
     public void One_character_over_the_limit_is_rejected()
         => Assert.Contains(ErrorsFor(Command(Campus(workingContent: new string('x', 4001)))),
             p => p.Contains("WorkingContent"));
+
+    // ── "Ghi chú gửi FPTU" is independent of media consent ───────────────────
+    // The note the media-consent field used to carry was conditional on AGREED: the form only
+    // showed it then, and it read as a justification for the consent answer. `notes` replaces it
+    // with the guest's own general remark about the campus, which has nothing to do with consent —
+    // so all four combinations below are legitimate, and none of them may be refused.
+
+    [Theory]
+    [InlineData("AGREED", null)]
+    [InlineData("DECLINED", null)]
+    [InlineData("AGREED", "Đoàn có hai khách lớn tuổi, xin hỗ trợ xe điện.")]
+    [InlineData("DECLINED", "Đoàn có hai khách lớn tuổi, xin hỗ trợ xe điện.")]
+    public void Notes_and_media_consent_do_not_gate_each_other(string status, string? notes)
+        => Assert.True(_validator.Validate(
+            Command(Campus(mediaConsentStatus: status, notes: notes))).IsValid);
+
+    [Fact]
+    public void Notes_at_exactly_the_limit_is_accepted()
+        => Assert.True(_validator.Validate(Command(Campus(notes: new string('n', 2000)))).IsValid);
+
+    [Fact]
+    public void Notes_one_character_over_the_limit_is_rejected()
+        => Assert.Contains(ErrorsFor(Command(Campus(notes: new string('n', 2001)))),
+            p => p.Contains("Notes"));
+
+    [Fact]
+    public void An_over_long_note_is_refused_in_Vietnamese_naming_the_field()
+    {
+        var messages = _validator.Validate(Command(Campus(notes: new string('n', 2001))))
+            .Errors.Select(e => e.ErrorMessage).ToArray();
+        Assert.Contains(messages, m => m.Contains("Ghi chú gửi FPTU", StringComparison.Ordinal));
+        Assert.DoesNotContain(messages, m => m.Contains("The length of", StringComparison.OrdinalIgnoreCase));
+    }
 }

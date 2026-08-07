@@ -712,3 +712,43 @@ describe('a draft is written for anything the user filled in, and for nothing th
     expect(loadVisitRequestV2Draft(NS)).toBeNull();
   });
 });
+
+// ── "Yêu cầu bổ sung": one note, not two ─────────────────────────────────────
+/**
+ * The card used to carry TWO free-text notes: a general one and a media-consent one that appeared
+ * only while consent was AGREED. The business kept one note and dropped the media one, so the
+ * conditional block is gone — and with it the reason for a card to render differently depending on
+ * an answer given two fields earlier.
+ *
+ * `t` is mocked to echo the key, so these assertions read label KEYS rather than Vietnamese text:
+ * a mistranslation cannot make this pass, and a removed key cannot make it fail silently.
+ */
+describe('the campus card offers exactly one free-text note', () => {
+  const renderForm = () => render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
+
+  const consentSelect = (): HTMLSelectElement => {
+    const wrapper = screen.getByText('visitRequestV2:card.mediaConsent').closest('div.flex.flex-col.gap-2');
+    return wrapper!.querySelector('select') as HTMLSelectElement;
+  };
+
+  beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+
+  it('shows "Ghi chú gửi FPTU" and the consent answer, and no media note', () => {
+    renderForm();
+    expect(screen.getByText('visitRequestV2:card.notes')).toBeTruthy();
+    expect(screen.getByText('visitRequestV2:card.mediaConsent')).toBeTruthy();
+    expect(screen.queryByText('visitRequestV2:card.mediaNote')).toBeNull();
+  });
+
+  it.each([['AGREED'], ['DECLINED']])(
+    'keeps the note field and adds no second one when consent is %s', (status) => {
+      renderForm();
+      fireEvent.change(consentSelect(), { target: { value: status } });
+
+      expect(consentSelect().value).toBe(status);
+      expect(screen.getByText('visitRequestV2:card.notes')).toBeTruthy();
+      // The old card grew an extra textarea here on AGREED. Nothing about the note depends on
+      // the consent answer any more, in either direction.
+      expect(screen.queryByText('visitRequestV2:card.mediaNote')).toBeNull();
+    });
+});

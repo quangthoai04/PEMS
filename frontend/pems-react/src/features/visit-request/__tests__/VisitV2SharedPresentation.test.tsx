@@ -8,6 +8,8 @@ import {
   visitStatusI18nKey,
   visitStatusTone,
 } from '../components/v2/shared/visitStatus';
+import viVisitRequestV2 from '../../../shared/i18n/locales/vi/visitRequestV2.json';
+import enVisitRequestV2 from '../../../shared/i18n/locales/en/visitRequestV2.json';
 
 // jsdom's navigator.language is en-US → i18n initializes in EN; assertions use the EN strings.
 
@@ -97,11 +99,33 @@ describe('VisitStatusBadge', () => {
     expect(screen.getByTestId('b')).toHaveTextContent('Partially approved');
   });
 
+  // The confirmation gate has a value on BOTH enums, and neither was in the vocabulary: a request
+  // sitting at PENDING_CONTACT_CONFIRMATION rendered "Unknown" on the detail screen, directly above
+  // a campus card that rendered "Unknown" for WAITING_CONTACT_CONFIRMATION.
+  it('names the request-level confirmation gate instead of falling back to Unknown', () => {
+    render(<VisitStatusBadge kind="request" status="PENDING_CONTACT_CONFIRMATION" data-testid="b" />);
+
+    expect(screen.getByTestId('b')).toHaveTextContent('Awaiting delegation contact confirmation');
+    expect(screen.getByTestId('b')).not.toHaveTextContent('Unknown');
+    expect(screen.getByTestId('b').textContent).not.toContain('_');
+  });
+
+  it('names the campus-level confirmation gate too', () => {
+    render(<VisitStatusBadge kind="instance" status="WAITING_CONTACT_CONFIRMATION" data-testid="b" />);
+
+    expect(screen.getByTestId('b')).toHaveTextContent('Awaiting delegation contact confirmation');
+    expect(screen.getByTestId('b')).not.toHaveTextContent('Unknown');
+  });
+
   it.each([
     ['a value from the OTHER enum', 'instance', 'PARTIALLY_APPROVED'],
     ['an unknown value', 'request', 'SOMETHING_NEW'],
     ['an empty value', 'instance', ''],
     ['a null value', 'instance', null],
+    // The two gate values stay in their own enum: the request one is not a campus state and the
+    // campus one is not a request state, so each is still Unknown on the other side.
+    ['the request gate value on the instance enum', 'instance', 'PENDING_CONTACT_CONFIRMATION'],
+    ['the instance gate value on the request enum', 'request', 'WAITING_CONTACT_CONFIRMATION'],
   ])('falls back to the neutral label for %s', (_label, kind, status) => {
     render(<VisitStatusBadge kind={kind as 'instance' | 'request'} status={status} data-testid="b" />);
 
@@ -122,11 +146,39 @@ describe('visitStatus helpers', () => {
     expect(isKnownVisitStatus('request', 'ASSIGNED')).toBe(false);
     expect(isKnownVisitStatus('request', 'APPROVED')).toBe(true);
     expect(isKnownVisitStatus('instance', 'APPROVED')).toBe(false);
+    // …and the confirmation gate is two DIFFERENT values, one per enum, not one shared value.
+    expect(isKnownVisitStatus('request', 'PENDING_CONTACT_CONFIRMATION')).toBe(true);
+    expect(isKnownVisitStatus('instance', 'PENDING_CONTACT_CONFIRMATION')).toBe(false);
+    expect(isKnownVisitStatus('instance', 'WAITING_CONTACT_CONFIRMATION')).toBe(true);
+    expect(isKnownVisitStatus('request', 'WAITING_CONTACT_CONFIRMATION')).toBe(false);
+  });
+
+  it('tones the confirmation gate as waiting, on both enums', () => {
+    expect(visitStatusTone('request', 'PENDING_CONTACT_CONFIRMATION')).toBe('waiting');
+    expect(visitStatusTone('instance', 'WAITING_CONTACT_CONFIRMATION')).toBe('waiting');
+    expect(visitStatusI18nKey('request', 'PENDING_CONTACT_CONFIRMATION'))
+      .toBe('visitRequestV2:status.request.PENDING_CONTACT_CONFIRMATION');
   });
 
   it('routes an unknown value to the shared unknown key and a neutral tone', () => {
     expect(visitStatusI18nKey('instance', 'NOPE')).toBe('visitRequestV2:status.unknown');
     expect(visitStatusTone('instance', 'NOPE')).toBe('neutral');
+  });
+
+  // The badge renders in ONE language per run (jsdom picks EN), so the other locale can only be
+  // checked at its source. A key present in one file and missing in the other falls back silently:
+  // the reader gets Vietnamese in an English UI, or "Unknown" again.
+  it.each([
+    ['vi', viVisitRequestV2, 'Chờ đầu mối đoàn khách xác nhận'],
+    ['en', enVisitRequestV2, 'Awaiting delegation contact confirmation'],
+  ])('labels the confirmation gate in %s, on both enums', (_lang, bundle, expected) => {
+    const status = (bundle as { status: { request: Record<string, string>; instance: Record<string, string> } }).status;
+
+    expect(status.request.PENDING_CONTACT_CONFIRMATION).toBe(expected);
+    expect(status.instance.WAITING_CONTACT_CONFIRMATION).toBe(expected);
+    // Each value belongs to exactly one enum — a stray copy is how the two vocabularies drift.
+    expect(status.instance.PENDING_CONTACT_CONFIRMATION).toBeUndefined();
+    expect(status.request.WAITING_CONTACT_CONFIRMATION).toBeUndefined();
   });
 });
 

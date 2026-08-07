@@ -62,7 +62,9 @@ public sealed class StaffCalendarDetailDto
     public int GuestCount { get; set; }
     public string? WorkingLanguage { get; set; }
     public string? MediaConsentStatus { get; set; }
-    public string? MediaConsentNote { get; set; }
+    /// <summary>"Ghi chú gửi FPTU" — the guest's one general remark about this campus,
+    /// independent of <see cref="MediaConsentStatus"/>.</summary>
+    public string? Notes { get; set; }
     /// <summary>Free text the guest entered to identify the transportation to FPTU.</summary>
     public string? TransportationNote { get; set; }
 

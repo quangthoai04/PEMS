@@ -241,7 +241,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             if (campuses.TryGetValue(c.CampusId, out var ci)) { code = ci.Code; name = ci.Name; }
 
             string delegationName, visitType, purpose, workingLanguage, mediaStatus;
-            string? visitTypeOther, workingContent, transportationNote, mediaNote;
+            string? visitTypeOther, workingContent, transportationNote, notes;
             ResolvedOperationalContactDto opContact;
             List<ResolvedMemberDto> visitors, support;
             uint formRevision, approvalRevision;
@@ -271,7 +271,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 workingLanguage = d.WorkingLanguage;
                 transportationNote = d.TransportationNote;
                 mediaStatus = d.MediaConsentStatus;
-                mediaNote = d.MediaConsentNote;
+                notes = d.Notes;
                 opContact = new ResolvedOperationalContactDto
                 {
                     FullName = d.OperationalContactFullName,
@@ -413,7 +413,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 WorkingLanguage = workingLanguage,
                 TransportationNote = transportationNote,
                 MediaConsentStatus = mediaStatus,
-                MediaConsentNote = mediaNote,
+                Notes = notes,
                 ContactState = new ResolvedCampusContactStateDto
                 {
                     Confirmed = c.OperationalContactUserId is not null,
@@ -852,7 +852,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 WorkingContent = d.WorkingContent,
                 WorkingLanguage = d.WorkingLanguage,
                 MediaConsentStatus = d.MediaConsentStatus,
-                MediaConsentNote = d.MediaConsentNote,
+                Notes = d.Notes,
                 TransportationNote = d.TransportationNote,
                 OperationalContact = new VisitFormOperationalContact
                 {

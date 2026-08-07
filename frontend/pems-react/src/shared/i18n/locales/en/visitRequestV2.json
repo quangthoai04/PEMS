@@ -82,10 +82,9 @@
     "workingLanguage": "Working language",
     "languageVi": "Vietnamese",
     "languageEn": "English",
-    "mediaConsent": "Media coverage",
-    "mediaAgreed": "Agreed",
-    "mediaDeclined": "Declined",
-    "mediaNote": "Media note",
+    "mediaConsent": "Media consent",
+    "mediaAgreed": "Photography/recording allowed",
+    "mediaDeclined": "Not allowed",
     "transportationNote": "Transportation identification",
     "notes": "Notes",
     "addCampus": "Add campus ({{count}}/{{max}})"
@@ -250,8 +249,7 @@
     "mediaConsent": "Media consent",
     "mediaAgreed": "Agreed",
     "mediaDeclined": "Declined",
-    "mediaNote": "Media note",
-    "campusNote": "Campus note",
+    "campusNote": "Note to FPTU",
     "instanceStatus": "Campus status",
     "none": "—",
     "colIndex": "No.",
@@ -389,8 +387,7 @@
     "contactAccessStatus": "Confirmation status",
     "contactActive": "Confirmed",
     "contactVerifiedAt": "Confirmed at",
-    "noCampusInScope": "No campus in your viewing scope.",
-    "confirmedCampuses": "Campuses with a confirmed contact"
+    "noCampusInScope": "No campus in your viewing scope."
   },
   "preparation": {
     "hostAssigned": "Host assigned",
@@ -407,6 +404,7 @@
     "complete": "Information completed",
     "incomplete": "Incomplete",
     "instance": {
+      "WAITING_CONTACT_CONFIRMATION": "Awaiting delegation contact confirmation",
       "WAITING_REQUEST_APPROVAL": "Awaiting Staff Leader",
       "ASSIGNED": "Host assigned",
       "BEFORE_VISIT": "In preparation",
@@ -417,6 +415,7 @@
       "REJECTED": "Rejected"
     },
     "request": {
+      "PENDING_CONTACT_CONFIRMATION": "Awaiting delegation contact confirmation",
       "PENDING_APPROVAL": "Pending approval",
       "PARTIALLY_APPROVED": "Partially approved",
       "APPROVED": "Approved",
@@ -518,7 +517,7 @@
       "workingLanguage": "Working language",
       "transportationNote": "Transport details",
       "mediaConsentStatus": "Media consent",
-      "mediaConsentNote": "Media consent note",
+      "notes": "Note to FPTU",
       "noteToFptu": "Note to the campus",
       "operationalContactFullName": "Operational contact",
       "operationalContactOrganization": "Contact organisation",

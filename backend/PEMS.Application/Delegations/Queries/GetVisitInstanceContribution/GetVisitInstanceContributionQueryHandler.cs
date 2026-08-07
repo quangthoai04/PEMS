@@ -180,7 +180,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
         string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
         string? purpose = d.Purpose, workingContent = d.WorkingContent;
         string? workingLanguage = d.WorkingLanguage;
-        string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
+        string? mediaConsentStatus = d.MediaConsentStatus, notes = d.Notes;
         string? transportationNote = d.TransportationNote;
         var guestMembers = d.Visitors.Select(MapRow).ToList();
         var externalSupportMembers = d.SupportMembers.Select(MapRow).ToList();
@@ -210,7 +210,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
             WorkingContent = workingContent,
             WorkingLanguage = workingLanguage,
             MediaConsentStatus = mediaConsentStatus,
-            MediaConsentNote = mediaConsentNote,
+            Notes = notes,
             TransportationNote = transportationNote,
 
             OperationalContactFullName = d.OperationalContact.FullName,

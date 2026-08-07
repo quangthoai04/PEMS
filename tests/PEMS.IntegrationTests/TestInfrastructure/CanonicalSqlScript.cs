@@ -532,8 +532,72 @@ public static class CanonicalSqlScript
     //     drifted on 14 requests: 2002 said PENDING_APPROVAL over two REJECTED campuses. A closing
     //     UPDATE now recomputes the request status with the same rule (and the same precedence) as
     //     VisitRequestAggregateStatusService.Compute, so the seed cannot disagree with the app.
+    // Repinned for the §4.4 guest roster — and, in passing, for a break this change did not cause.
+    //
+    // TWO things moved the hash, and only the second is this change's doing:
+    //   • commit a69a4021 ("fix seed SQL") edited the script without touching this constant, so the
+    //     pin already named a file that was not on disk. The schema contract was therefore RED on Dev
+    //     before any of the work below: ReadVerified throws, and every database-backed test fails at
+    //     bootstrap rather than on an assertion. Measured: HEAD's script normalises to
+    //     de1a3f773a41e6fce3be84d0ed461084ea034a4dfaab3db699035d8274afa1f8, not the ecc8758c… pinned.
+    //   • the deliberate change: the eleven §4.4 operational-contact scenarios (requests 47001-47011)
+    //     seeded campuses with NO guest at all. Every other seeded request carries a GUEST row, so
+    //     these were the only campuses in the whole script showing a delegation of nobody — a state
+    //     no write path can produce now that CampusVisitFormDtoValidator requires a non-empty guest
+    //     list. One guest per request (ids 47201+) is inserted and linked to each of that request's
+    //     campuses, its two DELETEs join the block's reset list, and a new reporting check
+    //     (invalid_21_campus_without_visitor) asserts the invariant across every seeded campus.
+    //
+    // Seed rows plus ONE assertion, no DDL: no table, column, index, constraint or trigger differs.
+    //
+    // The assertion lives in sp_pems_assert_curated_seed_quality, immediately after the check it is
+    // modelled on: "operational campus instances without agenda". That invariant is carried BOTH ways
+    // in this script — report-only in the invalid_*/v2_* list, and fail-fast in the procedure — and
+    // "campus with no guest at all" is the same kind of claim (a campus missing a mandatory child
+    // collection), so it is carried the same way rather than left as a number nobody reads.
+    //
+    // Verified against real MySQL 8.0.46 by importing the retargeted script into a fresh disposable
+    // database: exit 0, 81 base tables, 33 triggers, 252 foreign keys, 31 email templates,
+    // invalid_21_campus_without_visitor = 0, contact_guard_negative_failures = 0 /
+    // contact_guard_positive_failures = 0, curated_seed_quality_gate PASS — 0 campuses without a guest
+    // across all 96 seeded campuses, and all 21 OPC-01..OPC-11 campuses at exactly one.
+    // Repinned again for the media-consent-note HARD CUTOVER. This one IS a schema change, and the
+    // only one in this bump:
+    //
+    //   • `visit_instance_form_details.media_consent_note` is DROPPED and `notes TEXT NULL` takes its
+    //     place, commented "Ghi chú bổ sung chung của khách gửi FPTU tại campus này". Not a rename:
+    //     the media note meant "why this consent answer", `notes` means "the guest's one general
+    //     remark to FPTU about this campus", and no data is carried across — the business dropped the
+    //     first field and the seed writes the second from scratch.
+    //   • `media_consent_status` is UNCHANGED, including its index — the consent answer stays; only
+    //     its note is gone.
+    //
+    // Everything else that moved follows the column: the three INSERT … SELECT scenario blocks and the
+    // §4.4 inline VALUES rows (their column lists, their SELECT lists and all 148 seeded values), the
+    // has-mixed-details comparison in the aggregate view, and the form-revision-1 snapshot JSON_OBJECT
+    // (`'mediaConsentNote'` → `'notes'`, which is the key the history drawer reads).
+    //
+    // DELIBERATELY NOT TOUCHED — two lists that name `media_consent_note` for a DIFFERENT table. The
+    // Pure-V2 assertions (`sp_pems_assert_pure_v2_only` and the `pure_v2_legacy_columns` report) assert
+    // that the legacy request-level form columns do not exist on `visit_requests`. That column never
+    // came back and must keep being refused, so a blind search/replace there would have deleted a live
+    // guard. `SchemaContractTests` and `DisposableDatabaseManager` carry the same list for the same
+    // reason and are likewise untouched.
+    //
+    // Seed VALUES are rewritten, not copied: nothing that meant "ghi chú truyền thông" survives as a
+    // general note. 26 scenarios that have a real remark to make (accessibility, interpreter, dietary,
+    // documents, timing) get one; the rest are NULL. The two fields are independent, and the seed shows
+    // it — all four combinations exist, including AGREED with no note and DECLINED with one.
+    //
+    // Verified by importing the retargeted script into a fresh disposable MySQL 8.0.46 database:
+    // exit 0 with an empty stderr, 81 base tables, 33 triggers, 252 foreign keys — identical to the
+    // §4.4 bump above, since no table was added or removed. 93 assertion rows, every issue_count 0
+    // (pure_v2_legacy_columns 0, invalid_21_campus_without_visitor 0, contact_guard_negative_failures 0,
+    // contact_guard_positive_failures 0, merged_runtime_table_count 0), curated_seed_quality_gate PASS.
+    // On the changed table: `notes` present, `media_consent_note` absent from the WHOLE schema
+    // (information_schema count 0, not merely 0 on this table), 96 form-detail rows, 32 carrying a note.
     public const string ExpectedSha256 =
-        "ecc8758cd3edab38ebde07c0ca32ab1ec864b0c54644a3a915a278212945c5a9";
+        "4bac899e639c50ea0c17966fed29576d0b028aa2b8e23da96b99c7b5fe6274eb";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

@@ -171,7 +171,6 @@ public sealed class VisitScheduleMultiDayV2Tests
         var purpose = new string('p', 2000);
         var workingContent = new string('w', 4000);
         var transportation = new string('t', 2000);
-        var mediaNote = new string('m', 2000);
         var notes = new string('n', 2000);
 
         var start = Now.AddDays(22).Date.AddHours(9);
@@ -180,7 +179,7 @@ public sealed class VisitScheduleMultiDayV2Tests
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
-            "EN", transportation, "AGREED", mediaNote, null);
+            "EN", transportation, "AGREED", notes, null);
 
         var req = await Svc(db).CreateV2Async(
             Form(campus), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
@@ -195,7 +194,7 @@ public sealed class VisitScheduleMultiDayV2Tests
         Assert.Equal(2000, detail.Purpose.Length);
         Assert.Equal(4000, detail.WorkingContent!.Length);
         Assert.Equal(2000, detail.TransportationNote!.Length);
-        Assert.Equal(2000, detail.MediaConsentNote!.Length);
+        Assert.Equal(2000, detail.Notes!.Length);
 
         await tx.RollbackAsync();
     }

@@ -73,7 +73,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote);
+            content.Notes);
 
     /// <summary>Edit slot for a NEW campus (no instance id).</summary>
     private static CampusVisitEditV2Dto Add(CampusVisitFormDto content)
@@ -82,7 +82,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote);
+            content.Notes);
 
     private static VisitRequestEditV2Dto Edit(VisitRequest request, params CampusVisitEditV2Dto[] campuses)
         => new(request.RowVersion,

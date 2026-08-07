@@ -56,7 +56,7 @@ export const campusFixture = (overrides: Partial<ResolvedCampusVisit> = {}): Res
   workingLanguage: 'VI',
   transportationNote: null,
   mediaConsentStatus: 'DECLINED',
-  mediaConsentNote: null,
+  notes: null,
   formRevision: 2,
   approvalRevision: 1,
   rowVersion: 3,

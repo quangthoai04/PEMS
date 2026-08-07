@@ -23,6 +23,9 @@ export const VISIT_STATUS_TONE_CLASSES: Record<VisitStatusTone, string> = {
 
 /** `visit_request_campuses.status` — the per-campus lifecycle. */
 export const VISIT_INSTANCE_STATUS_TONES: Record<string, VisitStatusTone> = {
+  // The first gate stage: this campus's operational contact has not answered its invitation yet.
+  // It is a campus value only — the whole-request counterpart is PENDING_CONTACT_CONFIRMATION below.
+  WAITING_CONTACT_CONFIRMATION: 'waiting',
   WAITING_REQUEST_APPROVAL: 'waiting',
   ASSIGNED: 'success',
   BEFORE_VISIT: 'progress',
@@ -35,6 +38,10 @@ export const VISIT_INSTANCE_STATUS_TONES: Record<string, VisitStatusTone> = {
 
 /** `visit_requests.status` — the aggregate derived from the campus decisions. */
 export const VISIT_REQUEST_STATUS_TONES: Record<string, VisitStatusTone> = {
+  // The confirmation gate, held shut for the WHOLE request while any active campus is still waiting
+  // for its operational contact. Never an instance value — a campus in that state is
+  // WAITING_CONTACT_CONFIRMATION above.
+  PENDING_CONTACT_CONFIRMATION: 'waiting',
   PENDING_APPROVAL: 'waiting',
   PARTIALLY_APPROVED: 'progress',
   APPROVED: 'success',

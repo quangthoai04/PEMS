@@ -61,7 +61,7 @@ public static class VisitRequestV2Canonical
         {
             N(cv.DelegationName), C(cv.VisitType), N(cv.VisitTypeOther), N(cv.Purpose), N(cv.WorkingContent),
             N(cv.OperationalContact.FullName), N(cv.OperationalContact.Organization), C(cv.OperationalContact.Phone), E(cv.OperationalContact.Email),
-            C(cv.WorkingLanguage), N(cv.TransportationNote), C(cv.MediaConsentStatus), N(cv.MediaConsentNote),
+            C(cv.WorkingLanguage), N(cv.TransportationNote), C(cv.MediaConsentStatus), N(cv.Notes),
             $"V[{visitors}]", $"S[{support}]",
         });
     }

@@ -44,7 +44,6 @@ const MAX = {
   purpose: 2000,
   workingContent: 4000,
   transportationNote: 2000,
-  mediaConsentNote: 2000,
   notes: 2000,
   personName: 150,
   personJobTitle: 150,

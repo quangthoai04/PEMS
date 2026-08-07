@@ -44,7 +44,7 @@ public sealed record SafeInstancePatchDto(
     SafeContactPatchDto? OperationalContact,   // null = this campus's contact snapshot untouched
     string? TransportationNote,
     string? MediaConsentStatus,   // AGREED | DECLINED | null = unchanged
-    string? MediaConsentNote);
+    string? Notes);               // "Ghi chú gửi FPTU" | null = unchanged
 
 public sealed record VisitRequestSafeEditDto(
     int ExpectedRequestRowVersion,

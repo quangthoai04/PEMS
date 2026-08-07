@@ -114,7 +114,7 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         <Field label="Phạm vi" value={scopeLabel} />
         <Field label="Loại hình tham quan" value={visitTypeLabel} />
         <Field label="Ngôn ngữ làm việc" value={summary?.workingLanguage ? (WORKING_LANG_LABELS[summary.workingLanguage] || summary.workingLanguage) : null} />
-        <Field label="Đồng ý sử dụng hình ảnh" value={summary?.mediaConsentStatus ? (MEDIA_CONSENT_LABELS[summary.mediaConsentStatus] || summary.mediaConsentStatus) : null} />
+        <Field label="Đồng ý truyền thông" value={summary?.mediaConsentStatus ? (MEDIA_CONSENT_LABELS[summary.mediaConsentStatus] || summary.mediaConsentStatus) : null} />
       </div>
 
       <div>
@@ -170,7 +170,7 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
         <Field label="Mục đích thăm" value={summary?.purpose} multiline />
         <Field label="Nội dung làm việc" value={summary?.workingContent} multiline />
         {summary?.transportationNote?.trim() && <Field label="Nhận diện phương tiện di chuyển" value={summary.transportationNote} multiline />}
-        {summary?.mediaConsentNote?.trim() && <Field label="Ghi chú hình ảnh" value={summary.mediaConsentNote} multiline />}
+        {summary?.notes?.trim() && <Field label="Ghi chú gửi FPTU" value={summary.notes} multiline />}
       </div>
 
       <div>

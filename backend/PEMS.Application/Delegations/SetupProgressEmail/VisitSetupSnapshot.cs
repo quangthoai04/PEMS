@@ -38,7 +38,7 @@ public sealed record VisitSetupLogisticsRow(
 /// <list type="bullet">
 /// <item><c>preparation_note</c> — the Host's internal briefing (staffing, talking points).</item>
 /// <item><c>offline_coordination_note</c>, assignee / requester / receiver identities — internal ops.</item>
-/// <item><c>note_to_fptu</c> and <c>media_consent_note</c> — handling notes, not a status the guest asked for.</item>
+/// <item><c>notes</c> — the guest's general remark to FPTU, a handling note rather than a status they asked to be told.</item>
 /// <item>Audit rows, incident/issue records, and any FPT-only commentary about the delegation.</item>
 /// </list>
 /// </summary>

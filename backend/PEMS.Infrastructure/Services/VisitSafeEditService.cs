@@ -127,9 +127,9 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     detail.OperationalContactPhone, contact.Phone.Trim(),
                     v => detail.OperationalContactPhone = v!);
             }
-            if (ip.MediaConsentNote is not null)
-                Diff(changes, VisitFieldClassifier.MediaConsentNote, instance.VisitInstanceId,
-                    detail.MediaConsentNote, Clean(ip.MediaConsentNote), v => detail.MediaConsentNote = v);
+            if (ip.Notes is not null)
+                Diff(changes, VisitFieldClassifier.Notes, instance.VisitInstanceId,
+                    detail.Notes, Clean(ip.Notes), v => detail.Notes = v);
             if (ip.MediaConsentStatus is not null)
                 Diff(changes, VisitFieldClassifier.MediaConsentStatus, instance.VisitInstanceId,
                     detail.MediaConsentStatus, ip.MediaConsentStatus, v => detail.MediaConsentStatus = v!);
@@ -148,15 +148,19 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     $"Trường '{c.FieldPath}' không thuộc nhóm sửa nhanh. Vui lòng gửi đề xuất thay đổi (amendment).",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
-        // ── 4a. Per-instance cutoff — a privacy-urgent media withdrawal (plus its note, same instance)
-        //        stays exempt from the DEADLINE; the lifecycle gate above already ran unconditionally. ──
+        // ── 4a. Per-instance cutoff — a privacy-urgent media withdrawal stays exempt from the DEADLINE;
+        //        the lifecycle gate above already ran unconditionally.
+        //
+        //        The exemption is the withdrawal ALONE. It used to stretch to the media-consent note as
+        //        well, because that note existed to explain the withdrawal and refusing it would have
+        //        let the status through while silently dropping its reason. `notes` is not that field:
+        //        it is the guest's general remark to FPTU, unrelated to consent, so it earns no urgency
+        //        from a withdrawal filed alongside it and is held to the ordinary cutoff. ──
         foreach (var instance in touchedInstances)
         {
             var instanceChanges = changes.Where(c => c.InstanceId == instance.VisitInstanceId).ToList();
-            var hasUrgent = instanceChanges.Any(c => c.Class == AmendmentChangeClasses.PrivacyUrgent);
-            var nonExempt = instanceChanges.Where(c =>
-                c.Class != AmendmentChangeClasses.PrivacyUrgent
-                && !(hasUrgent && c.FieldPath == VisitFieldClassifier.MediaConsentNote)).ToList();
+            var nonExempt = instanceChanges
+                .Where(c => c.Class != AmendmentChangeClasses.PrivacyUrgent).ToList();
             if (nonExempt.Count == 0) continue;
             VisitMutationGuard.EnsureAllowed(
                 VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
@@ -344,7 +348,7 @@ internal static class V2CanonicalRefresh
             new ContactPointDto(
                 d.OperationalContactFullName, d.OperationalContactOrganization ?? string.Empty,
                 d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
-            d.WorkingLanguage ?? "EN", d.TransportationNote, d.MediaConsentStatus ?? "DECLINED", d.MediaConsentNote,
+            d.WorkingLanguage ?? "EN", d.TransportationNote, d.MediaConsentStatus ?? "DECLINED", d.Notes,
             null);
     }
 }

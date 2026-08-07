@@ -37,8 +37,7 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   workingLanguage: 'VI',
   transportationNote: '',
-  mediaConsentStatus: 'AGREED',
-  mediaConsentNote: '',
+  mediaConsentStatus: 'DECLINED',
   notes: '',
 });
 
@@ -147,16 +146,16 @@ const toApiCampusVisit = (
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
   mediaConsentStatus: cv.mediaConsentStatus,
-  mediaConsentNote: trimOrNull(cv.mediaConsentNote),
+  notes: trimOrNull(cv.notes),
   // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
   // external submit that names anybody, so sending a placeholder would fail the whole request.
   hostSelection: hostChoice
     ? {
-        mode: hostChoice.mode,
-        proposedHostUserId:
-          hostChoice.mode === 'SELECTED' ? hostChoice.proposedHostUserId ?? null : null,
-        confirmedHostConflict: hostChoice.confirmedHostConflict ?? false,
-      }
+      mode: hostChoice.mode,
+      proposedHostUserId:
+        hostChoice.mode === 'SELECTED' ? hostChoice.proposedHostUserId ?? null : null,
+      confirmedHostConflict: hostChoice.confirmedHostConflict ?? false,
+    }
     : null,
 });
 
@@ -285,8 +284,8 @@ export const resolvedFormToV2Schema = (
       workingContent: cv.workingContent ?? '',
       visitors: cv.visitors.length
         ? cv.visitors.map(v => ({
-            fullName: v.fullName, jobTitle: v.jobTitle, organization: v.organization, nationality: v.nationality,
-          }))
+          fullName: v.fullName, jobTitle: v.jobTitle, organization: v.organization, nationality: v.nationality,
+        }))
         : [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
       supportTeam: cv.supportMembers.map(s => ({
         fullName: s.fullName, jobTitle: s.jobTitle, organization: s.organization, nationality: s.nationality,
@@ -301,8 +300,9 @@ export const resolvedFormToV2Schema = (
       workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',
-      mediaConsentNote: cv.mediaConsentNote ?? '',
-      notes: '',
+      // Hydrated from the server, not blanked. Seeding '' here is what made an edit silently erase
+      // whatever the guest had written: the form loaded empty and saved that emptiness back.
+      notes: cv.notes ?? '',
     })),
   },
 });

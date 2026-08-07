@@ -45,7 +45,8 @@ export interface V2CampusVisitForm {
   workingLanguage: string;
   transportationNote?: string | null;
   mediaConsentStatus: string;
-  mediaConsentNote?: string | null;
+  /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
+  notes?: string | null;
   /**
    * "Phương án người phụ trách tiếp đón" — an INTENTION, not an assignment. Omit it entirely for a
    * Visitor/external submit: the backend forces WAIT_FOR_LATER and REFUSES a payload that names
@@ -261,7 +262,8 @@ export interface ResolvedCampusVisit {
   workingLanguage: string;
   transportationNote: string | null;
   mediaConsentStatus: string;
-  mediaConsentNote: string | null;
+  /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
+  notes: string | null;
   formRevision: number;
   approvalRevision: number;
   rowVersion: number;
@@ -551,7 +553,7 @@ export interface SafeEditPayload {
     transportationNote?: string | null;
     /** AGREED | DECLINED, or omitted when unchanged. DECLINED applies even inside the cutoff. */
     mediaConsentStatus?: string | null;
-    mediaConsentNote?: string | null;
+    notes?: string | null;
   }> | null;
 }
 

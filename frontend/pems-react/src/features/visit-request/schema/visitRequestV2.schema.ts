@@ -173,7 +173,8 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       .optional()
       .default(''),
     mediaConsentStatus: z.enum(['AGREED', 'DECLINED']),
-    mediaConsentNote: bounded(z.string(), 2000, t('fields.mediaConsentNote'), t).optional().default(''),
+    // "Ghi chú gửi FPTU". Bounded only — deliberately NOT conditioned on mediaConsentStatus, because
+    // it is the guest's general remark about the campus, not a justification for the consent answer.
     notes: bounded(z.string(), 2000, t('fields.notes'), t).optional().default(''),
   })
   .superRefine((data, ctx) => {

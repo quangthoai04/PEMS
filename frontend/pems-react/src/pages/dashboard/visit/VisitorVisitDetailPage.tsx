@@ -337,9 +337,11 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
             <KV label="Loại hình" value={summary.visitType} />
             <KV label="Ngôn ngữ" value={summary.workingLanguage} />
             <KV label="Nhận diện phương tiện" value={summary.transportationNote || null} />
-            <KV label="Media Consent" value={summary.mediaConsentStatus === 'AGREE' ? 'Đồng ý ghi hình' : 'Từ chối ghi hình'} />
+            {/* The stored value is AGREED, not AGREE — the old comparison never matched, so a guest
+                who had agreed was shown as having declined on their own submitted form. */}
+            <KV label="Đồng ý truyền thông" value={summary.mediaConsentStatus === 'AGREED' ? 'Đồng ý' : 'Không đồng ý'} />
           </div>
-          {summary.mediaConsentNote && <KVBlock label="Lưu ý Media" value={summary.mediaConsentNote} />}
+          {summary.notes && <KVBlock label="Ghi chú gửi FPTU" value={summary.notes} />}
         </div>
       </div>
     </section>

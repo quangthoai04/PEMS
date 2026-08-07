@@ -34,7 +34,6 @@ const filledCampus = (key: string, code: string): CampusVisitSchema =>
     operationalContact: { fullName: `ĐM ${code}`, organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: '' },
     workingLanguage: 'EN',
     mediaConsentStatus: 'AGREED',
-    mediaConsentNote: 'note',
     notes: `ghi chú ${code}`,
   });
 
@@ -134,6 +133,43 @@ describe('buildV2CreatePayload', () => {
     expect(payload).not.toHaveProperty('sameForAll');
   });
 
+  // The bug this pins: the form collected "Ghi chú gửi FPTU" and the mapper never put it in the
+  // payload, so every note the guest typed was dropped at the browser boundary — the request
+  // succeeded, and the note simply did not exist anywhere downstream.
+  it('sends notes to the backend, and no longer sends mediaConsentNote', () => {
+    const payload = buildV2CreatePayload(values([filledCampus('a', 'HN')]), 'sub-notes');
+    const cv = payload.campusVisits[0];
+
+    expect(cv.notes).toBe('ghi chú HN');
+    expect(cv).not.toHaveProperty('mediaConsentNote');
+  });
+
+  it('trims notes and sends null rather than an empty string', () => {
+    const blank = buildV2CreatePayload(
+      values([{ ...filledCampus('a', 'HN'), notes: '   ' }]), 'sub-blank');
+    expect(blank.campusVisits[0].notes).toBeNull();
+
+    const padded = buildV2CreatePayload(
+      values([{ ...filledCampus('a', 'HN'), notes: '  cần xe điện  ' }]), 'sub-pad');
+    expect(padded.campusVisits[0].notes).toBe('cần xe điện');
+  });
+
+  // notes and media consent are independent: neither value of the consent gates the note.
+  it.each([['AGREED'], ['DECLINED']] as const)(
+    'sends notes regardless of mediaConsentStatus=%s', (status) => {
+      const payload = buildV2CreatePayload(
+        values([{ ...filledCampus('a', 'HN'), mediaConsentStatus: status, notes: 'hỗ trợ xe điện' }]),
+        'sub-consent');
+      expect(payload.campusVisits[0].mediaConsentStatus).toBe(status);
+      expect(payload.campusVisits[0].notes).toBe('hỗ trợ xe điện');
+    });
+
+  it('carries notes through the EDIT payload too, so an edit cannot silently drop it', () => {
+    const payload = buildV2EditPayload(values([filledCampus('a', 'HN')]), 7);
+    expect(payload.campusVisits[0].notes).toBe('ghi chú HN');
+    expect(payload.campusVisits[0]).not.toHaveProperty('mediaConsentNote');
+  });
+
   it('attaches per-campus processing ONLY for matching campuses (authenticated mode)', () => {
     const payload = buildV2CreatePayload(
       values([filledCampus('a', 'HN'), filledCampus('b', 'HCM')]),
@@ -222,7 +258,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         supportMembers: [], operationalContact: { fullName: 'OP HN', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+8493', email: 'op@x.vn', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
         currentHost: null, proposedHost: null,
         hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
-        workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null,        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
+        workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', notes: null,        formRevision: 2, approvalRevision: 1, rowVersion: 4, activeAmendment: null,
         cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
         cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
@@ -237,7 +273,7 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
         operationalContact: { fullName: 'OP HCM', organization: 'ĐH Y', jobTitle: 'Trưởng phòng Hợp tác', phone: '+8494', email: '', confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null },
         currentHost: null, proposedHost: null,
         hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
-        workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', mediaConsentNote: 'ok',        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
+        workingLanguage: 'EN', transportationNote: 'xe 16 chỗ', mediaConsentStatus: 'AGREED', notes: 'ghi chú HCM',        formRevision: 3, approvalRevision: 2, rowVersion: 6, activeAmendment: null,
         cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
         cancellationActorType: null, cancellationSource: null, cancellationReason: null,
       },
@@ -263,9 +299,10 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     expect(hn.delegationName).toBe('Đoàn HN');
     expect(hn.startDatetime).toBe('2026-08-01T09:00'); // datetime-local (16 chars)
     expect(hn.workingLanguage).toBe('VI');
-    // noteToFptu left the read model with the request-level contact, so a hydrated campus has no
-    // note to start from. The field itself stays on the form.
-    expect(hn.notes).toBe('');
+    // "Ghi chú gửi FPTU" hydrates from THIS campus's stored value. It used to be hard-coded to ''
+    // here, so opening an edit blanked the field and saving wrote that blank back over the note.
+    expect(hn.notes).toBe('');            // this campus genuinely has none (server sent null)
+    expect(hcm.notes).toBe('ghi chú HCM'); // this one does, and it survives the hydration
     expect(hcm.campus).toBe('HCM');
     expect(hcm.delegationName).toBe('Đoàn HCM');
     expect(hcm.visitType).toBe('WORKSHOP');

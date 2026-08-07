@@ -267,17 +267,20 @@ export function SubmittedVisitRequestInfoPanel({ data }: { data: SubmittedVisitR
         </section>
       )}
 
-      {/* Yêu cầu & nội dung biên bản công việc */}
+      {/* Yêu cầu bổ sung.
+          "Ghi chú gửi FPTU" is the guest's own general remark and now has a column of its own. The
+          row here used to be labelled as that note but was fed data.workingContent — the working
+          content already shown in full above — so this block repeated a field and named it
+          something it was not, and the one note the guest actually wrote appeared nowhere. */}
       <section>
-        <SectionTitle index={++sectionCounter}>Yêu cầu &amp; nội dung biên bản công việc</SectionTitle>
+        <SectionTitle index={++sectionCounter}>Yêu cầu bổ sung</SectionTitle>
         <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
           <KV label="Ngôn ngữ làm việc" value={workingLanguageLabel(data.workingLanguage)} />
-          <KV label="Dùng hình ảnh & thông tin" value={mediaConsentLabel(data.mediaConsentStatus)} />
+          <KV label="Đồng ý truyền thông" value={mediaConsentLabel(data.mediaConsentStatus)} />
         </div>
         <div className="mt-1.5 space-y-1.5">
           <KVBlock label="Nhận diện phương tiện di chuyển tới FPTU" value={data.transportationNote} />
-          {data.mediaConsentNote ? <KVBlock label="Ghi chú về sử dụng hình ảnh" value={data.mediaConsentNote} /> : null}
-          <KVBlock label="Nội dung biên bản &amp; ghi chú cho FPTU" value={data.workingContent} />
+          <KVBlock label="Ghi chú gửi FPTU" value={data.notes} />
         </div>
       </section>
     </div>

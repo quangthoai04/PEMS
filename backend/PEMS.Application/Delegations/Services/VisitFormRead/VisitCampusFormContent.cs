@@ -20,8 +20,10 @@ public sealed class VisitCampusFormContent
     public string? WorkingContent { get; init; }
     public string? WorkingLanguage { get; init; }
     public string? MediaConsentStatus { get; init; }
-    public string? MediaConsentNote { get; init; }
     public string? TransportationNote { get; init; }
+
+    /// <summary>"Ghi chú gửi FPTU" — this campus's one general remark, independent of media consent.</summary>
+    public string? Notes { get; init; }
 
     /// <summary>
     /// This campus's OPERATIONAL contact — the only contact there is. It grants nothing on a sibling

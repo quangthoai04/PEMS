@@ -34,7 +34,7 @@ public static class VisitFieldClassifier
     public const string ContactPhone = "request.contact.phone";
 
     public const string TransportationNote = "instance.transportationNote";
-    public const string MediaConsentNote = "instance.mediaConsentNote";
+    public const string Notes = "instance.notes";
     public const string MediaConsentStatus = "instance.mediaConsentStatus";
 
     public const string DelegationName = "instance.delegationName";
@@ -65,7 +65,7 @@ public static class VisitFieldClassifier
         [ContactPhone] = AmendmentChangeClasses.Safe,
 
         [TransportationNote] = AmendmentChangeClasses.Safe,
-        [MediaConsentNote] = AmendmentChangeClasses.Safe,
+        [Notes] = AmendmentChangeClasses.Safe,
         // mediaConsentStatus is special-cased in ClassifyChange (→ DECLINED = PRIVACY_URGENT).
         [MediaConsentStatus] = AmendmentChangeClasses.Safe,
 

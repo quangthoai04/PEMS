@@ -42,7 +42,9 @@ public sealed class EditableVisitRequestDetailDto
     public string WorkingLanguage { get; set; } = "EN";
     public string? TransportationNote { get; set; }
     public string MediaConsentStatus { get; set; } = "DECLINED";
-    public string? MediaConsentNote { get; set; }
+    /// <summary>"Ghi chú gửi FPTU" — the guest's one general remark about this campus,
+    /// independent of <see cref="MediaConsentStatus"/>.</summary>
+    public string? Notes { get; set; }
     public long? PartnerId { get; set; }
     /// <summary>Display name of the linked partner (null when the request has no partner_id).</summary>
     public string? PartnerName { get; set; }

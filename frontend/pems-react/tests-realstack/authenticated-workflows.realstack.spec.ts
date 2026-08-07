@@ -71,7 +71,6 @@ function campusBlock(code: string, dayOffset: number, delegation: string, tag: s
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',
-    mediaConsentNote: null,
     notes: null,
     processing: null,
   };
