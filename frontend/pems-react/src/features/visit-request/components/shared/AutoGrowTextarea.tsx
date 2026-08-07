@@ -77,7 +77,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         onChange={e => { onChange(e.target.value); resize(); }}
         onFocus={e => { setFocused(true); resize(); if (onFocus) onFocus(e); }}
         onBlur={e => { setFocused(false); if (onBlur) onBlur(e); }}
-        className={`w-full resize-none overflow-hidden rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-1 ${
+        className={`w-full resize-none overflow-hidden rounded-lg border bg-white px-3 py-2 text-sm outline-none transition-colors focus:ring-1 ${
           hasError
             ? 'border-red-400 focus:border-red-400 focus:ring-red-400'
             : 'border-slate-300 focus:border-[#004c91] focus:ring-[#004c91]'

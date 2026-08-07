@@ -228,105 +228,113 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
   return (
     <div className="flex flex-col">
       <div className="mb-4">
-        {/* Header of the Schedule block */}
+        {/* Header: label | duration badge | checkbox */}
         <div className="flex flex-wrap items-center justify-between mb-3 gap-2">
           <label className="text-sm font-bold text-slate-900">
             {scheduleLabel}
           </label>
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
-            <input
-              type="checkbox"
-              disabled={disabled}
-              checked={multiDay}
-              onChange={e => toggleMultiDay(e.target.checked)}
-              data-testid={`${idPrefix}-multiday`}
-              className="h-4 w-4 rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]"
-            />
-            {t('visitRequestV2:schedule.endsOnAnotherDay')}
-          </label>
+          <div className="flex items-center gap-3">
+            {total !== null && total > 0 && (
+              <span
+                data-testid={`${idPrefix}-duration`}
+                className="rounded-full bg-[#004c91]/10 px-3 py-1 text-xs font-bold text-[#004c91]"
+              >
+                {t('visitRequestV2:schedule.duration', { value: formatDuration(total) })}
+              </span>
+            )}
+            <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
+              <input
+                type="checkbox"
+                disabled={disabled}
+                checked={multiDay}
+                onChange={e => toggleMultiDay(e.target.checked)}
+                data-testid={`${idPrefix}-multiday`}
+                className="h-4 w-4 rounded border-slate-300 text-[#004c91] focus:ring-[#004c91]"
+              />
+              {t('visitRequestV2:schedule.endsOnAnotherDay')}
+            </label>
+          </div>
         </div>
 
-        {/* Unified Time Container */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 md:gap-6 items-start">
-            
-            {/* Start Section */}
-            <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                {t('visitRequestV2:schedule.startTime', 'Bắt đầu')}
-              </span>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="flex-1">
+        {/* Inputs: BẮT ĐẦU → KẾT THÚC, no box wrapper */}
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap min-w-0">
+          
+          {/* Start Section */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap shrink-0">
+              {t('visitRequestV2:schedule.startTime', 'Bắt đầu')}
+            </span>
+            <div className="flex flex-1 gap-2 min-w-0">
+              <div className="flex-1 min-w-0">
+                <input
+                  id={`${prefix}-start-date`}
+                  type="date"
+                  lang="vi-VN"
+                  disabled={disabled}
+                  min={minStartDate || undefined}
+                  value={start?.date ?? ''}
+                  onChange={e => setStartDate(e.target.value)}
+                  className={dateCls(!!showStartError)}
+                  data-testid={`${idPrefix}-start-date`}
+                />
+              </div>
+              <div className="w-28 shrink-0">
+                <TimeSelect
+                  id={`${prefix}-start-time`}
+                  testId={`${idPrefix}-start-time`}
+                  ariaLabel={t('visitRequestV2:schedule.startTime')}
+                  value={start?.time ?? ''}
+                  onChange={setStartTime}
+                  options={startOptions}
+                  hasError={!!showStartError}
+                  disabled={disabled}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Separator */}
+          <div className="flex items-center justify-center text-slate-300 shrink-0">
+            <ArrowRight className="h-5 w-5" />
+          </div>
+
+          {/* End Section */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap shrink-0">
+              {t('visitRequestV2:schedule.endTime', 'Kết thúc')}
+            </span>
+            <div className="flex flex-1 gap-2 min-w-0">
+              {multiDay && (
+                <div className="flex-1 min-w-0">
                   <input
-                    id={`${prefix}-start-date`}
+                    id={`${prefix}-end-date`}
                     type="date"
                     lang="vi-VN"
                     disabled={disabled}
-                    min={minStartDate || undefined}
-                    value={start?.date ?? ''}
-                    onChange={e => setStartDate(e.target.value)}
-                    className={dateCls(!!showStartError)}
-                    data-testid={`${idPrefix}-start-date`}
+                    min={start?.date || minStartDate || undefined}
+                    value={end?.date ?? ''}
+                    onChange={e => setEndDate(e.target.value)}
+                    className={dateCls(!!showEndError)}
+                    data-testid={`${idPrefix}-end-date`}
                   />
                 </div>
-                <div className="sm:w-32">
-                  <TimeSelect
-                    id={`${prefix}-start-time`}
-                    testId={`${idPrefix}-start-time`}
-                    ariaLabel={t('visitRequestV2:schedule.startTime')}
-                    value={start?.time ?? ''}
-                    onChange={setStartTime}
-                    options={startOptions}
-                    hasError={!!showStartError}
-                    disabled={disabled}
-                  />
-                </div>
+              )}
+              <div className={multiDay ? 'w-28 shrink-0' : 'flex-1 min-w-0'}>
+                <TimeSelect
+                  id={`${prefix}-end-time`}
+                  testId={`${idPrefix}-end-time`}
+                  ariaLabel={t('visitRequestV2:schedule.endTime')}
+                  value={end?.time ?? ''}
+                  onChange={setEndTime}
+                  options={endOptions}
+                  emptyHint={t('visitRequestV2:schedule.noEndSlots')}
+                  hasError={!!showEndError}
+                  disabled={disabled}
+                />
               </div>
             </div>
-
-            {/* Separator */}
-            <div className="hidden md:flex pt-7 items-center justify-center text-slate-300">
-              <ArrowRight className="h-5 w-5" />
-            </div>
-
-            {/* End Section */}
-            <div className="flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                {t('visitRequestV2:schedule.endTime', 'Kết thúc')}
-              </span>
-              <div className="flex flex-col sm:flex-row gap-2">
-                {multiDay && (
-                  <div className="flex-1">
-                    <input
-                      id={`${prefix}-end-date`}
-                      type="date"
-                      lang="vi-VN"
-                      disabled={disabled}
-                      min={start?.date || minStartDate || undefined}
-                      value={end?.date ?? ''}
-                      onChange={e => setEndDate(e.target.value)}
-                      className={dateCls(!!showEndError)}
-                      data-testid={`${idPrefix}-end-date`}
-                    />
-                  </div>
-                )}
-                <div className={multiDay ? "sm:w-32" : "w-full"}>
-                  <TimeSelect
-                    id={`${prefix}-end-time`}
-                    testId={`${idPrefix}-end-time`}
-                    ariaLabel={t('visitRequestV2:schedule.endTime')}
-                    value={end?.time ?? ''}
-                    onChange={setEndTime}
-                    options={endOptions}
-                    emptyHint={t('visitRequestV2:schedule.noEndSlots')}
-                    hasError={!!showEndError}
-                    disabled={disabled}
-                  />
-                </div>
-              </div>
-            </div>
-
           </div>
+
         </div>
 
         {(showStartError || showEndError) && (
@@ -344,16 +352,7 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
           </div>
         )}
 
-        {total !== null && total > 0 && (
-          <div className="mt-4 flex items-center gap-2">
-            <span
-              data-testid={`${idPrefix}-duration`}
-              className="rounded-full bg-[#004c91]/10 px-3 py-1 text-xs font-bold text-[#004c91]"
-            >
-              {t('visitRequestV2:schedule.duration', { value: formatDuration(total) })}
-            </span>
-          </div>
-        )}
+
       </div>
     </div>
   );

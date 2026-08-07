@@ -544,7 +544,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           {campusVisitFields.fields.map((field, index) => {
             const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || (field as any).clientKey || field.id;
             return (
-              <div key={field.id} ref={el => { cardRefs.current.set(clientKey, el); }}>
+              <div key={clientKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
                 <CampusVisitCard
                   form={form}
                   index={index}

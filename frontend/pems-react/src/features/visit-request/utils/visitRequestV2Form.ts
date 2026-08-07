@@ -37,7 +37,7 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   workingLanguage: 'VI',
   transportationNote: '',
-  mediaConsentStatus: 'DECLINED',
+  mediaConsentStatus: 'AGREED',
   mediaConsentNote: '',
   notes: '',
 });

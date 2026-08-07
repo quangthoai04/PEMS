@@ -126,12 +126,12 @@ export const CampusVisitCard: React.FC<Props> = ({
   const [pendingReplace, setPendingReplace] = useState<
     { kind: 'visitors' | 'supportTeam'; rows: PersonRow[]; fileName: string } | null
   >(null);
+  const [selectedSource, setSelectedSource] = useState<string>('');
   const visitorFileRef = useRef<HTMLInputElement>(null);
   const supportFileRef = useRef<HTMLInputElement>(null);
 
   const campusCode = watch(`${base}.campus`);
   const visitType = watch(`${base}.visitType`);
-  const mediaConsent = watch(`${base}.mediaConsentStatus`);
   const campusName = campuses.find(c => c.campusCode === campusCode)?.campusName;
   const headerLabel = campusName ?? t('visitRequestV2:card.unselectedCampus');
 
@@ -376,12 +376,12 @@ export const CampusVisitCard: React.FC<Props> = ({
       <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white lg:block">
         <table data-testid={`v2-${kind}-table`} className="w-full min-w-[760px] table-fixed border-collapse text-sm">
           <colgroup>
-            <col style={{ width: '5%' }} />
-            <col style={{ width: '27%' }} />
-            <col style={{ width: '25%' }} />
+            <col style={{ width: '4%' }} />
+            <col style={{ width: '22%' }} />
             <col style={{ width: '24%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '5%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '17%' }} />
+            <col style={{ width: '8%' }} />
           </colgroup>
           <thead className="border-b border-slate-200 bg-[#F8FAFC]">
             <tr>
@@ -523,6 +523,45 @@ export const CampusVisitCard: React.FC<Props> = ({
             </span>
           )}
         </button>
+
+        {copySources.length > 0 && (
+          <div className="flex items-center gap-2 text-xs" onClick={e => e.stopPropagation()}>
+            {index > 0 && (
+              <>
+                <span className="font-semibold text-indigo-700 flex items-center gap-1">
+                  <Copy className="h-3.5 w-3.5 text-indigo-500" />
+                  {t('visitRequestV2:card.copyFromLabel')}
+                </span>
+                <select
+                  id={`copy-src-${clientKey}`}
+                  className="h-8 rounded-lg border border-indigo-200 bg-white px-2 py-0 pl-2 pr-7 text-xs font-semibold text-indigo-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  value={selectedSource}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const src = Number(val);
+                    if (!Number.isNaN(src) && val !== '') {
+                      setSelectedSource(val);
+                      onCopyFrom(src);
+                    }
+                  }}
+                >
+                  <option value="" disabled>{t('visitRequestV2:card.copyFromPlaceholder')}</option>
+                  {copySources.map(s => (
+                    <option key={s.index} value={String(s.index)}>{s.label}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            <button
+              type="button"
+              className="rounded-lg border border-indigo-200 bg-indigo-50/70 px-2.5 py-1.5 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-100"
+              onClick={onApplyToAll}
+            >
+              {t('visitRequestV2:card.applyToAll')}
+            </button>
+          </div>
+        )}
+
         {canRemove && (
           <button
             type="button"
@@ -536,40 +575,10 @@ export const CampusVisitCard: React.FC<Props> = ({
       </div>
 
       <div id={bodyId} className={open ? 'space-y-6 border-t border-slate-100 p-4 sm:p-6' : 'hidden'}>
-        {copySources.length > 0 && (
-          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-lg bg-indigo-50/50 px-4 py-2 ring-1 ring-indigo-50">
-            <Copy className="h-4 w-4 text-indigo-400" />
-            <span className="text-sm font-medium text-indigo-900">
-              {t('visitRequestV2:card.copyFromLabel')}
-            </span>
-            <select
-              id={`copy-src-${clientKey}`}
-              className="h-8 rounded-md border-0 bg-white px-2 py-0 pl-3 pr-8 text-sm text-indigo-900 ring-1 ring-inset ring-indigo-200 focus:ring-2 focus:ring-indigo-600"
-              defaultValue=""
-              onChange={e => {
-                const src = Number(e.target.value);
-                if (!Number.isNaN(src) && e.target.value !== '') onCopyFrom(src);
-                e.target.value = '';
-              }}
-            >
-              <option value="" disabled>{t('visitRequestV2:card.copyFromPlaceholder')}</option>
-              {copySources.map(s => (
-                <option key={s.index} value={s.index}>{s.label}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="ml-auto rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200 transition-colors hover:bg-indigo-50"
-              onClick={onApplyToAll}
-            >
-              {t('visitRequestV2:card.applyToAll')}
-            </button>
-          </div>
-        )}
 
         {/* Campus and Schedule */}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          <div className="col-span-12 xl:col-span-4">
+          <div className="col-span-12 xl:col-span-3">
             <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
               <select
                 {...register(`${base}.campus`)}
@@ -588,7 +597,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             </FormField>
           </div>
 
-          <div className="col-span-12 xl:col-span-8">
+          <div className="col-span-12 xl:col-span-9">
             <Controller
               name={`${base}.startDatetime`}
               control={control}
@@ -942,8 +951,8 @@ export const CampusVisitCard: React.FC<Props> = ({
             </div>
           )}
 
-          <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
+          <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
+            <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.fullName`}
                 control={control}
@@ -964,7 +973,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 still plain text — this contact is a snapshot and the schema has no relation to a
                 partner record, so picking a known organization links nothing and the request's own
                 partner selection is untouched. */}
-            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.organization`}
                 control={control}
@@ -985,7 +994,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 end of the phone can settle a schedule or has to go and ask. Every detail screen has
                 always had a row for it, and the row was blank on every request because this field
                 did not exist. */}
-            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:person.jobTitle')} required error={fieldError('operationalContact.jobTitle')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required error={fieldError('operationalContact.jobTitle')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.jobTitle`}
                 control={control}
@@ -1002,7 +1011,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <PhoneField
                 field={register(`${base}.operationalContact.phone`)}
                 hasError={!!fieldError('operationalContact.phone')}
@@ -1010,7 +1019,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 testId={`campus-opcontact-phone-${index}`}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
               <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />
             </FormField>
           </div>
@@ -1026,13 +1035,24 @@ export const CampusVisitCard: React.FC<Props> = ({
                 <option value="EN">{t('visitRequestV2:card.languageEn')}</option>
               </select>
             </FormField>
-            <FormField className="col-span-12 lg:col-span-6 xl:col-span-2" label={t('visitRequestV2:card.mediaConsent')} required error={fieldError('mediaConsentStatus')} showValidIcon={false}>
+            <FormField
+              className="col-span-12 lg:col-span-6 xl:col-span-2"
+              label={
+                <span className="inline-flex items-center gap-1">
+                  {t('visitRequestV2:card.mediaConsent')}
+                  <HelpTooltip content="Cho phép FPTU ghi hình, chụp ảnh và sử dụng hình ảnh của đoàn cho các bài viết truyền thông, tin tức sự kiện." />
+                </span>
+              }
+              required
+              error={fieldError('mediaConsentStatus')}
+              showValidIcon={false}
+            >
               <select {...register(`${base}.mediaConsentStatus`)} className={inputCls(false, false, false)}>
-                <option value="DECLINED">{t('visitRequestV2:card.mediaDeclined')}</option>
                 <option value="AGREED">{t('visitRequestV2:card.mediaAgreed')}</option>
+                <option value="DECLINED">{t('visitRequestV2:card.mediaDeclined')}</option>
               </select>
             </FormField>
-            <FormField className="col-span-12 lg:col-span-6 xl:col-span-4" label={t('visitRequestV2:card.transportationNote')} error={fieldError('transportationNote')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-3" label={t('visitRequestV2:card.transportationNote')} error={fieldError('transportationNote')} showValidIcon={false}>
               <Controller
                 name={`${base}.transportationNote`}
                 control={control}
@@ -1048,7 +1068,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-6 xl:col-span-4" label={t('visitRequestV2:card.notes')} error={fieldError('notes')} showValidIcon={false}>
+            <FormField className="col-span-12 lg:col-span-6 xl:col-span-5" label={t('visitRequestV2:card.notes')} error={fieldError('notes')} showValidIcon={false}>
               <Controller
                 name={`${base}.notes`}
                 control={control}
@@ -1064,24 +1084,6 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            {mediaConsent === 'AGREED' && (
-              <FormField className="col-span-12" label={t('visitRequestV2:card.mediaNote')} error={fieldError('mediaConsentNote')} showValidIcon={false}>
-                <Controller
-                  name={`${base}.mediaConsentNote`}
-                  control={control}
-                  render={({ field }) => (
-                    <AutoGrowTextField
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      hasError={!!fieldError('mediaConsentNote')}
-                      maxLength={MAX.mediaConsentNote}
-                      ariaLabel={t('visitRequestV2:card.mediaNote')}
-                    />
-                  )}
-                />
-              </FormField>
-            )}
           </div>
 
           {/* Who processes THIS campus — authenticated create only; absent for public submit. */}
