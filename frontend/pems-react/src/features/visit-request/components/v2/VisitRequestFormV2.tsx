@@ -543,8 +543,12 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         <div className="space-y-4">
           {campusVisitFields.fields.map((field, index) => {
             const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || (field as any).clientKey || field.id;
+            // A copy/apply-to-all patches this card's form values correctly, but register()-bound
+            // inputs and the nested visitors/supportTeam field arrays only re-read fresh values on
+            // mount — folding the bump counter into the key forces that remount (vm.cardVersion).
+            const renderKey = `${clientKey}:${vm.cardVersion[clientKey] ?? 0}`;
             return (
-              <div key={clientKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
+              <div key={renderKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
                 <CampusVisitCard
                   form={form}
                   index={index}

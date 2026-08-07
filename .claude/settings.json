@@ -16,7 +16,18 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5265/api/email-templates)",
       "Bash(curl -s http://localhost:5265/swagger/v1/swagger.json -o /dev/null -w \"%{http_code}\\\\n\")",
       "Bash(npm install *)",
-      "Bash(node query.mjs)"
+      "Bash(node query.mjs)",
+      "Bash(git stash *)",
+      "Bash(git restore *)",
+      "Bash(mkdir -p /tmp/backup_check)",
+      "Bash(cp src/features/visit-request/hooks/useVisitRequestFormV2.ts /tmp/backup_check/useVisitRequestFormV2.ts.bak)",
+      "Bash(cp src/features/visit-request/components/v2/VisitRequestFormV2.tsx /tmp/backup_check/VisitRequestFormV2.tsx.bak)",
+      "Bash(cp /tmp/backup_check/useVisitRequestFormV2.ts.bak src/features/visit-request/hooks/useVisitRequestFormV2.ts)",
+      "Bash(cp /tmp/backup_check/VisitRequestFormV2.tsx.bak src/features/visit-request/components/v2/VisitRequestFormV2.tsx)",
+      "Bash(rm -rf /tmp/backup_check /tmp/full_run.log 2>/dev/null; echo done)"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }

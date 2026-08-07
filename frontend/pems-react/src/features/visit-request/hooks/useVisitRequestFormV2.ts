@@ -296,6 +296,19 @@ export const useVisitRequestFormV2 = (
 
   const [applyToAllPrompt, setApplyToAllPrompt] = useState<ApplyToAllPrompt | null>(null);
 
+  /**
+   * Keyed by clientKey, bumped whenever a copy/apply-to-all overwrites that card's content.
+   * `useFieldArray.update()`/`.replace()` patch the underlying form values correctly, but they
+   * skip resyncing `register()`-bound inputs and any NESTED `useFieldArray` (visitors/supportTeam
+   * live inside `CampusVisitCard`, registered under their own name) — those keep showing their
+   * pre-copy state until something else touches them. Folding this into the card's React `key`
+   * forces a full remount, which is the only way those nested hooks re-read the fresh values.
+   */
+  const [cardVersion, setCardVersion] = useState<Record<string, number>>({});
+  const bumpCardVersion = useCallback((clientKey: string) => {
+    setCardVersion(prev => ({ ...prev, [clientKey]: (prev[clientKey] ?? 0) + 1 }));
+  }, []);
+
   const currentUserEmail = options?.currentUserEmail;
   /**
    * "Is the person named as registrant the signed-in user?" — the single question that decides the
@@ -556,9 +569,10 @@ export const useVisitRequestFormV2 = (
       const target = current[targetIndex];
       if (!source || !target || sourceIndex === targetIndex) return;
       campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
+      bumpCardVersion(target.clientKey);
       showSuccessToast(t('visitRequestV2:card.copySuccess'));
     },
-    [form, campusVisitFields, t],
+    [form, campusVisitFields, t, bumpCardVersion],
   );
 
   /** Step 1 of apply-to-all: build the confirmation prompt (never applies by itself). */
@@ -580,9 +594,12 @@ export const useVisitRequestFormV2 = (
     const current = form.getValues('campusVisits');
     const next = applyContentToAllCampuses(current, applyToAllPrompt.sourceIndex);
     campusVisitFields.replace(next);
+    current.forEach((cv, i) => {
+      if (i !== applyToAllPrompt.sourceIndex) bumpCardVersion(cv.clientKey);
+    });
     setApplyToAllPrompt(null);
     showSuccessToast(t('visitRequestV2:card.applyAllSuccess'));
-  }, [applyToAllPrompt, form, campusVisitFields, t]);
+  }, [applyToAllPrompt, form, campusVisitFields, t, bumpCardVersion]);
 
   const cancelApplyToAll = useCallback(() => setApplyToAllPrompt(null), []);
 
@@ -1036,6 +1053,7 @@ export const useVisitRequestFormV2 = (
     setSubmitError(null);
     setFirstErrorCampusIndex(null);
     setApplyToAllPrompt(null);
+    setCardVersion({});
     submissionIdRef.current = null;
     setPendingOtp(null);
     resetOtpChallengeState();
@@ -1062,6 +1080,8 @@ export const useVisitRequestFormV2 = (
     confirmApplyToAll,
     cancelApplyToAll,
     applyToAllPrompt,
+    /** clientKey -> version, bumped on copy/apply-to-all so the card can be force-remounted. */
+    cardVersion,
     // Submit
     onSubmit,
     isSelfRegistration,
