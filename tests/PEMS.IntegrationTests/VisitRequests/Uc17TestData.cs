@@ -194,7 +194,18 @@ public static class Uc17TestData
                     ["visitTypeOther"] = null,
                     ["purpose"] = "Tham quan và trao đổi hợp tác (integration test)",
                     ["workingContent"] = "Test working content",
-                    ["visitors"] = Array.Empty<object>(),
+                    // A campus needs at least one delegate to be a valid payload at all — see
+                    // V2TestDataBuilder.OneGuest for why this baseline cannot be an empty list.
+                    ["visitors"] = new[]
+                    {
+                        new Dictionary<string, object?>
+                        {
+                            ["fullName"] = "IT UC17 Khách mời",
+                            ["nationality"] = "Việt Nam",
+                            ["jobTitle"] = "Trưởng đoàn",
+                            ["organization"] = "Công ty Kiểm Thử UC17",
+                        },
+                    },
                     ["externalSupportMembers"] = Array.Empty<object>(),
                     ["operationalContact"] = new Dictionary<string, object?>
                     {
@@ -207,7 +218,6 @@ public static class Uc17TestData
                     ["workingLanguage"] = "VI",
                     ["transportationNote"] = null,
                     ["mediaConsentStatus"] = "DECLINED",
-                    ["mediaConsentNote"] = null,
                     ["notes"] = null,
                     ["processing"] = null,
                 }

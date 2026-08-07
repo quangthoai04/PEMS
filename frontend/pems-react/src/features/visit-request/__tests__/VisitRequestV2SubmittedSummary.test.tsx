@@ -32,7 +32,6 @@ const campus = (over: Partial<CampusVisitSchema>): CampusVisitSchema => ({
   workingLanguage: 'EN',
   transportationNote: '',
   mediaConsentStatus: 'DECLINED',
-  mediaConsentNote: '',
   notes: '',
   ...over,
 });
@@ -109,8 +108,52 @@ describe('VisitRequestV2SubmittedSummary', () => {
       values={values(cvs)} />);
 
     const card = screen.getByTestId('campus-summary-0');
-    expect(within(card).getByText('Op Only')).toBeInTheDocument();
+    // Name and job title share one line (blank org is dropped from the join), so this matches on
+    // the name rather than the whole node.
+    expect(within(card).getByText(/Op Only/)).toBeInTheDocument();
     // phone still shows; email empty is fine (no crash, phone rendered).
     expect(within(card).getByText(/\+84900000009/)).toBeInTheDocument();
+  });
+});
+
+// ── The post-submit summary shows what was actually submitted ────────────────
+/**
+ * This is the screen a guest reads immediately after submitting, so a field the form collected and
+ * this page omits reads as "it did not go through". Two were wrong here: the consent answer carried
+ * the media note glued on after an em dash, and the operational contact's job title — asked for on
+ * the form, and the line that says whether that person can settle a schedule — was dropped.
+ */
+describe('VisitRequestV2SubmittedSummary — full submitted form parity', () => {
+  const withContact = (over: Partial<CampusVisitSchema> = {}) => campus({
+    clientKey: 'p', campus: 'HN',
+    operationalContact: {
+      fullName: 'Trần Thị B', organization: 'ĐH Đối Tác',
+      jobTitle: 'Trưởng phòng Hợp tác Quốc tế', phone: '+84900000002', email: 'b@example.com',
+    },
+    ...over,
+  });
+
+  const renderOne = (cv: CampusVisitSchema) => render(<VisitRequestV2SubmittedSummary
+    response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }], false)}
+    values={values([cv])} />);
+
+  it('shows the consent answer and the guest note as two separate facts', () => {
+    renderOne(withContact({ mediaConsentStatus: 'AGREED', notes: 'Xin hỗ trợ xe điện cho khách lớn tuổi.' }));
+    const card = screen.getByTestId('campus-summary-0');
+
+    expect(within(card).getByText('Xin hỗ trợ xe điện cho khách lớn tuổi.')).toBeInTheDocument();
+    // Never "Đồng ý — <note>" / "Agreed — <note>".
+    expect(within(card).queryByText(/—\s*Xin hỗ trợ xe điện/)).not.toBeInTheDocument();
+  });
+
+  it('shows the note when consent is DECLINED too', () => {
+    renderOne(withContact({ mediaConsentStatus: 'DECLINED', notes: 'Cần phiên dịch buổi chiều.' }));
+    expect(within(screen.getByTestId('campus-summary-0')).getByText('Cần phiên dịch buổi chiều.')).toBeInTheDocument();
+  });
+
+  it("shows the operational contact's job title, which the form asked for", () => {
+    renderOne(withContact());
+    expect(within(screen.getByTestId('campus-summary-0'))
+      .getByText(/Trưởng phòng Hợp tác Quốc tế/)).toBeInTheDocument();
   });
 });

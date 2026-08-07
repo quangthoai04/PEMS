@@ -28,7 +28,8 @@ export interface SafeEditInstanceDraft {
   contact: SafeEditContactDraft;
   transportationNote: string;
   mediaConsentStatus: string;
-  mediaConsentNote: string;
+  /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
+  notes: string;
 }
 
 /** Trimmed text, with empty treated the same as absent — "  " and null mean the same thing here. */
@@ -109,8 +110,8 @@ export function buildChangedOnlyPayload(
       };
       touched = true;
     }
-    if (changed(current.mediaConsentNote, draft.mediaConsentNote)) {
-      patch.mediaConsentNote = norm(draft.mediaConsentNote);
+    if (changed(current.notes, draft.notes)) {
+      patch.notes = norm(draft.notes);
       touched = true;
     }
     if (norm(current.mediaConsentStatus) !== norm(draft.mediaConsentStatus)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import VisitRequestV2DetailView from '../components/v2/VisitRequestV2DetailView';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -300,26 +300,18 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText(/PENDING|APPLIED|CLAIM_APPLIED/)).not.toBeInTheDocument();
   });
 
-  // ── The confirmation roll-up must not repeat what the campus card already says ────────────────
-  // On an instance-scoped page with one confirmed campus it rendered a heading over "1/1", directly
-  // above the block that names that very contact and shows the same confirmed state.
+  // ── There is no request-level confirmation roll-up any more ───────────────────────────────────
+  // It counted campuses ("1/1", "còn N cơ sở chờ") immediately above the cards that name each
+  // contact and show that contact's own state, so it repeated the section below it in every shape
+  // it was ever rendered in. The per-campus workflow is untouched — only the summary is gone.
 
-  it('drops the confirmation roll-up when one confirmed campus in scope already shows its contact', async () => {
-    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
-      confirmationSummary: { total: 1, confirmed: 1, pending: 0, declined: 0, expired: 0, gateOpen: true },
-      campusVisits: [campusFixture({ instanceStatus: 'ASSIGNED' })],
-      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
-    }));
-    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
-
-    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByTestId('section-contact-summary')).toBeNull();
-    // The detailed per-campus block is the one that stays.
-    expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(1);
-  });
-
-  it('keeps the roll-up for a full-request view, several campuses, or an answer still missing', async () => {
+  it('never renders the request-level confirmation roll-up, in any scope', async () => {
     const cases: Array<[string, Partial<ResolvedVisitForm>]> = [
+      ['one confirmed campus, instance-scoped', {
+        confirmationSummary: { total: 1, confirmed: 1, pending: 0, declined: 0, expired: 0, gateOpen: true },
+        campusVisits: [campusFixture({ instanceStatus: 'ASSIGNED' })],
+        viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      }],
       ['full-request scope', {
         confirmationSummary: { total: 1, confirmed: 1, pending: 0, declined: 0, expired: 0, gateOpen: true },
         viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
@@ -329,8 +321,18 @@ describe('VisitRequestV2DetailView', () => {
         campusVisits: [campusFixture(), campusFixture({ visitInstanceId: 11, campusCode: 'HCM' })],
         viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
       }],
+      // The shape that used to force it on: an answer still outstanding. This is the OPC-10 case.
       ['a contact has not answered', {
+        requestStatus: 'PENDING_CONTACT_CONFIRMATION',
         confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+        campusVisits: [campusFixture({
+          instanceStatus: 'WAITING_CONTACT_CONFIRMATION',
+          operationalContact: {
+            fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng',
+            phone: '+84912345678', email: 'dm@x.vn',
+            confirmationStatus: 'PENDING', confirmationSource: null, confirmedAt: null,
+          },
+        })],
         viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
       }],
     ];
@@ -339,9 +341,46 @@ describe('VisitRequestV2DetailView', () => {
       vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture(overrides));
       const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
       expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-      expect(screen.queryByTestId('section-contact-summary'), label).not.toBeNull();
+
+      expect(screen.queryByTestId('section-contact-summary'), label).toBeNull();
+      // …by test id AND by what the reader would actually look for.
+      expect(screen.queryByText('Contact confirmation'), label).toBeNull();
+      expect(screen.queryByText(/Xác nhận đầu mối đoàn khách/), label).toBeNull();
+      // Every campus still carries its own contact block — the data was never the problem.
+      const cards = screen.getAllByLabelText(/Campus detail/);
+      expect(cards.length, label).toBe(overrides.campusVisits?.length ?? 1);
+      for (const card of cards) {
+        expect(within(card).getByText('Đầu Mối HN'), label).toBeInTheDocument();
+      }
       unmount();
     }
+  });
+
+  it('a campus waiting for its contact shows that state on the card, not as "Unknown"', async () => {
+    // The OPC-10 shape end to end: the request badge and the campus badge are two DIFFERENT enum
+    // values, and neither was in the UI vocabulary before.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      requestStatus: 'PENDING_CONTACT_CONFIRMATION',
+      confirmationSummary: { total: 1, confirmed: 0, pending: 1, declined: 0, expired: 0, gateOpen: false },
+      campusVisits: [campusFixture({ instanceStatus: 'WAITING_CONTACT_CONFIRMATION' })],
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.getByTestId('request-status')).toHaveTextContent('Awaiting delegation contact confirmation');
+    expect(screen.getByTestId('campus-status-10')).toHaveTextContent('Awaiting delegation contact confirmation');
+    expect(screen.queryByText('Unknown')).toBeNull();
+  });
+
+  it('numbers the sections 1-2-3 with no gap where the roll-up used to be', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    // A page that ran 1, 3, 4 would read as if section 2 had failed to load.
+    expect(within(screen.getByTestId('section-registrant')).getByText('1')).toBeInTheDocument();
+    expect(within(screen.getByTestId('section-campuses')).getByText('2')).toBeInTheDocument();
+    expect(within(screen.getByTestId('section-history')).getByText('3')).toBeInTheDocument();
   });
 
   it('flag OFF / not found → stable friendly message, no silent v1 fallback fetch', async () => {

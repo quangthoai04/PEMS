@@ -115,7 +115,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.MediaConsentNote)).ToList();
+            content.Notes)).ToList();
         return new VisitRequestEditV2Dto(
             r.RowVersion,
             new RegistrantInputV2(r.RegistrantFullName, r.RegistrantNationality ?? "VN", r.RegistrantOrganization,

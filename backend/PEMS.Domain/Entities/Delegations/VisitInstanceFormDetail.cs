@@ -70,8 +70,13 @@ public class VisitInstanceFormDetail
     [Column("media_consent_status")]
     public string MediaConsentStatus { get; set; } = "DECLINED";
 
-    [Column("media_consent_note")]
-    public string? MediaConsentNote { get; set; }
+    /// <summary>
+    /// The guest's one general remark to FPTU about THIS campus ("Ghi chú gửi FPTU") — dietary needs,
+    /// accessibility, timing, documents. Independent of <see cref="MediaConsentStatus"/>: it is not a
+    /// justification for the consent answer, and either value is valid with or without a note.
+    /// </summary>
+    [Column("notes")]
+    public string? Notes { get; set; }
 
     // form_revision bumps on every applied change; approval_revision only when an
     // approval-sensitive amendment is applied. row_version is the manual optimistic token.

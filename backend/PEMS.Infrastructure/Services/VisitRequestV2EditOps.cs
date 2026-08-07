@@ -111,7 +111,7 @@ internal static class VisitRequestV2EditOps
         detail.WorkingLanguage = content.WorkingLanguage;
         detail.TransportationNote = Clean(content.TransportationNote);
         detail.MediaConsentStatus = content.MediaConsentStatus;
-        detail.MediaConsentNote = content.MediaConsentNote;
+        detail.Notes = Clean(content.Notes);
         detail.FormRevision += 1;
         detail.RowVersion += 1;
         detail.UpdatedAt = now;
@@ -136,7 +136,7 @@ internal static class VisitRequestV2EditOps
             WorkingLanguage = content.WorkingLanguage,
             TransportationNote = Clean(content.TransportationNote),
             MediaConsentStatus = content.MediaConsentStatus,
-            MediaConsentNote = content.MediaConsentNote,
+            Notes = Clean(content.Notes),
             FormRevision = 1,
             ApprovalRevision = 1,
             RowVersion = 0,
@@ -151,7 +151,7 @@ internal static class VisitRequestV2EditOps
             d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
             d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactJobTitle,
             d.OperationalContactPhone, d.OperationalContactEmail,
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
+            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,
             Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
         }, Json);
 

@@ -48,7 +48,9 @@ const campus = (id: number, code: string, name: string, rowVersion: number, dele
   },
   currentHost: null, proposedHost: null,
   hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
-  workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED', mediaConsentNote: null,  formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
+  workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED',
+  notes: `Ghi chú ${code}`,
+  formRevision: 1, approvalRevision: 0, rowVersion, activeAmendment: null,
   cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
   cancellationActorType: null, cancellationSource: null, cancellationReason: null,
 });

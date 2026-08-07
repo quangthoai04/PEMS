@@ -71,13 +71,16 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
     },
     {
       label: t('visitRequestV2:card.mediaConsent'),
+      // The consent answer alone. It used to carry the media note appended after an em dash, which
+      // read as one fact; they are two, and the general note is its own row below.
       value: campus.mediaConsentStatus === 'AGREED'
-        ? `${t('visitRequestV2:card.mediaAgreed')}${campus.mediaConsentNote ? ` — ${campus.mediaConsentNote}` : ''}`
+        ? t('visitRequestV2:card.mediaAgreed')
         : t('visitRequestV2:card.mediaDeclined'),
     },
     { label: t('visitRequestV2:card.transportationNote'), value: campus.transportationNote },
     { label: t('visitRequestV2:card.purpose'), value: campus.purpose, multiline: true },
     { label: t('visitRequestV2:card.workingContent'), value: campus.workingContent, multiline: true },
+    { label: t('visitRequestV2:card.notes'), value: campus.notes, multiline: true },
   ];
 
   return (

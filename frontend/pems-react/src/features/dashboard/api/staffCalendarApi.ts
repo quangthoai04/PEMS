@@ -110,9 +110,10 @@ export interface StaffCalendarDetail {
   guestCount: number;
   workingLanguage: string | null;
   mediaConsentStatus: string | null;
-  mediaConsentNote: string | null;
   /** Free text nhận diện phương tiện di chuyển tới FPTU (SQL v10). */
   transportationNote: string | null;
+  /** "Ghi chú gửi FPTU" — ghi chú chung của khách, độc lập với đồng ý truyền thông. */
+  notes: string | null;
   currentHostUserId: number | null;
   currentHostName: string | null;
   currentHostEmail: string | null;

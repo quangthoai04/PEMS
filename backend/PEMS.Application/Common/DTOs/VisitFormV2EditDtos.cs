@@ -41,14 +41,14 @@ public record CampusVisitEditV2Dto(
     string WorkingLanguage,
     string? TransportationNote,
     string MediaConsentStatus,
-    string? MediaConsentNote)
+    string? Notes)
 {
     /// <summary>Projects the campus content into the shared create DTO shape so create/edit reuse ONE
     /// canonical recompute (<c>VisitRequestV2Canonical</c>). The host arrangement is not campus CONTENT, so it is not part of this projection — it is edited through its own endpoint.</summary>
     public CampusVisitFormDto ToFormDto() => new(
         CampusId, PlannedStartAt, PlannedEndAt, DelegationName, VisitType, VisitTypeOther, Purpose, WorkingContent,
         Visitors, ExternalSupportMembers, OperationalContact, WorkingLanguage, TransportationNote,
-        MediaConsentStatus, MediaConsentNote, HostSelection: null);
+        MediaConsentStatus, Notes, HostSelection: null);
 }
 
 /// <summary>

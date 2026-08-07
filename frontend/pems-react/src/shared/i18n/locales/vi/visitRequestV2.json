@@ -85,7 +85,6 @@
     "mediaConsent": "Đồng ý truyền thông",
     "mediaAgreed": "Đồng ý ghi hình/chụp ảnh",
     "mediaDeclined": "Không đồng ý",
-    "mediaNote": "Ghi chú truyền thông",
     "transportationNote": "Nhận diện phương tiện di chuyển",
     "notes": "Ghi chú gửi FPTU",
     "addCampus": "Thêm cơ sở ({{count}}/{{max}})"
@@ -250,8 +249,7 @@
     "mediaConsent": "Đồng ý truyền thông",
     "mediaAgreed": "Đồng ý",
     "mediaDeclined": "Không đồng ý",
-    "mediaNote": "Ghi chú truyền thông",
-    "campusNote": "Ghi chú cho cơ sở",
+    "campusNote": "Ghi chú gửi FPTU",
     "instanceStatus": "Trạng thái cơ sở",
     "none": "—",
     "colIndex": "STT",
@@ -389,8 +387,7 @@
     "contactAccessStatus": "Trạng thái xác nhận",
     "contactActive": "Đã xác nhận",
     "contactVerifiedAt": "Xác nhận lúc",
-    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem.",
-    "confirmedCampuses": "Cơ sở đã có đầu mối xác nhận"
+    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem."
   },
   "preparation": {
     "hostAssigned": "Đã phân công Host",
@@ -407,6 +404,7 @@
     "complete": "Đã đủ thông tin",
     "incomplete": "Chưa hoàn tất",
     "instance": {
+      "WAITING_CONTACT_CONFIRMATION": "Chờ đầu mối đoàn khách xác nhận",
       "WAITING_REQUEST_APPROVAL": "Chờ Staff Leader xử lý",
       "ASSIGNED": "Đã phân công Host",
       "BEFORE_VISIT": "Đang chuẩn bị",
@@ -417,6 +415,7 @@
       "REJECTED": "Đã từ chối"
     },
     "request": {
+      "PENDING_CONTACT_CONFIRMATION": "Chờ đầu mối đoàn khách xác nhận",
       "PENDING_APPROVAL": "Chờ duyệt",
       "PARTIALLY_APPROVED": "Đã duyệt một phần",
       "APPROVED": "Đã duyệt",
@@ -518,7 +517,7 @@
       "workingLanguage": "Ngôn ngữ làm việc",
       "transportationNote": "Nhận diện phương tiện",
       "mediaConsentStatus": "Đồng ý truyền thông",
-      "mediaConsentNote": "Ghi chú truyền thông",
+      "notes": "Ghi chú gửi FPTU",
       "noteToFptu": "Ghi chú cho cơ sở",
       "operationalContactFullName": "Đầu mối điều phối",
       "operationalContactOrganization": "Đơn vị đầu mối",

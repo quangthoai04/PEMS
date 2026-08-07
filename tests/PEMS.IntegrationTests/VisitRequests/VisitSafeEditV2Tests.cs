@@ -361,9 +361,24 @@ public sealed class VisitSafeEditV2Tests
                 Assert.Equal(VisitMutationPolicy.RequiredLeadHours, ex.RequiredLeadHours);
             }
 
-            // Privacy-urgent media WITHDRAWAL (+ its note) still applies past the cutoff, with an
-            // URGENT notification. Someone who no longer wants to be photographed must be able to say
-            // so late — that is what the privacy-urgent class is for. The DEADLINE is waived; the
+            // A general note ("Ghi chú gửi FPTU") is NOT privacy-urgent, so it does not slip past the
+            // cutoff by travelling with a withdrawal. The exemption used to cover the note as well,
+            // because back then the note existed to explain the withdrawal; the field that replaced
+            // it is the guest's ordinary remark about the campus and is held to the ordinary deadline.
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance], null, null, "DECLINED", "Xin thêm một chỗ đỗ xe"),
+                        })), CancellationToken.None));
+                Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
+            }
+
+            // Privacy-urgent media WITHDRAWAL still applies past the cutoff, with an URGENT
+            // notification. Someone who no longer wants to be photographed must be able to say so
+            // late — that is what the privacy-urgent class is for. The DEADLINE is waived; the
             // lifecycle gate above is not, so this can never reopen a finished visit.
             var notifications = new RecordingNotifications();
             using (var db = NewContext())
@@ -371,7 +386,7 @@ public sealed class VisitSafeEditV2Tests
                 var res = await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                     {
-                        new(instance, instV[instance], null, null, "DECLINED", "Rút quyền hình ảnh"),
+                        new(instance, instV[instance], null, null, "DECLINED", null),
                     })), CancellationToken.None);
                 Assert.Contains(res.AppliedChanges,
                     c => c.FieldPath == VisitFieldClassifier.MediaConsentStatus

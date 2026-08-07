@@ -36,7 +36,6 @@
       "workingLanguage": "Working language",
       "transportation": "Transportation details",
       "mediaConsent": "Media consent",
-      "mediaConsentNote": "Media notes",
       "notes": "General notes"
     }
   },
@@ -235,8 +234,6 @@
     "media": "Media/Photography Consent *",
     "agreed": "Agreed",
     "declined": "Declined",
-    "mediaNoteTitle": "Media Notes (If any)",
-    "mediaNotePlaceholder": "e.g., Please avoid taking close-up photos of students...",
     "notes": "Notes for FPTU",
     "notesPlaceholder": "Enter any essential notes..."
   },

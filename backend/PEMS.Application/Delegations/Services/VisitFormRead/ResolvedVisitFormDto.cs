@@ -217,7 +217,9 @@ public sealed class ResolvedCampusVisitDto
     public string WorkingLanguage { get; init; } = "";
     public string? TransportationNote { get; init; }
     public string MediaConsentStatus { get; init; } = "";
-    public string? MediaConsentNote { get; init; }
+
+    /// <summary>"Ghi chú gửi FPTU" — this campus's one general remark, independent of media consent.</summary>
+    public string? Notes { get; init; }
 
     /// <summary>
     /// Where THIS campus stands in the confirmation workflow. Per campus because the workflow is:

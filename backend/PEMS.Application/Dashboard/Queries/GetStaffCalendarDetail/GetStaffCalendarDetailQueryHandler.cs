@@ -144,7 +144,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
         string? purpose = d.Purpose, workingContent = d.WorkingContent;
         string? visitType = d.VisitType, visitTypeOther = d.VisitTypeOther;
         string? workingLanguage = d.WorkingLanguage;
-        string? mediaConsentStatus = d.MediaConsentStatus, mediaConsentNote = d.MediaConsentNote;
+        string? mediaConsentStatus = d.MediaConsentStatus, notes = d.Notes;
         string? transportationNote = d.TransportationNote;
         // Guest count is the TARGET instance's linked members only (never the request-wide total).
         guestCount = d.Visitors.Count + d.SupportMembers.Count;
@@ -212,7 +212,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
             GuestCount = guestCount,
             WorkingLanguage = workingLanguage,
             MediaConsentStatus = mediaConsentStatus,
-            MediaConsentNote = mediaConsentNote,
+            Notes = notes,
             TransportationNote = transportationNote,
             CurrentHostUserId = instance.CurrentHostUserId,
             CurrentHostName = hostName,

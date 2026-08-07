@@ -137,6 +137,15 @@ public sealed class SchemaContractTests
         // Form content must live on the per-campus detail instead.
         Assert.Contains(columns, c => c.Table == "visit_instance_form_details" && c.Column == "delegation_name");
 
+        // The media-consent-note cutover, asserted on the table that actually changed. `media_consent_note`
+        // appears twice more in this file — in the legacy list above — but that list is about `visit_requests`,
+        // where the column was already gone, so it could not have caught the per-campus one still being there.
+        // The consent STATUS stays: only the note was dropped, replaced by one general note to FPTU.
+        Assert.DoesNotContain(columns,
+            c => c.Table == "visit_instance_form_details" && c.Column == "media_consent_note");
+        Assert.Contains(columns, c => c.Table == "visit_instance_form_details" && c.Column == "notes");
+        Assert.Contains(columns, c => c.Table == "visit_instance_form_details" && c.Column == "media_consent_status");
+
         // No staging/seed helper objects may survive an import.
         Assert.DoesNotContain(tables, t => t.StartsWith("pems_seed_", StringComparison.OrdinalIgnoreCase));
     }

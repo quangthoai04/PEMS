@@ -767,7 +767,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
             new ContactPointDto(d.OperationalContactFullName, d.OperationalContactOrganization,
                 d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.MediaConsentNote,
+            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,
             HostSelection: null);
     }
 

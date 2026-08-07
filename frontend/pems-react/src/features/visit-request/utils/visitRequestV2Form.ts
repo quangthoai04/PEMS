@@ -38,7 +38,6 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   workingLanguage: 'VI',
   transportationNote: '',
   mediaConsentStatus: 'DECLINED',
-  mediaConsentNote: '',
   notes: '',
 });
 
@@ -147,7 +146,7 @@ const toApiCampusVisit = (
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
   mediaConsentStatus: cv.mediaConsentStatus,
-  mediaConsentNote: trimOrNull(cv.mediaConsentNote),
+  notes: trimOrNull(cv.notes),
   // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
   // external submit that names anybody, so sending a placeholder would fail the whole request.
   hostSelection: hostChoice
@@ -301,8 +300,9 @@ export const resolvedFormToV2Schema = (
       workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',
-      mediaConsentNote: cv.mediaConsentNote ?? '',
-      notes: '',
+      // Hydrated from the server, not blanked. Seeding '' here is what made an edit silently erase
+      // whatever the guest had written: the form loaded empty and saved that emptiness back.
+      notes: cv.notes ?? '',
     })),
   },
 });

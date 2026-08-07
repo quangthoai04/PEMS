@@ -10,10 +10,11 @@ namespace PEMS.UnitTests.VisitRequests;
 /// <summary>
 /// Plan §25 — the boundary of every bounded field, and the schedule rules, on the SERVER side.
 ///
-/// Two of these were genuinely unguarded before: <c>MediaConsentNote</c> had no length rule at all
-/// (the form capped it at 2000, the API took anything, and the edit screen would then refuse to
-/// save the value back), and no phone field had one, though every phone column is VARCHAR(50) —
-/// so an over-long number failed as a MySQL truncation instead of as a message naming the field.
+/// Two of these were genuinely unguarded before: the per-campus free-text note (now <c>Notes</c>)
+/// had no length rule at all (the form capped it at 2000, the API took anything, and the edit
+/// screen would then refuse to save the value back), and no phone field had one, though every
+/// phone column is VARCHAR(50) — so an over-long number failed as a MySQL truncation instead of
+/// as a message naming the field.
 ///
 /// Each limit is checked from BOTH sides: the largest accepted value and the smallest rejected
 /// one. A one-sided test would still pass if someone quietly widened the rule.
@@ -44,7 +45,7 @@ public class VisitRequestV2LengthAndScheduleTests
         string? purpose = null,
         string? workingContent = null,
         string? transportationNote = null,
-        string? mediaConsentNote = null,
+        string? notes = null,
         IList<VisitorDto>? visitors = null,
         IList<SupportTeamMemberDto>? support = null,
         ContactPointDto? opContact = null)
@@ -55,7 +56,7 @@ public class VisitRequestV2LengthAndScheduleTests
             visitors ?? new List<VisitorDto> { Guest() },
             support ?? new List<SupportTeamMemberDto>(),
             opContact ?? OpContact(),
-            "EN", transportationNote, "DECLINED", mediaConsentNote, null);
+            "EN", transportationNote, "DECLINED", notes, null);
 
     private static CreateVisitRequestV2Command Command(
         CampusVisitFormDto? campus = null,
@@ -103,8 +104,8 @@ public class VisitRequestV2LengthAndScheduleTests
         => AssertBoundary(2000, v => Command(Campus(transportationNote: v)), "TransportationNote");
 
     [Fact]
-    public void Media_consent_note_is_bounded_at_2000()
-        => AssertBoundary(2000, v => Command(Campus(mediaConsentNote: v)), "MediaConsentNote");
+    public void Notes_is_bounded_at_2000()
+        => AssertBoundary(2000, v => Command(Campus(notes: v)), "Notes");
 
     // ── People ───────────────────────────────────────────────────────────────
 
@@ -176,7 +177,7 @@ public class VisitRequestV2LengthAndScheduleTests
         // FluentValidation's untranslated default ("The length of ... must be ...") sitting next to
         // Vietnamese required-messages on the same field is what this rules out.
         var messages = MessagesFor(Command(Campus(
-            delegationName: Of(201), purpose: Of(2001), mediaConsentNote: Of(2001))));
+            delegationName: Of(201), purpose: Of(2001), notes: Of(2001))));
 
         Assert.NotEmpty(messages);
         Assert.All(messages, m => Assert.DoesNotContain("The length of", m, StringComparison.OrdinalIgnoreCase));

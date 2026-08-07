@@ -90,7 +90,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
         string? visitType = detail.VisitType, visitTypeOther = detail.VisitTypeOther;
         string? purpose = detail.Purpose, workingContent = detail.WorkingContent;
         string? workingLanguage = detail.WorkingLanguage;
-        string? mediaConsentStatus = detail.MediaConsentStatus, mediaConsentNote = detail.MediaConsentNote;
+        string? mediaConsentStatus = detail.MediaConsentStatus, notes = detail.Notes;
         string? transportationNote = detail.TransportationNote;
         var guestMembers = detail.Visitors.Select(MapRow).ToList();
         var externalSupportMembers = detail.SupportMembers.Select(MapRow).ToList();
@@ -120,7 +120,7 @@ public sealed class GetVisitInstanceSummaryQueryHandler : IRequestHandler<GetVis
             WorkingContent = workingContent,
             WorkingLanguage = workingLanguage,
             MediaConsentStatus = mediaConsentStatus,
-            MediaConsentNote = mediaConsentNote,
+            Notes = notes,
             TransportationNote = transportationNote,
 
             OperationalContactFullName = detail.OperationalContact.FullName,

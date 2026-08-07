@@ -36,7 +36,6 @@
       "workingLanguage": "Ngôn ngữ làm việc",
       "transportation": "Thông tin phương tiện",
       "mediaConsent": "Chấp thuận truyền thông",
-      "mediaConsentNote": "Ghi chú truyền thông",
       "notes": "Ghi chú chung"
     }
   },
@@ -235,8 +234,6 @@
     "media": "Chấp thuận truyền thông/Chụp ảnh *",
     "agreed": "Đồng ý",
     "declined": "Từ chối",
-    "mediaNoteTitle": "Ghi chú truyền thông (Nếu có)",
-    "mediaNotePlaceholder": "VD: Vui lòng không chụp cận mặt học sinh...",
     "notes": "Ghi chú cho FPTU",
     "notesPlaceholder": "Nhập bất kỳ ghi chú thiết yếu nào..."
   },

@@ -133,14 +133,22 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
         RuleFor(c => c.MediaConsentStatus)
             .NotEmpty().WithMessage("Trạng thái truyền thông không được để trống.")
             .Must(s => s is "AGREED" or "DECLINED").WithMessage("Trạng thái truyền thông không hợp lệ.");
-        // The form has always capped this at 2000; the server never did, so a direct call could
-        // store a note the edit screen would then refuse to save back.
-        RuleFor(c => c.MediaConsentNote)
-            .MaximumLength(2000).WithMessage(TooLong("Ghi chú truyền thông", 2000));
+        // "Ghi chú gửi FPTU" — the guest's one general remark about this campus. Deliberately NOT
+        // conditioned on MediaConsentStatus: it is not a justification for the consent answer, so all
+        // four combinations (AGREED/DECLINED × note/no note) are valid. Blank is normalized to NULL
+        // at the write boundary, so a whitespace-only note never reaches the column as content.
+        RuleFor(c => c.Notes)
+            .MaximumLength(2000).WithMessage(TooLong("Ghi chú gửi FPTU", 2000));
 
         // ── People (per-campus, independent) ──
+        // A campus with nobody coming is not a visit. The form has always required at least one guest,
+        // but the server only null-checked the list, so a direct call — or an edit/resubmit, which run
+        // through this same validator — could store a campus whose delegation is empty, and the detail
+        // screen then showed a delegation of 0 people. Support members stay optional (below): they are
+        // an FPTU-side convenience, not the reason the campus is receiving anyone.
         RuleFor(c => c.Visitors)
             .NotNull().WithMessage("Danh sách khách không hợp lệ.")
+            .NotEmpty().WithMessage("Mỗi cơ sở phải có ít nhất 1 khách.")
             .Must(v => v is null || v.Count <= MaxMembers).WithMessage($"Tối đa {MaxMembers} khách mỗi cơ sở.");
         RuleForEach(c => c.Visitors).SetValidator(new VisitorV2Validator());
 

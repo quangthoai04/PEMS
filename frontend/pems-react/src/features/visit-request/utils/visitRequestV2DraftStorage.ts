@@ -114,7 +114,7 @@ const campusVisitHasContent = (visit: unknown): boolean => {
     filled(cv.campus) || filled(cv.startDatetime) || filled(cv.endDatetime)
     || filled(cv.delegationName) || filled(cv.purpose) || filled(cv.workingContent)
     || filled(cv.visitTypeOther) || filled(cv.transportationNote)
-    || filled(cv.mediaConsentNote) || filled(cv.notes)
+    || filled(cv.notes)
     || (filled(cv.visitType) && cv.visitType !== UNTOUCHED_VISIT_TYPE)
     || (filled(cv.workingLanguage) && cv.workingLanguage !== UNTOUCHED_WORKING_LANGUAGE)
     || (filled(cv.mediaConsentStatus) && cv.mediaConsentStatus !== UNTOUCHED_MEDIA_CONSENT)

@@ -197,7 +197,7 @@ public class VisitSetupEmailHtmlTests
 
         foreach (var forbidden in new[]
         {
-            "PreparationNote", "OfflineCoordinationNote", "NoteToFptu", "MediaConsentNote",
+            "PreparationNote", "OfflineCoordinationNote", "NoteToFptu", "Notes",
             "AssignedToUserId", "RequestedBy", "ReceivedBy", "AuditLog", "DecisionNote",
         })
         {

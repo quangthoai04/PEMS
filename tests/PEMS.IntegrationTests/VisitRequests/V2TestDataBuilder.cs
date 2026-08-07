@@ -6,6 +6,24 @@ namespace PEMS.IntegrationTests.VisitRequests;
 
 public static class V2TestDataBuilder
 {
+    /// <summary>
+    /// One valid delegate, because a campus with an empty guest list is no longer a payload the API
+    /// accepts (CampusVisitFormDtoValidator requires a non-empty Visitors list on every write path).
+    /// These builders produce the VALID baseline that the business-rule tests then vary one field of,
+    /// so an empty roster here made every one of them assert a 400 about payload shape instead of the
+    /// rule under test. A test that needs an empty list writes it explicitly at the call site.
+    /// </summary>
+    private static List<Dictionary<string, object?>> OneGuest() => new()
+    {
+        new Dictionary<string, object?>
+        {
+            ["fullName"] = "IT Guest Delegate",
+            ["nationality"] = "VN",
+            ["jobTitle"] = "Trưởng đoàn",
+            ["organization"] = "Test Organization",
+        },
+    };
+
     public static Dictionary<string, object?> BuildCreatePayload(
         string delegationName = "Default Test Delegation",
         string registrantEmail = "registrant@integration.test",
@@ -29,7 +47,7 @@ public static class V2TestDataBuilder
                 ["visitTypeOther"] = null,
                 ["purpose"] = "Tham quan v� trao d?i h?p t�c (integration test)",
                 ["workingContent"] = "Default valid working content",
-                ["visitors"] = Array.Empty<object>(),
+                ["visitors"] = OneGuest(),
                 ["externalSupportMembers"] = Array.Empty<object>(),
                 ["operationalContact"] = new Dictionary<string, object?>
                 {
@@ -42,7 +60,7 @@ public static class V2TestDataBuilder
                 ["workingLanguage"] = "VI",
                 ["transportationNote"] = null,
                 ["mediaConsentStatus"] = "DECLINED",
-                ["mediaConsentNote"] = null,
+                ["notes"] = null,
                 // The reception-host ARRANGEMENT. Omitted entirely when the caller names no mode,
                 // because the backend REFUSES an external submit that carries one — a placeholder
                 // would fail the whole request rather than being ignored.
@@ -97,7 +115,7 @@ public static class V2TestDataBuilder
                 ["visitTypeOther"] = null,
                 ["purpose"] = "Edited Purpose",
                 ["workingContent"] = "Edited Working Content",
-                ["visitors"] = Array.Empty<object>(),
+                ["visitors"] = OneGuest(),
                 ["externalSupportMembers"] = Array.Empty<object>(),
                 ["operationalContact"] = new Dictionary<string, object?>
                 {
@@ -110,7 +128,7 @@ public static class V2TestDataBuilder
                 ["workingLanguage"] = "VI",
                 ["transportationNote"] = null,
                 ["mediaConsentStatus"] = "DECLINED",
-                ["mediaConsentNote"] = null
+                ["notes"] = null
             });
         }
 

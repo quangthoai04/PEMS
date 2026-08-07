@@ -1505,7 +1505,8 @@ CREATE TABLE visit_instance_form_details (
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN',
   transportation_note TEXT NULL,
   media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
-  media_consent_note TEXT NULL,
+  notes TEXT NULL
+    COMMENT 'Ghi chú bổ sung chung của khách gửi FPTU tại campus này',
   form_revision INT UNSIGNED NOT NULL DEFAULT 1,
   approval_revision INT UNSIGNED NOT NULL DEFAULT 1,
   row_version INT UNSIGNED NOT NULL DEFAULT 0,
@@ -5097,7 +5098,7 @@ INSERT INTO visit_instance_form_details (
   working_language,
   transportation_note,
   media_consent_status,
-  media_consent_note,
+  notes,
   form_revision,
   approval_revision,
   row_version,
@@ -5119,7 +5120,7 @@ SELECT
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
-  sf.media_consent_note,
+  sf.notes,
   1,
   1,
   0,
@@ -5139,7 +5140,7 @@ JOIN (
     'EN' AS working_language,
     'Khách tự túc phương tiện. Xe riêng của đoàn, đến cổng chính Hòa Lạc.' AS transportation_note,
     'AGREED' AS media_consent_status,
-    'Đồng ý sử dụng hình ảnh cho bản tin nội bộ và public news nếu được duyệt.' AS media_consent_note
+    'Đoàn có hai thành viên lớn tuổi, mong FPTU bố trí chỗ nghỉ ngắn giữa các điểm tham quan.' AS notes
     UNION ALL SELECT
     1002,
     'Kyoto robotics showcase request',
@@ -5161,7 +5162,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự di chuyển bằng xe 16 chỗ.',
     'AGREED',
-    'Chỉ sử dụng ảnh nhóm sau khi đoàn xác nhận.'
+    'Đoàn xin nhận trước slide chương trình đào tạo AI để chuẩn bị câu hỏi.'
     UNION ALL SELECT
     1004,
     'Green campus preparation visit',
@@ -5172,7 +5173,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ xe điện nội khu cho 6 khách.',
     'AGREED',
-    'Đồng ý ảnh hoạt động ngoài trời.'
+    NULL
     UNION ALL SELECT
     1005,
     'Iberia Mobility Forum campus day',
@@ -5183,7 +5184,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn có xe thuê riêng, FPTU hỗ trợ điều phối bãi đỗ.',
     'AGREED',
-    'Đồng ý dùng hình ảnh cho recap sau sự kiện.'
+    'Đoàn cần phiên dịch Anh - Việt cho phiên thảo luận buổi chiều.'
     UNION ALL SELECT
     1006,
     'SeoulTech AI lab follow-up discussion',
@@ -5205,7 +5206,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU bố trí xe từ khách sạn và trả đoàn tại sân bay.',
     'AGREED',
-    'Đồng ý public ảnh ký kết sau khi kiểm duyệt.'
+    'Buổi làm việc kín, đề nghị FPTU không đưa tin trước khi hai bên thống nhất.'
     UNION ALL SELECT
     1008,
     'Self-cancelled seminar visit',
@@ -5238,7 +5239,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần hỗ trợ shuttle nội khu tại từng campus.',
     'AGREED',
-    'Cho phép ảnh khuôn viên và phương tiện xanh.'
+    'Đoàn xin bản đồ khuôn viên từng cơ sở trước ngày đến.'
     UNION ALL SELECT
     2002,
     'Rejected cross-campus mobility forum',
@@ -5249,7 +5250,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn tự thuê xe giữa các địa điểm.',
     'AGREED',
-    'Đồng ý ảnh nội bộ nếu được tổ chức.'
+    NULL
     UNION ALL SELECT
     2003,
     'Campus-level pending Staff Leader approval tour',
@@ -5260,7 +5261,7 @@ JOIN (
     'EN',
     'Khách tự túc phương tiện. Đoàn tự đặt xe theo từng thành phố.',
     'AGREED',
-    'Cho phép dùng ảnh tour nếu không chụp tài liệu nội bộ.'
+    NULL
     UNION ALL SELECT
     2004,
     'Assigned cross-campus AI curriculum roadshow',
@@ -5271,7 +5272,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ phòng workshop và xe nội khu.',
     'AGREED',
-    'Ảnh workshop được dùng cho recap nếu host duyệt.'
+    'Đoàn đề nghị mỗi cơ sở dành 30 phút hỏi đáp với giảng viên phụ trách.'
     UNION ALL SELECT
     2005,
     'Before-visit mobility preparation',
@@ -5282,7 +5283,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Yêu cầu xe điện tại HN và shuttle tại HCM.',
     'AGREED',
-    'Chỉ chụp ảnh khuôn viên, không chụp biển số xe cá nhân.'
+    'Một khách dùng xe lăn, mong FPTU chọn lối đi không có bậc thang.'
     UNION ALL SELECT
     2006,
     'During-visit sustainability exchange',
@@ -5293,7 +5294,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn sử dụng xe thuê riêng, cần hỗ trợ check-in nhanh.',
     'AGREED',
-    'Cho phép ảnh hoạt động sinh viên.'
+    NULL
     UNION ALL SELECT
     2007,
     'After-visit hospitality and AI follow-up',
@@ -5315,7 +5316,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU hỗ trợ điều phối xe nội khu tại từng campus.',
     'AGREED',
-    'Ảnh ký kết được duyệt cho public news.'
+    'Đoàn xin bản mềm biên bản làm việc của cả ba cơ sở sau chuyến thăm.'
     UNION ALL SELECT
     2009,
     'Partial-cancel robotics route',
@@ -5337,7 +5338,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. FPTU dự kiến hỗ trợ shuttle tại HN và HCM.',
     'AGREED',
-    'Đồng ý ảnh nếu chuyến thăm diễn ra.'
+    NULL
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -6236,7 +6237,7 @@ INSERT INTO visit_instance_form_details (
   working_language,
   transportation_note,
   media_consent_status,
-  media_consent_note,
+  notes,
   form_revision,
   approval_revision,
   row_version,
@@ -6258,7 +6259,7 @@ SELECT
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
-  sf.media_consent_note,
+  sf.notes,
   1,
   1,
   0,
@@ -6278,7 +6279,7 @@ JOIN (
     'VI' AS working_language,
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.' AS transportation_note,
     'DECLINED' AS media_consent_status,
-    NULL AS media_consent_note
+    NULL AS notes
     UNION ALL SELECT
     3002,
     'Green campus energy walk with facilities specialists',
@@ -6289,7 +6290,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3003,
     'Robotics classroom demonstration for visiting educators',
@@ -6300,7 +6301,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3004,
     'International credit-transfer workshop with mobility coordinators',
@@ -6322,7 +6323,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3006,
     'Hospitality and tourism learning showcase',
@@ -6333,7 +6334,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn có ba khách ăn chay, xin báo trước cho bộ phận tiếp khách.'
     UNION ALL SELECT
     3007,
     'Mekong community engagement and service-learning visit',
@@ -6355,7 +6356,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3009,
     'Industry advisory board meeting on graduate skills',
@@ -6366,7 +6367,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3010,
     'Research collaboration planning and signing session',
@@ -6377,7 +6378,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL
+    'Đoàn xin chuẩn bị hai bản hồ sơ ký kết song ngữ trước buổi làm việc.'
     UNION ALL SELECT
     3011,
     'Service-learning mobility forum for programme coordinators',
@@ -6388,7 +6389,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3012,
     'Smart library operations briefing for visiting administrators',
@@ -6399,7 +6400,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3013,
     'Campus safety and visitor-service review',
@@ -6410,7 +6411,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'DECLINED',
-    NULL
+    'Đoàn xin phổ biến quy định an toàn và lối thoát hiểm ngay đầu buổi.'
     UNION ALL SELECT
     3014,
     'Innovation hub partnership sprint with startup mentors',
@@ -6421,7 +6422,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3015,
     'Bilingual student-buddy programme observation',
@@ -6432,7 +6433,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn cần phiên dịch Anh - Việt đi cùng suốt buổi quan sát lớp.'
     UNION ALL SELECT
     3016,
     'Sustainable facilities protocol and operations visit',
@@ -6454,7 +6455,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3018,
     'Accessible outdoor campus tour with partner coordinators',
@@ -6465,7 +6466,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn có một khách đi lại khó khăn, xin chọn tuyến tham quan không có bậc thang.'
     UNION ALL SELECT
     3019,
     'Career services exchange meeting with employer-relations teams',
@@ -6487,7 +6488,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin bản mềm toàn bộ tài liệu bàn giao sau buổi làm việc.'
     UNION ALL SELECT
     3021,
     'AI curriculum review focused on project-based learning',
@@ -6498,7 +6499,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3022,
     'Sustainable campus operations and energy-efficiency tour',
@@ -6520,7 +6521,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3024,
     'Course equivalency review for student exchange',
@@ -6531,7 +6532,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3025,
     'Startup mentoring exchange for student project teams',
@@ -6553,7 +6554,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3027,
     'Community-based learning exchange with regional partners',
@@ -6564,7 +6565,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3028,
     'Digital art learning-studio tour with creative educators',
@@ -6586,7 +6587,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3030,
     'Joint research partnership meeting with faculty leaders',
@@ -6597,7 +6598,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3031,
     'International forum on community-based student mobility',
@@ -6619,7 +6620,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3033,
     'Visitor experience and campus safety walkthrough',
@@ -6630,7 +6631,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3034,
     'Co-design workshop for a joint innovation programme',
@@ -6652,7 +6653,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn cần phiên dịch Anh - Việt cho phần trao đổi với sinh viên.'
     UNION ALL SELECT
     3036,
     'Facilities management exchange on environmental standards',
@@ -6663,7 +6664,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3037,
     'Edtech product validation session',
@@ -6685,7 +6686,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin tuyến đi có thang máy và nhà vệ sinh tiếp cận được cho khách dùng xe lăn.'
     UNION ALL SELECT
     3039,
     'Graduate employability and internship coordination session',
@@ -6696,7 +6697,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3040,
     'Records-management session for partnership documents',
@@ -6718,7 +6719,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3042,
     'Low-carbon campus mobility and utilities walkthrough',
@@ -6729,7 +6730,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3043,
     'Student robotics project showcase with partner faculty',
@@ -6751,7 +6752,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3045,
     'Entrepreneurship ecosystem discussion with visiting partners',
@@ -6762,7 +6763,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3046,
     'Hospitality and tourism showcase — staff-created internal delegation campus 1',
@@ -6784,7 +6785,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3048,
     'Digital art learning studio tour — staff-created internal delegation campus 3',
@@ -6795,7 +6796,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3049,
     'Industry advisory board meeting — staff-created internal delegation campus 4',
@@ -6817,7 +6818,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin chuẩn bị phòng riêng và hai bản hồ sơ ký kết cho lễ ký.'
     UNION ALL SELECT
     3051,
     'Service-learning exchange design workshop',
@@ -6828,7 +6829,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3052,
     'Smart library operations briefing — multi-campus rejected by responsible Staff Leaders',
@@ -6850,7 +6851,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin nhận trước quy trình ứng phó khẩn cấp bản tiếng Anh.'
     UNION ALL SELECT
     3054,
     'Innovation-space collaboration session',
@@ -6861,7 +6862,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3055,
     'Student ambassador and language-support walkthrough',
@@ -6883,7 +6884,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3057,
     'Edtech product validation session — multi-campus rejected by responsible Staff Leaders',
@@ -6894,7 +6895,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3058,
     'Outdoor learning-space and accessibility review',
@@ -6905,7 +6906,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'DECLINED',
-    NULL
+    'Đoàn xin bố trí phương án thay thế trong nhà nếu trời mưa.'
     UNION ALL SELECT
     3059,
     'Career-support model comparison with partner institutions',
@@ -6916,7 +6917,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3060,
     'Document retention and handover process review',
@@ -6927,7 +6928,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin bản mềm danh mục hồ sơ lưu trữ trước buổi rà soát.'
     UNION ALL SELECT
     3061,
     'AI course-mapping session for student exchange',
@@ -6949,7 +6950,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3063,
     'Robotics curriculum workshop in the innovation lab',
@@ -6960,7 +6961,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3064,
     'Academic mobility session on credit recognition',
@@ -6982,7 +6983,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3066,
     'Service-design demonstration with hospitality educators',
@@ -6993,7 +6994,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3067,
     'Mekong community engagement visit — multi-campus rejected by responsible Staff Leaders',
@@ -7015,7 +7016,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3069,
     'Industry consultation for programme improvement',
@@ -7026,7 +7027,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3070,
     'Applied research cooperation and document-signing programme',
@@ -7048,7 +7049,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3072,
     'Smart library operations briefing — multi-campus rejected by responsible Staff Leaders',
@@ -7059,7 +7060,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3073,
     'Campus access and visitor support review',
@@ -7081,7 +7082,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3075,
     'Peer-support model review for international visitors',
@@ -7092,7 +7093,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3076,
     'Green operations protocol workshop',
@@ -7114,7 +7115,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3078,
     'Visitor route assessment for guests with mobility needs',
@@ -7125,7 +7126,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn có hai khách cần hỗ trợ di chuyển, xin bố trí điểm dừng nghỉ giữa tuyến.'
     UNION ALL SELECT
     3079,
     'Employer engagement workshop for student mobility',
@@ -7147,7 +7148,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn xin quyền xem trước kho hồ sơ hợp tác để chuẩn bị câu hỏi rà soát.'
     UNION ALL SELECT
     3081,
     'Academic delegation reviewing AI learning outcomes',
@@ -7158,7 +7159,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3082,
     'Green campus energy walk — multi-campus rejected by responsible Staff Leaders',
@@ -7180,7 +7181,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3084,
     'Credit-transfer process mapping with partner universities',
@@ -7191,7 +7192,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Di chuyển kết hợp bus thuê riêng và xe điện nội bộ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3085,
     'Student entrepreneurship roundtable with industry mentors',
@@ -7213,7 +7214,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    'Đoàn có hai khách ăn chay và một khách dị ứng hải sản.'
     UNION ALL SELECT
     3087,
     'Mekong community engagement visit — multi-campus rejected by responsible Staff Leaders',
@@ -7224,7 +7225,7 @@ JOIN (
     'EN',
     'Visitor chưa chốt phương án di chuyển tại thời điểm gửi form.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3088,
     'Digital media teaching demonstration',
@@ -7246,7 +7247,7 @@ JOIN (
     'VI',
     'Khách tự túc phương tiện. Đoàn tự bố trí xe và gửi biển số trước giờ đến.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
     UNION ALL SELECT
     3090,
     'Research roadmap discussion with international partners',
@@ -7257,7 +7258,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Đề nghị FPTU hỗ trợ xe điện nội khu và hướng dẫn bãi đỗ.',
     'AGREED',
-    'Đồng ý sử dụng ảnh nhóm sau khi host xác nhận.'
+    NULL
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -9236,7 +9237,7 @@ INSERT INTO visit_instance_form_details (
   working_language,
   transportation_note,
   media_consent_status,
-  media_consent_note,
+  notes,
   form_revision,
   approval_revision,
   row_version,
@@ -9258,7 +9259,7 @@ SELECT
   sf.working_language,
   sf.transportation_note,
   sf.media_consent_status,
-  sf.media_consent_note,
+  sf.notes,
   1,
   1,
   0,
@@ -9278,7 +9279,7 @@ JOIN (
     'EN' AS working_language,
     'Khách tự túc phương tiện. Đoàn tự bố trí xe từ trung tâm TP.HCM đến campus.' AS transportation_note,
     'AGREED' AS media_consent_status,
-    'Chỉ đồng ý dùng ảnh nhóm nếu chuyến đi diễn ra.' AS media_consent_note
+    NULL AS notes
     UNION ALL SELECT
     9002,
     'UTS robotics classroom visit cancelled by visitor at DN',
@@ -9300,7 +9301,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn dự kiến kết hợp xe thuê và boat tour nội vùng.',
     'AGREED',
-    'Đồng ý ảnh recap nội bộ nếu có sự kiện.'
+    'Đoàn xin xác nhận lại lịch trước một tuần vì phải đặt vé nội địa.'
     UNION ALL SELECT
     9004,
     'Casablanca hospitality pathway cancelled by visitor at QN',
@@ -9322,7 +9323,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ điều phối di chuyển giữa các campus nếu lịch được chốt.',
     'AGREED',
-    'Đồng ý dùng ảnh đoàn trong bản tin hợp tác nếu chuyến diễn ra.'
+    'Đoàn có nhu cầu suất ăn chay cho ba thành viên.'
     UNION ALL SELECT
     9006,
     'Singapore AI consortium partial campus cancellation',
@@ -9333,7 +9334,7 @@ JOIN (
     'EN',
     'Phương tiện khác. Đoàn dùng xe thuê riêng, chỉ đổi lịch bay tại chặng HCM.',
     'AGREED',
-    'Cho phép ảnh nội bộ tại các campus còn tiếp tục.'
+    'Chỉ các cơ sở còn tiếp tục cần chuẩn bị phòng họp; các cơ sở đã hủy xin dừng mọi khâu chuẩn bị.'
     UNION ALL SELECT
     9007,
     'Casablanca coastal program partial cancellation',
@@ -9355,7 +9356,7 @@ JOIN (
     'EN',
     'Khách đề nghị FPTU hỗ trợ phương tiện. Cần FPTU hỗ trợ bảng welcome và xe nội khu tại từng campus.',
     'AGREED',
-    'Cho phép ảnh workshop nếu sự kiện diễn ra.'
+    NULL
 ) sf
   ON sf.visit_request_id = vrc.visit_request_id
 WHERE NOT EXISTS (
@@ -11780,7 +11781,7 @@ JOIN (
         OR NOT (d.working_language <=> base_d.working_language)
         OR NOT (d.transportation_note <=> base_d.transportation_note)
         OR NOT (d.media_consent_status <=> base_d.media_consent_status)
-        OR NOT (d.media_consent_note <=> base_d.media_consent_note)
+        OR NOT (d.notes <=> base_d.notes)
         OR COALESCE(member_sig.member_signature, SHA2('', 256))
            <> COALESCE(base_member_sig.member_signature, SHA2('', 256))
       THEN 1 ELSE 0 END
@@ -11868,7 +11869,7 @@ SELECT
     'workingLanguage', d.working_language,
     'transportationNote', d.transportation_note,
     'mediaConsentStatus', d.media_consent_status,
-    'mediaConsentNote', d.media_consent_note
+    'notes', d.notes
   ),
   COALESCE(d.created_by, vr.registrant_user_id),
   COALESCE(d.created_at, vr.created_at, vr.submitted_at),
@@ -15022,38 +15023,38 @@ SET status = 'BEFORE_VISIT'
 WHERE visit_instance_id IN (42015, 42016);
 
 -- F. Full per-campus form snapshots with distinct business content
-INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_job_title, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, media_consent_note, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (42001, 'Helsinki Education Governance Delegation', 'MEETING', NULL, 'Trao đổi mô hình quản trị dữ liệu học vụ và cơ chế phối hợp giữa trường với cơ quan quản lý giáo dục.', 'Phiên làm việc tập trung vào governance framework, phân quyền truy cập dữ liệu, quy trình phê duyệt báo cáo và kế hoạch thử nghiệm chung trong học kỳ mùa thu.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Helsinki Education Governance Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Helsinki Education Governance Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (42002, 'British Council Digital Skills Roundtable', 'MEETING', NULL, 'Chuẩn bị chương trình kỹ năng số cho sinh viên và cơ chế đồng tổ chức hoạt động tại campus Hà Nội.', 'Hai bên thống nhất phạm vi workshop, tiêu chí lựa chọn giảng viên, phương án truyền thông và mốc rà soát nội dung trước ngày tổ chức.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho British Council Digital Skills Roundtable: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'British Council Digital Skills Roundtable chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
-  (42003, 'Osaka AI Laboratories Academic Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát phòng lab trí tuệ nhân tạo và thảo luận cơ hội đồng hướng dẫn đồ án sinh viên.', 'Đoàn tham quan AI Lab, gặp nhóm giảng viên phụ trách computer vision và rà soát đề cương ba đề tài có thể triển khai trong năm học tới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Osaka AI Laboratories Academic Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Osaka AI Laboratories Academic Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
-  (42004, 'Korea Foundation Culture Exchange Mission', 'EXCHANGE', NULL, 'Tổ chức phiên giao lưu văn hóa Hàn Quốc - Việt Nam và trao đổi kế hoạch học kỳ trải nghiệm.', 'Chương trình gồm giới thiệu campus, đối thoại sinh viên, trình diễn văn hóa và phiên làm việc riêng về chương trình mobility ngắn hạn.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Korea Foundation Culture Exchange Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Korea Foundation Culture Exchange Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
-  (42005, 'Aalto University Service Design Delegation', 'WORKSHOP', NULL, 'Thực hành service design cho trải nghiệm sinh viên quốc tế tại campus.', 'Workshop hoàn thành bản đồ hành trình sinh viên, xác định điểm nghẽn trong onboarding và thống nhất nhóm phụ trách thử nghiệm hai cải tiến ưu tiên.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Aalto University Service Design Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Aalto University Service Design Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
-  (42006, 'University of Queensland Partnership Review', 'MEETING', NULL, 'Đánh giá kết quả hợp tác năm học trước và thống nhất ba ưu tiên cho giai đoạn tiếp theo.', 'Biên bản ghi nhận kết quả trao đổi sinh viên, kế hoạch nghiên cứu chung và đầu mối phụ trách chương trình đào tạo ngắn hạn. Hồ sơ đã hoàn tất hậu kiểm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho University of Queensland Partnership Review: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của University of Queensland Partnership Review không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
-  (42007, 'Warsaw Exchange Planning Team', 'MEETING', NULL, 'Đề xuất phiên làm việc gấp về trao đổi học kỳ mùa đông.', 'Đề nghị ban đầu thiếu danh sách thành viên chính thức và trùng lịch thi cuối kỳ của campus Hà Nội nên chưa thể tiếp nhận ở mốc thời gian đề xuất.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Warsaw Exchange Planning Team vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Warsaw Exchange Planning Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
-  (42008, 'Thai Nguyen Innovation Network Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Tham quan mô hình không gian đổi mới và kết nối nhóm khởi nghiệp sinh viên.', 'Đoàn chủ động hủy do lịch công tác của trưởng đoàn thay đổi; hai bên thống nhất sẽ gửi lại đề nghị vào tháng sau.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Thai Nguyen Innovation Network Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Thai Nguyen Innovation Network Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
-  (42009, 'Erasmus Applied Learning Consortium', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Erasmus Applied Learning Consortium không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42010, 'Erasmus Applied Learning Consortium - TP.HCM', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', 'Chuyên viên Hợp tác Quốc tế', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Erasmus Applied Learning Consortium chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
-  (42011, 'SeoulTech Semiconductor Education Visit', 'MEETING', NULL, 'Trao đổi cấu trúc chương trình bán dẫn và nhu cầu phát triển phòng lab thực hành.', 'Đoàn làm việc với IC và nhóm đào tạo về học phần nền tảng, thiết bị mô phỏng và cơ chế mời chuyên gia doanh nghiệp tham gia giảng dạy.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Semiconductor Education Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Semiconductor Education Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
-  (42012, 'Taiwan Smart Campus Working Group', 'WORKSHOP', NULL, 'Chia sẻ kinh nghiệm vận hành smart campus và thiết kế dashboard tiêu thụ năng lượng.', 'Nhóm đã hoàn thành workshop về cảm biến, dữ liệu thời gian thực và bộ chỉ số giám sát vận hành; đang tổng hợp đầu việc sau chuyến thăm.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Taiwan Smart Campus Working Group: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Taiwan Smart Campus Working Group không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42013, 'Jeju Tourism Technology Delegation', 'CAMPUS_TOUR', NULL, 'Tìm hiểu chương trình công nghệ du lịch và trải nghiệm không gian đào tạo thực hành.', 'Đoàn dự kiến tham quan campus, gặp giảng viên chuyên ngành và thảo luận một học phần trải nghiệm chung về dữ liệu du lịch.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho Jeju Tourism Technology Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Jeju Tourism Technology Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
-  (42014, 'Daegu Global Seminar Organizing Team', 'WORKSHOP', NULL, 'Chuẩn bị seminar về kỹ năng nghề nghiệp quốc tế cho sinh viên khối công nghệ.', 'Hồ sơ đang chờ Staff Leader rà soát lịch, thành phần diễn giả và phương án sử dụng hội trường trước khi phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Daegu Global Seminar Organizing Team: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Daegu Global Seminar Organizing Team chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
-  (42015, 'Temasek Polytechnic Learning Innovation Workshop', 'WORKSHOP', NULL, 'Trao đổi cách tổ chức studio học tập và đánh giá dự án liên ngành.', 'Staff Hà Nội tạo đơn nội bộ và tự nhận làm host trong cùng transaction; agenda gồm phiên giới thiệu studio và thảo luận rubric đánh giá.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Temasek Polytechnic Learning Innovation Workshop: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Temasek Polytechnic Learning Innovation Workshop không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
-  (42016, 'Porto Data Partnership Delegation', 'MEETING', NULL, 'Tổng kết thử nghiệm chia sẻ dữ liệu nghiên cứu và thảo luận nguyên tắc quản trị bộ dữ liệu chung.', 'Chuyến thăm đã đóng sau khi hoàn thành biên bản, hạng mục phòng họp, thiết bị trình chiếu và danh sách hành động hậu kỳ.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Porto Data Partnership Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Porto Data Partnership Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
-  (42017, 'Pacific Language Center Observation Visit', 'CAMPUS_TOUR', NULL, 'Quan sát lớp tiếng Anh và tìm hiểu mô hình kiểm tra năng lực đầu vào.', 'Yêu cầu chưa nêu rõ mục tiêu hợp tác, thành phần đoàn thay đổi liên tục và thời gian đề xuất trùng kỳ kiểm tra nên bị từ chối.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Pacific Language Center Observation Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Pacific Language Center Observation Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
-  (42018, 'Ritsumeikan APU Student Mobility Briefing', 'MEETING', NULL, 'Trao đổi thủ tục mobility và hỗ trợ sinh viên trước kỳ trao đổi.', 'Đầu mối chính hủy vì lịch đoàn chuyển sang hình thức trực tuyến; Staff vẫn nhìn thấy lịch sử ở tab đơn đã đăng ký.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Ritsumeikan APU Student Mobility Briefing vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của Ritsumeikan APU Student Mobility Briefing không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
-  (42019, 'SeoulTech Summer School Planning Visit', 'MEETING', NULL, 'Thảo luận lịch trình summer school và tiêu chí tuyển chọn sinh viên tham gia.', 'Visitor đã xác minh email và gửi đơn; campus Hà Nội đang kiểm tra lịch phòng, giảng viên tham gia và phương án di chuyển nội bộ.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Summer School Planning Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech Summer School Planning Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
-  (42020, 'SeoulTech AI Education Multi-Campus Mission', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'SeoulTech AI Education Multi-Campus Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42021, 'SeoulTech AI Education Multi-Campus Mission - Đà Nẵng', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng. Phần làm việc tại Đà Nẵng ưu tiên chương trình kỹ thuật và trải nghiệm môi trường học tập.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff Đà Nẵng', 'FPT University - IC Đà Nẵng', 'Chuyên viên Hợp tác Quốc tế', '0901000012', 'staff.dn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Đà Nẵng; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech AI Education Multi-Campus Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
-  (42022, 'Busan Design Council Campus Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát không gian thiết kế và đề xuất cuộc thi sáng tạo liên trường.', 'Đơn bị từ chối vì danh sách 48 khách vượt khả năng bố trí tại thời điểm đề xuất và chưa có phương án chia nhóm tham quan.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho Busan Design Council Campus Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Busan Design Council Campus Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
-  (42023, 'SeoulTech August Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Thăm campus và gặp gỡ sinh viên đã tham gia chương trình trao đổi.', 'Người đăng ký hủy trước thời hạn vì chuyến bay quốc tế bị điều chỉnh; lý do được lưu trong lịch sử yêu cầu.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho SeoulTech August Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'SeoulTech August Courtesy Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
-  (42024, 'SeoulTech Robotics Collaboration Delegation', 'WORKSHOP', NULL, 'Tổ chức workshop robot di động và xác định đề tài nghiên cứu chung cho sinh viên.', 'Chuyến thăm đã hoàn tất, biên bản và thiết bị được bàn giao đầy đủ; Visitor đã gửi feedback tổng thể sau khi hồ sơ đóng.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Robotics Collaboration Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của SeoulTech Robotics Collaboration Delegation không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
-  (42025, 'Vietnam–Japan Startup Network Delegation', 'MEETING', NULL, 'Kết nối startup sinh viên với cố vấn Nhật Bản và khảo sát không gian ươm tạo.', 'Đơn mới đã xác minh email, đang chờ Staff Leader Hà Nội kiểm tra thành phần mentor và lịch sử dụng khu innovation hub.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Vietnam–Japan Startup Network Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Vietnam–Japan Startup Network Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
-  (42026, 'Tokyo Metropolitan Smart Campus Delegation', 'CAMPUS_TOUR', NULL, 'Khảo sát hạ tầng thông minh, khu học tập số và quy trình vận hành sự kiện.', 'Host đang hoàn thiện biển đón, xác nhận điểm tập kết xe và phân công sinh viên hỗ trợ theo từng chặng tham quan.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Tokyo Metropolitan Smart Campus Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Tokyo Metropolitan Smart Campus Delegation chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
-  (42027, 'ASEAN Youth Forum Study Visit', 'EXCHANGE', NULL, 'Tổ chức đối thoại thanh niên ASEAN và tham quan campus trong một buổi chiều.', 'Đơn chưa cung cấp xác nhận số lượng khách quốc tế, yêu cầu an ninh và thông tin trưởng đoàn nên campus chưa thể phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho ASEAN Youth Forum Study Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đầu mối của ASEAN Youth Forum Study Visit không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
-  (42028, 'Kyoto Creative Lab Campus Exchange', 'WORKSHOP', NULL, 'Tổ chức workshop thiết kế sáng tạo với sinh viên ngành multimedia.', 'Người đăng ký hủy vì đoàn chuyển kế hoạch sang quý sau; yêu cầu được giữ để tra cứu lịch sử.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Kyoto Creative Lab Campus Exchange vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Kyoto Creative Lab Campus Exchange chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
-  (42029, 'National Chengchi University Partnership Visit', 'SIGNING_CEREMONY', NULL, 'Rà soát nội dung hợp tác và tổ chức phiên ký biên bản ghi nhớ cấp đơn vị.', 'Hồ sơ đã đóng sau lễ ký, biên bản và danh sách đầu việc được xác nhận; Staff Leader Hà Nội là host chính của chuyến thăm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho National Chengchi University Partnership Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'National Chengchi University Partnership Visit chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
-  (42030, 'Asia-Pacific Academic Alliance Mission', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đầu mối của Asia-Pacific Academic Alliance Mission không đồng ý sử dụng hình ảnh cho nội dung công khai.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
-  (42031, 'Asia-Pacific Academic Alliance Mission - TP.HCM', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', 'Chuyên viên Hợp tác Quốc tế', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Asia-Pacific Academic Alliance Mission chỉ cho phép sử dụng ảnh tập thể đã được đầu mối xác nhận; không công khai ảnh tài liệu làm việc.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
+INSERT INTO visit_instance_form_details (visit_instance_id, delegation_name, visit_type, visit_type_other, purpose, working_content, operational_contact_full_name, operational_contact_organization, operational_contact_job_title, operational_contact_phone, operational_contact_email, working_language, transportation_note, media_consent_status, notes, form_revision, approval_revision, row_version, created_at, created_by, updated_at, updated_by) VALUES
+  (42001, 'Helsinki Education Governance Delegation', 'MEETING', NULL, 'Trao đổi mô hình quản trị dữ liệu học vụ và cơ chế phối hợp giữa trường với cơ quan quản lý giáo dục.', 'Phiên làm việc tập trung vào governance framework, phân quyền truy cập dữ liệu, quy trình phê duyệt báo cáo và kế hoạch thử nghiệm chung trong học kỳ mùa thu.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Helsinki Education Governance Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Đoàn xin nhận trước quy chế quản lý dữ liệu học vụ bản tiếng Anh để đối chiếu.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
+  (42002, 'British Council Digital Skills Roundtable', 'MEETING', NULL, 'Chuẩn bị chương trình kỹ năng số cho sinh viên và cơ chế đồng tổ chức hoạt động tại campus Hà Nội.', 'Hai bên thống nhất phạm vi workshop, tiêu chí lựa chọn giảng viên, phương án truyền thông và mốc rà soát nội dung trước ngày tổ chức.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho British Council Digital Skills Roundtable: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_sl_hn, NULL, NULL),
+  (42003, 'Osaka AI Laboratories Academic Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát phòng lab trí tuệ nhân tạo và thảo luận cơ hội đồng hướng dẫn đồ án sinh viên.', 'Đoàn tham quan AI Lab, gặp nhóm giảng viên phụ trách computer vision và rà soát đề cương ba đề tài có thể triển khai trong năm học tới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Osaka AI Laboratories Academic Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đoàn xin bố trí ổ cắm chuẩn Nhật tại phòng lab cho thiết bị mang theo.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_sl_hn, NULL, NULL),
+  (42004, 'Korea Foundation Culture Exchange Mission', 'EXCHANGE', NULL, 'Tổ chức phiên giao lưu văn hóa Hàn Quốc - Việt Nam và trao đổi kế hoạch học kỳ trải nghiệm.', 'Chương trình gồm giới thiệu campus, đối thoại sinh viên, trình diễn văn hóa và phiên làm việc riêng về chương trình mobility ngắn hạn.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Korea Foundation Culture Exchange Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_sl_hn, NULL, NULL),
+  (42005, 'Aalto University Service Design Delegation', 'WORKSHOP', NULL, 'Thực hành service design cho trải nghiệm sinh viên quốc tế tại campus.', 'Workshop hoàn thành bản đồ hành trình sinh viên, xác định điểm nghẽn trong onboarding và thống nhất nhóm phụ trách thử nghiệm hai cải tiến ưu tiên.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Aalto University Service Design Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Workshop cần bảng trắng và giấy note cho bốn nhóm làm việc song song.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_sl_hn, NULL, NULL),
+  (42006, 'University of Queensland Partnership Review', 'MEETING', NULL, 'Đánh giá kết quả hợp tác năm học trước và thống nhất ba ưu tiên cho giai đoạn tiếp theo.', 'Biên bản ghi nhận kết quả trao đổi sinh viên, kế hoạch nghiên cứu chung và đầu mối phụ trách chương trình đào tạo ngắn hạn. Hồ sơ đã hoàn tất hậu kiểm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho University of Queensland Partnership Review: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_sl_hn, NULL, NULL),
+  (42007, 'Warsaw Exchange Planning Team', 'MEETING', NULL, 'Đề xuất phiên làm việc gấp về trao đổi học kỳ mùa đông.', 'Đề nghị ban đầu thiếu danh sách thành viên chính thức và trùng lịch thi cuối kỳ của campus Hà Nội nên chưa thể tiếp nhận ở mốc thời gian đề xuất.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Warsaw Exchange Planning Team vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_sl_hn, NULL, NULL),
+  (42008, 'Thai Nguyen Innovation Network Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Tham quan mô hình không gian đổi mới và kết nối nhóm khởi nghiệp sinh viên.', 'Đoàn chủ động hủy do lịch công tác của trưởng đoàn thay đổi; hai bên thống nhất sẽ gửi lại đề nghị vào tháng sau.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Thai Nguyen Innovation Network Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_sl_hn, NULL, NULL),
+  (42009, 'Erasmus Applied Learning Consortium', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42010, 'Erasmus Applied Learning Consortium - TP.HCM', 'EXCHANGE', NULL, 'Khảo sát mô hình học tập dự án tại Hà Nội và hệ sinh thái doanh nghiệp tại TP.HCM. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Campus Hà Nội tập trung vào phương pháp triển khai capstone; campus TP.HCM dự kiến làm việc với mạng lưới doanh nghiệp và trung tâm đổi mới. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', 'Chuyên viên Hợp tác Quốc tế', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Erasmus Applied Learning Consortium: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Đoàn xin gộp phần ăn trưa với sinh viên để có thêm thời gian trao đổi.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_sl_hn, NULL, NULL),
+  (42011, 'SeoulTech Semiconductor Education Visit', 'MEETING', NULL, 'Trao đổi cấu trúc chương trình bán dẫn và nhu cầu phát triển phòng lab thực hành.', 'Đoàn làm việc với IC và nhóm đào tạo về học phần nền tảng, thiết bị mô phỏng và cơ chế mời chuyên gia doanh nghiệp tham gia giảng dạy.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Semiconductor Education Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_visitor_main, NULL, NULL),
+  (42012, 'Taiwan Smart Campus Working Group', 'WORKSHOP', NULL, 'Chia sẻ kinh nghiệm vận hành smart campus và thiết kế dashboard tiêu thụ năng lượng.', 'Nhóm đã hoàn thành workshop về cảm biến, dữ liệu thời gian thực và bộ chỉ số giám sát vận hành; đang tổng hợp đầu việc sau chuyến thăm.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Taiwan Smart Campus Working Group: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42013, 'Jeju Tourism Technology Delegation', 'CAMPUS_TOUR', NULL, 'Tìm hiểu chương trình công nghệ du lịch và trải nghiệm không gian đào tạo thực hành.', 'Đoàn dự kiến tham quan campus, gặp giảng viên chuyên ngành và thảo luận một học phần trải nghiệm chung về dữ liệu du lịch.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho Jeju Tourism Technology Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Đoàn có một khách ăn chay và một khách dị ứng hải sản.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_visitor_main, NULL, NULL),
+  (42014, 'Daegu Global Seminar Organizing Team', 'WORKSHOP', NULL, 'Chuẩn bị seminar về kỹ năng nghề nghiệp quốc tế cho sinh viên khối công nghệ.', 'Hồ sơ đang chờ Staff Leader rà soát lịch, thành phần diễn giả và phương án sử dụng hội trường trước khi phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Daegu Global Seminar Organizing Team: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_staff_hn, NULL, NULL),
+  (42015, 'Temasek Polytechnic Learning Innovation Workshop', 'WORKSHOP', NULL, 'Trao đổi cách tổ chức studio học tập và đánh giá dự án liên ngành.', 'Staff Hà Nội tạo đơn nội bộ và tự nhận làm host trong cùng transaction; agenda gồm phiên giới thiệu studio và thảo luận rubric đánh giá.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Temasek Polytechnic Learning Innovation Workshop: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_staff_hn, NULL, NULL),
+  (42016, 'Porto Data Partnership Delegation', 'MEETING', NULL, 'Tổng kết thử nghiệm chia sẻ dữ liệu nghiên cứu và thảo luận nguyên tắc quản trị bộ dữ liệu chung.', 'Chuyến thăm đã đóng sau khi hoàn thành biên bản, hạng mục phòng họp, thiết bị trình chiếu và danh sách hành động hậu kỳ.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Porto Data Partnership Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Đoàn xin bản mềm biên bản làm việc trong vòng ba ngày sau chuyến thăm.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_staff_hn, NULL, NULL),
+  (42017, 'Pacific Language Center Observation Visit', 'CAMPUS_TOUR', NULL, 'Quan sát lớp tiếng Anh và tìm hiểu mô hình kiểm tra năng lực đầu vào.', 'Yêu cầu chưa nêu rõ mục tiêu hợp tác, thành phần đoàn thay đổi liên tục và thời gian đề xuất trùng kỳ kiểm tra nên bị từ chối.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Pacific Language Center Observation Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 18 DAY, @u_staff_hn, NULL, NULL),
+  (42018, 'Ritsumeikan APU Student Mobility Briefing', 'MEETING', NULL, 'Trao đổi thủ tục mobility và hỗ trợ sinh viên trước kỳ trao đổi.', 'Đầu mối chính hủy vì lịch đoàn chuyển sang hình thức trực tuyến; Staff vẫn nhìn thấy lịch sử ở tab đơn đã đăng ký.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Ritsumeikan APU Student Mobility Briefing vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_staff_hn, NULL, NULL),
+  (42019, 'SeoulTech Summer School Planning Visit', 'MEETING', NULL, 'Thảo luận lịch trình summer school và tiêu chí tuyển chọn sinh viên tham gia.', 'Visitor đã xác minh email và gửi đơn; campus Hà Nội đang kiểm tra lịch phòng, giảng viên tham gia và phương án di chuyển nội bộ.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Summer School Planning Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_visitor_main, NULL, NULL),
+  (42020, 'SeoulTech AI Education Multi-Campus Mission', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', 'Trưởng đoàn chỉ dự được buổi sáng, mong FPTU xếp nội dung chính lên đầu chương trình.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42021, 'SeoulTech AI Education Multi-Campus Mission - Đà Nẵng', 'MEETING', NULL, 'Làm việc về AI education tại Hà Nội và khảo sát chương trình kỹ thuật phần mềm tại Đà Nẵng. Phần làm việc tại Đà Nẵng ưu tiên chương trình kỹ thuật và trải nghiệm môi trường học tập.', 'Hà Nội đã duyệt và gán Staff Leader làm host; Đà Nẵng đang chờ xử lý độc lập nên request hiển thị trạng thái phê duyệt một phần. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff Đà Nẵng', 'FPT University - IC Đà Nẵng', 'Chuyên viên Hợp tác Quốc tế', '0901000012', 'staff.dn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech AI Education Multi-Campus Mission: vào cổng chính campus Đà Nẵng; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đoàn cần phiên dịch Anh - Việt cho phiên làm việc tại Đà Nẵng.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_visitor_main, NULL, NULL),
+  (42022, 'Busan Design Council Campus Visit', 'CAMPUS_TOUR', NULL, 'Khảo sát không gian thiết kế và đề xuất cuộc thi sáng tạo liên trường.', 'Đơn bị từ chối vì danh sách 48 khách vượt khả năng bố trí tại thời điểm đề xuất và chưa có phương án chia nhóm tham quan.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho Busan Design Council Campus Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', 'Đoàn 48 khách, đề nghị FPTU chia thành ba nhóm tham quan luân phiên.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 5 DAY, @u_visitor_main, NULL, NULL),
+  (42023, 'SeoulTech August Courtesy Visit', 'CAMPUS_TOUR', NULL, 'Thăm campus và gặp gỡ sinh viên đã tham gia chương trình trao đổi.', 'Người đăng ký hủy trước thời hạn vì chuyến bay quốc tế bị điều chỉnh; lý do được lưu trong lịch sử yêu cầu.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Không điều phối phương tiện cho SeoulTech August Courtesy Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 6 DAY, @u_visitor_main, NULL, NULL),
+  (42024, 'SeoulTech Robotics Collaboration Delegation', 'WORKSHOP', NULL, 'Tổ chức workshop robot di động và xác định đề tài nghiên cứu chung cho sinh viên.', 'Chuyến thăm đã hoàn tất, biên bản và thiết bị được bàn giao đầy đủ; Visitor đã gửi feedback tổng thể sau khi hồ sơ đóng.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'EN', 'Phương án xe cho SeoulTech Robotics Collaboration Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đoàn mang theo hai robot mẫu, cần bàn trưng bày và nguồn điện riêng.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 7 DAY, @u_visitor_main, NULL, NULL),
+  (42025, 'Vietnam–Japan Startup Network Delegation', 'MEETING', NULL, 'Kết nối startup sinh viên với cố vấn Nhật Bản và khảo sát không gian ươm tạo.', 'Đơn mới đã xác minh email, đang chờ Staff Leader Hà Nội kiểm tra thành phần mentor và lịch sử dụng khu innovation hub.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Vietnam–Japan Startup Network Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 8 DAY, @u_nvt, NULL, NULL),
+  (42026, 'Tokyo Metropolitan Smart Campus Delegation', 'CAMPUS_TOUR', NULL, 'Khảo sát hạ tầng thông minh, khu học tập số và quy trình vận hành sự kiện.', 'Host đang hoàn thiện biển đón, xác nhận điểm tập kết xe và phân công sinh viên hỗ trợ theo từng chặng tham quan.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Tokyo Metropolitan Smart Campus Delegation: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 9 DAY, @u_nvt, NULL, NULL),
+  (42027, 'ASEAN Youth Forum Study Visit', 'EXCHANGE', NULL, 'Tổ chức đối thoại thanh niên ASEAN và tham quan campus trong một buổi chiều.', 'Đơn chưa cung cấp xác nhận số lượng khách quốc tế, yêu cầu an ninh và thông tin trưởng đoàn nên campus chưa thể phê duyệt.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho ASEAN Youth Forum Study Visit vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'DECLINED', 'Đoàn có ba sinh viên dưới 18 tuổi, xin hỗ trợ thủ tục ra vào cổng.', 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 10 DAY, @u_nvt, NULL, NULL),
+  (42028, 'Kyoto Creative Lab Campus Exchange', 'WORKSHOP', NULL, 'Tổ chức workshop thiết kế sáng tạo với sinh viên ngành multimedia.', 'Người đăng ký hủy vì đoàn chuyển kế hoạch sang quý sau; yêu cầu được giữ để tra cứu lịch sử.', 'IC Staff Hà Nội', 'FPT University - IC Hà Nội', 'Chuyên viên Hợp tác Quốc tế', '0901000004', 'staff.hn@fpt.edu.vn', 'VI', 'Không điều phối phương tiện cho Kyoto Creative Lab Campus Exchange vì campus chưa tiếp nhận hoặc chuyến thăm đã hủy.', 'AGREED', NULL, 1, 0, 0, CURRENT_TIMESTAMP - INTERVAL 11 DAY, @u_nvt, NULL, NULL),
+  (42029, 'National Chengchi University Partnership Visit', 'SIGNING_CEREMONY', NULL, 'Rà soát nội dung hợp tác và tổ chức phiên ký biên bản ghi nhớ cấp đơn vị.', 'Hồ sơ đã đóng sau lễ ký, biên bản và danh sách đầu việc được xác nhận; Staff Leader Hà Nội là host chính của chuyến thăm.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho National Chengchi University Partnership Visit: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 12 DAY, @u_nvt, NULL, NULL),
+  (42030, 'Asia-Pacific Academic Alliance Mission', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus.', 'IC Staff Leader Hà Nội', 'FPT University - IC Hà Nội', 'Trưởng nhóm Hợp tác Quốc tế', '0901000003', 'staff.leader.hn@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus Hà Nội; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'DECLINED', 'Đoàn xin xác nhận lịch trước hai tuần để kịp làm thủ tục nhập cảnh.', 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL),
+  (42031, 'Asia-Pacific Academic Alliance Mission - TP.HCM', 'MEETING', NULL, 'Làm việc tại Hà Nội về hợp tác học thuật và tại TP.HCM về kết nối doanh nghiệp. Phần làm việc tại TP.HCM ưu tiên kết nối doanh nghiệp và vận hành campus.', 'Hai campus đã phê duyệt độc lập và gán host phù hợp; nội dung, lịch và đầu mối vận hành được lưu thành snapshot riêng cho từng campus. Snapshot campus này được lưu độc lập, không dùng nội dung của Hà Nội làm bản đại diện.', 'IC Staff TP.HCM', 'FPT University - IC TP.HCM', 'Chuyên viên Hợp tác Quốc tế', '0901000010', 'staff.hcm@fpt.edu.vn', 'VI', 'Phương án xe cho Asia-Pacific Academic Alliance Mission: vào cổng chính campus TP.HCM; host xác nhận biển số và điểm trả khách trước 24 giờ.', 'AGREED', NULL, 1, 1, 0, CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_nvt, NULL, NULL);
 
 -- G. Realistic guest and external-support rosters
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
@@ -15707,6 +15708,8 @@ SET @op_now := CURRENT_TIMESTAMP;
 DELETE FROM visit_request_identity_change_events WHERE identity_change_id BETWEEN 67001 AND 67099;
 DELETE FROM visit_request_identity_changes      WHERE identity_change_id BETWEEN 67001 AND 67099;
 DELETE FROM visit_instance_form_details         WHERE visit_instance_id  BETWEEN 47101 AND 47199;
+DELETE FROM visit_instance_guest_members        WHERE visit_instance_id  BETWEEN 47101 AND 47199;
+DELETE FROM visit_guest_members                 WHERE guest_member_id    BETWEEN 47201 AND 47299;
 DELETE FROM visit_request_campuses              WHERE visit_instance_id  BETWEEN 47101 AND 47199;
 DELETE FROM visit_requests                      WHERE visit_request_id   BETWEEN 47001 AND 47099;
 
@@ -16007,6 +16010,39 @@ VALUES
    'p***@northbridge-edu.example', 'Bị thay thế bởi lần gửi lại mới hơn.', 'opc-10', @op_now - INTERVAL 1 DAY),
   (67009, 47010, 47119, 'OPERATIONAL_CONTACT_INVITED', NULL, 'PENDING', @op_visitor,
    'p***@northbridge-edu.example', 'Lời mời còn hiệu lực.', 'opc-10', @op_now - INTERVAL 1 DAY);
+
+-- Đoàn khách. Mọi cơ sở phải có ít nhất 1 khách: cơ sở không có khách nào không phải trạng thái mà
+-- create/pending-edit/resubmit/amendment tạo ra được (CampusVisitFormDtoValidator bắt buộc Visitors
+-- NotEmpty), nên bộ kịch bản này là chỗ duy nhất trong seed từng dựng nên "đoàn 0 người" và khiến
+-- màn hình chi tiết hiển thị một cơ sở không ai đến. Một khách cho mỗi request, id 47201+ theo đúng
+-- dải id riêng của khối §4.4.
+INSERT INTO visit_guest_members
+  (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality,
+   display_order, created_at, created_by)
+SELECT
+  47200 + (vr.visit_request_id - 47000),
+  vr.visit_request_id,
+  'GUEST',
+  'Kim Min Jae',
+  'SeoulTech Global Engagement Center',
+  'Director of Global Programs',
+  'Hàn Quốc',
+  1,
+  vr.created_at,
+  vr.registrant_user_id
+FROM visit_requests vr
+WHERE vr.visit_request_id BETWEEN 47001 AND 47099;
+
+-- …và nối vào TỪNG cơ sở của request đó: danh sách khách là dữ liệu theo campus, nên một roster ở
+-- mức request mà không có link thì thẻ campus vẫn trống y như không có ai.
+INSERT INTO visit_instance_guest_members
+  (visit_request_id, visit_instance_id, guest_member_id, display_order, created_at, created_by)
+SELECT
+  vrc.visit_request_id, vrc.visit_instance_id, m.guest_member_id, m.display_order,
+  vrc.created_at, m.created_by
+FROM visit_request_campuses vrc
+JOIN visit_guest_members m ON m.visit_request_id = vrc.visit_request_id
+WHERE vrc.visit_instance_id BETWEEN 47101 AND 47199;
 
 -- Scenario coverage assertions. Every issue_count must be 0.
 SELECT 'opc_scenario_request_count' AS check_name, 11 - COUNT(*) AS issue_count
@@ -16995,6 +17031,22 @@ SELECT 'invalid_20_generic_document_title' AS check_name, COUNT(*) AS issue_coun
 FROM documents
 WHERE title REGEXP '(coverage[[:space:]]+[0-9]+|document[[:space:]]+coverage)';
 
+-- Mỗi cơ sở phải có ít nhất 1 khách trong đoàn. Không write path nào tạo được cơ sở 0 khách
+-- (CampusVisitFormDtoValidator dùng chung cho create / pending-edit / resubmit, và validator
+-- amendment cũng vậy), nên seed cũng không được dựng ra trạng thái đó. Chạy SAU khối §4.4 để phủ
+-- toàn bộ campus đã seed, không chỉ các dải cũ.
+SELECT 'invalid_21_campus_without_visitor' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+WHERE NOT EXISTS (
+  SELECT 1
+  FROM visit_instance_guest_members l
+  JOIN visit_guest_members m
+    ON m.guest_member_id = l.guest_member_id
+   AND m.visit_request_id = l.visit_request_id
+  WHERE l.visit_instance_id = vrc.visit_instance_id
+    AND m.member_type = 'GUEST'
+);
+
 -- Coverage output for role/relationship/status, template/event, visit-detail
 -- email history, documents, contact claims and report attachments.
 SELECT role_code, relationship_type, reachable_status, COUNT(*) AS story_count
@@ -17180,6 +17232,32 @@ BEGIN
   IF v_issue_count <> 0 THEN
     SET v_message = CONCAT(
       'CURATED_SEED_INVALID: operational campus instances without agenda = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  -- Mỗi campus phải có ít nhất 1 khách trong đoàn. Cùng hạng với check agenda ở trên: đây là ràng
+  -- buộc "campus thiếu tập con bắt buộc", và không write path nào tạo được trạng thái này
+  -- (CampusVisitFormDtoValidator dùng chung cho create/pending-edit/resubmit, validator amendment
+  -- cũng vậy) — nên seed dựng ra nó là seed sai, phải dừng import chứ không chỉ in ra một con số.
+  -- invalid_21_campus_without_visitor ở phần trên report cùng ràng buộc này, y như cặp
+  -- operational_visit_instances_missing_agenda / check agenda ngay trên đây.
+  SELECT COUNT(*) INTO v_issue_count
+  FROM visit_request_campuses vrc
+  WHERE NOT EXISTS (
+      SELECT 1
+      FROM visit_instance_guest_members l
+      JOIN visit_guest_members m
+        ON m.guest_member_id = l.guest_member_id
+       AND m.visit_request_id = l.visit_request_id
+      WHERE l.visit_instance_id = vrc.visit_instance_id
+        AND m.member_type = 'GUEST'
+    );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: campus instances without any guest = ',
       v_issue_count
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;

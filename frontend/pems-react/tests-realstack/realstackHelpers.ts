@@ -146,7 +146,6 @@ export function campusBlock(code: string, dayOffset: number, delegation: string,
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',
-    mediaConsentNote: null,
     notes: null,
     processing: null,
   };

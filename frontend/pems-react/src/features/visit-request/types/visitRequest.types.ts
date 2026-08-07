@@ -51,8 +51,8 @@ export interface VisitRequestFormData {
   /** Free text identifying the transportation to FPTU (optional). */
   transportationNote?: string;
   mediaConsentStatus: 'AGREED' | 'DECLINED';
-  mediaConsentNote?: string;
   partnerId?: number | null;
+  /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
   notes: string;
 }
 

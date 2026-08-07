@@ -39,7 +39,7 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
                 .MaximumLength(2000)
                 .Must(n => string.IsNullOrEmpty(n) || (!n.Contains('<') && !n.Contains('>')))
                 .WithMessage("Nhận diện phương tiện di chuyển không được chứa HTML/script.");
-            i.RuleFor(p => p.MediaConsentNote).MaximumLength(2000);
+            i.RuleFor(p => p.Notes).MaximumLength(2000);
             // null is legitimate — the field is simply not part of this sparse patch.
             i.RuleFor(p => p.MediaConsentStatus)
                 .Must(s => s is null or "AGREED" or "DECLINED")
@@ -80,8 +80,12 @@ public sealed class SubmitVisitAmendmentCommandValidator : AbstractValidator<Sub
                 .SetValidator(new CreateVisitRequestV2.OperationalContactV2Validator())
                 .When(x => x.Proposal.OperationalContact is not null);
             RuleFor(x => x.Proposal.Reason).MaximumLength(500);
+            // An approved amendment REPLACES the campus's guest list, so accepting an empty one here
+            // would reintroduce the zero-guest campus that create/edit/resubmit now refuse.
             RuleFor(x => x.Proposal.Visitors)
-                .NotNull().Must(v => v.Count <= 200).WithMessage("Tối đa 200 khách mỗi cơ sở.");
+                .NotNull()
+                .NotEmpty().WithMessage("Mỗi cơ sở phải có ít nhất 1 khách.")
+                .Must(v => v is null || v.Count <= 200).WithMessage("Tối đa 200 khách mỗi cơ sở.");
             RuleForEach(x => x.Proposal.Visitors).SetValidator(new CreateVisitRequestV2.VisitorV2Validator());
             RuleFor(x => x.Proposal.ExternalSupportMembers)
                 .NotNull().Must(s => s.Count <= 200).WithMessage("Tối đa 200 nhân sự hỗ trợ mỗi cơ sở.");

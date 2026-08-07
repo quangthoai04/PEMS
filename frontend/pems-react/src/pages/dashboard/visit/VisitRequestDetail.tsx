@@ -10,7 +10,10 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { Info, Clock, User, Users, Calendar, FileText, Building2, Mail, Phone } from 'lucide-react';
+import {
+  Info, Clock, User, Users, Calendar, FileText, Building2, Mail, Phone,
+  Languages, Camera, Car, StickyNote,
+} from 'lucide-react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -24,6 +27,19 @@ const INSTANCE_STATUS_LABEL: Record<string, string> = {
   CLOSED: 'Đã đóng',
   CANCELLED: 'Đã hủy',
 };
+
+const VISIT_TYPE_LABEL: Record<string, string> = {
+  CAMPUS_TOUR: 'Tham quan cơ sở',
+  MEETING: 'Họp / làm việc',
+  WORKSHOP: 'Hội thảo / workshop',
+  SIGNING_CEREMONY: 'Lễ ký kết',
+  EXCHANGE: 'Giao lưu / trao đổi',
+  OTHER: 'Khác',
+};
+
+const WORKING_LANGUAGE_LABEL: Record<string, string> = { VI: 'Tiếng Việt', EN: 'Tiếng Anh' };
+
+const MEDIA_CONSENT_LABEL: Record<string, string> = { AGREED: 'Đồng ý', DECLINED: 'Không đồng ý' };
 
 export function VisitRequestDetail() {
   const navigate = useNavigate();
@@ -60,9 +76,33 @@ export function VisitRequestDetail() {
   const summary = detail?.requestSummary ?? null;
   const senderName = summary?.registrantName?.trim() || '—';
   const senderOrg = summary?.registrantOrganization?.trim() || null;
-  const purpose = (summary?.workingContent ?? summary?.purpose ?? '')?.trim();
+  // Purpose and working content are two different answers on the form — why the delegation is
+  // coming, and what will actually be done. Coalescing them showed only one, and which one you got
+  // depended on whether working content happened to be filled in.
+  const purpose = summary?.purpose?.trim() || '';
+  const workingContent = summary?.workingContent?.trim() || '';
   const guests = summary?.guestMembers ?? [];
+  const supportMembers = summary?.externalSupportMembers ?? [];
   const statusLabel = detail ? (INSTANCE_STATUS_LABEL[detail.instanceStatus] ?? detail.instanceStatus) : '';
+  const visitTypeLabel = summary?.visitType
+    ? (summary.visitType === 'OTHER'
+        ? (summary.visitTypeOther?.trim() || VISIT_TYPE_LABEL.OTHER)
+        : (VISIT_TYPE_LABEL[summary.visitType] ?? summary.visitType))
+    : null;
+  const workingLanguageLabel = summary?.workingLanguage
+    ? (WORKING_LANGUAGE_LABEL[summary.workingLanguage] ?? summary.workingLanguage)
+    : null;
+  const mediaConsentLabel = summary?.mediaConsentStatus
+    ? (MEDIA_CONSENT_LABEL[summary.mediaConsentStatus] ?? summary.mediaConsentStatus)
+    : null;
+  const opContact = summary
+    ? [summary.operationalContactFullName, summary.operationalContactJobTitle, summary.operationalContactOrganization]
+        .map(v => v?.trim()).filter(Boolean).join(' — ')
+    : '';
+  const opContactReach = summary
+    ? [summary.operationalContactPhone, summary.operationalContactEmail]
+        .map(v => v?.trim()).filter(Boolean).join(' · ')
+    : '';
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24 relative animate-in fade-in duration-500">
@@ -132,8 +172,19 @@ export function VisitRequestDetail() {
                 </div>
               </div>
 
-              {(summary?.registrantEmail || summary?.registrantPhone) && (
+              {(summary?.registrantEmail || summary?.registrantPhone
+                || summary?.registrantJobTitle || summary?.registrantNationality) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {summary?.registrantJobTitle && (
+                    <Field icon={<User className="w-4 h-4" />} label="Chức danh người gửi">
+                      <span className="text-sm font-medium text-gray-800">{summary.registrantJobTitle}</span>
+                    </Field>
+                  )}
+                  {summary?.registrantNationality && (
+                    <Field icon={<User className="w-4 h-4" />} label="Quốc tịch người gửi">
+                      <span className="text-sm font-medium text-gray-800">{summary.registrantNationality}</span>
+                    </Field>
+                  )}
                   {summary?.registrantEmail && (
                     <Field icon={<Mail className="w-4 h-4" />} label="Email người gửi">
                       <span className="text-sm font-medium text-gray-800 break-all">{summary.registrantEmail}</span>
@@ -147,15 +198,72 @@ export function VisitRequestDetail() {
                 </div>
               )}
 
+              {/* Yêu cầu bổ sung — the same block the guest filled in on the form. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {visitTypeLabel && (
+                  <Field icon={<Info className="w-4 h-4" />} label="Loại hình">
+                    <span className="text-sm font-bold text-gray-800">{visitTypeLabel}</span>
+                  </Field>
+                )}
+                {workingLanguageLabel && (
+                  <Field icon={<Languages className="w-4 h-4" />} label="Ngôn ngữ làm việc">
+                    <span className="text-sm font-bold text-gray-800">{workingLanguageLabel}</span>
+                  </Field>
+                )}
+                {mediaConsentLabel && (
+                  <Field icon={<Camera className="w-4 h-4" />} label="Đồng ý truyền thông">
+                    <span className="text-sm font-bold text-gray-800">{mediaConsentLabel}</span>
+                  </Field>
+                )}
+                {summary?.transportationNote?.trim() && (
+                  <Field icon={<Car className="w-4 h-4" />} label="Nhận diện phương tiện">
+                    <span className="text-sm font-medium text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
+                  </Field>
+                )}
+                {opContact && (
+                  <div className="md:col-span-2">
+                    <Field icon={<User className="w-4 h-4" />} label="Đầu mối phối hợp">
+                      <span className="text-sm font-bold text-gray-800">{opContact}</span>
+                      {opContactReach && (
+                        <span className="block text-xs font-medium text-gray-500 mt-0.5 break-all">{opContactReach}</span>
+                      )}
+                    </Field>
+                  </div>
+                )}
+              </div>
+
+              {/* Purpose and working content are asked separately and answered separately. */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-gray-400">
+                  <FileText className="w-4 h-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider">Mục đích</span>
+                </div>
+                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                  {purpose ? purpose : <span className="italic text-gray-400">Chưa có mục đích.</span>}
+                </div>
+              </div>
+
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
                   <FileText className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung làm việc</span>
                 </div>
                 <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
-                  {purpose ? purpose : <span className="italic text-gray-400">Chưa có nội dung làm việc.</span>}
+                  {workingContent ? workingContent : <span className="italic text-gray-400">Chưa có nội dung làm việc.</span>}
                 </div>
               </div>
+
+              {summary?.notes?.trim() && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <StickyNote className="w-4 h-4" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span>
+                  </div>
+                  <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                    {summary.notes}
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
@@ -179,6 +287,30 @@ export function VisitRequestDetail() {
                   </ul>
                 )}
               </div>
+
+              {/* Support members are a SEPARATE group with their own list — they arrive under
+                  different rules from the delegation, and one running count would imply otherwise.
+                  The backend has always sent them; this screen simply never showed them. */}
+              {supportMembers.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 text-gray-400">
+                    <Users className="w-4 h-4" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider">Nhân sự hỗ trợ ({supportMembers.length})</span>
+                  </div>
+                  <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-200 overflow-hidden">
+                    {supportMembers.map((s) => (
+                      <li key={s.guestMemberId} className="flex items-center justify-between px-4 py-3 bg-white">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-gray-800 truncate">{s.fullName}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {[s.jobTitle, s.organization, s.nationality].filter(Boolean).join(' · ') || '—'}
+                          </p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         )}

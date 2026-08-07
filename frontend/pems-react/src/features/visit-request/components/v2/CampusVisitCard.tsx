@@ -44,7 +44,6 @@ const MAX = {
   purpose: 2000,
   workingContent: 4000,
   transportationNote: 2000,
-  mediaConsentNote: 2000,
   notes: 2000,
   personName: 150,
   personJobTitle: 150,
@@ -131,7 +130,6 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   const campusCode = watch(`${base}.campus`);
   const visitType = watch(`${base}.visitType`);
-  const mediaConsent = watch(`${base}.mediaConsentStatus`);
   const campusName = campuses.find(c => c.campusCode === campusCode)?.campusName;
   const headerLabel = campusName ?? t('visitRequestV2:card.unselectedCampus');
 
@@ -1064,24 +1062,6 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            {mediaConsent === 'AGREED' && (
-              <FormField className="col-span-12" label={t('visitRequestV2:card.mediaNote')} error={fieldError('mediaConsentNote')} showValidIcon={false}>
-                <Controller
-                  name={`${base}.mediaConsentNote`}
-                  control={control}
-                  render={({ field }) => (
-                    <AutoGrowTextField
-                      value={field.value ?? ''}
-                      onChange={field.onChange}
-                      onBlur={field.onBlur}
-                      hasError={!!fieldError('mediaConsentNote')}
-                      maxLength={MAX.mediaConsentNote}
-                      ariaLabel={t('visitRequestV2:card.mediaNote')}
-                    />
-                  )}
-                />
-              </FormField>
-            )}
           </div>
 
           {/* Who processes THIS campus — authenticated create only; absent for public submit. */}

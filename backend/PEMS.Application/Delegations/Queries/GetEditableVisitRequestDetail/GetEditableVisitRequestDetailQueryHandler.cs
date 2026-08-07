@@ -140,7 +140,7 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
         string? workingLanguage = rep.WorkingLanguage;
         string? transportationNote = rep.TransportationNote;
         string? mediaConsentStatus = rep.MediaConsentStatus;
-        string? mediaConsentNote = rep.MediaConsentNote;
+        string? notes = rep.Notes;
         List<EditableGuestMemberDto> visitorMembers = rep.Visitors.Select(MapRow).ToList();
         List<EditableGuestMemberDto> supportMembers = rep.SupportMembers.Select(MapRow).ToList();
 
@@ -170,7 +170,7 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
             WorkingLanguage = workingLanguage,
             TransportationNote = transportationNote,
             MediaConsentStatus = mediaConsentStatus,
-            MediaConsentNote = mediaConsentNote,
+            Notes = notes,
             PartnerId = visit.PartnerId.HasValue ? (long)visit.PartnerId.Value : null,
             PartnerName = partnerName,
             PartnerIsActive = partnerIsActive,

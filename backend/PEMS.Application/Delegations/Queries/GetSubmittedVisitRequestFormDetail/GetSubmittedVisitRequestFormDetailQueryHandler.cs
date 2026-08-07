@@ -237,7 +237,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         string? workingContent = rep.WorkingContent;
         string? workingLanguage = rep.WorkingLanguage;
         string? mediaConsentStatus = rep.MediaConsentStatus;
-        string? mediaConsentNote = rep.MediaConsentNote;
+        string? notes = rep.Notes;
         string? transportationNote = rep.TransportationNote;
         List<SubmittedGuestMemberDto> guestMembers = rep.Visitors.Select(MapMemberRow).ToList();
         List<SubmittedGuestMemberDto> externalSupportMembers = rep.SupportMembers.Select(MapMemberRow).ToList();
@@ -370,7 +370,7 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             },
             WorkingLanguage = workingLanguage,
             MediaConsentStatus = mediaConsentStatus,
-            MediaConsentNote = mediaConsentNote,
+            Notes = notes,
             TransportationNote = transportationNote,
 
             Campuses = visibleInstances
