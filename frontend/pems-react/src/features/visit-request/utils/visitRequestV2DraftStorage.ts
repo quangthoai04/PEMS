@@ -63,6 +63,12 @@ export type SaveV2DraftResult =
   | { success: true; savedAt: number; expiresAt: number }
   | { success: false; error: string };
 
+/**
+ * The one refusal that is not a fault: there was simply nothing worth writing. Callers tell it apart
+ * from a storage failure so they can say the right thing instead of a blanket "could not save".
+ */
+export const V2_DRAFT_NOTHING_TO_SAVE = 'No meaningful data to save';
+
 export interface SaveV2DraftOptions {
   expiresInMs?: number;
   namespace?: string;
@@ -71,24 +77,73 @@ export interface SaveV2DraftOptions {
   otp?: VisitRequestV2OtpContext | null;
 }
 
+/**
+ * The values a card is BORN with (`createEmptyCampusVisit`) — and the request-level selection mode a
+ * form starts on. A field still sitting on one of these is a field nobody has touched; anything else
+ * is a choice the user made, and a choice is worth keeping.
+ */
+const UNTOUCHED_VISIT_TYPE = 'CAMPUS_TOUR';
+const UNTOUCHED_WORKING_LANGUAGE = 'VI';
+const UNTOUCHED_MEDIA_CONSENT = 'DECLINED';
+const UNTOUCHED_PARTNER_MODE = 'NEW_ORGANIZATION';
+
+const filled = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
+/** A visitor / support row counts the moment ANY of its four columns has something in it. */
+const personRowHasContent = (person: unknown): boolean => {
+  const p = person as Record<string, unknown> | null | undefined;
+  return Boolean(p) && (
+    filled(p?.fullName) || filled(p?.jobTitle) || filled(p?.organization) || filled(p?.nationality)
+  );
+};
+
+const operationalContactHasContent = (contact: unknown): boolean => {
+  const c = contact as Record<string, unknown> | null | undefined;
+  return Boolean(c) && (
+    filled(c?.fullName) || filled(c?.organization) || filled(c?.jobTitle)
+    || filled(c?.phone) || filled(c?.email)
+  );
+};
+
+const campusVisitHasContent = (visit: unknown): boolean => {
+  const cv = visit as Record<string, unknown> | null | undefined;
+  if (!cv) return false;
+  // `clientKey`, `visitInstanceId` and `expectedRowVersion` are deliberately absent: they are
+  // bookkeeping the form mints for itself, and a draft built out of them would be an empty form.
+  return Boolean(
+    filled(cv.campus) || filled(cv.startDatetime) || filled(cv.endDatetime)
+    || filled(cv.delegationName) || filled(cv.purpose) || filled(cv.workingContent)
+    || filled(cv.visitTypeOther) || filled(cv.transportationNote)
+    || filled(cv.mediaConsentNote) || filled(cv.notes)
+    || (filled(cv.visitType) && cv.visitType !== UNTOUCHED_VISIT_TYPE)
+    || (filled(cv.workingLanguage) && cv.workingLanguage !== UNTOUCHED_WORKING_LANGUAGE)
+    || (filled(cv.mediaConsentStatus) && cv.mediaConsentStatus !== UNTOUCHED_MEDIA_CONSENT)
+    || operationalContactHasContent(cv.operationalContact)
+    || (Array.isArray(cv.visitors) && cv.visitors.some(personRowHasContent))
+    || (Array.isArray(cv.supportTeam) && cv.supportTeam.some(personRowHasContent)),
+  );
+};
+
+/**
+ * "Is there anything here worth writing to disk?" — asked before every save, and NOT the same
+ * question as "has the user changed the form" (that one is `formState.isDirty`, which is what the
+ * close prompt is driven by).
+ *
+ * It covers EVERY field the schema lets a user fill, because the ones it missed were silently
+ * unsaveable: a form carrying only a job title, a nationality, the working content, an operational
+ * contact, or a visitor row without a name was answered with "No meaningful data to save" and the
+ * typing was lost on close. Anything a fresh form already contains — the client keys, the single
+ * empty campus card, the empty visitor row, the default enums — still counts as nothing.
+ */
 export function hasMeaningfulV2Data(values: Partial<VisitRequestV2Schema> | null | undefined): boolean {
   if (!values) return false;
-  const reg = values.registerInfo;
+  const reg = values.registerInfo as Record<string, unknown> | undefined;
   return Boolean(
-    reg?.fullName?.trim() ||
-    reg?.organization?.trim() ||
-    reg?.email?.trim() ||
-    reg?.phone?.trim() ||
-    (values.partnerId !== undefined && values.partnerId !== null) ||
-    values.campusVisits?.some(cv =>
-      cv.campus?.trim() ||
-      cv.startDatetime ||
-      cv.endDatetime ||
-      cv.delegationName?.trim() ||
-      cv.purpose?.trim() ||
-      cv.visitors?.some(v => v.fullName?.trim()) ||
-      cv.supportTeam?.some(s => s.fullName?.trim()),
-    ),
+    filled(reg?.fullName) || filled(reg?.organization) || filled(reg?.jobTitle)
+    || filled(reg?.phone) || filled(reg?.email) || filled(reg?.nationality)
+    || (values.partnerId !== undefined && values.partnerId !== null)
+    || (filled(values.partnerSelectionMode) && values.partnerSelectionMode !== UNTOUCHED_PARTNER_MODE)
+    || (Array.isArray(values.campusVisits) && values.campusVisits.some(campusVisitHasContent)),
   );
 }
 
@@ -111,7 +166,7 @@ export function saveVisitRequestV2Draft(
   options?: Omit<SaveV2DraftOptions, 'expiresInMs' | 'namespace'>,
 ): SaveV2DraftResult {
   if (!hasMeaningfulV2Data(data)) {
-    return { success: false, error: 'No meaningful data to save' };
+    return { success: false, error: V2_DRAFT_NOTHING_TO_SAVE };
   }
   const ttl = expiresInMs ?? 30 * 60 * 1000;
   try {

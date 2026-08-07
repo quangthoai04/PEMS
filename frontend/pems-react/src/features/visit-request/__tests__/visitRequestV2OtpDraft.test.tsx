@@ -290,6 +290,72 @@ describe('visit request v2: the draft survives the OTP round trip', () => {
     expect(result.current.pendingOtp).toBeNull();
   });
 
+  it('an autosave armed just before the create cannot resurrect the draft afterwards', async () => {
+    // The last keystroke arms a 700ms save; the verify comes back inside that window. Left alone,
+    // the timer fires AFTER the draft was deleted and writes it straight back — complete with the
+    // submissionId the backend has already spent, which the next visit would offer to "restore".
+    vi.mocked(verifyAndCreateVisitRequestV2).mockResolvedValue({ visitRequestId: 11 } as never);
+    const { result } = setup();
+    // Autosave only subscribes once the draft question has been answered, which is what a mounted
+    // form does first — without this the debounce under test would never be armed at all.
+    act(() => { result.current.detectDraft(); });
+    await submitOnce(result);
+
+    act(() => { result.current.form.setValue('campusVisits.0.notes', 'gõ nốt câu cuối'); });
+    await act(async () => { await result.current.verifyOtp('123456'); });
+    expect(loadVisitRequestV2Draft()).toBeNull();
+
+    await act(async () => { await new Promise(r => setTimeout(r, 900)); });
+
+    expect(loadVisitRequestV2Draft()).toBeNull();
+  });
+
+  it('an autosave armed just before "discard" cannot resurrect the draft either', async () => {
+    const { result } = setup();
+    act(() => { result.current.detectDraft(); });
+    await submitOnce(result);
+    act(() => { result.current.cancelOtp(); });
+
+    act(() => { result.current.form.setValue('campusVisits.0.notes', 'thêm một chữ'); });
+    act(() => { result.current.discardDraft(); });
+    await act(async () => { await new Promise(r => setTimeout(r, 900)); });
+
+    expect(loadVisitRequestV2Draft()).toBeNull();
+    expect(sessionStorage.getItem('pems_visit_registration_otp_challenge')).toBeNull();
+  });
+
+  it('"exit without saving" takes the pending challenge with the draft', async () => {
+    const { result } = setup();
+    act(() => { result.current.detectDraft(); });
+    await submitOnce(result);
+    act(() => { result.current.cancelOtp(); });
+    expect(result.current.pendingOtp).not.toBeNull();
+
+    act(() => { result.current.abandonEdits(); });
+
+    // The challenge described the request being thrown away; leaving it behind would attach the next
+    // form to an abandoned attempt.
+    expect(loadVisitRequestV2Draft()).toBeNull();
+    expect(result.current.pendingOtp).toBeNull();
+    expect(sessionStorage.getItem('pems_visit_registration_otp_challenge')).toBeNull();
+
+    // …and no armed autosave may undo any of it.
+    await act(async () => { await new Promise(r => setTimeout(r, 900)); });
+    expect(loadVisitRequestV2Draft()).toBeNull();
+  });
+
+  it('keeps autosaving for a form that had no draft to start with', async () => {
+    // `detectDraft` answering "there is none" must RELEASE autosave, not leave it held: holding it
+    // would quietly disable saving for the entire session on every first-time form.
+    const { result } = setup();
+    act(() => { expect(result.current.detectDraft()).toBe(false); });
+
+    act(() => { result.current.form.reset(validValues()); });
+    await act(async () => { await new Promise(r => setTimeout(r, 900)); });
+
+    expect(loadVisitRequestV2Draft()?.data.registerInfo?.email).toBe('reg@example.com');
+  });
+
   it('discarding the draft removes the pending challenge with it', async () => {
     const { result } = setup();
     await submitOnce(result);

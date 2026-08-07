@@ -33,13 +33,41 @@ const open = (onClose = vi.fn()) => {
 };
 
 let mockIsDirty = false;
+let mockIsBusy = false;
+/** The two states that decide whether a dirty form is worth stopping the user over. */
+let mockHasMeaningfulData = true;
+let mockHasPersistedDraft = false;
 
 const markDirty = () => {
   mockIsDirty = true;
 };
 
+const savedOk = () => ({ success: true as const, savedAt: Date.now(), expiresAt: Date.now() + 1000 });
+
+/** Hands the shell a set of draft controls, defaulting the ones a test does not care about. */
+const provideControls = (overrides: Record<string, unknown> = {}) => {
+  const controls = {
+    saveDraftNow: vi.fn(savedOk),
+    deleteDraft: vi.fn(),
+    abandonEdits: vi.fn(),
+    isDirty: () => mockIsDirty,
+    hasMeaningfulData: () => mockHasMeaningfulData,
+    hasPersistedDraft: () => mockHasPersistedDraft,
+    isBusy: () => mockIsBusy,
+    ...overrides,
+  };
+  act(() => { (lastFormProps.onDraftControls as (c: unknown) => void)(controls); });
+  return controls;
+};
+
 describe('VisitRequestV2Modal', () => {
-  beforeEach(() => { lastFormProps = {}; mockIsDirty = false; });
+  beforeEach(() => {
+    lastFormProps = {};
+    mockIsDirty = false;
+    mockIsBusy = false;
+    mockHasMeaningfulData = true;
+    mockHasPersistedDraft = false;
+  });
 
   it('renders nothing when closed', () => {
     const { container } = render(
@@ -77,12 +105,10 @@ describe('VisitRequestV2Modal', () => {
   });
 
   it('offers save-draft-and-exit as well as discard, so closing never means losing work', () => {
-    const saveDraftNow = vi.fn();
+    const saveDraftNow = vi.fn(savedOk);
     const discardDraft = vi.fn();
     const { onClose } = open();
-    act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft, isDirty: () => mockIsDirty });
-    });
+    provideControls({ saveDraftNow, discardDraft });
     markDirty();
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
@@ -93,28 +119,67 @@ describe('VisitRequestV2Modal', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('discarding clears the draft rather than leaving it to reappear later', () => {
-    const saveDraftNow = vi.fn();
-    const discardDraft = vi.fn();
+  it('"exit without saving" saves nothing and hands the deletion to the form', () => {
+    const saveDraftNow = vi.fn(savedOk);
+    const abandonEdits = vi.fn();
     const { onClose } = open();
-    act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow, discardDraft, isDirty: () => mockIsDirty });
-    });
+    provideControls({ saveDraftNow, abandonEdits });
     markDirty();
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
     fireEvent.click(screen.getByTestId('v2-modal-discard'));
 
-    expect(discardDraft).toHaveBeenCalledTimes(1);
+    expect(abandonEdits).toHaveBeenCalledTimes(1);
+    expect(saveDraftNow).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes a dirty-but-empty form outright when there is no draft behind it', () => {
+    // React Hook Form calls a form dirty for a structural change alone — an empty guest row added to
+    // a form nobody has typed in. Stopping the user there produced a prompt whose own save button
+    // then answered "there is nothing to save".
+    const saveDraftNow = vi.fn(savedOk);
+    const { onClose } = open();
+    provideControls({ saveDraftNow });
+    markDirty();
+    mockHasMeaningfulData = false;
+    mockHasPersistedDraft = false;
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+
+    expect(screen.queryByTestId('v2-modal-discard')).toBeNull();
+    expect(saveDraftNow).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops the save button when an emptied form still has a stored draft behind it', () => {
+    const saveDraftNow = vi.fn(savedOk);
+    const abandonEdits = vi.fn();
+    const { onClose } = open();
+    provideControls({ saveDraftNow, abandonEdits });
+    markDirty();
+    mockHasMeaningfulData = false;
+    mockHasPersistedDraft = true;
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+
+    // Two honest ways on: keep filling it in, or leave — and leaving deletes the stored draft.
+    expect(screen.queryByTestId('v2-modal-save-draft')).toBeNull();
+    expect(screen.getByTestId('v2-modal-continue-editing')).toBeTruthy();
+    expect(screen.getByTestId('v2-modal-discard').textContent)
+      .toContain('visitRequestV2:draft.exitDeletesDraft');
+    expect(onClose).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('v2-modal-discard'));
+
+    expect(abandonEdits).toHaveBeenCalledTimes(1);
     expect(saveDraftNow).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('asks before discarding typed data, and honours "keep editing"', () => {
     const { onClose } = open();
-    act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow: vi.fn(), discardDraft: vi.fn(), isDirty: () => mockIsDirty });
-    });
+    provideControls();
     markDirty();
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
@@ -136,13 +201,76 @@ describe('VisitRequestV2Modal', () => {
 
   it('Esc on a dirty form prompts instead of discarding', () => {
     const { onClose } = open();
-    act(() => {
-      (lastFormProps.onDraftControls as (c: unknown) => void)({ saveDraftNow: vi.fn(), discardDraft: vi.fn(), isDirty: () => mockIsDirty });
-    });
+    provideControls();
     markDirty();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByTestId('v2-modal-discard')).toBeTruthy();
+  });
+
+  it('nothing closes the shell while a submit or verify is in flight', () => {
+    const { onClose, container } = open();
+    provideControls();
+    markDirty();
+    mockIsBusy = true;
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.mouseDown(container.firstChild as Element);
+
+    // Not even the prompt: the create may be committing right now, and this shell is the only place
+    // its outcome can arrive.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('v2-modal-discard')).toBeNull();
+  });
+
+  it('says nothing about drafts once the request exists — X just closes the receipt', () => {
+    const { onClose } = open();
+    // A form that is still "dirty" by the time the receipt shows is the normal case: the answers are
+    // all still in it. There is no longer anything to save, so it must not ask.
+    provideControls();
+    markDirty();
+    act(() => {
+      (lastFormProps.onSuccess as (r: unknown, v: unknown) => void)(
+        { requestCode: 'VR-9', visitRequestId: 9, instances: [], hasMixedCampusDetails: false }, {},
+      );
+    });
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+
+    expect(screen.queryByTestId('v2-modal-discard')).toBeNull();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('never claims a draft was saved when the save came back a failure', () => {
+    const saveDraftNow = vi.fn(() => ({ success: false as const, error: 'QuotaExceededError' }));
+    const { onClose } = open();
+    provideControls({ saveDraftNow });
+    markDirty();
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+    fireEvent.click(screen.getByTestId('v2-modal-save-draft'));
+
+    // Closing on a save that did not happen is the data loss this prompt exists to prevent, so the
+    // prompt stays up with "keep editing" and "discard" still on offer.
+    expect(saveDraftNow).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId('v2-modal-save-draft-failed').textContent)
+      .toContain('visitRequestV2:draft.saveFailed');
+    expect(screen.getByTestId('v2-modal-discard')).toBeTruthy();
+  });
+
+  it('distinguishes "nothing to save" from a storage failure', () => {
+    const saveDraftNow = vi.fn(() => ({ success: false as const, error: 'No meaningful data to save' }));
+    open();
+    provideControls({ saveDraftNow });
+    markDirty();
+
+    fireEvent.click(screen.getByTestId('v2-modal-close'));
+    fireEvent.click(screen.getByTestId('v2-modal-save-draft'));
+
+    expect(screen.getByTestId('v2-modal-save-draft-failed').textContent)
+      .toContain('visitRequestV2:draft.nothingToSave');
   });
 
   it('stays open on success and shows the receipt instead of vanishing', () => {

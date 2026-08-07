@@ -157,7 +157,13 @@
     "pendingOtpBody": "A verification code was sent to {{email}}. You can enter it without filling the form in again.",
     "resumeOtp": "Continue verifying",
     "discardOtp": "Discard the code",
-    "resumeOtpUnavailable": "That verification code can no longer be used. Submit again for a new one — your answers are kept."
+    "resumeOtpUnavailable": "That verification code can no longer be used. Submit again for a new one — your answers are kept.",
+    "saved": "Draft saved. Reopen the form within 30 minutes to carry on.",
+    "deleted": "Draft deleted.",
+    "exitDeletesDraft": "Your current changes and any previously saved draft will be deleted.",
+    "emptiedDesc": "There is nothing left to save in this form, but the draft you saved earlier is still there. Keep filling the form in, or close and delete that draft?",
+    "saveFailed": "The draft could not be saved (browser storage is blocked or full). You can keep filling the form in and submit it now, or close without saving.",
+    "nothingToSave": "There is nothing to save as a draft yet. You can keep filling the form in, or close without saving."
   },
   "submit": {
     "public": "Submit & receive OTP",

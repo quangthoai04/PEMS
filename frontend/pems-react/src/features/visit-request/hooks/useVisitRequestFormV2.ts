@@ -27,6 +27,7 @@ import {
   readOtpChallengeToken,
   saveOtpChallengeToken,
   saveVisitRequestV2Draft,
+  type SaveV2DraftResult,
   type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
 import { countFieldErrors } from '../utils/formErrorNavigation';
@@ -316,6 +317,13 @@ export const useVisitRequestFormV2 = (
   const autoSaveBlockedRef = useRef(false);
   const debouncedSaveRef = useRef<ReturnType<typeof debounce> | null>(null);
   /**
+   * Does storage hold a draft for THIS namespace right now? A third state, kept apart from "the form
+   * differs from its baseline" (`isDirty`) and "there is something worth writing" (`hasMeaningfulV2Data`):
+   * a form can be empty and still have a stored draft behind it that the user is in the middle of
+   * emptying, and that is the one case where an empty form still deserves to be asked about.
+   */
+  const hasPersistedDraftRef = useRef(false);
+  /**
    * The OTP challenge that was already requested for this draft, if any. It survives a wrong code,
    * a closed modal and a reload — the whole point being that none of those are a reason to make
    * somebody type the form again.
@@ -371,6 +379,7 @@ export const useVisitRequestFormV2 = (
     setPendingOtp(draft.otp ?? null);
     setMigratedFromGlobalDraft(migrated);
     setDraftHydrated(true);
+    hasPersistedDraftRef.current = true;
     return true;
   }, [form, draftNamespace]);
 
@@ -383,10 +392,16 @@ export const useVisitRequestFormV2 = (
   const detectDraft = useCallback((): boolean => {
     const { draft } = loadVisitRequestV2DraftWithMigration(draftNamespace);
     if (!draft) {
+      // Nothing is being offered, so nothing needs protecting: autosave is explicitly RELEASED
+      // here. It is blocked whenever this form is (re)pointed at a namespace, and leaving it that
+      // way on the "no draft" answer would silently disable saving for the whole session.
+      autoSaveBlockedRef.current = false;
+      hasPersistedDraftRef.current = false;
       setDraftHydrated(true);
       return false;
     }
     autoSaveBlockedRef.current = true;
+    hasPersistedDraftRef.current = true;
     setDraftAvailableAt(draft.savedAt ?? null);
     return true;
   }, [draftNamespace]);
@@ -401,6 +416,9 @@ export const useVisitRequestFormV2 = (
   const discardDraft = useCallback(() => {
     // Deleting the draft deletes the whole submission intent with it: the id, the pending challenge
     // and its token. Leaving any of them behind would attach the next form to an abandoned attempt.
+    // The armed autosave goes first: a keystroke 700ms before "discard" would otherwise land AFTER
+    // the delete and put the draft straight back, which is indistinguishable from discard not working.
+    debouncedSaveRef.current?.cancel();
     clearVisitRequestV2Draft(draftNamespace);
     submissionIdRef.current = null;
     setPendingOtp(null);
@@ -408,26 +426,69 @@ export const useVisitRequestFormV2 = (
     setMigratedFromGlobalDraft(false);
     setDraftAvailableAt(null);
     autoSaveBlockedRef.current = false;
+    hasPersistedDraftRef.current = false;
     setDraftHydrated(true);
   }, [draftNamespace]);
+
+  /**
+   * "Close without saving" — one meaning, whatever the draft's history: the stored draft for this
+   * namespace is DELETED, along with the edits on screen. Where it came from makes no difference; a
+   * draft restored ten seconds ago and one autosaved while typing both go.
+   *
+   * There is deliberately no snapshot of the pre-edit draft to fall back to. Restoring a version the
+   * user can no longer see would be a third outcome nobody asked for, and it cannot be honest anyway:
+   * autosave has usually already overwritten the stored copy with the edits by the time this is
+   * clicked, so "the draft as it was" mostly does not exist. Keeping the work is what "Lưu nháp và
+   * đóng" is for.
+   *
+   * Autosave is stopped for good on the way out — the armed keystroke is dropped and further writes
+   * are blocked, or the debounce would land moments later and recreate exactly what was deleted.
+   */
+  const abandonEdits = useCallback(() => {
+    discardDraft();
+    autoSaveBlockedRef.current = true;
+  }, [discardDraft]);
 
   /**
    * Force-saves immediately, bypassing the debounce. Used for "save draft and exit" AND before every
    * step of the OTP round trip: the 700ms autosave has not necessarily fired when somebody fills the
    * last field and submits, and that is exactly the draft worth keeping.
+   *
+   * The values come straight from `form.getValues()`, so whether the debounce happened to have fired
+   * never changes what gets written. The RESULT is returned rather than swallowed: a caller that
+   * tells the user "saved" has to be able to find out whether it actually was.
    */
   const saveDraftNow = useCallback(
-    (options?: { submissionId?: string | null; otp?: VisitRequestV2OtpContext | null }) => {
-      saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace, options);
+    (options?: { submissionId?: string | null; otp?: VisitRequestV2OtpContext | null }): SaveV2DraftResult => {
+      const outcome = saveVisitRequestV2Draft(form.getValues(), undefined, draftNamespace, options);
+      if (outcome.success) hasPersistedDraftRef.current = true;
+      return outcome;
     },
     [form, draftNamespace],
   );
+
+  /**
+   * The draft of a request that HAS been created. Autosave is stopped for good rather than merely
+   * having its file deleted: a keystroke moments before the create returns leaves a debounced save
+   * armed, and letting it fire would recreate the draft of a request that already exists — which the
+   * next visit would then offer to "restore", carrying a submissionId the backend has already spent.
+   */
+  const clearDraftAfterCreate = useCallback(() => {
+    autoSaveBlockedRef.current = true;
+    debouncedSaveRef.current?.cancel();
+    clearVisitRequestV2Draft(draftNamespace);
+    hasPersistedDraftRef.current = false;
+  }, [draftNamespace]);
 
   useEffect(() => {
     if (!draftHydrated) return;
     debouncedSaveRef.current = debounce((value: Partial<VisitRequestV2Schema>) => {
       if (autoSaveBlockedRef.current) return;
-      saveVisitRequestV2Draft(value, undefined, draftNamespace);
+      // An autosave that lands is a draft on disk like any other — the close prompt has to know,
+      // or emptying a form whose draft was written while typing would close without a word.
+      if (saveVisitRequestV2Draft(value, undefined, draftNamespace).success) {
+        hasPersistedDraftRef.current = true;
+      }
     }, 700);
     const subscription = form.watch(value => {
       debouncedSaveRef.current?.(value as Partial<VisitRequestV2Schema>);
@@ -437,6 +498,30 @@ export const useVisitRequestFormV2 = (
       debouncedSaveRef.current?.cancel();
     };
   }, [form, draftHydrated, draftNamespace]);
+
+  /**
+   * The namespace names WHOSE draft this is, and it is not always known at first render: in
+   * authenticated mode it is derived from the signed-in user, who arrives asynchronously. Every time
+   * it changes — `undefined` → `u15` on load, or `u15` → `u16` if the account changes underneath a
+   * mounted form — this is a different person's draft, so the form goes back to "not decided yet":
+   * autosave is held, the armed keystroke is dropped, and the submission intent (which belonged to
+   * the previous namespace) is forgotten. `detectDraft` then answers for the NEW namespace and
+   * either offers its draft or releases autosave.
+   */
+  const activeNamespaceRef = useRef(draftNamespace);
+  useEffect(() => {
+    if (activeNamespaceRef.current === draftNamespace) return;
+    activeNamespaceRef.current = draftNamespace;
+    debouncedSaveRef.current?.cancel();
+    autoSaveBlockedRef.current = true;
+    // Whether the NEW namespace has a draft is unknown until `detectDraft` answers, and the previous
+    // account's answer must never stand in for it.
+    hasPersistedDraftRef.current = false;
+    submissionIdRef.current = null;
+    setPendingOtp(null);
+    setDraftAvailableAt(null);
+    setDraftHydrated(false);
+  }, [draftNamespace]);
 
   // ── Campus card operations ──
   const addCampusVisit = useCallback(
@@ -555,7 +640,7 @@ export const useVisitRequestFormV2 = (
         const result = await createVisitRequestV2(payload);
         submissionIdRef.current = null;
         setPendingOtp(null);
-        clearVisitRequestV2Draft(draftNamespace);
+        clearDraftAfterCreate();
         setStage('CREATE_CONFIRMED');
         onSuccess(result, submittedValues);
       } catch (error) {
@@ -581,7 +666,7 @@ export const useVisitRequestFormV2 = (
         if (!mapped) console.error('v2 authenticated create failed', getApiErrorCode(error));
       }
     },
-    [applyServerFieldErrors, draftNamespace, onSuccess, options, saveDraftNow, t],
+    [applyServerFieldErrors, clearDraftAfterCreate, onSuccess, options, saveDraftNow, t],
   );
 
   const onSubmit = form.handleSubmit(async data => {
@@ -679,7 +764,7 @@ export const useVisitRequestFormV2 = (
         submissionIdRef.current = null;
         setPendingOtp(null);
         resetOtpChallengeState();
-        clearVisitRequestV2Draft(draftNamespace);
+        clearDraftAfterCreate();
         setStage('CREATE_CONFIRMED');
         onSuccess(result, submittedValues);
         return;
@@ -725,7 +810,7 @@ export const useVisitRequestFormV2 = (
         }
       }
     },
-    [sessionToken, form, draftNamespace, onSuccess, resetOtpChallengeState, applyServerFieldErrors, saveDraftNow, t],
+    [sessionToken, form, clearDraftAfterCreate, onSuccess, resetOtpChallengeState, applyServerFieldErrors, saveDraftNow, t],
   );
 
   /**
@@ -747,7 +832,7 @@ export const useVisitRequestFormV2 = (
         submissionIdRef.current = null;
         setPendingOtp(null);
         resetOtpChallengeState();
-        clearVisitRequestV2Draft(draftNamespace);
+        clearDraftAfterCreate();
         setUncertain(null);
         setStage('CREATE_CONFIRMED');
         // The lookup is deliberately narrower than a create response — it answers "does this exist"
@@ -775,7 +860,7 @@ export const useVisitRequestFormV2 = (
     } finally {
       setIsCheckingResult(false);
     }
-  }, [uncertain, isCheckingResult, form, draftNamespace, resetOtpChallengeState, onSuccess, t]);
+  }, [uncertain, isCheckingResult, form, clearDraftAfterCreate, resetOtpChallengeState, onSuccess, t]);
 
   /** Abandons the uncertain panel and hands the form back, keeping the draft and the intent. */
   const backToFormFromUncertain = useCallback(() => {
@@ -955,6 +1040,7 @@ export const useVisitRequestFormV2 = (
     setPendingOtp(null);
     resetOtpChallengeState();
     clearVisitRequestV2Draft(draftNamespace);
+    hasPersistedDraftRef.current = false;
     // A brand-new submit intent: the next submit mints a fresh submissionId, so it can never
     // replay idempotently onto the request that was just completed.
     setUncertain(null);
@@ -1026,6 +1112,15 @@ export const useVisitRequestFormV2 = (
     restoreDraft,
     discardDraft,
     saveDraftNow,
+    /**
+     * Whether storage holds a draft for this namespace RIGHT NOW. A function, not a value: the close
+     * prompt asks at click time, and a boolean captured in a render would answer for a moment that
+     * has passed. Not `draftAvailableAt !== null` — that only says a draft is being OFFERED, and it
+     * goes back to null the instant the offer is accepted while the draft itself lives on.
+     */
+    hasPersistedDraft: useCallback(() => hasPersistedDraftRef.current, []),
+    /** "Close without saving" — see the callback for what it does and does not delete. */
+    abandonEdits,
     migratedFromGlobalDraft,
     resetForm,
     /** Exposed so the schedule picker enforces the SAME floor the schema does (72h vs 24h). */

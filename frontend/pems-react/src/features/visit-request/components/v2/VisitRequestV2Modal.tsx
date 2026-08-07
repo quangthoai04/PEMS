@@ -6,6 +6,7 @@ import { showSuccessToast } from '../../../../shared/utils/toast';
 import { VisitRequestFormV2 } from './VisitRequestFormV2';
 import { VisitRequestV2SuccessPanel } from './VisitRequestV2SuccessPanel';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
+import { V2_DRAFT_NOTHING_TO_SAVE, type SaveV2DraftResult } from '../../utils/visitRequestV2DraftStorage';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { UseVisitRequestFormV2Options } from '../../hooks/useVisitRequestFormV2';
 
@@ -38,14 +39,26 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'common']);
   const [footerEl, setFooterEl] = useState<HTMLDivElement | null>(null);
-  const [confirmClose, setConfirmClose] = useState(false);
+  /**
+   * The open close-prompt, and which of the two it is:
+   *   'save'    — the form holds something, so "save draft and close" is offered;
+   *   'emptied' — the form has been emptied over a stored draft. There is nothing left to save, so
+   *               that button is not shown at all; the only two ways on are to carry on filling the
+   *               form in, or to leave — which deletes the stored draft, and says so.
+   * Decided when the prompt opens, so a button cannot say one thing and do another.
+   */
+  const [closePrompt, setClosePrompt] = useState<'save' | 'emptied' | null>(null);
+  /** Set when "save draft and close" came back a failure — the prompt STAYS open rather than lie. */
+  const [saveDraftFailed, setSaveDraftFailed] = useState<'empty' | 'error' | null>(null);
   const [result, setResult] = useState<{ response: V2CreateResponse; values: VisitRequestV2Schema } | null>(null);
   /** Bumped to remount the form for "create another", so nothing survives from the finished one. */
   const [formGeneration, setFormGeneration] = useState(0);
   const [draftControls, setDraftControls] = useState<{
-    saveDraftNow: () => void;
-    discardDraft: () => void;
+    saveDraftNow: () => SaveV2DraftResult;
+    abandonEdits: () => void;
     isDirty: () => boolean;
+    hasMeaningfulData: () => boolean;
+    hasPersistedDraft: () => boolean;
     isBusy: () => boolean;
   } | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -69,9 +82,62 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
     // No receipt yet: a verify in flight may be committing right now, and tearing the shell down
     // would destroy the only place its outcome can arrive (plan §5, §9).
     if (draftControls?.isBusy?.()) return;
-    if (draftControls?.isDirty?.()) setConfirmClose(true);
-    else onClose();
+
+    // Three separate questions, and all three are needed. "Dirty" alone was asking the wrong one:
+    // React Hook Form counts a structural change as dirty, so adding an empty guest row to a form
+    // nobody has typed in made X open a prompt whose own save button then answered "there is nothing
+    // to save". Dirty says the form MOVED; meaningful says it holds something; persisted says there
+    // is a stored draft standing behind it. A prompt is only worth showing when the movement puts
+    // one of the latter two at risk.
+    const dirty = draftControls?.isDirty?.() ?? false;
+    const meaningful = draftControls?.hasMeaningfulData?.() ?? false;
+    const persisted = draftControls?.hasPersistedDraft?.() ?? false;
+    if (!dirty || (!meaningful && !persisted)) { onClose(); return; }
+
+    setSaveDraftFailed(null);
+    setClosePrompt(meaningful ? 'save' : 'emptied');
   }, [draftControls, result, onClose]);
+
+  /**
+   * "Save draft and close". The save is forced (no waiting on the 700ms autosave, which has not
+   * necessarily fired for the field the user typed last) and its OUTCOME decides what happens next:
+   * only a real success closes the modal and says so. A failure keeps the prompt open with the other
+   * two choices still there, because closing on a save that did not happen is precisely the silent
+   * data loss this prompt exists to prevent.
+   */
+  const saveDraftAndClose = useCallback(() => {
+    const outcome = draftControls?.saveDraftNow?.();
+    if (outcome && outcome.success === false) {
+      setSaveDraftFailed(outcome.error === V2_DRAFT_NOTHING_TO_SAVE ? 'empty' : 'error');
+      return;
+    }
+    // No outcome at all means no draft controls to ask — nothing was saved, so nothing is claimed.
+    if (outcome?.success) {
+      showSuccessToast(t('visitRequestV2:draft.saved'), 'v2-draft-saved');
+    }
+    setSaveDraftFailed(null);
+    setClosePrompt(null);
+    onClose();
+  }, [draftControls, onClose, t]);
+
+  /**
+   * "Exit without saving" — the ONE way out that keeps nothing. The stored draft for this namespace
+   * is deleted along with the edits on screen, whether it was restored at the start of this session
+   * or autosaved during it; the prompt says as much before the user commits to it. There is no second
+   * "delete the draft" button, because there is no second deleting outcome to tell apart.
+   *
+   * The confirmation is only shown when something was actually deleted — after a form the user merely
+   * opened and emptied there is no draft to report on, and announcing one would be a lie about work
+   * that never existed.
+   */
+  const closeWithoutSaving = useCallback(() => {
+    const hadDraft = draftControls?.hasPersistedDraft?.() ?? false;
+    draftControls?.abandonEdits?.();
+    if (hadDraft) showSuccessToast(t('visitRequestV2:draft.deleted'), 'v2-draft-deleted');
+    setSaveDraftFailed(null);
+    setClosePrompt(null);
+    onClose();
+  }, [draftControls, onClose, t]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -94,7 +160,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
 
   // Reset transient shell state between openings so a previous session cannot leak in.
   useEffect(() => {
-    if (!isOpen) { setConfirmClose(false); setResult(null); }
+    if (!isOpen) { setClosePrompt(null); setSaveDraftFailed(null); setResult(null); }
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -187,7 +253,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
       </div>
 
       <AnimatePresence>
-        {confirmClose && (
+        {closePrompt && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -203,25 +269,39 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                   {t('visitRequest:cancelConfirm.title')}
                 </h3>
                 <p className="mt-2 text-sm font-medium text-slate-600 leading-relaxed">
-                  {t('visitRequest:cancelConfirm.desc')}
+                  {closePrompt === 'emptied'
+                    ? t('visitRequestV2:draft.emptiedDesc')
+                    : t('visitRequest:cancelConfirm.desc')}
                 </p>
+                {saveDraftFailed && (
+                  <p
+                    role="alert"
+                    data-testid="v2-modal-save-draft-failed"
+                    className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
+                  >
+                    {saveDraftFailed === 'empty'
+                      ? t('visitRequestV2:draft.nothingToSave')
+                      : t('visitRequestV2:draft.saveFailed')}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2.5 px-6 pb-6">
+                {/* Nothing to save means no save button: an emptied form leaves "keep filling it in"
+                    and "leave" as the only two honest ways on. */}
+                {closePrompt === 'save' && (
+                  <button
+                    type="button"
+                    data-testid="v2-modal-save-draft"
+                    onClick={saveDraftAndClose}
+                    className="flex w-full items-center justify-center rounded-xl bg-[#004c91] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#013565] shadow-lg shadow-blue-900/20"
+                  >
+                    {t('visitRequest:cancelConfirm.saveAndExit')}
+                  </button>
+                )}
                 <button
                   type="button"
-                  data-testid="v2-modal-save-draft"
-                  onClick={() => {
-                    draftControls?.saveDraftNow();
-                    setConfirmClose(false);
-                    onClose();
-                  }}
-                  className="flex w-full items-center justify-center rounded-xl bg-[#004c91] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#013565] shadow-lg shadow-blue-900/20"
-                >
-                  {t('visitRequest:cancelConfirm.saveAndExit')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmClose(false)}
+                  data-testid="v2-modal-continue-editing"
+                  onClick={() => { setSaveDraftFailed(null); setClosePrompt(null); }}
                   className="flex w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
                 >
                   {t('visitRequest:cancelConfirm.continue')}
@@ -229,14 +309,15 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 <button
                   type="button"
                   data-testid="v2-modal-discard"
-                  onClick={() => {
-                    draftControls?.discardDraft();
-                    setConfirmClose(false);
-                    onClose();
-                  }}
-                  className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
+                  onClick={closeWithoutSaving}
+                  className="flex w-full flex-col items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
                 >
                   {t('visitRequest:cancelConfirm.discard')}
+                  {/* Spelled out on the button itself: this deletes the saved draft too, and a user
+                      who has one has no other way of knowing that before they click. */}
+                  <span className="mt-0.5 text-xs font-medium text-red-500/90">
+                    {t('visitRequestV2:draft.exitDeletesDraft')}
+                  </span>
                 </button>
               </div>
             </motion.div>

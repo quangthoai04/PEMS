@@ -16,7 +16,7 @@ import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import { campusVisitHasUserContent } from '../../utils/visitRequestV2Form';
 import { focusFirstInvalidField } from '../../utils/formErrorNavigation';
-import { hasMeaningfulV2Data } from '../../utils/visitRequestV2DraftStorage';
+import { hasMeaningfulV2Data, type SaveV2DraftResult } from '../../utils/visitRequestV2DraftStorage';
 import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
 import { PhoneField } from '../shared/PhoneField';
@@ -48,9 +48,16 @@ interface Props {
    * "discard changes" without reimplementing draft storage.
    */
   onDraftControls?: (controls: {
-    saveDraftNow: () => void;
-    discardDraft: () => void;
+    /** Writes the draft NOW (no debounce) and says whether it actually landed. */
+    saveDraftNow: () => SaveV2DraftResult;
+    /** "Exit without saving": deletes this namespace's draft outright and stops autosave. */
+    abandonEdits: () => void;
+    /** True when the form differs from its current baseline — NOT "is there enough to save". */
     isDirty: () => boolean;
+    /** True when the form holds something worth writing to storage. */
+    hasMeaningfulData: () => boolean;
+    /** True when storage already holds a draft for this namespace. */
+    hasPersistedDraft: () => boolean;
     /** True while a verify is in flight — the host must not tear the shell down mid-transaction. */
     isBusy: () => boolean;
   }) => void;
@@ -116,14 +123,31 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const { form, campusVisitFields } = vm;
   useEffect(() => { stageRef.current = vm.stage; }, [vm.stage]);
 
-  // Look for a saved draft once, but never apply it silently — the user is offered the choice.
-  const hydratedRef = useRef(false);
+  /**
+   * Look for a saved draft once PER NAMESPACE, and never apply it silently — the user is offered
+   * the choice.
+   *
+   * "Once per namespace", not "once per mount", is the whole fix. In authenticated mode the
+   * namespace is `u{userId}`, and the user arrives from AuthContext one render LATE. A single
+   * mount-time detect therefore ran while the namespace was still undefined: it looked in the
+   * PUBLIC draft key, found nothing, and never looked again once the account key existed — so a
+   * perfectly good draft sat in `u15` while the form claimed there was none. Whether the prompt
+   * appeared came down to whether AuthContext happened to have resolved first, which is why the
+   * same user saw it some of the time.
+   *
+   * Authenticated mode therefore WAITS for a namespace rather than falling back to the public key:
+   * reading it would show one person a draft that is not theirs, and writing it would leave an
+   * account's typing in the key anonymous visitors share.
+   */
+  const detectedNamespaceRef = useRef<string | null>(null);
+  const { detectDraft } = vm;
   useEffect(() => {
-    if (hydratedRef.current) return;
-    hydratedRef.current = true;
-    vm.detectDraft();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (isAuthenticated && !draftNamespace) return;
+    const namespaceKey = draftNamespace ?? '__public__';
+    if (detectedNamespaceRef.current === namespaceKey) return;
+    detectedNamespaceRef.current = namespaceKey;
+    detectDraft();
+  }, [isAuthenticated, draftNamespace, detectDraft]);
 
   // First card open by default; keep the set in sync when cards are added/removed.
   useEffect(() => {
@@ -200,17 +224,37 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     .map(cv => (cv.campus || '').toUpperCase())
     .filter(Boolean);
 
-  const { saveDraftNow, discardDraft } = vm;
+  /**
+   * "Has the user changed anything?" — React Hook Form's own answer, compared against the CURRENT
+   * baseline (the defaults, or the values a restored draft was `reset` with).
+   *
+   * This used to ask `hasMeaningfulV2Data(...)` instead, which answers a different question
+   * entirely: "is there enough here to be worth saving?". Anything that question did not cover —
+   * a job title, a working language, an operational contact, a visitor's organization — read as
+   * "nothing has been typed", so the close prompt never appeared and X threw the work away without
+   * asking. The two are kept apart deliberately: this one guards the close, that one guards the
+   * write.
+   */
+  const isFormDirty = form.formState.isDirty;
+  const isDirtyRef = useRef(false);
+  useEffect(() => {
+    isDirtyRef.current = isFormDirty;
+    onDirtyChange?.(isFormDirty);
+  }, [isFormDirty, onDirtyChange]);
+
+  const { saveDraftNow, abandonEdits, hasPersistedDraft } = vm;
   useEffect(() => {
     onDraftControls?.({
       saveDraftNow,
-      discardDraft,
-      isDirty: () => hasMeaningfulV2Data(form.getValues()),
-      // A ref, not the render-time value: the host holds this object across renders and would
-      // otherwise ask a stale closure whether the form is busy.
+      abandonEdits,
+      // All read through refs or straight off the form: the host holds this object across renders and
+      // would otherwise be answered by a closure from whenever it was handed over.
+      isDirty: () => isDirtyRef.current,
+      hasMeaningfulData: () => hasMeaningfulV2Data(form.getValues()),
+      hasPersistedDraft,
       isBusy: () => stageRef.current === 'VERIFYING_OTP' || stageRef.current === 'SENDING_OTP',
     });
-  }, [onDraftControls, saveDraftNow, discardDraft, form]);
+  }, [onDraftControls, saveDraftNow, abandonEdits, hasPersistedDraft, form]);
 
   const submitBar = (node: React.ReactNode) =>
     footerSlot ? createPortal(node, footerSlot) : node;

@@ -157,7 +157,13 @@
     "pendingOtpBody": "Mã xác minh đã được gửi tới {{email}}. Bạn có thể nhập tiếp mà không cần khai lại đơn.",
     "resumeOtp": "Tiếp tục xác minh",
     "discardOtp": "Bỏ mã xác minh",
-    "resumeOtpUnavailable": "Mã xác minh cũ không còn dùng được. Bấm gửi đơn để nhận mã mới; nội dung đơn vẫn được giữ nguyên."
+    "resumeOtpUnavailable": "Mã xác minh cũ không còn dùng được. Bấm gửi đơn để nhận mã mới; nội dung đơn vẫn được giữ nguyên.",
+    "saved": "Đã lưu nháp. Mở lại form trong 30 phút để điền tiếp.",
+    "deleted": "Đã xóa bản nháp.",
+    "exitDeletesDraft": "Dữ liệu đang nhập và bản nháp đã lưu trước đó sẽ bị xóa.",
+    "emptiedDesc": "Biểu mẫu hiện không còn nội dung nào để lưu, nhưng bản nháp đã lưu trước đó vẫn còn. Anh/chị muốn tiếp tục điền, hay thoát và xóa bản nháp đó?",
+    "saveFailed": "Chưa lưu được nháp (bộ nhớ trình duyệt bị chặn hoặc đã đầy). Anh/chị có thể tiếp tục điền rồi gửi luôn, hoặc thoát không lưu.",
+    "nothingToSave": "Chưa có thông tin nào để lưu nháp. Anh/chị có thể tiếp tục điền, hoặc thoát không lưu."
   },
   "submit": {
     "public": "Gửi yêu cầu & nhận mã OTP",
