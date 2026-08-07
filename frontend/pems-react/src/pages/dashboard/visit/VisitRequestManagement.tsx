@@ -58,7 +58,6 @@ import { VisitFeedbackModal } from '../../../features/feedbacks/components/Visit
 import type { PendingFeedbackItem } from '../../../features/feedbacks/types/visitFeedback.types';
 import { VisitChangeBadges } from '../../../features/delegations/components/VisitChangeBadges';
 import { VisitRowActionMenu, type VisitRowMenuItem } from '../../../features/delegations/components/VisitRowActionMenu';
-import { VisitNextTaskLine } from '../../../features/delegations/components/VisitNextTaskLine';
 
 import VisitHostTransferModal, { type HostTransferTarget } from '../../../features/visit-request/components/VisitHostTransferModal';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
@@ -283,9 +282,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     : (isStudent || isDept) ? 'attending' : canUseAllTab ? 'all' : 'responsible';
   const [activeTab, setActiveTab] = useState<Tab>(defaultTab);
 
-  // UC-27: pending participation invitations for invitee roles. This banner is the entry
-  // point to the invitation-detail screen, where Accept/Decline happens — never in the
-  // attending tab (which only lists already-ACCEPTED invitations and is read-only).
+  // UC-27: pending participation invitations for invitee roles. This banner is a second entry
+  // point (alongside the dedicated attending tab itself) to the invitation-detail screen, where
+  // Accept/Decline happens. The attending tab now lists every response state — INVITED
+  // ("Chờ phản hồi"), ACCEPTED, DECLINED — with its own Accept action per row, not just
+  // already-accepted ones.
   const [pendingInvitations, setPendingInvitations] = useState<VisitInvitation[]>([]);
 
   // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
@@ -1443,8 +1444,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   /**
    * The row's PRIMARY action — the one thing this reader is most likely here to do. Driven off the
-   * backend's next task where there is one, so the button and the "Việc cần làm" line can never
-   * disagree; everything else moved into the ⋯ menu, which is what stopped every row being a toolbar.
+   * backend's next task where there is one; everything else moved into the ⋯ menu, which is what
+   * stopped every row being a toolbar.
    */
   const renderRowActions = (row: Row, variant: RowVariant) => {
     const actions = row.allowedActions || [];
@@ -2181,7 +2182,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                         </p>
                       )}
                       {renderBadges(row)}
-                      <VisitNextTaskLine task={row.nextTask} testId={`next-task-${row.id}`} />
                       <SearchMatchContexts contexts={row.matchedContexts} />
                       {row.canExpandCampuses && (
                         <button
@@ -2254,7 +2254,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     <div className="flex-shrink-0">{getStatusBadge(row)}</div>
                   </div>
                   {renderBadges(row)}
-                  <VisitNextTaskLine task={row.nextTask} testId={`next-task-mobile-${row.id}`} />
                   <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 mt-3">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />

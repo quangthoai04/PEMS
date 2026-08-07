@@ -22,7 +22,9 @@ namespace PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 ///   • "responsible": Visitor = CONTACT-OWNER rows (one per request); HO = monitor (one per
 ///     request); campus actors (Staff Leader/Staff, Dept, Student) = one row per relevant
 ///     campus instance (regular Staff = instances they officially HOST).
-///   • "attending" (Đơn mời tham dự): requests the user has ACCEPTED an invitation for.
+///   • "attending" (Đơn mời tham dự): requests the user was invited to as a non-host
+///     participant, any response status (INVITED/ACCEPTED/DECLINED) — same population as the
+///     dedicated "Lời mời tham dự" tab (GetVisitInvitationsQueryHandler).
 ///   • "registered" (Đơn tôi đăng ký / Tôi là người đăng ký): requests where the caller is
 ///     the REGISTRANT (registrant_user_id) — strictly read-only tracking rows.
 ///   • "hosted" (Tôi là host): instance rows the caller officially hosts (Staff Leader's
@@ -460,6 +462,10 @@ public sealed class ViewGuestDelegationListQueryHandler
             // Tab 2 — "Đơn mời tham dự": instances the user was INVITED to by someone else as a
             // NON-host participant. Anything where the user is the host /
             // creator / visitor belongs in Tab 1, so it is excluded here.
+            // Status: any response state (INVITED/ACCEPTED/DECLINED) — matches the dedicated
+            // "Lời mời tham dự" tab (GetVisitInvitationsQueryHandler), which shows pending
+            // invitations too, not just ones the user already accepted. Only REMOVED (revoked)
+            // and ASSIGNED (a different, department-task relation) are excluded.
             q = q.Where(x =>
                 x.vr.Status != VisitRequestStatuses.Rejected &&
                 x.vr.Status != VisitRequestStatuses.Cancelled &&
@@ -473,7 +479,8 @@ public sealed class ViewGuestDelegationListQueryHandler
                     pp.VisitInstanceId == x.c.VisitInstanceId &&
                     pp.UserId == userId &&
                     !pp.IsHost &&
-                    pp.Status == ParticipantStatuses.Accepted &&
+                    pp.Status != ParticipantStatuses.Removed &&
+                    pp.Status != ParticipantStatuses.Assigned &&
                     (pp.ParticipantRole == ParticipantRoles.IcSupport || pp.ParticipantRole == ParticipantRoles.DeptSupport || pp.ParticipantRole == ParticipantRoles.Student) &&
                     (pp.InvitedBy == null || pp.InvitedBy != userId)));
         }
