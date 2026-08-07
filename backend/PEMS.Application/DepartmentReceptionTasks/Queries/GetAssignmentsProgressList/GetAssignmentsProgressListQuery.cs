@@ -257,7 +257,10 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 NeedsAttention = IsRequestNeedsAttention(row.li.Status, row.li.AssignedToUserId, currentUserId, startAt, now),
                 AttentionReason = uiStatus == "CANCELLED" ? "Đơn đã hủy vì đoàn khách đã hủy" : BuildAttentionReason(row.li.Status, startAt, now),
                 CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason,
-                CanOpenContribution = PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForLogistics(currentUserId, row.li.AssignedToUserId, row.li.Status)
+                // "Đóng góp kết quả" is earned by accepting the INVITATION to help receive the
+                // delegation, never by a logistics request alone — a department fulfilling a
+                // room/LED/vehicle request has not thereby taken part in the reception itself.
+                CanOpenContribution = false
             };
         }).ToList();
 

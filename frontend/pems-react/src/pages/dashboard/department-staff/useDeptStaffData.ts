@@ -57,6 +57,9 @@ export type AssignedTask = {
   canProposeChange: boolean;
   canSignBorrow: boolean;
   canSignReturn: boolean;
+  /** Backend-computed (ContributionAccess): true only for an accepted/assigned INVITATION — a
+   * logistics REQUEST never earns this, regardless of status. */
+  canOpenContribution?: boolean;
   latestDeclineReason?: string;
   latestDeclinedByName?: string;
   latestDeclinedAt?: string;

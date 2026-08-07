@@ -4,7 +4,8 @@
  * - Bảng lịch sử nhiệm vụ: đã chấp nhận, từ chối, đang đề xuất, đã hủy...
  */
 import React, { useState } from 'react';
-import { Search, ChevronLeft, ChevronRight, Eye, CheckCircle2, XCircle, FileSignature } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Search, ChevronLeft, ChevronRight, Eye, CheckCircle2, XCircle, FileSignature, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { SubmittedVisitRequestDetailModal } from '../../../components/modals/SubmittedVisitRequestDetailModal';
 import { departmentReceptionTasksApi } from '../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
@@ -107,6 +108,7 @@ function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
 export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems, filter, onFilterChange, onRefresh }: Props) {
   const PAGE_SIZE = filter.pageSize || 10;
   const totalPages = Math.max(1, Math.ceil(totalTasks / PAGE_SIZE));
+  const navigate = useNavigate();
 
   const [decliningItem, setDecliningItem] = useState<AssignedTask | null>(null);
   const [proposingItem, setProposingItem] = useState<AssignedTask | null>(null);
@@ -265,6 +267,26 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
                           className="w-8 h-8 rounded-full text-rose-500 hover:bg-rose-50 flex items-center justify-center transition-colors disabled:opacity-50"
                           title="Từ chối">
                           <XCircle className="w-5 h-5" />
+                        </button>
+                      )}
+                      {/* Đóng góp kết quả chuyến thăm — chỉ đúng ĐOÀN đã Chấp nhận/Được giao
+                          (invitation), không áp dụng cho Đơn yêu cầu logistics dù đang tiến hành.
+                          Cờ do backend tính (ContributionAccess.IsDepartmentContributorForInvitation). */}
+                      {item.canOpenContribution && (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/dashboard/visit/contribution/${item.visitInstanceId}`, {
+                            // "/dashboard/visit" (the fallback the Contribution page uses when no
+                            // returnTo is given) resolves to VisitRequestManagement for a plain
+                            // DEPARTMENT role, not this dashboard — Department Staff has no such
+                            // page. Send them back to their own "Nhiệm vụ được giao" tab instead.
+                            state: { returnTo: '/dashboard?tab=tasks' },
+                          })}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-full text-[#f37021] hover:bg-orange-50 transition-colors"
+                          title="Đóng góp kết quả chuyến thăm"
+                          aria-label="Đóng góp kết quả chuyến thăm"
+                        >
+                          <FileText className="w-5 h-5" />
                         </button>
                       )}
                       {/* Giữ nguyên icon mắt hiện tại */}

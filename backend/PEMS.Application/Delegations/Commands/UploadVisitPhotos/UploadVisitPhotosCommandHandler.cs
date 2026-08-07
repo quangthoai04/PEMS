@@ -40,17 +40,19 @@ public sealed class UploadVisitPhotosCommandHandler : IRequestHandler<UploadVisi
         if (instance == null)
             throw new NotFoundException("Visit instance not found.");
 
-        // Quyền: Phải là Host, hoặc participant được assigned
+        // Quyền: Phải là Host, hoặc participant được assigned — trừ Department (chỉ xem, giống
+        // Minutes/News: Department đóng góp hậu cần, không phải hồ sơ media/biên bản của chuyến thăm).
         bool isHost = instance.CurrentHostUserId == userId;
-        bool isAcceptedParticipant = await _db.VisitParticipants.AnyAsync(
+        bool isAcceptedNonDepartmentParticipant = await _db.VisitParticipants.AnyAsync(
             p => p.VisitInstanceId == request.VisitInstanceId
                  && p.UserId == userId
                  && !p.IsHost
-                 && (p.Status == "ACCEPTED" || p.Status == "ASSIGNED"),
+                 && (p.Status == "ACCEPTED" || p.Status == "ASSIGNED")
+                 && p.ParticipantRole != PEMS.Domain.Constants.ParticipantRoles.DeptSupport,
             cancellationToken);
 
         bool isLive = instance.Status != "CLOSED" && instance.Status != "CANCELLED" && instance.VisitRequest.Status != "CANCELLED";
-        bool mediaUploader = (isHost || isAcceptedParticipant) && isLive && instance.Status == "AFTER_VISIT";
+        bool mediaUploader = (isHost || isAcceptedNonDepartmentParticipant) && isLive && instance.Status == "AFTER_VISIT";
 
         if (!mediaUploader)
             throw new ForbiddenException("Bạn không có quyền tải lên media cho chuyến thăm này.");

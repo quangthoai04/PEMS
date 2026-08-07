@@ -101,10 +101,13 @@ public sealed class GetVisitInstanceContributionQueryHandler
         bool isStudent = relation == "STUDENT_RELATED";
         bool isDepartment = relation == "DEPARTMENT_RELATED";
 
-        // Minutes: Host or any accepted participant may edit while live (mirrors the process rule).
-        bool minutesEditor = (isHost || isAcceptedParticipant) && isLive;
-        // Media upload opens in AFTER_VISIT for Host/accepted participant (spec §7.2 B2).
-        bool mediaUploader = (isHost || isAcceptedParticipant) && isLive
+        // Minutes: Host or any accepted participant may edit while live (mirrors the process rule) —
+        // except a pure Department participant, who stays read-only here just like News (spec §6.8):
+        // Department contributes logistics, not the minutes/media record of the visit itself.
+        bool minutesEditor = (isHost || (isAcceptedParticipant && !isDepartment)) && isLive;
+        // Media upload opens in AFTER_VISIT for Host/accepted participant (spec §7.2 B2), same
+        // Department exclusion as Minutes/News.
+        bool mediaUploader = (isHost || (isAcceptedParticipant && !isDepartment)) && isLive
                              && instance.Status == VisitInstanceStatus.AfterVisit;
         // News: Host, IC support or Student — never a pure Department participant (spec §6.8).
         // Writing window opens at AFTER_VISIT (news is a close condition) and stays open after CLOSED.

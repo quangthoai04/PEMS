@@ -11,8 +11,10 @@ namespace PEMS.Application.Delegations.Minutes;
 /// Shared access rules for meeting minutes (UC biên bản):
 ///  • View: any user in scope of the campus instance (Host / Staff Leader of campus / HO /
 ///    Visitor owner / accepted non-host participant).
-///  • Create / Edit: ONLY the Host or an accepted (IC/Dept/Student) participant, and only while
-///    the visit is live (instance not CLOSED/CANCELLED and request not CANCELLED).
+///  • Create / Edit: ONLY the Host or an accepted IC/Student participant, and only while the
+///    visit is live (instance not CLOSED/CANCELLED and request not CANCELLED). An accepted
+///    DEPARTMENT participant is in scope (may view) but stays read-only here — same split as
+///    news creation (spec §6.8): Department contributes logistics, not the visit's own record.
 /// Visitor / HO / Staff Leader may never create or edit — they only view.
 /// </summary>
 internal static class MinuteAccess
@@ -32,12 +34,13 @@ internal static class MinuteAccess
         bool isHo = user.RoleCode == RoleCodes.Ho;
         bool isGuestSide = VisitRequestOwnership.IsGuestSide(visit, instance, userId);
         bool isAccepted = acceptedParticipantRole != null;
+        bool isAcceptedDepartment = acceptedParticipantRole == ParticipantRoles.DeptSupport;
 
         bool inScope = isHost || isStaffLeaderOfCampus || isHo || isGuestSide || isAccepted;
         bool isLive = instance.Status != VisitInstanceStatus.Closed
             && instance.Status != VisitInstanceStatus.Cancelled
             && visit.Status != VisitRequestStatuses.Cancelled;
-        bool canEdit = (isHost || isAccepted) && isLive;
+        bool canEdit = (isHost || (isAccepted && !isAcceptedDepartment)) && isLive;
         return (inScope, canEdit);
     }
 

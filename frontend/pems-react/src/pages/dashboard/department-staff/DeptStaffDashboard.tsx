@@ -41,6 +41,11 @@ export function DeptStaffDashboard() {
         itemType: itemType as 'REQUEST' | 'INVITATION',
       });
       setActiveTab('tasks');
+    } else if (searchParams.get('tab') === 'tasks') {
+      // Landing spot for "Quản lý tiếp khách" links that should return Department Staff to their
+      // own task list (e.g. the Contribution page's back breadcrumb) rather than the default
+      // calendar tab.
+      setActiveTab('tasks');
     }
   }, [searchParams]);
 
