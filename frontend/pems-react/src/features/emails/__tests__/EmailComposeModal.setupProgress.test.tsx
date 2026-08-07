@@ -49,8 +49,8 @@ vi.mock('../../../components/modals/ConfirmModal', () => ({
 vi.mock('../../../shared/auth/authStorage', () => ({ authStorage: { getAccessToken: () => 'test-token' } }));
 
 vi.mock('react-quill-new', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value)} />
+  default: ({ value, onChange }: { value: string; onChange: (v: string, d: unknown, s: string) => void }) => (
+    <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value, undefined, 'user')} />
   ),
 }));
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));

@@ -64,6 +64,45 @@ import { EmailTableDialog } from './EmailTableDialog';
 // first document opened loses its action block and its dividers.
 registerEmailEditorFormats();
 
+/**
+ * Puts every `style` attribute's declarations in one fixed order.
+ *
+ * <b>The defect this closes.</b> Quill assigns an element's declarations one property at a time as it
+ * rebuilds the DOM from a Delta, and which property lands first is not stable across parses of the SAME
+ * content — one pass gives `"font-size:12px;color:#647"`, the next gives `"color:#647;font-size:12px"`.
+ * That is invisible on screen, but this editor is CONTROLLED: the stored html this produces becomes the
+ * `value` prop handed back to Quill, which parses it again and can re-order it again, to a THIRD spelling
+ * that differs from the second exactly as much as the second differed from the first. A pair of
+ * declarations whose order keeps changing never reaches a spelling that equals the one before it, so
+ * ReactQuill's own "did the value actually change" check never once answers no — it re-set the document
+ * and fired another `onChange` on every tick, which pinned a CPU core the moment an editor opened on any
+ * template whose style carried two declarations (every shipped template's does), before the operator
+ * could do anything at all, including opening devtools to see why.
+ *
+ * <b>Why sorting, not `canonicalizeEmailHtml`.</b> That comparison is deliberately lossy — it also
+ * collapses runs of whitespace, because two spellings of insignificant markup formatting should read as
+ * "no edit". Applied to what actually gets STORED, that same collapse would silently rewrite a run of
+ * spaces an author typed on purpose into one space, which is precisely what V4 §7.4 refuses to do
+ * anywhere in this product. This touches only the order of declarations inside `style=""` — never a
+ * property, a value, or a character of text — which is safe to apply unconditionally: two declarations in
+ * either order paint the same pixels.
+ */
+function sortStyleDeclarations(html: string): string {
+  if (!html || typeof window === 'undefined' || !window.DOMParser) return html;
+
+  const doc = new window.DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  for (const el of Array.from(doc.body.querySelectorAll('[style]'))) {
+    const declarations = (el.getAttribute('style') ?? '')
+      .split(';')
+      .map((d) => d.trim())
+      .filter((d) => d.length > 0);
+    const sorted = [...declarations].sort();
+    const next = sorted.join(';');
+    if (next !== declarations.join(';')) el.setAttribute('style', next);
+  }
+  return doc.body.innerHTML;
+}
+
 /** A variable the author may insert, as offered by the picker (§8.1). */
 export interface EmailEditorVariable {
   /** The raw name, without braces — e.g. `senderName`. */
@@ -461,7 +500,7 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   );
 
   const fromEditor = useCallback(
-    (html: string) => fromEditorHtml(nodesToTables(chipsToVariables(html))),
+    (html: string) => sortStyleDeclarations(fromEditorHtml(nodesToTables(chipsToVariables(html)))),
     [],
   );
 
@@ -482,7 +521,29 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
    * scrolled past is a warning that ships. What this does is tell the author at the moment they make the
    * run, rather than at the moment they press the button.
    */
-  const handleChange = useCallback((html: string) => {
+  const handleChange = useCallback((html: string, _delta: unknown, source?: string) => {
+    // `source` is Quill's own word for where this change came from: `'user'` for a keystroke or a
+    // paste, `'api'` for a `setContents()` call this component made itself, `'silent'` for one that
+    // must not even reach a listener. Only `'user'` is an edit.
+    //
+    // Every render of a CONTROLLED Quill re-feeds it `editorHtml` via `setContents()`, and Quill answers
+    // that with a 'text-change' of its own — react-quill-new's wrapper does not distinguish that echo
+    // from typing, so it reached this handler exactly like a keystroke would. The echo is never
+    // byte-identical to what was fed in — Quill has its own spelling for a colour, a self-closing tag, a
+    // typed space — so `onChange` ran again with the reparsed spelling, which became the next `value`,
+    // which Quill reparsed into a THIRD spelling on the next render, and so on: two notations for the
+    // same content trading places forever. That pinned a CPU core the instant a template with a
+    // multi-declaration inline style was opened — every shipped template has one — before the operator
+    // could do anything, including opening devtools to see why.
+    //
+    // Filtering on `source` closes it at the one point that cannot mistake an edit for an echo: Quill
+    // itself marks the difference at the moment the change happens. A guard built from comparing HTML
+    // strings instead (tried first) had to approximate "no real edit", and the closest available
+    // approximation — the dirty-check's own comparison — also collapses runs of whitespace, which
+    // silently broke the one warning that exists to make a run of spaces impossible to save (V4 §7.4).
+    // This has no such tradeoff: an echo is never `'user'`, and every keystroke always is.
+    if (source !== 'user') return;
+
     const canonical = fromEditor(html);
 
     // Once per editing session, not once per keystroke: a warning that reappears on every space after

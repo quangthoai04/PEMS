@@ -23,9 +23,9 @@ vi.mock('../api/emailsApi', () => ({
 }));
 
 vi.mock('react-quill-new', () => ({
-  default: ({ value, onChange, readOnly }: { value: string; onChange: (v: string) => void; readOnly?: boolean }) => (
+  default: ({ value, onChange, readOnly }: { value: string; onChange: (v: string, d: unknown, s: string) => void; readOnly?: boolean }) => (
     <textarea aria-label="reply-body" value={value} readOnly={readOnly}
-      onChange={e => onChange(e.target.value)} />
+      onChange={e => onChange(e.target.value, undefined, 'user')} />
   ),
 }));
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));

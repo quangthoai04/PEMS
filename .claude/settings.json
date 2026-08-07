@@ -12,7 +12,11 @@
       "Bash(node -e \"console.log\\('react types version:', require\\('./node_modules/@types/react/package.json'\\).version\\)\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/campuses/filter-options)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5265/api/campuses/filter-options)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5265/api/campuses/filter-options)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5265/api/email-templates)",
+      "Bash(curl -s http://localhost:5265/swagger/v1/swagger.json -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(npm install *)",
+      "Bash(node query.mjs)"
     ]
   }
 }

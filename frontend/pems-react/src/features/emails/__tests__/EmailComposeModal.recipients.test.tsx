@@ -38,8 +38,8 @@ vi.mock('../../../shared/auth/authStorage', () => ({ authStorage: { getAccessTok
 
 // The rich-text editor is not what these tests are about; a plain textarea keeps them fast and stable.
 vi.mock('react-quill-new', () => ({
-  default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-    <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value)} />
+  default: ({ value, onChange }: { value: string; onChange: (v: string, d: unknown, s: string) => void }) => (
+    <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value, undefined, 'user')} />
   ),
 }));
 vi.mock('react-quill-new/dist/quill.snow.css', () => ({}));

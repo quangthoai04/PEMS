@@ -95,8 +95,8 @@ describe('EmailComposeModal preview', () => {
     vi.doMock('../../../shared/api/filesApi', () => ({ filesApi: { upload: vi.fn() } }));
     vi.doMock('../../../shared/auth/authStorage', () => ({ authStorage: { getToken: () => 't' } }));
     vi.doMock('react-quill-new', () => ({
-      default: ({ value, onChange }: { value: string; onChange: (v: string) => void }) => (
-        <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value)} />
+      default: ({ value, onChange }: { value: string; onChange: (v: string, d: unknown, s: string) => void }) => (
+        <textarea aria-label="body" value={value} onChange={e => onChange(e.target.value, undefined, 'user')} />
       ),
     }));
     vi.doMock('react-quill-new/dist/quill.snow.css', () => ({}));
@@ -290,10 +290,10 @@ describe('TemplateManagement editor preview', () => {
       return {
         default: react.forwardRef(
           (
-            { value, onChange }: { value: string; onChange: (v: string) => void },
+            { value, onChange }: { value: string; onChange: (v: string, d: unknown, s: string) => void },
             ref: React.ForwardedRef<HTMLTextAreaElement>,
           ) => (
-            <textarea ref={ref} aria-label="content" value={value} onChange={e => onChange(e.target.value)} />
+            <textarea ref={ref} aria-label="content" value={value} onChange={e => onChange(e.target.value, undefined, 'user')} />
           ),
         ),
       };
