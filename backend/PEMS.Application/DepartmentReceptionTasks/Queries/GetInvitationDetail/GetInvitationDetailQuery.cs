@@ -151,12 +151,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
         {
             var now = VietnamTime.Now();
             if (instanceStatus == "CANCELLED") return "CANCELLED";
+            if (status == ParticipantStatuses.Declined) return "REJECTED";
+            // Once the reception window has closed, the task is over regardless of whether this row
+            // ever got an explicit Accept — a delegated or never-answered invitation for a visit that
+            // has already happened is not still pending; it is history.
+            if (instanceStatus == "CLOSED" || now > endAt) return "DONE";
             if (status == ParticipantStatuses.Invited) return "REQUESTED";
             if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
-            if (status == ParticipantStatuses.Declined) return "REJECTED";
             if (status == ParticipantStatuses.Accepted)
             {
-                if (instanceStatus == "CLOSED" || now > endAt) return "DONE";
                 if (now >= startAt && now <= endAt) return "IN_PROGRESS";
                 return "ACCEPTED";
             }

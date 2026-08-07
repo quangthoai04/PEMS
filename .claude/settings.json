@@ -28,7 +28,15 @@
       "Bash(dotnet test *)",
       "Bash(python3 -c ' *)",
       "Bash(python -c ' *)",
-      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'PEMS|dotnet' } | Select-Object Id, ProcessName, StartTime, Path | Format-Table -AutoSize)"
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'PEMS|dotnet' } | Select-Object Id, ProcessName, StartTime, Path | Format-Table -AutoSize)",
+      "Bash(mkdir -p /tmp/backup_check2)",
+      "Bash(cp backend/PEMS.Application/Delegations/Commands/SignVisitLogisticsHandover/SignVisitLogisticsHandoverCommandHandler.cs /tmp/backup_check2/host.cs.bak)",
+      "Bash(cp backend/PEMS.Application/DepartmentReceptionTasks/Commands/SignLogisticsHandover/SignLogisticsHandoverCommand.cs /tmp/backup_check2/dept.cs.bak)",
+      "Bash(git show *)",
+      "Bash(cp /tmp/backup_check2/host.cs.bak backend/PEMS.Application/Delegations/Commands/SignVisitLogisticsHandover/SignVisitLogisticsHandoverCommandHandler.cs)",
+      "Bash(cp /tmp/backup_check2/dept.cs.bak backend/PEMS.Application/DepartmentReceptionTasks/Commands/SignLogisticsHandover/SignLogisticsHandoverCommand.cs)",
+      "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'PEMS' } | Select-Object Id, ProcessName, StartTime | Format-Table -AutoSize)"
     ],
     "additionalDirectories": [
       "\\tmp"

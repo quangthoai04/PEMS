@@ -137,8 +137,11 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
             }
         }
 
-        // Borrower signing RETURN closes the item (mirrors SignLogisticsHandoverCommand).
-        if (handoverType == LogisticsHandoverTypes.Return)
+        // The item closes only once BOTH sides have signed the return ("nghiệm thu") handover —
+        // the borrower's signature alone (just recorded above) leaves the department's own
+        // acceptance unconfirmed. ProviderSignedAt may already be set if the department signed
+        // first; either order reaches DONE the moment the second signature lands.
+        if (handoverType == LogisticsHandoverTypes.Return && handover.ProviderSignedAt != null)
         {
             item.Status = LogisticsItemStatus.Done;
             item.CompletedAt = now;

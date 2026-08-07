@@ -477,12 +477,15 @@ public sealed class GetAssignmentsProgressListQueryHandler
     {
         if (instanceStatus == "CANCELLED") return "CANCELLED";
         if (status == ParticipantStatuses.Declined) return "REJECTED";
+        // Once the reception window has closed, the task is over regardless of whether this row
+        // ever got an explicit Accept — a delegated or never-answered invitation for a visit that
+        // has already happened is not still pending; it is history.
+        if (instanceStatus is "AFTER_VISIT" or "CLOSED" || now > endAt) return "DONE";
         if (hasActiveStaffAssignment && status != ParticipantStatuses.Accepted) return "ASSIGNED";
         if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
         if (status == ParticipantStatuses.Invited) return "REQUESTED";
         if (status == ParticipantStatuses.Accepted)
         {
-            if (instanceStatus is "AFTER_VISIT" or "CLOSED" || now > endAt) return "DONE";
             if (instanceStatus == "DURING_VISIT" || (now >= startAt && now <= endAt)) return "IN_PROGRESS";
             return "ACCEPTED";
         }

@@ -125,8 +125,13 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         {
             item.Status = "IN_PROGRESS";
         }
-        else if (handoverType == LogisticsHandoverTypes.Return && signerSide == HandoverSignerSides.Borrower)
+        else if (handoverType == LogisticsHandoverTypes.Return
+            && handover.BorrowerSignedAt != null && handover.ProviderSignedAt != null)
         {
+            // Both sides ("nghiệm thu") must sign the return handover before the item closes — one
+            // signature alone (whichever side this call just recorded) leaves the other side's
+            // acceptance unconfirmed. Order-independent: this fires the moment the second lands,
+            // whether the department signs first or after the host (SignVisitLogisticsHandoverCommand).
             item.Status = "DONE";
             item.CompletedAt = now;
         }
