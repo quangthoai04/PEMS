@@ -68,6 +68,21 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const requestRowVersionRef = useRef<number>(0);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
 
+  /**
+   * Keyed by clientKey, bumped whenever a copy/apply-to-all overwrites that card's content.
+   * `useFieldArray.update()`/`.replace()` patch the underlying form values correctly, but they
+   * skip resyncing `register()`-bound inputs and any NESTED `useFieldArray` (visitors/supportTeam
+   * live inside `CampusVisitCard`, registered under their own name) — those keep showing their
+   * pre-copy state until something else touches them. Folding this into the card's React `key`
+   * forces a full remount, which is the only way those nested hooks re-read the fresh values.
+   * Mirrors useVisitRequestFormV2's cardVersion (create mode) — this screen has its own local
+   * copy/apply-to-all handlers instead of that hook, so it needs its own copy of the mechanism.
+   */
+  const [cardVersion, setCardVersion] = useState<Record<string, number>>({});
+  const bumpCardVersion = useCallback((clientKey: string) => {
+    setCardVersion(prev => ({ ...prev, [clientKey]: (prev[clientKey] ?? 0) + 1 }));
+  }, []);
+
   const schema = useMemo(
     () => buildVisitRequestV2Schema(V2_MIN_ADVANCE_HOURS_EDIT, (key, opts) => t(key, { ns: 'validation', ...opts })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -151,6 +166,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     const target = current[targetIndex];
     if (source && target && sourceIndex !== targetIndex) {
       campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
+      bumpCardVersion(target.clientKey);
     }
   };
 
@@ -253,7 +269,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const allowAddRemove = mode === 'edit'; // resubmit keeps the campus set fixed
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       {back}
       <header>
         <h1 className="text-2xl font-extrabold text-[#004c91]">
@@ -296,8 +312,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
           <div className="space-y-4">
             {campusVisitFields.fields.map((field, index) => {
               const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || field.id;
+              // A copy/apply-to-all patches this card's form values correctly, but register()-bound
+              // inputs and the nested visitors/supportTeam field arrays only re-read fresh values on
+              // mount — folding the bump counter into the key forces that remount (cardVersion).
+              const renderKey = `${clientKey}:${cardVersion[clientKey] ?? 0}`;
               return (
-                <div key={clientKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
+                <div key={renderKey} ref={el => { cardRefs.current.set(clientKey, el); }}>
                   <CampusVisitCard
                     form={form}
                     index={index}
@@ -372,7 +392,11 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                 type="button"
                 className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white"
                 onClick={() => {
-                  campusVisitFields.replace(applyContentToAllCampuses(form.getValues('campusVisits'), applyPrompt.sourceIndex));
+                  const current = form.getValues('campusVisits');
+                  campusVisitFields.replace(applyContentToAllCampuses(current, applyPrompt.sourceIndex));
+                  current.forEach((cv, i) => {
+                    if (i !== applyPrompt.sourceIndex) bumpCardVersion(cv.clientKey);
+                  });
                   setApplyPrompt(null);
                 }}
               >

@@ -38,7 +38,9 @@
       "Bash(PYTHONIOENCODING=utf-8 python -c ' *)",
       "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'PEMS' } | Select-Object Id, ProcessName, StartTime | Format-Table -AutoSize)",
       "Bash(xargs cat)",
-      "Bash(/c/Python313/python -c ' *)"
+      "Bash(/c/Python313/python -c ' *)",
+      "Bash(PYTHONIOENCODING=utf-8 /c/Python313/python -c ' *)",
+      "Bash(git diff *)"
     ],
     "additionalDirectories": [
       "\\tmp"

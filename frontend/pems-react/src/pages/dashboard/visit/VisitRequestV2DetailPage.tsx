@@ -15,7 +15,7 @@ export default function VisitRequestV2DetailPage() {
   const id = Number(visitRequestId);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
       <Link
         to="/dashboard/visit"
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#004c91] hover:underline"

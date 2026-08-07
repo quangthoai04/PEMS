@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EditVisitRequestV2Page from '../../../pages/dashboard/visit/EditVisitRequestV2Page';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -168,5 +168,59 @@ describe('EditVisitRequestV2Page', () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ requestStatus: 'REJECTED' }));
     renderAt('edit');
     expect(await screen.findByRole('alert')).toHaveTextContent(/no longer editable/i);
+  });
+
+  // Pins the same regression VisitRequestFormV2CopyApply.test.tsx pins for create mode:
+  // useFieldArray.update()/.replace() patch the underlying RHF values correctly, but
+  // register()-bound inputs and nested field arrays (visitors) only re-read fresh values on
+  // mount. This screen has its OWN copy/apply-to-all handlers (not the create-mode hook), so it
+  // needs its own remount trigger — without it, the copy looks like a no-op on screen even though
+  // form.getValues() already has the copied content.
+  describe('copy / apply-to-all actually reach the screen', () => {
+    const visitTypeSelects = () =>
+      screen.getAllByRole('combobox').filter(el =>
+        el.tagName === 'SELECT'
+        && Array.from((el as HTMLSelectElement).options).some(o => o.value === 'MEETING'));
+
+    it('"Copy content from" fills the register()-bound visit-type select AND the nested visitor row on the target card', async () => {
+      const hn = campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN');
+      const hcm = { ...campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM'), visitType: 'WORKSHOP' };
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ visitScope: 'MULTI_CAMPUS', campusVisits: [hn, hcm] }));
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      // Before the copy: card 2 (HCM) still shows its own content.
+      expect(visitTypeSelects()[1]).toHaveValue('WORKSHOP');
+      expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HCM')).toBeInTheDocument();
+
+      const copySelect = document.querySelector('select[id^="copy-src-"]') as HTMLSelectElement;
+      expect(copySelect).toBeTruthy();
+      fireEvent.change(copySelect, { target: { value: '0' } });
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('campus-delegation-input')[1]).toHaveValue('Đoàn HN');
+        expect(visitTypeSelects()[1]).toHaveValue('MEETING');
+        expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HN')).toBeInTheDocument();
+      });
+    }, 15000);
+
+    it('"Apply to other campuses" (confirmed) reaches the other card on screen, not just form state', async () => {
+      const hn = campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN');
+      const hcm = { ...campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM'), visitType: 'WORKSHOP' };
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ visitScope: 'MULTI_CAMPUS', campusVisits: [hn, hcm] }));
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Apply to other campuses' })[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId('campus-delegation-input')[1]).toHaveValue('Đoàn HN');
+        expect(visitTypeSelects()[1]).toHaveValue('MEETING');
+        expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HN')).toBeInTheDocument();
+      });
+    }, 15000);
   });
 });
