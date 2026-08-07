@@ -314,6 +314,115 @@ public sealed class EmailTemplateContractTests
         }
     }
 
+    // ── The whole registry, not one template (V4 §24, §35) ───────────────────
+
+    /// <summary>
+    /// Every variable the EDITOR is offered, on every template, in both languages, carries a label and a
+    /// sample.
+    ///
+    /// <para>
+    /// The per-template version of this above covers one code. This covers all of them, because the
+    /// failure it guards against arrives with a NEW template rather than with a change to an old one: a
+    /// registry entry declaring a variable the catalog has never heard of gives the sidebar a raw name to
+    /// show and the preview the name itself in place of a value — the operator sees "delegationName"
+    /// where an organisation belongs and cannot tell whether that is what a recipient will get.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(EmailLanguages.Vi)]
+    [InlineData(EmailLanguages.En)]
+    public void Every_contract_variable_carries_a_label_and_a_sample(string language)
+    {
+        var problems = new System.Collections.Generic.List<string>();
+
+        foreach (var template in SystemEmailTemplates.All)
+        {
+            var contract = EmailTemplateContracts.Describe(template.TemplateCode, language);
+            if (contract is null) continue;
+
+            foreach (var v in contract.Variables)
+            {
+                if (string.IsNullOrWhiteSpace(v.Label)) problems.Add($"{template.TemplateCode}.{v.Name}: no label");
+                if (string.IsNullOrWhiteSpace(v.Sample)) problems.Add($"{template.TemplateCode}.{v.Name}: no sample");
+                if (v.Label == v.Name) problems.Add($"{template.TemplateCode}.{v.Name}: label is the raw name");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(" | ", problems));
+    }
+
+    /// <summary>
+    /// Nothing the editor may insert is a name the RUNTIME does not know.
+    ///
+    /// <para>
+    /// This is the join V4 §23 is about, stated in the one place it can be checked without a database:
+    /// the contract offered to the screen is derived from the registry entry, and the renderer refuses a
+    /// send whose supplied values do not match that same registry's declared set exactly. So a variable
+    /// that the picker offers and the registry does not declare would save cleanly and then fail every
+    /// send of that template — the operator's change looks accepted and the mail stops going out.
+    /// </para>
+    /// <para>
+    /// The database side of the same join — declared set ↔ the placeholders actually written in the
+    /// seeded bodies — is asserted by <c>SystemEmailTemplateContractTests</c>, which needs the real seed
+    /// to answer it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Every_variable_the_editor_may_insert_is_declared_by_the_registry()
+    {
+        var problems = new System.Collections.Generic.List<string>();
+
+        foreach (var template in SystemEmailTemplates.All)
+        {
+            var contract = EmailTemplateContracts.For(template.TemplateCode);
+            if (contract is null) continue;
+
+            var declared = template.DeclaredVariables.ToHashSet(StringComparer.Ordinal);
+
+            foreach (var name in contract.AllowedVariables.Concat(contract.SenderVariables ?? Array.Empty<string>()))
+            {
+                if (!declared.Contains(name))
+                    problems.Add($"{template.TemplateCode}: offers {{{{{name}}}}} which the registry does not declare");
+            }
+
+            // A required variable that is not offered could never be written by an operator who deleted
+            // it — the picker would have nothing to put back.
+            foreach (var name in contract.RequiredVariables)
+            {
+                if (!contract.AllowedVariables.Contains(name, StringComparer.Ordinal)
+                    && !EmailTrustedBlocks.All.Contains(name, StringComparer.Ordinal))
+                    problems.Add($"{template.TemplateCode}: requires {{{{{name}}}}} but does not offer it");
+            }
+        }
+
+        Assert.True(problems.Count == 0, string.Join(" | ", problems));
+    }
+
+    /// <summary>
+    /// A system block is offered as a BLOCK or not at all — never as a variable the picker can insert.
+    ///
+    /// <para>
+    /// The frontend depends on this split to draw one as a protected object rather than as a data chip:
+    /// a block that arrived in the variable list would be inserted as `{{actionBlock}}` labelled like a
+    /// person's name, and deleted as casually as one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void No_template_offers_a_system_block_as_an_insertable_variable()
+    {
+        foreach (var template in SystemEmailTemplates.All)
+        {
+            var contract = EmailTemplateContracts.Describe(template.TemplateCode, EmailLanguages.Vi);
+            if (contract is null) continue;
+
+            foreach (var block in EmailTrustedBlocks.All)
+            {
+                Assert.DoesNotContain(contract.Variables, v => v.Name == block);
+                Assert.DoesNotContain(block, contract.AllowedVariables);
+            }
+        }
+    }
+
     // ── Sensitivity and copies ───────────────────────────────────────────────
 
     /// <summary>

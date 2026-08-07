@@ -36,6 +36,15 @@ public sealed class HtmlSanitizerService : IHtmlSanitizerService
         // node at send time, and an author who writes the node by hand gets an empty div and no buttons.
         _emailSanitizer.AllowedAttributes.Add("data-system-block");
 
+        // `role="presentation"` on a layout table. Every table this product puts in an email — the ones
+        // the backend builds and the ones an operator inserts in the template editor — declares it,
+        // because a table used for layout should not be announced as a data table by a screen reader,
+        // and several mail clients read it as "do not restyle this". The sanitiser was dropping it, so
+        // the markup that left the editor and the markup that reached the recipient disagreed about the
+        // one attribute nobody would think to check. Safe by inspection: an ARIA role names a semantic,
+        // carries no URL and executes nothing.
+        _emailSanitizer.AllowedAttributes.Add("role");
+
         // ── Inline style, on EMAIL bodies only, restricted to a named list of properties ──
         //
         // <b>What this fixes.</b> `BuildBase` strips `style`, and an email body is sanitised on its way

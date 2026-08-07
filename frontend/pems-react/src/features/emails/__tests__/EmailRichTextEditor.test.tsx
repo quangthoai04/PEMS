@@ -209,15 +209,222 @@ describe('formatting produces inline CSS, not classes', () => {
   });
 });
 
+// ── §11 / §12 the toolbar applies to the operator's selection, every time ───
+
+/**
+ * Every formatting control, applied to a selection the operator made and then LOST focus on — which is
+ * what actually happens: a colour input, a font list and a table dialog all take focus away from the
+ * editor before their handler runs.
+ *
+ * <b>The defect these pin.</b> Two formats in a row worked and the third silently did nothing. Measured
+ * on quill 2.0.3: after a format the host stores the new html, a controlled editor re-renders, and
+ * Quill's selection comes back COLLAPSED at index 0. `q.focus()` restores the range Quill last saw —
+ * the collapsed one — so every later format landed on a cursor. An operator selecting a heading and
+ * setting size, then font, then colour, got a heading with no colour and no explanation.
+ */
+describe('the toolbar formats what is selected', () => {
+  /** Selects "xin" and then blurs, the way clicking any toolbar control does. */
+  function selectAndBlur(container: HTMLElement) {
+    const q = quillOf(container);
+    q.setSelection(0, 3, 'user');
+    q.blur();
+    return q;
+  }
+
+  it('applies three formats in a row to the SAME selection', async () => {
+    const { container, html } = setup({ value: '<p>xin chào</p>' });
+    selectAndBlur(container);
+
+    fireEvent.change(screen.getByLabelText('Cỡ chữ'), { target: { value: '18px' } });
+    await waitFor(() => expect(html()).toContain('font-size: 18px'));
+
+    fireEvent.change(screen.getByLabelText('Phông chữ'), { target: { value: 'Georgia' } });
+    await waitFor(() => expect(html()).toContain('font-family: Georgia'));
+
+    // The one that used to be dropped.
+    fireEvent.change(screen.getByLabelText('Màu chữ'), { target: { value: '#ff0000' } });
+    await waitFor(() => expect(html()).toContain('color: rgb(255, 0, 0)'));
+
+    // …all three on the words, not on the rest of the line.
+    expect(html()).toContain('chào');
+  });
+
+  it.each([
+    ['Đậm', '<strong>'],
+    ['Nghiêng', '<em>'],
+    ['Gạch chân', '<u>'],
+    ['Gạch ngang', '<s>'],
+  ])('applies %s after the editor has lost focus', async (label, tag) => {
+    const { container, html } = setup({ value: '<p>xin chào</p>' });
+    selectAndBlur(container);
+
+    fireEvent.click(screen.getByRole('button', { name: label }));
+
+    await waitFor(() => expect(html()).toContain(tag));
+  });
+
+  it('applies a background colour after a colour has already been set', async () => {
+    const { container, html } = setup({ value: '<p>xin chào</p>' });
+    selectAndBlur(container);
+
+    fireEvent.change(screen.getByLabelText('Màu chữ'), { target: { value: '#ff0000' } });
+    await waitFor(() => expect(html()).toContain('color: rgb(255, 0, 0)'));
+
+    fireEvent.change(screen.getByLabelText('Màu nền'), { target: { value: '#ffff00' } });
+
+    await waitFor(() => expect(html()).toContain('background-color: rgb(255, 255, 0)'));
+  });
+
+  it.each([
+    ['Căn giữa', 'text-align: center'],
+    ['Căn phải', 'text-align: right'],
+    ['Tăng thụt lề', 'margin-left: 16px'],
+  ])('applies %s to the line the caret was on', async (label, style) => {
+    const { container, html } = setup({ value: '<p>xin chào</p><p>dòng hai</p>' });
+    const q = quillOf(container);
+    q.setSelection(1, 0, 'user');
+    q.blur();
+
+    fireEvent.click(screen.getByRole('button', { name: label }));
+
+    await waitFor(() => expect(html()).toContain(style));
+    // The FIRST line, which is where the caret was — not whichever line Quill defaulted to.
+    expect(html().indexOf(style)).toBeLessThan(html().indexOf('dòng hai'));
+  });
+
+  it.each([
+    ['Danh sách gạch đầu dòng', '<ul>'],
+    ['Danh sách đánh số', '<ol>'],
+  ])('turns the caret line into a %s', async (label, tag) => {
+    const { container, emitted } = setup({ value: '<p>một</p><p>hai</p>' });
+    const q = quillOf(container);
+    q.setSelection(1, 0, 'user');
+    q.blur();
+
+    fireEvent.click(screen.getByRole('button', { name: label }));
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain(tag));
+    expect(emitted().at(-1)).toContain('một');
+  });
+
+  it('clears formatting from the selection it was given', async () => {
+    const { container, html } = setup({ value: '<p><strong>đậm</strong> thường</p>' });
+    const q = quillOf(container);
+    q.setSelection(0, 3, 'user');
+    q.blur();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa định dạng' }));
+
+    await waitFor(() => expect(html()).not.toContain('<strong>'));
+    expect(html()).toContain('đậm');
+  });
+
+  it('puts a link on the selected words after the prompt has taken focus', async () => {
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('https://pems.fpt.edu.vn/x');
+    const { container, html } = setup({ value: '<p>xin chào</p>' });
+    selectAndBlur(container);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn liên kết' }));
+
+    await waitFor(() => expect(html()).toContain('href="https://pems.fpt.edu.vn/x"'));
+    // On the words, not on the whole line.
+    expect(html()).toContain('chào');
+    prompt.mockRestore();
+  });
+});
+
+// ── §40 a controlled editor survives the screen around it re-rendering ──────
+
+/**
+ * The host screen re-renders for its own reasons — a keystroke in the subject, a toast, a fetch landing.
+ * None of that is an edit to the body, and none of it may reload the document.
+ *
+ * <b>What this pins.</b> react-quill-new compares the value it was handed against what the editor holds,
+ * on every render, and re-runs `setContents` when they differ. Any lasting difference — a style attribute
+ * we re-spelled, a trailing blank block Quill's parse drops — makes that comparison answer "different"
+ * forever: the whole document is rebuilt on every render, the caret is discarded, and live DOM nodes are
+ * replaced under whatever was holding one. It is invisible until an operator loses a selection mid-format
+ * or a fan spins up, which is exactly why it is pinned here rather than left to be noticed.
+ */
+describe('stability across an unrelated re-render', () => {
+  /** Renders the editor beside a counter the test can bump without touching the body. */
+  function setupWithSibling(value: string) {
+    const seen: string[] = [];
+
+    function Host() {
+      const [html, setHtml] = useState(value);
+      const [tick, setTick] = useState(0);
+      return (
+        <>
+          <button type="button" data-testid="bump" onClick={() => setTick(tick + 1)}>{tick}</button>
+          <EmailRichTextEditor
+            mode="TEMPLATE"
+            variables={[{ name: 'fullName', label: 'Họ tên' }]}
+            systemBlocks={[{ name: 'actionBlock', label: 'Khu vực nút thao tác' }]}
+            value={html}
+            onChange={(next) => { seen.push(next); setHtml(next); }}
+          />
+        </>
+      );
+    }
+
+    const utils = render(<Host />);
+    return { ...utils, emitted: () => seen };
+  }
+
+  it.each([
+    ['plain text', '<p>xin chào</p>'],
+    ['a multi-declaration style', '<p style="color:#334155;font-size:14px;line-height:1.65">Kính gửi,</p>'],
+    ['a variable', '<p>Kính gửi {{fullName}}</p>'],
+    ['a system block', '<p>a</p>{{actionBlock}}<p>b</p>'],
+    ['a table', '<table role="presentation" style="border-collapse:collapse"><tbody><tr><td>ô</td></tr></tbody></table><p>sau bảng</p>'],
+    ['a divider', '<p>a</p><hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0"><p>b</p>'],
+    ['a list', '<ul><li>Một</li><li>Hai</li></ul>'],
+  ])('keeps the document and the caret through a re-render with %s', async (_label, value) => {
+    const utils = setupWithSibling(value);
+    const q = quillOf(utils.container);
+
+    q.setSelection(1, 0, 'user');
+    const before = utils.container.querySelector('.ql-editor')!.firstElementChild;
+
+    fireEvent.click(screen.getByTestId('bump'));
+    await waitFor(() => expect(screen.getByTestId('bump').textContent).toBe('1'));
+    fireEvent.click(screen.getByTestId('bump'));
+    await waitFor(() => expect(screen.getByTestId('bump').textContent).toBe('2'));
+
+    // The same nodes, not replacements: a rebuild is what discards the caret and detaches selections.
+    expect(utils.container.querySelector('.ql-editor')!.firstElementChild).toBe(before);
+    expect(q.getSelection()).toEqual({ index: 1, length: 0 });
+    // …and nothing was reported to the host as a change, because nobody edited anything.
+    expect(utils.emitted()).toHaveLength(0);
+  });
+});
+
 // ── §9 the action block, through the shared editor ──────────────────────────
 
 describe('the system action block', () => {
-  it('is offered in TEMPLATE mode and withheld in COMPOSE', () => {
-    const { unmount } = setup({ mode: 'TEMPLATE' });
-    expect(screen.getByRole('button', { name: 'Chèn khối nút phản hồi' })).toBeTruthy();
+  /**
+   * The button offers what the CONTRACT allows, and nothing when it allows nothing.
+   *
+   * TEMPLATE and COMPOSE insert two different things under one button — a `{{placeholder}}` the renderer
+   * substitutes, and a position node inside content already rendered. See `emailEditorTemplateBlocks.ts`;
+   * the suite below the variables covers the template half in full.
+   */
+  it('is offered in TEMPLATE when the contract has a block, and withheld in COMPOSE', () => {
+    const blocks = [{ name: 'actionBlock', label: 'Khu vực nút thao tác' }];
+
+    const { unmount } = setup({ mode: 'TEMPLATE', systemBlocks: blocks });
+    expect(screen.getByRole('button', { name: 'Chèn khối hệ thống' })).toBeTruthy();
     unmount();
 
-    setup({ mode: 'COMPOSE' });
+    // A template whose send path attaches no block offers no button: a placeholder saved here would be
+    // refused by the renderer, so it must not be insertable in the first place.
+    const bare = setup({ mode: 'TEMPLATE' });
+    expect(screen.queryByRole('button', { name: 'Chèn khối hệ thống' })).toBeNull();
+    bare.unmount();
+
+    setup({ mode: 'COMPOSE', systemBlocks: blocks });
+    expect(screen.queryByRole('button', { name: 'Chèn khối hệ thống' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Chèn khối nút phản hồi' })).toBeNull();
   });
 
@@ -234,8 +441,13 @@ describe('the system action block', () => {
     }
   });
 
-  it('refuses a second one rather than minting one token into two buttons', () => {
-    const { onNotice } = setup({ value: `<p>a</p>${SYSTEM_ACTION_NODE}` });
+  it('refuses a second position node rather than minting one token into two buttons', () => {
+    // The COMPOSE half, reached the way a runtime-edit flow reaches it: the capability is granted.
+    const { onNotice } = setup({
+      mode: 'COMPOSE',
+      capabilities: { allowSystemBlockInsert: true },
+      value: `<p>a</p>${SYSTEM_ACTION_NODE}`,
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'Chèn khối nút phản hồi' }));
 
@@ -294,6 +506,437 @@ describe('variable insertion', () => {
     // Stored without the editor's wrapper.
     await waitFor(() => expect(emitted().at(-1) ?? '').toContain('<table'));
     expect(emitted().at(-1)).not.toContain('data-email-table');
+  });
+});
+
+// ── §5 / §6 / §7 system blocks inside a TEMPLATE ────────────────────────────
+
+/**
+ * A system block is not a variable, and a template does not hold the COMPOSE node.
+ *
+ * <b>What was wrong, measured before the fix.</b> A stored body carrying `{{actionBlock}}` rendered as
+ * `<span class="pems-variable-chip" data-variable="actionBlock">actionBlock</span>` — an ordinary data
+ * chip, labelled with the raw name, indistinguishable from `{{fullName}}`. And "Chèn khối nút phản hồi"
+ * wrote `<div data-system-block="action"></div>` INTO THE TEMPLATE: markup the runtime renderer never
+ * looks at, because what it substitutes is `{{actionBlock}}`. Saving that produced a template whose
+ * buttons simply do not exist in the delivered mail, with nothing on screen saying so.
+ */
+describe('system blocks in a template', () => {
+  const blocks = [
+    { name: 'actionBlock', label: 'Khu vực nút thao tác' },
+    { name: 'setupSummaryBlock', label: 'Bảng thông tin chuẩn bị' },
+  ];
+  const variables = [{ name: 'fullName', label: 'Họ tên' }];
+
+  const blockNodes = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ql-editor [data-template-block]')) as HTMLElement[];
+
+  it('shows a stored placeholder as a protected object, not as a variable chip', () => {
+    const { container } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks,
+      value: '<p>Trước</p>{{actionBlock}}<p>Sau</p>',
+    });
+
+    const [node] = blockNodes(container);
+    expect(node).toBeTruthy();
+    expect(node.getAttribute('data-template-block')).toBe('actionBlock');
+    expect(node.textContent).toContain('Khu vực nút thao tác');
+    // Not a data variable — that is the whole point.
+    expect(container.querySelector('.ql-editor [data-variable="actionBlock"]')).toBeNull();
+    // And not editable inside: the backend owns what goes there.
+    expect(node.getAttribute('contenteditable')).toBe('false');
+  });
+
+  it('stores it back as the placeholder the renderer substitutes', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks,
+      value: '<p>Trước</p>{{actionBlock}}<p>Sau</p>',
+    });
+
+    const q = quillOf(container);
+    await act(async () => { q.insertText(0, 'x', 'user'); });
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{actionBlock}}'));
+    const out = emitted().at(-1) ?? '';
+    // Never the editor's furniture, and never the COMPOSE node.
+    expect(out).not.toContain('pems-template-block');
+    expect(out).not.toContain('data-template-block');
+    expect(out).not.toContain('data-system-block');
+    expect(out).not.toContain('Khu vực nút thao tác');
+    expect(out).toContain('Trước');
+    expect(out).toContain('Sau');
+  });
+
+  it('keeps both blocks apart, and keeps ordinary variables as chips', () => {
+    const { container } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks,
+      value: '<p>{{fullName}}</p>{{actionBlock}}{{setupSummaryBlock}}',
+    });
+
+    expect(blockNodes(container).map((n) => n.getAttribute('data-template-block')))
+      .toEqual(['actionBlock', 'setupSummaryBlock']);
+    expect(container.querySelector('.ql-editor [data-variable="fullName"]')).toBeTruthy();
+  });
+
+  it('inserts the PLACEHOLDER, never the compose node', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: [blocks[0]], value: '<p>Trước</p>',
+    });
+
+    // One allowed block: the button inserts it directly rather than opening a list.
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn khối hệ thống' }));
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{actionBlock}}'));
+    expect(emitted().at(-1)).not.toContain('data-system-block');
+    expect(blockNodes(container)).toHaveLength(1);
+  });
+
+  it('offers a choice when the contract allows more than one', async () => {
+    const { emitted } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks, value: '<p>Trước</p>',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn khối hệ thống' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Bảng thông tin chuẩn bị/ }));
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{setupSummaryBlock}}'));
+    expect(emitted().at(-1)).not.toContain('{{actionBlock}}');
+  });
+
+  it('refuses a second copy of the same block', async () => {
+    const { onNotice, emitted } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: [blocks[0]],
+      value: '<p>Trước</p>{{actionBlock}}',
+    });
+    const before = emitted().length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chèn khối hệ thống' }));
+
+    expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('Khu vực nút thao tác'));
+    expect(emitted().length).toBe(before);
+  });
+
+  it('survives load → edit → save → reload unchanged', async () => {
+    const stored = '<p>Kính gửi {{fullName}},</p>{{setupSummaryBlock}}<p>Trân trọng.</p>{{actionBlock}}';
+    const { emitted } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks, value: stored,
+    });
+
+    await waitFor(() => expect(document.querySelector('.ql-editor')).toBeTruthy());
+    expect(isSameEmailHtml(emitted().at(-1) ?? stored, stored)).toBe(true);
+  });
+
+  /** A block written into a template that may not carry it is still an object, not silent text. */
+  it('shows a block the contract does not list, rather than turning it into a variable', () => {
+    const { container } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: [blocks[0]],
+      value: '<p>a</p>{{setupSummaryBlock}}',
+    });
+
+    expect(blockNodes(container)).toHaveLength(1);
+    expect(container.querySelector('.ql-editor [data-variable="setupSummaryBlock"]')).toBeNull();
+  });
+
+  /** A misspelling is NOT a block: it must stay a variable so the contract check can name it. */
+  it('leaves a mistyped block name as an ordinary variable', () => {
+    const { container } = setup({
+      mode: 'TEMPLATE', variables, systemBlocks: blocks, value: '<p>{{actionBlok}}</p>',
+    });
+
+    expect(blockNodes(container)).toHaveLength(0);
+    expect(container.querySelector('.ql-editor [data-variable="actionBlok"]')).toBeTruthy();
+  });
+
+  /** COMPOSE is the other representation, and must not be given the template one. */
+  it('leaves a placeholder alone in COMPOSE, where a block is a position node', () => {
+    const { container } = setup({
+      mode: 'COMPOSE', value: '<p>Trước</p>{{actionBlock}}<p>Sau</p>',
+    });
+
+    expect(container.querySelectorAll('.ql-editor [data-template-block]')).toHaveLength(0);
+  });
+});
+
+// ── §38 what the host would SAVE carries no editor furniture ────────────────
+
+/**
+ * The save-payload contract, on one document carrying every feature at once.
+ *
+ * Each of these has its own test above; this one exists because the failure they guard against is not
+ * "one conversion is wrong" but "one conversion was forgotten" — a chip class, a wrapper div, a
+ * `contenteditable` flag or a guard character reaching the database, the renderer and then a recipient.
+ * Asserted on what the editor emits, which is exactly what the screen puts in the payload.
+ */
+describe('the save payload', () => {
+  const EVERYTHING = [
+    '<p style="text-align: center;"><span style="font-size: 18px; color: rgb(255, 0, 0);">Kính gửi {{fullName}}</span></p>',
+    '<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">',
+    '<ul><li>Một</li><li>Hai</li></ul>',
+    '<table role="presentation" style="border-collapse:collapse"><tbody><tr>',
+    '<td style="border:1px solid #dbe4ee">{{delegationName}}</td></tr></tbody></table>',
+    '<p>Trân trọng, {{senderName}}</p>',
+    '{{actionBlock}}',
+  ].join('');
+
+  it('is canonical content and nothing else', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE',
+      variables: [
+        { name: 'fullName', label: 'Họ tên' },
+        { name: 'delegationName', label: 'Tên đoàn' },
+        { name: 'senderName', label: 'Họ tên người gửi' },
+      ],
+      systemBlocks: [{ name: 'actionBlock', label: 'Khu vực nút thao tác' }],
+      value: EVERYTHING,
+    });
+
+    const q = quillOf(container);
+    await act(async () => { q.insertText(0, 'x', 'user'); });
+    await waitFor(() => expect(emitted().length).toBeGreaterThan(0));
+    const payload = emitted().at(-1) ?? '';
+
+    // Editor furniture — every spelling of it.
+    for (const forbidden of [
+      'pems-variable-chip', 'data-variable', 'data-label',
+      'pems-template-block', 'data-template-block',
+      'pems-email-table', 'data-email-table', 'data-selected',
+      'contenteditable', 'ql-ui', 'data-list',
+      'Khu vực nút thao tác', 'Họ tên',        // labels shown on screen, never sent
+      '﻿', '​',                      // Quill's guard characters
+    ]) {
+      expect(payload).not.toContain(forbidden);
+    }
+
+    // …and everything that IS content.
+    for (const kept of [
+      '{{fullName}}', '{{delegationName}}', '{{senderName}}', '{{actionBlock}}',
+      '<hr', '<ul>', '<li>', '<table', 'border:1px solid #dbe4ee',
+      'text-align: center', 'font-size: 18px', 'color: rgb(255, 0, 0)',
+    ]) {
+      expect(payload).toContain(kept);
+    }
+  });
+});
+
+// ── §16 lists reach storage in their canonical shape ────────────────────────
+
+/**
+ * Quill draws a list as `<ol><li data-list="bullet"><span class="ql-ui">` — its own CSS-dependent
+ * spelling, with a marker element that means nothing outside the editor. None of that may be stored: a
+ * mail client has no `ql-*` stylesheet, so a bulleted list saved that way arrives numbered.
+ *
+ * It already does not reach storage, because react-quill-new hands this component Quill's SEMANTIC html.
+ * That is a property of the stack rather than of anything written here, which is exactly why it is worth
+ * a test: a future change of that default would silently start saving editor markup.
+ */
+describe('list canonicalisation', () => {
+  it.each([
+    ['bullet', '<ul><li>Một</li><li>Hai</li></ul>', '<ul>'],
+    ['ordered', '<ol><li>Một</li><li>Hai</li></ol>', '<ol>'],
+  ])('stores a %s list as plain markup', async (_kind, stored, tag) => {
+    const { container, emitted } = setup({ mode: 'TEMPLATE', value: stored });
+
+    const q = quillOf(container);
+    await act(async () => { q.insertText(0, 'x', 'user'); });
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('<li>'));
+    const out = emitted().at(-1) ?? '';
+    expect(out).toContain(tag);
+    expect(out).not.toContain('ql-ui');
+    expect(out).not.toContain('data-list');
+    expect(out).toContain('Hai');
+  });
+});
+
+// ── §4 / §7 two variables side by side ──────────────────────────────────────
+
+/**
+ * A caret between two adjacent variables — the difference between a template that can say
+ * `{{senderName}} / {{senderRole}}` and one that cannot.
+ *
+ * <b>What was wrong.</b> The chip element carried `contenteditable="false"`, which reads as the obvious
+ * way to say "this is an object". Quill 2 renders an inline embed as a guard character, a non-editable
+ * content node, and a second guard — the two guards being the only caret positions immediately before and
+ * after the object, and the only thing standing between two chips that touch. Marking the outer element
+ * non-editable put those guards in a non-editable subtree, so no caret could reach them: two variables
+ * inserted one after another became a wall, and the separator had to be typed BEFORE the second variable
+ * or not at all.
+ *
+ * <b>What is asserted here, and what cannot be.</b> Clicking down between two inline boxes is a hit-test
+ * against a rendered layout, and jsdom has no layout — so the click itself is not simulable, in this or
+ * any other test in this project. What IS asserted is the two things that decide whether the click can
+ * work: the guards exist and are inside an editable subtree, and text placed at the position between the
+ * chips comes back out in stored content with both placeholders intact and no guard character in it.
+ */
+describe('two variables side by side', () => {
+  const variables = [
+    { name: 'senderName', label: 'Họ tên người gửi' },
+    { name: 'senderRole', label: 'Vai trò người gửi' },
+  ];
+
+  const GUARD = '﻿';
+  const chips = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.ql-editor [data-variable]')) as HTMLElement[];
+
+  it('leaves the caret positions around a chip reachable', () => {
+    const { container } = setup({
+      mode: 'TEMPLATE', variables, value: '<p>{{senderName}}{{senderRole}}</p>',
+    });
+
+    const [first, second] = chips(container);
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+
+    for (const chip of [first, second]) {
+      // The label is the untouchable part — not the element around it.
+      expect(chip.getAttribute('contenteditable')).toBeNull();
+      expect(chip.querySelector('span[contenteditable="false"]')).toBeTruthy();
+
+      // A guard at each end, and nothing above them saying "not editable".
+      const guards = Array.from(chip.childNodes).filter(
+        (n) => n.nodeType === Node.TEXT_NODE && n.textContent === GUARD,
+      );
+      expect(guards).toHaveLength(2);
+      expect(chip.closest('[contenteditable="false"]')).toBeNull();
+    }
+  });
+
+  it('takes a character typed between them, and stores both placeholders around it', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE', variables, value: '<p>{{senderName}}{{senderRole}}</p>',
+    });
+
+    // Index 1 is exactly between the two embeds: each is one unit long.
+    const q = quillOf(container);
+    await act(async () => {
+      q.insertText(1, '/', 'user');
+    });
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{senderName}}'));
+    const out = emitted().at(-1) ?? '';
+    expect(out).toContain('{{senderName}}/{{senderRole}}');
+    // Editor furniture never reaches stored content — §13.
+    expect(out).not.toContain(GUARD);
+    expect(out).not.toContain('​');
+    expect(out).not.toContain('pems-variable-chip');
+  });
+
+  /**
+   * The same with spaces around the separator — asserted by MEANING rather than by spelling.
+   *
+   * Quill writes a space at the edge of a text run as `&nbsp;`, here as everywhere else in this editor
+   * (see the change-attribution suite, which says the same thing about ordinary typing). That is one
+   * whitespace character, not a run, and both the canonicaliser and every mail client read it as a
+   * space — so what is asserted is that the document MEANS `{{senderName}} / {{senderRole}}`. Matching
+   * the entity literally would be pinning Quill's spelling, and rewriting it on the way out would be the
+   * whitespace-editing V4 §7.4 refuses to do.
+   */
+  it('takes a spaced separator between them', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE', variables, value: '<p>{{senderName}}{{senderRole}}</p>',
+    });
+
+    const q = quillOf(container);
+    await act(async () => {
+      q.insertText(1, ' / ', 'user');
+    });
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('/'));
+    const out = emitted().at(-1) ?? '';
+    expect(isSameEmailHtml(out, '<p>{{senderName}} / {{senderRole}}</p>')).toBe(true);
+    expect(out).not.toContain(GUARD);
+  });
+
+  it('stores two touching variables with nothing at all between them', async () => {
+    const { container, emitted } = setup({
+      mode: 'TEMPLATE', variables, value: '<p>x{{senderName}}{{senderRole}}</p>',
+    });
+
+    // A real edit somewhere else, so the host is handed the document as it now stands.
+    const q = quillOf(container);
+    await act(async () => {
+      q.insertText(0, 'y', 'user');
+    });
+
+    await waitFor(() => expect(emitted().at(-1) ?? '').toContain('{{senderRole}}'));
+    expect(emitted().at(-1)).toContain('{{senderName}}{{senderRole}}');
+  });
+
+  it('deletes a whole variable rather than half of one', async () => {
+    const { container, emitted, html } = setup({
+      mode: 'TEMPLATE', variables, value: '<p>{{senderName}}{{senderRole}}</p>',
+    });
+
+    const q = quillOf(container);
+    await act(async () => {
+      q.deleteText(0, 1, 'user');            // backspace over the first chip
+    });
+
+    await waitFor(() => expect(html()).not.toContain('data-variable="senderName"'));
+    const out = emitted().at(-1) ?? '';
+    expect(out).toContain('{{senderRole}}');
+    // Not `{{senderNam` or a stray brace: an embed goes whole or not at all.
+    expect(out).not.toContain('senderName');
+    expect(out).not.toContain('{{}}');
+  });
+
+  it('inserts two variables in a row through the handle, then takes a separator between them', async () => {
+    const ref = React.createRef<EmailRichTextEditorHandle>();
+    const seen: string[] = [];
+
+    function Host() {
+      const [html, setHtml] = useState('<p></p>');
+      return (
+        <EmailRichTextEditor
+          ref={ref}
+          mode="TEMPLATE"
+          variables={variables}
+          value={html}
+          onChange={(next) => { seen.push(next); setHtml(next); }}
+        />
+      );
+    }
+
+    const { container } = render(<Host />);
+
+    await act(async () => { ref.current!.insertVariable(variables[0]); });
+    await act(async () => { ref.current!.insertVariable(variables[1]); });
+
+    await waitFor(() => expect(seen.at(-1) ?? '').toContain('{{senderRole}}'));
+
+    const q = quillOf(container);
+    await act(async () => {
+      q.insertText(1, ' - ', 'user');
+    });
+
+    await waitFor(() => expect(seen.at(-1) ?? '').toContain('-'));
+    // By meaning, for the reason given above: Quill spells a boundary space as `&nbsp;`.
+    expect(isSameEmailHtml(seen.at(-1) ?? '', '<p>{{senderName}} - {{senderRole}}</p>')).toBe(true);
+  });
+
+  it('survives save and reload with the text between the variables intact', async () => {
+    const stored = '<p>{{senderName}} / {{senderRole}}</p>';
+    const seen: string[] = [];
+
+    function Host() {
+      const [html, setHtml] = useState(stored);
+      return (
+        <EmailRichTextEditor
+          mode="TEMPLATE"
+          variables={variables}
+          value={html}
+          onChange={(next) => { seen.push(next); setHtml(next); }}
+        />
+      );
+    }
+
+    const { container } = render(<Host />);
+    await waitFor(() => expect(container.querySelector('.ql-editor')).toBeTruthy());
+
+    // Both variables are still objects on screen…
+    expect(container.querySelectorAll('.ql-editor [data-variable]')).toHaveLength(2);
+    // …and what a save would write means the same as what was loaded.
+    expect(isSameEmailHtml(seen.at(-1) ?? stored, stored)).toBe(true);
   });
 });
 
@@ -495,6 +1138,211 @@ describe('table editing', () => {
     setup({ mode: 'TEMPLATE', value: '<p>không có bảng</p>' });
 
     expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).toBeDisabled();
+  });
+
+  /**
+   * §5 — the table as an object the author can see they have selected, and can type after.
+   *
+   * The node is atomic by design, which is not the complaint: the complaint is that an author who
+   * inserted one had no way to tell WHICH table "Chỉnh sửa bảng" would open, and — when the table was
+   * the last thing in the document — nowhere to put the caret afterwards, so the editor read as stuck.
+   */
+  describe('selecting a table, and writing after one', () => {
+    const TWO = `${STORED}<p>giữa</p>${STORED}`;
+
+    it('marks the clicked table, and only that one', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: TWO });
+      const nodes = Array.from(
+        utils.container.querySelectorAll('.pems-email-table'),
+      ) as HTMLElement[];
+      expect(nodes).toHaveLength(2);
+
+      fireEvent.click(nodes[1]);
+
+      await waitFor(() => expect(nodes[1].getAttribute('data-selected')).toBe('true'));
+      expect(nodes[0].getAttribute('data-selected')).toBeNull();
+
+      fireEvent.click(nodes[0]);
+      await waitFor(() => expect(nodes[0].getAttribute('data-selected')).toBe('true'));
+      expect(nodes[1].getAttribute('data-selected')).toBeNull();
+    });
+
+    it('drops the mark when the click lands outside any table', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: TWO });
+      const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+
+      fireEvent.click(node);
+      await waitFor(() => expect(node.getAttribute('data-selected')).toBe('true'));
+
+      fireEvent.click(utils.root);
+
+      await waitFor(() => expect(node.getAttribute('data-selected')).toBeNull());
+      expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).toBeDisabled();
+    });
+
+    /**
+     * The selected mark is editor furniture, and furniture must not become an edit. It is written onto
+     * the wrapper element, which `nodesToTables` removes on the way to stored content — so selecting a
+     * table cannot make the screen above offer to save one nobody touched.
+     */
+    it('is not an edit, and never reaches stored content', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED });
+      const before = utils.emitted().length;
+      const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+
+      fireEvent.click(node);
+
+      await waitFor(() => expect(node.getAttribute('data-selected')).toBe('true'));
+      expect(utils.emitted().length).toBe(before);
+      for (const html of utils.emitted()) expect(html).not.toContain('data-selected');
+    });
+
+    /**
+     * The caret goes AFTER the table, so the next thing typed continues below it rather than jumping to
+     * the top of the document — which is where it used to go, because the toolbar click had blurred the
+     * editor and a blurred editor answers 0 when asked where the caret is.
+     *
+     * A table inserted at the very END of a body is the one case this cannot fix: the last line is then
+     * the object itself, so the document has no position after it, and neither Quill nor the html it is
+     * given can be made to hold an empty one (see the notes above `dropTrailingBlank`). The author's
+     * closing sentence has to be written before the table is added, or after it by pressing Enter first.
+     */
+    it('puts the caret after a table, ready for the next sentence', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: '<p>trên</p><p>dưới</p>' });
+
+      // The caret sits at the end of the first line, where an author would put the table.
+      const q = quillOf(utils.container);
+      q.setSelection(5, 0, 'user');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+      fireEvent.click(await screen.findByTestId('table-dialog-apply'));
+      await waitFor(() => expect(utils.html()).toContain('<table'));
+
+      await act(async () => {
+        q.insertText(q.getSelection()?.index ?? 0, 'sau bảng', 'user');
+      });
+
+      await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('sau'));
+      const out = utils.emitted().at(-1) ?? '';
+      expect(out.indexOf('sau')).toBeGreaterThan(out.indexOf('</table>'));
+      expect(out.indexOf('trên')).toBeLessThan(out.indexOf('<table'));
+    });
+
+    it('leaves the table it has just inserted selected, ready to edit', async () => {
+      setup({ mode: 'TEMPLATE', value: '<p>trên</p>' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Chèn bảng' }));
+      fireEvent.click(await screen.findByTestId('table-dialog-apply'));
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).not.toBeDisabled());
+    });
+
+    it('keeps the table selected after an edit, so a second row is one click away', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED });
+      const apply = await openDialog(utils);
+
+      fireEvent.change(cell(2, 2), { target: { value: '25' } });
+      fireEvent.click(apply);
+
+      await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('>25<'));
+      // The element the state was holding has been replaced; the selection followed the replacement.
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).not.toBeDisabled());
+      const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+      expect(node.getAttribute('data-selected')).toBe('true');
+    });
+
+    /**
+     * The stale-node case, and why the selection is held as a POSITION as well as an element.
+     *
+     * A controlled Quill rebuilds its whole document whenever the value is re-fed, so the element a
+     * click selected is detached moments later — and "Chỉnh sửa bảng" was then pointing at markup no
+     * longer in the document, which resolves an index in a document that node is not part of. The
+     * position survives the rebuild, so the selection is re-resolved against whatever the editor now
+     * holds; when the table is genuinely gone, the button goes back to being disabled.
+     */
+    it('refuses to edit a table that has left the document, and says why', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED });
+      const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+      fireEvent.click(node);
+      await waitFor(() => expect(node.getAttribute('data-selected')).toBe('true'));
+
+      const q = quillOf(utils.container);
+      await act(async () => {
+        q.setText('bảng đã đi\n', 'user');
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Chỉnh sửa bảng' }));
+
+      // No dialog on a table that is not there, and no silent no-op either.
+      expect(screen.queryByTestId('table-dialog-apply')).toBeNull();
+      expect(utils.onNotice).toHaveBeenCalledWith(expect.stringContaining('Vui lòng chọn lại bảng'));
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Chỉnh sửa bảng' })).toBeDisabled());
+    });
+  });
+
+  // ── §6 the dialog's own controls ──────────────────────────────────────────
+
+  describe('the table dialog', () => {
+    it('will not offer a variable until a cell has been chosen', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED, variables });
+      await openDialog(utils);
+
+      const picker = screen.getByLabelText('Chèn biến vào ô đang chọn') as HTMLSelectElement;
+      // Plainly unavailable, rather than available and silently doing nothing.
+      expect(picker).toBeDisabled();
+      expect(picker.options[0].text).toBe('Chọn một ô trước');
+
+      fireEvent.focus(cell(1, 1));
+
+      await waitFor(() => expect(picker).not.toBeDisabled());
+      expect(screen.getByTestId('table-variable-target').textContent).toBe('Ô hàng 1 cột 1');
+    });
+
+    it('keeps what was typed when a row is added', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED });
+      const apply = await openDialog(utils);
+
+      fireEvent.change(cell(2, 2), { target: { value: 'giữ lại' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Thêm hàng' }));
+
+      expect(cell(2, 2).value).toBe('giữ lại');
+      fireEvent.click(apply);
+      await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('giữ lại'));
+    });
+
+    it('keeps what was typed when a column is added', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED });
+      const apply = await openDialog(utils);
+
+      fireEvent.change(cell(2, 1), { target: { value: 'vẫn đây' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Thêm cột' }));
+
+      expect(cell(2, 1).value).toBe('vẫn đây');
+      fireEvent.click(apply);
+      await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('vẫn đây'));
+    });
+
+    it('inserts the variable into the cell that was chosen, at the caret', async () => {
+      const utils = setup({ mode: 'TEMPLATE', value: STORED, variables });
+      const apply = await openDialog(utils);
+
+      const target = cell(2, 1);
+      fireEvent.focus(target);
+      target.setSelectionRange(0, 0);
+      fireEvent.select(target);
+
+      fireEvent.change(screen.getByLabelText('Chèn biến vào ô đang chọn'), { target: { value: 'senderName' } });
+
+      // In THAT cell, at its head — not appended to whichever cell rendered last.
+      await waitFor(() => expect(cell(2, 1).value).toBe('{{senderName}}Ghế'));
+      expect(cell(2, 2).value).toBe('20');
+
+      fireEvent.click(apply);
+      await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('{{senderName}}'));
+    });
   });
 
   it('leaves the document alone when the dialog is cancelled', async () => {

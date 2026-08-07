@@ -12,6 +12,21 @@
  * late, or by a template whose contract has since changed. The name is the truth; the label is decoration
  * carried alongside it.
  *
+ * <b>Where `contenteditable="false"` belongs, and where it does not.</b> On the OUTER chip element it
+ * looks like the obvious way to say "this is an object" — and it is the reason two variables next to each
+ * other used to be a wall no caret could get between, so a template could not say `{{A}} / {{B}}` unless
+ * the separator was typed before the second chip was inserted.
+ *
+ * Quill 2's `Embed` already solves this, and the attribute was defeating it. Its constructor moves the
+ * chip's contents into a content node it marks non-editable, and wraps that in two `﻿` guard text
+ * nodes INSIDE the outer element — the guards are the caret positions immediately before and after the
+ * object, and `Embed.restore()` watches them: a character typed into one is lifted out of the embed and
+ * re-inserted beside it, as ordinary text. Marking the outer element non-editable put the guards in a
+ * non-editable subtree, so no caret could land in them and the mechanism never ran.
+ *
+ * So the outer element stays editable and the label stays untouchable — which is the property that
+ * mattered: there is still no half of a placeholder to leave behind.
+ *
  * <b>The import that matters.</b> `Quill` from `react-quill-new`, never from `quill` — two copies exist
  * and registering against the top-level 1.3.7 does nothing at all to the editor the user sees.
  */
@@ -79,8 +94,9 @@ export function registerVariableChipBlot(): boolean {
 
       node.setAttribute('data-variable', name);
       node.setAttribute('data-label', label);
-      // Not editable: the point of the chip is that there is no half of it to leave behind.
-      node.setAttribute('contenteditable', 'false');
+      // The OUTER element is deliberately left editable — see the note below on where
+      // `contenteditable="false"` belongs. The label still cannot be edited: Quill's `Embed` moves it
+      // into a content node it marks non-editable itself, in its constructor, a moment after this runs.
       node.textContent = label;
       return node;
     }
@@ -113,8 +129,11 @@ export function variablesToChips(
   PLACEHOLDER.lastIndex = 0;
   return html.replace(PLACEHOLDER, (whole, name: string) => {
     const label = labelOf(name) ?? name;
+    // No `contenteditable` here either: Quill rebuilds the element through `create()` when it parses
+    // this, and the two spellings must agree or a test reading this string would be reading a chip the
+    // editor never renders.
     return `<span class="${VARIABLE_CHIP_CLASS}" data-variable="${escapeAttr(name)}"`
-      + ` data-label="${escapeAttr(label)}" contenteditable="false">${escapeText(label)}</span>`;
+      + ` data-label="${escapeAttr(label)}">${escapeText(label)}</span>`;
   });
 }
 

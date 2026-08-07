@@ -57,6 +57,16 @@ export function EmailTableDialog({ initial, variables, onCancel, onApply }: Emai
    */
   const focused = useRef<{ row: number; col: number; start: number; end: number } | null>(null);
 
+  /**
+   * The same fact as `focused`, in a form the markup can read.
+   *
+   * The ref cannot drive the UI — nothing re-renders when it changes — and without something that does,
+   * the picker looked usable with no cell chosen and then did nothing at all when it was used. A control
+   * that silently declines is worse than one that is plainly not available yet: the author repeats the
+   * action, decides the variable is broken, and types the placeholder by hand.
+   */
+  const [activeCell, setActiveCell] = useState<{ row: number; col: number } | null>(null);
+
   const rowCount = model.rows.length;
   const colCount = model.rows[0]?.length ?? 0;
 
@@ -99,12 +109,23 @@ export function EmailTableDialog({ initial, variables, onCancel, onApply }: Emai
     focused.current = {
       row, col, start: el.selectionStart ?? el.value.length, end: el.selectionEnd ?? el.value.length,
     };
+    // Same cell, same object: this runs on every keystroke, and a fresh object each time would re-render
+    // the whole grid mid-word for no visible difference.
+    setActiveCell((prev) => (prev && prev.row === row && prev.col === col ? prev : { row, col }));
   }, []);
 
   const preview = useMemo(
     () => `${rowCount} hàng × ${colCount} cột`,
     [rowCount, colCount],
   );
+
+  /**
+   * Whether there is a cell for a variable to go into — asked of the MODEL, not only of the ref.
+   *
+   * A cell that was focused and then deleted (its row dropped, its column removed) leaves the ref
+   * pointing at a position the table no longer has, and the picker would offer to insert into it.
+   */
+  const cellIsLive = !!activeCell && !!model.rows[activeCell.row]?.[activeCell.col];
 
   return (
     <div
@@ -245,25 +266,34 @@ export function EmailTableDialog({ initial, variables, onCancel, onApply }: Emai
           </div>
 
           {variables && variables.length > 0 && (
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <label className="text-xs text-gray-600" htmlFor="pems-table-variable">
                 Chèn biến vào ô đang chọn
               </label>
               <select
                 id="pems-table-variable"
                 aria-label="Chèn biến vào ô đang chọn"
-                className="h-8 max-w-xs rounded-lg border border-gray-200 px-1.5 text-xs outline-none focus:border-[#004c91]"
+                // Not merely ignored when there is no cell to insert into — said. The token has to go
+                // somewhere, and "wherever was rendered last" is not a position anybody asked for.
+                disabled={!cellIsLive}
+                title={cellIsLive ? undefined : 'Chọn một ô trước'}
+                className="h-8 max-w-xs rounded-lg border border-gray-200 px-1.5 text-xs outline-none focus:border-[#004c91] disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
                 value=""
                 onChange={(e) => {
                   if (e.target.value) insertVariable(e.target.value);
                   e.target.value = '';
                 }}
               >
-                <option value="">Chọn biến…</option>
+                <option value="">{cellIsLive ? 'Chọn biến…' : 'Chọn một ô trước'}</option>
                 {variables.map((v) => (
                   <option key={v.name} value={v.name}>{`${v.label} — {{${v.name}}}`}</option>
                 ))}
               </select>
+              {cellIsLive && (
+                <span className="text-[11px] text-gray-400" data-testid="table-variable-target">
+                  {`Ô hàng ${activeCell!.row + 1} cột ${activeCell!.col + 1}`}
+                </span>
+              )}
             </div>
           )}
         </div>
