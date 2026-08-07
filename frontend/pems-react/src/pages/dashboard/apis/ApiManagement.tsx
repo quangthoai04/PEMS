@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ScanLine, Loader2, RefreshCw, Power, PowerOff,
-  Settings2, Activity, KeyRound, X, Languages, ScanFace, Mail,
+  Settings2, Activity, KeyRound, X, Languages, ScanFace, Mail, HardDrive, Link2, Unlink,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiManagementApi } from '../../../features/api-management/api/apiManagementApi';
@@ -23,6 +23,7 @@ import {
   getApiErrorMessage,
   showLoadingToast,
   showMessageErrorToast,
+  showSuccessToast,
   updateToastSuccess,
   updateToastError,
   updateToastMessageError,
@@ -32,6 +33,36 @@ import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
 const labelCls = 'block text-xs font-bold text-gray-500 uppercase mb-1';
+
+/** api_code của cấu hình Google Drive — khớp seed canonical, dùng làm định danh duy nhất. */
+const GOOGLE_DRIVE_API_CODE = 'GOOGLE_DRIVE_STORAGE';
+
+/**
+ * Diễn giải các mã lý do backend gửi kèm khi luồng cấp quyền Google Drive thất bại.
+ * Danh sách cố định — backend không bao giờ đưa nội dung Google trả về lên query string.
+ */
+const GOOGLE_DRIVE_OAUTH_FAILURES: Record<string, string> = {
+  access_denied: 'Bạn đã từ chối cấp quyền trên màn hình Google. Chưa có gì thay đổi.',
+  invalid_state: 'Phiên kết nối không hợp lệ. Vui lòng bấm kết nối lại từ trang này.',
+  state_expired: 'Phiên kết nối đã hết hạn. Vui lòng bấm kết nối lại và hoàn tất trong 5 phút.',
+  no_refresh_token:
+    'Google không cấp refresh token mới nên hệ thống giữ nguyên kết nối cũ. '
+    + 'Hãy gỡ quyền ứng dụng PEMS trong tài khoản Google rồi kết nối lại.',
+  token_exchange_failed: 'Google từ chối hoàn tất kết nối. Vui lòng thử kết nối lại.',
+  save_failed: 'Không lưu được kết nối vào hệ thống. Vui lòng thử lại.',
+  config_missing: 'Máy chủ chưa được cấu hình OAuth Google Drive. Vui lòng liên hệ quản trị hệ thống.',
+};
+
+/**
+ * Lỗi test kết nối Google Drive được backend phân loại sẵn theo GoogleDriveErrorCodes, và mỗi mã ứng với
+ * một hành động sửa khác nhau — nên message của backend được dùng nguyên văn thay vì gộp thành
+ * "vui lòng thử lại". Riêng các mã dưới đây báo hiệu credential cần được cấp lại.
+ */
+const GOOGLE_DRIVE_RECONNECT_ERROR_CODES = new Set([
+  'GOOGLE_DRIVE_TOKEN_EXPIRED',
+  'GOOGLE_DRIVE_CREDENTIAL_UNREADABLE',
+  'GOOGLE_DRIVE_CONFIG_MISSING',
+]);
 
 /**
  * Diễn giải lỗi test kết nối Google Document AI thành thông báo rõ ràng cho người dùng.
@@ -65,6 +96,12 @@ export function ApiManagement() {
   const [formKind, setFormKind] = useState<'OCR' | 'TRANSLATION' | 'FACE_DETECTION' | 'RESEND' | null>(null);
   const [testBusy, setTestBusy] = useState<number | null>(null);
   const [statusBusy, setStatusBusy] = useState<number | null>(null);
+  const [driveOAuthBusy, setDriveOAuthBusy] = useState(false);
+  /**
+   * Mã lỗi của lần test Google Drive vừa chạy trong phiên này. Dùng để hiện ngay banner "cần kết nối lại"
+   * mà không phải chờ tải lại danh sách — trạng thái lâu dài vẫn nằm ở `credentialStatus` từ backend.
+   */
+  const [driveLiveErrorCode, setDriveLiveErrorCode] = useState<string | null>(null);
 
   // Panel: quota + logs of the selected config
   const [panelTarget, setPanelTarget] = useState<ApiIntegration | null>(null);
@@ -88,6 +125,31 @@ export function ApiManagement() {
 
   useEffect(() => { void load(); }, [load]);
 
+  /**
+   * Backend kết thúc luồng OAuth bằng một redirect về đúng trang này với `?googleDriveOAuth=...`.
+   * Đọc kết quả, thông báo, tải lại thẻ, rồi xoá query param — để F5 không hiện lại toast cũ.
+   */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('googleDriveOAuth');
+    if (!outcome) return;
+
+    if (outcome === 'success') {
+      showSuccessToast('Đã kết nối Google Drive thành công.', 'google-drive-oauth');
+      setDriveLiveErrorCode(null);
+      void load();
+    } else {
+      const reason = params.get('reason') ?? '';
+      showMessageErrorToast(
+        GOOGLE_DRIVE_OAUTH_FAILURES[reason]
+          ?? 'Không hoàn tất được kết nối Google Drive. Vui lòng thử lại.',
+        'google-drive-oauth',
+      );
+    }
+
+    navigate(window.location.pathname, { replace: true });
+  }, [load, navigate]);
+
   useEffect(() => {
     if (!panelTarget) return;
     if (panelTab === 'QUOTA') {
@@ -99,24 +161,66 @@ export function ApiManagement() {
   }, [panelTarget, panelTab, logsPage]);
 
   const test = async (config: ApiIntegration) => {
+    const isDrive = config.apiCode === GOOGLE_DRIVE_API_CODE;
     setTestBusy(config.apiConfigId);
     const toastId = showLoadingToast('Đang kiểm tra kết nối...', `api-test-${config.apiConfigId}`);
     try {
       const result = await apiManagementApi.testConnection(config.apiConfigId);
       if (result.success) {
         updateToastSuccess(toastId, `Kết nối API thành công (${result.responseTimeMs} ms).`);
+        if (isDrive) setDriveLiveErrorCode(null);
       } else {
-        updateToastMessageError(toastId, describeTestFailure(undefined, result.message));
+        // Backend đã phân loại lỗi Drive theo từng nguyên nhân (hết hạn / sai client secret / Google lỗi),
+        // mỗi mã ứng với một cách sửa khác nhau — nên giữ nguyên message thay vì gộp lại.
+        updateToastMessageError(
+          toastId,
+          isDrive ? result.message : describeTestFailure(undefined, result.message),
+        );
+        if (isDrive) setDriveLiveErrorCode(result.errorCode ?? null);
       }
       await load();
     } catch (e: any) {
-      const message = describeTestFailure(
-        e?.response?.status,
-        getApiErrorMessage(e, 'Test kết nối thất bại. Vui lòng thử lại.'),
-      );
+      const message = isDrive
+        ? getApiErrorMessage(e, 'Test kết nối Google Drive thất bại. Vui lòng thử lại.')
+        : describeTestFailure(
+          e?.response?.status,
+          getApiErrorMessage(e, 'Test kết nối thất bại. Vui lòng thử lại.'),
+        );
+      if (isDrive) setDriveLiveErrorCode(e?.response?.data?.errorCode ?? null);
       updateToastMessageError(toastId, message);
     } finally {
       setTestBusy(null);
+    }
+  };
+
+  /**
+   * Mở màn hình cấp quyền của Google. Điều hướng bằng `window.location.assign` chứ không dùng router —
+   * đích đến nằm ngoài ứng dụng.
+   */
+  const connectGoogleDrive = async () => {
+    setDriveOAuthBusy(true);
+    const toastId = showLoadingToast('Đang mở trang cấp quyền Google...', 'google-drive-oauth');
+    try {
+      const { authorizationUrl } = await apiManagementApi.startGoogleDriveOAuth();
+      window.location.assign(authorizationUrl);
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Không mở được luồng kết nối Google Drive.');
+      setDriveOAuthBusy(false);
+    }
+  };
+
+  const disconnectGoogleDrive = async () => {
+    setDriveOAuthBusy(true);
+    const toastId = showLoadingToast('Đang ngắt kết nối Google Drive...', 'google-drive-oauth');
+    try {
+      await apiManagementApi.disconnectGoogleDrive();
+      setDriveLiveErrorCode(null);
+      await load();
+      updateToastSuccess(toastId, 'Đã ngắt kết nối Google Drive.');
+    } catch (e: any) {
+      updateToastError(toastId, e, 'Không ngắt được kết nối Google Drive.');
+    } finally {
+      setDriveOAuthBusy(false);
     }
   };
 
@@ -233,27 +337,43 @@ export function ApiManagement() {
               </button>
             </div>
           )}
-          {integrations.map((config) => (
+          {integrations.map((config) => {
+            const isGoogleDrive = config.apiCode === GOOGLE_DRIVE_API_CODE;
+            // Hiện banner "cần cấp lại quyền" khi backend đã ghi nhận credential lỗi, hoặc khi lần test
+            // vừa chạy trong phiên này trả về một mã lỗi mà cách sửa là kết nối lại.
+            const driveNeedsReconnect = isGoogleDrive
+              && (config.credentialStatus === 'ERROR'
+                || (driveLiveErrorCode !== null && GOOGLE_DRIVE_RECONNECT_ERROR_CODES.has(driveLiveErrorCode)));
+
+            return (
             <div key={config.apiConfigId} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-[#e6eff7] flex items-center justify-center">
-                    {config.purpose === 'NEWS_TRANSLATION'
-                      ? <Languages className="w-5 h-5 text-[#004c91]" />
-                      : config.purpose === 'FACE_DETECTION'
-                        ? <ScanFace className="w-5 h-5 text-[#004c91]" />
-                        : config.purpose === 'EMAIL_DELIVERY'
-                          ? <Mail className="w-5 h-5 text-[#004c91]" />
-                          : <ScanLine className="w-5 h-5 text-[#004c91]" />}
+                    {isGoogleDrive
+                      ? <HardDrive className="w-5 h-5 text-[#004c91]" />
+                      : config.purpose === 'NEWS_TRANSLATION'
+                        ? <Languages className="w-5 h-5 text-[#004c91]" />
+                        : config.purpose === 'FACE_DETECTION'
+                          ? <ScanFace className="w-5 h-5 text-[#004c91]" />
+                          : config.purpose === 'EMAIL_DELIVERY'
+                            ? <Mail className="w-5 h-5 text-[#004c91]" />
+                            : <ScanLine className="w-5 h-5 text-[#004c91]" />}
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-800">{config.name}</h3>
                     <p className="text-xs text-gray-400 font-medium">
-                      {config.providerName || '—'} · {config.purpose || '—'}
+                      {config.providerName || '—'} · {isGoogleDrive ? 'GOOGLE_DRIVE_STORAGE' : config.purpose || '—'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {config.managementSource === 'HYBRID' && (
+                    <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#e6eff7] text-[#004c91] border border-[#c7dcef]"
+                      title="Client ID/Secret và các thư mục cấu hình trên server; riêng kết nối tài khoản Google quản lý tại đây">
+                      Hybrid
+                    </span>
+                  )}
                   {config.managementSource === 'ENVIRONMENT' && (
                     <span className="px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200"
                       title="Cấu hình qua environment trên server — chỉ xem trạng thái tại đây">
@@ -270,10 +390,23 @@ export function ApiManagement() {
                 </div>
               </div>
 
+              {driveNeedsReconnect && (
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                  <p className="text-sm font-bold text-amber-700">Kết nối Google Drive cần được cấp lại</p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Tài khoản Google dùng chung cần được cấp quyền lại. Trong lúc đó, các thao tác tải
+                    ảnh/tài liệu lên Drive sẽ không thực hiện được.
+                  </p>
+                </div>
+              )}
+
               <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Base URL</dt>
                   <dd className="text-gray-600 truncate">{config.baseUrl}</dd></div>
-                {config.purpose === 'EMAIL_DELIVERY' ? (
+                {isGoogleDrive ? (
+                  <div><dt className="text-xs text-gray-400 font-bold uppercase">Tài khoản</dt>
+                    <dd className="text-gray-600 truncate">Tài khoản Google dùng chung (OAuth)</dd></div>
+                ) : config.purpose === 'EMAIL_DELIVERY' ? (
                   <>
                     <div><dt className="text-xs text-gray-400 font-bold uppercase">From Address</dt>
                       <dd className="text-gray-600 truncate">{config.fromEmail ? `${config.fromName} <${config.fromEmail}>` : '—'}</dd></div>
@@ -293,12 +426,26 @@ export function ApiManagement() {
                   </>
                 )}
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Credential</dt>
-                  <dd className={`font-bold ${config.hasCredential || config.secretRef ? 'text-green-600' : 'text-red-500'}`}>
-                    <span className="inline-flex items-center gap-1">
-                      <KeyRound className="w-3.5 h-3.5" />
-                      {config.hasCredential ? 'Đã cấu hình (DB, mã hoá)' : config.secretRef ? `Secret ref: ${config.secretRef}` : 'Chưa có'}
-                    </span>
-                  </dd></div>
+                  {isGoogleDrive ? (
+                    <dd className={`font-bold ${
+                      config.credentialStatus === 'CONNECTED' ? 'text-green-600'
+                        : config.credentialStatus === 'ERROR' ? 'text-amber-600' : 'text-red-500'
+                    }`}>
+                      <span className="inline-flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        {config.credentialStatus === 'CONNECTED' ? 'Đã kết nối (DB, mã hoá)'
+                          : config.credentialStatus === 'ERROR' ? 'Đã kết nối — lần test gần nhất thất bại'
+                            : 'Chưa kết nối'}
+                      </span>
+                    </dd>
+                  ) : (
+                    <dd className={`font-bold ${config.hasCredential || config.secretRef ? 'text-green-600' : 'text-red-500'}`}>
+                      <span className="inline-flex items-center gap-1">
+                        <KeyRound className="w-3.5 h-3.5" />
+                        {config.hasCredential ? 'Đã cấu hình (DB, mã hoá)' : config.secretRef ? `Secret ref: ${config.secretRef}` : 'Chưa có'}
+                      </span>
+                    </dd>
+                  )}</div>
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Giới hạn</dt>
                   <dd className="text-gray-600">{config.rateLimitPerMinute ?? '—'}/phút · {config.monthlyQuota ?? '—'}/tháng</dd></div>
                 <div className="col-span-2"><dt className="text-xs text-gray-400 font-bold uppercase">Test gần nhất</dt>
@@ -332,10 +479,31 @@ export function ApiManagement() {
                     <Settings2 className="w-4 h-4" /> Chỉnh sửa
                   </button>
                 )}
+                {/* Google Drive không dùng form edit chung: credential của nó do Google cấp qua màn hình
+                    consent, không phải thứ gõ tay vào ô nhập. */}
+                {config.canConnectOAuth && (
+                  <button
+                    onClick={() => void connectGoogleDrive()}
+                    disabled={driveOAuthBusy}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-bold text-white transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ${
+                      driveNeedsReconnect || config.credentialStatus === 'NOT_CONFIGURED'
+                        ? 'bg-[#f37021] hover:bg-[#d9621a]'
+                        : 'bg-[#004c91] hover:bg-[#003a70]'
+                    }`}
+                  >
+                    {driveOAuthBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                    {config.credentialStatus === 'NOT_CONFIGURED'
+                      ? 'Kết nối Google Drive'
+                      : 'Kết nối lại Google Drive'}
+                  </button>
+                )}
                 {config.canTest && (
                   <button
                     onClick={() => void test(config)}
-                    disabled={testBusy === config.apiConfigId}
+                    disabled={testBusy === config.apiConfigId
+                      || (isGoogleDrive && config.credentialStatus === 'NOT_CONFIGURED')}
+                    title={isGoogleDrive && config.credentialStatus === 'NOT_CONFIGURED'
+                      ? 'Cần kết nối Google Drive trước khi test' : undefined}
                     className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                   >
                     {testBusy === config.apiConfigId
@@ -361,20 +529,31 @@ export function ApiManagement() {
                     {config.status === 'ACTIVE' ? 'Tắt' : 'Kích hoạt'}
                   </button>
                 )}
+                {config.canDisconnectOAuth && (
+                  <button
+                    onClick={() => void disconnectGoogleDrive()}
+                    disabled={driveOAuthBusy}
+                    className="px-3 py-1.5 rounded-lg text-sm font-bold text-red-500 border border-red-200 hover:bg-red-50 transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                    title="Xoá kết nối đang lưu trong hệ thống. Không thu hồi quyền phía tài khoản Google."
+                  >
+                    <Unlink className="w-4 h-4" /> Ngắt kết nối
+                  </button>
+                )}
                 <button
                   onClick={() => { setPanelTarget(config); setPanelTab('QUOTA'); setLogsPage(1); }}
                   className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Activity className="w-4 h-4" /> Hạn mức & Nhật ký
                 </button>
-                {!config.canEdit && !config.canTest && !config.canToggleStatus && (
+                {!config.canEdit && !config.canTest && !config.canToggleStatus && !config.canConnectOAuth && (
                   <span className="text-xs text-gray-400 font-medium">
                     Cấu hình này được quản lý qua environment — chỉ xem trạng thái.
                   </span>
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

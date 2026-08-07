@@ -96,7 +96,7 @@ public sealed class SecretConfigurationValidatorTests
     }
 
     [Fact]
-    public void Production_google_drive_oauth_requires_client_secret_and_refresh_token()
+    public void Production_google_drive_oauth_requires_the_oauth_client()
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
             SecretConfigurationValidator.ValidateSecrets(
@@ -104,12 +104,39 @@ public sealed class SecretConfigurationValidatorTests
                     ("JwtSettings:SecretKey", "supplied"),
                     ("GoogleDrive:Enabled", "true"),
                     ("GoogleDrive:AuthMode", "OAuthUser"),
+                    ("GoogleDrive:ClientId", ""),
                     ("GoogleDrive:ClientSecret", ""),
-                    ("GoogleDrive:RefreshToken", "")),
+                    ("GoogleDrive:RedirectUri", "")),
                 Env("Production")));
 
+        Assert.Contains("GoogleDrive:ClientId", ex.Message);
         Assert.Contains("GoogleDrive:ClientSecret", ex.Message);
-        Assert.Contains("GoogleDrive:RefreshToken", ex.Message);
+        Assert.Contains("GoogleDrive:RedirectUri", ex.Message);
+    }
+
+    /// <summary>
+    /// The refresh token is runtime state, not deployment configuration: it lives encrypted in
+    /// api_configurations and is replaced by an ADMIN through the API-management screen.
+    ///
+    /// <para>
+    /// A host with no stored token — a fresh production database, or one whose token Google revoked — must
+    /// therefore START. Refusing to boot would take away the only screen that can reconnect it, which is
+    /// how replacing the token used to require a redeploy in the first place.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Production_google_drive_starts_without_a_refresh_token()
+    {
+        SecretConfigurationValidator.ValidateSecrets(
+            Config(
+                ("JwtSettings:SecretKey", "a-value-injected-by-the-environment"),
+                ("GoogleDrive:Enabled", "true"),
+                ("GoogleDrive:AuthMode", "OAuthUser"),
+                ("GoogleDrive:ClientId", "an-oauth-client-id"),
+                ("GoogleDrive:ClientSecret", "an-injected-client-secret"),
+                ("GoogleDrive:RedirectUri", "https://api.example.test/api/google-drive/oauth/callback"),
+                ("GoogleDrive:RefreshToken", "")),
+            Env("Production"));
     }
 
     [Fact]

@@ -576,6 +576,10 @@ public sealed class StubGoogleDriveStorage : IGoogleDriveStorageService
     public Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
         string folderName, string parentFolderId, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Folder creation is not part of any flow using this double.");
+
+    public Task<string> CheckConnectionAsync(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "The API-management connection test is not part of any flow using this double.");
 }
 
 /// <summary>Mutable current-user stub defaulting to the instance host of the fixtures.</summary>

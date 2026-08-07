@@ -4,9 +4,15 @@ namespace PEMS.Api.Extensions;
 /// Fail-closed start-up validation for runtime secrets.
 ///
 /// PEMS keeps non-sensitive configuration in tracked <c>appsettings*.json</c>, but every real credential
-/// (JWT signing key, SMTP password, Google Drive OAuth client secret / refresh token) must come from the
-/// environment — <c>JwtSettings__SecretKey</c>, <c>Smtp__Password</c>, <c>GoogleDrive__ClientSecret</c>,
-/// <c>GoogleDrive__RefreshToken</c> — or from a gitignored local override file.
+/// (JWT signing key, SMTP password, Google Drive OAuth client secret) must come from the environment —
+/// <c>JwtSettings__SecretKey</c>, <c>Smtp__Password</c>, <c>GoogleDrive__ClientSecret</c> — or from a
+/// gitignored local override file.
+///
+/// <para>
+/// The Drive REFRESH token is deliberately not on that list any more. It is runtime state held encrypted in
+/// the database and replaced through the API-management screen, so requiring it at start-up would keep a
+/// host with an expired token from booting into the one screen that can replace it.
+/// </para>
 ///
 /// The point of this class is that a missing secret must never silently degrade into a weak default:
 /// a production host with no JWT key would otherwise mint tokens signed with an empty/committed string.
@@ -54,12 +60,20 @@ public static class SecretConfigurationValidator
         }
 
         // Google Drive storage: same rule — only when the integration is switched on.
+        //
+        // What is required here is the OAuth CLIENT, not the refresh token. The token is runtime state now:
+        // it lives encrypted in api_configurations and is replaced by an ADMIN through the API-management
+        // screen, so a host with an expired or absent one must still START — that screen is where it gets
+        // fixed, and refusing to boot would take away the only way to fix it. RedirectUri joins the list
+        // because the reconnect flow cannot be started without it, and a mismatch is rejected by Google at
+        // the end of the round-trip rather than at the beginning.
         if (configuration.GetValue<bool>("GoogleDrive:Enabled")
             && string.Equals(configuration["GoogleDrive:AuthMode"], "OAuthUser", StringComparison.OrdinalIgnoreCase)
             && environment.IsProduction())
         {
+            if (!IsConfigured(configuration["GoogleDrive:ClientId"])) missing.Add("GoogleDrive:ClientId");
             if (!IsConfigured(configuration["GoogleDrive:ClientSecret"])) missing.Add("GoogleDrive:ClientSecret");
-            if (!IsConfigured(configuration["GoogleDrive:RefreshToken"])) missing.Add("GoogleDrive:RefreshToken");
+            if (!IsConfigured(configuration["GoogleDrive:RedirectUri"])) missing.Add("GoogleDrive:RedirectUri");
         }
 
         if (missing.Count == 0)

@@ -125,6 +125,8 @@ public sealed class FileDownloadAuthorizationTests : IDisposable
         public Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
             string folderName, string parentFolderId, CancellationToken ct = default)
             => throw new NotSupportedException();
+        public Task<string> CheckConnectionAsync(CancellationToken ct = default)
+            => throw new NotSupportedException();
     }
 
     private static ICurrentUserService Viewer(

@@ -155,6 +155,8 @@ export const API_ENDPOINTS = {
     upsertGoogleTranslation: '/api-integrations/news-translation/google-cloud-translation',
     upsertGoogleVisionFaceDetection: '/api-integrations/face-detection/google-cloud-vision',
     upsertResend: '/api-integrations/email-delivery/resend',
+    googleDriveOAuthStart: '/api-integrations/google-drive/oauth/start',
+    googleDriveOAuthDisconnect: '/api-integrations/google-drive/oauth/disconnect',
     update: (id: string | number) => `/api-integrations/${id}`,
     test: (id: string | number) => `/api-integrations/${id}/test`,
     enable: (id: string | number) => `/api-integrations/${id}/enable`,

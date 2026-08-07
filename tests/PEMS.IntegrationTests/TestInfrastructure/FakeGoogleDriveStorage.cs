@@ -103,6 +103,10 @@ public sealed class FakeGoogleDriveStorage : IGoogleDriveStorageService
         string externalFileId, long? from, long? to, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Ranged download is not part of any flow using this double.");
 
+    public Task<string> CheckConnectionAsync(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException(
+            "The API-management connection test is not part of any flow using this double.");
+
     private static string Sanitize(string name)
     {
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');

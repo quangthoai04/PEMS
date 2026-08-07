@@ -31,13 +31,43 @@ export interface ApiIntegration {
   allowedMimeTypes: string[];
   createdAt: string;
   updatedAt?: string | null;
-  /** DATABASE = quản lý qua console này; ENVIRONMENT = cấu hình trên server (read-only). */
-  managementSource: 'DATABASE' | 'ENVIRONMENT';
+  /**
+   * DATABASE = quản lý qua console này; ENVIRONMENT = cấu hình trên server (read-only);
+   * HYBRID = một phần trên server, một phần trong DB.
+   *
+   * Google Drive là trường hợp HYBRID: ClientId/ClientSecret/RedirectUri và các folder ID nằm ở
+   * environment, chỉ refresh token — thứ duy nhất hết hạn và cần thay thường xuyên — nằm trong DB.
+   */
+  managementSource: 'DATABASE' | 'ENVIRONMENT' | 'HYBRID';
   canEdit: boolean;
   canTest: boolean;
   canToggleStatus: boolean;
   canConfigureQuota: boolean;
+  /** ADMIN được mở luồng OAuth để cấp lại credential cho tích hợp này. */
+  canConnectOAuth: boolean;
+  /** ADMIN được xoá credential OAuth đang lưu. */
+  canDisconnectOAuth: boolean;
+  /** ERROR = đã có credential nhưng lần test kết nối gần nhất thất bại. Không bao giờ chứa giá trị token. */
+  credentialStatus: 'NOT_CONFIGURED' | 'CONNECTED' | 'ERROR';
 }
+
+/** URL màn hình cấp quyền của Google. Không chứa ClientSecret, không chứa token. */
+export interface GoogleDriveOAuthStartResult {
+  authorizationUrl: string;
+}
+
+/**
+ * Các lý do thất bại backend gửi kèm khi redirect về `?googleDriveOAuth=failed&reason=...`.
+ * Cố định và không nhạy cảm — backend không bao giờ đưa nội dung Google trả về lên query string.
+ */
+export type GoogleDriveOAuthFailureReason =
+  | 'access_denied'
+  | 'invalid_state'
+  | 'state_expired'
+  | 'no_refresh_token'
+  | 'token_exchange_failed'
+  | 'save_failed'
+  | 'config_missing';
 
 export interface UpsertGoogleDocumentAiOcrConfigRequest {
   name: string;

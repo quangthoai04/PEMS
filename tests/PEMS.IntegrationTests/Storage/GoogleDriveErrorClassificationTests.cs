@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Storage;
 using PEMS.Infrastructure.FileStorage.GoogleDrive;
 using Xunit;
@@ -225,8 +226,22 @@ public sealed class GoogleDriveErrorClassificationTests
 
         return new GoogleDriveStorageService(
             Options.Create(options),
+            // The token now arrives from a resolver rather than from the options object. The stub keeps
+            // these cases about CLASSIFICATION by answering exactly what the options say, so
+            // `configure: o => o.RefreshToken = null` still means "this deployment has no credential".
+            new StubCredentialResolver(options),
             new StubHttpClientFactory(respond),
             NullLogger<GoogleDriveStorageService>.Instance);
+    }
+
+    private sealed class StubCredentialResolver : IGoogleDriveCredentialResolver
+    {
+        private readonly GoogleDriveOptions _options;
+
+        public StubCredentialResolver(GoogleDriveOptions options) => _options = options;
+
+        public Task<string?> ResolveRefreshTokenAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(string.IsNullOrWhiteSpace(_options.RefreshToken) ? null : _options.RefreshToken);
     }
 
     private sealed class StubHttpClientFactory : IHttpClientFactory

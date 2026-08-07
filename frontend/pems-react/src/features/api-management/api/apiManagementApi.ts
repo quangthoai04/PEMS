@@ -5,6 +5,7 @@ import type {
   ApiIntegration,
   ApiQuota,
   ApiRequestLogListResponse,
+  GoogleDriveOAuthStartResult,
   UpsertGoogleDocumentAiOcrConfigRequest,
   UpsertGoogleTranslationConfigRequest,
   UpsertGoogleVisionFaceDetectionConfigRequest,
@@ -77,6 +78,25 @@ export const apiManagementApi = {
     const { data } = await httpClient.put<ApiIntegration>(
       API_ENDPOINTS.apiIntegrations.update(apiConfigId),
       payload,
+    );
+    return data;
+  },
+
+  /**
+   * Mở luồng cấp quyền Google Drive (ADMIN). Trả URL để component tự điều hướng —
+   * backend KHÔNG 302 vì lời gọi này đi qua axios, trình duyệt sẽ không rời trang.
+   */
+  async startGoogleDriveOAuth(): Promise<GoogleDriveOAuthStartResult> {
+    const { data } = await httpClient.post<GoogleDriveOAuthStartResult>(
+      API_ENDPOINTS.apiIntegrations.googleDriveOAuthStart,
+    );
+    return data;
+  },
+
+  /** Xoá refresh token Google Drive đang lưu trong DB (ADMIN). Không thu hồi quyền phía Google. */
+  async disconnectGoogleDrive(): Promise<ApiIntegration> {
+    const { data } = await httpClient.post<ApiIntegration>(
+      API_ENDPOINTS.apiIntegrations.googleDriveOAuthDisconnect,
     );
     return data;
   },
