@@ -91,7 +91,7 @@ export interface V2CreateResponse {
   visitScope: string;
   hasMixedCampusDetails: boolean;
   /** Campuses still waiting for their own operational contact to answer. 0 = the gate is open. */
-  pendingConfirmations: number;
+  pendingContactConfirmations: number;
   instances: V2CampusRef[];
   idempotent: boolean;
   /** Request status straight from the committed row — never inferred client-side. */

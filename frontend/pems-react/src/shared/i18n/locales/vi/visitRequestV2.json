@@ -183,7 +183,7 @@
     "requestCode": "Mã yêu cầu: {{code}}",
     "mixedNote": "nội dung khác nhau theo cơ sở",
     "idempotentReplay": "Yêu cầu này đã được ghi nhận trước đó (gửi lại không tạo đơn mới).",
-    "claimPending": "Người đăng ký khác đầu mối đoàn khách: hệ thống đã gửi email mời xác nhận vai trò tới đầu mối của {{campusCount}} cơ sở (hiệu lực 72 giờ). Các cơ sở chỉ bắt đầu xử lý sau khi tất cả đầu mối đã xác nhận.",
+    "claimPending": "Người đăng ký khác đầu mối đoàn khách: hệ thống đã gửi email mời xác nhận vai trò tới đầu mối của: {{campusContacts}} — hiệu lực 72 giờ. Các cơ sở chỉ bắt đầu xử lý sau khi tất cả đầu mối đã xác nhận.",
     "trackStatusAlso": "Đồng thời kiểm tra email của bạn hoặc đăng nhập vào hệ thống bằng Google ({{email}}) để theo dõi trạng thái đơn.",
     "trackStatus": "Kiểm tra email của bạn hoặc đăng nhập vào hệ thống bằng Google ({{email}}) để theo dõi trạng thái đơn.",
     "backHome": "Về trang chủ",

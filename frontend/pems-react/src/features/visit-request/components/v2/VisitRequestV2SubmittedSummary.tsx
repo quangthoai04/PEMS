@@ -200,8 +200,8 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
           {/* No request-level contact any more: each campus names its own, and the only
               request-level fact is how many of them still have to answer. */}
           <Field label={t('visitRequestV2:summary.contactConfirmation')}>
-            {response.pendingConfirmations > 0
-              ? t('visitRequestV2:summary.contactPendingCount', { count: response.pendingConfirmations })
+            {response.pendingContactConfirmations > 0
+              ? t('visitRequestV2:summary.contactPendingCount', { count: response.pendingContactConfirmations })
               : t('visitRequestV2:summary.contactAllConfirmed')}
           </Field>
         </dl>

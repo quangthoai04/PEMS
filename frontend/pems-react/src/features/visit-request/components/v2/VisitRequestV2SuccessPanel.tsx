@@ -57,7 +57,21 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
 
   // Campuses whose own operational contact has not answered yet. Counted per campus by the server —
   // there is no request-level contact to be "pending" on.
-  const contactsPending = response.pendingConfirmations;
+  const contactsPending = response.pendingContactConfirmations;
+
+  // Emails of operational contacts that differ from the registrant — these are the ones awaiting
+  // confirmation. Deduplicated because two campuses may share the same contact.
+  const registrantEmailNorm = values.registerInfo.email.trim().toLowerCase();
+
+  // Per-campus "TênCơSở (email)" pairs for contacts that still need to confirm.
+  const pendingCampusContacts = values.campusVisits
+    .filter(cv => (cv.operationalContact?.email?.trim() ?? '').toLowerCase() !== registrantEmailNorm)
+    .map(cv => {
+      const name = campuses.find(c => c.campusCode === cv.campus)?.campusName ?? cv.campus;
+      const email = cv.operationalContact?.email?.trim() ?? '';
+      return email ? `${name} (${email})` : name;
+    })
+    .join(', ');
 
   const copyCode = async () => {
     if (!code) return;
@@ -107,7 +121,6 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
             <dt className="font-semibold">{t('visitRequestV2:success.campusCountLabel')}</dt>
             <dd data-testid="v2-success-campuses">
               {campusNames}
-              {response.hasMixedCampusDetails ? ` — ${t('visitRequestV2:success.mixedNote')}` : ''}
             </dd>
           </div>
           {response.submittedAt && (
@@ -134,7 +147,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
           <ul className="list-disc space-y-1 pl-4">
             {contactsPending > 0 && (
-              <li>{t('visitRequestV2:success.claimPending', { campusCount: contactsPending })}</li>
+              <li>{t('visitRequestV2:success.claimPending', { campusContacts: pendingCampusContacts })}</li>
             )}
             <li>
               {t(

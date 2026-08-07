@@ -183,7 +183,7 @@
     "requestCode": "Request code: {{code}}",
     "mixedNote": "content varies by campus",
     "idempotentReplay": "This request was already recorded (resubmitting did not create a duplicate).",
-    "claimPending": "The registrant is not the guest-side operational contact: a role-confirmation invitation has been emailed to the contact of {{campusCount}} campus(es) (valid for 72 hours). No campus starts processing until every contact has confirmed.",
+    "claimPending": "The registrant is not the guest-side operational contact: a role-confirmation invitation has been emailed to the contact of: {{campusContacts}} — valid for 72 hours. No campus starts processing until every contact has confirmed.",
     "trackStatusAlso": "Also check your own email or sign in with Google ({{email}}) to track your request status.",
     "trackStatus": "Check your email or sign in with Google ({{email}}) to track your request status.",
     "backHome": "Back to home",
