@@ -612,8 +612,6 @@ CREATE TABLE users (
 COMMENT='Tài khoản chính. Production dùng SSO; LOCAL_PASSWORD chỉ dùng DEV/test.';
 
 
-
-
 CREATE TABLE user_auth_providers (
   auth_provider_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -3968,7 +3966,6 @@ CREATE TABLE visit_photo_face_detections (
 COMMENT='Individual Google Vision face boxes awaiting manual assignment to a guest in the exact campus visit instance. Confirmed rows link to existing photo_face_tags.';
 
 
-
 -- ---------------------------------------------------------------------
 -- Business Card OCR: business_card_ocr_jobs
 -- ---------------------------------------------------------------------
@@ -5024,7 +5021,6 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
 -- after each corresponding visit_request_campuses seed block.
 
 
-
 INSERT INTO visit_requests (visit_request_id, registrant_user_id, request_code, partner_id, created_source, registrant_full_name, registrant_organization, registrant_job_title, registrant_phone, registrant_email, registrant_nationality, visit_scope, status, submitted_at, email_verified_at, cancelled_by, cancelled_at, cancellation_reason, row_version, created_at, created_by, updated_at, updated_by) VALUES
   (1001, 8, 'VR-SC-HN-0001', 1, 'VISITOR_SUBMITTED', 'Kim Min Jae', 'SeoulTech Global Engagement Center', 'International Partnerships Manager', '+821012340001', 'kim.minjae@seoultech.example', 'Hàn Quốc', 'SINGLE_CAMPUS', 'PENDING_APPROVAL', '2026-06-23 08:00:00', '2026-06-23 08:03:12', NULL, NULL, NULL, 0, '2026-06-23 08:00:00', 8, NULL, NULL),
   (1002, 21, 'VR-SC-HN-0002', 2, 'VISITOR_SUBMITTED', 'Tanaka Aoi', 'Kyoto Robotics Collaboration Lab', 'Partnership Manager', '+819012345678', 'aoi.tanaka@kyoto-global.example', 'Nhật Bản', 'SINGLE_CAMPUS', 'REJECTED', '2026-06-10 08:30:00', '2026-06-10 08:34:00', NULL, NULL, NULL, 1, '2026-06-10 08:30:00', 21, '2026-06-10 15:20:00', 3),
@@ -5604,25 +5600,39 @@ INSERT INTO visit_instance_reminder_settings (reminder_setting_id, visit_instanc
   (4, 3110, 'EMAIL', 'HOST_AND_PARTICIPANTS', 1, '09:00:00', '2026-06-30 09:00:00', 'PENDING', NULL, NULL, '2026-06-20 09:45:00', 10, NULL, NULL),
   (5, 3004, 'IN_APP', 'PARTICIPANTS', 1, '16:00:00', '2026-06-27 16:00:00', 'CANCELLED', NULL, 'Host đã tắt cảnh báo trước khi tới lịch gửi.', '2026-06-18 10:30:00', 4, '2026-06-18 11:00:00', 4);
 
-INSERT INTO api_configurations (api_config_id, api_code, name, provider_name, purpose, base_url, default_method, auth_type, api_key_encrypted, bearer_token_encrypted, basic_username, basic_password_encrypted, oauth_client_id, oauth_client_secret_encrypted, oauth_token_url, oauth_scope, body_template_text, rate_limit_per_minute, monthly_quota, retry_enabled, max_retries, cache_ttl_seconds, last_test_status, last_tested_at, last_test_message, timeout_seconds, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (1, 'GOOGLE_DRIVE_STORAGE', 'Google Drive Storage', 'Google Drive', 'Lưu metadata và file business của documents/gallery/news.', 'https://www.googleapis.com/drive/v3', 'POST', 'OAUTH2', NULL, NULL, NULL, NULL, 'encrypted-client-id-drive', 'encrypted-client-secret-drive', 'https://oauth2.googleapis.com/token', 'https://www.googleapis.com/auth/drive.file', NULL, 120, 50000, TRUE, 3, 300, 'SUCCESS', '2026-06-20 09:00:00', 'Kết nối Google Drive thành công bằng service account của môi trường staging.', 30, 'ACTIVE', '2026-03-01 09:00:00', 1, '2026-06-20 09:00:00', 1, NULL, NULL),
-  (2, 'SMTP_GMAIL_OUTBOUND', 'Gmail SMTP Outbound', 'Google Mail', 'Gửi OTP, notification email và reminder.', 'smtp://smtp.gmail.com:587', 'POST', 'BASIC', NULL, NULL, 'pems-staging@fpt.edu.vn', 'encrypted-app-password', NULL, NULL, NULL, NULL, NULL, 60, 30000, TRUE, 2, NULL, 'FAILED', '2026-06-20 10:00:00', 'Mật khẩu ứng dụng SMTP đã hết hạn; cấu hình đang chờ quản trị viên cập nhật.', 20, 'ACTIVE', '2026-03-01 09:10:00', 1, '2026-06-20 10:00:00', 1, NULL, NULL),
-  (3, 'OCR_BUSINESS_CARD', 'Business Card OCR', 'External OCR Service', 'Scan card visit để tạo partner contact.', 'https://ocr.example/api/v1/business-card', 'POST', 'API_KEY', 'encrypted-ocr-api-key', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'multipart image upload with language hint', 30, 5000, TRUE, 1, 600, 'SUCCESS', '2026-06-18 09:30:00', 'OCR API trả về kết quả trong 1.2s.', 45, 'ACTIVE', '2026-03-01 09:20:00', 1, '2026-06-18 09:30:00', 1, NULL, NULL);
-
-INSERT INTO api_configuration_headers (api_configuration_header_id, api_config_id, header_name, header_value_encrypted, is_secret, created_at) VALUES
-  (1, 1, 'X-Pems-Trace', 'encrypted-static-trace-drive', TRUE, '2026-03-01 09:01:00'),
-  (2, 3, 'X-Api-Key', 'encrypted-ocr-api-key-header', TRUE, '2026-03-01 09:21:00'),
-  (3, 3, 'X-Client', 'PEMS-STAGING', FALSE, '2026-03-01 09:22:00');
-
-INSERT INTO api_usage_quotas (api_usage_quota_id, api_config_id, campus_id, campus_scope_key, period_yyyymm, monthly_limit, used_count, last_used_at, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, NULL, 'GLOBAL', '202606', 50000, 1320, '2026-06-22 18:00:00', '2026-06-01 00:00:00', 1, '2026-06-22 18:00:00', 1),
-  (2, 2, 1, '1', '202606', 30000, 418, '2026-06-20 10:05:00', '2026-06-01 00:00:00', 1, '2026-06-20 10:05:00', 1),
-  (3, 3, 1, '1', '202606', 5000, 23, '2026-06-10 13:00:00', '2026-06-01 00:00:00', 1, '2026-06-10 13:00:00', 1);
-
-INSERT INTO api_request_logs (api_request_log_id, api_config_id, campus_id, requested_by, related_type, related_id, endpoint, method, http_status, response_time_ms, request_size_bytes, response_size_bytes, success, error_code, error_message, created_at) VALUES
-  (1, 1, 1, 4, 'FILE', 5, '/files?uploadType=multipart', 'POST', 200, 840, 933000, 1200, TRUE, NULL, NULL, '2026-06-15 17:40:00'),
-  (2, 3, 1, 4, 'PARTNER_CONTACT', 3, '/business-card/parse', 'POST', 200, 1260, 650000, 4300, TRUE, NULL, NULL, '2026-06-10 13:00:00'),
-  (3, 2, 1, 4, 'LOGISTICS', 10, '/smtp/send', 'POST', 500, 3100, 2400, 980, FALSE, 'SMTP_TEMP_FAILURE', 'Gmail SMTP staging returned temporary failure.', '2026-06-20 10:05:00');
+INSERT INTO api_configurations (
+  api_config_id,
+  api_code,
+  name,
+  provider_name,
+  purpose,
+  base_url,
+  default_method,
+  auth_type,
+  oauth_token_url,
+  oauth_scope,
+  data_sensitivity,
+  timeout_seconds,
+  status,
+  created_at,
+  created_by
+) VALUES (
+  1,
+  'GOOGLE_DRIVE_STORAGE',
+  'Google Drive Storage',
+  'Google Drive',
+  'GOOGLE_DRIVE_STORAGE',
+  'https://www.googleapis.com/drive/v3',
+  'POST',
+  'OAUTH2',
+  'https://oauth2.googleapis.com/token',
+  'https://www.googleapis.com/auth/drive',
+  'CONFIDENTIAL',
+  30,
+  'ACTIVE',
+  '2026-03-01 09:00:00',
+  1
+);
 
 -- Agenda templates: one GLOBAL default per visit_type (ids 1-6) plus two campus-specific
 -- (campus 1 = Hòa Lạc) templates (ids 7-8) so campus-over-GLOBAL fallback can be tested.
@@ -5722,7 +5732,6 @@ INSERT INTO audit_log_changes (audit_log_change_id, audit_log_id, field_name, ol
 -- - Visitor sees own requests through registrant_user_id = 8.
 -- - Admin visit view must return zero rows.
 -- =====================================================================
-
 
 
 -- =====================================================================
@@ -8660,84 +8669,6 @@ INSERT INTO calendar_event_reminders (calendar_event_reminder_id, calendar_event
   (20247, 20012, 'IN_APP', 30, '2026-08-22 08:30:00', NULL, 'CANCELLED', '2026-08-20 08:10:00'),
   (20248, 20012, 'IN_APP', 30, '2026-08-22 08:30:00', NULL, 'FAILED', '2026-08-20 08:10:00');
 
-INSERT INTO api_configurations (api_config_id, api_code, name, provider_name, purpose, base_url, default_method, auth_type, api_key_encrypted, bearer_token_encrypted, basic_username, basic_password_encrypted, oauth_client_id, oauth_client_secret_encrypted, oauth_token_url, oauth_scope, body_template_text, rate_limit_per_minute, monthly_quota, retry_enabled, max_retries, cache_ttl_seconds, last_test_status, last_tested_at, last_test_message, timeout_seconds, status, created_at, created_by, updated_at, updated_by, deleted_at, deleted_by) VALUES
-  (21001, 'PUBLIC_CAMPUS_DIRECTORY', 'Danh mục campus công khai', 'PEMS Public Content', 'Cung cấp thông tin campus, khu vực tham quan và hướng dẫn đăng ký công khai.', 'https://public-content.pems-fpt.site/api', 'GET', 'NONE', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 0, 300, 'SUCCESS', '2026-08-21 08:00:00', 'Kết nối công khai hoạt động bình thường.', 20, 'ACTIVE', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL),
-  (21002, 'MAP_ROUTE_SERVICE', 'Dịch vụ bản đồ và tuyến đường', 'Campus Maps Provider', 'Tính khoảng cách và gợi ý tuyến di chuyển giữa điểm đón với campus.', 'https://maps-provider.example/api', 'POST', 'API_KEY', 'enc-api-key', NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 1, 300, 'FAILED', '2026-08-21 08:00:00', 'API key hết hạn; cấu hình đang chờ cập nhật.', 21, 'INACTIVE', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL),
-  (21003, 'DOCUMENT_ANALYSIS_SERVICE', 'Phân tích tài liệu đối tác', 'Document AI Gateway', 'Trích xuất thông tin từ danh thiếp và tài liệu do đối tác cung cấp.', 'https://document-ai.example/api', 'PUT', 'BEARER_TOKEN', NULL, 'enc-bearer', NULL, NULL, NULL, NULL, NULL, NULL, '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 2, 300, 'SUCCESS', '2026-08-21 08:00:00', 'Bearer token đã được xác thực thành công.', 22, 'DISABLED', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL),
-  (21004, 'LEGACY_PARTNER_DIRECTORY', 'Danh bạ đối tác nội bộ', 'Legacy Cooperation Portal', 'Đồng bộ thông tin đầu mối từ hệ thống hợp tác cũ trong giai đoạn chuyển đổi.', 'https://legacy-partners.example/api', 'PATCH', 'BASIC', NULL, NULL, 'basic-user', 'enc-basic-pass', NULL, NULL, NULL, NULL, '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 3, 300, 'FAILED', '2026-08-21 08:00:00', 'Tài khoản dịch vụ không còn quyền truy cập; cấu hình tạm dừng.', 23, 'ACTIVE', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL),
-  (21005, 'TRANSLATION_SERVICE', 'Dịch vụ dịch nội dung', 'Cloud Translation Provider', 'Hỗ trợ bản dịch nháp cho tin tức, FAQ và nội dung giới thiệu song ngữ.', 'https://translation-provider.example/api', 'DELETE', 'OAUTH2', NULL, NULL, NULL, NULL, 'oauth-client', 'enc-oauth-secret', 'https://translation-provider.example/oauth/token', 'profile email', '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 4, 300, 'SUCCESS', '2026-08-21 08:00:00', 'OAuth2 access token hợp lệ và quota còn đủ.', 24, 'INACTIVE', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL),
-  (21006, 'INTERNAL_WEBHOOK_GATEWAY', 'Cổng webhook nội bộ', 'FPTU Integration Gateway', 'Nhận sự kiện đồng bộ từ các dịch vụ nội bộ theo chữ ký tùy chỉnh.', 'https://integration-gateway.fptu.example/hooks', 'GET', 'CUSTOM', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '{"sourceLanguage":"auto","targetLanguage":"vi","format":"text"}', 60, 10000, TRUE, 5, 300, 'FAILED', '2026-08-21 08:00:00', 'Chữ ký kiểm tra không hợp lệ; cấu hình đang bị vô hiệu hóa.', 25, 'DISABLED', '2026-08-21 07:00:00', 1, '2026-08-21 08:00:00', 1, NULL, NULL);
-
-INSERT INTO api_configuration_headers (api_configuration_header_id, api_config_id, header_name, header_value_encrypted, is_secret, created_at) VALUES
-  (21101, 21001, 'X-Correlation-Id', 'enc-header-21001-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21102, 21001, 'Authorization', 'enc-header-21001-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21103, 21001, 'X-PEMS-Campus', 'enc-header-21001-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00'),
-  (21104, 21002, 'X-Correlation-Id', 'enc-header-21002-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21105, 21002, 'Authorization', 'enc-header-21002-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21106, 21002, 'X-PEMS-Campus', 'enc-header-21002-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00'),
-  (21107, 21003, 'X-Correlation-Id', 'enc-header-21003-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21108, 21003, 'Authorization', 'enc-header-21003-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21109, 21003, 'X-PEMS-Campus', 'enc-header-21003-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00'),
-  (21110, 21004, 'X-Correlation-Id', 'enc-header-21004-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21111, 21004, 'Authorization', 'enc-header-21004-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21112, 21004, 'X-PEMS-Campus', 'enc-header-21004-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00'),
-  (21113, 21005, 'X-Correlation-Id', 'enc-header-21005-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21114, 21005, 'Authorization', 'enc-header-21005-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21115, 21005, 'X-PEMS-Campus', 'enc-header-21005-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00'),
-  (21116, 21006, 'X-Correlation-Id', 'enc-header-21006-X-Correlation-Id', FALSE, '2026-08-21 07:05:00'),
-  (21117, 21006, 'Authorization', 'enc-header-21006-Authorization', TRUE, '2026-08-21 07:05:00'),
-  (21118, 21006, 'X-PEMS-Campus', 'enc-header-21006-X-PEMS-Campus', FALSE, '2026-08-21 07:05:00');
-
-INSERT INTO api_usage_quotas (api_usage_quota_id, api_config_id, campus_id, campus_scope_key, period_yyyymm, monthly_limit, used_count, last_used_at, created_at, created_by, updated_at, updated_by) VALUES
-  (21201, 21001, NULL, 'GLOBAL', '202608', 5000, 1, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21202, 21001, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21203, 21001, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21204, 21001, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21205, 21001, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21206, 21001, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21207, 21002, NULL, 'GLOBAL', '202608', 5000, 2, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21208, 21002, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21209, 21002, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21210, 21002, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21211, 21002, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21212, 21002, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21213, 21003, NULL, 'GLOBAL', '202608', 5000, 3, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21214, 21003, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21215, 21003, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21216, 21003, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21217, 21003, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21218, 21003, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21219, 21004, NULL, 'GLOBAL', '202608', 5000, 4, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21220, 21004, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21221, 21004, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21222, 21004, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21223, 21004, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21224, 21004, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21225, 21005, NULL, 'GLOBAL', '202608', 5000, 5, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21226, 21005, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21227, 21005, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21228, 21005, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21229, 21005, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21230, 21005, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21231, 21006, NULL, 'GLOBAL', '202608', 5000, 6, '2026-08-21 09:00:00', '2026-08-21 07:10:00', 1, '2026-08-21 09:00:00', 1),
-  (21232, 21006, 1, '1', '202608', 1100, 17, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21233, 21006, 2, '2', '202608', 1200, 34, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21234, 21006, 3, '3', '202608', 1300, 51, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21235, 21006, 4, '4', '202608', 1400, 68, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1),
-  (21236, 21006, 5, '5', '202608', 1500, 85, '2026-08-21 09:05:00', '2026-08-21 07:15:00', 1, '2026-08-21 09:05:00', 1);
-
-INSERT INTO api_request_logs (api_request_log_id, api_config_id, campus_id, requested_by, related_type, related_id, endpoint, method, http_status, response_time_ms, request_size_bytes, response_size_bytes, success, error_code, error_message, created_at) VALUES
-  (21301, 21002, 2, 4, 'VISIT_REQUEST', 3022, '/v1/routes/estimate', 'GET', 200, 151, 1325, 2349, TRUE, NULL, NULL, '2026-08-21 10:00:00'),
-  (21302, 21003, 3, 4, 'VISIT_REQUEST', 3023, '/v1/documents/analyse', 'GET', 503, 152, 1326, 2350, FALSE, 'UPSTREAM_TIMEOUT', 'Nhà cung cấp không phản hồi trong thời gian chờ; yêu cầu đã được ghi nhận để thử lại.', '2026-08-21 10:00:00'),
-  (21303, 21004, 4, 4, 'VISIT_REQUEST', 3024, '/api/partners/sync', 'POST', 200, 153, 1327, 2351, TRUE, NULL, NULL, '2026-08-21 10:00:00'),
-  (21304, 21005, 5, 4, 'VISIT_REQUEST', 3025, '/v2/translate', 'POST', 503, 154, 1328, 2352, FALSE, 'UPSTREAM_TIMEOUT', 'Nhà cung cấp không phản hồi trong thời gian chờ; yêu cầu đã được ghi nhận để thử lại.', '2026-08-21 10:00:00'),
-  (21305, 21006, 1, 4, 'VISIT_REQUEST', 3026, '/hooks/visit-status', 'PUT', 200, 155, 1329, 2353, TRUE, NULL, NULL, '2026-08-21 10:00:00'),
-  (21306, 21001, 2, 4, 'VISIT_REQUEST', 3027, '/api/campuses/public', 'PUT', 503, 156, 1330, 2354, FALSE, 'UPSTREAM_TIMEOUT', 'Nhà cung cấp không phản hồi trong thời gian chờ; yêu cầu đã được ghi nhận để thử lại.', '2026-08-21 10:00:00'),
-  (21307, 21002, 3, 4, 'VISIT_REQUEST', 3028, '/v1/routes/estimate', 'PATCH', 200, 157, 1331, 2355, TRUE, NULL, NULL, '2026-08-21 10:00:00'),
-  (21308, 21003, 4, 4, 'VISIT_REQUEST', 3029, '/v1/documents/analyse', 'PATCH', 503, 158, 1332, 2356, FALSE, 'UPSTREAM_TIMEOUT', 'Nhà cung cấp không phản hồi trong thời gian chờ; yêu cầu đã được ghi nhận để thử lại.', '2026-08-21 10:00:00'),
-  (21309, 21004, 5, 4, 'VISIT_REQUEST', 3030, '/api/partners/sync', 'DELETE', 200, 159, 1333, 2357, TRUE, NULL, NULL, '2026-08-21 10:00:00'),
-  (21310, 21005, 1, 4, 'VISIT_REQUEST', 3031, '/v2/translate', 'DELETE', 503, 160, 1334, 2358, FALSE, 'UPSTREAM_TIMEOUT', 'Nhà cung cấp không phản hồi trong thời gian chờ; yêu cầu đã được ghi nhận để thử lại.', '2026-08-21 10:00:00');
-
 INSERT INTO audit_logs (audit_log_id, actor_user_id, campus_id, action, entity_type, entity_id, ip_address, user_agent, request_id, created_at) VALUES
   (22001, 8, NULL, 'CREATE_VISIT_REQUEST', 'visit_requests', 3001, '10.40.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) Safari/17.5 PEMS-Portal', 'req-79f066fe-55dd-5e75-8a59-f9f8a7125626', '2026-08-22 08:00:00'),
   (22002, 3, 1, 'APPROVE_CAMPUS_INSTANCE', 'visit_request_campuses', 5002, '10.40.0.2', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0 PEMS-Admin', 'req-05f580d1-a1ef-5dd5-afe3-efb3862f5a8c', '2026-08-22 08:00:00'),
@@ -9366,7 +9297,6 @@ WHERE NOT EXISTS (
 );
 
 
-
 INSERT INTO visit_guest_members (guest_member_id, visit_request_id, member_type, full_name, organization, job_title, nationality, display_order, created_at, created_by, updated_at, updated_by) VALUES
   (99001, 9001, 'GUEST', 'Sofia Bianchi Guest Delegate', 'Politecnico di Milano Mobility Lab', 'Faculty Representative', 'Ý', 1, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL),
   (99002, 9001, 'EXTERNAL_SUPPORT', 'Sofia Bianchi', 'Politecnico di Milano Mobility Lab', 'Mobility Research Programme Manager', 'Ý', 2, CURRENT_TIMESTAMP - INTERVAL 12 DAY, NULL, NULL, NULL),
@@ -9567,7 +9497,6 @@ INSERT INTO visit_logistics_item_handovers (handover_id, logistics_item_id, hand
   (4, 7, 'BORROW', NULL, NULL, 18, '2026-06-23 08:35:00', 'GOOD', 'Provider đã ký bàn giao màn LED; đang chờ bên mượn ký nhận qua email action.', NULL, '2026-06-23 08:30:00', 18),
   (5, 5, 'BORROW', NULL, NULL, NULL, NULL, NULL, 'Handover mượn micro được tạo trước để demo case chưa có chữ ký nào.', NULL, '2026-06-23 08:45:00', 17),
   (6, 7, 'RETURN', 4, '2026-06-23 16:10:00', NULL, NULL, 'GOOD', 'Bên mượn đã ký trả màn LED; đang chờ bên cho mượn ký nhận lại qua email action.', NULL, '2026-06-23 16:00:00', 4);
-
 
 
 -- =====================================================================
@@ -11300,30 +11229,6 @@ SET se.subject = CASE
     ELSE se.body_snapshot END;
 
 -- ---------------------------------------------------------------------
--- 13) API configuration: make external API seed useful for API management screen.
--- ---------------------------------------------------------------------
-UPDATE api_configurations SET
-  name = CASE api_code
-    WHEN 'GOOGLE_DRIVE' THEN 'Google Drive Service Account - lưu file PEMS'
-    WHEN 'SMTP_PRIMARY' THEN 'SMTP Primary - gửi OTP/thông báo/trạng thái'
-    WHEN 'GOOGLE_OAUTH' THEN 'Google OAuth/SSO - đăng nhập Internal và Visitor'
-    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Google Cloud Translation v3 - dịch bài News'
-    WHEN 'BUSINESS_CARD_OCR_GOOGLE' THEN 'Google Document AI - OCR danh thiếp đối tác'
-    ELSE name END,
-  purpose = CASE api_code
-    WHEN 'GOOGLE_DRIVE' THEN 'Upload avatar, cover, tài liệu visit, ảnh news/gallery và lưu metadata vào bảng files.'
-    WHEN 'SMTP_PRIMARY' THEN 'Gửi OTP, invitation, logistics action token, reminder và thông báo trạng thái xử lý.'
-    WHEN 'GOOGLE_OAUTH' THEN 'Xác thực SSO bằng Google/FPT domain, liên kết provider_subject với user_auth_providers.'
-    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Dịch title/summary/section của news sang ngôn ngữ khác; giữ nguyên ảnh và cấu trúc section.'
-    WHEN 'BUSINESS_CARD_OCR_GOOGLE' THEN 'Nhận ảnh danh thiếp, trích xuất tên/email/chức danh/tổ chức và tạo gợi ý contact person.'
-    ELSE purpose END,
-  last_test_message = CASE api_code
-    WHEN 'GOOGLE_DRIVE' THEN 'Cấu hình Google Drive cần credential hợp lệ của môi trường khi thực hiện tải tệp.'
-    WHEN 'NEWS_TRANSLATION_GOOGLE_CLOUD' THEN 'Cấu hình dịch thuật cần projectId và credential hợp lệ; giao diện sẽ báo chưa cấu hình khi thiếu thông tin.'
-    ELSE last_test_message END
-WHERE api_code IN ('GOOGLE_DRIVE','SMTP_PRIMARY','GOOGLE_OAUTH','NEWS_TRANSLATION_GOOGLE_CLOUD','BUSINESS_CARD_OCR_GOOGLE');
-
--- ---------------------------------------------------------------------
 -- 14) Validation queries: these SELECTs should return 0 issue rows.
 -- ---------------------------------------------------------------------
 SELECT 'seed_placeholder_terms_remaining' AS check_name,
@@ -11473,8 +11378,6 @@ COMMIT;
 -- LEFT JOIN users inviter ON inviter.user_id = vp.invited_by
 -- WHERE vp.participant_id BETWEEN 99211 AND 99225
 -- ORDER BY vp.participant_id;
-
-
 
 
 -- =====================================================================
@@ -11684,9 +11587,6 @@ SET operational_contact_full_name = 'IC Staff Hà Nội',
     updated_at = '2026-07-11 09:00:00',
     updated_by = 4
 WHERE visit_instance_id = 5046;
-
-
-
 
 
 -- 2) Preserve V1 shared-member semantics as independent V2 instance links.
@@ -13156,7 +13056,6 @@ WHERE vrc.status IN ('DURING_VISIT','AFTER_VISIT','CLOSED')
 -- 7002, 7016, 7022, 7034, 7048, 7054, 7060, 7066, 7080, 7092, 7098, 7112, 7124, 7130, 7144, 7150, 7166, 7182, 7198, 7214, 7232, 7238, 7256, 7262, 7280, 7286, 7300, 7306, 7320, 7326, 99014, 99213, 99218, 99223
 
 
-
 -- =====================================================================
 -- CONTACT / VISITOR ROLE GUARD — ROLLBACK-SAFE DATABASE SELF-TESTS
 -- All negative mutations are isolated in transactions and rolled back. Results are
@@ -14067,8 +13966,9 @@ SET
   END;
 
 -- ---------------------------------------------------------------------
--- 3. Seed Google Cloud Translation config as api_config_id 21008.
--- The same config is reused by News, FAQ, Partner and Gallery save flows.
+-- 3. Seed the runtime Google Cloud Translation config as api_config_id 21008.
+-- Runtime uses project_id/location + credential resolution only. The row starts
+-- INACTIVE with no fabricated connection-test history; ADMIN can test and enable it.
 -- ---------------------------------------------------------------------
 INSERT INTO api_configurations (
   api_config_id,
@@ -14084,15 +13984,6 @@ INSERT INTO api_configurations (
   secret_ref,
   data_sensitivity,
   allows_provider_training,
-  retention_days,
-  rate_limit_per_minute,
-  monthly_quota,
-  retry_enabled,
-  max_retries,
-  cache_ttl_seconds,
-  last_test_status,
-  last_tested_at,
-  last_test_message,
   timeout_seconds,
   status,
   created_at,
@@ -14105,7 +13996,7 @@ INSERT INTO api_configurations (
 SELECT
   21008,
   'NEWS_TRANSLATION_GOOGLE_CLOUD',
-  'Google Cloud Translation - Dịch tin tức',
+  'Google Cloud Translation - News & Content',
   'GOOGLE_CLOUD_TRANSLATION',
   'NEWS_TRANSLATION',
   'https://translation.googleapis.com',
@@ -14114,35 +14005,18 @@ SELECT
   JSON_OBJECT(
     'endpoint', 'translation.googleapis.com',
     'location', 'global',
-    'project_id', 'pems-production',
-    'processor_id', '',
-    'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY(
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf'
-    )
+    'project_id', 'pems-production'
   ),
   NULL,
   'GOOGLE_TRANSLATION_SERVICE_ACCOUNT',
   'INTERNAL',
   FALSE,
-  NULL,
-  60,
-  10000,
-  TRUE,
-  2,
-  NULL,
-  'SUCCESS',
-  '2026-07-20 23:27:10',
-  'Kết nối Google Cloud Translation thành công ("Xin chào" → "Hello").',
   30,
-  'ACTIVE',
-  '2026-07-20 23:25:48',
+  'INACTIVE',
+  CURRENT_TIMESTAMP,
   1,
-  '2026-07-20 23:27:27',
-  1,
+  NULL,
+  NULL,
   NULL,
   NULL
 FROM DUAL
@@ -14151,85 +14025,6 @@ WHERE NOT EXISTS (
   FROM api_configurations
   WHERE api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD'
 );
-
--- Normalize the Translation config and intentionally keep portable secrets out of SQL.
-UPDATE api_configurations
-SET
-  name = 'Google Cloud Translation - Dịch tin tức',
-  provider_name = 'GOOGLE_CLOUD_TRANSLATION',
-  purpose = 'NEWS_TRANSLATION',
-  base_url = 'https://translation.googleapis.com',
-  default_method = 'POST',
-  auth_type = 'CUSTOM',
-  credentials_json_encrypted = NULL,
-  settings_json = JSON_OBJECT(
-    'endpoint', 'translation.googleapis.com',
-    'location', 'global',
-    'project_id', 'pems-production',
-    'processor_id', '',
-    'max_file_size_mb', 10,
-    'allowed_mime_types', JSON_ARRAY(
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'application/pdf'
-    )
-  ),
-  secret_ref = 'GOOGLE_TRANSLATION_SERVICE_ACCOUNT',
-  data_sensitivity = 'INTERNAL',
-  allows_provider_training = FALSE,
-  retention_days = NULL,
-  rate_limit_per_minute = 60,
-  monthly_quota = 10000,
-  retry_enabled = TRUE,
-  max_retries = 2,
-  cache_ttl_seconds = NULL,
-  last_test_status = 'SUCCESS',
-  last_tested_at = '2026-07-20 23:27:10',
-  last_test_message = 'Kết nối Google Cloud Translation thành công ("Xin chào" → "Hello").',
-  timeout_seconds = 30,
-  status = 'ACTIVE',
-  created_at = '2026-07-20 23:25:48',
-  created_by = 1,
-  updated_at = '2026-07-20 23:27:27',
-  updated_by = 1,
-  deleted_at = NULL,
-  deleted_by = NULL
-WHERE api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD';
-
--- ---------------------------------------------------------------------
--- 4. Current-month global quotas for both live Google configs.
--- ---------------------------------------------------------------------
-INSERT INTO api_usage_quotas (
-  api_config_id,
-  campus_id,
-  campus_scope_key,
-  period_yyyymm,
-  monthly_limit,
-  used_count,
-  created_by
-)
-SELECT
-  c.api_config_id,
-  NULL,
-  'GLOBAL',
-  DATE_FORMAT(CURRENT_DATE(), '%Y%m'),
-  c.monthly_quota,
-  0,
-  1
-FROM api_configurations c
-WHERE c.api_code IN (
-    'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
-    'NEWS_TRANSLATION_GOOGLE_CLOUD'
-  )
-  AND c.monthly_quota IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM api_usage_quotas q
-    WHERE q.api_config_id = c.api_config_id
-      AND q.campus_scope_key = 'GLOBAL'
-      AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m')
-  );
 
 -- ---------------------------------------------------------------------
 -- 5. Seed Google Cloud Vision Face Detection config as api_config_id 21009.
@@ -14493,15 +14288,11 @@ WHERE api_config_id = 21008
   AND api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD'
   AND provider_name = 'GOOGLE_CLOUD_TRANSLATION'
   AND secret_ref = 'GOOGLE_TRANSLATION_SERVICE_ACCOUNT'
-  AND credentials_json_encrypted IS NULL;
-
-SELECT 'translation_api_quota_seeded' AS check_name,
-       CASE WHEN COUNT(*) = 1 THEN 0 ELSE 1 END AS issue_count
-FROM api_usage_quotas q
-JOIN api_configurations c ON c.api_config_id = q.api_config_id
-WHERE c.api_code = 'NEWS_TRANSLATION_GOOGLE_CLOUD'
-  AND q.campus_scope_key = 'GLOBAL'
-  AND q.period_yyyymm = DATE_FORMAT(CURRENT_DATE(), '%Y%m');
+  AND credentials_json_encrypted IS NULL
+  AND status = 'INACTIVE'
+  AND last_test_status IS NULL
+  AND last_tested_at IS NULL
+  AND last_test_message IS NULL;
 
 SELECT 'face_scan_orphans' AS check_name, COUNT(*) AS issue_count
 FROM visit_photo_face_scans s
@@ -14837,7 +14628,7 @@ DELETE FROM sent_email_recipients WHERE sent_email_id BETWEEN 18001 AND 18003
    OR sent_email_recipient_id BETWEEN 18101 AND 18115;
 DELETE FROM sent_emails WHERE sent_email_id BETWEEN 18001 AND 18003;
 
--- Enumeration-only calendar/API/audit rows from the old wide factory.
+-- Enumeration-only calendar/audit rows from the old wide factory.
 DELETE FROM calendar_event_reminders
 WHERE calendar_event_id BETWEEN 20001 AND 20012
    OR calendar_event_reminder_id BETWEEN 20201 AND 20248;
@@ -14845,13 +14636,6 @@ DELETE FROM calendar_event_attendees
 WHERE calendar_event_id BETWEEN 20001 AND 20012
    OR calendar_event_attendee_id BETWEEN 20101 AND 20148;
 DELETE FROM calendar_events WHERE calendar_event_id BETWEEN 20001 AND 20012;
-DELETE FROM api_request_logs WHERE api_request_log_id BETWEEN 21301 AND 21310
-   OR api_config_id BETWEEN 21001 AND 21006;
-DELETE FROM api_usage_quotas WHERE api_usage_quota_id BETWEEN 21201 AND 21236
-   OR api_config_id BETWEEN 21001 AND 21006;
-DELETE FROM api_configuration_headers WHERE api_configuration_header_id BETWEEN 21101 AND 21118
-   OR api_config_id BETWEEN 21001 AND 21006;
-DELETE FROM api_configurations WHERE api_config_id BETWEEN 21001 AND 21006;
 DELETE FROM audit_log_changes WHERE audit_log_change_id BETWEEN 22101 AND 22124
    OR audit_log_id BETWEEN 22001 AND 22012;
 DELETE FROM audit_logs WHERE audit_log_id BETWEEN 22001 AND 22012;
@@ -14912,7 +14696,6 @@ SET @u_sl_hcm      := (SELECT user_id FROM users WHERE LOWER(email)='staff.leade
 SET @u_staff_hcm   := (SELECT user_id FROM users WHERE LOWER(email)='staff.hcm@fpt.edu.vn' LIMIT 1);
 SET @u_sl_dn       := (SELECT user_id FROM users WHERE LOWER(email)='staff.leader.dn@fpt.edu.vn' LIMIT 1);
 SET @u_staff_dn    := (SELECT user_id FROM users WHERE LOWER(email)='staff.dn@fpt.edu.vn' LIMIT 1);
-
 
 
 -- D. Curated request ownership / registration journeys
@@ -16810,6 +16593,247 @@ WHERE user_id=@u_student_hn AND is_host=0 AND visit_instance_id BETWEEN 42001 AN
 GROUP BY status ORDER BY status;
 
 -- ---------------------------------------------------------------------------
+-- R7.5. OPERATIONAL CONTACT SEED CANONICALIZATION — VISITOR ONLY
+--
+-- Seed invariant aligned with the current application write path:
+--   * a confirmed operational_contact_user_id must reference an ACTIVE VISITOR;
+--   * the per-campus snapshot name/email must describe that same account;
+--   * an internal registrant/Host/Staff Leader is never reused as the guest-side contact.
+--
+-- Historical seed rows created before the hard cutover sometimes reused the registrant
+-- or copied an FPTU Staff snapshot into operational_contact_*. Repair them deterministically:
+--   1) keep an already ACTIVE VISITOR contact and repair only its stale snapshot;
+--   2) for a cancelled campus, prefer the existing ACTIVE VISITOR cancellation actor when present;
+--   3) otherwise provision a dedicated VISITOR seed account from the request's first guest.
+-- Pending WAITING_CONTACT_CONFIRMATION rows keep operational_contact_user_id = NULL and are not touched.
+-- ---------------------------------------------------------------------------
+DROP TEMPORARY TABLE IF EXISTS tmp_seed_operational_contact_repairs;
+CREATE TEMPORARY TABLE tmp_seed_operational_contact_repairs (
+  visit_instance_id BIGINT UNSIGNED NOT NULL,
+  visit_request_id BIGINT UNSIGNED NOT NULL,
+  registrant_user_id BIGINT UNSIGNED NULL,
+  old_contact_user_id BIGINT UNSIGNED NOT NULL,
+  replacement_user_id BIGINT UNSIGNED NULL,
+  replacement_full_name VARCHAR(150) NOT NULL,
+  replacement_organization VARCHAR(255) NOT NULL,
+  replacement_job_title VARCHAR(150) NOT NULL,
+  replacement_phone VARCHAR(50) NULL,
+  replacement_email VARCHAR(150) NOT NULL,
+  replacement_nationality VARCHAR(100) NULL,
+  confirmed_at DATETIME NOT NULL,
+  PRIMARY KEY (visit_instance_id),
+  KEY idx_tmp_seed_op_contact_request (visit_request_id),
+  KEY idx_tmp_seed_op_contact_email (replacement_email)
+) ENGINE=InnoDB;
+
+INSERT INTO tmp_seed_operational_contact_repairs (
+  visit_instance_id, visit_request_id, registrant_user_id, old_contact_user_id, replacement_user_id,
+  replacement_full_name, replacement_organization, replacement_job_title,
+  replacement_phone, replacement_email, replacement_nationality, confirmed_at
+)
+SELECT
+  vrc.visit_instance_id,
+  vrc.visit_request_id,
+  vr.registrant_user_id,
+  vrc.operational_contact_user_id,
+  CASE
+    WHEN current_role.role_code = 'VISITOR' AND current_contact.status = 'ACTIVE'
+      THEN current_contact.user_id
+    WHEN cancel_role.role_code = 'VISITOR' AND cancel_user.status = 'ACTIVE'
+      THEN cancel_user.user_id
+    ELSE NULL
+  END AS replacement_user_id,
+  CASE
+    WHEN current_role.role_code = 'VISITOR' AND current_contact.status = 'ACTIVE'
+      THEN current_contact.full_name
+    WHEN cancel_role.role_code = 'VISITOR' AND cancel_user.status = 'ACTIVE'
+      THEN cancel_user.full_name
+    ELSE COALESCE(NULLIF(TRIM(first_guest.full_name), ''), CONCAT('Delegation Contact ', vrc.visit_request_id))
+  END AS replacement_full_name,
+  CASE
+    WHEN current_role.role_code = 'VISITOR'
+         AND current_contact.status = 'ACTIVE'
+         AND current_contact.user_id = vr.registrant_user_id
+      THEN COALESCE(NULLIF(TRIM(vr.registrant_organization), ''), NULLIF(TRIM(first_guest.organization), ''), 'External Delegation')
+    ELSE COALESCE(NULLIF(TRIM(first_guest.organization), ''), 'External Delegation')
+  END AS replacement_organization,
+  CASE
+    WHEN current_role.role_code = 'VISITOR'
+         AND current_contact.status = 'ACTIVE'
+         AND current_contact.user_id = vr.registrant_user_id
+      THEN COALESCE(NULLIF(TRIM(vr.registrant_job_title), ''), NULLIF(TRIM(first_guest.job_title), ''), 'Delegation Coordinator')
+    ELSE COALESCE(NULLIF(TRIM(first_guest.job_title), ''), 'Delegation Coordinator')
+  END AS replacement_job_title,
+  CASE
+    WHEN current_role.role_code = 'VISITOR' AND current_contact.status = 'ACTIVE'
+      THEN current_contact.phone
+    WHEN cancel_role.role_code = 'VISITOR' AND cancel_user.status = 'ACTIVE'
+      THEN cancel_user.phone
+    ELSE NULL
+  END AS replacement_phone,
+  CASE
+    WHEN current_role.role_code = 'VISITOR' AND current_contact.status = 'ACTIVE'
+      THEN LOWER(TRIM(current_contact.email))
+    WHEN cancel_role.role_code = 'VISITOR' AND cancel_user.status = 'ACTIVE'
+      THEN LOWER(TRIM(cancel_user.email))
+    ELSE CONCAT('visit.contact.', vrc.visit_request_id, '@delegation.example')
+  END AS replacement_email,
+  CASE
+    WHEN current_role.role_code = 'VISITOR' AND current_contact.status = 'ACTIVE'
+      THEN current_contact.nationality
+    WHEN cancel_role.role_code = 'VISITOR' AND cancel_user.status = 'ACTIVE'
+      THEN cancel_user.nationality
+    ELSE first_guest.nationality
+  END AS replacement_nationality,
+  COALESCE(vrc.operational_contact_confirmed_at, vrc.created_at, vr.submitted_at, CURRENT_TIMESTAMP) AS confirmed_at
+FROM visit_request_campuses vrc
+JOIN visit_requests vr
+  ON vr.visit_request_id = vrc.visit_request_id
+JOIN visit_instance_form_details d
+  ON d.visit_instance_id = vrc.visit_instance_id
+LEFT JOIN users current_contact
+  ON current_contact.user_id = vrc.operational_contact_user_id
+LEFT JOIN roles current_role
+  ON current_role.role_id = current_contact.role_id
+LEFT JOIN users cancel_user
+  ON cancel_user.user_id = vrc.cancelled_by
+LEFT JOIN roles cancel_role
+  ON cancel_role.role_id = cancel_user.role_id
+LEFT JOIN visit_guest_members first_guest
+  ON first_guest.guest_member_id = (
+    SELECT gm2.guest_member_id
+    FROM visit_guest_members gm2
+    WHERE gm2.visit_request_id = vrc.visit_request_id
+      AND gm2.member_type = 'GUEST'
+    ORDER BY gm2.display_order, gm2.guest_member_id
+    LIMIT 1
+  )
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND (
+       current_role.role_code IS NULL
+    OR current_role.role_code <> 'VISITOR'
+    OR current_contact.status <> 'ACTIVE'
+    OR LOWER(TRIM(d.operational_contact_email)) <> LOWER(TRIM(current_contact.email))
+    OR TRIM(d.operational_contact_full_name) <> TRIM(current_contact.full_name)
+  );
+
+-- Provision only the replacement identities that do not already have a usable VISITOR account.
+INSERT INTO users (
+  full_name, email, phone, nationality, role_id, sub_role,
+  primary_campus_id, department_id, status, email_verified_at,
+  failed_login_count, created_via, created_at
+)
+SELECT
+  t.replacement_full_name,
+  t.replacement_email,
+  t.replacement_phone,
+  t.replacement_nationality,
+  visitor_role.role_id,
+  NULL,
+  NULL,
+  NULL,
+  'ACTIVE',
+  MIN(t.confirmed_at),
+  0,
+  'VISITOR_FORM',
+  MIN(t.confirmed_at)
+FROM tmp_seed_operational_contact_repairs t
+JOIN roles visitor_role
+  ON visitor_role.role_code = 'VISITOR'
+WHERE t.replacement_user_id IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM users existing_user
+    WHERE LOWER(existing_user.email) = LOWER(t.replacement_email)
+  )
+GROUP BY
+  t.visit_request_id, t.replacement_full_name, t.replacement_email,
+  t.replacement_phone, t.replacement_nationality, visitor_role.role_id;
+
+-- Resolve generated/reused replacement accounts after provisioning.
+UPDATE tmp_seed_operational_contact_repairs t
+JOIN users replacement_user
+  ON LOWER(replacement_user.email) = LOWER(t.replacement_email)
+JOIN roles replacement_role
+  ON replacement_role.role_id = replacement_user.role_id
+ AND replacement_role.role_code = 'VISITOR'
+SET t.replacement_user_id = replacement_user.user_id
+WHERE t.replacement_user_id IS NULL
+  AND replacement_user.status = 'ACTIVE';
+
+-- Runtime relation: operational contact is always the ACTIVE VISITOR identity.
+-- IMPORTANT: do NOT JOIN visit_requests in this UPDATE. The AFTER UPDATE aggregate trigger on
+-- visit_request_campuses updates visit_requests; MySQL raises Error 1442 if the invoking statement
+-- is already reading visit_requests. registrant_user_id was snapshotted into the temporary table
+-- before this write specifically to keep the trigger-safe update isolated to visit_request_campuses.
+UPDATE visit_request_campuses vrc
+JOIN tmp_seed_operational_contact_repairs t
+  ON t.visit_instance_id = vrc.visit_instance_id
+SET vrc.operational_contact_user_id = t.replacement_user_id,
+    vrc.operational_contact_confirmed_at = t.confirmed_at,
+    vrc.operational_contact_confirmation_source = CASE
+      WHEN t.replacement_user_id = t.registrant_user_id THEN 'REGISTRANT_SELF_MATCH'
+      ELSE 'EMAIL_CONFIRMATION'
+    END;
+
+-- Read-model snapshot: name/email describe exactly the linked VISITOR account; organization/title
+-- remain realistic guest-side data and never reuse FPTU Staff/Leader identity fields.
+UPDATE visit_instance_form_details d
+JOIN tmp_seed_operational_contact_repairs t
+  ON t.visit_instance_id = d.visit_instance_id
+SET d.operational_contact_full_name = t.replacement_full_name,
+    d.operational_contact_organization = t.replacement_organization,
+    d.operational_contact_job_title = t.replacement_job_title,
+    d.operational_contact_phone = t.replacement_phone,
+    d.operational_contact_email = t.replacement_email;
+
+-- Keep immutable form-history snapshots semantically aligned when they contain the contact object.
+UPDATE visit_instance_form_revision_history h
+JOIN tmp_seed_operational_contact_repairs t
+  ON t.visit_instance_id = h.visit_instance_id
+SET h.snapshot_json = JSON_SET(
+      h.snapshot_json,
+      '$.operationalContact.fullName', t.replacement_full_name,
+      '$.operationalContact.organization', t.replacement_organization,
+      '$.operationalContact.jobTitle', t.replacement_job_title,
+      '$.operationalContact.phone', t.replacement_phone,
+      '$.operationalContact.email', t.replacement_email
+    )
+WHERE JSON_CONTAINS_PATH(h.snapshot_json, 'one', '$.operationalContact') = 1;
+
+-- Some curated legacy request-history rows carried one request-level operationalContactEmail.
+-- Single-campus history is synchronized; multi-campus history drops that obsolete request-level key.
+UPDATE visit_request_revision_history h
+JOIN visit_requests vr
+  ON vr.visit_request_id = h.visit_request_id
+JOIN (
+  SELECT visit_request_id, MIN(replacement_email) AS replacement_email
+  FROM tmp_seed_operational_contact_repairs
+  GROUP BY visit_request_id
+) t
+  ON t.visit_request_id = h.visit_request_id
+SET h.snapshot_json = CASE
+      WHEN vr.visit_scope = 'MULTI_CAMPUS'
+        THEN JSON_REMOVE(h.snapshot_json, '$.operationalContactEmail')
+      ELSE JSON_SET(h.snapshot_json, '$.operationalContactEmail', t.replacement_email)
+    END
+WHERE JSON_CONTAINS_PATH(h.snapshot_json, 'one', '$.operationalContactEmail') = 1;
+
+-- If a historical APPLIED confirmation row still points to the replaced identity, synchronize it too.
+UPDATE visit_request_identity_changes ic
+JOIN tmp_seed_operational_contact_repairs t
+  ON t.visit_instance_id = ic.visit_instance_id
+SET ic.new_user_id = t.replacement_user_id,
+    ic.new_email_normalized = t.replacement_email,
+    ic.new_email_masked = CONCAT(
+      LEFT(t.replacement_email, 1), '***@', SUBSTRING_INDEX(t.replacement_email, '@', -1)
+    )
+WHERE ic.status = 'APPLIED'
+  AND (ic.new_user_id <=> t.old_contact_user_id);
+
+DROP TEMPORARY TABLE IF EXISTS tmp_seed_operational_contact_repairs;
+
+-- ---------------------------------------------------------------------------
 -- R8. Code-grounded verification. Every invalid_* result below must be 0.
 -- ---------------------------------------------------------------------------
 SELECT 'invalid_01_automated_email_without_template' AS check_name, COUNT(*) AS issue_count
@@ -17047,6 +17071,42 @@ WHERE NOT EXISTS (
     AND m.member_type = 'GUEST'
 );
 
+
+SELECT 'invalid_22_operational_contact_non_visitor' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN users u ON u.user_id = vrc.operational_contact_user_id
+JOIN roles r ON r.role_id = u.role_id
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND (r.role_code <> 'VISITOR' OR u.status <> 'ACTIVE');
+
+SELECT 'invalid_23_operational_contact_snapshot_identity_mismatch' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN users u ON u.user_id = vrc.operational_contact_user_id
+JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+WHERE vrc.operational_contact_user_id IS NOT NULL
+  AND (
+       LOWER(TRIM(d.operational_contact_email)) <> LOWER(TRIM(u.email))
+    OR TRIM(d.operational_contact_full_name) <> TRIM(u.full_name)
+  );
+
+SELECT 'invalid_24_invalid_registrant_self_match_source' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_campuses vrc
+JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+WHERE vrc.operational_contact_confirmation_source = 'REGISTRANT_SELF_MATCH'
+  AND NOT (vrc.operational_contact_user_id <=> vr.registrant_user_id);
+
+SELECT 'invalid_25_applied_contact_confirmation_non_visitor' AS check_name, COUNT(*) AS issue_count
+FROM visit_request_identity_changes ic
+LEFT JOIN users u ON u.user_id = ic.new_user_id
+LEFT JOIN roles r ON r.role_id = u.role_id
+WHERE ic.status = 'APPLIED'
+  AND (
+       ic.new_user_id IS NULL
+    OR r.role_code IS NULL
+    OR r.role_code <> 'VISITOR'
+    OR u.status <> 'ACTIVE'
+  );
+
 -- Coverage output for role/relationship/status, template/event, visit-detail
 -- email history, documents, contact claims and report attachments.
 SELECT role_code, relationship_type, reachable_status, COUNT(*) AS story_count
@@ -17170,7 +17230,6 @@ SET SQL_SAFE_UPDATES = @pems_old_safe_updates;
 -- END PEMS CURATED SEED REBUILD
 -- ============================================================================
 --
-
 
 
 -- Make phone numbers optional for visit requests
@@ -17313,6 +17372,73 @@ BEGIN
   END IF;
 
   SELECT COUNT(*) INTO v_issue_count
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id = vrc.operational_contact_user_id
+  JOIN roles r ON r.role_id = u.role_id
+  WHERE vrc.operational_contact_user_id IS NOT NULL
+    AND (r.role_code <> 'VISITOR' OR u.status <> 'ACTIVE');
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: Operational Contacts not ACTIVE VISITOR = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM visit_request_campuses vrc
+  JOIN users u ON u.user_id = vrc.operational_contact_user_id
+  JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+  WHERE vrc.operational_contact_user_id IS NOT NULL
+    AND (
+         LOWER(TRIM(d.operational_contact_email)) <> LOWER(TRIM(u.email))
+      OR TRIM(d.operational_contact_full_name) <> TRIM(u.full_name)
+    );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: Operational Contact snapshot/account mismatches = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM visit_request_campuses vrc
+  JOIN visit_requests vr ON vr.visit_request_id = vrc.visit_request_id
+  WHERE vrc.operational_contact_confirmation_source = 'REGISTRANT_SELF_MATCH'
+    AND NOT (vrc.operational_contact_user_id <=> vr.registrant_user_id);
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: invalid REGISTRANT_SELF_MATCH contacts = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM visit_request_identity_changes ic
+  LEFT JOIN users u ON u.user_id = ic.new_user_id
+  LEFT JOIN roles r ON r.role_id = u.role_id
+  WHERE ic.status = 'APPLIED'
+    AND (
+         ic.new_user_id IS NULL
+      OR r.role_code IS NULL
+      OR r.role_code <> 'VISITOR'
+      OR u.status <> 'ACTIVE'
+    );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: APPLIED contact confirmations not ACTIVE VISITOR = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
   FROM visit_instance_form_details d
   WHERE d.operational_contact_job_title IS NULL
      OR TRIM(d.operational_contact_job_title) = '';
@@ -17397,6 +17523,92 @@ BEGIN
   IF v_issue_count <> 0 THEN
     SET v_message = CONCAT(
       'CURATED_SEED_INVALID: stale Head Office approval content = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+
+  -- API configuration seed must mirror the current Dev runtime exactly: five
+  -- well-known integrations, no legacy/factory rows, no fabricated request logs
+  -- or custom headers, and quotas only for features that actually enforce them.
+  SELECT COUNT(*) INTO v_issue_count
+  FROM api_configurations
+  WHERE deleted_at IS NULL;
+
+  IF v_issue_count <> 5 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: live API configurations must equal 5, actual = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM api_configurations
+  WHERE deleted_at IS NULL
+    AND api_code NOT IN (
+      'GOOGLE_DRIVE_STORAGE',
+      'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
+      'NEWS_TRANSLATION_GOOGLE_CLOUD',
+      'FACE_DETECTION_GOOGLE_VISION',
+      'RESEND_EMAIL_DELIVERY'
+    );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: unsupported API configuration rows = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count FROM api_configuration_headers;
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: seeded API configuration headers = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count FROM api_request_logs;
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: fabricated API request logs = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM api_usage_quotas q
+  JOIN api_configurations c ON c.api_config_id = q.api_config_id
+  WHERE c.api_code NOT IN (
+    'BUSINESS_CARD_OCR_GOOGLE_DOCUMENT_AI',
+    'FACE_DETECTION_GOOGLE_VISION'
+  );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: quotas seeded for non-enforced API integrations = ',
+      v_issue_count
+    );
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
+  END IF;
+
+  SELECT COUNT(*) INTO v_issue_count
+  FROM api_configurations
+  WHERE deleted_at IS NULL
+    AND (
+      last_test_status IS NOT NULL
+      OR last_tested_at IS NOT NULL
+      OR last_test_message IS NOT NULL
+    );
+
+  IF v_issue_count <> 0 THEN
+    SET v_message = CONCAT(
+      'CURATED_SEED_INVALID: fabricated API connection-test history rows = ',
       v_issue_count
     );
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_message;
@@ -17491,5 +17703,5 @@ DROP PROCEDURE IF EXISTS sp_pems_assert_curated_seed_quality;
 SELECT
   'curated_seed_quality_gate' AS check_name,
   'PASS' AS result,
-  'Operational agendas, Host email senders, campus statuses, contact job titles, HO semantics and visible seed content are valid.' AS details;
+  'Operational agendas, Host email senders, campus statuses, Visitor-only operational contacts, API integration seed minimalism, HO semantics and visible seed content are valid.' AS details;
 

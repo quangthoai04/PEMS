@@ -1,0 +1,264 @@
+{
+  "breadcrumb": {
+    "home": "Home"
+  },
+  "toc": {
+    "title": "On this page",
+    "mobileLabel": "Jump to section"
+  },
+  "lastUpdated": "Last updated: {{date}}",
+  "org": {
+    "name": "International Cooperation Department – FPT University",
+    "email": "international.fptu@fpt.edu.vn",
+    "phone": "024 6680 5912",
+    "website": "https://www.pems-fpt.site"
+  },
+  "contactCard": {
+    "privacyTitle": "Have questions about our Privacy Policy?",
+    "termsTitle": "Have questions about our Terms of Service?",
+    "cta": "Contact us"
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "subtitle": "Legal",
+    "description": "PEMS respects your privacy and is committed to handling personal data transparently and securely for the operation of the Visit Management and International Cooperation System.",
+    "documentTitle": "Privacy Policy | PEMS - FPT University",
+    "sections": [
+      {
+        "id": "introduction",
+        "title": "Introduction",
+        "paragraphs": [
+          "PEMS is a Visit Management and International Cooperation System used to support visit registration, delegation reception, schedule coordination, document and media management, partner management, and related operational activities.",
+          "This Privacy Policy explains the types of data that PEMS may process, the purposes for which such data is used, how the data is protected, and the rights available to users.",
+          "Users are provided access to this Privacy Policy before or during their use of features involving personal data."
+        ]
+      },
+      {
+        "id": "information-we-process",
+        "title": "Information We Process",
+        "paragraphs": [
+          "Depending on the features used, PEMS may process information such as name, email address, phone number when provided, organization, job title, nationality, visit registration information, working schedules, delegation members, responsible personnel, documents, images, reports, and other information required for visitor management operations.",
+          "For internal users, PEMS may process account information, roles, organizational information, activity history, and information necessary for authentication, authorization, and system auditing.",
+          "PEMS does not intentionally request information that is unnecessary for the feature being used."
+        ]
+      },
+      {
+        "id": "google-drive",
+        "title": "Google Drive and Google User Data",
+        "paragraphs": [
+          "PEMS uses the Google Drive API to provide file storage and retrieval capabilities required by the system.",
+          "When an authorized administrator connects a Google Drive account to PEMS, the system requests Google Drive access in order to upload, download, retrieve, organize, and manage files used by PEMS.",
+          "These files may include gallery media, visit or delegation photos, documents, partner documents, meeting minutes, reports, and other operational files created or managed through PEMS.",
+          "PEMS uses Google Drive access only to provide and operate user-facing features that are clearly available within the system.",
+          "PEMS does not use data obtained from Google Drive for advertising, advertising profiling, data brokerage, sale of user data, or unrelated purposes.",
+          "PEMS does not use Google user data for purposes unrelated to the functionality of the system.",
+          "PEMS's use of information received from Google APIs adheres to the Google API Services User Data Policy, including its Limited Use requirements."
+        ]
+      },
+      {
+        "id": "google-oauth",
+        "title": "Google OAuth Credentials",
+        "paragraphs": [
+          "PEMS uses OAuth 2.0 to obtain Google Drive access from an account explicitly authorized by an administrator.",
+          "PEMS does not request or store the password of the connected Google Account.",
+          "OAuth refresh tokens are protected before being stored and are used only by the PEMS backend to obtain access tokens required to communicate with the Google Drive API.",
+          "Google authentication credentials are not publicly exposed to ordinary system users."
+        ]
+      },
+      {
+        "id": "how-we-use",
+        "title": "How We Use Information",
+        "paragraphs": [
+          "PEMS processes information to provide system functionality; authenticate users and enforce authorization; receive and process visit requests; coordinate activities before, during, and after visits; manage documents, media, and reports; send operational notifications; protect system security; detect errors or misuse; and support auditing when necessary."
+        ]
+      },
+      {
+        "id": "sharing",
+        "title": "Sharing of Information",
+        "paragraphs": [
+          "PEMS does not sell personal data or Google user data.",
+          "Information may be processed by or transmitted to services necessary to provide PEMS functionality, only to the extent required for that functionality.",
+          "Information may also be disclosed where necessary to comply with valid legal obligations, protect system security, or investigate abuse."
+        ]
+      },
+      {
+        "id": "security",
+        "title": "Data Security",
+        "paragraphs": [
+          "PEMS applies appropriate technical and organizational safeguards to protect information against unauthorized access, use, alteration, or disclosure.",
+          "These safeguards may include role-based access control, user authentication, encryption or protection of sensitive credentials, access restrictions, audit logging, and transmission over secure connections.",
+          "No system can guarantee absolute security; however, PEMS is designed to reduce the risks of unauthorized access and data exposure."
+        ]
+      },
+      {
+        "id": "retention",
+        "title": "Data Retention",
+        "paragraphs": [
+          "PEMS retains information for as long as reasonably necessary to provide its operational functions, maintain relevant records, and meet applicable operational requirements.",
+          "The retention period may vary depending on the type of information and its business purpose.",
+          "When information is no longer required, it may be deleted, anonymized, or archived in accordance with applicable data management practices."
+        ]
+      },
+      {
+        "id": "revoke-google",
+        "title": "Revoking Google Access",
+        "paragraphs": [
+          "An administrator may stop using the PEMS Google Drive integration through the integration management features provided by PEMS or by revoking PEMS access from the third-party application settings of the connected Google Account.",
+          "After access is revoked, PEMS will no longer be able to use the corresponding refresh token to access Google Drive."
+        ]
+      },
+      {
+        "id": "user-requests",
+        "title": "User Requests",
+        "paragraphs": [
+          "Users may contact the PEMS operating team for assistance regarding their personal information, including requests to update, correct, or delete information where appropriate and permitted.",
+          "Certain information may need to be retained where necessary to preserve operational records, auditing requirements, or other applicable obligations."
+        ]
+      },
+      {
+        "id": "third-party",
+        "title": "Third-party Services",
+        "paragraphs": [
+          "PEMS may use third-party services to provide certain functionality, such as Google Drive for file storage, configured Google Cloud services for supported data-processing functions, and email delivery providers for system notifications.",
+          "These third-party services may be subject to their own privacy policies and terms."
+        ]
+      },
+      {
+        "id": "minors",
+        "title": "Information Relating to Minors",
+        "paragraphs": [
+          "PEMS is designed to support organizational visitor management and cooperation activities. Where information relating to minors is processed as part of legitimate operational activities, such information should be handled in accordance with the applicable procedures and authority of the responsible organization."
+        ]
+      },
+      {
+        "id": "changes",
+        "title": "Changes to This Privacy Policy",
+        "paragraphs": [
+          "PEMS may update this Privacy Policy when system functionality or data-processing practices change.",
+          "The updated version will be published on this page together with the most recent update date.",
+          "If there is a material change to the way PEMS uses Google user data, users will be notified or asked to provide renewed consent where appropriate before the data is used for a new purpose."
+        ]
+      },
+      {
+        "id": "contact",
+        "title": "Contact",
+        "paragraphs": []
+      }
+    ]
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "subtitle": "Legal",
+    "description": "These Terms govern access to and use of the PEMS Visit Management and International Cooperation System.",
+    "documentTitle": "Terms of Service | PEMS - FPT University",
+    "privacyLinkLabel": "View Privacy Policy",
+    "sections": [
+      {
+        "id": "acceptance",
+        "title": "Acceptance of Terms",
+        "paragraphs": [
+          "By accessing or using PEMS, users agree to use the system in accordance with these Terms, applicable operational policies, and instructions provided through the system.",
+          "Users who do not agree with the applicable terms should discontinue use of the relevant features."
+        ]
+      },
+      {
+        "id": "purpose",
+        "title": "Purpose of the System",
+        "paragraphs": [
+          "PEMS is provided to support visit registration, delegation management, visitor coordination, schedules, documents, media, partners, reports, and related operational functions."
+        ]
+      },
+      {
+        "id": "accounts",
+        "title": "Accounts",
+        "paragraphs": [
+          "Users are responsible for protecting their authentication credentials and must not share accounts with unauthorized persons.",
+          "Actions performed through authenticated accounts may be logged for operational and auditing purposes."
+        ]
+      },
+      {
+        "id": "authorized-use",
+        "title": "Authorized Use",
+        "paragraphs": [
+          "Users may use PEMS only for purposes consistent with the system's functionality and their assigned permissions.",
+          "Users must not attempt to access data, functionality, or resources for which they are not authorized."
+        ]
+      },
+      {
+        "id": "user-content",
+        "title": "User Content",
+        "paragraphs": [
+          "Users are responsible for the appropriateness and accuracy of information, documents, and content they submit to PEMS.",
+          "Users must not upload unlawful, harmful, rights-infringing, or operationally irrelevant content."
+        ]
+      },
+      {
+        "id": "google-drive",
+        "title": "Google Drive Integration",
+        "paragraphs": [
+          "Certain PEMS file-storage features are provided through the Google Drive API.",
+          "Google Drive connections may only be established by appropriately authorized accounts or administrators.",
+          "Use of Google Drive through PEMS is also subject to applicable Google terms and policies."
+        ]
+      },
+      {
+        "id": "availability",
+        "title": "Availability",
+        "paragraphs": [
+          "PEMS aims to provide reliable service but does not guarantee uninterrupted availability.",
+          "The system may be temporarily unavailable due to maintenance, updates, incident response, or circumstances beyond reasonable control."
+        ]
+      },
+      {
+        "id": "prohibited-conduct",
+        "title": "Security and Prohibited Conduct",
+        "paragraphs": [
+          "Users must not attempt to bypass security controls, exploit vulnerabilities, disrupt services, distribute malicious software, or obtain unauthorized access."
+        ]
+      },
+      {
+        "id": "suspension",
+        "title": "Suspension",
+        "paragraphs": [
+          "Access to PEMS may be restricted or suspended where an account violates these Terms, is no longer authorized to use the system, or where restriction is necessary to protect the system and its data."
+        ]
+      },
+      {
+        "id": "intellectual-property",
+        "title": "Intellectual Property",
+        "paragraphs": [
+          "Software, interfaces, designs, system documentation, and other PEMS components remain subject to the applicable ownership and usage rights of their respective owners.",
+          "Use of PEMS does not transfer intellectual property rights to users."
+        ]
+      },
+      {
+        "id": "third-party",
+        "title": "Third-party Services",
+        "paragraphs": [
+          "Certain PEMS features depend on third-party services such as Google APIs or email delivery services.",
+          "PEMS does not have complete control over the availability or policy changes of those third-party services."
+        ]
+      },
+      {
+        "id": "privacy",
+        "title": "Privacy",
+        "paragraphs": [
+          "The processing of personal information in connection with PEMS is described in the Privacy Policy."
+        ]
+      },
+      {
+        "id": "changes",
+        "title": "Changes to These Terms",
+        "paragraphs": [
+          "PEMS may update these Terms when functionality, policies, or operational requirements change.",
+          "The revised Terms will be published on this page together with the most recent update date."
+        ]
+      },
+      {
+        "id": "contact",
+        "title": "Contact",
+        "paragraphs": []
+      }
+    ]
+  }
+}

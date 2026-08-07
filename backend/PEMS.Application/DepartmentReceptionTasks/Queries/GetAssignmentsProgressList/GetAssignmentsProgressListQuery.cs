@@ -81,6 +81,7 @@ public sealed class AssignmentsProgressItemDto
     public DateTime? ActionAt { get; set; }
     /// <summary>True nếu chính current user là người đã xử lý (đồng ý / từ chối) đơn này.</summary>
     public bool IsActedByCurrentUser { get; set; }
+    public bool CanOpenContribution { get; set; }
 }
 
 public sealed class GetAssignmentsProgressListQueryHandler
@@ -190,7 +191,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 && row.li.Status != "REJECTED"
                 && row.LatestStatus != "REJECTED";
 
-            var responsibleUserId = row.li.AssignedToUserId;
+            var responsibleUserId = hasActiveAssignee ? row.li.AssignedToUserId : null;
             var responsibleInfo = responsibleUserId.HasValue && userNames.TryGetValue(responsibleUserId.Value, out var aInfo)
                 ? aInfo
                 : (responsibleUserId.HasValue && assigneeNames.TryGetValue(responsibleUserId.Value, out var aInfo2) ? aInfo2 : null);
@@ -225,8 +226,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 Title = row.li.Title,
                 Description = row.li.Description,
                 CurrentResponsibleUserId = responsibleUserId,
-                CurrentResponsibleName = hasActiveAssignee ? responsibleName : null,
-                CurrentResponsibleRole = hasActiveAssignee ? responsibleRole : null,
+                CurrentResponsibleName = responsibleName,
+                CurrentResponsibleRole = responsibleRole,
                 IsCurrentUserResponsible = row.li.AssignedToUserId == currentUserId,
                 IsLeaderSelfAccepted = isSelfAccepted && leaderUserId == currentUserId,
                 // True khi leader đã chính tay từ chối (được ghi vào UpdatedBy khi REJECTED)
@@ -255,7 +256,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LatestAssignmentAttemptStatus = row.LatestStatus,
                 NeedsAttention = IsRequestNeedsAttention(row.li.Status, row.li.AssignedToUserId, currentUserId, startAt, now),
                 AttentionReason = uiStatus == "CANCELLED" ? "Đơn đã hủy vì đoàn khách đã hủy" : BuildAttentionReason(row.li.Status, startAt, now),
-                CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason
+                CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason,
+                CanOpenContribution = PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForLogistics(currentUserId, row.li.AssignedToUserId, row.li.Status)
             };
         }).ToList();
 
@@ -312,6 +314,11 @@ public sealed class GetAssignmentsProgressListQueryHandler
             var isLeaderSelfAccepted = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Accepted;
             var canLeaderHandle = uiStatus is "REQUESTED" or "DECLINED";
 
+            var hasActiveAssignee = activeStaff != null && uiStatus != "REQUESTED";
+            var activeUserId = hasActiveAssignee ? activeStaff!.p.UserId : (uiStatus != "REQUESTED" ? row.p.UserId : (ulong?)null);
+            var activeUserName = hasActiveAssignee ? activeStaff!.u.FullName : (uiStatus != "REQUESTED" ? row.u.FullName : null);
+            var activeUserSubRole = hasActiveAssignee ? activeStaff!.u.SubRole : (uiStatus != "REQUESTED" ? row.u.SubRole : null);
+
             items.Add(new AssignmentsProgressItemDto
             {
                 ItemType = "INVITATION",
@@ -327,10 +334,10 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 RegistrantJobTitle = row.vr.RegistrantJobTitle,
                 Title = "Thư mời tham gia đón tiếp",
                 Description = row.p.Note ?? row.EffectiveWorkingContent,
-                CurrentResponsibleUserId = activeStaff?.p.UserId ?? row.p.UserId,
-                CurrentResponsibleName = activeStaff?.u.FullName ?? row.u.FullName,
-                CurrentResponsibleRole = ToDepartmentRoleLabel((activeStaff?.u ?? row.u).SubRole, activeStaff?.p.UserId ?? row.p.UserId, leaderUserId),
-                IsCurrentUserResponsible = (activeStaff?.p.UserId ?? row.p.UserId) == currentUserId,
+                CurrentResponsibleUserId = activeUserId,
+                CurrentResponsibleName = activeUserName,
+                CurrentResponsibleRole = activeUserId.HasValue ? ToDepartmentRoleLabel(activeUserSubRole, activeUserId.Value, leaderUserId) : null,
+                IsCurrentUserResponsible = activeUserId == currentUserId,
                 IsLeaderSelfAccepted = isLeaderSelfAccepted,
                 // True khi chính current user là participant (đã đồng ý hoặc từ chối thư mời)
                 IsActedByCurrentUser = row.p.UserId == currentUserId,
@@ -352,7 +359,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 LatestAssignmentAttemptStatus = activeStaff == null ? null : activeStaff.p.Status,
                 NeedsAttention = IsInvitationNeedsAttention(uiStatus, row.p.UserId, currentUserId, row.inst.PlannedStartAt, now),
                 AttentionReason = uiStatus == "REQUESTED" ? "Thư mời chưa được xử lý/phân công" : null,
-                CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason
+                CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason,
+                CanOpenContribution = PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForInvitation(currentUserId, row.p.UserId, row.p.Status)
             });
         }
 
@@ -433,8 +441,9 @@ public sealed class GetAssignmentsProgressListQueryHandler
     private static bool Contains(string? value, string keyword)
         => !string.IsNullOrWhiteSpace(value) && value.ToLowerInvariant().Contains(keyword);
 
-    private static string ToDepartmentRoleLabel(string? subRole, ulong? userId, ulong? leaderUserId)
+    private static string? ToDepartmentRoleLabel(string? subRole, ulong? userId, ulong? leaderUserId)
     {
+        if (!userId.HasValue) return null;
         if (string.Equals(subRole, "LEADER", StringComparison.OrdinalIgnoreCase) || userId == leaderUserId)
             return "Trưởng phòng";
         return "Nhân viên";

@@ -860,7 +860,7 @@ export const useVisitRequestFormV2 = (
           requestCode: lookup.requestCode ?? '',
           visitScope: (values.campusVisits?.length ?? 0) > 1 ? 'MULTI_CAMPUS' : 'SINGLE_CAMPUS',
           hasMixedCampusDetails: false,
-          pendingConfirmations: 0,
+          pendingContactConfirmations: 0,
           instances: [],
           idempotent: true,
           status: lookup.status ?? '',

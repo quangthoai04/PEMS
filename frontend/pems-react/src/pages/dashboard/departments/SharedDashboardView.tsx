@@ -102,6 +102,7 @@ type AssignmentProgressItem = {
   latestDeclinedAt?: string;
   /** True khi chính người đang đăng nhập là người thực hiện hành động gần nhất. */
   isActedByCurrentUser?: boolean;
+  canOpenContribution?: boolean;
   needsAttention: boolean;
   attentionReason?: string;
   cancelReason?: string;
@@ -1507,14 +1508,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     });
   };
 
-  // TEMP DEV TEST: Department contribution shortcut.
-  // Shows an extra action (next to the unchanged eye icon) that opens the Contribution Page,
-  // only for Department roles on rows that carry a visitInstanceId, and only in dev builds.
-  // Does NOT touch the eye icon's onClick/route/detail flow, nor backend allowedActions.
-  // Remove this shortcut when the OPEN_CONTRIBUTION allowedAction is implemented by backend.
+  // Quyền truy cập Contribution từ backend
   const isDepartmentRole = !!isDeptLeader || !!isDeptStaff;
   const canOpenContribution = (row: AssignmentProgressItem) =>
-    import.meta.env.DEV && isDepartmentRole && !!row.visitInstanceId;
+    !!row.canOpenContribution;
 
   const renderAssignmentsProgressPanel = () => (
     <div className="space-y-5">
@@ -3172,10 +3169,41 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                       </div>
 
-                      {/* 3. Setup */}
+                      {/* Đầu mối đoàn khách phối hợp tại cơ sở */}
                       <div className="p-5 border-b border-orange-100">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
                           <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '3' : '2'}</span>
+                          Đầu mối đoàn khách phối hợp tại cơ sở
+                        </h4>
+                        <p className="text-xs text-slate-500 mb-4">Thông tin liên hệ đầu mối phía đoàn khách phối hợp tại campus này</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
+                          <div>
+                            <p className="text-slate-500 mb-1">Họ và tên</p>
+                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactFullName || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Đơn vị công tác</p>
+                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactOrganization || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Chức vụ</p>
+                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactJobTitle || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Số điện thoại</p>
+                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactPhone || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-500 mb-1">Email</p>
+                            <p className="font-bold text-slate-800">{activeEventDetail?.operationalContactEmail || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Setup */}
+                      <div className="p-5 border-b border-orange-100">
+                        <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '4' : '3'}</span>
                           Setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Tiêu chí bố trí tham quan, chương trình chi tiết & thành phần tham gia</p>
@@ -3212,10 +3240,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                       </div>
 
-                      {/* 4. Detail setup */}
+                      {/* Detail setup */}
                       <div className="p-5 bg-orange-50/50">
                         <h4 className="font-bold text-[#004c91] mb-1 flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '4' : '3'}</span>
+                          <span className="w-6 h-6 rounded-full bg-orange-100 text-[#f37021] flex items-center justify-center text-xs">{canSeeRegistrantInfo ? '5' : '4'}</span>
                           Detail setup
                         </h4>
                         <p className="text-xs text-slate-500 mb-4">Yêu cầu kỹ thuật về khẩu hiệu trình chiếu LED và công tác chuẩn bị đón tiếp Campus Tour</p>
@@ -3616,6 +3644,36 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             </div>
                           </div>
 
+                        </div>
+
+                        {/* Đầu mối đoàn khách phối hợp tại cơ sở — Request detail */}
+                        <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default mt-4">
+                          <div className="flex items-center gap-2 text-gray-400 mb-3">
+                            <User className="w-4 h-4" />
+                            <span className="text-[11px] font-bold uppercase tracking-wider">Đầu mối đoàn khách phối hợp tại cơ sở</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Họ và tên</p>
+                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactFullName || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Đơn vị công tác</p>
+                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactOrganization || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Chức vụ</p>
+                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactJobTitle || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Số điện thoại</p>
+                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactPhone || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-0.5">Email</p>
+                              <p className="font-semibold text-gray-800">{activeEventDetail?.operationalContactEmail || '—'}</p>
+                            </div>
+                          </div>
                         </div>
 
                         <div className="flex flex-col gap-3 pt-4 transition-all cursor-default relative z-10">
