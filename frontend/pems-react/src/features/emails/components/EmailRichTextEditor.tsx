@@ -48,6 +48,7 @@ import {
 import {
   SPACE_RUN_WARNING, hasSpaceRun, htmlHasSpaceRun, sanitizePastedFragment,
 } from '../utils/emailEditorPaste';
+import { isSameEmailHtml } from '../utils/emailHtmlCanonicalizer';
 import { fromEditorHtml, toEditorHtml } from '../utils/emailEditorSystemNodes';
 import { countSystemActionNodes } from '../utils/systemActionNode';
 import {
@@ -58,50 +59,37 @@ import {
   TABLE_BLOT_NAME, TABLE_WRAPPER_CLASS, applyTableEdit, buildEmailTable, nodesToTables,
   parseEmailTable, tablesToNodes,
 } from '../utils/emailEditorTable';
+import {
+  TEMPLATE_BLOCK_ATTRIBUTE, TEMPLATE_BLOCK_BLOT_NAME, TEMPLATE_BLOCK_CLASS,
+  countTemplateBlocks, nodesToTemplateBlocks, templateBlockLabel, templateBlocksToNodes,
+} from '../utils/emailEditorTemplateBlocks';
 import { EmailTableDialog } from './EmailTableDialog';
 
 // Before any editor is constructed: Quill drops what it has no blot for, so a late registration means the
 // first document opened loses its action block and its dividers.
 registerEmailEditorFormats();
 
-/**
- * Puts every `style` attribute's declarations in one fixed order.
+/*
+ * A note on the ORDER of declarations inside a style attribute, because sorting them looked obvious.
  *
- * <b>The defect this closes.</b> Quill assigns an element's declarations one property at a time as it
- * rebuilds the DOM from a Delta, and which property lands first is not stable across parses of the SAME
- * content — one pass gives `"font-size:12px;color:#647"`, the next gives `"color:#647;font-size:12px"`.
- * That is invisible on screen, but this editor is CONTROLLED: the stored html this produces becomes the
- * `value` prop handed back to Quill, which parses it again and can re-order it again, to a THIRD spelling
- * that differs from the second exactly as much as the second differed from the first. A pair of
- * declarations whose order keeps changing never reaches a spelling that equals the one before it, so
- * ReactQuill's own "did the value actually change" check never once answers no — it re-set the document
- * and fired another `onChange` on every tick, which pinned a CPU core the moment an editor opened on any
- * template whose style carried two declarations (every shipped template's does), before the operator
- * could do anything at all, including opening devtools to see why.
+ * There used to be a `sortStyleDeclarations` here, applied to everything on its way to storage, written
+ * to stop a ping-pong: Quill re-spells a style attribute when it parses one, that re-spelling became the
+ * next value, and the two notations traded places forever. That loop is closed at its source now —
+ * `handleChange` ignores anything Quill did not attribute to a person (see its `source` note), so an
+ * echo never becomes a value at all.
  *
- * <b>Why sorting, not `canonicalizeEmailHtml`.</b> That comparison is deliberately lossy — it also
- * collapses runs of whitespace, because two spellings of insignificant markup formatting should read as
- * "no edit". Applied to what actually gets STORED, that same collapse would silently rewrite a run of
- * spaces an author typed on purpose into one space, which is precisely what V4 §7.4 refuses to do
- * anywhere in this product. This touches only the order of declarations inside `style=""` — never a
- * property, a value, or a character of text — which is safe to apply unconditionally: two declarations in
- * either order paint the same pixels.
+ * Sorting on top of that was not free, and the price was measured on quill 2.0.3: a sorted spelling
+ * never equals what Quill renders, react-quill-new compares those two on EVERY render, and a lasting
+ * difference makes it re-run `setContents`. So any element carrying two declarations — every formatted
+ * span, in every shipped template — rebuilt the whole document on every render of the screen around it,
+ * and Quill's selection went with it. Applying three formats to one selection therefore lost the third:
+ * the size landed, the font landed, and by the time the colour was picked the selection had collapsed to
+ * a cursor at index 0. The colour was silently dropped, on a heading the operator was watching.
+ *
+ * What is stored now is Quill's own spelling, unaltered. Equality is answered by
+ * `canonicalizeEmailHtml`, which sorts declarations for COMPARISON only — where reordering is free,
+ * because nothing is written back.
  */
-function sortStyleDeclarations(html: string): string {
-  if (!html || typeof window === 'undefined' || !window.DOMParser) return html;
-
-  const doc = new window.DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  for (const el of Array.from(doc.body.querySelectorAll('[style]'))) {
-    const declarations = (el.getAttribute('style') ?? '')
-      .split(';')
-      .map((d) => d.trim())
-      .filter((d) => d.length > 0);
-    const sorted = [...declarations].sort();
-    const next = sorted.join(';');
-    if (next !== declarations.join(';')) el.setAttribute('style', next);
-  }
-  return doc.body.innerHTML;
-}
 
 /** A variable the author may insert, as offered by the picker (§8.1). */
 export interface EmailEditorVariable {
@@ -125,9 +113,115 @@ export interface EmailRichTextEditorProps {
   /** Uploads an image and returns the URL to embed. Without it, the image button is hidden. */
   onUploadImage?: (file: File) => Promise<string>;
   onNotice?: (message: string) => void;
+  /**
+   * Fired the moment this editor becomes the thing the operator is writing in.
+   *
+   * <b>The defect it closes.</b> A host screen with a second place to write — the template screen's
+   * subject line — has to know which of the two an inserted variable belongs to, and it learns about the
+   * subject from that input's own focus and select events. The body had no equivalent: this editor keeps
+   * its caret to itself (rightly — one copy of that rule, not two), so the screen went on believing the
+   * subject was still the target long after the operator had clicked into the body, and every variable
+   * they picked jumped up into the subject line.
+   *
+   * Deliberately carries no position. Where inside the body a variable lands is this component's business
+   * and stays here; all the host is told is WHICH field is live.
+   */
+  onEditorActivated?: () => void;
+  /**
+   * The system blocks this TEMPLATE may carry, from its contract — never a list held in the editor.
+   *
+   * Each becomes a protected object in the document and `{{name}}` in what is stored (§5). Absent or
+   * empty hides the button entirely, which is the correct answer for a template whose send path attaches
+   * no block: offering one would let an operator save a placeholder the renderer then refuses.
+   *
+   * Ignored in COMPOSE, where the action area is a position node inside already-rendered content rather
+   * than a placeholder — see `emailEditorTemplateBlocks.ts` for why those are two different things.
+   */
+  systemBlocks?: { name: string; label?: string }[];
   disabled?: boolean;
   minHeight?: number;
   'data-testid'?: string;
+}
+
+/** True for a block a caret cannot go inside, and therefore cannot go after when it ends a document. */
+function isBlockObject(el: Element | null | undefined): boolean {
+  if (!el) return false;
+  return el.tagName === 'HR'
+    || el.tagName === 'TABLE'
+    || el.classList.contains(TABLE_WRAPPER_CLASS)
+    || el.hasAttribute('data-system-block')
+    || el.hasAttribute(TEMPLATE_BLOCK_ATTRIBUTE)
+    || !!el.querySelector?.(`table, hr, [data-system-block], [${TEMPLATE_BLOCK_ATTRIBUTE}]`);
+}
+
+/**
+ * True for a block with no text in it at all — `<p></p>` and Quill's `<p><br></p>`, and nothing else.
+ *
+ * Deliberately NOT "looks empty". A paragraph holding a space or a `&nbsp;` is a line the author put
+ * there, and Quill keeps it: its delta ends with a character, so the trailing-newline rule below does
+ * not apply to it. Treating it as blank here would delete a spacer line from somebody's template.
+ */
+function isBlankBlock(el: Element | null | undefined): boolean {
+  if (!el || !/^(P|DIV)$/.test(el.tagName)) return false;
+  if (el.querySelector('img, table, hr, [data-system-block], [data-variable]')) return false;
+  return (el.textContent ?? '').replace(/[﻿​]/g, '') === '';
+}
+
+/**
+ * Drops one trailing blank block — the one Quill is going to drop anyway.
+ *
+ * <b>The defect this closes, which is a performance one.</b> `clipboard.convert` deletes exactly one
+ * trailing newline when it parses a document, so a body stored as `…</table><p></p>` arrives in the
+ * editor WITHOUT that paragraph. react-quill-new then compares the value it was given against what the
+ * editor actually holds — on every render — and re-runs `setContents` whenever they differ. A difference
+ * the parse itself creates can never be reconciled, so that comparison answers "different" forever: the
+ * whole document is rebuilt on every keystroke, every DOM node is replaced under whatever was holding
+ * one, and the caret goes with it. Measured on quill 2.0.3 with a body ending in a table and an empty
+ * paragraph — a shape a person makes by pressing Enter after a table and saving.
+ *
+ * `onlyAfterObject` is for the OTHER direction. On the way IN this matches Quill's own rule exactly, so
+ * what is handed over is what will be held. On the way OUT only the blank line that follows a table, a
+ * divider or the action block is removed — the one `caretAfterBlock` adds so the author has somewhere to
+ * type — because a blank line an author left at the end of ordinary prose is theirs while they are still
+ * editing, and taking it out from under them mid-session is an edit nobody asked for.
+ */
+function dropTrailingBlank(html: string, onlyAfterObject = false): string {
+  if (!html || typeof window === 'undefined' || !window.DOMParser) return html;
+
+  const doc = new window.DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+  const last = doc.body.lastElementChild;
+  if (!isBlankBlock(last)) return html;
+  if (onlyAfterObject && !isBlockObject(last!.previousElementSibling)) return html;
+
+  last!.remove();
+  return doc.body.innerHTML;
+}
+
+/*
+ * A note on the line AFTER a table, because the obvious repair is a trap.
+ *
+ * A table, a divider and the action block are each one indivisible block, so a document that ENDS with
+ * one has no position after it — the last line IS the object. `caretAfterBlock` adds a paragraph as part
+ * of the insert so the caret has somewhere to land.
+ *
+ * What is deliberately NOT done is keeping that paragraph there permanently by writing it into the html
+ * handed to Quill. The parse eats one trailing newline (see `dropTrailingBlank`), so a single filler
+ * paragraph never appears at all; writing TWO does leave one, and buys the rebuild-on-every-render
+ * failure described above in exchange. An empty line that survives a reload is not worth that — and an
+ * author who writes something under the table keeps their paragraph anyway, because it is then not blank.
+ */
+
+/**
+ * The table wrapper living at `index`, or null if that position holds something else.
+ *
+ * Resolved from the DOCUMENT rather than remembered from the insert, because the element Quill renders
+ * for an embed is not the one the caller passed it — the value is markup, and the node is built from it.
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function tableNodeAt(q: any, index: number): HTMLElement | null {
+  const [blot] = q.getLine?.(index) ?? [];
+  const node: unknown = blot?.domNode;
+  return node instanceof HTMLElement && node.classList.contains(TABLE_WRAPPER_CLASS) ? node : null;
 }
 
 /** A toolbar button. Kept tiny and unstyled-by-default so the group markup below stays readable. */
@@ -174,7 +268,8 @@ export interface EmailRichTextEditorHandle {
 
 export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRichTextEditorProps>(({
   mode, value, onChange, capabilities, variables, placeholder,
-  onUploadImage, onNotice, disabled, minHeight = 240, 'data-testid': testId,
+  onUploadImage, onNotice, onEditorActivated, systemBlocks,
+  disabled, minHeight = 240, 'data-testid': testId,
 }: EmailRichTextEditorProps, ref) => {
   const caps = useMemo(
     () => ({ ...capabilitiesFor(mode), ...(capabilities ?? {}) }),
@@ -182,9 +277,32 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   );
 
   const quillRef = useRef<any>(null);
+
+  /**
+   * Kept stable by the CONTENT of the variable list, not by the identity of the array.
+   *
+   * A host that builds `variables` inline hands over a new array on every render — which is ordinary
+   * React — and that would make every derived conversion a new function, which in turn defeats the
+   * document-reuse rule in `shown` below and reloads the editor on every render of the screen. The
+   * mapping only changes when a name or a label changes, so that is what this depends on.
+   */
+  const variablesRef = useRef(variables);
+  variablesRef.current = variables;
+
+  const labelKey = useMemo(
+    () => (variables ?? []).map((v) => `${v.name} ${v.label}`).join(''),
+    [variables],
+  );
+
+  const labelOf = useCallback(
+    (name: string) => variablesRef.current?.find((v) => v.name === name)?.label,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [labelKey],
+  );
   const [fullscreen, setFullscreen] = useState(false);
   const [active, setActive] = useState<Record<string, any>>({});
   const [showVariables, setShowVariables] = useState(false);
+  const [showBlocks, setShowBlocks] = useState(false);
 
   /**
    * The last caret the editor actually had.
@@ -206,11 +324,36 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
 
   const editor = useCallback(() => quillRef.current?.getEditor?.(), []);
 
-  /** Applies `fn` to the live editor, then refreshes the toolbar's active state. */
+  /**
+   * Applies `fn` to the live editor ON THE SELECTION THE OPERATOR MADE, then refreshes the toolbar.
+   *
+   * <b>The defect this closes.</b> Applying two formats in a row to one selection worked; the THIRD did
+   * nothing. Measured on quill 2.0.3: after a format, the host stores the new html, which re-renders a
+   * controlled editor, and Quill's own selection comes back COLLAPSED — `{index: 0, length: 0}`. Every
+   * later format then lands on a cursor instead of on the words, so the operator selects a heading, sets
+   * the size, sets the font, picks a colour, and the colour is silently dropped.
+   *
+   * `q.focus()` alone cannot fix it: Quill restores the range IT last saw, which is the collapsed one.
+   * The remembered range is the operator's, so it is restored explicitly before the format is applied,
+   * `'silent'` because moving a caret back to where somebody put it is not an edit to report.
+   */
   const withEditor = useCallback((fn: (q: any) => void) => {
     const q = editor();
     if (!q) return;
+
     q.focus();
+
+    const wanted = lastRange.current;
+    if (wanted) {
+      const limit = Math.max(0, q.getLength() - 1);
+      const index = Math.min(wanted.index, limit);
+      const length = Math.min(wanted.length, Math.max(0, limit - index));
+      const live = q.getSelection();
+      if (!live || live.index !== index || live.length !== length) {
+        q.setSelection(index, length, 'silent');
+      }
+    }
+
     fn(q);
     setActive(q.getFormat() ?? {});
   }, [editor]);
@@ -279,14 +422,31 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     input.click();
   }, [onUploadImage, editor, onNotice]);
 
+  /**
+   * Leaves the caret on a line the author can actually write on after inserting a block object.
+   *
+   * A table, a divider and the action block are each one indivisible block. Inserted at the END of the
+   * document, there is no position after them — the last line IS the object — so an author who put a
+   * table at the bottom of a template could not type a closing sentence and reported the editor as
+   * stuck. It is not stuck; there is simply nowhere left to put a cursor.
+   *
+   * The paragraph is added only when there is nothing after the object already, and it is not made
+   * permanent — see the note above `tableNodeAt` for the two measurements that rule that out.
+   */
+  const caretAfterBlock = useCallback((q: any, index: number) => {
+    if (index + 1 >= q.getLength()) q.insertText(q.getLength(), '\n', 'user');
+    q.setSelection(index + 1, 0);
+    lastRange.current = { index: index + 1, length: 0 };
+  }, []);
+
   const insertDivider = useCallback(() => {
     withEditor((q) => {
       const range = q.getSelection(true);
       const index = range ? range.index : q.getLength();
       q.insertEmbed(index, DIVIDER_BLOT_NAME, true, 'user');
-      q.setSelection(index + 1, 0);
+      caretAfterBlock(q, index);
     });
-  }, [withEditor]);
+  }, [withEditor, caretAfterBlock]);
 
   const insertActionBlock = useCallback(() => {
     // §9.5 — one action area, never two: both would be minted from the same one-time token, so the first
@@ -299,9 +459,35 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       const range = q.getSelection(true);
       const index = range ? range.index : q.getLength();
       q.insertEmbed(index, 'pemsSystemActionBlock', 'action', 'user');
-      q.setSelection(index + 1, 0);
+      caretAfterBlock(q, index);
     });
-  }, [value, withEditor, onNotice]);
+  }, [value, withEditor, onNotice, caretAfterBlock]);
+
+  /**
+   * Puts a system block into a TEMPLATE — as `{{name}}`, which is what the renderer substitutes.
+   *
+   * Not the same operation as `insertActionBlock` above, and deliberately not merged with it: that one
+   * writes the COMPOSE position node into content that has already been rendered. Writing that node into
+   * a template stores a `<div>` the renderer never looks at, so the buttons the template promises are
+   * simply absent from the message — which is what this screen used to do.
+   */
+  const insertTemplateBlock = useCallback((name: string) => {
+    setShowBlocks(false);
+
+    // One of each: the backend builds a block once, and a second placeholder would either duplicate a
+    // one-time action or repeat a whole table of setup data under the first.
+    if (countTemplateBlocks(value, name) >= 1) {
+      onNotice?.(`Mẫu này đã có ${templateBlockLabel(name)}. Mỗi khối chỉ được đặt một lần.`);
+      return;
+    }
+
+    withEditor((q) => {
+      const at = lastRange.current;
+      const index = at ? at.index : q.getLength();
+      q.insertEmbed(index, TEMPLATE_BLOCK_BLOT_NAME, { name, label: templateBlockLabel(name) }, 'user');
+      caretAfterBlock(q, index);
+    });
+  }, [value, withEditor, onNotice, caretAfterBlock]);
 
   /**
    * Inserts a variable as an atomic CHIP, not as the characters `{{name}}`.
@@ -335,14 +521,52 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   // ── Table (§7.3) ──
   //
   // The node is atomic, so a caret cannot go inside it and the cells have to be edited somewhere else.
-  // `target.el` is the live wrapper element rather than a document index: the index is resolved from it
-  // at APPLY time, so an edit elsewhere in the document while the dialog is open cannot land the
-  // replacement on the wrong block.
+  // `el` is the wrapper element the dialog was opened on and `at` the position it was at: the index used
+  // to write the replacement is resolved from the ELEMENT at apply time — so an edit elsewhere while the
+  // dialog is open cannot land it on the wrong block — and falls back to the position only when the
+  // element itself has been replaced by a rebuild.
   const [tableEdit, setTableEdit] = useState<
-  { el: HTMLElement | null; original: string; model: EmailTableModel } | null>(null);
+  { el: HTMLElement | null; at: number | null; original: string; model: EmailTableModel } | null>(null);
 
   /** The table the caret/click is on, if any — what enables "Chỉnh sửa bảng". */
   const [selectedTable, setSelectedTable] = useState<HTMLElement | null>(null);
+
+  /**
+   * WHERE the selected table is, as a document index, kept beside WHICH element it is.
+   *
+   * A DOM element is not a durable handle here. This editor is controlled: an edit anywhere re-feeds the
+   * document through `setContents`, which rebuilds every node — so the element this state was holding is
+   * detached a moment after any change, and "Chỉnh sửa bảng" was left pointing at markup no longer in the
+   * document. The index survives that rebuild, so the selection can be re-resolved against whatever the
+   * editor now holds; the element is still kept because it is what gets painted and what enables the
+   * button.
+   */
+  const selectedTableIndex = useRef<number | null>(null);
+
+  /** Selects a table, remembering both the element and the position it was found at. */
+  const selectTable = useCallback((el: HTMLElement | null) => {
+    setSelectedTable(el);
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = el ? (Quill as any)?.find?.(el) : null;
+    const q = editor();
+    selectedTableIndex.current = blot && q ? q.getIndex(blot) : null;
+  }, [editor]);
+
+  /**
+   * The selected table AS IT STANDS NOW — the element if it is still in the document, otherwise the one
+   * that took its place at the same position.
+   *
+   * Read at the moment it is needed rather than kept in state on every render. Re-resolving into state
+   * would be a `setState` in an effect that has to run after every render (a rebuild does not change
+   * `value`), and each rebuild produces a new element, so the two would chase each other.
+   */
+  const liveSelectedTable = useCallback((): HTMLElement | null => {
+    if (selectedTable?.isConnected) return selectedTable;
+
+    const q = editor();
+    const at = selectedTableIndex.current;
+    return q && at !== null ? tableNodeAt(q, at) : null;
+  }, [selectedTable, editor]);
 
   const openTableDialog = useCallback((el: HTMLElement | null, original: string) => {
     const model = parseEmailTable(original);
@@ -352,8 +576,11 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       onNotice?.('Không mở được trình chỉnh sửa cho bảng này (bảng lồng nhau hoặc cấu trúc không đọc được).');
       return;
     }
-    setTableEdit({ el, original, model });
-  }, [onNotice]);
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = el ? (Quill as any)?.find?.(el) : null;
+    const q = editor();
+    setTableEdit({ el, at: blot && q ? q.getIndex(blot) : null, original, model });
+  }, [onNotice, editor]);
 
   const insertTable = useCallback(() => {
     // A starting shape rather than a size prompt: rows and columns are added in the dialog, where the
@@ -363,8 +590,39 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
 
   const editSelectedTable = useCallback(() => {
     if (!selectedTable) return;
-    openTableDialog(selectedTable, selectedTable.innerHTML);
-  }, [selectedTable, openTableDialog]);
+
+    // Never the element held in state without checking: a controlled Quill replaces every node when it
+    // reloads the document, so by the time this runs the selected element is routinely detached — and
+    // editing a detached one resolves an index in a document it is no longer part of, which is how a
+    // replacement lands on some other block. The position is what survives.
+    const live = liveSelectedTable();
+    if (!live) {
+      selectTable(null);
+      onNotice?.('Bảng đã thay đổi. Vui lòng chọn lại bảng cần chỉnh sửa.');
+      return;
+    }
+
+    openTableDialog(live, live.innerHTML);
+  }, [selectedTable, liveSelectedTable, openTableDialog, onNotice, selectTable]);
+
+  /**
+   * Paints the selected table, and only that one.
+   *
+   * Written as an attribute on the wrapper — which `nodesToTables` strips on the way to stored content,
+   * so it cannot reach the database, the preview or a recipient. It is set from an effect rather than at
+   * click time so that a table which stops being selected (because another was clicked, or because the
+   * node was replaced) is always cleaned up by the same code that marks one.
+   */
+  useEffect(() => {
+    const root: HTMLElement | undefined = editor()?.root;
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+
+    const live = liveSelectedTable();
+    for (const el of Array.from(root.querySelectorAll(`.${TABLE_WRAPPER_CLASS}[data-selected]`))) {
+      if (el !== live) el.removeAttribute('data-selected');
+    }
+    live?.setAttribute('data-selected', 'true');
+  }, [selectedTable, liveSelectedTable, editor, value]);
 
   const applyTable = useCallback((model: EmailTableModel) => {
     const target = tableEdit;
@@ -375,11 +633,20 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     const q = editor();
     if (!q) return;
 
+    // What goes INTO the document is editor spelling: a variable inside a cell is a chip here, exactly
+    // as it is everywhere else in the body, and `chipsToVariables` turns it back into a placeholder on
+    // the way to storage. Inserting the stored spelling instead would leave the braces showing inside
+    // the table until the next reload — the one place in the document where a variable looked raw.
+    const editorTableHtml = variablesToChips(html, labelOf);
+
     if (!target.el) {
       const at = lastRange.current;
       const index = at ? at.index : q.getLength();
-      q.insertEmbed(index, TABLE_BLOT_NAME, html, 'user');
-      q.setSelection(index + 1, 0);
+      q.insertEmbed(index, TABLE_BLOT_NAME, editorTableHtml, 'user');
+      // A caret on a line the author can actually type on, and the new table left selected so
+      // "Chỉnh sửa bảng" opens the one they have just made rather than nothing at all.
+      caretAfterBlock(q, index);
+      selectTable(tableNodeAt(q, index));
       return;
     }
 
@@ -387,21 +654,29 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     // would still register as an edit, and the screen would offer to save a table nobody touched.
     if (html === target.original) return;
 
+    // Resolved at APPLY time, not remembered from when the dialog opened, so an edit made elsewhere in
+    // the document while the dialog was open cannot land the replacement on the wrong block. The element
+    // is only trusted while it is still in the document — see `liveSelectedTable`.
     /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    const blot = (Quill as any)?.find?.(target.el);
-    if (!blot) {
-      // The element was replaced under the dialog (a reload, an undo). Said out loud rather than
-      // dropped: the author spent time in that dialog and is entitled to know the edit did not land.
+    const blot = target.el.isConnected ? (Quill as any)?.find?.(target.el) : null;
+    const index = blot ? q.getIndex(blot) : target.at;
+
+    if (index === null || !tableNodeAt(q, index)) {
+      // The table this dialog was opened on is not there any more (a reload, an undo, someone else's
+      // change). Said out loud rather than dropped: the author spent time in that dialog and is entitled
+      // to know the edit did not land.
       onNotice?.('Bảng đã thay đổi trong lúc chỉnh sửa. Vui lòng mở lại bảng và áp dụng lần nữa.');
       return;
     }
 
-    const index = q.getIndex(blot);
     q.deleteText(index, 1, 'user');
-    q.insertEmbed(index, TABLE_BLOT_NAME, html, 'user');
-    q.setSelection(index + 1, 0);
-    setSelectedTable(null);
-  }, [tableEdit, editor, onNotice]);
+    q.insertEmbed(index, TABLE_BLOT_NAME, editorTableHtml, 'user');
+    caretAfterBlock(q, index);
+    // The element that was selected has just been replaced, so the selection follows the REPLACEMENT
+    // rather than being dropped: an author who adds a row usually adds a second one straight after, and
+    // clearing it made them click the table again between every edit.
+    selectTable(tableNodeAt(q, index));
+  }, [tableEdit, editor, onNotice, caretAfterBlock, selectTable, labelOf]);
 
   // Clicking a table selects it; double-clicking opens the editor, which is what every other table
   // control in the product does and therefore what an author will try first.
@@ -415,11 +690,11 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       return t?.closest?.(`.${TABLE_WRAPPER_CLASS}`) ?? null;
     };
 
-    const onClick = (e: Event) => setSelectedTable(wrapperOf(e));
+    const onClick = (e: Event) => selectTable(wrapperOf(e));
     const onDouble = (e: Event) => {
       const el = wrapperOf(e);
       if (!el || disabled) return;
-      setSelectedTable(el);
+      selectTable(el);
       openTableDialog(el, el.innerHTML);
     };
 
@@ -429,7 +704,7 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
       node.removeEventListener('click', onClick);
       node.removeEventListener('dblclick', onDouble);
     };
-  }, [editor, openTableDialog, disabled]);
+  }, [editor, openTableDialog, disabled, selectTable]);
 
   const clearFormatting = useCallback(() => {
     withEditor((q) => {
@@ -489,20 +764,64 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
    * recognise: chips carrying a label, tables wrapped in their atomic node, the action node classed so
    * Parchment matches it. Neither side ever sees the other's spelling.
    */
-  const labelOf = useCallback(
-    (name: string) => variables?.find((v) => v.name === name)?.label,
-    [variables],
-  );
+
+  /**
+   * In TEMPLATE mode a `{{systemBlock}}` is an object, not a variable — and the ORDER below is what makes
+   * that true: `variablesToChips` matches any `{{name}}`, so a block reaching it first becomes a data
+   * chip labelled "actionBlock" and stops being recognisable as something the backend builds.
+   */
+  const isTemplate = mode === 'TEMPLATE';
 
   const toEditor = useCallback(
-    (stored: string) => tablesToNodes(variablesToChips(toEditorHtml(stored), labelOf)),
-    [labelOf],
+    (stored: string) => dropTrailingBlank(
+      tablesToNodes(variablesToChips(
+        isTemplate ? templateBlocksToNodes(toEditorHtml(stored)) : toEditorHtml(stored),
+        labelOf,
+      )),
+    ),
+    [labelOf, isTemplate],
   );
 
   const fromEditor = useCallback(
-    (html: string) => sortStyleDeclarations(fromEditorHtml(nodesToTables(chipsToVariables(html)))),
-    [],
+    (html: string) => {
+      const withoutChips = chipsToVariables(html);
+      const canonical = isTemplate ? nodesToTemplateBlocks(withoutChips) : withoutChips;
+      return dropTrailingBlank(
+        fromEditorHtml(nodesToTables(canonical)),
+        true,
+      );
+    },
+    [isTemplate],
   );
+
+  /**
+   * The document currently on screen, in QUILL's spelling, for the stored value it stands for.
+   *
+   * <b>Why a controlled Quill needs this.</b> react-quill-new compares the value it is handed against
+   * what the editor holds, on EVERY render, and re-runs `setContents` when the two differ. They always
+   * differ: Quill writes an ordinary space as `&nbsp;`, wraps a variable chip in guard characters and an
+   * inner span, and re-spells inline styles — none of which belongs in stored content, so what is stored
+   * is deliberately not what Quill rendered. The comparison therefore answered "different" forever, and
+   * the whole document was rebuilt on every render of the screen around it: the caret was discarded
+   * mid-edit, live DOM nodes were replaced under whatever held one, and a large body was re-parsed on
+   * every keystroke in the SUBJECT field.
+   *
+   * <b>The rule.</b> When the value coming back is the same document the editor already shows, hand back
+   * the spelling the editor itself produced — byte-identical to what it is holding, so nothing is
+   * reloaded. When it is genuinely a different document (a restore, a language switch, a fresh template),
+   * hand over the converted value and let it load. Sameness is decided in STORED space, where the two
+   * spellings are supposed to agree, not in the editor's.
+   */
+  const shown = useRef<{ value: string; editorHtml: string; convert: typeof toEditor } | null>(null);
+
+  const resolveEditorHtml = (stored: string): string => {
+    const cached = shown.current;
+    if (cached && cached.value === stored && cached.convert === toEditor) return cached.editorHtml;
+
+    const converted = toEditor(stored);
+    shown.current = { value: stored, editorHtml: converted, convert: toEditor };
+    return converted;
+  };
 
   /**
    * V4 §7.4 — a run of spaces is not a layout tool, however it got there.
@@ -542,9 +861,25 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     // approximation — the dirty-check's own comparison — also collapses runs of whitespace, which
     // silently broke the one warning that exists to make a run of spaces impossible to save (V4 §7.4).
     // This has no such tradeoff: an echo is never `'user'`, and every keystroke always is.
-    if (source !== 'user') return;
+    if (source !== 'user') {
+      // An echo still carries information worth keeping: it is Quill's OWN rendering of the value that
+      // was just handed over, so it is by definition what "showing that value" looks like. Recorded
+      // against that value, it stops the next render offering a different spelling of the same document
+      // and reloading everything — see `shown`.
+      //
+      // Recorded whatever it says, including where Quill's rendering differs from what was given to it:
+      // a block-level style becomes a span, a colour becomes `rgb()`, a trailing blank line disappears.
+      // Handing the original back again would only produce the same rendering a second time, so the
+      // difference is not a reason to reload — it is what loading that document produces.
+      const cached = shown.current;
+      if (cached) cached.editorHtml = html;
+      return;
+    }
 
     const canonical = fromEditor(html);
+    // The same recording for a real edit, where it is free: `html` IS what the editor holds, and
+    // `canonical` is exactly the value about to come back as a prop.
+    shown.current = { value: canonical, editorHtml: html, convert: toEditor };
 
     // Once per editing session, not once per keystroke: a warning that reappears on every space after
     // the third is noise, and the sender has already been told.
@@ -563,9 +898,9 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     }
 
     onChange(canonical);
-  }, [onChange, fromEditor, onNotice]);
+  }, [onChange, fromEditor, toEditor, onNotice]);
 
-  const editorHtml = useMemo(() => toEditor(value), [value, toEditor]);
+  const editorHtml = resolveEditorHtml(value);
 
   const groupClass = 'flex flex-wrap items-center gap-0.5';
   const selectClass = 'h-8 rounded-lg border border-gray-200 bg-white px-1.5 text-xs text-gray-700 outline-none focus:border-[#004c91]';
@@ -664,10 +999,49 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
         <TB onClick={insertDivider} title="Chèn đường kẻ ngang" disabled={disabled}><Minus className="h-4 w-4" /></TB>
         <TB onClick={clearFormatting} title="Xóa định dạng" disabled={disabled}><Eraser className="h-4 w-4" /></TB>
 
-        {caps.allowSystemBlockInsert && (
+        {/*
+          COMPOSE inserts the position node; TEMPLATE inserts a placeholder the renderer substitutes.
+          One button, two operations, because they are two representations of the same idea — see
+          `emailEditorTemplateBlocks.ts`.
+
+          In TEMPLATE the list comes from the contract: a template whose send path attaches no block
+          offers no button at all, so an operator cannot save a placeholder the renderer would refuse.
+        */}
+        {caps.allowSystemBlockInsert && !isTemplate && (
           <TB onClick={insertActionBlock} title="Chèn khối nút phản hồi" disabled={disabled}>
             <MousePointerClick className="h-4 w-4" />
           </TB>
+        )}
+
+        {caps.allowSystemBlockInsert && isTemplate && (systemBlocks?.length ?? 0) > 0 && (
+          <div className="relative">
+            <TB
+              onClick={() => {
+                if (systemBlocks!.length === 1) insertTemplateBlock(systemBlocks![0].name);
+                else setShowBlocks((s) => !s);
+              }}
+              title="Chèn khối hệ thống"
+              active={showBlocks}
+              disabled={disabled}
+            >
+              <MousePointerClick className="h-4 w-4" />
+            </TB>
+            {showBlocks && (
+              <div className="absolute right-0 z-20 mt-1 w-64 rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
+                {systemBlocks!.map((b) => (
+                  <button
+                    key={b.name}
+                    type="button"
+                    onClick={() => insertTemplateBlock(b.name)}
+                    className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                  >
+                    <span className="font-semibold">{b.label ?? templateBlockLabel(b.name)}</span>
+                    <span className="ml-1 text-gray-400">{`{{${b.name}}}`}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {caps.allowVariables && variables && variables.length > 0 && (
@@ -717,6 +1091,16 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
             font-size: 12px;
             font-weight: 600;
             white-space: nowrap;
+          }
+          /*
+            The LABEL is unselectable; the chip element around it is not.
+
+            Those two guard characters Quill hides at each end of an inline embed are the caret positions
+            immediately before and after the object — the only places a caret can go between two adjacent
+            variables. A user-select of none on the whole chip takes those positions with it, and the wall
+            this fix removes comes straight back.
+          */
+          .pems-email-editor .ql-editor .${VARIABLE_CHIP_CLASS} > span[contenteditable="false"] {
             user-select: none;
           }
           /* The table is atomic here: what was loaded is what is saved, so it must not look editable. */
@@ -727,7 +1111,23 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
             border-radius: 8px;
             user-select: none;
           }
+          /*
+            Which table "Chỉnh sửa bảng" would open, said on the table rather than only in a disabled
+            button. The attribute is editor furniture: it is set on the wrapper, and the wrapper is
+            removed on the way to stored content, so it can never be saved, previewed or sent.
+          */
+          .pems-email-editor .ql-editor .${TABLE_WRAPPER_CLASS}[data-selected="true"] {
+            border: 1px solid #004c91;
+            box-shadow: 0 0 0 3px rgba(0, 76, 145, 0.12);
+          }
           .pems-email-editor .ql-editor .${TABLE_WRAPPER_CLASS} table { width: 100%; }
+          /* A TEMPLATE system block: an object the author places, whose contents the backend builds. */
+          .pems-email-editor .ql-editor .${TEMPLATE_BLOCK_CLASS} {
+            margin: 16px 0; padding: 12px 14px;
+            border: 1px dashed #f59e0b; border-radius: 10px; background: #fffbeb;
+            color: #92400e; font-size: 12px; font-weight: 600; text-align: center;
+            cursor: move; user-select: none;
+          }
           .pems-email-editor .ql-editor .pems-system-action-block {
             margin: 16px 0; padding: 12px 14px;
             border: 1px dashed #f59e0b; border-radius: 10px; background: #fffbeb;
@@ -742,12 +1142,31 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
             readOnly={disabled}
             value={editorHtml}
             onChange={handleChange}
-            onChangeSelection={(range: { index: number; length: number } | null) => {
+            onChangeSelection={(
+              range: { index: number; length: number } | null,
+              source?: string,
+            ) => {
               // Ignore null: that is the blur a toolbar click causes, and storing it would erase the
               // position the insert is about to need, one event before it needs it.
-              if (range) lastRange.current = { index: range.index, length: range.length };
+              //
+              // Ignore `'api'` for the same reason, one step further on. A controlled re-render reloads
+              // the document and Quill reports a selection of its own — usually collapsed at 0 — which
+              // is not where the operator put the caret. Recording that would overwrite the range the
+              // next toolbar click is about to restore, and the format would land on a cursor instead
+              // of on the words they had selected. Only a person's own selection is remembered here;
+              // the places that move the caret deliberately (`insertVariable`, `caretAfterBlock`) set
+              // this ref themselves.
+              if (range && source !== 'api') {
+                lastRange.current = { index: range.index, length: range.length };
+                // A caret inside this editor IS the signal that the body is what the operator is
+                // writing in — one signal for both facts, so the two cannot disagree. The `onFocus`
+                // below is a second route to the same statement, not the primary one: a click that
+                // lands in the document reports a range whether or not focus was elsewhere before.
+                onEditorActivated?.();
+              }
               setActive(editor()?.getFormat() ?? {});
             }}
+            onFocus={() => onEditorActivated?.()}
             placeholder={placeholder ?? 'Soạn nội dung email...'}
             modules={modules}
             formats={EMAIL_EDITOR_FORMATS}

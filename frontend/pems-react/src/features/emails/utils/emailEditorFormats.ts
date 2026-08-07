@@ -22,6 +22,7 @@ import { Quill } from 'react-quill-new';
 import { registerSystemActionBlot } from './emailEditorSystemNodes';
 import { registerVariableChipBlot } from './emailEditorVariableChips';
 import { registerEmailTableBlot } from './emailEditorTable';
+import { registerTemplateBlockBlot } from './emailEditorTemplateBlocks';
 
 /**
  * V4 §6.2. Bare family names rather than full stacks: the value has to survive a round trip through the
@@ -128,6 +129,9 @@ export function registerEmailEditorFormats(): boolean {
   registerSystemActionBlot();
   registerVariableChipBlot();
   registerEmailTableBlot();
+  // The TEMPLATE spelling of a system block — `{{actionBlock}}` as an object. Registered here with the
+  // rest so a template opened before it existed cannot lose one: Quill drops what it has no blot for.
+  registerTemplateBlockBlot();
 
   registered = true;
   return true;
@@ -148,6 +152,7 @@ export const EMAIL_EDITOR_FORMATS = [
   'link', 'image',
   DIVIDER_BLOT_NAME,
   'pemsSystemActionBlock',
+  'pemsTemplateBlock',
   'pemsVariable',
   'pemsEmailTable',
 ];

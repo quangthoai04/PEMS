@@ -20,6 +20,15 @@ export const TEMPLATE_ERROR_CODES = {
   runtimeVariableMissing: 'EMAIL_TEMPLATE_RUNTIME_VARIABLE_MISSING',
   subjectForbiddenSensitive: 'EMAIL_TEMPLATE_SUBJECT_FORBIDDEN_SENSITIVE_VARIABLE',
   actionBlockRequired: 'EMAIL_TEMPLATE_ACTION_BLOCK_REQUIRED',
+  /**
+   * The action area written as the runtime POSITION NODE inside a template.
+   *
+   * Its own code, matching `EmailErrorCodes.ActionBlockMalformed`, because the repair is specific and
+   * nothing else says it: the block is not missing and not disallowed, it is written in the spelling
+   * that belongs to a message being composed rather than to a template. Only `{{actionBlock}}` is
+   * substituted at send time, so the node would ship as an empty div with no buttons.
+   */
+  actionBlockMalformed: 'EMAIL_ACTION_BLOCK_MALFORMED',
   requiredBlockMissing: 'EMAIL_TEMPLATE_REQUIRED_BLOCK_NOT_IN_BODY',
   systemBlockNotAllowed: 'EMAIL_TEMPLATE_SYSTEM_BLOCK_NOT_ALLOWED',
   /**
@@ -443,6 +452,26 @@ export function validateContent(
           severity: 'ERROR',
         });
       }
+    }
+
+    // A system block written as the COMPOSE position node instead of its placeholder.
+    //
+    // Not something the editor can produce any more — the block button inserts `{{actionBlock}}` in
+    // TEMPLATE mode — but a paste from a sent message brings the node with it, and the two spellings are
+    // indistinguishable on screen. Only the placeholder is substituted at send time, so a template
+    // carrying the node keeps an empty div and the recipient gets a message with no buttons in it. The
+    // backend refuses the save for the same reason; this says so before the round trip.
+    if (/<div\b[^>]*\bdata-system-block\b/i.test(content[field] ?? '')) {
+      issues.push({
+        field,
+        code: TEMPLATE_ERROR_CODES.actionBlockMalformed,
+        variableName: 'actionBlock',
+        messageVi: 'Nội dung có khối nút phản hồi ở dạng không dùng được cho mẫu email. '
+          + 'Hãy xóa khối đó và chèn lại bằng nút "Chèn khối hệ thống" để đặt {{actionBlock}}.',
+        messageEn: 'The content carries the action area in a form a template cannot use. '
+          + 'Remove it and insert {{actionBlock}} instead.',
+        severity: 'ERROR',
+      });
     }
 
     // Spacing is judged per field, so an operator with a clean Vietnamese tab is told that the English

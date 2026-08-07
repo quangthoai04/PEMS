@@ -141,6 +141,21 @@ public sealed class EmailTemplateRenderer : IEmailTemplateRenderer
             // Authored mode is exempt by construction: there the block is APPENDED to the author's text
             // rather than substituted into it, so it cannot be dropped by what the row happens to say.
             AssertRequiredTrustedBlockIsInBody(code, bodySource);
+
+            // 6d) …and the same block written in the OTHER spelling is refused outright.
+            //
+            // `<div data-system-block="action">` marks a position inside content that has already been
+            // rendered — the COMPOSE representation. In a stored template it is inert markup this path
+            // never substitutes, so the buttons the body promises simply do not exist in the message,
+            // and every guard below stays quiet: there is no leftover placeholder and no missing
+            // variable to report. The template screen refuses to save one (see
+            // EmailTemplateContentValidator); this catches a row that acquired it some other way — a
+            // hand-edited database, an older editor, a half-applied sync.
+            if (EmailSystemBlockNodes.HasActionNode(bodySource))
+                throw new BusinessRuleException(
+                    $"Nội dung template email '{code}' chứa khối nút phản hồi ở dạng không dùng được cho "
+                    + "template. Hãy sửa mẫu để dùng {{actionBlock}} tại vị trí muốn hiển thị các nút.",
+                    EmailErrorCodes.ActionBlockMalformed);
         }
 
         // 7) + 8) Substitute. Values are untrusted text everywhere; only TrustedHtmlBlocks may be markup.

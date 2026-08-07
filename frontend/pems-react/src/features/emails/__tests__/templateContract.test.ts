@@ -309,6 +309,36 @@ describe('system blocks are judged as blocks, not variables', () => {
     expect(issues).toEqual([]);
   });
 
+  /**
+   * The block written in the OTHER spelling — the position node a message being composed carries.
+   *
+   * Only `{{actionBlock}}` is substituted at send time, so a template body holding the node keeps an
+   * empty div and the recipient gets a message whose buttons do not exist. The backend refuses the save
+   * with the same code; this is the half that says so before the round trip, and it names the repair
+   * rather than the symptom.
+   */
+  it('refuses the compose position node written into a template body', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}.</p><div data-system-block="action"></div>',
+    }));
+
+    const issue = issues.find(i => i.code === TEMPLATE_ERROR_CODES.actionBlockMalformed);
+    expect(issue).toBeTruthy();
+    expect(issue!.field).toBe('bodyVi');
+    expect(issue!.severity).toBe('ERROR');
+    expect(issue!.messageVi).toContain('{{actionBlock}}');
+  });
+
+  it('accepts the placeholder spelling of the same block', () => {
+    const issues = validateContent(accountContract, content({
+      subjectVi: 'Xác nhận',
+      bodyVi: '<p>Chào {{fullName}}.</p>{{actionBlock}}',
+    }));
+
+    expect(issues.filter(i => i.code === TEMPLATE_ERROR_CODES.actionBlockMalformed)).toEqual([]);
+  });
+
   it('never reports a system block under the unknown-VARIABLE code', () => {
     const issues = validateContent(accountContract, content({
       subjectVi: 'Xác nhận',

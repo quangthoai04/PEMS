@@ -5,13 +5,12 @@ import {
   EmailRichTextEditor, type EmailRichTextEditorHandle,
 } from '../../../features/emails/components/EmailRichTextEditor';
 import { canonicalizeEmailHtml } from '../../../features/emails/utils/emailHtmlCanonicalizer';
+import { buildTemplateDraftPreview } from '../../../features/emails/utils/templateDraftPreview';
 import 'react-quill-new/dist/quill.snow.css';
 import { ConfirmModal } from '../../../components/modals/ConfirmModal';
-import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import {
+  SYSTEM_BLOCK_LABELS,
   TEMPLATE_ERROR_CODES,
-  applySamples,
-  applySystemBlocks,
   isSenderVariable,
   describeSystemBlocks,
   errorCodeOf,
@@ -530,6 +529,8 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       setBaseline(loaded);
       setEditingId(t.emailTemplateId || id);
       setServerIssues([]);
+      // A different document: nothing remembered about the previous one applies to it.
+      resetInsertState();
       setLanguage('VI');
       setShowForm(true);
       if (t.templateCode) void loadContract(t.templateCode);
@@ -718,6 +719,9 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       // The restore WROTE all of this, so nothing is unsaved.
       setBaseline(restored);
       setServerIssues([]);
+      // Every field has just been replaced by the shipped wording. An offset measured in the text that
+      // was there a moment ago now points into somebody else's sentence.
+      resetInsertState();
       pushToast('success', t?.message || 'Đã khôi phục mẫu email về bản mặc định.');
       fetchData();
     } catch (err: any) {
@@ -741,6 +745,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
     setEditingId(null);
     setServerIssues([]);
     setContract({ status: 'idle' });
+    resetInsertState();
   };
 
   /**
@@ -823,6 +828,35 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   // about what a null range means.
 
   /**
+   * Records that the operator has moved into the BODY of the tab currently shown.
+   *
+   * The other half of `rememberSubjectSelection`, and the half that was missing. Moving the caret into
+   * the editor left `lastInsertTarget` saying "subject" — set there by the subject input's own focus
+   * handler and never contradicted — so every variable picked from the sidebar afterwards was inserted
+   * into the subject line, in front of an operator who was looking at the body.
+   *
+   * No caret is recorded here: WHERE in the body is the editor's business, and it keeps that to itself.
+   */
+  const rememberBodyTarget = useCallback(() => {
+    lastInsertTarget.current[language] = 'body';
+  }, [language]);
+
+  /**
+   * Forgets where the caret was, in both fields and both languages.
+   *
+   * Called whenever the document under the editor is replaced — a different template opened, the editor
+   * closed, a restore performed. A remembered subject offset belongs to the text it was measured in: 24
+   * characters into a heading that has just been replaced by a shorter one is not a position, and a
+   * target of "subject" carried into a template the operator has not looked at yet decides where their
+   * first variable lands. The body editor needs no equivalent — it is keyed by language and remounts,
+   * which resets its own caret with it.
+   */
+  const resetInsertState = useCallback(() => {
+    subjectSelection.current = { VI: null, EN: null };
+    lastInsertTarget.current = { VI: null, EN: null };
+  }, []);
+
+  /**
    * Inserts a variable at the caret the operator left, in the control they left it in.
    *
    * <b>The old behaviour and why it was wrong.</b> This used to ask the DOM what was focused. By the time
@@ -841,6 +875,19 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
   const insertVariable = (name: string) => {
     const token = `{{${name}}}`;
     const target = lastInsertTarget.current[language] ?? 'body';
+    const declared = contract.status === 'ready'
+      ? contract.contract.variables.find(v => v.name === name)
+      : undefined;
+
+    // A subject is one line of plain text a mail client shows in a list, and the contract marks the
+    // variables that may not appear in one — a value that is long, multi-line or confidential. The save
+    // already refuses it and the backend refuses it again, but being told at the click is the difference
+    // between a correction and a puzzle: the refusal at save time names a field, not the chip that put
+    // the placeholder there.
+    if (target === 'subject' && declared?.forbiddenInSubject) {
+      pushToast('error', `Biến "${declared.label}" không được đặt trong tiêu đề. Hãy dùng biến này trong nội dung.`);
+      return;
+    }
 
     if (target === 'subject') {
       const current = formData[subjectField] ?? '';
@@ -883,11 +930,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
       return;
     }
 
-    const label = contract.status === 'ready'
-      ? contract.contract.variables.find(v => v.name === name)?.label ?? name
-      : name;
-
-    editor.insertVariable({ name, label });
+    editor.insertVariable({ name, label: declared?.label ?? name });
     lastInsertTarget.current[language] = 'body';
   };
 
@@ -994,20 +1037,12 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
   if (showForm) {
     const ready = contract.status === 'ready' ? contract.contract : null;
-    const previewSubject = ready ? applySamples(ready, formData[subjectField]) : formData[subjectField];
-
-    // Variables first, then blocks. Order matters only in that a block's sample markup is trusted and
-    // must not itself be scanned for variables — substituting it last means it never is.
-    //
-    // The contact block comes from card 4's live draft rather than the contract, so unticking a toggle
-    // changes this pane immediately; the rest of the samples were built by the backend with the same
-    // helpers the send uses.
-    const previewBody = ready
-      ? applySystemBlocks(
-          ready,
-          applySamples(ready, formData[bodyField]),
-        )
-      : formData[bodyField];
+    // One pipeline, in one place, over the CANONICAL draft — never over the editor's DOM. See
+    // `buildTemplateDraftPreview` for the ordering rule and for what this preview does not prove.
+    const { subject: previewSubject, bodyHtml: previewBody } = buildTemplateDraftPreview(ready, {
+      subject: formData[subjectField],
+      body: formData[bodyField],
+    });
     const visibleVariables = (ready?.variables ?? []).filter(v =>
       v.label.toLowerCase().includes(varSearch.toLowerCase()) ||
       v.name.toLowerCase().includes(varSearch.toLowerCase()));
@@ -1194,6 +1229,16 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                         value={formData[bodyField]}
                         disabled={isHistorical}
                         onChange={(html) => handleBodyChange(bodyField, html)}
+                        /* The body saying "I am what is being written in". Without it the screen goes
+                           on believing the subject is the target, and the sidebar's variables jump up
+                           into the heading. */
+                        onEditorActivated={rememberBodyTarget}
+                        /* The blocks THIS template may carry, from its contract — so the editor can
+                           offer them as objects and never offers one the renderer would refuse. */
+                        systemBlocks={systemBlockNotices.map(b => ({
+                          name: b.name,
+                          label: SYSTEM_BLOCK_LABELS[b.name]?.title ?? b.name,
+                        }))}
                         variables={contract.status === 'ready' ? contract.contract.variables : undefined}
                         onNotice={(message) => pushToast('error', message)}
                         minHeight={250}
@@ -1217,14 +1262,15 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   <div className="font-bold border-b border-gray-100 pb-2 mb-2">
                     {previewSubject || <span className="text-gray-400 italic">Chưa có tiêu đề...</span>}
                   </div>
-                  {/* Sanitised after variable substitution: the samples are inserted into the markup,
-                      so the substituted result is what this browser must be protected from. */}
+                  {/* Already sanitised, by the pipeline that substituted the samples into it: the
+                      substituted result is what this browser must be protected from, so the sanitiser
+                      runs after substitution — and in exactly one place. */}
                   {/* `prose prose-sm` used to be here. It is a no-op today — the Tailwind typography
                       plugin is not installed — but it is markup that says "restyle this", and the one
                       thing a preview of an email must not do is restyle it. Replaced by the isolation
                       class, which only undoes inherited layout and lets a wide table scroll. */}
                   <div className="pems-email-body max-w-none" data-testid="preview-body" dangerouslySetInnerHTML={{
-                    __html: sanitizeHtml(previewBody || '<span class="text-gray-400 italic">Chưa có nội dung...</span>')
+                    __html: previewBody || '<span class="text-gray-400 italic">Chưa có nội dung...</span>'
                   }} />
                 </div>
               </div>

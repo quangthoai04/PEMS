@@ -201,6 +201,22 @@ public static class EmailTemplateContentValidator
             }
         }
 
+        // A TEMPLATE marks a system block with its placeholder; the empty <div data-system-block> is the
+        // COMPOSE spelling, for content that has already been rendered. The two look interchangeable and
+        // are not: the renderer substitutes {{actionBlock}}, so a template body carrying the node keeps
+        // the div and gets no buttons — a message that says "choose one of the options below" and shows
+        // none, sent with nothing on screen or in the log saying so. Refused where the mistake was made.
+        if (EmailSystemBlockNodes.HasActionNode(content))
+        {
+            issues.Add(new EmailTemplateIssue(
+                field, EmailErrorCodes.ActionBlockMalformed, EmailTrustedBlocks.ActionBlock,
+                "Nội dung có khối nút phản hồi ở dạng không dùng được cho mẫu email. "
+                + "Hãy đặt {{actionBlock}} tại vị trí muốn hiển thị các nút.",
+                "The content carries the action area in a form a template cannot use. "
+                + "Put {{actionBlock}} where the buttons should appear.",
+                EmailTemplateIssueSeverity.Error));
+        }
+
         // Spacing applies to BOTH: a subject is one line of visible text, and a run of spaces in it
         // survives into the recipient's list view and into the stored history exactly as typed. Reported
         // per field so an operator with a clean Vietnamese tab is told the English one is the problem.
