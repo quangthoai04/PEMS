@@ -446,8 +446,15 @@ export function ApiManagement() {
                       </span>
                     </dd>
                   )}</div>
-                <div><dt className="text-xs text-gray-400 font-bold uppercase">Giới hạn</dt>
-                  <dd className="text-gray-600">{config.rateLimitPerMinute ?? '—'}/phút · {config.monthlyQuota ?? '—'}/tháng</dd></div>
+                {/* Drive không hiện "Giới hạn": rate_limit_per_minute không được đọc ở bất kỳ đâu, và
+                    monthly_quota chỉ được áp trong luồng OCR danh thiếp và quét khuôn mặt — không luồng
+                    upload/download Drive nào tra api_usage_quotas. Hiển thị hai con số seed cạnh một thẻ
+                    có nút bấm thật khiến người đọc tin là hệ thống đang chặn theo chúng. Giới hạn thật của
+                    Drive nằm ở quota phía Google Cloud, không quản lý được từ đây. */}
+                {!isGoogleDrive && (
+                  <div><dt className="text-xs text-gray-400 font-bold uppercase">Giới hạn</dt>
+                    <dd className="text-gray-600">{config.rateLimitPerMinute ?? '—'}/phút · {config.monthlyQuota ?? '—'}/tháng</dd></div>
+                )}
                 <div className="col-span-2"><dt className="text-xs text-gray-400 font-bold uppercase">Test gần nhất</dt>
                   <dd className={`text-sm ${config.lastTestStatus === 'SUCCESS' ? 'text-green-600' : config.lastTestStatus === 'FAILED' ? 'text-red-500' : 'text-gray-400'}`}>
                     {config.lastTestStatus
@@ -540,10 +547,14 @@ export function ApiManagement() {
                   </button>
                 )}
                 <button
-                  onClick={() => { setPanelTarget(config); setPanelTab('QUOTA'); setLogsPage(1); }}
+                  onClick={() => {
+                    setPanelTarget(config);
+                    setPanelTab(isGoogleDrive ? 'LOGS' : 'QUOTA');
+                    setLogsPage(1);
+                  }}
                   className="px-3 py-1.5 rounded-lg text-sm font-bold text-gray-600 border border-gray-300 hover:bg-gray-50 transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Activity className="w-4 h-4" /> Hạn mức & Nhật ký
+                  <Activity className="w-4 h-4" /> {isGoogleDrive ? 'Nhật ký' : 'Hạn mức & Nhật ký'}
                 </button>
                 {!config.canEdit && !config.canTest && !config.canToggleStatus && !config.canConnectOAuth && (
                   <span className="text-xs text-gray-400 font-medium">
@@ -597,8 +608,13 @@ export function ApiManagement() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            {/* Drive chỉ có tab Nhật ký: api_usage_quotas của nó chỉ chứa row seed demo mà không luồng
+                nào tăng used_count, nên bảng hạn mức sẽ đứng yên mãi ở một con số không có thật. */}
             <div className="flex items-center gap-1 border-b border-gray-200 mb-4">
-              {(['QUOTA', 'LOGS'] as const).map((key) => (
+              {(panelTarget.apiCode === GOOGLE_DRIVE_API_CODE
+                ? (['LOGS'] as const)
+                : (['QUOTA', 'LOGS'] as const)
+              ).map((key) => (
                 <button key={key} onClick={() => setPanelTab(key)}
                   className={`px-4 py-2 text-sm font-bold border-b-2 -mb-px cursor-pointer ${
                     panelTab === key ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-400'
