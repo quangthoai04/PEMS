@@ -1,0 +1,264 @@
+{
+  "breadcrumb": {
+    "home": "Trang chủ"
+  },
+  "toc": {
+    "title": "Nội dung trang",
+    "mobileLabel": "Chuyển nhanh đến mục"
+  },
+  "lastUpdated": "Cập nhật lần cuối: {{date}}",
+  "org": {
+    "name": "Phòng Hợp tác Quốc tế – FPT University",
+    "email": "international.fptu@fpt.edu.vn",
+    "phone": "024 6680 5912",
+    "website": "https://www.pems-fpt.site"
+  },
+  "contactCard": {
+    "privacyTitle": "Bạn có câu hỏi về Chính sách bảo mật?",
+    "termsTitle": "Bạn có câu hỏi về Điều khoản sử dụng?",
+    "cta": "Liên hệ chúng tôi"
+  },
+  "privacy": {
+    "title": "Chính sách bảo mật",
+    "subtitle": "Privacy Policy",
+    "description": "PEMS tôn trọng quyền riêng tư và cam kết xử lý dữ liệu một cách minh bạch, an toàn và phù hợp với mục đích vận hành Hệ thống Quản lý Tiếp khách và Hợp tác Quốc tế.",
+    "documentTitle": "Chính sách bảo mật | PEMS - FPT University",
+    "sections": [
+      {
+        "id": "introduction",
+        "title": "Giới thiệu",
+        "paragraphs": [
+          "PEMS là Hệ thống Quản lý Tiếp khách và Hợp tác Quốc tế được sử dụng để hỗ trợ các hoạt động đăng ký tham quan, tiếp nhận đoàn khách, điều phối lịch trình, quản lý tài liệu, hình ảnh, đối tác và các hoạt động liên quan.",
+          "Chính sách bảo mật này giải thích loại dữ liệu PEMS có thể xử lý, mục đích sử dụng dữ liệu, cách dữ liệu được bảo vệ và các quyền liên quan của người dùng.",
+          "Việc sử dụng PEMS đồng nghĩa với việc người dùng đã được cung cấp khả năng tiếp cận chính sách này trước hoặc trong quá trình sử dụng các chức năng có liên quan đến dữ liệu cá nhân."
+        ]
+      },
+      {
+        "id": "information-we-process",
+        "title": "Dữ liệu PEMS xử lý",
+        "paragraphs": [
+          "Tùy theo chức năng được sử dụng, PEMS có thể xử lý các thông tin như họ tên, email, số điện thoại nếu được cung cấp, đơn vị hoặc tổ chức, chức vụ, quốc tịch, thông tin đăng ký tham quan, lịch trình làm việc, thành viên đoàn khách, người phụ trách, tài liệu, hình ảnh, báo cáo và các thông tin phục vụ hoạt động tiếp khách.",
+          "Đối với người dùng nội bộ, hệ thống có thể xử lý thông tin tài khoản, vai trò, đơn vị công tác, lịch sử thao tác và thông tin cần thiết để xác thực, phân quyền và kiểm toán hệ thống.",
+          "PEMS không yêu cầu người dùng cung cấp dữ liệu không cần thiết cho chức năng đang sử dụng."
+        ]
+      },
+      {
+        "id": "google-drive",
+        "title": "Google Drive và Google User Data",
+        "paragraphs": [
+          "PEMS sử dụng Google Drive API để cung cấp chức năng lưu trữ và truy xuất tệp phục vụ hoạt động của hệ thống.",
+          "Khi Quản trị viên được ủy quyền kết nối tài khoản Google Drive với PEMS, hệ thống yêu cầu quyền truy cập Google Drive nhằm thực hiện các chức năng như tải lên, tải xuống, truy xuất, tổ chức và quản lý các tệp được PEMS sử dụng.",
+          "Các tệp có thể bao gồm hình ảnh thư viện, ảnh liên quan đến đoàn khách hoặc chuyến thăm, tài liệu, tài liệu đối tác, biên bản, báo cáo và các tệp nghiệp vụ khác được tạo hoặc quản lý thông qua PEMS.",
+          "PEMS chỉ sử dụng quyền truy cập Google Drive để cung cấp và vận hành các chức năng hiển thị rõ trong hệ thống.",
+          "PEMS không sử dụng dữ liệu nhận được từ Google Drive cho quảng cáo, xây dựng hồ sơ quảng cáo, bán dữ liệu hoặc cung cấp dữ liệu cho nhà môi giới dữ liệu.",
+          "PEMS không sử dụng Google user data cho mục đích không liên quan đến chức năng của hệ thống.",
+          "Việc sử dụng thông tin nhận được từ Google APIs tuân thủ Google API Services User Data Policy, bao gồm các yêu cầu về Limited Use."
+        ]
+      },
+      {
+        "id": "google-oauth",
+        "title": "Xác thực và thông tin ủy quyền Google",
+        "paragraphs": [
+          "PEMS sử dụng OAuth 2.0 để nhận quyền truy cập Google Drive từ tài khoản được quản trị viên chủ động ủy quyền.",
+          "PEMS không yêu cầu hoặc lưu trữ mật khẩu tài khoản Google.",
+          "Refresh token nhận được thông qua OAuth được bảo vệ trước khi lưu trữ và chỉ được backend của PEMS sử dụng để yêu cầu access token cần thiết cho việc giao tiếp với Google Drive API.",
+          "Thông tin xác thực Google không được hiển thị công khai cho người dùng thông thường."
+        ]
+      },
+      {
+        "id": "how-we-use",
+        "title": "Mục đích sử dụng dữ liệu",
+        "paragraphs": [
+          "PEMS sử dụng dữ liệu được xử lý nhằm cung cấp các chức năng của hệ thống; xác thực và phân quyền; tiếp nhận và xử lý yêu cầu tham quan; điều phối hoạt động trước, trong và sau chuyến thăm; quản lý tài liệu, hình ảnh và báo cáo; gửi các thông báo nghiệp vụ; bảo đảm an toàn hệ thống; phát hiện lỗi hoặc hành vi sử dụng không phù hợp; và phục vụ hoạt động kiểm toán khi cần thiết."
+        ]
+      },
+      {
+        "id": "sharing",
+        "title": "Chia sẻ dữ liệu",
+        "paragraphs": [
+          "PEMS không bán dữ liệu cá nhân hoặc Google user data.",
+          "Dữ liệu chỉ được xử lý hoặc truyền cho các dịch vụ cần thiết để cung cấp chức năng của PEMS, trong phạm vi cần thiết cho chức năng đó.",
+          "Dữ liệu cũng có thể được cung cấp khi cần thiết để đáp ứng yêu cầu pháp lý hợp lệ, bảo vệ an toàn hệ thống hoặc điều tra hành vi lạm dụng."
+        ]
+      },
+      {
+        "id": "security",
+        "title": "Bảo mật",
+        "paragraphs": [
+          "PEMS áp dụng các biện pháp kỹ thuật và tổ chức phù hợp nhằm bảo vệ dữ liệu khỏi truy cập, sử dụng, thay đổi hoặc tiết lộ trái phép.",
+          "Các biện pháp có thể bao gồm kiểm soát truy cập theo vai trò, xác thực người dùng, mã hóa hoặc bảo vệ thông tin xác thực nhạy cảm, giới hạn quyền truy cập, ghi nhật ký kiểm toán và truyền dữ liệu qua kết nối bảo mật.",
+          "Không có hệ thống nào có thể bảo đảm an toàn tuyệt đối; tuy nhiên PEMS được thiết kế nhằm giảm thiểu các rủi ro truy cập trái phép và lộ dữ liệu."
+        ]
+      },
+      {
+        "id": "retention",
+        "title": "Lưu trữ dữ liệu",
+        "paragraphs": [
+          "PEMS lưu dữ liệu trong thời gian cần thiết để cung cấp chức năng nghiệp vụ, duy trì hồ sơ hoạt động và đáp ứng các yêu cầu vận hành phù hợp.",
+          "Thời gian lưu cụ thể có thể phụ thuộc vào loại dữ liệu và mục đích nghiệp vụ.",
+          "Khi dữ liệu không còn cần thiết, dữ liệu có thể được xóa, ẩn danh hoặc lưu trữ theo chính sách quản lý dữ liệu áp dụng."
+        ]
+      },
+      {
+        "id": "revoke-google",
+        "title": "Thu hồi quyền Google",
+        "paragraphs": [
+          "Quản trị viên có thể ngừng sử dụng kết nối Google Drive của PEMS bằng chức năng quản lý tích hợp trong hệ thống hoặc bằng cách thu hồi quyền truy cập của PEMS trong phần quản lý ứng dụng bên thứ ba của Google Account.",
+          "Sau khi quyền truy cập bị thu hồi, PEMS sẽ không thể tiếp tục sử dụng refresh token đó để truy cập Google Drive."
+        ]
+      },
+      {
+        "id": "user-requests",
+        "title": "Yêu cầu người dùng",
+        "paragraphs": [
+          "Người dùng có thể liên hệ với đơn vị vận hành PEMS để yêu cầu hỗ trợ về dữ liệu cá nhân, bao gồm yêu cầu cập nhật, chỉnh sửa hoặc xóa dữ liệu khi phù hợp với quyền hạn và quy định áp dụng.",
+          "Một số dữ liệu có thể cần được giữ lại trong thời gian cần thiết để bảo đảm tính toàn vẹn của hồ sơ nghiệp vụ, kiểm toán hoặc nghĩa vụ liên quan."
+        ]
+      },
+      {
+        "id": "third-party",
+        "title": "Dịch vụ bên thứ ba",
+        "paragraphs": [
+          "PEMS có thể sử dụng các dịch vụ bên thứ ba để cung cấp một số chức năng, chẳng hạn Google Drive để lưu trữ tệp, các dịch vụ Google Cloud phục vụ chức năng xử lý dữ liệu được cấu hình trong hệ thống, và nhà cung cấp email để gửi thông báo.",
+          "Các dịch vụ này có thể có chính sách bảo mật và điều khoản riêng."
+        ]
+      },
+      {
+        "id": "minors",
+        "title": "Dữ liệu người chưa thành niên",
+        "paragraphs": [
+          "PEMS được thiết kế để phục vụ hoạt động quản lý tiếp khách và hợp tác của tổ chức. Việc cung cấp dữ liệu về người chưa thành niên, nếu phát sinh trong hoạt động nghiệp vụ, cần được thực hiện theo quy trình và căn cứ phù hợp của đơn vị quản lý."
+        ]
+      },
+      {
+        "id": "changes",
+        "title": "Thay đổi chính sách",
+        "paragraphs": [
+          "PEMS có thể cập nhật Chính sách bảo mật này khi chức năng hoặc phương thức xử lý dữ liệu thay đổi.",
+          "Phiên bản cập nhật sẽ được công bố trên trang này cùng ngày cập nhật gần nhất.",
+          "Nếu có thay đổi đáng kể về cách PEMS sử dụng Google user data, người dùng sẽ được thông báo hoặc yêu cầu xác nhận lại khi cần thiết trước khi dữ liệu được sử dụng cho mục đích mới."
+        ]
+      },
+      {
+        "id": "contact",
+        "title": "Liên hệ",
+        "paragraphs": []
+      }
+    ]
+  },
+  "terms": {
+    "title": "Điều khoản sử dụng",
+    "subtitle": "Terms of Service",
+    "description": "Điều khoản này quy định việc truy cập và sử dụng Hệ thống Quản lý Tiếp khách và Hợp tác Quốc tế PEMS.",
+    "documentTitle": "Điều khoản sử dụng | PEMS - FPT University",
+    "privacyLinkLabel": "Xem Chính sách bảo mật",
+    "sections": [
+      {
+        "id": "acceptance",
+        "title": "Chấp nhận điều khoản",
+        "paragraphs": [
+          "Bằng việc truy cập hoặc sử dụng PEMS, người dùng đồng ý sử dụng hệ thống phù hợp với các điều khoản này, các quy định áp dụng của đơn vị vận hành và các hướng dẫn được cung cấp trong hệ thống.",
+          "Nếu người dùng không đồng ý với các điều khoản áp dụng, người dùng nên ngừng sử dụng các chức năng tương ứng."
+        ]
+      },
+      {
+        "id": "purpose",
+        "title": "Mục đích hệ thống",
+        "paragraphs": [
+          "PEMS được cung cấp nhằm hỗ trợ đăng ký tham quan, quản lý đoàn khách, điều phối hoạt động tiếp khách, quản lý lịch trình, tài liệu, hình ảnh, đối tác, báo cáo và các chức năng liên quan."
+        ]
+      },
+      {
+        "id": "accounts",
+        "title": "Tài khoản",
+        "paragraphs": [
+          "Người dùng chịu trách nhiệm bảo vệ thông tin đăng nhập của mình và không được chia sẻ tài khoản cho người không có thẩm quyền.",
+          "Mọi thao tác thực hiện bằng tài khoản được xác thực có thể được ghi nhận nhằm phục vụ vận hành và kiểm toán hệ thống."
+        ]
+      },
+      {
+        "id": "authorized-use",
+        "title": "Sử dụng được phép",
+        "paragraphs": [
+          "Người dùng chỉ được sử dụng PEMS cho các mục đích phù hợp với chức năng và quyền được cấp.",
+          "Không được cố gắng truy cập dữ liệu, chức năng hoặc tài nguyên mà tài khoản không được phép sử dụng."
+        ]
+      },
+      {
+        "id": "user-content",
+        "title": "Nội dung người dùng cung cấp",
+        "paragraphs": [
+          "Người dùng chịu trách nhiệm về tính phù hợp và chính xác của dữ liệu, tài liệu hoặc nội dung mà mình gửi lên PEMS.",
+          "Người dùng không được tải lên nội dung trái pháp luật, độc hại, vi phạm quyền của bên khác hoặc không liên quan đến mục đích nghiệp vụ của hệ thống."
+        ]
+      },
+      {
+        "id": "google-drive",
+        "title": "Google Drive Integration",
+        "paragraphs": [
+          "Một số chức năng lưu trữ tệp của PEMS được cung cấp thông qua Google Drive API.",
+          "Việc kết nối Google Drive chỉ được thực hiện bởi tài khoản hoặc quản trị viên có thẩm quyền.",
+          "Việc sử dụng Google Drive thông qua PEMS đồng thời chịu sự điều chỉnh của các điều khoản và chính sách áp dụng của Google."
+        ]
+      },
+      {
+        "id": "availability",
+        "title": "Tính sẵn sàng của dịch vụ",
+        "paragraphs": [
+          "PEMS hướng tới duy trì khả năng hoạt động ổn định nhưng không cam kết dịch vụ luôn hoạt động không gián đoạn.",
+          "Hệ thống có thể tạm ngừng để bảo trì, cập nhật, xử lý sự cố hoặc vì nguyên nhân nằm ngoài khả năng kiểm soát hợp lý."
+        ]
+      },
+      {
+        "id": "prohibited-conduct",
+        "title": "Bảo mật và hành vi bị cấm",
+        "paragraphs": [
+          "Người dùng không được thực hiện hành vi cố gắng vượt qua cơ chế bảo mật, khai thác lỗ hổng, gây gián đoạn dịch vụ, phát tán mã độc hoặc truy cập trái phép."
+        ]
+      },
+      {
+        "id": "suspension",
+        "title": "Hạn chế hoặc tạm dừng quyền truy cập",
+        "paragraphs": [
+          "Quyền sử dụng PEMS có thể bị hạn chế hoặc tạm dừng khi tài khoản vi phạm điều khoản sử dụng, không còn thẩm quyền sử dụng hệ thống hoặc khi việc hạn chế là cần thiết để bảo vệ hệ thống và dữ liệu."
+        ]
+      },
+      {
+        "id": "intellectual-property",
+        "title": "Quyền sở hữu trí tuệ",
+        "paragraphs": [
+          "Phần mềm, giao diện, thiết kế, tài liệu hệ thống và các thành phần thuộc PEMS được bảo vệ theo quyền sở hữu và quyền sử dụng tương ứng của các bên có liên quan.",
+          "Việc sử dụng PEMS không mặc nhiên chuyển giao quyền sở hữu trí tuệ cho người dùng."
+        ]
+      },
+      {
+        "id": "third-party",
+        "title": "Dịch vụ bên thứ ba",
+        "paragraphs": [
+          "Một số chức năng của PEMS phụ thuộc vào dịch vụ bên thứ ba như Google APIs hoặc dịch vụ gửi email.",
+          "PEMS không kiểm soát hoàn toàn tính sẵn sàng hoặc thay đổi chính sách của các dịch vụ bên thứ ba đó."
+        ]
+      },
+      {
+        "id": "privacy",
+        "title": "Quyền riêng tư",
+        "paragraphs": [
+          "Việc xử lý dữ liệu cá nhân khi sử dụng PEMS được mô tả chi tiết trong Chính sách bảo mật."
+        ]
+      },
+      {
+        "id": "changes",
+        "title": "Thay đổi điều khoản",
+        "paragraphs": [
+          "PEMS có thể cập nhật các Điều khoản này khi chức năng, chính sách hoặc yêu cầu vận hành thay đổi.",
+          "Phiên bản mới sẽ được công bố trên trang này cùng ngày cập nhật gần nhất."
+        ]
+      },
+      {
+        "id": "contact",
+        "title": "Liên hệ",
+        "paragraphs": []
+      }
+    ]
+  }
+}

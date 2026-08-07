@@ -7,6 +7,7 @@
 // Đây là component phần chân trang của website (Footer)
 import React from 'react';
 import { ArrowUp, MapPin, Phone, Mail, Facebook, Youtube, Globe as GlobeIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import footerLogo from '../../assets/images/2021-FPTU-Eng.png';
 import { useTranslation } from 'react-i18next';
 
@@ -86,9 +87,9 @@ export function Footer() {
             </div>
             
             <ul className="space-y-2 text-xs text-gray-300">
-              <li><a href="#" className="hover:text-white transition-colors">{t('publicLayout:footer.privacy')}</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">{t('publicLayout:footer.terms')}</a></li>
-              <li><a href="#" className="hover:text-white transition-colors">FAQs</a></li>
+              <li><Link to="/privacy" className="hover:text-white transition-colors">{t('publicLayout:footer.privacy')}</Link></li>
+              <li><Link to="/terms" className="hover:text-white transition-colors">{t('publicLayout:footer.terms')}</Link></li>
+              <li><Link to="/faq" className="hover:text-white transition-colors">FAQs</Link></li>
             </ul>
           </div>
 
