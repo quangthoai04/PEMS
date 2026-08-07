@@ -66,6 +66,8 @@ import { VisitFeedbackPage } from './pages/dashboard/visit/VisitFeedbackPage';
 import { FAQManagement } from './pages/dashboard/faq/FAQManagement';
 import { FAQDetail } from './pages/dashboard/faq/FAQDetail';
 import { FAQPage } from './pages/FAQPage';
+import { PrivacyPolicyPage } from './pages/legal/PrivacyPolicyPage';
+import { TermsOfServicePage } from './pages/legal/TermsOfServicePage';
 import { CampusManagement } from './pages/dashboard/campus/CampusManagement';
 import { CampusDetail } from './pages/dashboard/campus/CampusDetail';
 
@@ -150,6 +152,11 @@ export default function App() {
           <Route path="/visit-fptu" element={<VisitFPTUPage />} />
           <Route path="/visit-fptu/:id" element={<CampusDetailVisitPage />} />
           <Route path="/faq" element={<FAQPage />} />
+          {/* Trang pháp lý công khai. Hai URL này được khai báo trong Google Auth Platform
+              (privacy policy / terms of service link) nên phải mở được khi CHƯA đăng nhập —
+              đặt ngoài mọi <ProtectedRoute>, và không nằm trong BARE_ROUTES để giữ Header/Footer. */}
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsOfServicePage />} />
 
           {/* Authentication Routes */}
           <Route path="/login" element={<Navigate to="/" replace />} />
