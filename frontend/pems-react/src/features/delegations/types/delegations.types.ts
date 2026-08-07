@@ -1363,7 +1363,14 @@ export interface VisitInvitation {
   assignedAt?: string | null;
   visitRequestStatus?: string;
   campusVisitStatus?: string;
+  /** The INVITATION's own text — what the inviter wrote, and on a declined row the reason given back. */
   note: string | null;
+  /**
+   * "Ghi chú gửi FPTU" — the guest's one general remark about the invited campus, from
+   * visit_instance_form_details.notes. Kept apart from `note` above on purpose: they are written by
+   * different people about different things, and a screen showing both must not blur them.
+   */
+  notesToFptu?: string | null;
   allowedActions: InvitationAction[];
 }
 

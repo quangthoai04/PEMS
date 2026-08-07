@@ -154,6 +154,48 @@ public sealed class VisitInstanceContributionV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// The contribution page's request summary carries "Ghi chú gửi FPTU" and the vehicle note. The
+    /// backend has always sent both; the page rendered neither, so a contributor preparing a room or a
+    /// meal worked from a summary that omitted the one line describing what the guest actually needs.
+    /// </summary>
+    [Fact]
+    public async Task Request_summary_carries_notes_and_transportation_note()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        var dto = await Run(db, Ho(), inst[0].VisitInstanceId);
+
+        Assert.Equal("V2-NOTE", dto.Summary.Request!.Notes);
+        Assert.Equal("V2-TRANSPORT", dto.Summary.Request!.TransportationNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: a contributor is scoped to one instance and must read that instance's note.
+    /// </summary>
+    [Fact]
+    public async Task Request_summary_notes_never_leak_across_campuses()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true, host0: IcStaffC1);
+
+        var a = await Run(db, Ho(), inst[0].VisitInstanceId);
+        var b = await Run(db, Ho(), inst[1].VisitInstanceId);
+
+        Assert.Equal("NOTE-A", a.Summary.Request!.Notes);
+        Assert.Equal("NOTE-B", b.Summary.Request!.Notes);
+        Assert.NotEqual("NOTE-B", a.Summary.Request!.Notes);
+        Assert.NotEqual("NOTE-A", b.Summary.Request!.Notes);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {
@@ -275,6 +317,10 @@ public sealed class VisitInstanceContributionV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" and the vehicle note — two different remarks about THIS campus. Tagged
+        // like the other per-campus literals so a sibling leak or a swap between the two is visible.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
+        TransportationNote = perCampus ? $"TRANSPORT-{tag}" : "V2-TRANSPORT",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 

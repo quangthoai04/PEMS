@@ -255,11 +255,11 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               <div className="sm:col-span-2">
                 <Field label={t('visitRequestV2:summary.purpose')}>{cv.purpose || none}</Field>
               </div>
-              {cv.workingContent ? (
-                <div className="sm:col-span-2">
-                  <Field label={t('visitRequestV2:summary.workingContent')}>{cv.workingContent}</Field>
-                </div>
-              ) : null}
+              {/* Kept in place when blank, like purpose above: this is the guest's receipt for what
+                  they just submitted, and a field that silently drops out looks like it was lost. */}
+              <div className="sm:col-span-2">
+                <Field label={t('visitRequestV2:summary.workingContent')}>{cv.workingContent || none}</Field>
+              </div>
               {/* Guests and support get SEPARATE tables, each numbered from 1 — they are different
                   groups arriving under different rules, and one running count would imply otherwise. */}
               <PeopleTable
@@ -285,12 +285,8 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
                   </div>
                 </Field>
               </div>
-              {cv.transportationNote ? (
-                <Field label={t('visitRequestV2:summary.transportation')}>{cv.transportationNote}</Field>
-              ) : null}
-              {cv.notes ? (
-                <Field label={t('visitRequestV2:summary.campusNote')}>{cv.notes}</Field>
-              ) : null}
+              <Field label={t('visitRequestV2:summary.transportation')}>{cv.transportationNote || none}</Field>
+              <Field label={t('visitRequestV2:summary.campusNote')}>{cv.notes || none}</Field>
             </dl>
           </section>
         );

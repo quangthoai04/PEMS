@@ -86,6 +86,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
         public string RegistrantJobTitle { get; set; }
         public string Purpose { get; set; }
         public string WorkingContent { get; set; }
+        /// <summary>
+        /// "Ghi chú gửi FPTU" — the guest's one general remark about THIS campus, from
+        /// visit_instance_form_details.notes. It is delegation context, not logistics text: it has
+        /// nothing to do with <see cref="Description"/>, <see cref="ProposalNote"/>,
+        /// <see cref="BorrowNote"/> or <see cref="ReturnNote"/>, which belong to the item itself.
+        /// </summary>
+        public string NotesToFptu { get; set; }
         // The OPERATIONAL contact of THIS campus, all five fields. They used to be named
         // ContactPerson*, after the request-level contact that no longer exists, and carried only
         // name and phone — so a department read the right person under the wrong name and could not
@@ -243,6 +250,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
             string delegationName = d.DelegationName;
             string purpose = d.Purpose ?? "";
             string workingContent = d.WorkingContent ?? "";
+            // The guest's remark to FPTU about THIS campus — NOT any of the item's own note columns.
+            string notesToFptu = d.Notes ?? "";
             // OPERATIONAL contact of this campus — deliberately NOT the request-level primary contact.
             var opContact = d.OperationalContact;
 
@@ -300,6 +309,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetRequestDetail
                 RegistrantJobTitle = camp.VisitRequest.RegistrantJobTitle ?? "",
                 Purpose = purpose,
                 WorkingContent = workingContent,
+                NotesToFptu = notesToFptu,
                 OperationalContactFullName = opContact.FullName ?? "",
                 OperationalContactOrganization = opContact.Organization ?? "",
                 OperationalContactJobTitle = opContact.JobTitle ?? "",

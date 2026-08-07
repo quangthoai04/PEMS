@@ -261,11 +261,15 @@ export function VisitContributionPage() {
               <Field label="Mục đích" value={req.purpose} />
               <Field label="Ngôn ngữ làm việc" value={req.workingLanguage} />
             </div>
-            {req.workingContent && (
-              <div className="mt-2 pt-2 border-t border-slate-100">
-                <Field label="Nội dung làm việc" value={req.workingContent} />
-              </div>
-            )}
+            {/* Working content, transport identification and the guest's remark to FPTU are all part
+                of the request a contributor is being asked to prepare against, and the backend has
+                always sent them — the page simply never drew the last two. Rendered unconditionally:
+                Field falls back to "—", so a blank answer stays visibly answered. */}
+            <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
+              <Field label="Nội dung làm việc" value={req.workingContent} />
+              <Field label="Nhận diện phương tiện di chuyển" value={req.transportationNote} />
+              <Field label="Ghi chú gửi FPTU" value={req.notes} />
+            </div>
             {/* The OPERATIONAL contact of THIS campus, under its own heading and in full. It used to
                 be one unlabelled "Người liên hệ" line carrying a name, sitting among the delegation's
                 fields — which read as the registrant, and gave a contributor no way to reach anyone.

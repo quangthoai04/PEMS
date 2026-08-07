@@ -165,6 +165,101 @@ public sealed class MyVisitInvitationByIdV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// "Ghi chú gửi FPTU" reaches the invited person. The DTO carried the delegation name, purpose and
+    /// working content but no general note, so somebody deciding whether to accept an invitation could
+    /// not see that the guest had asked for a vegetarian meal or step-free access — the one field on
+    /// the form that says what the visit actually needs from whoever turns up.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_comes_from_the_invited_instance_detail()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, parts[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The screen shows the guest's remark and, on a declined invitation, the invitee's own reason. They
+    /// are two sentences by two people, so they live in two properties and neither may carry the other —
+    /// a decline reason displayed as a dietary requirement misinforms everyone who reads it afterwards.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_is_never_the_participant_note_or_decline_reason()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+
+        // Decline with a reason: p.Note becomes the decline reason, the classic place for a mix-up.
+        var participant = await db.VisitParticipants.FirstAsync(p => p.ParticipantId == parts[0]);
+        participant.Status = ParticipantStatuses.Declined;
+        participant.Note = "Trùng lịch họp nội bộ.";
+        participant.RespondedAt = DateTime.Now;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, parts[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        Assert.Equal("Trùng lịch họp nội bộ.", dto.Note);
+        Assert.NotEqual(dto.Note, dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>Blank is a real answer; the contract must be able to say it rather than omit the field.</summary>
+    [Fact]
+    public async Task NotesToFptu_is_null_when_the_guest_wrote_nothing()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var instanceId = await db.VisitParticipants.Where(p => p.ParticipantId == parts[0])
+            .Select(p => p.VisitInstanceId).FirstAsync();
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instanceId);
+        detail.Notes = null;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, parts[0]);
+
+        Assert.Null(dto.NotesToFptu);
+        // The participant note is still there and was not promoted to fill the gap.
+        Assert.Equal("PARTICIPANT-NOTE", dto.Note);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: the invitation is bound to one instance, so each invitee reads their own
+    /// campus's note. A request-level or representative-campus fallback would show both the same one.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_never_leaks_across_campuses_of_a_mixed_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+
+        var a = await Run(db, parts[0]);
+        var b = await Run(db, parts[1]);
+
+        Assert.Equal("NOTE-A", a.NotesToFptu);
+        Assert.Equal("NOTE-B", b.NotesToFptu);
+        Assert.NotEqual("NOTE-B", a.NotesToFptu);
+        Assert.NotEqual("NOTE-A", b.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {
@@ -269,6 +364,9 @@ public sealed class MyVisitInvitationByIdV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag.ToLowerInvariant()}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" — the guest's remark about THIS campus. Tagged like the other per-campus
+        // literals so a sibling-campus leak into NotesToFptu shows up as the wrong tag.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 
@@ -280,6 +378,9 @@ public sealed class MyVisitInvitationByIdV2Tests
         IsHost = false,
         Status = "INVITED",
         InvitedAt = DateTime.Now,
+        // The INVITATION's own text — what the inviter wrote to this participant. Deliberately unlike
+        // any form literal so a confusion with the guest's note is visible.
+        Note = "PARTICIPANT-NOTE",
         CreatedAt = DateTime.Now,
     };
 

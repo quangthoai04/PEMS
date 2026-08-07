@@ -153,6 +153,147 @@ public sealed class VisitProcessDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// "Ghi chú gửi FPTU" and the vehicle note are two separate answers on the form and reach this
+    /// screen as two separate fields. The host preparing the visit acts on the first and identifies the
+    /// arriving coach by the second, so neither may be shown in the other's place.
+    /// </summary>
+    [Fact]
+    public async Task Notes_and_transportation_note_are_two_separate_fields()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        Assert.Equal("V2-NOTE", dto.RequestSummary.Notes);
+        Assert.Equal("V2-TRANSPORT", dto.RequestSummary.TransportationNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// A blank note stays blank rather than borrowing the vehicle note — or a sibling campus's — to
+    /// fill the gap. The screen renders the field either way; what it must not do is invent content.
+    /// </summary>
+    [Fact]
+    public async Task Notes_stays_null_when_the_guest_wrote_nothing()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.Notes = null;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        Assert.Null(dto.RequestSummary.Notes);
+        Assert.Equal("V2-TRANSPORT", dto.RequestSummary.TransportationNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: each campus's host must read that campus's own note. This is the screen where
+    /// a shared or representative value would be acted on directly — one host catering for the other
+    /// campus's guests.
+    /// </summary>
+    [Fact]
+    public async Task Notes_never_leak_across_campuses_of_a_mixed_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+
+        var a = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+        var b = await Run(db, Owner(), req.VisitRequestId, inst[1].VisitInstanceId);
+
+        Assert.Equal("NOTE-A", a.RequestSummary.Notes);
+        Assert.Equal("NOTE-B", b.RequestSummary.Notes);
+        Assert.NotEqual("NOTE-B", a.RequestSummary.Notes);
+        Assert.NotEqual("NOTE-A", b.RequestSummary.Notes);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// A cancelled campus keeps the form the guest submitted. The cancellation reason is metadata that
+    /// arrives ALONGSIDE the form, never in place of it — a cancelled visit still has to be explained,
+    /// reconciled and sometimes rebooked, and all of that reads off the original request.
+    /// </summary>
+    [Fact]
+    public async Task Notes_survive_a_cancelled_instance_alongside_the_cancellation_reason()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+
+        // A still-pending campus is only cancelled as a consequence of cancelling the whole request
+        // (trg_visit_campuses_cancel_validate_bu), and that trigger reads visit_requests as it runs —
+        // so the request has to be written FIRST, in its own SaveChanges.
+        var request = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == req.VisitRequestId);
+        request.Status = "CANCELLED";
+        request.CancelledBy = VisitorOwner;
+        request.CancelledAt = DateTime.Now;
+        request.CancellationReason = "Đoàn khách chủ động hủy chuyến.";
+        await db.SaveChangesAsync();
+
+        var campus = await db.VisitRequestCampuses.FirstAsync(c => c.VisitInstanceId == inst[0].VisitInstanceId);
+        campus.Status = "CANCELLED";
+        // A cancellation has to say who did it and how — the schema will not record an unattributed one.
+        campus.CancelledBy = VisitorOwner;
+        campus.CancelledAt = DateTime.Now;
+        campus.CancellationActorType = "VISITOR";
+        campus.CancellationSource = "SELF_SERVICE";
+        campus.CancellationReason = "Đoàn khách chủ động hủy chuyến.";
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        // The form is intact…
+        Assert.Equal("V2-NOTE", dto.RequestSummary.Notes);
+        Assert.Equal("V2-DELEG", dto.RequestSummary.DelegationName);
+        Assert.Equal("V2-PURPOSE", dto.RequestSummary.Purpose);
+        // …and the cancellation reason did NOT overwrite the guest's note.
+        Assert.NotEqual("Đoàn khách chủ động hủy chuyến.", dto.RequestSummary.Notes);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Same for a rejected campus: the decision note explains the refusal, the guest's note explains
+    /// what they needed. Both exist; neither is the other.
+    /// </summary>
+    [Fact]
+    public async Task Notes_survive_a_rejected_instance_alongside_the_decision_note()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var campus = await db.VisitRequestCampuses.FirstAsync(c => c.VisitInstanceId == inst[0].VisitInstanceId);
+        campus.Status = "REJECTED";
+        // The schema refuses a REJECTED instance without full Staff Leader decision metadata —
+        // a rejection nobody signed is not a rejection anyone can answer for.
+        campus.DecidedBy = SlCampus1;
+        campus.DecidedAt = DateTime.Now;
+        campus.DecisionActorRole = "STAFF_LEADER";
+        campus.DecisionNote = "Thiếu thông tin lịch trình.";
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, Owner(), req.VisitRequestId, inst[0].VisitInstanceId);
+
+        Assert.Equal("V2-NOTE", dto.RequestSummary.Notes);
+        Assert.NotEqual("Thiếu thông tin lịch trình.", dto.RequestSummary.Notes);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {
@@ -270,6 +411,10 @@ public sealed class VisitProcessDetailV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" and the vehicle note — two different remarks about THIS campus. Tagged
+        // like the other per-campus literals so a sibling leak or a swap between the two is visible.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
+        TransportationNote = perCampus ? $"TRANSPORT-{tag}" : "V2-TRANSPORT",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 

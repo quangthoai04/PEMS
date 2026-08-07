@@ -52,12 +52,14 @@ public sealed class GetVisitInvitationDetailQueryHandler
             throw new NotFoundException("VisitInvitation", request.ParticipantId);
 
         // ── Per-campus form v2 (INSTANCE-LEVEL: the invitation is bound to ONE campus instance via the
-        // participant, so a MIXED request still returns 200; the only form field this DTO exposes —
-        // DelegationName — is sourced ONLY from the invited instance's detail, never global, never a
-        // sibling campus. Auth is already applied above (p.UserId == current user). ──
+        // participant, so a MIXED request still returns 200; every form field this DTO exposes — the
+        // delegation name and the guest's remark to FPTU — is sourced ONLY from the invited instance's
+        // detail, never global, never a sibling campus. Auth is already applied above
+        // (p.UserId == current user). ──
         var content = await _formReadService.ResolveCampusFormContentAsync(
             data.vr, new[] { data.p.VisitInstanceId }, cancellationToken);
-        string delegationName = content[data.p.VisitInstanceId].DelegationName;
+        var form = content[data.p.VisitInstanceId];
+        string delegationName = form.DelegationName;
 
         var campusName = await _context.Campuses
             .Where(x => x.CampusId == data.c.CampusId)
@@ -103,6 +105,8 @@ public sealed class GetVisitInvitationDetailQueryHandler
             RespondedAt = data.p.RespondedAt,
             Note = data.p.Note,
             DeclineReason = data.p.Status == ParticipantStatuses.Declined ? data.p.Note : null,
+            // The guest's remark to FPTU, kept strictly apart from Note/DeclineReason above.
+            NotesToFptu = form.Notes,
             AssignedByName = assignedByName,
             AssignedAt = data.p.AssignedAt,
             AllowedActions = new List<string> { "VIEW_INVITATION_DETAIL", "VIEW_REQUEST_FORM" }

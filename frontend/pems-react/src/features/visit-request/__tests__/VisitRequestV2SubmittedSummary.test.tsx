@@ -156,4 +156,85 @@ describe('VisitRequestV2SubmittedSummary — full submitted form parity', () => 
     expect(within(screen.getByTestId('campus-summary-0'))
       .getByText(/Trưởng phòng Hợp tác Quốc tế/)).toBeInTheDocument();
   });
+
+  /**
+   * Working content, the transport note and the note to FPTU used to be rendered only when non-empty,
+   * so a guest who skipped an optional field got a receipt on which that field had never been asked.
+   * On the one screen whose whole job is to say "here is what we received", a silently absent row
+   * reads as a lost answer. Each now falls back to the "none" placeholder instead of vanishing.
+   */
+  it('keeps the optional rows, with a placeholder, when the guest left them blank', () => {
+    renderOne(withContact({ workingContent: '', transportationNote: '', notes: '' }));
+    const card = within(screen.getByTestId('campus-summary-0'));
+
+    for (const label of ['Working content', 'Transportation', 'Note to FPTU']) {
+      const row = card.getByText(label).parentElement as HTMLElement;
+      expect(within(row).getByText('—')).toBeInTheDocument();
+    }
+  });
+
+  it('shows the note to FPTU and the transport note as two separate rows', () => {
+    renderOne(withContact({
+      transportationNote: 'Đoàn sử dụng shuttle từ cổng chính.',
+      notes: 'Đoàn có một khách dị ứng hải sản.',
+    }));
+    const card = within(screen.getByTestId('campus-summary-0'));
+
+    const transport = card.getByText('Transportation').parentElement as HTMLElement;
+    const note = card.getByText('Note to FPTU').parentElement as HTMLElement;
+    expect(within(transport).getByText('Đoàn sử dụng shuttle từ cổng chính.')).toBeInTheDocument();
+    expect(within(note).getByText('Đoàn có một khách dị ứng hải sản.')).toBeInTheDocument();
+  });
+
+  it('never fills a blank note to FPTU from the transport note', () => {
+    renderOne(withContact({ transportationNote: 'Xe 45 chỗ, biển 29B-123.45', notes: '' }));
+    const card = within(screen.getByTestId('campus-summary-0'));
+
+    const note = card.getByText('Note to FPTU').parentElement as HTMLElement;
+    expect(within(note).getByText('—')).toBeInTheDocument();
+    expect(within(note).queryByText(/29B-123\.45/)).toBeNull();
+  });
+});
+
+/**
+ * Each campus card is built from that campus's own entry in `values.campusVisits`. These pin that a
+ * per-campus note never leaks sideways — neither by a request-level fallback nor by the first campus
+ * standing in as representative.
+ */
+describe('VisitRequestV2SubmittedSummary — per-campus notes', () => {
+  it('gives each campus of a MIXED request its own note to FPTU', () => {
+    const cvs = [
+      campus({ clientKey: 'a', campus: 'HN', notes: 'HN note' }),
+      campus({ clientKey: 'b', campus: 'HCM', notes: 'HCM note' }),
+    ];
+    render(<VisitRequestV2SubmittedSummary
+      response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' },
+                          { visitInstanceId: 22, campusId: 2, status: 'WAITING_REQUEST_APPROVAL' }], true)}
+      values={values(cvs)} />);
+
+    const cardA = within(screen.getByTestId('campus-summary-0'));
+    const cardB = within(screen.getByTestId('campus-summary-1'));
+
+    expect(cardA.getByText('HN note')).toBeInTheDocument();
+    expect(cardA.queryByText('HCM note')).toBeNull();
+    expect(cardB.getByText('HCM note')).toBeInTheDocument();
+    expect(cardB.queryByText('HN note')).toBeNull();
+  });
+
+  it('leaves one campus blank while the other has a note', () => {
+    const cvs = [
+      campus({ clientKey: 'a', campus: 'HN', notes: 'Chỉ HN có ghi chú' }),
+      campus({ clientKey: 'b', campus: 'HCM', notes: '' }),
+    ];
+    render(<VisitRequestV2SubmittedSummary
+      response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' },
+                          { visitInstanceId: 22, campusId: 2, status: 'WAITING_REQUEST_APPROVAL' }], true)}
+      values={values(cvs)} />);
+
+    const cardB = within(screen.getByTestId('campus-summary-1'));
+    const note = cardB.getByText('Note to FPTU').parentElement as HTMLElement;
+    // Blank stays blank: HN's note must not be borrowed to fill HCM's row.
+    expect(within(note).getByText('—')).toBeInTheDocument();
+    expect(cardB.queryByText('Chỉ HN có ghi chú')).toBeNull();
+  });
 });

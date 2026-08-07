@@ -29,6 +29,8 @@ public sealed class VisitInvitationFlat
     public string? OrganizationName { get; set; }
     public string? Purpose { get; set; }
     public string? WorkingContent { get; set; }
+    /// <summary>"Ghi chú gửi FPTU" from this instance's own detail row — never the participant Note.</summary>
+    public string? NotesToFptu { get; set; }
 }
 
 /// <summary>Shared mapping + batched enrichment for invitation DTOs (list and detail).</summary>
@@ -62,6 +64,7 @@ public static class VisitInvitationProjection
             PlannedEndAt = r.PlannedEndAt,
             Purpose = r.Purpose,
             WorkingContent = r.WorkingContent,
+            NotesToFptu = r.NotesToFptu,
             InvitedByUserId = r.InvitedByUserId,
             InvitedAt = r.InvitedAt,
             RespondedAt = r.RespondedAt,

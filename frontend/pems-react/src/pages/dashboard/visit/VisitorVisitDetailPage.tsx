@@ -341,7 +341,9 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
                 who had agreed was shown as having declined on their own submitted form. */}
             <KV label="Đồng ý truyền thông" value={summary.mediaConsentStatus === 'AGREED' ? 'Đồng ý' : 'Không đồng ý'} />
           </div>
-          {summary.notes && <KVBlock label="Ghi chú gửi FPTU" value={summary.notes} />}
+          {/* Always shown: this is the visitor's own submitted form, and a row that disappears when
+              they left it blank makes them doubt the note was ever sent. KVBlock renders "-". */}
+          <KVBlock label="Ghi chú gửi FPTU" value={summary.notes} />
         </div>
       </div>
     </section>

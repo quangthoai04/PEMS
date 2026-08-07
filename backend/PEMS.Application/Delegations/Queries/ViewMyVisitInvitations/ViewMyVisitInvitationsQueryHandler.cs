@@ -80,6 +80,7 @@ public sealed class ViewMyVisitInvitationsQueryHandler
                 OrganizationName = x.vr.RegistrantOrganization,
                 Purpose = x.c.FormDetail != null ? x.c.FormDetail.Purpose : null,
                 WorkingContent = x.c.FormDetail != null ? x.c.FormDetail.WorkingContent : null,
+                NotesToFptu = x.c.FormDetail != null ? x.c.FormDetail.Notes : null,
             })
             .ToListAsync(cancellationToken);
 

@@ -215,11 +215,11 @@ export function VisitRequestDetail() {
                     <span className="text-sm font-bold text-gray-800">{mediaConsentLabel}</span>
                   </Field>
                 )}
-                {summary?.transportationNote?.trim() && (
-                  <Field icon={<Car className="w-4 h-4" />} label="Nhận diện phương tiện">
-                    <span className="text-sm font-medium text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
-                  </Field>
-                )}
+                <Field icon={<Car className="w-4 h-4" />} label="Nhận diện phương tiện">
+                  {summary?.transportationNote?.trim()
+                    ? <span className="text-sm font-medium text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
+                    : <span className="text-sm italic text-gray-400">Chưa có thông tin</span>}
+                </Field>
                 {opContact && (
                   <div className="md:col-span-2">
                     <Field icon={<User className="w-4 h-4" />} label="Đầu mối phối hợp">
@@ -253,17 +253,18 @@ export function VisitRequestDetail() {
                 </div>
               </div>
 
-              {summary?.notes?.trim() && (
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <StickyNote className="w-4 h-4" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span>
-                  </div>
-                  <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
-                    {summary.notes}
-                  </div>
+              {/* Shown whether or not the guest wrote anything — same treatment as "Mục đích" and
+                  "Nội dung làm việc" above. Silence and an unasked question look identical once the
+                  block is gone, and only one of them means there is nothing to prepare for. */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-gray-400">
+                  <StickyNote className="w-4 h-4" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span>
                 </div>
-              )}
+                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                  {summary?.notes?.trim() ? summary.notes : <span className="italic text-gray-400">Chưa có ghi chú.</span>}
+                </div>
+              </div>
 
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">

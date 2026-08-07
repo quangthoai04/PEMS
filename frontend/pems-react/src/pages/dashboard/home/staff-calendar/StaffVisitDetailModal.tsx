@@ -304,8 +304,12 @@ export function StaffVisitDetailModal({
                   <FileText className="w-3.5 h-3.5 text-[#f37021]" /> Nội dung chuyến thăm
                 </h4>
                 <div className="divide-y divide-slate-100 border-y border-slate-100">
-                  <InfoRow label="Mục đích" value={detail.purpose} />
-                  <InfoRow label="Nội dung làm việc" value={detail.workingContent} />
+                  {/* Form content is pinned with EMPTY_FIELD, like the contact block above: InfoRow
+                      drops a row whose value is blank, which is right for optional decoration but
+                      wrong here — a Staff Leader deciding whether to host needs to see that the guest
+                      was asked and answered nothing, not a form with the question missing. */}
+                  <InfoRow label="Mục đích" value={detail.purpose || EMPTY_FIELD} />
+                  <InfoRow label="Nội dung làm việc" value={detail.workingContent || EMPTY_FIELD} />
                   <InfoRow
                     label="Hình thức"
                     value={detail.visitType
@@ -324,12 +328,12 @@ export function StaffVisitDetailModal({
                   <InfoRow
                     icon={<Car className="w-3 h-3" />}
                     label="Nhận diện phương tiện"
-                    value={detail.transportationNote}
+                    value={detail.transportationNote || EMPTY_FIELD}
                   />
                   <InfoRow
                     icon={<StickyNote className="w-3 h-3" />}
                     label="Ghi chú gửi FPTU"
-                    value={detail.notes}
+                    value={detail.notes || EMPTY_FIELD}
                   />
                 </div>
               </section>

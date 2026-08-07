@@ -226,18 +226,28 @@ export function VisitParticipantInvitationDetail() {
               <Field icon={<Calendar className="w-4 h-4" />} label="Kết thúc" value={formatDateTime(invitation.plannedEndAt)} />
             </div>
 
-            {invitation.purpose && (
-              <div>
-                <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Mục đích</span></div>
-                <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">{invitation.purpose}</p>
-              </div>
-            )}
-            {invitation.workingContent && (
-              <div>
-                <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Nội dung làm việc</span></div>
-                <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">{invitation.workingContent}</p>
-              </div>
-            )}
+            {/* Form content of the invited campus. These three blocks are what the invitee is being
+                asked to say yes to, so they stay put whether or not the guest filled each one in —
+                and "Ghi chú gửi FPTU" is deliberately its own block, distinct from the decline reason
+                below, which is this participant's own text and never the guest's. */}
+            <div>
+              <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Mục đích</span></div>
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">
+                {invitation.purpose?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
+              </p>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Nội dung làm việc</span></div>
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">
+                {invitation.workingContent?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
+              </p>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span></div>
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100 whitespace-pre-line">
+                {invitation.notesToFptu?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
+              </p>
+            </div>
 
             {invitation.status === 'DECLINED' && invitation.note && (
               <div className="bg-red-50 rounded-xl p-4 border border-red-100">

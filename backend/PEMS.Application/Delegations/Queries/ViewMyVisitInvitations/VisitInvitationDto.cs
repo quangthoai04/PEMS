@@ -36,8 +36,20 @@ public sealed class VisitInvitationDto
     public DateTime? InvitedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
 
-    /// <summary>Free-text note; for a DECLINED invitation this holds the decline reason.</summary>
+    /// <summary>
+    /// The INVITATION's own free text; for a DECLINED invitation this holds the decline reason. It is
+    /// written by the inviter or the invitee about the invitation — see <see cref="NotesToFptu"/> for
+    /// the guest's remark, which is a different sentence by a different person.
+    /// </summary>
     public string? Note { get; set; }
+
+    /// <summary>
+    /// "Ghi chú gửi FPTU" — the guest's one general remark about the invited campus, from
+    /// visit_instance_form_details.notes. Deliberately not folded into <see cref="Note"/>: the
+    /// detail screen shows both, and an invitee reading a decline reason where a dietary requirement
+    /// should be has been told the wrong thing about the visit they are agreeing to attend.
+    /// </summary>
+    public string? NotesToFptu { get; set; }
 
     /// <summary>
     /// Actions available on the invitation-detail screen. ACCEPT_INVITATION / DECLINE_INVITATION

@@ -173,6 +173,95 @@ public sealed class DeptInvitationDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// "Ghi chú gửi FPTU" reaches the department. The DTO carried Purpose and WorkingContent but no
+    /// general note at all, so a department preparing a reception never saw that the guest had asked
+    /// for a wheelchair route or a vegetarian meal — the sentence existed in the database and stopped
+    /// at the contract. It is now <c>NotesToFptu</c>, sourced from the target instance's detail.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_comes_from_the_target_instance_detail()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, parts[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The guest's remark and the invitation's own note are two sentences written by two people about
+    /// two things. Sharing the name "Note" between them is exactly how a department ends up acting on
+    /// the wrong one, so the DTO keeps them in separate properties and neither may carry the other.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_is_never_the_participant_invitation_note()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, parts[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        Assert.Equal("PARTICIPANT-NOTE", dto.Note);
+        Assert.NotEqual(dto.Note, dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// A guest who left the note blank is a different fact from a guest who asked for something, and
+    /// the contract must be able to say the first one. Empty string, never a sibling's note.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_is_empty_when_the_guest_wrote_nothing()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var instanceId = await db.VisitParticipants.Where(p => p.ParticipantId == parts[0])
+            .Select(p => p.VisitInstanceId).FirstAsync();
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instanceId);
+        detail.Notes = null;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, parts[0]);
+
+        Assert.Equal("", dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: each instance holds its own note and the invitation is bound to one of them.
+    /// Campus A's department must read A's note and campus B's must read B's — a request-level or
+    /// representative-campus fallback would hand both departments the same sentence.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_never_leaks_across_campuses_of_a_mixed_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, parts) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+
+        var a = await Run(db, parts[0]);
+        var b = await Run(db, parts[1]);
+
+        Assert.Equal("NOTE-A", a.NotesToFptu);
+        Assert.Equal("NOTE-B", b.NotesToFptu);
+        Assert.NotEqual("NOTE-B", a.NotesToFptu);
+        Assert.NotEqual("NOTE-A", b.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {
@@ -261,6 +350,9 @@ public sealed class DeptInvitationDetailV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag.ToLowerInvariant()}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" — the guest's remark about THIS campus. Tagged like the other per-campus
+        // literals so a sibling-campus leak into NotesToFptu shows up as the wrong tag.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 
@@ -272,6 +364,9 @@ public sealed class DeptInvitationDetailV2Tests
         IsHost = false,
         Status = "INVITED",
         InvitedAt = DateTime.Now,
+        // The INVITATION's own text. Deliberately unlike any form literal: if it ever surfaces as
+        // NotesToFptu, or the guest's note surfaces as Note, the assertions below catch it.
+        Note = "PARTICIPANT-NOTE",
         CreatedAt = DateTime.Now,
     };
 

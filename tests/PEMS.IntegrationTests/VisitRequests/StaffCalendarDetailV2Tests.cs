@@ -184,6 +184,69 @@ public sealed class StaffCalendarDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// "Ghi chú gửi FPTU" and the vehicle note reach the Staff Leader as two separate fields. This is
+    /// the screen where a campus decides whether to take the visit at all, so the guest's requirements
+    /// have to be visible and must not be confused with how they are arriving.
+    /// </summary>
+    [Fact]
+    public async Task Notes_and_transportation_note_are_two_separate_fields()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, StaffMember(StaffC1, Campus1), inst[0].VisitInstanceId);
+
+        Assert.Equal("V2-NOTE", dto.Notes);
+        Assert.Equal("V2-TRANSPORT", dto.TransportationNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>Blank stays blank — never backfilled from the vehicle note or a sibling campus.</summary>
+    [Fact]
+    public async Task Notes_stays_null_when_the_guest_wrote_nothing()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == inst[0].VisitInstanceId);
+        detail.Notes = null;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, StaffMember(StaffC1, Campus1), inst[0].VisitInstanceId);
+
+        Assert.Null(dto.Notes);
+        Assert.Equal("V2-TRANSPORT", dto.TransportationNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: each campus's Staff Leader reads their own campus's note. They are scoped to
+    /// one instance and must never be shown what the guest wrote to the other campus.
+    /// </summary>
+    [Fact]
+    public async Task Notes_never_leak_across_campuses_of_a_mixed_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, inst) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+
+        var a = await Run(db, StaffMember(StaffC1, Campus1), inst[0].VisitInstanceId);
+        var b = await Run(db, StaffMember(StaffC2, Campus2), inst[1].VisitInstanceId);
+
+        Assert.Equal("NOTE-A", a.Notes);
+        Assert.Equal("NOTE-B", b.Notes);
+        Assert.NotEqual("NOTE-B", a.Notes);
+        Assert.NotEqual("NOTE-A", b.Notes);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_guest_count_is_per_instance_no_cross_leak()
     {
@@ -312,6 +375,10 @@ public sealed class StaffCalendarDetailV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag.ToLowerInvariant()}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" and the vehicle note — two different remarks about THIS campus. Tagged
+        // like the other per-campus literals so a sibling leak or a swap between the two is visible.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
+        TransportationNote = perCampus ? $"TRANSPORT-{tag}" : "V2-TRANSPORT",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 

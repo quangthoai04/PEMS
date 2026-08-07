@@ -173,6 +173,95 @@ public sealed class RequestDetailV2Tests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// "Ghi chú gửi FPTU" reaches the department handling this item. The DTO carried Purpose and
+    /// WorkingContent but no general note, so a department setting up a room never learned that the
+    /// guest had asked for step-free access — the sentence existed and stopped at the contract.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_comes_from_the_target_instance_detail()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, items) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, items[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// This DTO already carries five other things called a note — the item's Description, ProposalNote,
+    /// ProposalResponseNote, BorrowNote and ReturnNote — and all of them belong to the logistics item,
+    /// not to the guest. The guest's remark must never be filled from one of them, nor they from it.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_is_never_one_of_the_logistics_item_notes()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, items) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var dto = await Run(db, items[0]);
+
+        Assert.Equal("V2-NOTE", dto.NotesToFptu);
+        Assert.Equal("ITEM-DESCRIPTION", dto.Description);
+        Assert.NotEqual(dto.Description, dto.NotesToFptu);
+        // The item was seeded without any handover or proposal, so these stay empty — the guest's
+        // note must not have been copied into them either.
+        Assert.Null(dto.ProposalNote);
+        Assert.Null(dto.BorrowNote);
+        Assert.Null(dto.ReturnNote);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>Blank is a real answer and the contract has to be able to express it.</summary>
+    [Fact]
+    public async Task NotesToFptu_is_empty_when_the_guest_wrote_nothing()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, items) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1 }, mixed: false);
+        var instanceId = await db.VisitLogisticsItems.Where(i => i.LogisticsItemId == items[0])
+            .Select(i => i.VisitInstanceId).FirstAsync();
+        var detail = await db.VisitInstanceFormDetails.FirstAsync(d => d.VisitInstanceId == instanceId);
+        detail.Notes = null;
+        await db.SaveChangesAsync();
+
+        var dto = await Run(db, items[0]);
+
+        Assert.Equal("", dto.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// MIXED multi-campus: the item is bound to one instance, so the department reading it must get
+    /// that instance's note and never a sibling's.
+    /// </summary>
+    [Fact]
+    public async Task NotesToFptu_never_leaks_across_campuses_of_a_mixed_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (_, items) = await Seed(db, FormSchemaVersions.PerCampus, new[] { Campus1, Campus2 }, mixed: true);
+
+        var a = await Run(db, items[0]);
+        var b = await Run(db, items[1]);
+
+        Assert.Equal("NOTE-A", a.NotesToFptu);
+        Assert.Equal("NOTE-B", b.NotesToFptu);
+        Assert.NotEqual("NOTE-B", a.NotesToFptu);
+        Assert.NotEqual("NOTE-A", b.NotesToFptu);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task V2_missing_detail_throws_no_fallback()
     {
@@ -261,6 +350,9 @@ public sealed class RequestDetailV2Tests
         OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
         OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag.ToLowerInvariant()}@example.com",
         WorkingLanguage = "EN", MediaConsentStatus = "AGREED",
+        // "Ghi chú gửi FPTU" — the guest's remark about THIS campus. Tagged like the other per-campus
+        // literals so a sibling-campus leak into NotesToFptu shows up as the wrong tag.
+        Notes = perCampus ? $"NOTE-{tag}" : "V2-NOTE",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };
 
@@ -269,6 +361,9 @@ public sealed class RequestDetailV2Tests
         VisitInstanceId = instanceId,
         ItemType = "ROOM",
         Title = "Phòng họp",
+        // The ITEM's own free text. Distinct from every form literal: if this ever surfaces as
+        // NotesToFptu, or the guest's note surfaces as Description, the assertions below catch it.
+        Description = "ITEM-DESCRIPTION",
         Status = "REQUESTED",
         CoordinationMode = "SYSTEM_REQUEST",
         Quantity = 1,

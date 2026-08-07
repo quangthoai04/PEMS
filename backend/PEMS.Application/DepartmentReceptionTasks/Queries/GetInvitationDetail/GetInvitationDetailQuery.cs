@@ -41,6 +41,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
         public string RegistrantJobTitle { get; set; }
         public string Purpose { get; set; }
         public string WorkingContent { get; set; }
+        /// <summary>
+        /// "Ghi chú gửi FPTU" — the guest's one general remark about THIS campus, from
+        /// visit_instance_form_details.notes. Named apart from <see cref="Note"/>, which is the
+        /// invitation's own text (and, on a declined row, the reason): a department reading one as
+        /// the other would act on the wrong sentence.
+        /// </summary>
+        public string NotesToFptu { get; set; }
         // The OPERATIONAL contact of THIS campus, all five fields. They used to be named
         // ContactPerson*, after the request-level contact that no longer exists, and carried only
         // name and phone — so a department read the right person under the wrong name and could not
@@ -101,6 +108,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
             string delegationName = d.DelegationName;
             string purpose = d.Purpose ?? "";
             string workingContent = d.WorkingContent ?? "";
+            // The guest's remark to FPTU about THIS campus — NOT p.Note, which belongs to the invitation.
+            string notesToFptu = d.Notes ?? "";
             // OPERATIONAL contact of this campus — deliberately NOT the request-level primary contact.
             var opContact = d.OperationalContact;
 
@@ -129,6 +138,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetInvitationDetail
                 RegistrantJobTitle = camp.VisitRequest.RegistrantJobTitle ?? "",
                 Purpose = purpose,
                 WorkingContent = workingContent,
+                NotesToFptu = notesToFptu,
                 OperationalContactFullName = opContact.FullName ?? "",
                 OperationalContactOrganization = opContact.Organization ?? "",
                 OperationalContactJobTitle = opContact.JobTitle ?? "",

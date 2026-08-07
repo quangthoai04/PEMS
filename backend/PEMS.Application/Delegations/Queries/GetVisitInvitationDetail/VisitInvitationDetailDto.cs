@@ -28,8 +28,19 @@ public class VisitInvitationDetailDto
     public DateTime? InvitedAt { get; set; }
     public DateTime? RespondedAt { get; set; }
 
+    /// <summary>
+    /// The INVITATION's own note — what the inviter wrote to this participant, and on a DECLINED row
+    /// the reason they gave back. It is not the guest's remark to FPTU; see <see cref="NotesToFptu"/>.
+    /// </summary>
     public string? Note { get; set; }
     public string? DeclineReason { get; set; }
+
+    /// <summary>
+    /// "Ghi chú gửi FPTU" — the guest's one general remark about THIS campus, from
+    /// visit_instance_form_details.notes. Deliberately NOT called Note: <see cref="Note"/> already
+    /// means the participant/decline note, and a screen showing both must never confuse them.
+    /// </summary>
+    public string? NotesToFptu { get; set; }
 
     public string? AssignedByName { get; set; }
     public DateTime? AssignedAt { get; set; }

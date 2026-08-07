@@ -72,7 +72,8 @@ public sealed class GetVisitInvitationByIdQueryHandler
             ?? throw new NotFoundException("VisitInvitation", request.ParticipantId);
 
         // ── INSTANCE-LEVEL: an invitation is bound to exactly ONE campus instance, so a request whose
-        // campuses differ still returns 200 — the delegation name, purpose and working content are sourced
+        // campuses differ still returns 200 — the delegation name, purpose, working content and the
+        // guest's remark to FPTU are sourced
         // ONLY from the TARGET instance's detail, never a sibling campus and never the request row, which
         // holds no form content. OrganizationName is the registrant organisation, genuinely request-level
         // identity, and is unchanged. A missing detail is 409 VISIT_FORM_DETAIL_MISSING — there is nothing
@@ -85,6 +86,9 @@ public sealed class GetVisitInvitationByIdQueryHandler
         flat.DelegationName = instanceDetail.DelegationName;
         flat.Purpose = instanceDetail.Purpose;
         flat.WorkingContent = instanceDetail.WorkingContent;
+        // The guest's remark about THIS campus. flat.Note above is the participant's own text and the
+        // two travel side by side to the screen without either standing in for the other.
+        flat.NotesToFptu = instanceDetail.Notes;
 
         var dto = VisitInvitationProjection.ToDto(flat);
         var list = new List<VisitInvitationDto> { dto };

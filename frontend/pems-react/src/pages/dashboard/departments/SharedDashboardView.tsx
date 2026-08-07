@@ -3161,6 +3161,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <p className="text-slate-500 mb-1 font-bold">Nội dung làm việc</p>
                             <p className="text-slate-800">{activeEventDetail?.workingContent || 'Không có'}</p>
                           </div>
+                          {/* The guest's own remark about THIS campus — dietary needs, accessibility,
+                              timing. It is a different sentence from the invitation's note and from
+                              any of the logistics item's note columns, so it gets its own row and is
+                              never folded into them. Always shown, like the two blocks above. */}
+                          <div>
+                            <p className="text-slate-500 mb-1 font-bold">Ghi chú gửi FPTU</p>
+                            <p className="text-slate-800 whitespace-pre-line">{activeEventDetail?.notesToFptu || 'Không có'}</p>
+                          </div>
                         </div>
                       </div>
 
