@@ -21,10 +21,19 @@ public static class ApiIntegrationMapper
             ? ResendProviderSettings.Parse(config.SettingsJson)
             : null;
 
+        // Google Drive is identified by api_code, not purpose: the seeded row's purpose column holds a
+        // human description rather than a machine value (see GoogleDriveIntegrationConstants).
+        var isGoogleDrive = config.ApiCode == GoogleDriveIntegrationConstants.ApiCode;
         var isDbManaged = config.Purpose != null && DatabaseManagedPurposes.Contains(config.Purpose);
+
         // Capabilities mirror the command-side gates: only ADMIN, and managed purposes.
-        // Everything else (SMTP, Drive, env-configured providers) is surfaced read-only.
-        var manageable = isDbManaged && currentUser != null && ApiIntegrationAccess.CanManage(currentUser);
+        // Everything else (SMTP, env-configured providers) is surfaced read-only.
+        var isAdmin = currentUser != null && ApiIntegrationAccess.CanManage(currentUser);
+        var manageable = isDbManaged && isAdmin;
+
+        var hasCredential = !string.IsNullOrEmpty(config.CredentialsJsonEncrypted)
+                            || !string.IsNullOrEmpty(config.BearerTokenEncrypted);
+
         return new ApiIntegrationDto
         {
             ApiConfigId = config.ApiConfigId,
@@ -43,7 +52,7 @@ public static class ApiIntegrationMapper
             LastTestStatus = config.LastTestStatus,
             LastTestedAt = config.LastTestedAt,
             LastTestMessage = config.LastTestMessage,
-            HasCredential = !string.IsNullOrEmpty(config.CredentialsJsonEncrypted) || !string.IsNullOrEmpty(config.BearerTokenEncrypted),
+            HasCredential = hasCredential,
             SecretRef = config.SecretRef,
             ProjectId = settings.ProjectId,
             Location = settings.Location,
@@ -57,11 +66,25 @@ public static class ApiIntegrationMapper
             AllowedMimeTypes = settings.AllowedMimeTypes,
             CreatedAt = config.CreatedAt,
             UpdatedAt = config.UpdatedAt,
-            ManagementSource = isDbManaged ? "DATABASE" : "ENVIRONMENT",
+
+            ManagementSource = isGoogleDrive ? "HYBRID" : isDbManaged ? "DATABASE" : "ENVIRONMENT",
+
+            // Drive is never edited through the generic provider form: it has no project/processor/endpoint
+            // to fill in, and its one editable secret is obtained by consent, not by typing.
             CanEdit = manageable,
-            CanTest = manageable,
+            CanTest = manageable || (isGoogleDrive && isAdmin),
+            // Enable/disable and quota belong to configuration this console does not own for Drive: the
+            // integration is switched on by GoogleDrive:Enabled on the server, and its limits are Google's.
             CanToggleStatus = manageable,
             CanConfigureQuota = manageable,
+            CanConnectOAuth = isGoogleDrive && isAdmin,
+            CanDisconnectOAuth = isGoogleDrive && isAdmin && !string.IsNullOrEmpty(config.CredentialsJsonEncrypted),
+
+            CredentialStatus = !hasCredential
+                ? ApiIntegrationCredentialStatuses.NotConfigured
+                : config.LastTestStatus == "FAILED"
+                    ? ApiIntegrationCredentialStatuses.Error
+                    : ApiIntegrationCredentialStatuses.Connected,
         };
     }
 }

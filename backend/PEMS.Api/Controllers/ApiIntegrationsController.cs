@@ -1,7 +1,9 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using PEMS.Application.ApiIntegrations.Commands.DisconnectGoogleDriveOAuth;
 using PEMS.Application.ApiIntegrations.Commands.SetApiIntegrationStatus;
+using PEMS.Application.ApiIntegrations.Commands.StartGoogleDriveOAuth;
 using PEMS.Application.ApiIntegrations.Commands.TestApiIntegration;
 using PEMS.Application.ApiIntegrations.Commands.UpdateApiIntegrationQuota;
 using PEMS.Application.ApiIntegrations.Commands.UpsertGoogleDocumentAiOcrConfig;
@@ -100,6 +102,27 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> UpsertResendConfig(
             [FromBody] UpsertResendConfigCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
+
+        /// <summary>
+        /// Starts the Google Drive reconnect: returns the consent URL for the browser to navigate to.
+        ///
+        /// <para>
+        /// It lives here, on the ADMIN-gated management surface, rather than beside the anonymous callback —
+        /// the callback has to be reachable without a token because Google redirects a browser to it, and
+        /// putting the initiator on the same controller was how the old DEV utility ended up with a
+        /// class-level <c>[AllowAnonymous]</c> over an endpoint that mints consent for a shared account.
+        /// Authorization is enforced in the handler (ApiIntegrationAccess.EnsureManage), like every other
+        /// action on this controller.
+        /// </para>
+        /// </summary>
+        [HttpPost("google-drive/oauth/start")]
+        public async Task<IActionResult> StartGoogleDriveOAuth(CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new StartGoogleDriveOAuthCommand(), cancellationToken));
+
+        /// <summary>Clears the stored Google Drive refresh token (ADMIN only). Does not revoke at Google.</summary>
+        [HttpPost("google-drive/oauth/disconnect")]
+        public async Task<IActionResult> DisconnectGoogleDriveOAuth(CancellationToken cancellationToken)
+            => Ok(Sanitize(await _mediator.Send(new DisconnectGoogleDriveOAuthCommand(), cancellationToken)));
 
         [HttpPost("{apiConfigId}/test")]
         public async Task<IActionResult> Test(ulong apiConfigId, CancellationToken cancellationToken)

@@ -142,6 +142,16 @@ public static class DependencyInjection
         services.AddScoped<IFileStorageFolderResolver,
             PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveFolderResolver>();
 
+        // The refresh token is read from the database per call, so an ADMIN reconnect takes effect on the
+        // next request instead of on the next restart. Scoped because it reads through the request's
+        // DbContext — and the storage client above is Scoped too, so nothing captures it in a singleton.
+        services.AddScoped<IGoogleDriveCredentialResolver,
+            PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveCredentialResolver>();
+
+        // Stateless: seals/opens the OAuth `state` with the singleton secret protector and the clock.
+        services.AddSingleton<IGoogleDriveOAuthStateService,
+            PEMS.Infrastructure.FileStorage.GoogleDrive.GoogleDriveOAuthStateService>();
+
         // Visit request flow services (UC-17). Pure V2 only — the V1 create service was removed with
         // its unreachable handlers; the retired V1 endpoints answer 410 without touching a service.
         services.AddScoped<IVisitRequestV2CreateService, VisitRequestV2CreateService>();

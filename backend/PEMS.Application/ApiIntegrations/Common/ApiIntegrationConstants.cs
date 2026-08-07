@@ -31,6 +31,41 @@ public static class FaceDetectionConstants
     public const string DefaultSecretRef = "GOOGLE_VISION_SERVICE_ACCOUNT";
 }
 
+/// <summary>
+/// The well-known <c>api_configurations</c> row that holds the Google Drive OAuth refresh token.
+///
+/// <para>
+/// <see cref="ApiCode"/> — not <c>purpose</c> — is the identity used everywhere, because that is what the
+/// canonical seed pins (<c>uq_api_config_code</c>) and what the row already in every deployment carries.
+/// The seed's <c>purpose</c> column for this row holds a human sentence ("Lưu metadata và file business
+/// của documents/gallery/news."), not a machine value, so matching on it would find nothing. New rows this
+/// module creates get <see cref="Purpose"/> so the column is meaningful going forward; an existing row's
+/// description is left alone rather than rewritten under an operator.
+/// </para>
+/// </summary>
+public static class GoogleDriveIntegrationConstants
+{
+    public const string ApiCode = "GOOGLE_DRIVE_STORAGE";
+    public const string ProviderName = "Google Drive";
+    public const string Purpose = "GOOGLE_DRIVE_STORAGE";
+    public const string Name = "Google Drive Storage";
+    public const string BaseUrl = "https://www.googleapis.com/drive/v3";
+    public const string TokenUrl = "https://oauth2.googleapis.com/token";
+    public const string AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
+
+    /// <summary>
+    /// Full Drive scope. Matches what the existing refresh token was minted with — narrowing it here would
+    /// silently reduce what a reconnect can do compared with the token it replaces.
+    /// </summary>
+    public const string Scope = "https://www.googleapis.com/auth/drive";
+
+    /// <summary>Audit <c>action</c> values. First-ever connect and a re-consent are told apart on purpose.</summary>
+    public const string AuditConnect = "CONNECT_GOOGLE_DRIVE";
+    public const string AuditReconnect = "RECONNECT_GOOGLE_DRIVE";
+    public const string AuditDisconnect = "DISCONNECT_GOOGLE_DRIVE";
+    public const string AuditEntityType = "ApiConfiguration";
+}
+
 public static class ApiIntegrationStatuses
 {
     public const string Active = "ACTIVE";

@@ -12,8 +12,8 @@ namespace PEMS.Infrastructure.FileStorage.GoogleDrive;
 
 /// <summary>
 /// Dependency-free Google Drive client (no Google SDK): talks the raw REST API over
-/// <see cref="IHttpClientFactory"/>. Mints a short-lived access token from the configured
-/// long-lived <c>RefreshToken</c>, then uploads/downloads/deletes files. Used for user avatars.
+/// <see cref="IHttpClientFactory"/>. Mints a short-lived access token from the long-lived refresh token
+/// supplied by <see cref="IGoogleDriveCredentialResolver"/>, then uploads/downloads/deletes files.
 ///
 /// Errors are surfaced as <see cref="BusinessRuleException"/> carrying a
 /// <see cref="GoogleDriveErrorCodes"/> value for connection/write failures and a
@@ -34,15 +34,18 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
     private const string FilesEndpoint = "https://www.googleapis.com/drive/v3/files";
 
     private readonly GoogleDriveOptions _options;
+    private readonly IGoogleDriveCredentialResolver _credentialResolver;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<GoogleDriveStorageService> _logger;
 
     public GoogleDriveStorageService(
         IOptions<GoogleDriveOptions> options,
+        IGoogleDriveCredentialResolver credentialResolver,
         IHttpClientFactory httpClientFactory,
         ILogger<GoogleDriveStorageService> logger)
     {
         _options = options.Value;
+        _credentialResolver = credentialResolver;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -490,6 +493,67 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
     }
 
     /// <summary>
+    /// The API-management "Test kết nối" probe. Every step it can fail at maps to the code that names that
+    /// step — a missing root folder id never reaches Google, an expired grant is reported as expired rather
+    /// than as an outage, and a 404 on the folder says the folder, not the connection.
+    /// </summary>
+    public async Task<string> CheckConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.RootFolderId))
+            throw new BusinessRuleException(
+                "Google Drive chưa được cấu hình thư mục RootFolderId.",
+                GoogleDriveErrorCodes.NotConnected);
+
+        // Throws with the right code on its own: ConfigMissing, CredentialUnreadable, TokenExpired,
+        // AuthFailed or Unavailable.
+        var accessToken = await GetAccessTokenAsync(cancellationToken);
+        var client = _httpClientFactory.CreateClient();
+
+        var url = $"{FilesEndpoint}/{Uri.EscapeDataString(_options.RootFolderId!)}?fields=id,name";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The token was already minted, so the credential is fine and the network is not.
+            _logger.LogError(ex, "Google Drive connection test could not reach the files endpoint.");
+            throw new BusinessRuleException(
+                "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                GoogleDriveErrorCodes.Unavailable);
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Google Drive connection test returned {Status}: {Body}",
+                    (int)response.StatusCode, body);
+                throw ClassifyUploadFailure(response.StatusCode, body, "thư mục gốc");
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                var name = doc.RootElement.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+                return string.IsNullOrWhiteSpace(name) ? _options.RootFolderId! : name!;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Google Drive connection test response was not valid JSON.");
+                throw new BusinessRuleException(
+                    "Google Drive đang tạm thời không khả dụng. Vui lòng thử lại sau ít phút.",
+                    GoogleDriveErrorCodes.Unavailable);
+            }
+        }
+    }
+
+    /// <summary>
     /// A read stream that also owns the HTTP response/request it was read from, disposing them when the
     /// stream is disposed. This lets us return a live streamed body (no memory buffering) while keeping
     /// the underlying <see cref="HttpResponseMessage"/> alive until the caller finishes reading.
@@ -555,14 +619,17 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
     /// </summary>
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.RefreshToken))
-            throw new BusinessRuleException(
-                "Google Drive chưa được kết nối. Vui lòng liên hệ người phụ trách cấu hình.",
-                GoogleDriveErrorCodes.ConfigMissing);
-
         if (string.IsNullOrWhiteSpace(_options.ClientId) || string.IsNullOrWhiteSpace(_options.ClientSecret))
             throw new BusinessRuleException(
                 "Google Drive chưa được cấu hình đầy đủ (ClientId/ClientSecret).",
+                GoogleDriveErrorCodes.ConfigMissing);
+
+        // Resolved per call, from the database first. Nothing here remembers the answer: an ADMIN who
+        // reconnects must not have to wait for a restart before the next upload uses the new token.
+        var refreshToken = await _credentialResolver.ResolveRefreshTokenAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(refreshToken))
+            throw new BusinessRuleException(
+                "Google Drive chưa được kết nối. Vui lòng kết nối lại Google Drive trong màn Cấu hình API.",
                 GoogleDriveErrorCodes.ConfigMissing);
 
         var client = _httpClientFactory.CreateClient();
@@ -570,7 +637,7 @@ public sealed class GoogleDriveStorageService : IGoogleDriveStorageService
         {
             ["client_id"] = _options.ClientId!,
             ["client_secret"] = _options.ClientSecret!,
-            ["refresh_token"] = _options.RefreshToken!,
+            ["refresh_token"] = refreshToken!,
             ["grant_type"] = "refresh_token",
         });
 

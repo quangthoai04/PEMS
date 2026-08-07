@@ -75,4 +75,64 @@ public static class GoogleDriveErrorCodes
 
     /// <summary>A folder create failed for a reason other than the parent being absent.</summary>
     public const string FolderCreateFailed = "GOOGLE_DRIVE_FOLDER_CREATE_FAILED";
+
+    /// <summary>
+    /// A refresh token IS stored in <c>api_configurations.credentials_json_encrypted</c>, and it could not
+    /// be read back — the ciphertext failed its AES-GCM authentication tag, or decrypted into something
+    /// that is not the credential envelope.
+    ///
+    /// <para>
+    /// Deliberately NOT <see cref="ConfigMissing"/>: the operator did configure a credential, and the two
+    /// call for opposite actions. The usual cause is that <c>Security:SecretProtectionKey</c> changed (or
+    /// was never pinned, so the key derived from the rotating JWT secret), which no amount of reconnecting
+    /// diagnoses if the environment is not fixed first. Falling back to the environment token here would
+    /// hide exactly that.
+    /// </para>
+    /// </summary>
+    public const string CredentialUnreadable = "GOOGLE_DRIVE_CREDENTIAL_UNREADABLE";
+
+    // ── ADMIN reconnect (OAuth authorization-code flow) ──────────────────────
+    //
+    // These describe the CONSENT round-trip, not a Drive call: nothing has been uploaded or read when one
+    // of them is raised. They stay separate from the codes above so "the admin cancelled on Google's
+    // screen" never arrives looking like "the stored token expired".
+
+    /// <summary>The callback carried no <c>state</c>, or one this deployment did not issue / that was altered.</summary>
+    public const string OAuthInvalidState = "GOOGLE_DRIVE_OAUTH_INVALID_STATE";
+
+    /// <summary>The <c>state</c> was ours and authentic, but the admin took longer than its short lifetime.</summary>
+    public const string OAuthStateExpired = "GOOGLE_DRIVE_OAUTH_STATE_EXPIRED";
+
+    /// <summary>The admin refused consent on Google's screen. Not a fault — nothing to repair.</summary>
+    public const string OAuthAccessDenied = "GOOGLE_DRIVE_OAUTH_ACCESS_DENIED";
+
+    /// <summary>
+    /// Google accepted the code and returned no <c>refresh_token</c> — it only issues one when the grant is
+    /// new or consent was re-prompted. The previously stored credential is KEPT: overwriting it with
+    /// nothing would turn a no-op reconnect into an outage.
+    /// </summary>
+    public const string OAuthNoRefreshToken = "GOOGLE_DRIVE_OAUTH_NO_REFRESH_TOKEN";
+
+    /// <summary>Google rejected the authorization code exchange (expired code, redirect_uri mismatch, bad client).</summary>
+    public const string OAuthTokenExchangeFailed = "GOOGLE_DRIVE_OAUTH_TOKEN_EXCHANGE_FAILED";
+
+    /// <summary>A refresh token was obtained and the database write failed, so nothing was connected.</summary>
+    public const string OAuthSaveFailed = "GOOGLE_DRIVE_OAUTH_SAVE_FAILED";
+}
+
+/// <summary>
+/// The only vocabulary allowed in the <c>?googleDriveOAuth=failed&amp;reason=…</c> query string the callback
+/// redirects the browser to. Short, fixed slugs — a URL is written to history, proxy logs and the address
+/// bar, so nothing that came back from Google (error descriptions, codes, token payloads) may reach it.
+/// The frontend maps each slug to Vietnamese wording; an unknown slug maps to a generic message.
+/// </summary>
+public static class GoogleDriveOAuthRedirectReasons
+{
+    public const string AccessDenied = "access_denied";
+    public const string InvalidState = "invalid_state";
+    public const string StateExpired = "state_expired";
+    public const string NoRefreshToken = "no_refresh_token";
+    public const string TokenExchangeFailed = "token_exchange_failed";
+    public const string SaveFailed = "save_failed";
+    public const string ConfigMissing = "config_missing";
 }

@@ -49,4 +49,22 @@ public interface IGoogleDriveStorageService
     /// </summary>
     Task<GoogleDriveFolderResult> EnsureChildFolderAsync(
         string folderName, string parentFolderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Proves the current credential can actually reach Drive: mints an access token and reads the
+    /// configured root folder with it. Returns the folder's name, so a "connected" answer is backed by
+    /// something Google said rather than by a token merely existing.
+    ///
+    /// <para>
+    /// Read-only on purpose. The obvious alternative — uploading a probe file — would leave litter in a
+    /// shared team Drive on every press of a test button, and would prove more than the question asks.
+    /// Reading the root folder is the smallest call that still exercises the whole chain: the stored
+    /// credential, the token exchange, and the account's access to the folder everything is written under.
+    /// </para>
+    /// </summary>
+    /// <exception cref="PEMS.Application.Common.Exceptions.BusinessRuleException">
+    /// Carries the <c>GoogleDriveErrorCodes</c> value for what failed — an expired token, a rejected client
+    /// secret and an unreachable Drive each keep their own code so the console can say which it was.
+    /// </exception>
+    Task<string> CheckConnectionAsync(CancellationToken cancellationToken = default);
 }
