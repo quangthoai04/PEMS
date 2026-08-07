@@ -55,7 +55,7 @@ const response = (instances: V2CreateResponse['instances'], mixed: boolean): V2C
   submittedAt: '2026-08-01T09:30:00',
   campusCount: instances.length,
   instances,
-  pendingConfirmations: 0,
+  pendingContactConfirmations: 0,
   idempotent: false,
 });
 

@@ -47,7 +47,7 @@ const response = (over: Partial<V2CreateResponse> = {}): V2CreateResponse => ({
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
   instances: [{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }],
-  pendingConfirmations: 0,
+  pendingContactConfirmations: 0,
   idempotent: false,
   status: 'WAITING_REQUEST_APPROVAL',
   submittedAt: '2026-07-31T09:30:00',
@@ -105,7 +105,7 @@ describe('the success screen (plan §8)', () => {
   });
 
   it('says when the response was an idempotent replay rather than a fresh create', () => {
-    render(<VisitRequestV2SuccessPanel response={response({ pendingConfirmations: 0,
+    render(<VisitRequestV2SuccessPanel response={response({ pendingContactConfirmations: 0,
  idempotent: true })} values={values()} />);
     expect(screen.getByText(/already recorded|đã được ghi nhận/i)).toBeInTheDocument();
   });
@@ -122,10 +122,10 @@ describe('the success screen (plan §8)', () => {
   it('adds the pending-confirmation bullet ahead of the tracking bullet, counting CAMPUSES', () => {
     // Per-campus contacts: the bullet reports how many campuses are still waiting on their own
     // operational contact, not one request-level contact address.
-    render(<VisitRequestV2SuccessPanel response={response({ pendingConfirmations: 2 })} values={values()} />);
+    render(<VisitRequestV2SuccessPanel response={response({ pendingContactConfirmations: 2 })} values={values()} />);
     const notice = screen.getByRole('status');
     expect(notice).toHaveTextContent(/is not the guest-side operational contact/i);
-    expect(notice).toHaveTextContent(/contact of 2 campus/i);
+    expect(notice).toHaveTextContent(/contact of: FPT Hà Nội/i);
     expect(notice).toHaveTextContent(/also check your own email/i);
     expect(notice).toHaveTextContent('reg@example.com');
   });

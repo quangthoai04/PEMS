@@ -68,11 +68,13 @@ public sealed class GetVisitInstanceContributionQueryHandler
         bool isDepartmentRelated = false;
         if (!isHost && !isAcceptedParticipant && roleCode == RoleCodes.Department)
         {
-            isDepartmentRelated = await _db.VisitLogisticsItems.AnyAsync(
-                l => l.VisitInstanceId == instance.VisitInstanceId
-                     && ((departmentId != null && l.RequestedToDepartmentId == departmentId)
-                         || l.AssignedToUserId == userId),
-                cancellationToken);
+            var logisticsItems = await _db.VisitLogisticsItems
+                .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
+                .Select(l => new { l.AssignedToUserId, l.Status })
+                .ToListAsync(cancellationToken);
+            
+            isDepartmentRelated = logisticsItems.Any(l => 
+                PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForLogistics(userId, l.AssignedToUserId, l.Status));
         }
 
         bool isHo = roleCode == RoleCodes.Ho;

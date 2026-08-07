@@ -58,7 +58,7 @@ const mockCreateResponse = {
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
   instances: [{ visitInstanceId: 10, campusId: 1, status: 'PENDING' }],
-  pendingConfirmations: 0,
+  pendingContactConfirmations: 0,
   idempotent: false,
 };
 

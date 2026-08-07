@@ -78,7 +78,7 @@ const createResponse = (visitRequestId = 2003) => ({
   visitScope: 'SINGLE_CAMPUS',
   hasMixedCampusDetails: false,
   instances: [{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }],
-  pendingConfirmations: 0,
+  pendingContactConfirmations: 0,
   idempotent: false,
   status: 'WAITING_REQUEST_APPROVAL',
   submittedAt: '2026-07-31T09:30:00',

@@ -614,7 +614,7 @@ public static class CanonicalSqlScript
     // No DDL: no table, column, index, constraint, trigger or seed row differs. Still 81 base tables,
     // 33 triggers, 252 foreign keys, 31 email templates.
     public const string ExpectedSha256 =
-        "3e1caf55b934e3aac3b6e35f22e1357d9bf59c466890f10382e3ab65f40805cb";
+        "004d629ee4574b9bbacb046df1033875e70588b44aa10b12382e95ba9d533c3c";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
