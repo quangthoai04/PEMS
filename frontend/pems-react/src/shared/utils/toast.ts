@@ -77,7 +77,7 @@ const VIETNAMESE_CHARS = /[àáâãèéêìíòóôõùúăđĩũơưạ-ỹ]/i;
  * Map `errorCode` của backend sang message i18n (`errors:api.<CODE>`) nếu có key.
  * Chỉ dùng key đã tồn tại — không bịa code.
  */
-function translateErrorCode(errorCode: unknown): string | undefined {
+export function translateErrorCode(errorCode: unknown): string | undefined {
   if (typeof errorCode !== 'string' || !errorCode.trim()) return undefined;
   const key = `errors:api.${errorCode.trim()}`;
   return i18n.exists(key) ? i18n.t(key) : undefined;

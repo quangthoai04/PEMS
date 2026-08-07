@@ -26,6 +26,18 @@ public class ValidationException : Exception
         Errors = new Dictionary<string, string[]>(errors);
     }
 
+    /// <summary>
+    /// Field errors PLUS a stable code for the whole failure — for the (currently rare) case where
+    /// every field in <paramref name="errors"/> stems from the SAME business-rule violation, so the
+    /// client can look up one localized message (<c>errors:api.&lt;CODE&gt;</c>) instead of showing
+    /// whatever language the raw messages happen to be written in.
+    /// </summary>
+    public ValidationException(IDictionary<string, string[]> errors, string? errorCode)
+        : this(errors)
+    {
+        ErrorCode = errorCode;
+    }
+
     public ValidationException(string message)
         : base(message)
     {

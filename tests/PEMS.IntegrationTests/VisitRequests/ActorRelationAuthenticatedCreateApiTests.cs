@@ -186,6 +186,17 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         return doc.RootElement.TryGetProperty("errorCode", out var code) ? code.GetString() : null;
     }
 
+    /// <summary>The FluentValidation-shaped field errors (path → messages), so a test can assert the
+    /// violation landed on the exact campus card instead of only a top-level message.</summary>
+    private static async Task<Dictionary<string, string[]>> FieldErrorsOf(HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("errors", out var errors)) return new();
+        return errors.EnumerateObject().ToDictionary(
+            p => p.Name, p => p.Value.EnumerateArray().Select(v => v.GetString() ?? "").ToArray());
+    }
+
     // ── Visitor ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -429,8 +440,13 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(VisitRequestErrorCodes.ContactEmailCannotBeUsedForVisitorAccount, await ErrorCodeOf(response));
+        // A single campus (index 0) named the bad contact — the handler now reports it as a field
+        // error on that exact campus card (CampusVisits[0].OperationalContact.Email), not a plain
+        // 409 banner the multi-campus form could not point back at any one card.
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var fieldErrors = await FieldErrorsOf(response);
+        var message = Assert.Single(Assert.Contains("CampusVisits[0].OperationalContact.Email", fieldErrors));
+        Assert.Contains("VISITOR", message, StringComparison.OrdinalIgnoreCase);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

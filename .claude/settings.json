@@ -24,7 +24,11 @@
       "Bash(cp src/features/visit-request/components/v2/VisitRequestFormV2.tsx /tmp/backup_check/VisitRequestFormV2.tsx.bak)",
       "Bash(cp /tmp/backup_check/useVisitRequestFormV2.ts.bak src/features/visit-request/hooks/useVisitRequestFormV2.ts)",
       "Bash(cp /tmp/backup_check/VisitRequestFormV2.tsx.bak src/features/visit-request/components/v2/VisitRequestFormV2.tsx)",
-      "Bash(rm -rf /tmp/backup_check /tmp/full_run.log 2>/dev/null; echo done)"
+      "Bash(rm -rf /tmp/backup_check /tmp/full_run.log 2>/dev/null; echo done)",
+      "Bash(dotnet test *)",
+      "Bash(python3 -c ' *)",
+      "Bash(python -c ' *)",
+      "PowerShell(Get-Process | Where-Object { $_.ProcessName -match 'PEMS|dotnet' } | Select-Object Id, ProcessName, StartTime, Path | Format-Table -AutoSize)"
     ],
     "additionalDirectories": [
       "\\tmp"

@@ -40,7 +40,7 @@ import {
   type V2CreateResponse,
   type VisitSubmissionLookup,
 } from '../api/visitRequestV2Api';
-import { getApiErrorMessage, showInfoToast, showSuccessToast } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showInfoToast, showSuccessToast, translateErrorCode } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 import { parseApiDate } from '../../../shared/utils/vietnamTime';
 
@@ -608,12 +608,18 @@ export const useVisitRequestFormV2 = (
     (error: unknown): boolean => {
       const fieldErrors = getApiFieldErrors(error);
       if (!fieldErrors) return false;
+      // The raw string in `messages[0]` is whatever language the backend happened to write it in
+      // (usually Vietnamese) — safe on a Vietnamese-only screen, but wrong the moment the UI is
+      // switched to English. When the response also carries a stable `errorCode` with a matching
+      // `errors:api.<CODE>` entry, that translated text is shown instead (same lookup the generic
+      // error banner already uses via `getApiErrorMessage`/`translateErrorCode`).
+      const translated = translateErrorCode(getApiErrorCode(error));
       let firstCampusIndex: number | null = null;
       let mappedAny = false;
       for (const [serverPath, messages] of Object.entries(fieldErrors)) {
         const formPath = mapServerFieldPathToFormPath(serverPath);
         if (!formPath || !messages?.length) continue;
-        form.setError(formPath as FieldPath<VisitRequestV2Schema>, { type: 'server', message: messages[0] });
+        form.setError(formPath as FieldPath<VisitRequestV2Schema>, { type: 'server', message: translated ?? messages[0] });
         mappedAny = true;
         const campusMatch = /^campusVisits\.(\d+)\./.exec(formPath);
         if (campusMatch) {

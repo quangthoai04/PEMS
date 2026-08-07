@@ -94,16 +94,40 @@ public sealed class InitiateVisitRequestV2CommandHandler
         // EVERY campus's contact address is checked, not one representative: each of them will be
         // invited independently, so an address that cannot become a Visitor account has to be caught
         // now — after the OTP is spent, the registrant would be told about it one campus at a time.
-        // De-duplicated because one person legitimately runs several campuses of the same request.
-        foreach (var contactEmail in form.CampusVisits
-                     .Select(c => c.OperationalContact.Email)
-                     .Where(e => !string.IsNullOrWhiteSpace(e))
-                     .Select(RegistrantIdentityRules.Normalize)
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        // Grouped by normalized address (one lookup per distinct contact) so a violation can still be
+        // reported on EVERY campus card naming it, not just the first one found.
+        var contactsByEmail = form.CampusVisits
+            .Select((c, i) => (Index: i, Email: c.OperationalContact.Email))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Email))
+            .GroupBy(x => RegistrantIdentityRules.Normalize(x.Email), StringComparer.OrdinalIgnoreCase);
+
+        // Collected into field-shaped errors (CampusVisits[i].OperationalContact.Email) rather than
+        // thrown as a plain message: a bare ConflictException/BusinessRuleException here used to
+        // surface as one generic banner at the bottom of a long, multi-campus form, leaving the user
+        // to guess which contact email was the problem. A ValidationException lands red on the exact
+        // input instead (see mapServerFieldPathToFormPath on the frontend).
+        Dictionary<string, string[]>? contactFieldErrors = null;
+        // Representative code for the WHOLE response (first violation found) — the client uses it to
+        // show a localized message (errors:api.<CODE>) instead of this raw Vietnamese text verbatim,
+        // which is the only wording available when two different violations land in one response.
+        string? contactErrorCode = null;
+        foreach (var group in contactsByEmail)
         {
-            await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
-                contactEmail, cancellationToken);
+            try
+            {
+                await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
+                    group.Key, cancellationToken);
+            }
+            catch (Exception ex) when (ex is ConflictException or BusinessRuleException)
+            {
+                contactFieldErrors ??= new Dictionary<string, string[]>();
+                contactErrorCode ??= (ex as ConflictException)?.ErrorCode ?? (ex as BusinessRuleException)?.ErrorCode;
+                foreach (var contact in group)
+                    contactFieldErrors[$"CampusVisits[{contact.Index}].OperationalContact.Email"] = new[] { ex.Message };
+            }
         }
+        if (contactFieldErrors is not null)
+            throw new ValidationException(contactFieldErrors, contactErrorCode);
 
         // ── Mint the OTP challenge (bound to email + purpose + submissionId). Persists on its own. ──
         var issue = await _otpService.CreateChallengeAsync(

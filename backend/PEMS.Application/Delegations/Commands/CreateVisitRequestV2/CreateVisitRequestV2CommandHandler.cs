@@ -99,13 +99,14 @@ public sealed class CreateVisitRequestV2CommandHandler
         if (string.IsNullOrWhiteSpace(form.SubmissionId))
             throw new BusinessRuleException("Thiếu submissionId.", "SUBMISSION_ID_REQUIRED");
 
-        // Every campus names its own contact; one person may hold several, so de-duplicate before
-        // checking. There is no single request-level address left to check instead.
-        var contactEmails = form.CampusVisits
-            .Select(c => c.OperationalContact.Email)
-            .Where(e => !string.IsNullOrWhiteSpace(e))
-            .Select(RegistrantIdentityRules.Normalize)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+        // Every campus names its own contact; one person may hold several, so grouped by normalized
+        // address before checking — one lookup per distinct contact, and any violation is still
+        // reported on EVERY campus card naming it. There is no single request-level address left to
+        // check instead.
+        var contactsByEmail = form.CampusVisits
+            .Select((c, i) => (Index: i, Email: c.OperationalContact.Email))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Email))
+            .GroupBy(x => RegistrantIdentityRules.Normalize(x.Email), StringComparer.OrdinalIgnoreCase)
             .ToList();
         var registrantEmail = RegistrantIdentityRules.Normalize(actor.Email);
 
@@ -119,16 +120,41 @@ public sealed class CreateVisitRequestV2CommandHandler
         // An internal creator may not appoint THEMSELF as any campus's operational contact: the whole
         // point of the gate is that somebody outside FPTU confirms they will run the visit, and a
         // Staff Leader self-appointing would clear it without anyone confirming anything.
-        if (isInternal && contactEmails.Contains(registrantEmail, StringComparer.OrdinalIgnoreCase))
+        if (isInternal && contactsByEmail.Any(g => string.Equals(g.Key, registrantEmail, StringComparison.OrdinalIgnoreCase)))
             throw new BusinessRuleException(
                 "Nhân sự nội bộ không thể là đầu mối vận hành của đoàn khách. Vui lòng nhập một người khác (tài khoản VISITOR).",
                 VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
 
         if (isInternal)
         {
-            foreach (var contactEmail in contactEmails)
-                await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
-                    contactEmail, cancellationToken);
+            // Collected into field-shaped errors (CampusVisits[i].OperationalContact.Email) rather than
+            // thrown as a plain message: a bare ConflictException/BusinessRuleException here used to
+            // surface as one generic banner at the bottom of a long, multi-campus form, leaving the user
+            // to guess which contact email was the problem. A ValidationException lands red on the exact
+            // input instead (see mapServerFieldPathToFormPath on the frontend).
+            Dictionary<string, string[]>? contactFieldErrors = null;
+            // Representative code for the WHOLE response (first violation found) — the client uses it
+            // to show a localized message (errors:api.<CODE>) instead of this raw Vietnamese text
+            // verbatim, which is the only wording available when two different violations land in one
+            // response.
+            string? contactErrorCode = null;
+            foreach (var group in contactsByEmail)
+            {
+                try
+                {
+                    await _userProvisionService.ValidateContactEmailCanBeUsedForVisitorAsync(
+                        group.Key, cancellationToken);
+                }
+                catch (Exception ex) when (ex is ConflictException or BusinessRuleException)
+                {
+                    contactFieldErrors ??= new Dictionary<string, string[]>();
+                    contactErrorCode ??= (ex as ConflictException)?.ErrorCode ?? (ex as BusinessRuleException)?.ErrorCode;
+                    foreach (var contact in group)
+                        contactFieldErrors[$"CampusVisits[{contact.Index}].OperationalContact.Email"] = new[] { ex.Message };
+                }
+            }
+            if (contactFieldErrors is not null)
+                throw new ValidationException(contactFieldErrors, contactErrorCode);
         }
 
         // ── Per-campus reception-host arrangement (authenticated create only; default = wait for the
