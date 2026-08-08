@@ -399,6 +399,11 @@ export function VisitProcess() {
   const [detailLoadError, setDetailLoadError] = useState(false);
   const [agendaItems, setAgendaItems] = useState<AgendaRow[]>([]);
   const [isSavingAgenda, setIsSavingAgenda] = useState(false);
+  // View mode by default once an agenda exists (edit fields hidden, "Chỉnh sửa" shown instead of
+  // "Lưu lịch trình") — flips to edit mode on "Chỉnh sửa" click, and back to view mode right after
+  // a successful save. Initialised once per instance below (agendaPanelInitRef), same as
+  // isAgendaTemplatePanelOpen, so a background refetch never yanks the host out of edit mode.
+  const [isEditingAgenda, setIsEditingAgenda] = useState(false);
   const [remindersLoadFailed, setRemindersLoadFailed] = useState(false);
   // ── Planned visit window (visit_request_campuses.planned_start_at/end_at), editable from this tab.
   // Draft only takes effect once "Lưu lịch trình" is pressed — same as every agenda row edit. ──
@@ -585,6 +590,8 @@ export function VisitProcess() {
 
   const canEditAgenda = !!detail?.canEditBefore;
   const hasCurrentAgenda = agendaItems.length > 0;
+  // Agenda item fields/buttons are only truly editable in view+permission BOTH being satisfied.
+  const editableAgenda = canEditAgenda && isEditingAgenda;
   // Reminders + preparation note are editable by the instance Host during the prep window. This is
   // independent of the (always-false) SETUP_SAVE_AVAILABLE gate — the backend re-checks the same rule.
   const canConfigurePrep = !isClosed && detail?.relation === 'HOST'
@@ -603,6 +610,7 @@ export function VisitProcess() {
     if (agendaPanelInitRef.current === key) return; // already initialised for this instance
     agendaPanelInitRef.current = key;
     setIsAgendaTemplatePanelOpen(!hasCurrentAgenda); // open by default only when there's no agenda yet
+    setIsEditingAgenda(!hasCurrentAgenda); // edit mode by default only when there's no agenda yet
   }, [perm, detail, hasCurrentAgenda]);
 
   const saveAgenda = async () => {
@@ -671,6 +679,7 @@ export function VisitProcess() {
       );
       pushToast('success', 'Lưu lịch trình thành công. Lịch trình và người phụ trách đã được cập nhật.');
       await loadDetail();
+      setIsEditingAgenda(false);
     } catch (e: any) {
       const status = e?.response?.status;
       if (status === 403) {
@@ -1212,18 +1221,28 @@ export function VisitProcess() {
                             />
                           )}
                           {/* Real agenda editor (visit_agendas). Host edits while preparing; saved
-                              independently via "Lưu lịch trình" (does NOT change stage). */}
-                          <div className="mb-2">
-                            <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
-                            <p className="text-xs text-slate-500">
-                              Sắp xếp các hoạt động theo thứ tự thời gian. Mỗi dòng gồm thời gian, nội dung, địa điểm và người phụ trách.
-                              {agendaItems.length > 0 && <span className="text-slate-400"> · {agendaItems.length} hoạt động</span>}
-                            </p>
+                              independently via "Lưu lịch trình" (does NOT change stage). View mode
+                              (read-only + "Chỉnh sửa") is the default once an agenda exists, and is
+                              restored automatically right after a successful save. */}
+                          <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
+                              <p className="text-xs text-slate-500">
+                                Sắp xếp các hoạt động theo thứ tự thời gian. Mỗi dòng gồm thời gian, nội dung, địa điểm và người phụ trách.
+                                {agendaItems.length > 0 && <span className="text-slate-400"> · {agendaItems.length} hoạt động</span>}
+                              </p>
+                            </div>
+                            {canEditAgenda && !isEditingAgenda && (
+                              <button type="button" onClick={() => setIsEditingAgenda(true)}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-xs font-bold text-slate-600 outline-none transition hover:border-[#004c91] hover:text-[#004c91]">
+                                <Edit3 className="h-3.5 w-3.5" /> Chỉnh sửa
+                              </button>
+                            )}
                           </div>
                           <div className="space-y-3">
                             {agendaItems.length === 0 && (
                               <p className="text-sm text-slate-500 italic">
-                                Chưa có mục lịch trình nào.{canEditAgenda ? ' Bấm “Thêm mục” để tạo.' : ''}
+                                Chưa có mục lịch trình nào.{editableAgenda ? ' Bấm “Thêm mục” để tạo.' : ''}
                               </p>
                             )}
                             {agendaItems.length > 0 && (
@@ -1260,17 +1279,17 @@ export function VisitProcess() {
                                             <div className="flex items-center gap-1.5 pt-0.5">
                                               <div
                                                 onClick={(e) => {
-                                                  if (!canEditAgenda) return;
+                                                  if (!editableAgenda) return;
                                                   const input = e.currentTarget.querySelector('input');
                                                   if (input) { try { input.showPicker?.(); } catch {} }
                                                 }}
-                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${editableAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                                               >
                                                 <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                                                 <input
                                                   type="time"
                                                   value={getTimePart(it.startLocal)}
-                                                  disabled={!canEditAgenda}
+                                                  disabled={!editableAgenda}
                                                   onChange={(e) => {
                                                     const timeVal = e.target.value;
                                                     const dateVal = getDatePart(it.startLocal) || getDatePart(detail?.plannedStartAt) || '2026-01-01';
@@ -1283,17 +1302,17 @@ export function VisitProcess() {
                                               <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
                                               <div
                                                 onClick={(e) => {
-                                                  if (!canEditAgenda) return;
+                                                  if (!editableAgenda) return;
                                                   const input = e.currentTarget.querySelector('input');
                                                   if (input) { try { input.showPicker?.(); } catch {} }
                                                 }}
-                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${editableAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                                               >
                                                 <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                                                 <input
                                                   type="time"
                                                   value={getTimePart(it.endLocal)}
-                                                  disabled={!canEditAgenda}
+                                                  disabled={!editableAgenda}
                                                   onChange={(e) => {
                                                     const timeVal = e.target.value;
                                                     const dateVal = getDatePart(it.endLocal) || getDatePart(it.startLocal) || getDatePart(detail?.plannedStartAt) || '2026-01-01';
@@ -1317,17 +1336,17 @@ export function VisitProcess() {
                                                   <div className="flex flex-col gap-1.5">
                                                     <div
                                                       onClick={(e) => {
-                                                        if (!canEditAgenda) return;
+                                                        if (!editableAgenda) return;
                                                         const input = e.currentTarget.querySelector('input');
                                                         if (input) { try { input.showPicker?.(); } catch {} }
                                                       }}
-                                                      className={`flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50/70 px-2 py-0.5 w-max ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'}`}
+                                                      className={`flex items-center gap-1 rounded-lg border border-slate-200/60 bg-slate-50/70 px-2 py-0.5 w-max ${editableAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'}`}
                                                     >
                                                       <Calendar className="h-3.5 w-3.5 text-slate-500 shrink-0" />
                                                       <input
                                                         type="date"
                                                         value={startDate}
-                                                        disabled={!canEditAgenda}
+                                                        disabled={!editableAgenda}
                                                         onChange={(e) => {
                                                           const newDate = e.target.value;
                                                           if (!newDate) return;
@@ -1345,17 +1364,17 @@ export function VisitProcess() {
                                                     <div className="flex items-center gap-1.5">
                                                       <div
                                                         onClick={(e) => {
-                                                          if (!canEditAgenda) return;
+                                                          if (!editableAgenda) return;
                                                           const input = e.currentTarget.querySelector('input');
                                                           if (input) { try { input.showPicker?.(); } catch {} }
                                                         }}
-                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${editableAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                                                       >
                                                         <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                                                         <input
                                                           type="time"
                                                           value={getTimePart(it.startLocal)}
-                                                          disabled={!canEditAgenda}
+                                                          disabled={!editableAgenda}
                                                           onChange={(e) => {
                                                             const timeVal = e.target.value;
                                                             const newStart = timeVal ? `${startDate}T${timeVal}` : it.startLocal;
@@ -1367,17 +1386,17 @@ export function VisitProcess() {
                                                       <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
                                                       <div
                                                         onClick={(e) => {
-                                                          if (!canEditAgenda) return;
+                                                          if (!editableAgenda) return;
                                                           const input = e.currentTarget.querySelector('input');
                                                           if (input) { try { input.showPicker?.(); } catch {} }
                                                         }}
-                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${canEditAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                                        className={`flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-1.5 py-0.5 shadow-xs hover:border-[#004c91] focus-within:border-[#004c91] focus-within:ring-2 focus-within:ring-blue-100 transition-all ${editableAgenda ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                                                       >
                                                         <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
                                                         <input
                                                           type="time"
                                                           value={getTimePart(it.endLocal)}
-                                                          disabled={!canEditAgenda}
+                                                          disabled={!editableAgenda}
                                                           onChange={(e) => {
                                                             const timeVal = e.target.value;
                                                             const newEnd = timeVal ? `${endDate}T${timeVal}` : it.endLocal;
@@ -1397,7 +1416,7 @@ export function VisitProcess() {
                                                     <input
                                                       type="datetime-local"
                                                       value={it.startLocal}
-                                                      disabled={!canEditAgenda}
+                                                      disabled={!editableAgenda}
                                                       onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: e.target.value } : p))}
                                                       className={ghostTimeClass}
                                                     />
@@ -1405,7 +1424,7 @@ export function VisitProcess() {
                                                     <input
                                                       type="datetime-local"
                                                       value={it.endLocal}
-                                                      disabled={!canEditAgenda}
+                                                      disabled={!editableAgenda}
                                                       onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: e.target.value } : p))}
                                                       className={ghostTimeClass}
                                                     />
@@ -1419,7 +1438,7 @@ export function VisitProcess() {
                                         {/* Content */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Nội dung</label>
-                                          <textarea rows={1} value={it.title} disabled={!canEditAgenda} placeholder="Nội dung mục lịch trình"
+                                          <textarea rows={1} value={it.title} disabled={!editableAgenda} placeholder="Nội dung mục lịch trình"
                                             ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }}
                                             onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, title: e.target.value } : p))}
                                             className={ghostTextareaClass} />
@@ -1428,7 +1447,7 @@ export function VisitProcess() {
                                         {/* Location */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Địa điểm</label>
-                                          <input type="text" value={it.location} disabled={!canEditAgenda} placeholder="(tuỳ chọn)"
+                                          <input type="text" value={it.location} disabled={!editableAgenda} placeholder="(tuỳ chọn)"
                                             onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, location: e.target.value } : p))}
                                             className={ghostInputClass} />
                                         </div>
@@ -1436,14 +1455,14 @@ export function VisitProcess() {
                                         {/* Responsible person (free text) */}
                                         <div className="pl-9 md:pl-0">
                                           <label className="mb-1 block text-[10px] font-bold uppercase text-slate-400 md:hidden">Người phụ trách</label>
-                                          <input type="text" value={it.responsibleName} disabled={!canEditAgenda} placeholder="Tên người phụ trách"
+                                          <input type="text" value={it.responsibleName} disabled={!editableAgenda} placeholder="Tên người phụ trách"
                                             onChange={(e) => setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, responsibleName: e.target.value } : p))}
                                             className={ghostInputClass} />
                                         </div>
 
                                         {/* Delete */}
                                         <div className="flex justify-end pl-9 md:justify-center md:pl-0">
-                                          {canEditAgenda && (
+                                          {editableAgenda && (
                                             <button type="button" title="Xoá mục"
                                               onClick={() => { setAgendaItems((prev) => prev.filter((_, i) => i !== idx)); pushToast('info', 'Đã xóa mục khỏi lịch trình. Bấm “Lưu lịch trình” để lưu thay đổi.'); }}
                                               className="mt-1 inline-flex h-8 w-8 items-center justify-center rounded-lg text-red-500 transition hover:bg-red-50 hover:text-red-600 outline-none">
@@ -1457,7 +1476,7 @@ export function VisitProcess() {
                                 </div>
                               </div>
                             )}
-                            {canEditAgenda && (
+                            {editableAgenda && (
                               <div className="flex flex-wrap items-center gap-3 pt-2">
                                 <button type="button"
                                   onClick={() => setAgendaItems((prev) => [...prev, { agendaId: null, title: '', startLocal: toDatetimeLocalInputValue(detail?.plannedStartAt), endLocal: toDatetimeLocalInputValue(detail?.plannedEndAt), location: '', responsibleName: detail?.hostName ?? '', templateResponsibleRoleLabel: null }])}
