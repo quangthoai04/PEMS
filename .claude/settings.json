@@ -41,7 +41,9 @@
       "Bash(/c/Python313/python -c ' *)",
       "Bash(PYTHONIOENCODING=utf-8 /c/Python313/python -c ' *)",
       "Bash(git diff *)",
-      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/vi/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")"
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/vi/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/en/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
+      "Bash(node -e ' *)"
     ],
     "additionalDirectories": [
       "\\tmp"

@@ -712,27 +712,31 @@
     },
     "statusOptions": {
       "awaitingConfirmation": {
-        "label": "Waiting for contact confirmation",
+        "label": "Awaiting confirmation",
         "description": "The campus is waiting for its guest-side operational contact to confirm by email link"
       },
       "pendingApproval": {
-        "label": "Waiting at the campus",
+        "label": "Pending approval",
         "description": "Waiting for the Staff Leader to approve and name a host"
       },
       "approved": {
         "label": "Approved",
-        "description": "Approved (including preparing, receiving or closed)"
+        "description": "Approved (including preparing, in progress, awaiting your feedback or completed)"
       },
       "beforeVisit": {
         "label": "Preparing",
         "description": "The host has started preparing the reception"
       },
       "duringVisit": {
-        "label": "Receiving guests",
+        "label": "Visit in progress",
         "description": "The delegation is visiting the campus"
       },
+      "afterVisit": {
+        "label": "Awaiting your feedback",
+        "description": "The visit has ended and we're waiting for your feedback"
+      },
       "closed": {
-        "label": "Closed",
+        "label": "Completed",
         "description": "The delegation completed the visit and its paperwork"
       },
       "rejected": {
@@ -801,11 +805,11 @@
     },
     "statusBadge": {
       "pending": {
-        "label": "Waiting at the campus",
+        "label": "Pending approval",
         "title": "Waiting for the Staff Leader to approve and name a reception host"
       },
       "pendingRequest": {
-        "label": "Waiting",
+        "label": "Pending approval",
         "title": "The request is waiting to be processed at its campuses"
       },
       "rejected": {
@@ -820,7 +824,7 @@
       "cancelledByHost": "Cancelled by the host",
       "cancelledBySystem": "Cancelled by the system",
       "assigned": {
-        "label": "Host assigned",
+        "label": "Approved",
         "title": "Approved with a reception host named, preparation not started"
       },
       "before": {
@@ -828,15 +832,19 @@
         "title": "In the reception preparation stage"
       },
       "during": {
-        "label": "Receiving guests",
+        "label": "Visit in progress",
         "title": "The delegation is being received at the campus"
       },
       "after": {
         "label": "Awaiting close-out",
         "title": "The visit has ended and is awaiting close-out / paperwork"
       },
+      "afterVisitor": {
+        "label": "Awaiting your feedback",
+        "title": "The visit has ended — we're waiting for your feedback"
+      },
       "closed": {
-        "label": "Closed",
+        "label": "Completed",
         "title": "The delegation completed the whole process"
       },
       "approved": {
@@ -844,7 +852,7 @@
         "title": "Every campus has been processed and at least one has accepted"
       },
       "awaitingConfirmation": {
-        "label": "Waiting for contact confirmation",
+        "label": "Awaiting confirmation",
         "title": "The campus is waiting for its guest-side operational contact to confirm by email link"
       }
     },
