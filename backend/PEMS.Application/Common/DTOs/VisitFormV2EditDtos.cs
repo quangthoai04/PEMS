@@ -61,3 +61,23 @@ public record VisitRequestEditV2Dto(
     RegistrantInputV2 Registrant,
     ulong? PartnerId,
     System.Collections.Generic.IList<CampusVisitEditV2Dto> CampusVisits);
+
+/// <summary>
+/// The Host a "Lưu và duyệt" names, in the same payload as the edit. Approving assigns a Host or it does
+/// not happen at all, so the two travel together rather than as a save followed by a hopeful approve.
+/// </summary>
+public sealed record ApproveAfterSaveDto(ulong HostUserId, string? DecisionNote);
+
+/// <summary>
+/// A per-campus pending edit: the campus's full content snapshot, plus the two transient decisions the
+/// actor may be taking alongside it.
+/// </summary>
+/// <param name="OverrideLeadTimeConfirmed">
+/// The campus Staff Leader's explicit "yes, this schedule, with less than 72 hours' notice". It grants
+/// nothing on its own — the backend honours it only for the leader of THIS campus, so anyone else
+/// sending true is refused exactly as if they had not.
+/// </param>
+public sealed record VisitInstancePendingEditDto(
+    CampusVisitEditV2Dto Content,
+    bool OverrideLeadTimeConfirmed = false,
+    ApproveAfterSaveDto? ApproveAfterSave = null);

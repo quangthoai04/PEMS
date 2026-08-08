@@ -242,6 +242,41 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 PENDING EDIT of ONE campus that is still waiting for its decision.
+    ///
+    /// <para>
+    /// The endpoint above needs EVERY campus of the request to be waiting, because it rewrites data they
+    /// share. This one asks only about the campus in the route, which is what makes a MIXED request
+    /// workable: with HN approved, HCM waiting and DN refused, HCM is edited here, DN through
+    /// <c>…/instances/{id}/resubmit</c>, and HN through safe-edit or an amendment — and none of the
+    /// three touches the others.
+    /// </para>
+    /// <para>
+    /// Open to the registrant, to the operational contact of THAT campus, and to the campus's Staff
+    /// Leader. The leader alone may set a start inside the 72-hour registration floor — the first call
+    /// answers 409 <c>LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED</c> and the client re-sends with
+    /// <c>overrideLeadTimeConfirmed</c> — and the leader alone may pass <c>approveAfterSave</c>, which
+    /// saves and approves in ONE transaction.
+    /// </para>
+    /// </summary>
+    [HttpPut("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/pending-edit")]
+    [Authorize]
+    public async Task<IActionResult> UpdatePendingInstanceFormV2(
+        ulong visitRequestId,
+        ulong visitInstanceId,
+        [FromBody] PEMS.Application.Common.DTOs.VisitInstancePendingEditDto body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.UpdatePendingVisitInstanceV2
+                .UpdatePendingVisitInstanceV2Command(
+                    visitRequestId, visitInstanceId, body.Content,
+                    body.OverrideLeadTimeConfirmed, body.ApproveAfterSave),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits a still-fully-pending request (every campus WAITING_REQUEST_APPROVAL,
     /// ≥ 24h before the earliest start). Campus list may change; status stays PENDING_APPROVAL.
     /// </summary>

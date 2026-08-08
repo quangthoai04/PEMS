@@ -27,6 +27,24 @@ public static class VisitFormActions
     /// </para>
     /// </summary>
     public const string ResubmitRejectedInstance = "RESUBMIT_REJECTED_INSTANCE";
+
+    /// <summary>
+    /// Edit ONE campus that is still waiting for its decision. INSTANCE scope.
+    ///
+    /// <para>
+    /// The per-campus counterpart of <see cref="EditPendingRequest"/>, and the one that works on a MIXED
+    /// request. Whole-request editing needs EVERY campus still waiting, so on a request with one campus
+    /// approved it disappears — and until this code existed the campus that was still waiting had no
+    /// action at all while its refused sibling had resubmit and its approved sibling had amendments.
+    /// </para>
+    /// <para>
+    /// Granted to the registrant, to the operational contact of THAT campus, and to the campus's Staff
+    /// Leader (who may additionally file a schedule inside the 72-hour floor, and may approve in the
+    /// same action).
+    /// </para>
+    /// </summary>
+    public const string EditPendingCampus = "EDIT_PENDING_CAMPUS";
+
     /// <summary>Registrant/ACTIVE contact may apply a safe/privacy edit (v2, request not cancelled).</summary>
     public const string SubmitSafeEdit = "SUBMIT_SAFE_EDIT";
 
@@ -58,11 +76,12 @@ public static class VisitFormActions
     /// <summary>Registrant / this campus's confirmed contact may close the outstanding invitation.</summary>
     public const string CancelOperationalContactChange = "CANCEL_OPERATIONAL_CONTACT_CHANGE";
 
-    /// <summary>Requester side may propose an amendment for a BEFORE_VISIT instance ≥24h out with no pending amendment.</summary>
+    /// <summary>Requester side may propose an amendment for a decided, not-yet-started instance still
+    /// inside the mutation cutoff and with no pending amendment.</summary>
     public const string SubmitAmendment = "SUBMIT_AMENDMENT";
-    /// <summary>Current campus Staff Leader may approve the instance's pending amendment.</summary>
+    /// <summary>The instance's CURRENT Host may approve its pending amendment.</summary>
     public const string ApproveAmendment = "APPROVE_AMENDMENT";
-    /// <summary>Current campus Staff Leader may reject the instance's pending amendment.</summary>
+    /// <summary>The instance's CURRENT Host may reject its pending amendment.</summary>
     public const string RejectAmendment = "REJECT_AMENDMENT";
     /// <summary>Requester side may withdraw the instance's pending amendment.</summary>
     public const string WithdrawAmendment = "WITHDRAW_AMENDMENT";
@@ -91,4 +110,18 @@ public static class VisitAuditActions
     public const string HostTransferred = "HOST_TRANSFERRED";
     /// <summary>audit_logs.source_type for the handover — groups it apart from form revisions.</summary>
     public const string HostTransferSourceType = "HOST_TRANSFER";
+
+    /// <summary>
+    /// A campus's Staff Leader deliberately filed a schedule inside the 72-hour registration floor.
+    ///
+    /// <para>
+    /// Written as its own row rather than folded into the edit's field diff, because the question it
+    /// answers is different: the diff says the date moved, this says somebody with the authority to do
+    /// so accepted less notice than the rule asks for, and named themselves doing it. Its reason string
+    /// carries the required lead time and both starts, so the row stands on its own.
+    /// </para>
+    /// </summary>
+    public const string LeadTimeOverride = "LEAD_TIME_OVERRIDE";
+    /// <summary>audit_logs.source_type for the override, so the rows can be counted on their own.</summary>
+    public const string LeadTimeOverrideSourceType = "LEAD_TIME_OVERRIDE";
 }

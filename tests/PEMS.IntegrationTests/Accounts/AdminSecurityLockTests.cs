@@ -85,14 +85,25 @@ public sealed class AdminSecurityLockTests : IClassFixture<PemsWebApplicationFac
         _targetUserId = target.UserId;
     }
 
-    public Task DisposeAsync()
+    /// <summary>
+    /// <c>async</c>/<c>await</c> is load-bearing here, not style. Returning the cleanup task while a
+    /// <c>using</c> scope is still in scope disposes the scope — and with it the DbContext and its
+    /// MySqlConnection — the moment the method RETURNS, which is before the task it just handed back has
+    /// run. The cleanup then died on <c>ObjectDisposedException: MySqlConnection</c>, silently, because
+    /// nobody observes a fixture's teardown exception. Nothing was deleted, so
+    /// <c>it-admin-security-target@pems.test</c> survived into the next test and every later
+    /// <c>InitializeAsync</c> failed on <c>Duplicate entry … for key 'users.uq_users_email'</c> — five
+    /// tests reporting a duplicate email for one test's uncompleted teardown.
+    /// Awaiting keeps the scope alive until the deletes are actually done.
+    /// </summary>
+    public async Task DisposeAsync()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
         // audit_log_changes before audit_logs, and every row referencing the users before the users
         // themselves — the same ordering rule the other account fixtures follow.
-        return FixtureCleanup.For(db)
+        await FixtureCleanup.For(db)
             .Root("audit_log_changes",
                 $"audit_log_id IN (SELECT audit_log_id FROM audit_logs WHERE entity_type = 'User' AND entity_id = {_targetUserId})")
             .Root("audit_logs", $"entity_type = 'User' AND entity_id = {_targetUserId}")

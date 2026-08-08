@@ -76,24 +76,26 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         // ── 1. Immutable account-binding + registrant snapshot (v1 parity, plan §5.1/§16) ──
         ValidateImmutableFields(request, edit);
 
-        // ── 2. Classify payload campuses: kept (stable visitInstanceId) vs added (null id) ──
+        // ── 2. The campus set is IMMUTABLE (§18/§19). Every payload slot must name an instance this
+        //       request already has, and every instance must appear exactly once — so an edit cannot add
+        //       a campus (no id), drop one (missing from the payload) or swap one (id of another
+        //       request). Enforced HERE, in the write path, rather than by hiding buttons: the rule is
+        //       about what the request IS, and a client that keeps an old form open, or calls the API
+        //       directly, must meet the same answer.
+        //
+        //       It used to be negotiable while every campus was still waiting, which meant the scope,
+        //       the fingerprint and the set of people already invited could all change under a request
+        //       that other people were holding links to. ──
         var instancesById = request.CampusInstances.ToDictionary(c => c.VisitInstanceId);
         var kept = new List<(CampusVisitEditV2Dto Content, VisitRequestCampus Instance)>();
-        var added = new List<CampusVisitEditV2Dto>();
         foreach (var cv in edit.CampusVisits)
         {
-            if (cv.VisitInstanceId is { } id)
-            {
-                if (!instancesById.TryGetValue(id, out var instance))
-                    throw new BusinessRuleException(
-                        "Cơ sở được sửa không thuộc đơn này.", VisitRequestErrorCodes.InstanceEditInvalid);
-                kept.Add((cv, instance));
-            }
-            else
-            {
-                added.Add(cv);
-            }
+            if (cv.VisitInstanceId is not { } id || !instancesById.TryGetValue(id, out var instance))
+                throw new BusinessRuleException(CampusSetImmutableMessage, VisitRequestErrorCodes.CampusSetImmutable);
+            kept.Add((cv, instance));
         }
+        if (kept.Select(k => k.Instance.VisitInstanceId).Distinct().Count() != request.CampusInstances.Count)
+            throw new BusinessRuleException(CampusSetImmutableMessage, VisitRequestErrorCodes.CampusSetImmutable);
 
         // ── 3. Campus-code resolution + no-dup over the FINAL set ──
         var codes = edit.CampusVisits.Select(c => (c.CampusId ?? string.Empty).Trim().ToUpperInvariant()).ToList();
@@ -136,37 +138,17 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
         }
 
-        // ── 5. Removed instances = present on the request but absent from the payload ──
-        var keptIds = kept.Select(k => k.Instance.VisitInstanceId).ToHashSet();
-        var removed = request.CampusInstances.Where(c => !keptIds.Contains(c.VisitInstanceId)).ToList();
-        foreach (var gone in removed)
-            await EnsureInstanceRemovableAsync(gone, ct);
-
-        // ── 6. Schedule validation (pending-edit: every start ≥ now + MinScheduleLeadHours) ──
-        ValidateSchedules(edit, now);
-
-        // ── 7. Added campuses: full operational-availability recheck (ACTIVE + IC dept + one Staff Leader) ──
-        var addedSnapshots = new Dictionary<string, CampusAvailabilitySnapshot>(StringComparer.OrdinalIgnoreCase);
-        if (added.Count > 0)
+        // ── 5. Schedule validation. The 72-hour registration floor applies ONLY to a campus whose
+        //       schedule this edit actually MOVES (§28/§29): a guest correcting the purpose of a visit
+        //       two days out is not proposing a new date, and refusing them because the existing date is
+        //       now inside the floor would freeze the request with the mistake in it. The floor is not
+        //       overridable here — this path belongs to the registrant, and only the campus's own Staff
+        //       Leader may file a schedule inside it (per-campus pending edit). ──
+        foreach (var (content, instance) in kept)
         {
-            var addedIds = added.Select(a => campusIdsByCode[a.CampusId.Trim().ToUpperInvariant()]).ToList();
-            var snapshots = await CampusAvailabilityEvaluator.EvaluateAsync(_db, addedIds, ct);
-            foreach (var a in added)
-            {
-                var code = a.CampusId.Trim().ToUpperInvariant();
-                var s = snapshots.TryGetValue(campusIdsByCode[code], out var snap)
-                    ? snap
-                    : throw new BusinessRuleException($"Cơ sở '{code}' không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
-                if (!string.Equals(s.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
-                    throw new BusinessRuleException($"Cơ sở '{code}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
-                if (s.ActiveIcDepartmentCount == 0)
-                    throw new BusinessRuleException($"Cơ sở {s.Name} chưa có phòng ban IC đang hoạt động.", VisitRequestErrorCodes.CampusHasNoActiveIcDepartment);
-                if (s.ValidStaffLeaderCount == 0)
-                    throw new BusinessRuleException($"Cơ sở {s.Name} chưa có Staff Leader đang hoạt động.", VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
-                if (!s.IsAvailableForVisitRegistration)
-                    throw new BusinessRuleException($"Cấu hình tiếp nhận của cơ sở {s.Name} không hợp lệ.", VisitRequestErrorCodes.CampusStaffLeaderConfigurationInvalid);
-                addedSnapshots[code] = s;
-            }
+            var scheduleMoves = instance.PlannedStartAt != content.PlannedStartAt
+                                || instance.PlannedEndAt != content.PlannedEndAt;
+            ValidateSchedule(content, now, enforceLeadTime: scheduleMoves);
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -181,14 +163,14 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             EntityId = request.VisitRequestId,
             VisitRequestId = request.VisitRequestId,
             CorrelationId = correlationId,
-            // A full edit of a pending request is NOT a safe edit — it can rewrite content and change
-            // the campus set. Writing SAFE_EDIT here is what made the timeline report it as "sửa nhanh".
+            // A full edit of a pending request is NOT a safe edit — it rewrites content across every
+            // campus. Writing SAFE_EDIT here is what made the timeline report it as "sửa nhanh".
             SourceType = FormRevisionSourceTypes.PendingEdit,
             CreatedAt = now,
         };
         _db.AuditLogs.Add(audit);
 
-        // ── 8. Kept instances: change detection → apply only what changed ──
+        // ── 6. Per instance: change detection → apply only what changed ──
         var changedInstances = new List<(VisitRequestCampus Instance, List<VisitGuestMember> NewMembers)>();
         foreach (var (content, instance) in kept)
         {
@@ -240,110 +222,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 changedInstances.Add((instance, newMembers));
         }
 
-        // ── 9. Removed campuses: delete the instance (details/links/revisions cascade at the DB);
-        //       clean up member rows that no surviving instance links; audit the removal. ──
-        foreach (var gone in removed)
-        {
-            audit.Changes.Add(new AuditLogChange
-            {
-                FieldName = $"instance[{gone.VisitInstanceId}].removed",
-                OldValueText = $"campus_id={gone.CampusId};status={gone.Status}",
-                NewValueText = "removed_by_pending_edit",
-                CreatedAt = now,
-            });
-
-            var goneMemberIds = gone.GuestMemberLinks.Select(l => l.GuestMemberId).ToHashSet();
-            request.CampusInstances.Remove(gone);
-            _db.VisitRequestCampuses.Remove(gone);
-
-            foreach (var memberId in goneMemberIds)
-            {
-                var linkedElsewhere = request.CampusInstances
-                    .SelectMany(ci => ci.GuestMemberLinks)
-                    .Any(l => l.GuestMemberId == memberId);
-                if (!linkedElsewhere)
-                {
-                    var member = request.GuestMembers.FirstOrDefault(m => m.GuestMemberId == memberId);
-                    if (member is not null)
-                    {
-                        request.GuestMembers.Remove(member);
-                        _db.VisitGuestMembers.Remove(member);
-                    }
-                }
-            }
-        }
-
-        // ── 10. Added campuses: new instance + form detail + independent members, routed to the
-        //        campus Staff Leader.
-        //
-        //        A campus added by a pending edit starts exactly where one added at submit does (§3.1
-        //        step 4): if its operational contact is the registrant's own verified address it is
-        //        linked here and goes straight to WAITING_REQUEST_APPROVAL; otherwise it has no contact
-        //        yet, starts at WAITING_CONTACT_CONFIRMATION and holds the request behind the gate until
-        //        the invited person confirms. Hard-coding WAITING_REQUEST_APPROVAL — which is what this
-        //        did — produced a campus past the gate with no contact, which the DB refuses outright
-        //        (CAMPUS_BEYOND_CONFIRMATION_REQUIRES_OPERATIONAL_CONTACT), so adding a campus during a
-        //        pending edit could not succeed at all. ──
-        var registrantEmailForMatch = VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail);
-        var registrantIsVerified = request.RegistrantUserId is not null && request.EmailVerifiedAt is not null;
-
-        var addedStaging = new List<(VisitRequestCampus Instance, CampusVisitEditV2Dto Content, List<VisitGuestMember> Members)>();
-        foreach (var a in added)
-        {
-            var snapshot = addedSnapshots[a.CampusId.Trim().ToUpperInvariant()];
-            var addedSelfMatch = registrantIsVerified
-                && VisitRequestFingerprintBuilder.NormalizeEmail(a.OperationalContact.Email) == registrantEmailForMatch;
-            var instance = new VisitRequestCampus
-            {
-                CampusId = snapshot.CampusId,
-                PlannedStartAt = a.PlannedStartAt,
-                PlannedEndAt = a.PlannedEndAt,
-                Status = addedSelfMatch
-                    ? VisitInstanceStatuses.WaitingRequestApproval
-                    : VisitInstanceStatuses.WaitingContactConfirmation,
-                OperationalContactUserId = addedSelfMatch ? request.RegistrantUserId : null,
-                OperationalContactConfirmedAt = addedSelfMatch ? now : null,
-                OperationalContactConfirmationSource =
-                    addedSelfMatch ? OperationalContactSources.RegistrantSelfMatch : null,
-                CoordinatorUserId = snapshot.ValidStaffLeaderUserId,
-                CoordinatorAssignedBy = actorId,
-                CoordinatorAssignedAt = now,
-                RowVersion = 0,
-                CreatedAt = now,
-                CreatedBy = actorId,
-                FormDetail = VisitRequestV2EditOps.BuildFormDetail(a, now, actorId),
-            };
-            request.CampusInstances.Add(instance);
-
-            var rows = new List<VisitGuestMember>();
-            uint order = 1;
-            foreach (var v in a.Visitors ?? new List<VisitorDto>())
-                rows.Add(new VisitGuestMember
-                {
-                    FullName = v.FullName, Organization = v.Organization, JobTitle = v.JobTitle,
-                    Nationality = v.Nationality, MemberType = "GUEST", DisplayOrder = order++,
-                    CreatedAt = now, CreatedBy = actorId,
-                });
-            foreach (var m in a.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
-                rows.Add(new VisitGuestMember
-                {
-                    FullName = m.FullName, Organization = m.Organization, JobTitle = m.JobTitle,
-                    Nationality = m.Nationality, MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
-                    CreatedAt = now, CreatedBy = actorId,
-                });
-            foreach (var r in rows) request.GuestMembers.Add(r);
-
-            audit.Changes.Add(new AuditLogChange
-            {
-                FieldName = "instance.added",
-                OldValueText = null,
-                NewValueText = $"campus_id={snapshot.CampusId}",
-                CreatedAt = now,
-            });
-            addedStaging.Add((instance, a, rows));
-        }
-
-        // ── 11. Request-level common fields (mutable subset only) + canonical recompute ──
+        // ── 7. Request-level common fields (mutable subset only) + canonical recompute ──
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
 
         var finalContents = edit.CampusVisits.Select(c => c.ToFormDto()).ToList();
@@ -362,10 +241,10 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         request.UpdatedAt = now;
         request.UpdatedBy = actorId;
 
-        // ── FLUSH #1 — resolves new instance ids, form-detail PKs and new member ids. ──
+        // ── FLUSH #1 — resolves form-detail PKs and new member ids. ──
         await _db.SaveChangesAsync(ct);
 
-        // ── 12. Post-flush: composite links + immutable revision snapshots ──
+        // ── 8. Post-flush: composite links + immutable revision snapshots ──
         foreach (var (instance, newMembers) in changedInstances)
         {
             VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
@@ -377,22 +256,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 ApprovalRevision = instance.FormDetail.ApprovalRevision,
                 SourceType = FormRevisionSourceTypes.PendingEdit,
                 SnapshotJson = VisitRequestV2EditOps.SnapshotJson(instance.FormDetail, newMembers),
-                AppliedBy = actorId,
-                AppliedAt = now,
-                Reason = correlationId,
-            });
-        }
-        foreach (var (instance, _, members) in addedStaging)
-        {
-            VisitRequestV2EditOps.LinkMembers(_db, request, instance, members, now, actorId);
-            _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
-            {
-                VisitRequestId = request.VisitRequestId,
-                VisitInstanceId = instance.VisitInstanceId,
-                FormRevision = 1,
-                ApprovalRevision = 1,
-                SourceType = "CREATE",
-                SnapshotJson = VisitRequestV2EditOps.SnapshotJson(instance.FormDetail!, members),
                 AppliedBy = actorId,
                 AppliedAt = now,
                 Reason = correlationId,
@@ -667,6 +530,185 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     }
 
     /// <inheritdoc />
+    public async Task<V2EditResult> ApplyInstancePendingEditAsync(
+        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        ulong actorId, DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
+        CancellationToken ct)
+    {
+        // ── 1. THIS campus must still be waiting for its own decision. Nothing is asked about the
+        //       request aggregate on purpose: with a sibling already approved the request reads
+        //       PARTIALLY_APPROVED, and letting that decide would re-create the dead end this exists to
+        //       remove — a campus nobody has answered yet, unfixable because a different campus was
+        //       answered. ──
+        if (request.Status == VisitRequestStatuses.Cancelled)
+            throw new BusinessRuleException(
+                "Đơn đã bị hủy nên không thể sửa cơ sở này.",
+                VisitRequestErrorCodes.PendingCampusNotEditable);
+        if (instance.Status != VisitInstanceStatuses.WaitingRequestApproval)
+            throw new BusinessRuleException(
+                "Chỉ có thể sửa cơ sở đang chờ duyệt bằng chức năng này.",
+                VisitRequestErrorCodes.PendingCampusNotEditable);
+
+        // ── 2. The campus may not be swapped — that is an add and a remove wearing one payload. ──
+        var campusCode = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
+        var namedCampusId = await _db.Campuses
+            .Where(c => c.CampusCode == campusCode)
+            .Select(c => (ulong?)c.CampusId)
+            .FirstOrDefaultAsync(ct);
+        if (namedCampusId is null || namedCampusId != instance.CampusId)
+            throw new BusinessRuleException(CampusSetImmutableMessage, VisitRequestErrorCodes.CampusSetImmutable);
+
+        // ── 3. Optimistic concurrency on the INSTANCE alone. The request row version is deliberately
+        //       not the guard: a sibling being approved bumps it, and that must not brick an edit of a
+        //       campus nobody has touched.
+        //
+        //       The instance row is LOCKED first, for the same reason the whole-request path locks the
+        //       request: row_version is a plain int with no EF concurrency token, so two editors who
+        //       both read version 4 would both pass a bare comparison and the second would silently win.
+        //       With the lock they serialize, and the loser wakes up seeing the winner's bump. ──
+        await AssertCurrentInstanceVersionAsync(instance, content.ExpectedRowVersion, ct);
+
+        if (instance.FormDetail is not null)
+            EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
+
+        // ── 4. Schedule. The 72-hour floor applies only if this edit MOVES the dates (§28/§29), and the
+        //       campus's own Staff Leader may file inside it once they confirm they mean to (§30/§31). ──
+        var scheduleChanged = instance.PlannedStartAt != content.PlannedStartAt
+                              || instance.PlannedEndAt != content.PlannedEndAt;
+        var oldStart = instance.PlannedStartAt;
+        var oldEnd = instance.PlannedEndAt;
+        ValidateSchedule(
+            content, now,
+            enforceLeadTime: scheduleChanged,
+            leaderMayOverride: actorIsCampusLeader,
+            overrideConfirmed: overrideLeadTimeConfirmed);
+        var usedLeadTimeOverride = scheduleChanged
+            && actorIsCampusLeader
+            && content.PlannedStartAt < now.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
+
+        var detail = instance.FormDetail
+            ?? throw new ConflictException(
+                "Đơn thiếu dữ liệu chi tiết theo cơ sở (v2).", VisitFormV2ErrorCodes.VisitFormDetailMissing);
+
+        var contentChanged = VisitRequestV2Canonical.CanonicalContent(CurrentContentOf(request, instance, detail))
+                             != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
+        if (!contentChanged && !scheduleChanged)
+            throw new BusinessRuleException(
+                "Không có thay đổi nào để lưu cho cơ sở này.",
+                VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Apply — target-only. There is no loop over campuses here, which is the point: a sibling's
+        // status, host, decision, revision and row version cannot move because nothing writes them.
+        // ─────────────────────────────────────────────────────────────────────────────
+        var correlationId = Guid.NewGuid().ToString("N");
+        var audit = new AuditLog
+        {
+            ActorUserId = actorId,
+            Action = "UPDATE_PENDING_VISIT_INSTANCE_V2",
+            EntityType = "VisitRequestCampus",
+            EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            CorrelationId = correlationId,
+            SourceType = FormRevisionSourceTypes.PendingEdit,
+            CreatedAt = now,
+        };
+        _db.AuditLogs.Add(audit);
+
+        List<VisitGuestMember> newMembers = new();
+        if (contentChanged)
+        {
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = $"instance[{instance.VisitInstanceId}].form_content",
+                OldValueText = $"form_revision={detail.FormRevision}",
+                NewValueText = $"form_revision={detail.FormRevision + 1}",
+                CreatedAt = now,
+            });
+            VisitRequestV2EditOps.ApplyFormDetail(detail, content, now, actorId);
+            newMembers = VisitRequestV2EditOps.StageReplaceMembers(
+                _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
+        }
+
+        if (scheduleChanged)
+        {
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = $"instance[{instance.VisitInstanceId}].schedule",
+                OldValueText = $"{oldStart:yyyy-MM-dd HH:mm}..{oldEnd:yyyy-MM-dd HH:mm}",
+                NewValueText = $"{content.PlannedStartAt:yyyy-MM-dd HH:mm}..{content.PlannedEndAt:yyyy-MM-dd HH:mm}",
+                CreatedAt = now,
+            });
+            instance.PlannedStartAt = content.PlannedStartAt;
+            instance.PlannedEndAt = content.PlannedEndAt;
+        }
+
+        // An override is a decision somebody took, not a validation that happened to pass. It gets its
+        // own audit row — actor, campus, old and new start — so "why is this visit in two days when the
+        // rule says three" has an answer that does not depend on reading the code.
+        if (usedLeadTimeOverride)
+        {
+            _db.AuditLogs.Add(new AuditLog
+            {
+                ActorUserId = actorId,
+                Action = VisitAuditActions.LeadTimeOverride,
+                EntityType = "VisitRequestCampus",
+                EntityId = instance.VisitInstanceId,
+                CampusId = instance.CampusId,
+                VisitRequestId = request.VisitRequestId,
+                VisitInstanceId = instance.VisitInstanceId,
+                CorrelationId = correlationId,
+                SourceType = VisitAuditActions.LeadTimeOverrideSourceType,
+                Reason = $"required_lead_hours={VisitMutationPolicy.MinScheduleLeadHours};" +
+                         $"old_start={oldStart:yyyy-MM-dd HH:mm};new_start={content.PlannedStartAt:yyyy-MM-dd HH:mm}",
+                CreatedAt = now,
+            });
+        }
+
+        instance.RowVersion += 1;
+        instance.UpdatedAt = now;
+        instance.UpdatedBy = actorId;
+
+        // The campus stays WAITING_REQUEST_APPROVAL — editing is not deciding (§30.1). The aggregate is
+        // recomputed rather than assumed, so a request with one campus approved keeps reading
+        // PARTIALLY_APPROVED instead of being dragged back to PENDING by an edit of its other campus.
+        _aggregateStatus.Apply(request);
+        request.RowVersion += 1;
+        request.UpdatedAt = now;
+        request.UpdatedBy = actorId;
+
+        await _db.SaveChangesAsync(ct);
+
+        if (contentChanged)
+        {
+            VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
+            _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
+            {
+                VisitRequestId = request.VisitRequestId,
+                VisitInstanceId = instance.VisitInstanceId,
+                FormRevision = detail.FormRevision,
+                ApprovalRevision = detail.ApprovalRevision,
+                SourceType = FormRevisionSourceTypes.PendingEdit,
+                SnapshotJson = VisitRequestV2EditOps.SnapshotJson(detail, newMembers),
+                AppliedBy = actorId,
+                AppliedAt = now,
+                Reason = correlationId,
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
+        // Scope / mixed / fingerprint are facts about the campus SET and its content, so they are
+        // rebuilt from the persisted campuses — this path has no payload covering the siblings and must
+        // never infer theirs from the one campus it was given.
+        await V2CanonicalRefresh.RecomputeAsync(_db, request, ct);
+        await _db.SaveChangesAsync(ct);
+
+        return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
+    }
+
+    /// <inheritdoc />
     public async Task<V2EditResult> ApplyInstanceResubmitAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, DateTime now, CancellationToken ct)
@@ -833,27 +875,56 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     }
 
     /// <summary>
-    /// The schedule rules for ONE campus: end after start, at least 30 minutes, and a start no sooner
-    /// than <see cref="EditWindowHours"/> from now. Same numbers as the multi-campus check, applied to
-    /// the single campus an instance resubmit carries.
+    /// The schedule rules for ONE campus: end after start, at least 30 minutes, and — when the schedule
+    /// is genuinely being FILED — a start no sooner than <see cref="EditWindowHours"/> from now.
+    ///
+    /// <para>
+    /// <paramref name="enforceLeadTime"/> is false when the caller is not moving the schedule at all. An
+    /// edit that leaves the dates exactly as they were is not a new ask, and holding it to the
+    /// registration floor would mean a request became uneditable simply by getting closer to its own
+    /// date — the guest could no longer fix a name, and the campus would receive the visit with the
+    /// mistake still in it.
+    /// </para>
+    /// <para>
+    /// <paramref name="leaderMayOverride"/> is the Staff Leader of THIS campus, and it is resolved by the
+    /// handler from the actor's relation — never from the payload. A caller who sets
+    /// <paramref name="overrideConfirmed"/> without being that leader is refused exactly like anyone
+    /// else, because the flag alone grants nothing.
+    /// </para>
     /// </summary>
-    private static void ValidateSchedule(CampusVisitEditV2Dto content, DateTime now)
+    private static void ValidateSchedule(
+        CampusVisitEditV2Dto content, DateTime now, bool enforceLeadTime = true,
+        bool leaderMayOverride = false, bool overrideConfirmed = false)
     {
         var campus = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
         if (content.PlannedEndAt <= content.PlannedStartAt)
             throw new BusinessRuleException(
                 $"Cơ sở {campus}: thời gian kết thúc phải sau thời gian bắt đầu.",
                 VisitRequestErrorCodes.InvalidVisitTime);
-        if ((content.PlannedEndAt - content.PlannedStartAt).TotalMinutes < 30)
+        if ((content.PlannedEndAt - content.PlannedStartAt).TotalMinutes < MinDurationMinutes)
             throw new BusinessRuleException(
-                $"Cơ sở {campus}: thời lượng tối thiểu là 30 phút.",
+                $"Cơ sở {campus}: thời lượng tối thiểu là {MinDurationMinutes} phút.",
                 VisitRequestErrorCodes.InvalidVisitTime);
-        var earliestAllowedStart = now.AddHours(EditWindowHours);
-        if (content.PlannedStartAt < earliestAllowedStart)
-            throw new BusinessRuleException(
-                $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart)}",
-                VisitRequestErrorCodes.InvalidVisitTime);
+        if (!enforceLeadTime)
+            return;
+
+        var lead = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            content.PlannedStartAt, now, leaderMayOverride, overrideConfirmed);
+        if (lead.Allowed)
+            return;
+        if (lead.ConfirmationRequired)
+            throw new ConflictException(
+                $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeOverrideRequired(lead.EarliestAllowedStart)}",
+                VisitMutationErrorCodes.LeadTimeOverrideConfirmationRequired);
+        throw new BusinessRuleException(
+            $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeNotMet(lead.EarliestAllowedStart)}",
+            VisitRequestErrorCodes.InvalidVisitTime);
     }
+
+    /// <summary>The one sentence for "you cannot change which campuses this request is for".</summary>
+    private const string CampusSetImmutableMessage =
+        "Danh sách cơ sở không thể thay đổi sau khi đơn đã được tạo. " +
+        "Vui lòng tạo đơn mới nếu muốn đăng ký thêm cơ sở.";
 
     /// <summary>
     /// Locks the request row (<c>SELECT … FOR UPDATE</c>) and compares the payload's expected version AND the
@@ -873,6 +944,33 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             throw new ConflictException(
                 "Đơn đã được thay đổi bởi một thao tác khác. Vui lòng tải lại và thử lại.",
                 VisitRequestErrorCodes.RequestVersionConflict);
+    }
+
+    /// <summary>
+    /// Locks ONE campus row (<c>SELECT … FOR UPDATE</c>) and compares the payload's expected version AND
+    /// the tracked entity's loaded version against the CURRENT committed row_version.
+    ///
+    /// <para>
+    /// The instance rather than the request, on purpose: a sibling campus being approved bumps the
+    /// request row, and locking that would make an edit of a campus nobody has touched wait on — and
+    /// then lose to — a decision about a different campus.
+    /// </para>
+    /// </summary>
+    private async Task AssertCurrentInstanceVersionAsync(
+        VisitRequestCampus instance, int? expectedVersion, CancellationToken ct)
+    {
+        // Uncomposed FromSqlRaw: composing (Select/First) would wrap the SQL in a derived table and
+        // MySQL would not lock through it.
+        var rows = await _db.VisitRequestCampuses
+            .FromSqlRaw("SELECT * FROM visit_request_campuses WHERE visit_instance_id = {0} FOR UPDATE",
+                instance.VisitInstanceId)
+            .AsNoTracking()
+            .ToListAsync(ct);
+        var current = rows.Count == 1 ? rows[0].RowVersion : (int?)null;
+        if (current is null || expectedVersion != current.Value || instance.RowVersion != current.Value)
+            throw new ConflictException(
+                "Lịch thăm tại cơ sở này đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
+                VisitRequestErrorCodes.InstanceVersionConflict);
     }
 
     /// <summary>Registrant snapshot, partner and BOTH account-binding emails are immutable in a form edit.
@@ -1052,25 +1150,4 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         => status is VisitInstanceStatuses.WaitingContactConfirmation
                   or VisitInstanceStatuses.WaitingRequestApproval;
 
-    /// <summary>
-    /// A campus can only be dropped by a pending edit while its instance is still WAITING and carries no
-    /// downstream data (participants / agendas / logistics). Details, links and revision history cascade at
-    /// the DB; anything else must block the removal rather than be cascaded blindly.
-    /// </summary>
-    private async Task EnsureInstanceRemovableAsync(VisitRequestCampus gone, CancellationToken ct)
-    {
-        if (!IsPreDecision(gone.Status))
-            throw new BusinessRuleException(
-                "Không thể bỏ cơ sở đã được xử lý (duyệt/từ chối/hủy).",
-                VisitRequestErrorCodes.InstanceNotRemovable);
-
-        var hasDownstream =
-            await _db.VisitParticipants.AnyAsync(p => p.VisitInstanceId == gone.VisitInstanceId, ct)
-            || await _db.VisitAgendas.AnyAsync(a => a.VisitInstanceId == gone.VisitInstanceId, ct)
-            || await _db.VisitLogisticsItems.AnyAsync(l => l.VisitInstanceId == gone.VisitInstanceId, ct);
-        if (hasDownstream)
-            throw new BusinessRuleException(
-                "Không thể bỏ cơ sở vì lịch thăm tại cơ sở này đã có dữ liệu chuẩn bị (người tham dự/chương trình/hậu cần).",
-                VisitRequestErrorCodes.InstanceNotRemovable);
-    }
 }

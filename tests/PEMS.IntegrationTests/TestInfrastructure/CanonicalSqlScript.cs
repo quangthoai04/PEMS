@@ -631,8 +631,28 @@ public static class CanonicalSqlScript
     // database up without a re-import.
     //
     // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
+    //
+    // (2026-08-08) Repinned for commit 61e4b768 "remove seed file", which changed the script WITHOUT
+    // updating this constant in the same commit — so every integration suite had been aborting on the
+    // hash guard, reported through each suite's own catch-all as "pems_pr3_test is not reachable". The
+    // server was reachable the whole time; ReadVerified threw before a connection was ever opened.
+    //
+    // The change is seed rows only, and only DELETIONS of the file/attachment seed:
+    //
+    //   files 243→0, documents 15→0, news_section_files 20→0, photo_face_tags 18→0,
+    //   sent_email_attachments 4→0
+    //
+    // These are the rows whose GOOGLE_DRIVE ids were placeholders that 404 on read, so a seeded "file"
+    // never had bytes behind it. Removing them makes the seed honest rather than changing behaviour.
+    //
+    // Verified by importing BOTH revisions side by side and comparing information_schema, not by reading
+    // the diff: columns 1256 = 1256, triggers 33 = 33, table_constraints 453 = 453 — zero differences on
+    // all three. Unchanged seed elsewhere: users 94, visit_requests 66, visit_request_campuses 96,
+    // email_templates 33, email_contact_policies 34, news 3, notifications 29, audit_logs 17.
+    //
+    // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
     public const string ExpectedSha256 =
-        "b612c3a9881b383244b4b56624d425402ead4cfdf36924a517d0a916d1efedb8";
+        "afac4dbbf03c200755b4bc7a6a66cd0a3375fddabfb5621b5245a7a71f65c70d";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

@@ -24,8 +24,20 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
 {
     private const int MinDurationMinutes = 30;
 
-    /// <summary>Shared with every other self-service mutation — see <see cref="VisitMutationPolicy"/>.</summary>
-    private const int SelfServiceCutoffHours = VisitMutationPolicy.RequiredLeadHours;
+    /// <summary>
+    /// The window in which a proposal may be filed or decided at all, measured against the campus's
+    /// CURRENT start — shared with every other self-service mutation (<see cref="VisitMutationPolicy"/>).
+    ///
+    /// <para>
+    /// Not to be confused with the 72-hour registration floor. That floor governs a schedule being put
+    /// to a Staff Leader for the FIRST time, so that nobody is asked to approve a visit they have no
+    /// time to prepare. After approval the campus already has an owner and an agreed date: the current
+    /// schedule stays in force until the Host approves the proposal, so a proposal is a conversation
+    /// about a date that already exists rather than a fresh ask, and holding it to 72 hours would make
+    /// "can we start an hour later tomorrow" impossible to even suggest.
+    /// </para>
+    /// </summary>
+    private const int SelfServiceCutoffHours = VisitMutationPolicy.MutationCutoffHours;
 
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -82,13 +94,12 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 "Đề xuất không có thay đổi nào so với nội dung đang hiệu lực.",
                 VisitFormV2ErrorCodes.AmendmentNoChanges);
 
-        // Schedule proposals must still be a valid slot (server-side rule parity).
-        if (proposal.PlannedEndAt <= proposal.PlannedStartAt
-            || (proposal.PlannedEndAt - proposal.PlannedStartAt).TotalMinutes < MinDurationMinutes
-            || proposal.PlannedStartAt < now.AddHours(SelfServiceCutoffHours))
-            throw new BusinessRuleException(
-                $"Lịch đề xuất không hợp lệ (tối thiểu {MinDurationMinutes} phút và cách hiện tại ít nhất {SelfServiceCutoffHours} giờ).",
-                VisitRequestErrorCodes.InvalidVisitTime);
+        // Schedule proposals must be a real, future slot — and nothing more. The 72-hour registration
+        // floor does NOT apply here (§39/§40): the campus's current schedule remains the official one
+        // until the Host approves, so a proposal is a request to move an agreed date rather than a new
+        // date filed for approval. Refusing anything under 72 hours would have made the commonest
+        // post-approval conversation — "could we shift it to tomorrow morning" — unsubmittable.
+        EnsureProposedSlotValid(proposal.PlannedStartAt, proposal.PlannedEndAt, now);
 
         var amendmentNo = (await _db.VisitInstanceAmendments
             .Where(a => a.VisitInstanceId == instance.VisitInstanceId)
@@ -161,7 +172,8 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
     // ── Approve ──────────────────────────────────────────────────────────────────
 
     public async Task<VisitAmendmentDecisionResponse> ApproveAsync(
-        VisitInstanceAmendment amendment, ulong actorId, string? note, DateTime now, CancellationToken ct)
+        VisitInstanceAmendment amendment, ulong actorId, string? note, DateTime now, CancellationToken ct,
+        bool selfApproval = false)
     {
         EnsurePending(amendment, now);
 
@@ -182,9 +194,24 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // Approving is itself a mutation of a live campus, so it answers to the same window: a proposal
         // that is still pending when the campus is hours from starting must NOT be written in behind
         // everyone's back — by then the campus has printed its list and briefed its Host.
+        //
+        // The relation asserted here is HOST. The handler has already proved the actor IS the campus's
+        // current host (or is the requester side self-approving on a campus they host); passing the
+        // relation the policy expects keeps the two halves reading the same rule rather than each
+        // carrying its own copy of "who decides".
         VisitMutationGuard.EnsureAllowed(
             VisitMutationAction.ApproveAmendment, request.Status, instance, now,
-            VisitViewerRelations.CampusLeader, VisitFormV2ErrorCodes.AmendmentNotEditable);
+            VisitViewerRelations.Host, VisitFormV2ErrorCodes.AmendmentNotEditable);
+
+        // A schedule proposal that has aged past its own start time cannot become the campus's schedule
+        // — approving it would file a visit in the past. Checked against the PROPOSED values, so a
+        // content-only amendment is unaffected.
+        var proposedStart = FindProposedDate(amendment, VisitFieldClassifier.PlannedStartAt);
+        if (proposedStart is not null)
+            EnsureProposedSlotValid(
+                proposedStart.Value,
+                FindProposedDate(amendment, VisitFieldClassifier.PlannedEndAt) ?? instance.PlannedEndAt,
+                now);
 
         // ── 1. The CURRENT active state is already snapshotted: revision history holds exactly one row per
         //       form_revision (unique key) written by whichever edit produced it (CREATE/SAFE_EDIT/RESUBMIT/
@@ -270,10 +297,14 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         request.UpdatedAt = now;
         request.UpdatedBy = actorId;
 
+        // A self-approved amendment is a real amendment with a real decision — it just had no waiting to
+        // do, because the person proposing it is the person who decides it. It keeps its own audit
+        // action so the timeline can say so plainly instead of showing a proposal that was approved
+        // within the same second by its own author and leaving the reader to guess why.
         var audit = new AuditLog
         {
             ActorUserId = actorId,
-            Action = "VISIT_AMENDMENT_APPROVED",
+            Action = selfApproval ? "VISIT_AMENDMENT_SELF_APPROVED" : "VISIT_AMENDMENT_APPROVED",
             EntityType = "VisitInstanceAmendment",
             EntityId = amendment.AmendmentId,
             VisitRequestId = request.VisitRequestId,
@@ -308,7 +339,9 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         return new VisitAmendmentDecisionResponse(
             amendment.AmendmentId, instance.VisitInstanceId, amendment.Status,
             detail.FormRevision, detail.ApprovalRevision,
-            "Đề xuất thay đổi đã được duyệt và áp dụng cho cơ sở này.");
+            selfApproval
+                ? "Đã cập nhật thông tin cho cơ sở này."
+                : "Đề xuất thay đổi đã được duyệt và áp dụng cho cơ sở này.");
     }
 
     // ── Reject / withdraw / expire ───────────────────────────────────────────────
@@ -380,6 +413,23 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A proposed slot must be usable: end after start, at least half an hour, and still ahead of us.
+    /// Checked both when the proposal is filed and again when it is approved — a proposal that sat in
+    /// the queue until its own start time had passed must not be written in as the campus's schedule.
+    /// </summary>
+    private static void EnsureProposedSlotValid(DateTime start, DateTime end, DateTime now)
+    {
+        if (end <= start || (end - start).TotalMinutes < MinDurationMinutes)
+            throw new BusinessRuleException(
+                $"Lịch đề xuất không hợp lệ (thời gian kết thúc phải sau thời gian bắt đầu, tối thiểu {MinDurationMinutes} phút).",
+                VisitRequestErrorCodes.InvalidVisitTime);
+        if (start <= now)
+            throw new BusinessRuleException(
+                "Lịch đề xuất phải ở thời điểm trong tương lai.",
+                VisitRequestErrorCodes.InvalidVisitTime);
+    }
 
     private static void EnsurePending(VisitInstanceAmendment amendment, DateTime now)
     {
@@ -458,6 +508,13 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.SupportMembers, current.ExternalSupportMembers, p.ExternalSupportMembers);
 
         return rows;
+    }
+
+    /// <summary>The proposed value of a date field, or null when this amendment does not touch it.</summary>
+    private static DateTime? FindProposedDate(VisitInstanceAmendment amendment, string path)
+    {
+        var row = amendment.Changes.FirstOrDefault(c => c.FieldPath == path);
+        return row?.NewValueJson is null ? null : JsonSerializer.Deserialize<DateTime>(row.NewValueJson, Json);
     }
 
     private static T? FindMemberProposal<T>(VisitInstanceAmendment amendment, string path) where T : class

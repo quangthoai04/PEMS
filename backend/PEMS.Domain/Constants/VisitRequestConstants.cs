@@ -129,6 +129,28 @@ public static class VisitRequestErrorCodes
     public const string VisitRequestNotResubmittable = "VISIT_REQUEST_NOT_RESUBMITTABLE";
     // Resubmit must keep the exact same campus set (change campuses ⇒ create a new request).
     public const string ResubmitCampusListChanged = "RESUBMIT_CAMPUS_LIST_CHANGED";
+
+    /// <summary>
+    /// An edit tried to add, drop or swap a campus. The campus set is chosen once, at create, and is
+    /// fixed from the moment the request exists — for EVERY lifecycle, including the one where nothing
+    /// has been decided yet.
+    ///
+    /// <para>
+    /// The old whole-request pending edit allowed it while all campuses were still waiting, which made
+    /// the campus set look negotiable and produced requests whose identity (its scope, its fingerprint,
+    /// the invitations already sent for a campus about to be removed) changed underneath everyone
+    /// holding a link to it. Wanting another campus is a new request; wanting to drop one is a
+    /// cancellation of that campus, which is its own workflow with its own notifications.
+    /// </para>
+    /// </summary>
+    public const string CampusSetImmutable = "VISIT_REQUEST_CAMPUS_SET_IMMUTABLE";
+
+    /// <summary>
+    /// A per-campus pending edit named a campus that is not (or is no longer) waiting for its decision.
+    /// Distinct from <see cref="VisitRequestNotEditable"/>, which is the whole-request verdict: this one
+    /// is about ONE campus, so the client can keep the other cards' actions on screen.
+    /// </summary>
+    public const string PendingCampusNotEditable = "PENDING_CAMPUS_NOT_EDITABLE";
     // Visitor cancel/edit blocked because a campus starts within 24 hours.
     public const string VisitCancelWindowExpired = "VISIT_CANCEL_WINDOW_EXPIRED";
     // Cancel blocked because a campus already started (DURING_VISIT / AFTER_VISIT / CLOSED).

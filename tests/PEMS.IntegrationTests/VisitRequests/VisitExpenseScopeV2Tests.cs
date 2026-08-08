@@ -130,8 +130,11 @@ public sealed class VisitExpenseScopeV2Tests
         using var db = NewContext();
         var actor = new FakeUser(leaderId, RoleCodes.Staff, UserSubRoles.Leader, campusId);
         await new ApproveCampusInstanceCommandHandler(
-                db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), new SilentNotifications(),
-                new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()), new MySqlUserMutationLockService(db))
+                db, actor, new FixedClock(), 
+                new CampusApprovalExecutor(
+                    db, new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db), new SilentNotifications(),
+                    new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
+                    NullLogger<CampusApprovalExecutor>.Instance))
             .Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null), CancellationToken.None);
     }
 

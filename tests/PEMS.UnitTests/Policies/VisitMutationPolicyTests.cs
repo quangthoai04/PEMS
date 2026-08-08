@@ -183,39 +183,167 @@ public class VisitMutationPolicyTests
     }
 
     /// <summary>
-    /// Deciding a proposal is campus governance: the Staff Leader who owns the campus approves or
-    /// rejects it. Both directions are asserted because the interesting exclusion is the HOST — the
-    /// proposals that matter most are the ones that alter the Host's own visit, so a Host who could
-    /// approve them would be reviewing themself. The requester is excluded for the obvious reason.
+    /// Deciding a proposal belongs to the campus's CURRENT Host — the person running the visit, who
+    /// holds the room and the schedule and is already talking to the guest. All three directions are
+    /// asserted because the interesting exclusion is now the campus STAFF LEADER: they approved the
+    /// campus and named its Host, and from that point the day-to-day content is the Host's to decide.
     /// </summary>
     [Fact]
-    public void ApproveAmendment_RequiresTheCampusLeader()
+    public void ApproveAmendment_RequiresTheCurrentHost()
     {
-        var asLeader = Evaluate(
-            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.CampusLeader);
-        Assert.True(asLeader.Allowed);
+        var asHost = Evaluate(
+            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.Host);
+        Assert.True(asHost.Allowed);
 
         var asRequester = Evaluate(
             VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.Requester);
         Assert.False(asRequester.Allowed);
         Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, asRequester.ErrorCode);
 
-        var asHost = Evaluate(
-            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.Host);
-        Assert.False(asHost.Allowed);
-        Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, asHost.ErrorCode);
+        var asLeader = Evaluate(
+            VisitMutationAction.ApproveAmendment, Start.AddDays(-2), relation: VisitViewerRelations.CampusLeader);
+        Assert.False(asLeader.Allowed);
+        Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, asLeader.ErrorCode);
     }
 
     [Fact]
     public void ApproveAmendment_IsAlsoSubjectToTheDeadline()
     {
         // A proposal still pending hours before the visit must not be written in behind everyone's
-        // back — by then the campus has printed its list and briefed its Host.
+        // back — by then the campus has printed its list and briefed its team.
         var decision = Evaluate(
             VisitMutationAction.ApproveAmendment, Start.AddHours(-2),
-            relation: VisitViewerRelations.CampusLeader);
+            relation: VisitViewerRelations.Host);
         Assert.False(decision.Allowed);
         Assert.Equal(VisitMutationErrorCodes.CutoffReached, decision.ErrorCode);
+    }
+
+    // ── Per-campus pending edit (§17): the door a MIXED request needs ──
+
+    /// <summary>
+    /// The case the whole action exists for. With HN already ASSIGNED the request aggregate reads
+    /// PARTIALLY_APPROVED, and the whole-request edit is refused on HN — but HCM has not been answered
+    /// by anyone, and it must stay correctable. The policy therefore asks about the CAMPUS, never about
+    /// the aggregate.
+    /// </summary>
+    [Theory]
+    [InlineData(VisitRequestStatuses.PendingApproval)]
+    [InlineData(VisitRequestStatuses.PartiallyApproved)]
+    public void EditPendingCampus_IsOpenOnAWaitingCampus_WhateverTheRequestAggregateSays(string requestStatus)
+    {
+        var decision = Evaluate(
+            VisitMutationAction.EditPendingCampus, Start.AddDays(-2),
+            instanceStatus: VisitInstanceStatuses.WaitingRequestApproval,
+            requestStatus: requestStatus);
+        Assert.True(decision.Allowed);
+    }
+
+    [Theory]
+    [InlineData(VisitInstanceStatuses.Assigned)]
+    [InlineData(VisitInstanceStatuses.BeforeVisit)]
+    [InlineData(VisitInstanceStatuses.Rejected)]
+    [InlineData(VisitInstanceStatuses.DuringVisit)]
+    [InlineData(VisitInstanceStatuses.Closed)]
+    public void EditPendingCampus_IsRefusedOnceTheCampusHasMovedOn(string instanceStatus)
+    {
+        // Each of those states has its own workflow — safe edit / amendment, resubmit, or nothing at
+        // all. Accepting them here would be a second, quieter way to rewrite a decided campus.
+        var decision = Evaluate(
+            VisitMutationAction.EditPendingCampus, Start.AddDays(-2),
+            instanceStatus: instanceStatus, requestStatus: VisitRequestStatuses.PartiallyApproved);
+        Assert.False(decision.Allowed);
+        Assert.Equal(VisitMutationErrorCodes.LifecycleNotAllowed, decision.ErrorCode);
+    }
+
+    /// <summary>
+    /// Both sides of the campus reach it: the requester side because it is their request, and the
+    /// campus's Staff Leader because fixing a schedule before approving is how a request gets accepted
+    /// rather than refused. Nobody else — a HO reader, a sibling campus's leader — gets in.
+    /// </summary>
+    [Theory]
+    [InlineData(VisitViewerRelations.Requester, true)]
+    [InlineData(VisitViewerRelations.CampusLeader, true)]
+    [InlineData(VisitViewerRelations.Host, false)]
+    [InlineData(VisitViewerRelations.Other, false)]
+    public void EditPendingCampus_AdmitsTheRequesterSideAndTheCampusLeader(string relation, bool allowed)
+    {
+        var decision = Evaluate(
+            VisitMutationAction.EditPendingCampus, Start.AddDays(-2),
+            instanceStatus: VisitInstanceStatuses.WaitingRequestApproval,
+            requestStatus: VisitRequestStatuses.PendingApproval,
+            relation: relation);
+        Assert.Equal(allowed, decision.Allowed);
+        if (!allowed)
+            Assert.Equal(VisitMutationErrorCodes.RelationNotAllowed, decision.ErrorCode);
+    }
+
+    // ── The 72-hour registration floor, and who may pass it (§29–§31) ──
+
+    [Fact]
+    public void AScheduleAtOrBeyondSeventyTwoHours_IsAllowedForEveryone()
+    {
+        var now = new DateTime(2026, 8, 1, 9, 0, 0);
+        var exactly = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            now.AddHours(72), now, actorMayOverride: false, overrideConfirmed: false);
+        Assert.True(exactly.Allowed);
+        Assert.False(exactly.ConfirmationRequired);
+    }
+
+    [Fact]
+    public void AScheduleInsideTheFloor_IsRefusedForTheRequesterSide()
+    {
+        // No confirmation is offered, because there is nothing they could confirm: the answer is no,
+        // and a "continue anyway" would promise something the backend will not honour.
+        var now = new DateTime(2026, 8, 1, 9, 0, 0);
+        var decision = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            now.AddHours(71), now, actorMayOverride: false, overrideConfirmed: false);
+        Assert.False(decision.Allowed);
+        Assert.False(decision.ConfirmationRequired);
+        Assert.Equal(now.AddHours(72), decision.EarliestAllowedStart);
+    }
+
+    [Fact]
+    public void AScheduleInsideTheFloor_AsksTheCampusLeaderToConfirm_ThenAllowsIt()
+    {
+        var now = new DateTime(2026, 8, 1, 9, 0, 0);
+
+        var unconfirmed = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            now.AddHours(71), now, actorMayOverride: true, overrideConfirmed: false);
+        Assert.False(unconfirmed.Allowed);
+        Assert.True(unconfirmed.ConfirmationRequired);
+
+        var confirmed = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            now.AddHours(71), now, actorMayOverride: true, overrideConfirmed: true);
+        Assert.True(confirmed.Allowed);
+        Assert.False(confirmed.ConfirmationRequired);
+    }
+
+    /// <summary>
+    /// The flag alone grants nothing. Whether the actor MAY override is decided by the handler from
+    /// their relation to the campus; a caller who simply sets the flag is refused exactly as if they
+    /// had not, and is not even offered the confirmation.
+    /// </summary>
+    [Fact]
+    public void TheOverrideFlagAloneDoesNothingForSomebodyWhoMayNotOverride()
+    {
+        var now = new DateTime(2026, 8, 1, 9, 0, 0);
+        var decision = VisitMutationPolicy.EvaluateScheduleLeadTime(
+            now.AddHours(1), now, actorMayOverride: false, overrideConfirmed: true);
+        Assert.False(decision.Allowed);
+        Assert.False(decision.ConfirmationRequired);
+    }
+
+    /// <summary>
+    /// The two numbers answer different questions and must not be collapsed into one: 6 hours is how
+    /// late an action may be taken on an existing schedule, 72 is how soon a schedule may be SET.
+    /// </summary>
+    [Fact]
+    public void TheCutoffAndTheRegistrationFloor_AreDifferentNumbers()
+    {
+        Assert.Equal(6, VisitMutationPolicy.RequiredLeadHours);
+        Assert.Equal(VisitMutationPolicy.RequiredLeadHours, VisitMutationPolicy.MutationCutoffHours);
+        Assert.Equal(72, VisitMutationPolicy.MinScheduleLeadHours);
+        Assert.NotEqual(VisitMutationPolicy.MutationCutoffHours, VisitMutationPolicy.MinScheduleLeadHours);
     }
 
     [Theory]
@@ -234,9 +362,12 @@ public class VisitMutationPolicyTests
     {
         foreach (var action in Enum.GetValues<VisitMutationAction>())
         {
-            var relation = action is VisitMutationAction.ApproveAmendment or VisitMutationAction.TransferHost
-                ? VisitViewerRelations.CampusLeader
-                : VisitViewerRelations.Requester;
+            var relation = action switch
+            {
+                VisitMutationAction.ApproveAmendment => VisitViewerRelations.Host,
+                VisitMutationAction.TransferHost => VisitViewerRelations.CampusLeader,
+                _ => VisitViewerRelations.Requester,
+            };
             var decision = Evaluate(
                 action, Start.AddDays(-2), VisitInstanceStatuses.Assigned,
                 VisitRequestStatuses.Cancelled, relation);

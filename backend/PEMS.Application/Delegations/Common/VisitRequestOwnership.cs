@@ -38,6 +38,27 @@ public static class VisitRequestOwnership
         => userId is not null && instance.OperationalContactUserId == userId;
 
     /// <summary>
+    /// The person actually running THIS campus. After approval the Host is the campus's owner: they
+    /// decide amendments to it, and the authority travels with the role — a handover moves it to the
+    /// new Host the moment it completes, and a pending proposal is then decided by whoever holds the
+    /// role at DECISION time, not by whoever held it when the proposal was filed.
+    /// </summary>
+    public static bool IsCurrentHost(VisitRequestCampus instance, ulong? userId)
+        => userId is not null && instance.CurrentHostUserId == userId;
+
+    /// <summary>
+    /// Staff Leader OF THIS CAMPUS — the approval authority before a decision, and the person who hands
+    /// the Host role over after one. Campus scoping is part of the relation, not a separate check: a
+    /// leader of a different campus is a stranger to this one, whatever their role name says.
+    /// </summary>
+    public static bool IsCampusLeader(
+        PEMS.Application.Common.Interfaces.ICurrentUserService currentUser, ulong campusId)
+        => currentUser.UserId.HasValue
+           && currentUser.RoleCode == RoleCodes.Staff
+           && currentUser.SubRole == UserSubRoles.Leader
+           && currentUser.PrimaryCampusId == campusId;
+
+    /// <summary>
     /// True when the user is the confirmed operational contact of at least one campus of the
     /// request. Use for "may this person see the request at all"; never to decide an action on a
     /// specific campus — that must ask <see cref="IsOperationalContact"/> for that campus.

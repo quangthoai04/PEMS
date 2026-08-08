@@ -200,57 +200,63 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
         });
     }
 
+    /// <summary>
+    /// The campus set is chosen at create and is fixed from the moment the request exists — including
+    /// while every campus is still waiting, which is the case that used to be the exception.
+    ///
+    /// <para>
+    /// Adding used to work, and that is what makes this worth asserting rather than assuming: a request
+    /// whose scope, fingerprint and set of invited contacts could change under an edit is a request
+    /// whose identity is not stable for anyone already holding a link to it. Wanting another campus is
+    /// a new request.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task Add_campus_creates_routed_instance_with_baseline_revision_and_scope_multi()
+    public async Task Adding_a_campus_is_refused_even_while_every_campus_is_still_pending()
     {
         await RunAsync(async (db, create, edit) =>
         {
             var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
             Assert.Equal(VisitScopes.SingleCampus, r.VisitScope);
+            var instanceCountBefore = r.CampusInstances.Count;
 
-            var result = await edit.ApplyPendingEditAsync(r, Edit(r,
-                Keep(InstanceOf(r, "HN"), Campus("HN")),
-                Add(Campus("HCM"))), Registrant, Now, default);
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyPendingEditAsync(r, Edit(r,
+                    Keep(InstanceOf(r, "HN"), Campus("HN")),
+                    Add(Campus("HCM"))), Registrant, Now, default));
 
-            Assert.Equal(VisitScopes.MultiCampus, result.VisitScope);
-            var hcm = InstanceOf(r, "HCM");
-            // A campus added by a pending edit enters the same way one added at submit does: its contact
-            // is not the registrant, so it starts by waiting for that person to confirm, holds the whole
-            // request behind the gate, and carries no contact account yet.
-            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, hcm.Status);
-            Assert.Null(hcm.OperationalContactUserId);
-            Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, r.Status);
-            Assert.NotNull(hcm.CoordinatorUserId); // routed to the campus Staff Leader
-            Assert.NotNull(hcm.FormDetail);
-            Assert.NotEmpty(hcm.GuestMemberLinks); // independent members created + linked
-            Assert.True(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
-                h.VisitInstanceId == hcm.VisitInstanceId && h.SourceType == "CREATE"));
-
-            // Member independence: the added campus's member ids differ from HN's.
-            var hnIds = InstanceOf(r, "HN").GuestMemberLinks.Select(l => l.GuestMemberId).ToHashSet();
-            Assert.DoesNotContain(hcm.GuestMemberLinks, l => hnIds.Contains(l.GuestMemberId));
+            Assert.Equal(VisitRequestErrorCodes.CampusSetImmutable, ex.ErrorCode);
+            // Refused during validation, so nothing was half-applied.
+            Assert.Equal(instanceCountBefore, r.CampusInstances.Count);
+            Assert.Equal(VisitScopes.SingleCampus, r.VisitScope);
+            Assert.Equal(0, r.RowVersion);
         });
     }
 
+    /// <summary>
+    /// Dropping a campus by leaving it out of the payload is the other half of the same rule. It is not
+    /// an edit at all — a campus that should not happen is a cancellation, which has its own workflow,
+    /// its own audit and its own notifications to the people already invited to it.
+    /// </summary>
     [Fact]
-    public async Task Remove_campus_deletes_instance_and_orphan_members_and_recomputes_scope()
+    public async Task Omitting_a_campus_from_the_payload_is_refused_rather_than_deleting_it()
     {
         await RunAsync(async (db, create, edit) =>
         {
             var r = await create.CreateV2Async(CreateForm(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
-            var hcm = InstanceOf(r, "HCM");
-            var hcmInstanceId = hcm.VisitInstanceId;
-            var hcmMemberIds = hcm.GuestMemberLinks.Select(l => l.GuestMemberId).ToList();
+            var hcmInstanceId = InstanceOf(r, "HCM").VisitInstanceId;
+            var hcmMemberIds = InstanceOf(r, "HCM").GuestMemberLinks.Select(l => l.GuestMemberId).ToList();
 
-            var result = await edit.ApplyPendingEditAsync(r, Edit(r,
-                Keep(InstanceOf(r, "HN"), Campus("HN"))), Registrant, Now, default);
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyPendingEditAsync(r, Edit(r,
+                    Keep(InstanceOf(r, "HN"), Campus("HN"))), Registrant, Now, default));
 
-            Assert.Equal(VisitScopes.SingleCampus, result.VisitScope);
-            Assert.False(await db.VisitRequestCampuses.AnyAsync(c => c.VisitInstanceId == hcmInstanceId));
-            foreach (var memberId in hcmMemberIds) // orphan member rows cleaned up
-                Assert.False(await db.VisitGuestMembers.AnyAsync(m => m.GuestMemberId == memberId));
-            // Sibling untouched.
-            Assert.NotEmpty(InstanceOf(r, "HN").GuestMemberLinks);
+            Assert.Equal(VisitRequestErrorCodes.CampusSetImmutable, ex.ErrorCode);
+            // The campus and its people are still there.
+            Assert.Contains(r.CampusInstances, c => c.VisitInstanceId == hcmInstanceId);
+            foreach (var memberId in hcmMemberIds)
+                Assert.True(await db.VisitGuestMembers.AnyAsync(m => m.GuestMemberId == memberId));
+            Assert.Equal(VisitScopes.MultiCampus, r.VisitScope);
         });
     }
 
@@ -502,8 +508,13 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
         });
     }
 
+    /// <summary>
+    /// A decided campus closes the WHOLE-request edit, because that edit rewrites content across every
+    /// campus at once. The campus still waiting is not stranded by it — that is what the per-campus
+    /// pending edit is for (see <c>UpdatePendingVisitInstanceV2ServiceTests</c>).
+    /// </summary>
     [Fact]
-    public async Task Approved_instance_blocks_edit_and_removal()
+    public async Task Approved_instance_blocks_the_whole_request_edit()
     {
         await RunAsync(async (db, create, edit) =>
         {
@@ -513,40 +524,11 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             // In-memory only (no flush → no DB trigger involved): the service must gate on the tracked status.
             hcm.Status = VisitInstanceStatuses.BeforeVisit; // approved = host assigned
 
-            // Editing the approved instance is blocked.
-            var ex1 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyPendingEditAsync(r, Edit(r,
                     Keep(hn, Campus("HN")),
                     Keep(hcm, Campus("HCM", delegation: "Đoàn sửa"))), Registrant, Now, default));
-            Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex1.ErrorCode);
-
-            // Removing the approved instance is blocked too.
-            var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, Campus("HN"))), Registrant, Now, default));
-            Assert.Equal(VisitRequestErrorCodes.InstanceNotRemovable, ex2.ErrorCode);
-        });
-    }
-
-    [Fact]
-    public async Task Removal_with_downstream_data_is_blocked()
-    {
-        await RunAsync(async (db, create, edit) =>
-        {
-            var r = await create.CreateV2Async(CreateForm(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
-            var hcm = InstanceOf(r, "HCM");
-            db.VisitAgendas.Add(new VisitAgenda
-            {
-                VisitInstanceId = hcm.VisitInstanceId,
-                Title = "Chuẩn bị sớm",
-                StartTime = hcm.PlannedStartAt,
-                SequenceOrder = 1,
-                CreatedAt = Now,
-            });
-            await db.SaveChangesAsync();
-
-            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
-                edit.ApplyPendingEditAsync(r, Edit(r, Keep(InstanceOf(r, "HN"), Campus("HN"))), Registrant, Now, default));
-            Assert.Equal(VisitRequestErrorCodes.InstanceNotRemovable, ex.ErrorCode);
+            Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex.ErrorCode);
         });
     }
 
@@ -557,12 +539,40 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
         {
             var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
             var hn = InstanceOf(r, "HN");
-            // Same instance id, different campus code → must be remove + add, never in-place.
+            // Same instance id, different campus code — an add and a remove wearing one payload.
             var moved = Keep(hn, Campus("HCM"));
 
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyPendingEditAsync(r, Edit(r, moved), Registrant, Now, default));
             Assert.Equal(VisitRequestErrorCodes.InstanceEditInvalid, ex.ErrorCode);
+        });
+    }
+
+    /// <summary>
+    /// Time passing must not freeze a request. The 72-hour registration floor governs a schedule being
+    /// FILED, so an edit that leaves the dates exactly as they were is not held to it — otherwise a
+    /// guest correcting a typo two days before their visit would be told their own unchanged date is
+    /// invalid, and the campus would receive the delegation with the mistake still in it.
+    /// </summary>
+    [Fact]
+    public async Task Content_only_edit_inside_the_registration_floor_is_still_allowed()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+
+            // The date arrives: the campus now starts in 24 hours, well inside the 72-hour floor.
+            var near = Now.AddHours(24);
+            hn.PlannedStartAt = near;
+            hn.PlannedEndAt = near.AddHours(2);
+
+            var sameSchedule = Campus("HN", delegation: "Đoàn HN (sửa chính tả)")
+                with { PlannedStartAt = near, PlannedEndAt = near.AddHours(2) };
+            await edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, sameSchedule)), Registrant, Now, default);
+
+            Assert.Equal("Đoàn HN (sửa chính tả)", InstanceOf(r, "HN").FormDetail!.DelegationName);
+            Assert.Equal(near, InstanceOf(r, "HN").PlannedStartAt);
         });
     }
 }

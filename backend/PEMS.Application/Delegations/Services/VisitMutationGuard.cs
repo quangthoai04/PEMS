@@ -76,19 +76,17 @@ public static class VisitMutationGuard
         DateTime now,
         string viewerRelation,
         string lifecycleErrorCode,
-        IReadOnlyDictionary<ulong, string>? campusNames = null,
-        bool skipCutoff = false)
+        IReadOnlyDictionary<ulong, string>? campusNames = null)
     {
         var decision = VisitMutationPolicy.Evaluate(new VisitMutationContext(
             action, requestStatus, instance.Status, instance.PlannedStartAt, now, viewerRelation));
 
-        // `skipCutoff` exists for ONE case: withdrawing media consent. A visitor who no longer wants to
-        // be photographed must be able to say so late — that is the whole point of the privacy-urgent
-        // class, and the rule predates this policy (see the PRIVACY_URGENT branch in
-        // VisitSafeEditService). It waives the DEADLINE only; the lifecycle test above still refuses a
-        // campus that is under way or finished, so this can never reopen a closed visit.
-        if (decision.Allowed
-            || (skipCutoff && decision.ErrorCode == VisitMutationErrorCodes.CutoffReached))
+        // There is no deadline waiver here, for any field. A `skipCutoff` flag used to let a
+        // media-consent withdrawal through after the cutoff on privacy grounds, which made "until when
+        // may I change this" depend on WHICH field the payload happened to carry — and let a change be
+        // written into a campus whose Host had already briefed their team. Withdrawing consent late is
+        // a conversation with the Host now, not a silent write.
+        if (decision.Allowed)
             return;
 
         var campusName = campusNames is not null && campusNames.TryGetValue(instance.CampusId, out var n)

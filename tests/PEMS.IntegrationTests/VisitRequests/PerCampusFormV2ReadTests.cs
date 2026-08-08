@@ -801,8 +801,20 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// A pending proposal splits three ways: the owner may withdraw it, the campus's current HOST decides
+    /// it, and the campus's Staff Leader does not.
+    ///
+    /// <para>
+    /// This test previously asserted the opposite of its last two lines — the leader decided and the host
+    /// was never asked. Authority moved to the Host with the post-approval amendment rules (§9/§10/§15):
+    /// after approval the Host holds the campus, and routing every adjustment back through a leader who
+    /// handed it over days earlier is what the change removed. The name says "host to decide" now because
+    /// that is the rule; the owner half is unchanged.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task Pending_amendment_moves_owner_to_withdraw_and_leader_to_decide()
+    public async Task Pending_amendment_moves_owner_to_withdraw_and_host_to_decide()
     {
         RequireDb();
         using var db = NewContext();
@@ -817,10 +829,19 @@ public sealed class PerCampusFormV2ReadTests
         Assert.DoesNotContain(VisitFormActions.SubmitAmendment, ownerCampus.AllowedActions);  // one pending only
         Assert.DoesNotContain(VisitFormActions.ApproveAmendment, ownerCampus.AllowedActions); // owner never decides
 
+        // The campus's current Host decides it — approve and reject travel together.
+        var hostCampus = (await Resolver(db, Host(IcStaffC1, Campus1)).ResolveAsync(req.VisitRequestId, CancellationToken.None))
+            .CampusVisits.Single();
+        Assert.Contains(VisitFormActions.ApproveAmendment, hostCampus.AllowedActions);
+        Assert.Contains(VisitFormActions.RejectAmendment, hostCampus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.WithdrawAmendment, hostCampus.AllowedActions);
+
+        // And the campus's Staff Leader does NOT, even though they approved the campus in the first
+        // place. There is no fallback: if the Host is the wrong person the leader transfers the role.
         var leaderCampus = (await Resolver(db, StaffLeader(SlCampus1, Campus1)).ResolveAsync(req.VisitRequestId, CancellationToken.None))
             .CampusVisits.Single();
-        Assert.Contains(VisitFormActions.ApproveAmendment, leaderCampus.AllowedActions);
-        Assert.Contains(VisitFormActions.RejectAmendment, leaderCampus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.ApproveAmendment, leaderCampus.AllowedActions);
+        Assert.DoesNotContain(VisitFormActions.RejectAmendment, leaderCampus.AllowedActions);
         Assert.DoesNotContain(VisitFormActions.WithdrawAmendment, leaderCampus.AllowedActions);
         await tx.RollbackAsync();
     }

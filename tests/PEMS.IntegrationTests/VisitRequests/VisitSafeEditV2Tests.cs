@@ -365,8 +365,25 @@ public sealed class VisitSafeEditV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    /// <summary>
+    /// The cutoff applies to EVERY safe edit, with no per-field exception.
+    ///
+    /// <para>
+    /// A media-consent withdrawal used to be waved through it on privacy grounds. Two things were wrong
+    /// with that. The answer to "until when may I change this" depended on which field the payload
+    /// happened to carry, which nothing in the UI could explain; and a campus hours from starting had
+    /// already printed its list and briefed its Host, so the change landed after the only people who
+    /// could act on it had stopped looking. Withdrawing consent late is a conversation with the Host
+    /// now — the campus can honour it in the room, which a database write at that point cannot.
+    /// </para>
+    /// <para>
+    /// The PRIVACY_URGENT classification itself is untouched: it still drives the URGENT notification
+    /// while the window is open (asserted in the target-only test above). It just no longer moves a
+    /// deadline.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task Cutoff_blocks_normal_safe_edit_but_media_withdrawal_applies_with_urgent_notify()
+    public async Task Cutoff_blocks_every_safe_edit_including_a_media_withdrawal()
     {
         RequireDb();
         ulong requestId = 0;
@@ -395,10 +412,7 @@ public sealed class VisitSafeEditV2Tests
                 Assert.Equal(VisitMutationPolicy.RequiredLeadHours, ex.RequiredLeadHours);
             }
 
-            // A general note ("Ghi chú gửi FPTU") is NOT privacy-urgent, so it does not slip past the
-            // cutoff by travelling with a withdrawal. The exemption used to cover the note as well,
-            // because back then the note existed to explain the withdrawal; the field that replaced
-            // it is the guest's ordinary remark about the campus and is held to the ordinary deadline.
+            // A withdrawal travelling WITH a note is refused, exactly like the note alone.
             using (var db = NewContext())
             {
                 var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
@@ -410,30 +424,26 @@ public sealed class VisitSafeEditV2Tests
                 Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
             }
 
-            // Privacy-urgent media WITHDRAWAL still applies past the cutoff, with an URGENT
-            // notification. Someone who no longer wants to be photographed must be able to say so
-            // late — that is what the privacy-urgent class is for. The DEADLINE is waived; the
-            // lifecycle gate above is not, so this can never reopen a finished visit.
+            // And a withdrawal ON ITS OWN — the case that used to be exempt — is refused too.
             var notifications = new RecordingNotifications();
             using (var db = NewContext())
             {
-                var res = await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
-                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
-                    {
-                        new(instance, instV[instance], null, null, "DECLINED", null),
-                    })), CancellationToken.None);
-                Assert.Contains(res.AppliedChanges,
-                    c => c.FieldPath == VisitFieldClassifier.MediaConsentStatus
-                         && c.ChangeClass == AmendmentChangeClasses.PrivacyUrgent);
+                var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
+                    Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance], null, null, "DECLINED", null),
+                        })), CancellationToken.None));
+                Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
             }
             using (var db = NewContext())
             {
+                // Nothing was written, and nobody was told about a change that did not happen.
                 var detail = await db.VisitInstanceFormDetails.AsNoTracking()
                     .SingleAsync(d => d.VisitInstanceId == instance);
-                Assert.Equal("DECLINED", detail.MediaConsentStatus);
+                Assert.NotEqual("DECLINED", detail.MediaConsentStatus);
             }
-            Assert.NotEmpty(notifications.Sent);
-            Assert.All(notifications.Sent, n => Assert.Equal(NotificationPriority.URGENT, n.Priority));
+            Assert.Empty(notifications.Sent);
         }
         finally { await CleanupAsync(requestId); }
     }

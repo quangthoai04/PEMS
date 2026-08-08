@@ -313,29 +313,46 @@ public sealed class VisitFormReadService : IVisitFormReadService
             var requesterSideHere = isRegistrant || isContactHere;
             var instanceCapabilities = new List<VisitActionCapabilityDto>();
 
+            var pendingAmendmentReason = hasPendingAmendment
+                ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
+                : null;
+
             if (requesterSideHere)
             {
+                // Editing a campus that is still WAITING is the per-campus door, and it is open on a
+                // MIXED request where the whole-request edit is not: it asks only about THIS campus.
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.EditPendingCampus, VisitFormActions.EditPendingCampus,
+                    c, VisitViewerRelations.Requester, name, instanceScope: true));
                 instanceCapabilities.Add(Decide(
                     VisitMutationAction.SubmitSafeEdit, VisitFormActions.SubmitSafeEdit,
                     c, VisitViewerRelations.Requester, name, instanceScope: true));
                 instanceCapabilities.Add(Decide(
                     VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
                     c, VisitViewerRelations.Requester, name, instanceScope: true,
-                    overrideReason: hasPendingAmendment
-                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
-                        : null));
+                    overrideReason: pendingAmendmentReason));
             }
             if (isHostHere)
             {
+                // Deciding a proposal about this campus belongs to whoever is running it. The Host holds
+                // the room, the schedule and the conversation with the guest, so they are the person who
+                // can actually say whether a change is workable — and the person the requester is
+                // already talking to. It used to be the campus Staff Leader, which routed every small
+                // adjustment back through somebody who had handed the campus over days earlier.
                 instanceCapabilities.Add(Decide(
-                    VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
+                    VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
                     c, VisitViewerRelations.Host, name, instanceScope: true,
-                    overrideReason: hasPendingAmendment
-                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
-                        : null));
+                    overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
             }
             if (isLeaderHere)
             {
+                // Before the decision, the campus's leader edits it like the requester side does — that
+                // is how a schedule gets fixed instead of the whole request being refused — and they
+                // alone may file one inside the 72-hour floor (after confirming).
+                instanceCapabilities.Add(Decide(
+                    VisitMutationAction.EditPendingCampus, VisitFormActions.EditPendingCampus,
+                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true));
+
                 // Transferring the Host presupposes there IS one — before approval the Host arrives with
                 // the approval decision, which is a different action on a different screen.
                 instanceCapabilities.Add(Decide(
@@ -344,21 +361,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     overrideReason: c.CurrentHostUserId is null
                         ? "Cơ sở này chưa có Host để chuyển giao."
                         : null));
-
-                instanceCapabilities.Add(Decide(
-                    VisitMutationAction.SubmitAmendment, VisitFormActions.SubmitAmendment,
-                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
-                    overrideReason: hasPendingAmendment
-                        ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
-                        : null));
-
-                // Deciding a proposal belongs to the leader who owns this campus, not to the Host who
-                // runs the visit: the Host is usually the one whose visit the change alters, so letting
-                // them approve it would remove the review the proposal exists for.
-                instanceCapabilities.Add(Decide(
-                    VisitMutationAction.ApproveAmendment, VisitFormActions.ApproveAmendment,
-                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true,
-                    overrideReason: hasPendingAmendment ? null : "Cơ sở này không có đề xuất nào chờ duyệt."));
             }
 
             // The flat list stays the ENABLED subset, so it can never contradict the verdicts above.
@@ -366,7 +368,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
             // Reject travels with approve (one decision, two outcomes); withdraw is the requester's own
             // way out of a proposal and stays open regardless of the cutoff — cancelling a request for a
             // change is never something to keep alive against the requester's wishes.
-            if (hasPendingAmendment && isLeaderHere
+            if (hasPendingAmendment && isHostHere
                 && instanceActions.Contains(VisitFormActions.ApproveAmendment))
                 instanceActions.Add(VisitFormActions.RejectAmendment);
             if (hasPendingAmendment && requesterSideHere)
@@ -431,6 +433,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 ActiveAmendment = activeAmendmentByInstance.TryGetValue(c.VisitInstanceId, out var am) ? am : null,
                 AllowedActions = instanceActions,
                 Capabilities = instanceCapabilities,
+                // Requester side AND current Host of the same campus: there is nobody else to wait for,
+                // so a submitted change is decided in the same call. The label changes; the amendment,
+                // its validation and its history do not.
+                AmendmentSelfApproves = requesterSideHere && isHostHere,
+                CanOverrideScheduleLeadTime = isLeaderHere,
             });
         }
 

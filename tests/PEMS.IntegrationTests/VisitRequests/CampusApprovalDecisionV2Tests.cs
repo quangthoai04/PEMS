@@ -118,9 +118,11 @@ public sealed class CampusApprovalDecisionV2Tests
 
     private static ApproveCampusInstanceCommandHandler ApproveHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
-        => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
-            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
-            new MySqlUserMutationLockService(db));
+        => new(db, actor, new FixedClock(),
+            new CampusApprovalExecutor(
+                db, new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db), notifications,
+                new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
+                NullLogger<CampusApprovalExecutor>.Instance));
 
     private static RejectCampusInstanceCommandHandler RejectHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications,

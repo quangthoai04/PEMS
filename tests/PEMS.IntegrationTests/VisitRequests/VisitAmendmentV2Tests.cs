@@ -348,8 +348,14 @@ public sealed class VisitAmendmentV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    /// <summary>
+    /// Deciding a proposal belongs to the campus's CURRENT HOST, and the seed's Host happens to be the
+    /// Staff Leader who self-hosted — a real and common shape. The negative cases below are therefore
+    /// chosen to be people who are NOT that Host: the leader of the sibling campus (a Staff Leader, on
+    /// the same request, and still refused), an HO reader, and the requester.
+    /// </summary>
     [Fact]
-    public async Task Approve_by_current_campus_leader_applies_target_only_and_never_resets_approval()
+    public async Task Approve_by_current_host_applies_target_only_and_never_resets_approval()
     {
         RequireDb();
         ulong requestId = 0;
@@ -361,38 +367,43 @@ public sealed class VisitAmendmentV2Tests
                 b.DelegationName = "Đoàn Amend (đã duyệt đổi)";
                 b.Visitors = new List<VisitorDto> { new("Guest B", "JP", "Manager", "OrgJP") }; // member replace
             });
-            ulong amendmentId; ulong leaderA;
+            ulong amendmentId; ulong hostA; ulong leaderB; ulong campusA; ulong campusB;
             using (var db = NewContext())
             {
                 var dto = await Submit(db, Registrant).Handle(
                     new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
                 amendmentId = dto.AmendmentId;
-                leaderA = await db.VisitRequestCampuses.AsNoTracking()
-                    .Where(c => c.VisitInstanceId == instanceA).Select(c => c.CoordinatorUserId!.Value).SingleAsync();
+                var rowA = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instanceA)
+                    .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+                hostA = rowA.CurrentHostUserId!.Value;
+                campusA = rowA.CampusId;
+                var rowB = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instanceB)
+                    .Select(c => new { c.CoordinatorUserId, c.CampusId }).SingleAsync();
+                leaderB = rowB.CoordinatorUserId!.Value;
+                campusB = rowB.CampusId;
             }
 
-            // Wrong scope: another campus's leader / HO / the requester → forbidden.
+            // Everyone who is NOT this campus's current Host is refused — including a Staff Leader on
+            // the very same request, which is the change: the role no longer carries the decision.
             using (var db = NewContext())
             {
-                var campusB = await db.VisitRequestCampuses.AsNoTracking()
-                    .Where(c => c.VisitInstanceId == instanceB).Select(c => c.CampusId).SingleAsync();
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
-                    Decide(db, new FakeUser(leaderA, RoleCodes.Staff, UserSubRoles.Leader, campusB)).Handle(
+                    Decide(db, new FakeUser(leaderB, RoleCodes.Staff, UserSubRoles.Leader, campusB)).Handle(
                         new ApproveVisitAmendmentCommand(instanceA, amendmentId, null), CancellationToken.None));
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
-                    Decide(db, new FakeUser(leaderA, RoleCodes.Ho)).Handle(
+                    Decide(db, new FakeUser(leaderB, RoleCodes.Ho)).Handle(
                         new ApproveVisitAmendmentCommand(instanceA, amendmentId, null), CancellationToken.None));
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     Decide(db, new FakeUser(Registrant)).Handle(
                         new ApproveVisitAmendmentCommand(instanceA, amendmentId, null), CancellationToken.None));
             }
 
-            // Correct scope: the CURRENT Staff Leader of campus A.
+            // The CURRENT Host of campus A — here, the leader who self-hosted it.
             using (var db = NewContext())
             {
-                var campusA = await db.VisitRequestCampuses.AsNoTracking()
-                    .Where(c => c.VisitInstanceId == instanceA).Select(c => c.CampusId).SingleAsync();
-                var res = await Decide(db, new FakeUser(leaderA, RoleCodes.Staff, UserSubRoles.Leader, campusA)).Handle(
+                var res = await Decide(db, new FakeUser(hostA, RoleCodes.Staff, UserSubRoles.Leader, campusA)).Handle(
                     new ApproveVisitAmendmentCommand(instanceA, amendmentId, "OK"), CancellationToken.None);
                 Assert.Equal(AmendmentStatuses.Approved, res.Status);
                 Assert.Equal(2u, res.NewFormRevision);
@@ -657,8 +668,10 @@ public sealed class VisitAmendmentV2Tests
                     Submit(db, Registrant).Handle(
                         new SubmitVisitAmendmentCommand(pendingRequest, instance, proposal), CancellationToken.None));
                 Assert.Equal(VisitFormV2ErrorCodes.AmendmentNotEditable, ex.ErrorCode);
-                // ...and it points at the right alternative rather than just saying no.
-                Assert.Contains("sửa đơn đang chờ duyệt", ex.Message);
+                // ...and it points at the right alternative rather than just saying no. That alternative
+                // is now the PER-CAMPUS pending edit: the whole-request one is refused the moment any
+                // sibling has been decided, so naming it would have sent people to a closed door.
+                Assert.Contains("sửa thông tin cơ sở đang chờ duyệt", ex.Message);
             }
 
             // A decided instance starting inside the shared lead time → self-service window closed.
@@ -683,5 +696,190 @@ public sealed class VisitAmendmentV2Tests
             await CleanupAsync(pendingRequest);
             await CleanupAsync(lateRequest);
         }
+    }
+
+    /// <summary>
+    /// Requester side AND current Host are the same person (§13/§14). There is nobody to wait for, so
+    /// the proposal is decided in the same call — but it is still a proposal: the row exists, its change
+    /// rows exist, requested_by and decided_by both name the actor, and the audit says self-approved.
+    /// Making that person file, reload and approve their own proposal would be ceremony that teaches
+    /// people to click through a review which reviews nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_requester_who_is_also_the_host_has_the_change_applied_in_the_same_call()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, var instanceB) = await CreateApprovedAsync(Now.AddDays(20));
+
+            // Make campus A's HOST its operational contact, rather than making the registrant the Host.
+            // The relation under test is the same — requester side AND current Host in one person — but
+            // only this direction is a state the database will hold: current_host_user_id must be IC
+            // Staff of the campus (or the approving leader), and the registrant here is a VISITOR, so
+            // handing them the campus is refused by trg_visit_campuses_assignment_validate_bu. An
+            // operational contact only has to be an ACTIVE user, so the Host can take that side.
+            ulong selfActor;
+            using (var db = NewContext())
+            {
+                var a = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instanceA);
+                selfActor = a.CurrentHostUserId!.Value;
+                a.OperationalContactUserId = selfActor;
+                a.OperationalContactConfirmedAt = Now;
+                a.OperationalContactConfirmationSource = OperationalContactSources.Transfer;
+                a.RowVersion += 1;
+                await db.SaveChangesAsync();
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.Purpose = "Tự cập nhật");
+            ulong amendmentId;
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, selfActor).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                amendmentId = dto.AmendmentId;
+                Assert.Equal(AmendmentStatuses.Approved, dto.Status);
+            }
+
+            using (var db = NewContext())
+            {
+                // Applied — no pending proposal is left waiting for the person who wrote it.
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceA);
+                Assert.Equal("Tự cập nhật", detail.Purpose);
+                Assert.Equal(2u, detail.FormRevision);
+                Assert.False(await db.VisitInstanceAmendments.AsNoTracking()
+                    .AnyAsync(a => a.VisitInstanceId == instanceA && a.Status == AmendmentStatuses.PendingApproval));
+
+                // History is kept in full (§13.1) — this is not a silent write to the active form.
+                var amendment = await db.VisitInstanceAmendments.AsNoTracking()
+                    .SingleAsync(a => a.AmendmentId == amendmentId);
+                Assert.Equal(AmendmentStatuses.Approved, amendment.Status);
+                Assert.Equal(selfActor, amendment.RequestedBy);
+                Assert.Equal(selfActor, amendment.DecidedBy);
+                Assert.True(await db.AuditLogs.AsNoTracking()
+                    .AnyAsync(a => a.EntityId == amendmentId && a.Action == "VISIT_AMENDMENT_SELF_APPROVED"));
+
+                // Sibling untouched, as ever.
+                var b = await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceB);
+                Assert.Equal(1u, b.FormRevision);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Authority travels with the Host role, and is read at DECISION time (§11/§69). A proposal filed
+    /// while A held the campus is decided by whoever holds it when the decision is taken — so after a
+    /// handover, A is refused and B decides. A is still a Staff Leader throughout, which is the point:
+    /// the role never carried this.
+    /// </summary>
+    [Fact]
+    public async Task A_host_handover_moves_the_decision_to_the_new_host_mid_proposal()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+            ulong oldHost, campusA;
+            using (var db = NewContext())
+            {
+                var row = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instanceA)
+                    .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+                oldHost = row.CurrentHostUserId!.Value;
+                campusA = row.CampusId;
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.Purpose = "Đổi sau bàn giao");
+            ulong amendmentId;
+            using (var db = NewContext())
+                amendmentId = (await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None)).AmendmentId;
+
+            // The handover: campus A (HN) goes to an IC Staff of THAT campus. Not "any other valid user"
+            // — trg_visit_campuses_assignment_validate_bu requires current_host_user_id to be IC Staff of
+            // the campus or the approving Staff Leader, so a visitor account cannot hold a campus.
+            const ulong newHost = 101;   // STAFF/STAFF, IC, campus 1 (HN) in the canonical seed
+            using (var db = NewContext())
+            {
+                var a = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instanceA);
+                a.CurrentHostUserId = newHost;
+                a.HostAssignedBy = oldHost;
+                a.HostAssignedAt = Now;
+                a.RowVersion += 1;
+                await db.SaveChangesAsync();
+            }
+
+            using (var db = NewContext())
+            {
+                // The previous Host — still the campus's Staff Leader — no longer decides.
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Decide(db, new FakeUser(oldHost, RoleCodes.Staff, UserSubRoles.Leader, campusA)).Handle(
+                        new ApproveVisitAmendmentCommand(instanceA, amendmentId, null), CancellationToken.None));
+            }
+            using (var db = NewContext())
+            {
+                var res = await Decide(db, new FakeUser(newHost)).Handle(
+                    new ApproveVisitAmendmentCommand(instanceA, amendmentId, "OK"), CancellationToken.None);
+                Assert.Equal(AmendmentStatuses.Approved, res.Status);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// After approval the 72-hour registration floor does NOT apply to a proposed schedule (§39/§40).
+    /// The campus's current date stays official until the Host approves, so a proposal is a request to
+    /// move an agreed date rather than a new date filed for approval — and "could we shift it to
+    /// tomorrow morning" has to be submittable at all.
+    /// </summary>
+    [Fact]
+    public async Task A_proposed_schedule_after_approval_only_has_to_be_in_the_future()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+
+            // The REFUSAL goes first, because a campus holds at most one proposal at a time: filing the
+            // valid one first makes the second submit fail on "there is already a pending proposal",
+            // which would pass an Assert.Throws while proving nothing about the schedule rule.
+            //
+            // A start that has already passed is the one thing a proposal cannot carry.
+            var past = Now.AddHours(-1);
+            var stale = await BaselineProposalAsync(instanceA, b =>
+            {
+                b.PlannedStartAt = past;
+                b.PlannedEndAt = past.AddHours(2);
+            });
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
+                    Submit(db, Registrant).Handle(
+                        new SubmitVisitAmendmentCommand(requestId, instanceA, stale), CancellationToken.None));
+                Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            }
+
+            // Well inside the 72-hour floor, and comfortably in the future: accepted, because the floor
+            // is a REGISTRATION rule and this campus is already approved.
+            var soon = Now.AddHours(30);
+            var proposal = await BaselineProposalAsync(instanceA, b =>
+            {
+                b.PlannedStartAt = soon;
+                b.PlannedEndAt = soon.AddHours(2);
+            });
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.PlannedStartAt);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
     }
 }

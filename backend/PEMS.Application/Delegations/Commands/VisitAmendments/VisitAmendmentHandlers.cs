@@ -10,6 +10,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Policies;
 
 using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
@@ -45,30 +46,32 @@ internal static class AmendmentGuards
     }
 
     /// <summary>
-    /// Decision side: ONLY the current Staff Leader of the campus the amendment targets.
+    /// Decision side: ONLY the campus's CURRENT Host.
     ///
     /// <para>
-    /// Approving a proposal is campus governance — the same leader who decided this campus decides
-    /// changes to it. Deliberately NOT the Host: the Host runs the visit the leader approved, and the
-    /// proposals that matter most are the ones that alter the Host's own visit, so letting them wave
-    /// those through would remove the review the proposal exists for.
+    /// Once a Staff Leader approves a campus they name its Host in the same action, and from that
+    /// moment the Host owns it: they run the visit, they hold the schedule and the room, and they are
+    /// the person the requester is already talking to. So they decide proposals about it. It used to be
+    /// the Staff Leader, which meant every "could we start an hour later" had to go back to somebody who
+    /// had handed the campus over days earlier and had no way to know whether the change was workable.
     /// </para>
     /// <para>
-    /// Campus scoping is part of the check, not a separate one: a leader of another campus fails on
-    /// <paramref name="campusId"/> and gets the same refusal as a stranger, which is what keeps a
-    /// leader from deciding a sibling campus of the same request.
+    /// "Current" is the whole point of the check. Authority travels with the role, so a handover moves
+    /// it immediately: a proposal filed while A was Host is decided by B if B holds the campus when the
+    /// decision is taken, and A — still a Staff member, possibly still the Staff Leader — is refused.
+    /// </para>
+    /// <para>
+    /// A campus in this state with no Host at all is an invariant violation, not a case to fall back
+    /// from: approve assigns a Host or it does not commit. Letting the Staff Leader decide "because
+    /// nobody else can" would legitimise the corrupt row instead of surfacing it.
     /// </para>
     /// </summary>
-    public static void EnsureCurrentCampusLeader(ICurrentUserService currentUser, ulong campusId)
+    public static void EnsureCurrentHost(ulong? currentHostUserId, ulong actorId)
     {
-        var isLeaderHere = currentUser.UserId.HasValue
-            && currentUser.RoleCode == RoleCodes.Staff
-            && currentUser.SubRole == UserSubRoles.Leader
-            && currentUser.PrimaryCampusId == campusId;
-
-        if (!isLeaderHere)
+        if (currentHostUserId != actorId)
             throw new ForbiddenException(
-                "Chỉ Staff Leader phụ trách cơ sở này mới được quyết định đề xuất.");
+                "Chỉ Host đang phụ trách cơ sở này mới được quyết định đề xuất thay đổi.",
+                VisitMutationErrorCodes.NotCurrentHost);
     }
 
     public static VisitAmendmentDto ToDto(
@@ -127,49 +130,67 @@ public sealed class SubmitVisitAmendmentCommandHandler
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
         AmendmentGuards.EnsureRequesterSide(visit, instance, actorId);
 
+        // ── Self-approval (§13/§14). When the person proposing the change IS the campus's current Host,
+        //    there is nobody to wait for: the requester side and the decision side are the same person,
+        //    and making them file a proposal, reload, and approve their own proposal is ceremony that
+        //    teaches users to click through a review that reviews nothing.
+        //
+        //    It skips the WAIT, never a RULE. The amendment row is still created with its change rows,
+        //    still validated (cutoff, lifecycle, concurrency, base revision, schedule), and still
+        //    decided — requested_by and decided_by both name the actor, and the audit says
+        //    self-approved. So the campus's history reads the same whether or not the two roles happened
+        //    to be one person.
+        //
+        //    The test is the RELATION, not the role. It used to be `RoleCode == STAFF`, which approved
+        //    on behalf of any staff account that could reach the endpoint — including one that was
+        //    merely the registrant of the request and had no authority over the campus at all. ──
+        var selfApproves = VisitRequestOwnership.IsCurrentHost(instance, actorId);
+
         VisitInstanceAmendment amendment;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
             amendment = await _amendments.SubmitAsync(
                 visit, instance, request.Proposal, actorId, now, cancellationToken);
-            
-            if (_currentUser.RoleCode == RoleCodes.Staff)
-            {
-                await _amendments.ApproveAsync(amendment, actorId, "Tự động duyệt do người đề xuất là Staff.", now, cancellationToken);
-            }
+
+            if (selfApproves)
+                await _amendments.ApproveAsync(
+                    amendment, actorId, note: null, now, cancellationToken, selfApproval: true);
 
             await tx.CommitAsync(cancellationToken);
         }
 
-        // Post-commit: notify the CURRENT campus Staff Leader (decision) + the current Host (visibility).
-        try
+        // Post-commit: tell the person who has to DECIDE — the campus's current Host. The campus Staff
+        // Leader is no longer told: they are not the decision authority after approval, and an
+        // action-required notification to someone with no action is noise that trains people to ignore
+        // the channel. A self-approved amendment notifies nobody: "you have a proposal waiting for you"
+        // is not something to send to the person who just approved it.
+        if (!selfApproves)
         {
-            var recipients = await _db.Users.AsNoTracking()
-                .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader
-                            && u.Status == UserStatuses.Active && u.PrimaryCampusId == instance.CampusId)
-                .Select(u => u.UserId).ToListAsync(cancellationToken);
-            if (instance.CurrentHostUserId is { } host) recipients.Add(host);
-            var notifications = recipients.Distinct().Select(id =>
-                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                    RecipientUserId: id,
-                    Title: "Có đề xuất thay đổi nội dung chuyến thăm",
-                    Message: $"Đơn {visit.RequestCode}: khách đề xuất thay đổi nội dung tại cơ sở của bạn (chờ Staff Leader duyệt).",
-                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
-                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
-                    RelatedId: instance.VisitInstanceId,
-                    ActorUserId: actorId,
-                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
-                    IsActionRequired: true,
-                    VisitRequestId: visit.VisitRequestId,
-                    VisitInstanceId: instance.VisitInstanceId,
-                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}")).ToList();
-            if (notifications.Count > 0)
-                await _notificationService.CreateManyAsync(notifications, cancellationToken);
-        }
-        catch (System.Exception ex)
-        {
-            _logger.LogError(ex, "amendment submit notification failed for {AmendmentId}", amendment.AmendmentId);
+            try
+            {
+                if (instance.CurrentHostUserId is { } host)
+                    await _notificationService.CreateAsync(
+                        new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                            RecipientUserId: host,
+                            Title: "Có đề xuất thay đổi nội dung chuyến thăm",
+                            Message: $"Đơn {visit.RequestCode}: khách đề xuất thay đổi nội dung tại cơ sở bạn phụ trách. Vui lòng xem và quyết định.",
+                            NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.VisitRequestSubmitted,
+                            RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitInstance,
+                            RelatedId: instance.VisitInstanceId,
+                            ActorUserId: actorId,
+                            Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
+                            IsActionRequired: true,
+                            VisitRequestId: visit.VisitRequestId,
+                            VisitInstanceId: instance.VisitInstanceId,
+                            CampusId: instance.CampusId,
+                            ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                            ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"),
+                        cancellationToken);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "amendment submit notification failed for {AmendmentId}", amendment.AmendmentId);
+            }
         }
 
         var requesterName = await _db.Users.AsNoTracking()
@@ -269,15 +290,11 @@ public sealed class DecideVisitAmendmentCommandHandlers :
         ApproveVisitAmendmentCommand request, CancellationToken cancellationToken)
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
-        var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
-        try
-        {
-            AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
-        }
-        catch (ForbiddenException)
-        {
-            throw new ForbiddenException("Chỉ Staff Leader phụ trách cơ sở này mới được duyệt đề xuất.");
-        }
+        // Read the host INSIDE the request, then check it: "current" has to mean current at the moment
+        // of the decision, so a handover that completed while this proposal sat in the queue moves the
+        // authority before this call is answered, not after.
+        AmendmentGuards.EnsureCurrentHost(
+            await CurrentHostOfInstanceAsync(request.VisitInstanceId, cancellationToken), actorId);
 
         VisitAmendmentDecisionResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
@@ -294,9 +311,9 @@ public sealed class DecideVisitAmendmentCommandHandlers :
         RejectVisitAmendmentCommand request, CancellationToken cancellationToken)
     {
         var actorId = AmendmentGuards.EnsureAuthenticated(_writeFlag, _currentUser);
-        var campusId = await CampusOfInstanceAsync(request.VisitInstanceId, cancellationToken);
         // Reject is the other outcome of the same decision, so it answers to the same authority.
-        AmendmentGuards.EnsureCurrentCampusLeader(_currentUser, campusId);
+        AmendmentGuards.EnsureCurrentHost(
+            await CurrentHostOfInstanceAsync(request.VisitInstanceId, cancellationToken), actorId);
 
         VisitAmendmentDecisionResponse result;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
@@ -336,12 +353,20 @@ public sealed class DecideVisitAmendmentCommandHandlers :
         return result;
     }
 
-    private async Task<ulong> CampusOfInstanceAsync(ulong visitInstanceId, CancellationToken ct)
-        => await _db.VisitRequestCampuses.AsNoTracking()
-               .Where(c => c.VisitInstanceId == visitInstanceId)
-               .Select(c => (ulong?)c.CampusId)
-               .FirstOrDefaultAsync(ct)
-           ?? throw new NotFoundException("Lịch thăm tại cơ sở", visitInstanceId);
+    /// <summary>
+    /// The campus's current Host, or null when it has none. A missing campus 404s; a campus with no
+    /// host returns null and the caller refuses — that state is only reachable before approval, and a
+    /// campus with no decision has no amendment to decide either.
+    /// </summary>
+    private async Task<ulong?> CurrentHostOfInstanceAsync(ulong visitInstanceId, CancellationToken ct)
+    {
+        var row = await _db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == visitInstanceId)
+            .Select(c => new { c.CurrentHostUserId })
+            .FirstOrDefaultAsync(ct)
+            ?? throw new NotFoundException("Lịch thăm tại cơ sở", visitInstanceId);
+        return row.CurrentHostUserId;
+    }
 
     private async Task<VisitInstanceAmendment> LockOwnAsync(
         ulong amendmentId, ulong visitInstanceId, CancellationToken ct)

@@ -53,7 +53,17 @@ public sealed class GetVisitInstanceContributionQueryHandler
         var visit = instance.VisitRequest;
 
         // ── Contribution access gate (spec §5.3 / §10.3) ──
-        //   Host  OR  ACCEPTED/ASSIGNED participant  OR  Department with a real logistics relation.
+        //   Host  OR  ACCEPTED/ASSIGNED reception participant  OR  HO.
+        //
+        //   Taking part in the RECEPTION is what earns this page. A logistics assignment does not:
+        //   a department that supplies a room, an LED wall or a vehicle is responsible for that item,
+        //   not a member of the delegation's reception, so it has nothing to report here. The
+        //   assignments list and StaffTasksTab already say exactly that (CanOpenContribution is false
+        //   for a logistics row); this gate used to disagree, admitting anyone holding an ACCEPTED
+        //   logistics item via ContributionAccess.IsDepartmentContributorForLogistics. The button was
+        //   hidden while the endpoint stayed open, so the rule held only for users who did not know
+        //   the URL — which is no rule at all. A department user who IS invited to the reception still
+        //   gets in, through the participant check below, exactly like everyone else.
         bool isHost = instance.CurrentHostUserId == userId;
 
         var participant = await _db.VisitParticipants
@@ -65,20 +75,8 @@ public sealed class GetVisitInstanceContributionQueryHandler
             .FirstOrDefaultAsync(cancellationToken);
         bool isAcceptedParticipant = participant != null;
 
-        bool isDepartmentRelated = false;
-        if (!isHost && !isAcceptedParticipant && roleCode == RoleCodes.Department)
-        {
-            var logisticsItems = await _db.VisitLogisticsItems
-                .Where(l => l.VisitInstanceId == instance.VisitInstanceId)
-                .Select(l => new { l.AssignedToUserId, l.Status })
-                .ToListAsync(cancellationToken);
-            
-            isDepartmentRelated = logisticsItems.Any(l => 
-                PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForLogistics(userId, l.AssignedToUserId, l.Status));
-        }
-
         bool isHo = roleCode == RoleCodes.Ho;
-        if (!(isHost || isAcceptedParticipant || isDepartmentRelated || isHo))
+        if (!(isHost || isAcceptedParticipant || isHo))
             throw new ForbiddenException("Bạn không có quyền truy cập trang đóng góp kết quả chuyến thăm.");
 
         // Relation label (display/telemetry only — never an auth input).
@@ -89,7 +87,7 @@ public sealed class GetVisitInstanceContributionQueryHandler
                 ParticipantRoles.IcSupport => "IC_SUPPORT",
                 ParticipantRoles.DeptSupport => "DEPARTMENT_RELATED",
                 ParticipantRoles.Student => "STUDENT_RELATED",
-                _ => "DEPARTMENT_RELATED", // department-via-logistics relation
+                _ => "DEPARTMENT_RELATED", // any other participant role on the reception
             };
 
         bool isClosed = instance.Status == VisitInstanceStatus.Closed;

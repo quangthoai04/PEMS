@@ -248,6 +248,29 @@ public sealed class ResolvedCampusVisitDto
     /// instance's own status and start time.
     /// </summary>
     public List<VisitActionCapabilityDto> Capabilities { get; init; } = new();
+
+    /// <summary>
+    /// True when a change this caller submits for THIS campus will be approved in the same call, because
+    /// they are both the requester side and the campus's current Host.
+    ///
+    /// <para>
+    /// It exists so the UI can say "Cập nhật" instead of "Gửi đề xuất thay đổi" and skip a review step
+    /// that reviews nothing — not so the UI can apply anything itself. The backend still creates the
+    /// amendment, still validates it and still records the decision; this flag only changes a label.
+    /// The client must never infer it from role or status: the previous version of this behaviour lived
+    /// in the browser as "is the user a STAFF account", which was wrong for a staff registrant who was
+    /// not the Host of anything.
+    /// </para>
+    /// </summary>
+    public bool AmendmentSelfApproves { get; init; }
+
+    /// <summary>
+    /// True when this caller is the campus's Staff Leader, and so may (a) file a schedule inside the
+    /// 72-hour registration floor after confirming, and (b) approve the campus in the same call as an
+    /// edit. Lets the client warn EARLY and offer the right buttons; the backend re-decides both, so a
+    /// client that ignores this cannot obtain either.
+    /// </summary>
+    public bool CanOverrideScheduleLeadTime { get; init; }
 }
 
 public sealed class ResolvedMemberDto

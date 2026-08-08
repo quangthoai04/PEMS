@@ -65,6 +65,12 @@ public static class DependencyInjection
         // Central per-campus form content resolver — the one place campus scope and detail lookup live.
         services.AddScoped<PEMS.Application.Delegations.Services.VisitFormRead.IVisitFormReadService, PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>();
 
+        // Approve-a-campus-and-name-its-Host, in one implementation. Two commands reach it — the plain
+        // approval, and the Staff Leader's "Lưu và duyệt" that edits and approves in one transaction —
+        // and both must produce the same approved campus.
+        services.AddScoped<PEMS.Application.Delegations.Services.ICampusApprovalExecutor,
+            PEMS.Application.Delegations.Services.CampusApprovalExecutor>();
+
         // Student visit photo Drive-folder provisioning (VR-{request}/{campus} tree, one row per request).
         services.AddScoped<PEMS.Application.Delegations.VisitPhotos.IVisitPhotoFolderService,
             PEMS.Application.Delegations.VisitPhotos.VisitPhotoFolderService>();

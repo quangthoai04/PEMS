@@ -10,8 +10,9 @@ namespace PEMS.Application.Common.Interfaces;
 /// Applies a SAFE-EDIT patch (plan §16.6) inside the caller's transaction on a TRACKED request loaded
 /// with CampusInstances(+FormDetail) — the handler did flags/auth/editor-policy first; this service
 /// re-validates every data-facing rule: FOR-UPDATE row-version guard, per-instance versions, the SAFE
-/// allowlist via <c>VisitFieldClassifier</c> (fail closed), the 24h cutoff (privacy-urgent media
-/// withdrawal exempt), then applies target-only, bumps form/request revisions + row versions, recomputes
+/// allowlist via <c>VisitFieldClassifier</c> (fail closed), the shared mutation cutoff — with no
+/// per-field exception, a media withdrawal included — then applies target-only, bumps form/request
+/// revisions + row versions, recomputes
 /// the canonical scope, mixed-campus indicator and fingerprint — facts ABOUT the campus set; no
 /// request-level form projection is produced, campus content stays in each instance's detail — and
 /// writes field-level audit, all in one commit.
@@ -42,9 +43,14 @@ public interface IVisitAmendmentService
     /// <summary>Applies the locked PENDING amendment to the active detail/members/schedule (target-only),
     /// bumps form+approval revisions and row versions, recomputes the canonical projection and writes
     /// the revision snapshot + audit. Caller (handler) commits.</summary>
+    /// <param name="selfApproval">
+    /// True when the proposer IS the campus's current Host, so there was never anybody else to wait for.
+    /// It changes the audit action and the message, never a rule — every validation above still runs,
+    /// and the amendment row is written in full so the history shows what changed and who decided it.
+    /// </param>
     Task<VisitAmendmentDecisionResponse> ApproveAsync(
         VisitInstanceAmendment amendment, ulong actorId, string? note, DateTime now,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken, bool selfApproval = false);
 
     /// <summary>Marks the locked PENDING amendment REJECTED (reason required); active snapshot unchanged.</summary>
     Task<VisitAmendmentDecisionResponse> RejectAsync(

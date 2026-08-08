@@ -77,18 +77,19 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
                     VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
 
-            // LIFECYCLE for THIS campus only — a sibling that is under way says nothing about a campus
-            // still days out, and coupling them is what let one campus's timing freeze another's notes.
-            // The cutoff is checked further down, once the changes are known, because a privacy-urgent
-            // media withdrawal is exempt from the deadline (but never from the lifecycle).
+            // LIFECYCLE + CUTOFF for THIS campus only — a sibling that is under way says nothing about a
+            // campus still days out, and coupling them is what let one campus's timing freeze another's
+            // notes. Both halves are checked here, in one call: the cutoff used to be deferred until the
+            // changes were known so a privacy-urgent media withdrawal could skip it, and that exception
+            // is gone (§38) — every safe edit answers to the same six hours.
             //
-            // WAITING_REQUEST_APPROVAL is deliberately NOT accepted here any more: a still-pending
-            // campus belongs to pending-edit, which can change anything. Offering the narrow tool as
-            // well only made it unclear which one to reach for.
+            // WAITING_REQUEST_APPROVAL is deliberately NOT accepted here: a still-pending campus belongs
+            // to per-campus pending-edit, which can change anything. Offering the narrow tool as well
+            // only made it unclear which one to reach for.
             VisitMutationGuard.EnsureAllowed(
                 VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
                 VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitRequestNotEditable,
-                campusNames, skipCutoff: true);
+                campusNames);
 
             var detail = instance.FormDetail
                 ?? throw new ConflictException("Thiếu dữ liệu biểu mẫu theo cơ sở.",
@@ -148,27 +149,7 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     $"Trường '{c.FieldPath}' không thuộc nhóm sửa nhanh. Vui lòng gửi đề xuất thay đổi (amendment).",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
-        // ── 4a. Per-instance cutoff — a privacy-urgent media withdrawal stays exempt from the DEADLINE;
-        //        the lifecycle gate above already ran unconditionally.
-        //
-        //        The exemption is the withdrawal ALONE. It used to stretch to the media-consent note as
-        //        well, because that note existed to explain the withdrawal and refusing it would have
-        //        let the status through while silently dropping its reason. `notes` is not that field:
-        //        it is the guest's general remark to FPTU, unrelated to consent, so it earns no urgency
-        //        from a withdrawal filed alongside it and is held to the ordinary cutoff. ──
-        foreach (var instance in touchedInstances)
-        {
-            var instanceChanges = changes.Where(c => c.InstanceId == instance.VisitInstanceId).ToList();
-            var nonExempt = instanceChanges
-                .Where(c => c.Class != AmendmentChangeClasses.PrivacyUrgent).ToList();
-            if (nonExempt.Count == 0) continue;
-            VisitMutationGuard.EnsureAllowed(
-                VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
-                VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitCancelWindowExpired,
-                campusNames);
-        }
-
-        // ── 4b. Request-level scope. The registrant/contact block is SHARED by every campus, so it is
+        // ── 4. Request-level scope. The registrant/contact block is SHARED by every campus, so it is
         //        all-or-nothing: refused outright while any campus has passed the point of no return
         //        (its delegation is already on site reading that name), and the deadline comes from the
         //        earliest campus still ahead.

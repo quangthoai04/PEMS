@@ -16,7 +16,10 @@ public sealed record V2EditResult(string VisitScope, bool HasMixed, int RequestR
 /// copied up onto the request row. Recomputes scope / has_mixed / fingerprint — facts about the campus set,
 /// not content — and writes immutable revision history. Flows share the primitives:
 /// <list type="bullet">
-///   <item><see cref="ApplyPendingEditAsync"/> — a still-fully-pending request (campus set may change);</item>
+///   <item><see cref="ApplyPendingEditAsync"/> — a still-fully-pending request; the campus set is FIXED
+///         from create onwards, so this rewrites content and schedules and nothing else;</item>
+///   <item><see cref="ApplyInstancePendingEditAsync"/> — ONE still-pending campus of any request,
+///         including a mixed one whose siblings are already decided;</item>
 ///   <item><see cref="ApplyResubmitAsync"/> — a fully-REJECTED request: campus set fixed, instance ids KEPT
 ///         (no delete/recreate → history/FKs intact), old decisions snapshotted to audit then cleared,
 ///         resubmission_count++, instances reset to WAITING and re-routed to the CURRENT Staff Leaders.</item>
@@ -51,4 +54,36 @@ public interface IVisitRequestV2EditService
     Task<V2EditResult> ApplyInstanceResubmitAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, System.DateTime now, CancellationToken ct);
+
+    /// <summary>
+    /// Rewrites ONE campus that is still waiting for its decision, leaving every sibling untouched.
+    ///
+    /// <para>
+    /// <see cref="ApplyPendingEditAsync"/> cannot serve this: it is all-or-nothing, refused the moment
+    /// ANY campus has been decided, because it rewrites data the whole request shares. That left the
+    /// commonest multi-campus shape — one campus approved, one still waiting, one refused — with no way
+    /// to correct the campus that had not been answered yet. The refused one had
+    /// <see cref="ApplyInstanceResubmitAsync"/>, the approved one had safe-edit and amendments, and the
+    /// waiting one had nothing at all.
+    /// </para>
+    /// <para>
+    /// The campus stays WAITING_REQUEST_APPROVAL afterwards: editing is not deciding, and a Staff Leader
+    /// who fixes a schedule before approving still has to approve. The request aggregate is recomputed
+    /// from the campuses rather than named, so a request with an approved sibling stays
+    /// PARTIALLY_APPROVED.
+    /// </para>
+    /// </summary>
+    /// <param name="actorIsCampusLeader">
+    /// Whether the actor is the Staff Leader of THIS campus — resolved by the handler from the actor's
+    /// relation, never from the payload. It decides one thing: whether
+    /// <paramref name="overrideLeadTimeConfirmed"/> means anything at all.
+    /// </param>
+    /// <param name="overrideLeadTimeConfirmed">
+    /// The leader's explicit "yes, this schedule, with less than the required notice". Transient — it
+    /// travels with the request and is recorded as an audit event, never as a column.
+    /// </param>
+    Task<V2EditResult> ApplyInstancePendingEditAsync(
+        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        ulong actorId, System.DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
+        CancellationToken ct);
 }

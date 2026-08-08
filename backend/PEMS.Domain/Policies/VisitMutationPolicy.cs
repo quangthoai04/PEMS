@@ -11,13 +11,26 @@ public enum VisitMutationAction
 {
     /// <summary>Edit a fully-pending request in place (request-level, all campuses still waiting).</summary>
     EditPendingRequest,
+    /// <summary>
+    /// Edit ONE still-pending campus in place, leaving every sibling exactly as it was.
+    ///
+    /// <para>
+    /// The request-level <see cref="EditPendingRequest"/> is all-or-nothing: it exists only while EVERY
+    /// campus is still waiting. That left a pending campus of a MIXED request — one approved, one
+    /// waiting, one refused — with no way to be corrected at all, because the whole-request edit refused
+    /// on the approved sibling and safe-edit/amendment refused on "not decided yet". This action is that
+    /// missing door, and it targets exactly one campus so no sibling's status, host, decision or revision
+    /// can move with it.
+    /// </para>
+    /// </summary>
+    EditPendingCampus,
     /// <summary>Edit and re-send a fully-rejected request (request-level).</summary>
     ResubmitRejectedRequest,
     /// <summary>Apply-now correction to the safe field subset (request-level or instance-level).</summary>
     SubmitSafeEdit,
-    /// <summary>Propose a change to one decided campus, for its Staff Leader to approve.</summary>
+    /// <summary>Propose a change to one decided campus, for its current Host to approve.</summary>
     SubmitAmendment,
-    /// <summary>Approve a campus's pending amendment (campus Staff Leader).</summary>
+    /// <summary>Approve a campus's pending amendment (its CURRENT Host).</summary>
     ApproveAmendment,
     /// <summary>Hand one campus's Host role to a different eligible user (campus Staff Leader).</summary>
     TransferHost,
@@ -40,7 +53,29 @@ public static class VisitScheduleMessages
     public static string LeadTimeNotMet(DateTime earliestAllowedStart) =>
         $"Thời gian bắt đầu phải cách thời điểm hiện tại ít nhất {VisitMutationPolicy.MinScheduleLeadHours} giờ " +
         $"(sớm nhất là {earliestAllowedStart:HH:mm dd/MM/yyyy}).";
+
+    /// <summary>
+    /// The Staff Leader's version of the same fact. It does not say "invalid", because for this actor it
+    /// is not — it is a schedule they are entitled to accept and are being asked to mean deliberately.
+    /// </summary>
+    public static string LeadTimeOverrideRequired(DateTime earliestAllowedStart) =>
+        $"Lịch mới không đáp ứng thời gian đăng ký trước tối thiểu {VisitMutationPolicy.MinScheduleLeadHours} giờ " +
+        $"(sớm nhất là {earliestAllowedStart:HH:mm dd/MM/yyyy}). " +
+        "Với quyền Staff Leader của cơ sở này, bạn có thể xác nhận để tiếp tục với lịch đã chọn.";
 }
+
+/// <summary>
+/// The verdict on a PROPOSED start time, before approval. Three outcomes rather than two, because the
+/// Staff Leader of the campus is allowed to file a schedule inside the 72-hour registration floor and
+/// the middle outcome is what asks them to say so on purpose.
+/// </summary>
+/// <param name="ConfirmationRequired">
+/// True only for an actor who may override and has not confirmed. Never true for the requester side —
+/// for them an inside-the-floor schedule is simply refused, and offering a "continue anyway" would be
+/// offering something the backend will not honour.
+/// </param>
+public sealed record VisitScheduleLeadTimeDecision(
+    bool Allowed, bool ConfirmationRequired, DateTime EarliestAllowedStart);
 
 /// <summary>Who is asking, in business terms rather than role names.</summary>
 public static class VisitViewerRelations
@@ -64,6 +99,23 @@ public static class VisitMutationErrorCodes
     public const string LifecycleNotAllowed = "VISIT_MUTATION_LIFECYCLE_NOT_ALLOWED";
     /// <summary>This viewer is never allowed to perform this action.</summary>
     public const string RelationNotAllowed = "VISIT_MUTATION_RELATION_NOT_ALLOWED";
+
+    /// <summary>
+    /// The actor MAY file this schedule, but it is inside the 72-hour registration floor and they have
+    /// not said they mean it yet. Only ever returned to the Staff Leader of the campus being edited —
+    /// for anyone else a schedule inside the floor is a plain <c>INVALID_VISIT_TIME</c> refusal.
+    ///
+    /// <para>
+    /// It is a 409, not a validation error: nothing is wrong with the payload, the caller simply has to
+    /// re-send it with <c>overrideLeadTimeConfirmed</c>. The client shows the confirmation dialog on
+    /// THIS code and on no other, so a genuine refusal can never be turned into a dialog that offers to
+    /// proceed anyway.
+    /// </para>
+    /// </summary>
+    public const string LeadTimeOverrideConfirmationRequired = "LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED";
+
+    /// <summary>The actor is not the campus's CURRENT Host, and this action belongs to whoever is.</summary>
+    public const string NotCurrentHost = "NOT_CURRENT_HOST";
 }
 
 /// <summary>
@@ -110,8 +162,23 @@ public sealed record VisitMutationDecision(
 /// </summary>
 public static class VisitMutationPolicy
 {
-    /// <summary>Minimum lead time before a campus starts, shared by every self-service mutation.</summary>
+    /// <summary>
+    /// Minimum lead time before a campus starts, shared by every self-service mutation. Also known as
+    /// the MUTATION CUTOFF: it answers "is this action still open", never "may the visit be scheduled
+    /// here" — that is <see cref="MinScheduleLeadHours"/>, and the two must never be conflated.
+    ///
+    /// <para>
+    /// It applies uniformly. There is no per-field exception: a media-consent withdrawal used to be
+    /// allowed through it on privacy grounds, which meant one class of change had a different deadline
+    /// from every other and the answer to "until when may I edit this" depended on which field the user
+    /// happened to touch. Withdrawing consent late is now a conversation with the Host, not a silent
+    /// write into a campus that has already printed its list.
+    /// </para>
+    /// </summary>
     public const int RequiredLeadHours = 6;
+
+    /// <summary>The cutoff under the name the business rules use. Same number, same meaning.</summary>
+    public const int MutationCutoffHours = RequiredLeadHours;
 
     /// <summary>
     /// Minimum lead time a schedule may be SET TO. Distinct from <see cref="RequiredLeadHours"/> on
@@ -168,14 +235,25 @@ public static class VisitMutationPolicy
         // ── 1. Relation. Checked first so a Host never sees a reason that implies "come back earlier". ──
         var relationOk = context.Action switch
         {
-            // Deciding a proposal is campus governance, not day-to-day reception: the Staff Leader who
-            // owns this campus approves or rejects it, the same person who decided the campus in the
-            // first place. It is deliberately NOT the Host — the Host runs the visit the leader
-            // approved, and letting them wave through changes to their own visit removes the review.
+            // Once a campus has been approved it has an OWNER, and that owner is the Host the Staff
+            // Leader named in the same breath as the approval. Deciding a proposal about that campus is
+            // the Host's job from then on: they are the person who has to make the changed visit happen,
+            // who knows what the room and the schedule can still absorb, and who the requester is
+            // already talking to. It used to be the campus Staff Leader, which meant the person running
+            // the visit had to route every "can we move it an hour later" through someone who had handed
+            // the campus over days ago. The Leader keeps approval of the campus itself, and the handover
+            // of the Host role — not of the visit's day-to-day content.
             VisitMutationAction.ApproveAmendment
-                => context.ViewerRelation == VisitViewerRelations.CampusLeader,
+                => context.ViewerRelation == VisitViewerRelations.Host,
             VisitMutationAction.TransferHost
                 => context.ViewerRelation == VisitViewerRelations.CampusLeader,
+            // Editing a still-pending campus is the requester side's, and ALSO the Staff Leader's of
+            // that campus: they are the approval authority for it, and the ordinary way a schedule gets
+            // fixed before approval is the leader adjusting it with the guest rather than refusing the
+            // whole request. Which of the two is asking still matters further down — the 72-hour
+            // registration floor is overridable by the leader and by nobody else.
+            VisitMutationAction.EditPendingCampus
+                => context.ViewerRelation is VisitViewerRelations.Requester or VisitViewerRelations.CampusLeader,
             _ => context.ViewerRelation == VisitViewerRelations.Requester,
         };
         if (!relationOk)
@@ -192,6 +270,13 @@ public static class VisitMutationPolicy
             VisitMutationAction.EditPendingRequest =>
                 context.RequestStatus == VisitRequestStatuses.PendingApproval
                 && context.InstanceStatus == VisitInstanceStatuses.WaitingRequestApproval,
+
+            // Deliberately says NOTHING about the request status. A request whose siblings are already
+            // approved sits at PARTIALLY_APPROVED, and that aggregate is precisely what must not decide
+            // whether the campus still waiting for its own answer can be corrected. The only question is
+            // the target campus's own state.
+            VisitMutationAction.EditPendingCampus =>
+                context.InstanceStatus == VisitInstanceStatuses.WaitingRequestApproval,
 
             VisitMutationAction.ResubmitRejectedRequest =>
                 context.RequestStatus == VisitRequestStatuses.Rejected
@@ -230,19 +315,58 @@ public static class VisitMutationPolicy
         return new VisitMutationDecision(true, null, null, cutoffAt, RequiredLeadHours);
     }
 
+    /// <summary>
+    /// The 72-hour registration floor for a schedule being FILED for approval — create, pending edit
+    /// (request or campus) and resubmit all measure against this one, from the moment of the action.
+    ///
+    /// <para>
+    /// Only reached when the schedule actually CHANGES. Time passing must not turn a request that was
+    /// valid when it was filed into one that cannot be corrected: a guest fixing a typo three days
+    /// before their visit is not proposing a new date, and refusing them because the old date is now
+    /// inside the floor would leave the request frozen with the typo in it.
+    /// </para>
+    /// <para>
+    /// The Staff Leader of the target campus may pass it deliberately. They are the person the floor
+    /// protects — it exists so nobody is asked to approve a visit they have no time to prepare — so
+    /// their informed "yes" is the rule being satisfied, not bypassed. Anyone else gets a plain refusal,
+    /// including a Staff Leader of a DIFFERENT campus, and including a caller who simply sets the
+    /// confirmation flag by hand: <paramref name="actorMayOverride"/> is decided by the handler from the
+    /// actor's relation to THIS campus, never from the payload.
+    /// </para>
+    /// </summary>
+    public static VisitScheduleLeadTimeDecision EvaluateScheduleLeadTime(
+        DateTime proposedStart, DateTime now, bool actorMayOverride, bool overrideConfirmed)
+    {
+        var earliest = now.AddHours(MinScheduleLeadHours);
+        if (proposedStart >= earliest)
+            return new VisitScheduleLeadTimeDecision(true, false, earliest);
+        if (!actorMayOverride)
+            return new VisitScheduleLeadTimeDecision(false, false, earliest);
+        return overrideConfirmed
+            ? new VisitScheduleLeadTimeDecision(true, false, earliest)
+            : new VisitScheduleLeadTimeDecision(false, true, earliest);
+    }
+
     private static VisitMutationDecision Refused(DateTime cutoffAt, string reason) =>
         new(false, VisitMutationErrorCodes.LifecycleNotAllowed, reason, cutoffAt, RequiredLeadHours);
 
     private static string LifecycleReason(VisitMutationContext context) => context.InstanceStatus switch
     {
+        // The mixed request. Whole-request editing is refused because a campus has already been decided,
+        // and the reader needs to be told where the door actually is rather than only that this one is
+        // shut — the campus still waiting IS editable, one card at a time.
+        VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit
+            when context.Action == VisitMutationAction.EditPendingRequest =>
+            "Đơn đã có cơ sở được duyệt nên không thể sửa toàn đơn; hãy sửa riêng từng cơ sở đang chờ duyệt.",
         VisitInstanceStatuses.DuringVisit => "Chuyến thăm tại cơ sở này đang diễn ra nên không thể thay đổi.",
         VisitInstanceStatuses.AfterVisit or VisitInstanceStatuses.Closed =>
             "Chuyến thăm tại cơ sở này đã kết thúc nên không thể thay đổi.",
         VisitInstanceStatuses.Cancelled => "Cơ sở này đã bị hủy nên không thể thay đổi.",
         VisitInstanceStatuses.Rejected when context.Action != VisitMutationAction.ResubmitRejectedRequest =>
             "Cơ sở này đã bị từ chối; hãy dùng chức năng sửa và gửi lại đơn.",
-        VisitInstanceStatuses.WaitingRequestApproval when context.Action != VisitMutationAction.EditPendingRequest =>
-            "Cơ sở này chưa được duyệt; hãy dùng chức năng sửa đơn đang chờ duyệt.",
+        VisitInstanceStatuses.WaitingRequestApproval
+            when context.Action is not (VisitMutationAction.EditPendingRequest or VisitMutationAction.EditPendingCampus) =>
+            "Cơ sở này chưa được duyệt; hãy dùng chức năng sửa thông tin cơ sở đang chờ duyệt.",
         _ => "Trạng thái hiện tại không cho phép thực hiện thao tác này.",
     };
 }

@@ -175,8 +175,27 @@ public sealed class GetAssignmentsProgressListQueryTests : IClassFixture<PemsWeb
         Assert.False(item.CanOpenContribution);
     }
 
+    /// <summary>
+    /// An accepted logistics request makes the staff member RESPONSIBLE for it — but it does not make
+    /// them a contributor to the visit.
+    ///
+    /// <para>
+    /// This test used to assert the opposite of its last line. Commit <c>4450eb3e</c> derived the flag
+    /// from <c>ContributionAccess.IsDepartmentContributorForLogistics</c>, so an accepted request opened
+    /// "Đóng góp kết quả"; commit <c>8e8628fe</c> replaced that with a constant <c>false</c> and wrote the
+    /// reason into the projection: contribution is earned by accepting the INVITATION to help receive the
+    /// delegation, and a department fulfilling a room/LED/vehicle request has not thereby taken part in
+    /// the reception. The frontend documents the same rule where it renders the button
+    /// (<c>StaffTasksTab.tsx</c>). The rule changed; this assertion was left behind, which is why it has
+    /// been the suite's one red test since.
+    /// </para>
+    /// <para>
+    /// Everything else the test proved still holds and is still asserted: the staff member is the current
+    /// responsible party, and the Leader sees that without gaining the contribution entry point either.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task LogisticsItem_AssignedAndAcceptedByStaff_ShouldHaveStaffResponsible_AndCanContribute()
+    public async Task LogisticsItem_AssignedAndAcceptedByStaff_ShouldHaveStaffResponsible_ButNotContribute()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -205,14 +224,22 @@ public sealed class GetAssignmentsProgressListQueryTests : IClassFixture<PemsWeb
         Assert.Equal(_staffUserId, itemL!.CurrentResponsibleUserId);
         Assert.False(itemL.CanOpenContribution);
 
-        // 2. Staff views: Sees themselves responsible, CAN contribute
-        var staffHandler = new GetAssignmentsProgressListQueryHandler(db, 
+        // 2. Staff views: sees THEMSELVES responsible — the assignment landed on them and they accepted it.
+        var staffHandler = new GetAssignmentsProgressListQueryHandler(db,
             new FakeCurrentUser { UserId = _staffUserId, RoleCode = RoleCodes.Department, SubRole = UserSubRoles.Staff, PrimaryCampusId = _campusId, DepartmentId = _departmentId });
         var staffResult = await staffHandler.Handle(new GetAssignmentsProgressListQuery { ItemType = "REQUEST" }, CancellationToken.None);
         var itemS = staffResult.Items.FirstOrDefault(x => x.LogisticsItemId == li.LogisticsItemId);
         Assert.NotNull(itemS);
         Assert.Equal(_staffUserId, itemS!.CurrentResponsibleUserId);
-        Assert.True(itemS.CanOpenContribution);
+
+        // …but a logistics request is not a seat at the reception, so it opens no contribution — and the
+        // acceptance is what makes this worth asserting: ACCEPTED is the status the OLD rule turned into
+        // a contributor, so a revert to it would fail here rather than pass unnoticed.
+        Assert.Equal("ACCEPTED", li.Status);
+        Assert.False(itemS.CanOpenContribution);
+
+        // The responsibility itself is real, which is what separates "no contribution" from "no row".
+        Assert.True(itemS.CanSignBorrow);
     }
 
     [Fact]
