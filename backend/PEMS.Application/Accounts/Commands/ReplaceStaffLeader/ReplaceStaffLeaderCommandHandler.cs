@@ -48,8 +48,16 @@ public sealed class ReplaceStaffLeaderCommandHandler
     public async Task<ReplaceStaffLeaderResponse> Handle(
         ReplaceStaffLeaderCommand request, CancellationToken cancellationToken)
     {
-        // BR-RSL-01: only HO or ADMIN may replace a Staff Leader.
-        if (_currentUser.RoleCode != RoleCodes.Ho && _currentUser.RoleCode != RoleCodes.Admin)
+        // BR-RSL-01, narrowed by ADMIN_ACCOUNT_MANAGEMENT spec §15: replacing the campus IC head is
+        // personnel management and belongs to HO alone. ADMIN used to be allowed here; it now gets its
+        // own code so a direct API call is refused with a reason rather than a generic 403.
+        if (_currentUser.RoleCode == RoleCodes.Admin)
+            throw new AuthBusinessException(
+                AccountErrorCodes.AdminAccountEditNotAllowed,
+                "ADMIN chỉ được xem tài khoản và xử lý khóa bảo mật; việc thay thế Trưởng phòng IC thuộc về Head Office.",
+                403);
+
+        if (_currentUser.RoleCode != RoleCodes.Ho)
             throw new ForbiddenException("Bạn không có quyền thay thế Staff Leader.");
 
         var actorId = _currentUser.UserId;

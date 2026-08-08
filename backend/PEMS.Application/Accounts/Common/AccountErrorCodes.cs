@@ -106,6 +106,43 @@ public static class AccountErrorCodes
     /// </summary>
     public const string InvalidDepartmentHeadReplacement = "INVALID_DEPARTMENT_HEAD_REPLACEMENT";
 
+    // ── ADMIN = Global Read + Security Control (ADMIN_ACCOUNT_MANAGEMENT spec §31). ADMIN no longer
+    //    performs personnel/account business management; those belong to HO / Staff Leader. Each
+    //    refusal carries its own code so the client can tell WHICH boundary it hit. ──
+
+    /// <summary>ADMIN tried to create an account — personnel provisioning belongs to HO/SL. → 403.</summary>
+    public const string AdminAccountCreationNotAllowed = "ADMIN_ACCOUNT_CREATION_NOT_ALLOWED";
+
+    /// <summary>ADMIN tried to edit role / campus / department / identity of an account. → 403.</summary>
+    public const string AdminAccountEditNotAllowed = "ADMIN_ACCOUNT_EDIT_NOT_ALLOWED";
+
+    /// <summary>
+    /// ADMIN tried to move an account between the BUSINESS states (ACTIVE ↔ INACTIVE). That is
+    /// personnel management, not security control. → 422.
+    /// </summary>
+    public const string AdminBusinessStatusChangeNotAllowed = "ADMIN_BUSINESS_STATUS_CHANGE_NOT_ALLOWED";
+
+    /// <summary>Security lock requested from a state other than ACTIVE (spec §4). → 422.</summary>
+    public const string SecurityLockInvalidState = "SECURITY_LOCK_INVALID_STATE";
+
+    /// <summary>Security unlock requested for an account that is not LOCKED (spec §4). → 422.</summary>
+    public const string SecurityUnlockInvalidState = "SECURITY_UNLOCK_INVALID_STATE";
+
+    /// <summary>A security lock/unlock arrived without the mandatory reason (spec §17/§19). → 422.</summary>
+    public const string SecurityReasonRequired = "SECURITY_REASON_REQUIRED";
+
+    /// <summary>ADMIN tried to security-lock or unlock their own account (spec §20). → 403.</summary>
+    public const string AccountSecuritySelfActionForbidden = "ACCOUNT_SECURITY_SELF_ACTION_FORBIDDEN";
+
+    /// <summary>
+    /// A non-ADMIN caller (HO / Staff Leader) tried to lock or unlock a LOCKED account. LOCKED is a
+    /// SECURITY state owned by ADMIN, not a business status (spec §39). → 422.
+    /// </summary>
+    public const string SecurityStatusRequiresAdmin = "SECURITY_STATUS_REQUIRES_ADMIN";
+
+    /// <summary>The caller's role may not manage account status at all (fail-closed, spec §16.4). → 403.</summary>
+    public const string AccountStatusChangeForbidden = "ACCOUNT_STATUS_CHANGE_FORBIDDEN";
+
     // ── Related Visitor Accounts tab (Staff Leader) — see UC_StaffLeader_Related_Visitor_Accounts_Tab. ──
 
     /// <summary>Caller is not an active Staff Leader (STAFF/LEADER + campus) for this tab. → 403.</summary>

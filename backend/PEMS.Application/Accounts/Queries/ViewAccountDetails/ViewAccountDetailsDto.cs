@@ -13,6 +13,7 @@ public sealed class ViewAccountDetailsDto
     public string Email { get; init; } = default!;
     public string? Phone { get; init; }
     public Gender? Gender { get; init; }
+    public string? Nationality { get; init; }
 
     public string RoleCode { get; init; } = default!;
     public string RoleName { get; init; } = default!;
@@ -38,6 +39,21 @@ public sealed class ViewAccountDetailsDto
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
     public DateTime? LastLoginAt { get; init; }
+
+    /// <summary>
+    /// Which sign-in methods are linked (LOCAL_PASSWORD / GOOGLE_SSO / FEID). The provider TYPE only —
+    /// never the subject id, the stored tokens or the provider email's credential material. Read-only
+    /// context for the ADMIN security review (ADMIN_ACCOUNT_MANAGEMENT spec §8.3).
+    /// </summary>
+    public IReadOnlyList<string> Providers { get; init; } = Array.Empty<string>();
+
+    // FailedLoginCount / LockedUntil are deliberately NOT projected here (spec §8.4 offers them, it does
+    // not require them). Both columns are written by LoginViaCredentialsCommandHandler alone; Google SSO
+    // only reads LockedUntil to block a session and never touches either. With password sign-in retired
+    // in production they would be a permanently frozen 0 / null on the detail screen — and a counter
+    // stuck at 0 reads as "this account has not been attacked" rather than "nothing is counting". The
+    // columns stay on the User entity: the lockout still works for any password login that remains, and
+    // an ADMIN unlock still clears both (ManageAccountStatusCommandHandler, spec §21 items 22-23).
 
     /// <summary>
     /// True when an HO caller may edit this account's basic info (full name / email) — see

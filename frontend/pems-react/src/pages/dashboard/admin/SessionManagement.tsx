@@ -4,7 +4,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   KeyRound, Search, ChevronDown, ChevronLeft, ChevronRight,
   Loader2, RefreshCw, ShieldOff, UserX, X, Info,
@@ -56,8 +56,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 export function SessionManagement() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
-  const [keyword, setKeyword] = useState('');
+  // `?keyword=` lets another screen open this page already scoped to one account — the account
+  // detail drawer's "Xem phiên đăng nhập" sends the account's email. It seeds the VISIBLE search
+  // box rather than filtering behind its back: the operator can see why the list is short, widen it
+  // by clearing the box, and the URL stays shareable.
+  const [keyword, setKeyword] = useState(() => searchParams.get('keyword') ?? '');
   const [status, setStatus] = useState('');
   const [portal, setPortal] = useState('');
   const [page, setPage] = useState(1);
@@ -157,6 +162,7 @@ export function SessionManagement() {
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
+              aria-label="Tìm theo email hoặc họ tên"
               placeholder="Tìm theo email hoặc họ tên..."
               className="w-full pl-11 pr-4 py-3 rounded-2xl border-none focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all text-sm shadow-inner bg-white/10 text-white placeholder:text-blue-200"
             />
