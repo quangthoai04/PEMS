@@ -36,6 +36,7 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
                 u.Email,
                 u.Phone,
                 u.Gender,
+                u.Nationality,
                 RoleCode = u.Role.RoleCode,
                 RoleName = u.Role.Name,
                 u.SubRole,
@@ -49,6 +50,9 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
                 u.CreatedAt,
                 u.UpdatedAt,
                 u.LastLoginAt,
+                // Security context for the ADMIN read-only review (spec §8.4). Provider TYPES only —
+                // the subject ids, tokens and every other secret on UserAuthProvider stay in the DB.
+                Providers = u.AuthProviders.Select(p => p.ProviderType).ToList(),
             })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Account", request.UserId);
@@ -87,6 +91,7 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             Email = row.Email,
             Phone = row.Phone,
             Gender = row.Gender,
+            Nationality = row.Nationality,
             RoleCode = row.RoleCode,
             RoleName = row.RoleName,
             SubRole = row.SubRole,
@@ -102,6 +107,7 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             CreatedAt = row.CreatedAt,
             UpdatedAt = row.UpdatedAt,
             LastLoginAt = row.LastLoginAt,
+            Providers = row.Providers,
             CanEditBasicInfo = canEditBasicInfo,
             EditBasicInfoDisabledReason = editBasicInfoDisabledReason,
             CanResendEmailConfirmation = canManagePending,
