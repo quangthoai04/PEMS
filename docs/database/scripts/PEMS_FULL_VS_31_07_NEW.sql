@@ -4989,27 +4989,10 @@ INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_t
 -- 4. Files, partners and contacts
 -- ---------------------------------------------------------------------
 
-INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at, external_file_id, web_view_url, download_url, thumbnail_url, file_purpose) VALUES
-  (1, 'GOOGLE_DRIVE', 'pems-visit-archive', 'partners/seoultech/logo-2026.png', 'seoultech-logo.png', 'image/png', 184220, NULL, 4, '2026-03-01 08:00:00', 'drv-logo-seoultech', 'https://drive.example/pems/seoultech-logo', NULL, 'https://drive.example/thumb/seoultech-logo', 'PARTNER_LOGO'),
-  (2, 'GOOGLE_DRIVE', 'pems-visit-archive', 'partners/seoultech/cover-campus-mobility.jpg', 'seoultech-campus-mobility-cover.jpg', 'image/jpeg', 682140, NULL, 4, '2026-03-01 08:10:00', 'drv-cover-seoultech', 'https://drive.example/pems/seoultech-cover', NULL, 'https://drive.example/thumb/seoultech-cover', 'PARTNER_COVER'),
-  (3, 'GOOGLE_DRIVE', 'pems-visit-archive', 'partners/kyoto-robotics/logo.svg', 'kyoto-robotics-logo.svg', 'image/svg+xml', 94120, NULL, 4, '2026-03-02 09:00:00', 'drv-logo-kyoto', 'https://drive.example/pems/kyoto-logo', NULL, 'https://drive.example/thumb/kyoto-logo', 'PARTNER_LOGO'),
-  (4, 'GOOGLE_DRIVE', 'pems-visit-archive', 'partners/green-mobility/intro-brochure.pdf', 'green-mobility-introduction.pdf', 'application/pdf', 1240000, NULL, 4, '2026-03-03 10:00:00', 'drv-green-brochure', 'https://drive.example/pems/green-brochure', NULL, NULL, 'PARTNER_DOCUMENT'),
-  (5, 'GOOGLE_DRIVE', 'pems-visit-archive', 'visit/VR-SC-HN-0006/minutes-signed.pdf', 'signed-minutes-seoultech-ai-lab.pdf', 'application/pdf', 934000, NULL, 4, '2026-06-15 17:40:00', 'drv-minutes-seoultech', 'https://drive.example/pems/minutes-seoultech', NULL, NULL, 'MINUTES'),
-  (6, 'GOOGLE_DRIVE', 'pems-visit-archive', 'visit/VR-SC-HN-0007/service-report-room.pdf', 'service-report-room-auditorium.pdf', 'application/pdf', 427000, NULL, 18, '2026-06-12 16:20:00', 'drv-service-room', 'https://drive.example/pems/service-report-room', NULL, NULL, 'LOGISTICS_REPORT'),
-  (7, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/hn/alpha-lobby-hero.jpg', 'hn-alpha-lobby-hero.jpg', 'image/jpeg', 2430000, NULL, 4, '2026-04-01 09:00:00', 'drv-gallery-hn-hero', 'https://drive.example/pems/hn-alpha-hero', NULL, 'https://drive.example/thumb/hn-alpha-hero', 'GALLERY_HERO'),
-  (8, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/hn/innovation-lab-night.jpg', 'hn-innovation-lab-night.jpg', 'image/jpeg', 2110000, NULL, 4, '2026-04-01 09:15:00', 'drv-gallery-hn-lab', 'https://drive.example/pems/hn-lab-night', NULL, 'https://drive.example/thumb/hn-lab-night', 'GALLERY_IMAGE'),
-  (9, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/hcm/green-campus-walkway.jpg', 'hcm-green-campus-walkway.jpg', 'image/jpeg', 1980000, NULL, 10, '2026-04-02 09:00:00', 'drv-gallery-hcm-walkway', 'https://drive.example/pems/hcm-walkway', NULL, 'https://drive.example/thumb/hcm-walkway', 'GALLERY_IMAGE'),
-  (10, 'GOOGLE_DRIVE', 'pems-visit-archive', 'news/2026/global-mobility-cover.jpg', 'global-mobility-cover.jpg', 'image/jpeg', 1600000, NULL, 7, '2026-06-16 12:00:00', 'drv-news-global-mobility', 'https://drive.example/pems/news-global-mobility', NULL, 'https://drive.example/thumb/news-global-mobility', 'NEWS_COVER'),
-  (11, 'GOOGLE_DRIVE', 'pems-visit-archive', 'news/2026/student-buddy-photo.jpg', 'student-buddy-photo.jpg', 'image/jpeg', 1500000, NULL, 7, '2026-06-16 12:05:00', 'drv-news-student-buddy', 'https://drive.example/pems/news-student-buddy', NULL, 'https://drive.example/thumb/news-student-buddy', 'NEWS_INLINE_IMAGE'),
-  (12, 'GOOGLE_DRIVE', 'pems-visit-archive', 'cards/kyoto-contact-aoi.jpg', 'business-card-aoi-tanaka.jpg', 'image/jpeg', 650000, NULL, 4, '2026-06-10 13:00:00', 'drv-card-aoi', 'https://drive.example/pems/card-aoi', NULL, 'https://drive.example/thumb/card-aoi', 'BUSINESS_CARD'),
-  (13, 'GOOGLE_DRIVE', 'pems-visit-archive', 'documents/report/monthly-visit-june.pdf', 'monthly-visit-report-june-2026.pdf', 'application/pdf', 860000, NULL, 2, '2026-06-22 18:00:00', 'drv-report-june', 'https://drive.example/pems/report-june', NULL, NULL, 'REPORT'),
-  (14, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/dn/river-side-lab.jpg', 'dn-riverside-lab.jpg', 'image/jpeg', 1830000, NULL, 12, '2026-04-03 09:00:00', 'drv-gallery-dn-lab', 'https://drive.example/pems/dn-riverside-lab', NULL, 'https://drive.example/thumb/dn-riverside-lab', 'GALLERY_IMAGE'),
-  (15, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/ct/mekong-workshop.jpg', 'ct-mekong-workshop.jpg', 'image/jpeg', 1740000, NULL, 14, '2026-04-04 09:00:00', 'drv-gallery-ct-workshop', 'https://drive.example/pems/ct-mekong-workshop', NULL, 'https://drive.example/thumb/ct-mekong-workshop', 'GALLERY_IMAGE'),
-  (16, 'GOOGLE_DRIVE', 'pems-visit-archive', 'gallery/qn/coastal-innovation-space.jpg', 'qn-coastal-innovation-space.jpg', 'image/jpeg', 1900000, NULL, 16, '2026-04-05 09:00:00', 'drv-gallery-qn-coastal', 'https://drive.example/pems/qn-coastal-space', NULL, 'https://drive.example/thumb/qn-coastal-space', 'GALLERY_IMAGE');
 
 INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_name, country, city, website_url, partner_type, cooperation_status, description, logo_file_id, cover_file_id, address, public_slug, profile_status, review_note, reviewed_by, reviewed_at, visibility, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 'P-SEOU-TECH', 'SeoulTech Global Engagement Center', 'SeoulTech GEC', 'Hàn Quốc', 'Seoul', 'https://seoultech.example.kr', 'UNIVERSITY', 'ACTIVE', 'Đối tác trọng tâm cho trao đổi sinh viên kỹ thuật, seminar AI ứng dụng và mô hình campus thông minh.', 1, 2, '232 Gongneung-ro, Nowon-gu, Seoul', 'seoultech-global-engagement-center', 'APPROVED', 'Đã xác minh hồ sơ và liên hệ chính.', 2, '2026-03-01 14:00:00', 'PUBLIC', '2026-03-01 08:30:00', 4, '2026-03-01 14:00:00', 2),
-  (2, 1, 'P-KYOTO-ROBO', 'Kyoto Robotics Collaboration Lab', 'Kyoto RoboLab', 'Nhật Bản', 'Kyoto', 'https://kyoto-robotics.example.jp', 'COMPANY', 'ACTIVE', 'Phòng thí nghiệm doanh nghiệp về robot dịch vụ; quan tâm workshop ngắn hạn và showcase tại campus.', 3, NULL, 'Sakyo Innovation Quarter, Kyoto', 'kyoto-robotics-collaboration-lab', 'APPROVED', 'Logo được scan từ business card, cần cập nhật cover sau chuyến thăm.', 3, '2026-03-02 15:00:00', 'INTERNAL', '2026-03-02 09:20:00', 4, '2026-03-02 15:00:00', 3),
+  (1, 1, 'P-SEOU-TECH', 'SeoulTech Global Engagement Center', 'SeoulTech GEC', 'Hàn Quốc', 'Seoul', 'https://seoultech.example.kr', 'UNIVERSITY', 'ACTIVE', 'Đối tác trọng tâm cho trao đổi sinh viên kỹ thuật, seminar AI ứng dụng và mô hình campus thông minh.', NULL, NULL, '232 Gongneung-ro, Nowon-gu, Seoul', 'seoultech-global-engagement-center', 'APPROVED', 'Đã xác minh hồ sơ và liên hệ chính.', 2, '2026-03-01 14:00:00', 'PUBLIC', '2026-03-01 08:30:00', 4, '2026-03-01 14:00:00', 2),
+  (2, 1, 'P-KYOTO-ROBO', 'Kyoto Robotics Collaboration Lab', 'Kyoto RoboLab', 'Nhật Bản', 'Kyoto', 'https://kyoto-robotics.example.jp', 'COMPANY', 'ACTIVE', 'Phòng thí nghiệm doanh nghiệp về robot dịch vụ; quan tâm workshop ngắn hạn và showcase tại campus.', NULL, NULL, 'Sakyo Innovation Quarter, Kyoto', 'kyoto-robotics-collaboration-lab', 'APPROVED', 'Logo được scan từ business card, cần cập nhật cover sau chuyến thăm.', 3, '2026-03-02 15:00:00', 'INTERNAL', '2026-03-02 09:20:00', 4, '2026-03-02 15:00:00', 3),
   (3, 1, 'P-GREEN-MOB', 'Singapore Green Mobility Council', 'SGMC', 'Singapore', 'Singapore', 'https://greenmobility.example.sg', 'GOVERNMENT', 'POTENTIAL', 'Hội đồng thúc đẩy giao thông xanh; đang trao đổi khả năng ký MOU về workshop xe điện trong khuôn viên.', NULL, NULL, '1 Marina Boulevard, Singapore', 'singapore-green-mobility-council', 'PENDING_APPROVAL', 'Đang chờ hoàn tất hồ sơ pháp lý và xác nhận phạm vi hợp tác giữa các campus.', NULL, NULL, 'PRIVATE', '2026-03-03 10:30:00', 4, NULL, NULL),
   (4, 5, 'P-ASEAN-HOSP', 'ASEAN Hospitality Network', 'AHN', 'Thái Lan', 'Bangkok', 'https://asean-hospitality.example.org', 'NGO', 'ACTIVE', 'Mạng lưới khách sạn và du lịch khu vực; phù hợp với campus Quy Nhơn và chương trình hospitality.', NULL, NULL, '88 Sukhumvit Road, Bangkok', 'asean-hospitality-network', 'APPROVED', 'Ưu tiên dùng cho đoàn thăm Quy Nhơn.', 2, '2026-03-04 10:00:00', 'PUBLIC', '2026-03-04 09:30:00', 15, '2026-03-04 10:00:00', 2),
   (5, 1, 'P-MUNICH-AI', 'Munich Applied AI Institute', 'MAAI', 'Đức', 'Munich', NULL, 'UNIVERSITY', 'POTENTIAL', 'Nhóm nghiên cứu AI ứng dụng quan tâm mô hình blended learning và phòng lab tại campus HN.', NULL, NULL, 'Garching Research District, Munich', 'munich-applied-ai-institute', 'DRAFT', NULL, NULL, NULL, 'PRIVATE', '2026-03-05 08:30:00', 4, NULL, NULL),
@@ -5476,10 +5459,10 @@ INSERT INTO feedback_rating_items (feedback_rating_item_id, feedback_id, criteri
 -- ---------------------------------------------------------------------
 
 INSERT INTO news (news_id, campus_id, visit_instance_id, author_user_id, cover_file_id, status, submitted_at, reviewed_by, reviewed_at, review_note, published_at, is_featured, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 1, 3007, 7, 10, 'PENDING_REVIEW', '2026-06-02 09:00:00', NULL, NULL, NULL, NULL, FALSE, 1, '2026-06-02 08:30:00', 7, NULL, NULL),
-  (2, 1, 3006, 7, 11, 'REJECTED', '2026-06-16 09:00:00', 4, '2026-06-16 11:00:00', 'Cần bỏ thông tin nội bộ về ngân sách workshop trước khi gửi lại.', NULL, FALSE, 2, '2026-06-16 08:40:00', 7, '2026-06-16 11:00:00', 4),
-  (3, 1, 3007, 4, 10, 'PUBLISHED', '2026-06-01 14:00:00', 3, '2026-06-01 16:00:00', 'Bài viết đủ thông tin, ảnh ký kết đã được visitor đồng ý.', '2026-06-01 16:30:00', TRUE, 3, '2026-06-01 13:00:00', 4, '2026-06-01 16:30:00', 3),
-  (4, 2, 3116, 19, 9, 'HIDDEN', '2026-05-26 09:00:00', 10, '2026-05-26 10:00:00', 'Bài đã publish nội bộ, sau đó ẩn vì cần chờ xác nhận ảnh từ đối tác.', '2026-05-26 10:30:00', FALSE, 4, '2026-05-26 08:30:00', 19, '2026-06-01 10:00:00', 10);
+  (1, 1, 3007, 7, NULL, 'PENDING_REVIEW', '2026-06-02 09:00:00', NULL, NULL, NULL, NULL, FALSE, 1, '2026-06-02 08:30:00', 7, NULL, NULL),
+  (2, 1, 3006, 7, NULL, 'REJECTED', '2026-06-16 09:00:00', 4, '2026-06-16 11:00:00', 'Cần bỏ thông tin nội bộ về ngân sách workshop trước khi gửi lại.', NULL, FALSE, 2, '2026-06-16 08:40:00', 7, '2026-06-16 11:00:00', 4),
+  (3, 1, 3007, 4, NULL, 'PUBLISHED', '2026-06-01 14:00:00', 3, '2026-06-01 16:00:00', 'Bài viết đủ thông tin, ảnh ký kết đã được visitor đồng ý.', '2026-06-01 16:30:00', TRUE, 3, '2026-06-01 13:00:00', 4, '2026-06-01 16:30:00', 3),
+  (4, 2, 3116, 19, NULL, 'HIDDEN', '2026-05-26 09:00:00', 10, '2026-05-26 10:00:00', 'Bài đã publish nội bộ, sau đó ẩn vì cần chờ xác nhận ảnh từ đối tác.', '2026-05-26 10:30:00', FALSE, 4, '2026-05-26 08:30:00', 19, '2026-06-01 10:00:00', 10);
 
 INSERT INTO news_translations (news_translation_id, news_id, language_code, title, slug, summary, seo_title, seo_description, created_at, updated_at) VALUES
   (1, 1, 'vi', 'Sinh viên hỗ trợ lễ ký kết Porto AI Hub', 'sinh-vien-ho-tro-le-ky-ket-porto-ai-hub', 'Bản nháp ghi lại vai trò student buddy trong lễ ký kết.', 'Sinh viên hỗ trợ lễ ký kết Porto AI Hub', 'Câu chuyện hậu trường về hoạt động student buddy tại FPTU Hà Nội.', '2026-06-02 08:30:00', NULL),
@@ -5495,11 +5478,6 @@ INSERT INTO news_content_sections (section_id, news_translation_id, section_orde
   (4, 1, 1, 'Vai trò student buddy', '<p>Student buddy hỗ trợ check-in, điều phối ảnh và chuẩn bị góc giao lưu.</p>', 'Student buddy hỗ trợ check-in, điều phối ảnh và chuẩn bị góc giao lưu.', '2026-06-02 08:40:00', NULL),
   (5, 5, 1, 'Tour campus HCM', '<p>Đoàn khách trải nghiệm tuyến đường xanh và khu học tập mở tại campus TP.HCM.</p>', 'Đoàn khách trải nghiệm tuyến đường xanh và khu học tập mở tại campus TP.HCM.', '2026-05-26 08:40:00', '2026-06-01 10:00:00');
 
-INSERT INTO news_section_files (section_file_id, section_id, file_id, usage_type, display_order, created_at) VALUES
-  (1, 1, 10, 'INLINE_IMAGE', 1, '2026-06-01 13:15:00'),
-  (2, 2, 5, 'ATTACHMENT', 1, '2026-06-01 13:25:00'),
-  (3, 4, 11, 'INLINE_IMAGE', 1, '2026-06-02 08:45:00'),
-  (4, 5, 9, 'INLINE_IMAGE', 1, '2026-05-26 08:45:00');
 
 INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, created_at, created_by, updated_at, updated_by) VALUES
   (1, 'VISIT_REQUEST', 'Tôi cần đăng ký chuyến thăm trước bao lâu?', 'Nên gửi yêu cầu ít nhất 72 giờ trước thời gian dự kiến. Mỗi campus sẽ kiểm tra lịch và nguồn lực tiếp đón độc lập.', 1, 'PUBLISHED', '2026-03-10 09:00:00', 2, NULL, NULL),
@@ -5934,39 +5912,18 @@ INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_t
 -- B. Extra files, partners, contacts and documents
 -- ---------------------------------------------------------------------
 
-INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at, external_file_id, web_view_url, download_url, thumbnail_url, file_purpose) VALUES
-  (201, 'LOCAL', 'pems-integration-artifacts', 'internal/archive/visitor-policy-archive.dat', 'visitor-policy-archive.dat', 'application/octet-stream', 151657, '0fdf3e8d1af8f66a356326ad4228811ce524a881d515be5b61c11127d5b46a41', 4, '2026-04-10 08:00:00', 'ext-file-201', 'https://files.example/local/201', 'https://download.example/local/201', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (202, 'S3', 'pems-integration-artifacts', 'integrations/s3/campus-route-media-package.dat', 'campus-route-media-package.dat', 'application/octet-stream', 151914, '58b24574cc0bbfc1872e191f445f932d7de82f03c19620ccb3ae03676a1f9aa1', 4, '2026-04-10 08:00:00', 'ext-file-202', 'https://files.example/s3/202', 'https://download.example/s3/202', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (203, 'AZURE', 'pems-integration-artifacts', 'integrations/azure/partner-document-backup.dat', 'partner-document-backup.dat', 'application/octet-stream', 152171, 'f7bddeba882bee44d4dfe6e18af67d5ee377a098998fff17918293405f1bea08', 4, '2026-04-10 08:00:00', 'ext-file-203', 'https://files.example/azure/203', 'https://download.example/azure/203', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (204, 'GCS', 'pems-integration-artifacts', 'integrations/gcs/public-gallery-export.dat', 'public-gallery-export.dat', 'application/octet-stream', 152428, 'd0ec3e5bd7f5ce81e20a483bf037fe1a8c94ec6b694b02807333439f84375143', 4, '2026-04-10 08:00:00', 'ext-file-204', 'https://files.example/gcs/204', 'https://download.example/gcs/204', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (205, 'GOOGLE_DRIVE', 'pems-integration-artifacts', 'integrations/google-drive/shared-drive-reference.dat', 'shared-drive-reference.dat', 'application/octet-stream', 152685, '095256eedd20c6744554b18a796b84a1849acd9ba6f880248a4e5617628dce82', 4, '2026-04-10 08:00:00', 'ext-file-205', 'https://files.example/google_drive/205', 'https://download.example/google_drive/205', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (206, 'OTHER', 'pems-integration-artifacts', 'integrations/other/legacy-import-manifest.dat', 'legacy-import-manifest.dat', 'application/octet-stream', 152942, '76a269db9a062077f7e7a6c05ea55681dedad86ab11159a7de69cb3ecec2c604', 4, '2026-04-10 08:00:00', 'ext-file-206', 'https://files.example/other/206', 'https://download.example/other/206', NULL, 'ENUM_STORAGE_COVERAGE'),
-  (207, 'GOOGLE_DRIVE', 'pems-business-assets', 'partner-logo/gulf-innovation-logo.png', 'gulf-innovation-logo.png', 'image/png', 184207, '6bab95ae2dbd1a78ad47ce1e9bbdd076fd88526c27ef626b5442ba6923ae869d', 4, '2026-04-10 10:00:00', 'drv-partner-logo-207', 'https://drive.example/partners/gulf-logo', NULL, 'https://drive.example/thumb/gulf-logo', 'PARTNER_LOGO'),
-  (208, 'S3', 'pems-business-assets', 'partner-logo/seattle-edtech-logo.svg', 'seattle-edtech-logo.svg', 'image/svg+xml', 98208, '61d05d6b1aa00f510880b2f6e97bff428fd67dd0b83dd09777239c3fa4cf4e6d', 4, '2026-04-10 10:05:00', 's3-partner-logo-208', 'https://files.example/partners/seattle-logo', 'https://download.example/partners/seattle-logo', NULL, 'PARTNER_LOGO'),
-  (209, 'GCS', 'pems-business-assets', 'partner-logo/lagos-tech-emblem.png', 'lagos-tech-emblem.png', 'image/png', 176209, 'aaab95907c6cc3ae5f31ab318989265f5b4322b9e08a2e08958df4de6dd1890c', 4, '2026-04-10 10:10:00', 'gcs-partner-logo-209', 'https://files.example/partners/lagos-emblem', 'https://download.example/partners/lagos-emblem', 'https://files.example/thumb/lagos-emblem', 'PARTNER_LOGO'),
-  (210, 'GOOGLE_DRIVE', 'pems-business-assets', 'partner-logo/andes-exchange-logo.svg', 'andes-exchange-logo.svg', 'image/svg+xml', 104210, '24b14f58b9de5a8497f2cf5b6bfb408c77662d8be1681cb39dae3dcae508c8f2', 4, '2026-04-10 10:15:00', 'drv-partner-logo-210', 'https://drive.example/partners/andes-logo', NULL, 'https://drive.example/thumb/andes-logo', 'PARTNER_LOGO'),
-  (211, 'GOOGLE_DRIVE', 'pems-business-assets', 'visit-attachment/campus-tour-map-hn.pdf', 'campus-tour-map-hn.pdf', 'application/pdf', 256541, '738a6bdebbd5725754cedb23b2a47d9b4cefd1cc686f5219182dee8c28a1d441', 4, '2026-04-11 09:00:00', 'drv-asset-211', 'https://drive.example/assets/211', NULL, 'https://drive.example/thumb/211', 'VISIT_ATTACHMENT'),
-  (212, 'GOOGLE_DRIVE', 'pems-business-assets', 'gallery-image/robotics-showcase-photo.jpg', 'robotics-showcase-photo.jpg', 'image/jpeg', 256572, 'e2fb1c1502d5d8486f3385c56a5e74bd416b93f3a77d81ace72d173a76f41753', 4, '2026-04-11 09:00:00', 'drv-asset-212', 'https://drive.example/assets/212', NULL, 'https://drive.example/thumb/212', 'GALLERY_IMAGE'),
-  (213, 'GOOGLE_DRIVE', 'pems-business-assets', 'document/signed-mou-draft.pdf', 'signed-mou-draft.pdf', 'application/pdf', 256603, 'b291ac8ff34009ed37e9168ffc7576ae4b98d10506e0bdbb50521744b0796b2d', 4, '2026-04-11 09:00:00', 'drv-asset-213', 'https://drive.example/assets/213', NULL, 'https://drive.example/thumb/213', 'DOCUMENT'),
-  (214, 'GOOGLE_DRIVE', 'pems-business-assets', 'logistics-report/logistics-led-layout.png', 'logistics-led-layout.png', 'image/png', 256634, 'd73c6a4b8ab2c0737e594f8022dee789ea61dd2d5b20cca1f4814a4b0760bb20', 4, '2026-04-11 09:00:00', 'drv-asset-214', 'https://drive.example/assets/214', NULL, 'https://drive.example/thumb/214', 'LOGISTICS_REPORT'),
-  (215, 'GOOGLE_DRIVE', 'pems-business-assets', 'news-cover/news-innovation-cover.jpg', 'news-innovation-cover.jpg', 'image/jpeg', 256665, 'a3ac78b64de45fe702c4c3c103be31be91a0798bdf6a97c1f72cec0c53715458', 4, '2026-04-11 09:00:00', 'drv-asset-215', 'https://drive.example/assets/215', NULL, 'https://drive.example/thumb/215', 'NEWS_COVER'),
-  (216, 'GOOGLE_DRIVE', 'pems-business-assets', 'business-card/business-card-aarav.jpg', 'business-card-aarav.jpg', 'image/jpeg', 256696, 'c3456260a1cf979c2ab70c2df5cb103fc743ab83431f9120cd00fef34d732ad6', 4, '2026-04-11 09:00:00', 'drv-asset-216', 'https://drive.example/assets/216', NULL, 'https://drive.example/thumb/216', 'BUSINESS_CARD'),
-  (217, 'GOOGLE_DRIVE', 'pems-business-assets', 'report/visitor-feedback-export.csv', 'visitor-feedback-export.csv', 'text/csv', 256727, 'd9e8fa8a9b4e1f78001421c6b4fe5369058e2ef461cc77028e383ada2e9fe360', 4, '2026-04-11 09:00:00', 'drv-asset-217', 'https://drive.example/assets/217', NULL, 'https://drive.example/thumb/217', 'REPORT'),
-  (218, 'GOOGLE_DRIVE', 'pems-business-assets', 'minutes/minutes-action-list.xlsx', 'minutes-action-list.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 256758, 'ee003a5ab48bcf64b7a73dbd2c83c0d3aab442373db62b3bbde562b2de528c30', 4, '2026-04-11 09:00:00', 'drv-asset-218', 'https://drive.example/assets/218', NULL, 'https://drive.example/thumb/218', 'MINUTES'),
-  (219, 'GOOGLE_DRIVE', 'pems-business-assets', 'api-log-attachment/integration-request-payload.json', 'integration-request-payload.json', 'application/json', 256789, '4e4a4aeaecd45cea58ca84c24ad0ce00df78b8eeca4a9ae5e376f811e0581a8c', 4, '2026-04-11 09:00:00', 'drv-asset-219', 'https://drive.example/assets/219', NULL, 'https://drive.example/thumb/219', 'API_LOG_ATTACHMENT'),
-  (220, 'GOOGLE_DRIVE', 'pems-business-assets', 'logistics-report/transport-parking-map.png', 'transport-parking-map.png', 'image/png', 256820, '8dc906b521ecfd7520b9a58be06498f872efadef5dde58ed11131650b979addb', 4, '2026-04-11 09:00:00', 'drv-asset-220', 'https://drive.example/assets/220', NULL, 'https://drive.example/thumb/220', 'LOGISTICS_REPORT');
 
 INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_name, country, city, website_url, partner_type, cooperation_status, description, logo_file_id, cover_file_id, address, public_slug, profile_status, review_note, reviewed_by, reviewed_at, visibility, created_at, created_by, updated_at, updated_by) VALUES
-  (101, 1, 'P-IIT-DELHI', 'Indian Institute of Technology Delhi International Office', 'IIT Delhi IO', 'Ấn Độ', 'New Delhi', 'https://p-iit-delhi.example.org', 'UNIVERSITY', 'POTENTIAL', 'Hồ sơ mới nhập từ đoàn trao đổi AI, chưa duyệt public.', 202, NULL, 'New Delhi partnership district', 'p-iit-delhi', 'DRAFT', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
-  (102, 1, 'P-POLIMI', 'Politecnico di Milano Mobility Lab', 'Polimi Mobility', 'Ý', 'Milan', 'https://p-polimi.example.org', 'UNIVERSITY', 'ACTIVE', 'Đang chờ đối tác bổ sung đề cương hợp tác về mobility và thiết kế đô thị để hoàn tất hồ sơ.', 203, 213, 'Milan partnership district', 'p-polimi', 'PENDING_APPROVAL', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
-  (103, 1, 'P-UTS-AUS', 'University of Technology Sydney Student Exchange', 'UTS Exchange', 'Úc', 'Sydney', 'https://p-uts-aus.example.org', 'UNIVERSITY', 'ACTIVE', 'Đối tác trao đổi sinh viên và workshop kỹ năng toàn cầu.', 204, NULL, 'Sydney partnership district', 'p-uts-aus', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (104, 1, 'P-NORDIC-GREEN', 'Nordic Green Campus Alliance', 'Nordic Green', 'Đan Mạch', 'Copenhagen', 'https://p-nordic-green.example.org', 'NGO', 'POTENTIAL', 'Bị từ chối public do thiếu thông tin pháp lý trong hồ sơ ban đầu.', 205, 215, 'Copenhagen partnership district', 'p-nordic-green', 'REJECTED', 'Hồ sơ cần bổ sung nguồn xác minh và thông tin đầu mối trước khi gửi duyệt lại.', 2, '2026-04-12 10:00:00', 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (105, 1, 'P-PARIS-DIGITAL', 'Paris Digital Arts Institute', 'Paris Digital', 'Pháp', 'Paris', 'https://p-paris-digital.example.org', 'OTHER', 'INACTIVE', 'Đối tác cũ, tạm không còn hoạt động trao đổi thường xuyên.', 206, NULL, 'Paris partnership district', 'p-paris-digital', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (106, 1, 'P-GULF-INNOV', 'Gulf Innovation Fund for Education', 'Gulf InnovFund', 'UAE', 'Dubai', 'https://p-gulf-innov.example.org', 'GOVERNMENT', 'BLACKLISTED', 'Không hiển thị public vì rủi ro kiểm chứng tài trợ.', 207, 217, 'Dubai partnership district', 'p-gulf-innov', 'REJECTED', 'Hồ sơ cần bổ sung nguồn xác minh và thông tin đầu mối trước khi gửi duyệt lại.', 2, '2026-04-12 10:00:00', 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (107, 1, 'P-SEATTLE-EDTECH', 'Seattle EdTech Studio', 'Seattle EdTech', 'Hoa Kỳ', 'Seattle', 'https://p-seattle-edtech.example.org', 'COMPANY', 'ACTIVE', 'Doanh nghiệp edtech quan tâm sản phẩm học tập cá nhân hóa.', 208, NULL, 'Seattle partnership district', 'p-seattle-edtech', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (108, 1, 'P-LAGOS-TECH', 'Lagos Tech Bridge Initiative', 'Lagos Bridge', 'Nigeria', 'Lagos', 'https://p-lagos-tech.example.org', 'NGO', 'POTENTIAL', 'Sáng kiến kết nối sinh viên khởi nghiệp công nghệ châu Phi.', 209, 219, 'Lagos partnership district', 'p-lagos-tech', 'PENDING_APPROVAL', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
-  (109, 1, 'P-ANDES-EXCHANGE', 'Andes University Exchange Office', 'Andes Exchange', 'Chile', 'Santiago', 'https://p-andes-exchange.example.org', 'UNIVERSITY', 'ACTIVE', 'Đối tác trao đổi văn hóa, logistics chuyến thăm multi-campus.', 210, NULL, 'Santiago partnership district', 'p-andes-exchange', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
-  (110, 1, 'P-SG-AI', 'Singapore Applied AI Consortium', 'SG Applied AI', 'Singapore', 'Singapore', 'https://p-sg-ai.example.org', 'COMPANY', 'ACTIVE', 'Đối tác AI ứng dụng trong vận hành giáo dục và campus services.', 201, 211, 'Singapore partnership district', 'p-sg-ai', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2);
+  (101, 1, 'P-IIT-DELHI', 'Indian Institute of Technology Delhi International Office', 'IIT Delhi IO', 'Ấn Độ', 'New Delhi', 'https://p-iit-delhi.example.org', 'UNIVERSITY', 'POTENTIAL', 'Hồ sơ mới nhập từ đoàn trao đổi AI, chưa duyệt public.', NULL, NULL, 'New Delhi partnership district', 'p-iit-delhi', 'DRAFT', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (102, 1, 'P-POLIMI', 'Politecnico di Milano Mobility Lab', 'Polimi Mobility', 'Ý', 'Milan', 'https://p-polimi.example.org', 'UNIVERSITY', 'ACTIVE', 'Đang chờ đối tác bổ sung đề cương hợp tác về mobility và thiết kế đô thị để hoàn tất hồ sơ.', NULL, NULL, 'Milan partnership district', 'p-polimi', 'PENDING_APPROVAL', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (103, 1, 'P-UTS-AUS', 'University of Technology Sydney Student Exchange', 'UTS Exchange', 'Úc', 'Sydney', 'https://p-uts-aus.example.org', 'UNIVERSITY', 'ACTIVE', 'Đối tác trao đổi sinh viên và workshop kỹ năng toàn cầu.', NULL, NULL, 'Sydney partnership district', 'p-uts-aus', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (104, 1, 'P-NORDIC-GREEN', 'Nordic Green Campus Alliance', 'Nordic Green', 'Đan Mạch', 'Copenhagen', 'https://p-nordic-green.example.org', 'NGO', 'POTENTIAL', 'Bị từ chối public do thiếu thông tin pháp lý trong hồ sơ ban đầu.', NULL, NULL, 'Copenhagen partnership district', 'p-nordic-green', 'REJECTED', 'Hồ sơ cần bổ sung nguồn xác minh và thông tin đầu mối trước khi gửi duyệt lại.', 2, '2026-04-12 10:00:00', 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (105, 1, 'P-PARIS-DIGITAL', 'Paris Digital Arts Institute', 'Paris Digital', 'Pháp', 'Paris', 'https://p-paris-digital.example.org', 'OTHER', 'INACTIVE', 'Đối tác cũ, tạm không còn hoạt động trao đổi thường xuyên.', NULL, NULL, 'Paris partnership district', 'p-paris-digital', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (106, 1, 'P-GULF-INNOV', 'Gulf Innovation Fund for Education', 'Gulf InnovFund', 'UAE', 'Dubai', 'https://p-gulf-innov.example.org', 'GOVERNMENT', 'BLACKLISTED', 'Không hiển thị public vì rủi ro kiểm chứng tài trợ.', NULL, NULL, 'Dubai partnership district', 'p-gulf-innov', 'REJECTED', 'Hồ sơ cần bổ sung nguồn xác minh và thông tin đầu mối trước khi gửi duyệt lại.', 2, '2026-04-12 10:00:00', 'PRIVATE', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (107, 1, 'P-SEATTLE-EDTECH', 'Seattle EdTech Studio', 'Seattle EdTech', 'Hoa Kỳ', 'Seattle', 'https://p-seattle-edtech.example.org', 'COMPANY', 'ACTIVE', 'Doanh nghiệp edtech quan tâm sản phẩm học tập cá nhân hóa.', NULL, NULL, 'Seattle partnership district', 'p-seattle-edtech', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (108, 1, 'P-LAGOS-TECH', 'Lagos Tech Bridge Initiative', 'Lagos Bridge', 'Nigeria', 'Lagos', 'https://p-lagos-tech.example.org', 'NGO', 'POTENTIAL', 'Sáng kiến kết nối sinh viên khởi nghiệp công nghệ châu Phi.', NULL, NULL, 'Lagos partnership district', 'p-lagos-tech', 'PENDING_APPROVAL', 'Đang ở trạng thái cần rà soát.', NULL, NULL, 'INTERNAL', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', NULL),
+  (109, 1, 'P-ANDES-EXCHANGE', 'Andes University Exchange Office', 'Andes Exchange', 'Chile', 'Santiago', 'https://p-andes-exchange.example.org', 'UNIVERSITY', 'ACTIVE', 'Đối tác trao đổi văn hóa, logistics chuyến thăm multi-campus.', NULL, NULL, 'Santiago partnership district', 'p-andes-exchange', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2),
+  (110, 1, 'P-SG-AI', 'Singapore Applied AI Consortium', 'SG Applied AI', 'Singapore', 'Singapore', 'https://p-sg-ai.example.org', 'COMPANY', 'ACTIVE', 'Đối tác AI ứng dụng trong vận hành giáo dục và campus services.', NULL, NULL, 'Singapore partnership district', 'p-sg-ai', 'APPROVED', 'Hồ sơ đã được rà soát theo quy trình quản lý đối tác.', 2, '2026-04-12 10:00:00', 'PUBLIC', '2026-04-12 08:00:00', 4, '2026-04-12 10:00:00', 2);
 
 -- ---------------------------------------------------------------------
 -- C. Visit/delegation wide coverage: single, multi, all request/instance statuses
@@ -8300,22 +8257,22 @@ INSERT INTO feedback_rating_items (feedback_rating_item_id, feedback_id, criteri
 -- ---------------------------------------------------------------------
 
 INSERT INTO news (news_id, campus_id, visit_instance_id, author_user_id, cover_file_id, status, submitted_at, reviewed_by, reviewed_at, review_note, published_at, is_featured, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (15001, 1, 5003, 7, 215, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, TRUE, 0, '2026-08-16 08:00:00', 7, NULL, NULL),
-  (15002, 1, 5004, 7, 215, 'REJECTED', '2026-08-16 08:00:00', 101, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 1, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 101),
-  (15003, 1, 5005, 7, 215, 'PUBLISHED', '2026-08-16 08:00:00', 4, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 2, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 4),
-  (15004, 1, 5006, 7, 215, 'HIDDEN', '2026-08-16 08:00:00', 101, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 3, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 101),
-  (15005, 1, 5007, 7, 215, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 4, '2026-08-16 08:00:00', 7, NULL, NULL),
-  (15006, 2, 5012, 19, 215, 'REJECTED', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, TRUE, 5, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
-  (15007, 2, 5013, 19, 215, 'PUBLISHED', '2026-08-16 08:00:00', 10, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 6, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 10),
-  (15008, 2, 5014, 19, 215, 'HIDDEN', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 7, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
-  (15009, 2, 5015, 19, 215, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 8, '2026-08-16 08:00:00', 19, NULL, NULL),
-  (15010, 2, 5016, 19, 215, 'REJECTED', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 9, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
-  (15011, 3, 5021, 154, 215, 'PUBLISHED', '2026-08-16 08:00:00', 12, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', TRUE, 10, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 12),
-  (15012, 3, 5022, 154, 215, 'HIDDEN', '2026-08-16 08:00:00', 105, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 11, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 105),
-  (15013, 3, 5023, 154, 215, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 12, '2026-08-16 08:00:00', 154, NULL, NULL),
-  (15014, 3, 5024, 154, 215, 'REJECTED', '2026-08-16 08:00:00', 105, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 13, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 105),
-  (15015, 3, 5025, 154, 215, 'PUBLISHED', '2026-08-16 08:00:00', 12, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 14, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 12),
-  (15016, 4, 5030, 155, 215, 'HIDDEN', '2026-08-16 08:00:00', 107, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, TRUE, 15, '2026-08-16 08:00:00', 155, '2026-08-16 10:00:00', 107);
+  (15001, 1, 5003, 7, NULL, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, TRUE, 0, '2026-08-16 08:00:00', 7, NULL, NULL),
+  (15002, 1, 5004, 7, NULL, 'REJECTED', '2026-08-16 08:00:00', 101, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 1, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 101),
+  (15003, 1, 5005, 7, NULL, 'PUBLISHED', '2026-08-16 08:00:00', 4, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 2, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 4),
+  (15004, 1, 5006, 7, NULL, 'HIDDEN', '2026-08-16 08:00:00', 101, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 3, '2026-08-16 08:00:00', 7, '2026-08-16 10:00:00', 101),
+  (15005, 1, 5007, 7, NULL, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 4, '2026-08-16 08:00:00', 7, NULL, NULL),
+  (15006, 2, 5012, 19, NULL, 'REJECTED', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, TRUE, 5, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
+  (15007, 2, 5013, 19, NULL, 'PUBLISHED', '2026-08-16 08:00:00', 10, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 6, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 10),
+  (15008, 2, 5014, 19, NULL, 'HIDDEN', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 7, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
+  (15009, 2, 5015, 19, NULL, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 8, '2026-08-16 08:00:00', 19, NULL, NULL),
+  (15010, 2, 5016, 19, NULL, 'REJECTED', '2026-08-16 08:00:00', 103, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 9, '2026-08-16 08:00:00', 19, '2026-08-16 10:00:00', 103),
+  (15011, 3, 5021, 154, NULL, 'PUBLISHED', '2026-08-16 08:00:00', 12, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', TRUE, 10, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 12),
+  (15012, 3, 5022, 154, NULL, 'HIDDEN', '2026-08-16 08:00:00', 105, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, FALSE, 11, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 105),
+  (15013, 3, 5023, 154, NULL, 'PENDING_REVIEW', '2026-08-16 08:00:00', NULL, NULL, 'Bản thảo đã gửi duyệt; đang chờ kiểm tra nội dung, hình ảnh và quyền công bố.', NULL, FALSE, 12, '2026-08-16 08:00:00', 154, NULL, NULL),
+  (15014, 3, 5024, 154, NULL, 'REJECTED', '2026-08-16 08:00:00', 105, '2026-08-16 09:00:00', 'Bản thảo cần chỉnh sửa theo nhận xét của ban biên tập trước khi gửi lại.', NULL, FALSE, 13, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 105),
+  (15015, 3, 5025, 154, NULL, 'PUBLISHED', '2026-08-16 08:00:00', 12, '2026-08-16 09:00:00', 'Nội dung đã được duyệt và công bố sau khi xác nhận thông tin với các bên liên quan.', '2026-08-16 10:00:00', FALSE, 14, '2026-08-16 08:00:00', 154, '2026-08-16 10:00:00', 12),
+  (15016, 4, 5030, 155, NULL, 'HIDDEN', '2026-08-16 08:00:00', 107, '2026-08-16 09:00:00', 'Nội dung được ẩn khỏi trang công khai nhưng vẫn giữ trong lịch sử quản trị.', NULL, TRUE, 15, '2026-08-16 08:00:00', 155, '2026-08-16 10:00:00', 107);
 
 INSERT INTO news_translations (news_translation_id, news_id, language_code, title, slug, summary, seo_title, seo_description, created_at, updated_at) VALUES
   (15101, 15001, 'vi', 'Bản nháp: mở rộng chương trình trao đổi sinh viên với đối tác Ấn Độ', 'ban-nhap-mo-rong-chuong-trinh-trao-oi-sinh-vien-voi-oi-tac-an-o', 'Bài viết đang tổng hợp các nội dung về công nhận tín chỉ, hỗ trợ sinh viên và lịch triển khai dự kiến.', 'Bản nháp: mở rộng chương trình trao đổi sinh viên với đối tác Ấn Độ', 'Bài viết đang tổng hợp các nội dung về công nhận tín chỉ, hỗ trợ sinh viên và lịch triển khai dự kiến.', '2026-08-16 08:05:00', NULL),
@@ -8417,71 +8374,6 @@ INSERT INTO news_content_sections (section_id, news_translation_id, section_orde
   (15263, 15132, 1, 'Context and objectives', '<p>The story was removed from the public page but retained for reporting and historical reference. Representatives from both sides agreed on the discussion scope before the programme.</p>', 'The story was removed from the public page but retained for reporting and historical reference. Representatives from both sides agreed on the discussion scope before the programme.', '2026-08-16 08:10:00', NULL),
   (15264, 15132, 2, 'Outcomes and next steps', '<p>Follow-up items were assigned to named contacts with clear deadlines and supporting documents after the visit.</p>', 'Follow-up items were assigned to named contacts with clear deadlines and supporting documents after the visit.', '2026-08-16 08:10:00', NULL);
 
-INSERT INTO news_section_files (section_file_id, section_id, file_id, usage_type, display_order, created_at) VALUES
-  (15301, 15201, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15302, 15202, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15303, 15203, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15304, 15204, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15305, 15205, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15306, 15206, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15307, 15207, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15308, 15208, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15309, 15209, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15310, 15210, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15311, 15211, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15312, 15212, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15313, 15213, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15314, 15214, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15315, 15215, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15316, 15216, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15317, 15217, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15318, 15218, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15319, 15219, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15320, 15220, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15321, 15221, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15322, 15222, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15323, 15223, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15324, 15224, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15325, 15225, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15326, 15226, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15327, 15227, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15328, 15228, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15329, 15229, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15330, 15230, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15331, 15231, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15332, 15232, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15333, 15233, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15334, 15234, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15335, 15235, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15336, 15236, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15337, 15237, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15338, 15238, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15339, 15239, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15340, 15240, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15341, 15241, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15342, 15242, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15343, 15243, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15344, 15244, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15345, 15245, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15346, 15246, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15347, 15247, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15348, 15248, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15349, 15249, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15350, 15250, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15351, 15251, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15352, 15252, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15353, 15253, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15354, 15254, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15355, 15255, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15356, 15256, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15357, 15257, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15358, 15258, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15359, 15259, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15360, 15260, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15361, 15261, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15362, 15262, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00'),
-  (15363, 15263, 215, 'INLINE_IMAGE', 1, '2026-08-16 08:15:00'),
-  (15364, 15264, 212, 'ATTACHMENT', 2, '2026-08-16 08:15:00');
 
 INSERT INTO faqs (faq_id, faq_type, question, answer, display_order, status, created_at, created_by, updated_at, updated_by) VALUES
   (16001, 'OTHER', 'Head Office có thể thay Staff Leader xử lý đơn không?', 'Không. Head Office theo dõi và xem báo cáo tổng hợp ở chế độ chỉ đọc.', 1, 'PUBLISHED', '2026-08-17 08:00:00', 2, NULL, NULL),
@@ -8716,198 +8608,57 @@ INSERT INTO audit_log_changes (audit_log_change_id, audit_log_id, field_name, ol
 -- These replace the previous draft inserts for contact/document/action/gallery/tag tables.
 -- =====================================================================
 
-INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at, external_file_id, web_view_url, download_url, thumbnail_url, file_purpose) VALUES
-  (301, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/delegation-checkin-at-main-lobby.jpg', 'ha-noi-delegation-checkin-at-main-lobby.jpg', 'image/jpeg', 837023, '55ce62e1ee3e1d3fa4ee134355227f5a88a5cacd1171b27ca7b6994c1f2bbafd', 4, '2026-08-18 07:00:00', 'drv-55ce62e1ee3e1d3fa4ee1343', 'https://drive.example/pems/gallery/ha-noi/delegation-checkin-at-main-lobby', NULL, 'https://drive.example/thumb/55ce62e1ee3e1d3fa4ee', 'GALLERY_IMAGE'),
-  (302, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/delegation-checkin-at-main-lobby.jpg', 'ho-chi-minh-city-delegation-checkin-at-main-lobby.jpg', 'image/jpeg', 837146, '363880bb7303f522847da470bb606be492b13b4077f6c2f318fa4c511af9a782', 4, '2026-08-18 07:00:00', 'drv-363880bb7303f522847da470', 'https://drive.example/pems/gallery/ho-chi-minh-city/delegation-checkin-at-main-lobby', NULL, 'https://drive.example/thumb/363880bb7303f522847d', 'GALLERY_IMAGE'),
-  (303, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/delegation-checkin-at-main-lobby.jpg', 'da-nang-delegation-checkin-at-main-lobby.jpg', 'image/jpeg', 837269, 'c8d3a6b77bd06379a77f4368feca54026dc65a5787742c9e876c736a3852ead0', 4, '2026-08-18 07:00:00', 'drv-c8d3a6b77bd06379a77f4368', 'https://drive.example/pems/gallery/da-nang/delegation-checkin-at-main-lobby', NULL, 'https://drive.example/thumb/c8d3a6b77bd06379a77f', 'GALLERY_IMAGE'),
-  (304, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/delegation-checkin-at-main-lobby.jpg', 'can-tho-delegation-checkin-at-main-lobby.jpg', 'image/jpeg', 837392, 'b08394ff2f100ac8a882b3cb4d540ff417237d9565471c1711b304ad2a7eecde', 4, '2026-08-18 07:00:00', 'drv-b08394ff2f100ac8a882b3cb', 'https://drive.example/pems/gallery/can-tho/delegation-checkin-at-main-lobby', NULL, 'https://drive.example/thumb/b08394ff2f100ac8a882', 'GALLERY_IMAGE'),
-  (305, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/student-buddies-welcome-guests.mp4', 'ha-noi-student-buddies-welcome-guests.mp4', 'video/mp4', 837515, '631ff98de25377a982bb38c9c0fd244cd63e69aa2133f470838d0ac699401128', 4, '2026-08-18 07:00:00', 'drv-631ff98de25377a982bb38c9', 'https://drive.example/pems/gallery/ha-noi/student-buddies-welcome-guests', NULL, NULL, 'GALLERY_IMAGE'),
-  (306, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/student-buddies-welcome-guests.jpg', 'ho-chi-minh-city-student-buddies-welcome-guests.jpg', 'image/jpeg', 837638, '2017a439cfac20968b7a7f8b77b279b960af79d446e5a108e89c080eb09ee046', 4, '2026-08-18 07:00:00', 'drv-2017a439cfac20968b7a7f8b', 'https://drive.example/pems/gallery/ho-chi-minh-city/student-buddies-welcome-guests', NULL, 'https://drive.example/thumb/2017a439cfac20968b7a', 'GALLERY_IMAGE'),
-  (307, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/student-buddies-welcome-guests.jpg', 'da-nang-student-buddies-welcome-guests.jpg', 'image/jpeg', 837761, '541b6f4433b8afb918bf60264ca367a561f55a5189ae6059e3be903de27073a5', 4, '2026-08-18 07:00:00', 'drv-541b6f4433b8afb918bf6026', 'https://drive.example/pems/gallery/da-nang/student-buddies-welcome-guests', NULL, 'https://drive.example/thumb/541b6f4433b8afb918bf', 'GALLERY_IMAGE'),
-  (308, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/student-buddies-welcome-guests.jpg', 'can-tho-student-buddies-welcome-guests.jpg', 'image/jpeg', 837884, '7e459ee3ce093a7065fa086dfd7bf5a53623d72b9a62a71b873224c109d07578', 4, '2026-08-18 07:00:00', 'drv-7e459ee3ce093a7065fa086d', 'https://drive.example/pems/gallery/can-tho/student-buddies-welcome-guests', NULL, 'https://drive.example/thumb/7e459ee3ce093a7065fa', 'GALLERY_IMAGE'),
-  (309, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/academic-workshop-opening.jpg', 'ha-noi-academic-workshop-opening.jpg', 'image/jpeg', 838007, '848e16f7ffe287eaa4ee25be4229cbff3b4b6d7f4f403afda7deff5b90907579', 4, '2026-08-18 07:00:00', 'drv-848e16f7ffe287eaa4ee25be', 'https://drive.example/pems/gallery/ha-noi/academic-workshop-opening', NULL, 'https://drive.example/thumb/848e16f7ffe287eaa4ee', 'GALLERY_IMAGE'),
-  (310, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/academic-workshop-opening.mp4', 'ho-chi-minh-city-academic-workshop-opening.mp4', 'video/mp4', 838130, '569161c68bbc60b9d6ab47b3d68637709b2e1d43a25d3734ae9eb560a252652d', 4, '2026-08-18 07:00:00', 'drv-569161c68bbc60b9d6ab47b3', 'https://drive.example/pems/gallery/ho-chi-minh-city/academic-workshop-opening', NULL, NULL, 'GALLERY_IMAGE'),
-  (311, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/academic-workshop-opening.jpg', 'da-nang-academic-workshop-opening.jpg', 'image/jpeg', 838253, '73f9316f051ed5625fb94115788f7ab88c7489c9e36dad7f973552e2f39da0aa', 4, '2026-08-18 07:00:00', 'drv-73f9316f051ed5625fb94115', 'https://drive.example/pems/gallery/da-nang/academic-workshop-opening', NULL, 'https://drive.example/thumb/73f9316f051ed5625fb9', 'GALLERY_IMAGE'),
-  (312, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/academic-workshop-opening.jpg', 'can-tho-academic-workshop-opening.jpg', 'image/jpeg', 838376, '9ebc95f832356683d6af8bbc474d073d7ab61c8b146b8fb1bc2b232dec54b19b', 4, '2026-08-18 07:00:00', 'drv-9ebc95f832356683d6af8bbc', 'https://drive.example/pems/gallery/can-tho/academic-workshop-opening', NULL, 'https://drive.example/thumb/9ebc95f832356683d6af', 'GALLERY_IMAGE'),
-  (313, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/ai-lab-demonstration.jpg', 'ha-noi-ai-lab-demonstration.jpg', 'image/jpeg', 838499, 'cb0e17f9603d409dee3d369b71129c6db935e3682648e6ad344099b3a485d293', 4, '2026-08-18 07:00:00', 'drv-cb0e17f9603d409dee3d369b', 'https://drive.example/pems/gallery/ha-noi/ai-lab-demonstration', NULL, 'https://drive.example/thumb/cb0e17f9603d409dee3d', 'GALLERY_IMAGE'),
-  (314, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/ai-lab-demonstration.jpg', 'ho-chi-minh-city-ai-lab-demonstration.jpg', 'image/jpeg', 838622, 'fee4f03d028aff9dc31398f1cede292ea44e143309f1ea5435884d76e9e97e46', 4, '2026-08-18 07:00:00', 'drv-fee4f03d028aff9dc31398f1', 'https://drive.example/pems/gallery/ho-chi-minh-city/ai-lab-demonstration', NULL, 'https://drive.example/thumb/fee4f03d028aff9dc313', 'GALLERY_IMAGE'),
-  (315, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/ai-lab-demonstration.mp4', 'da-nang-ai-lab-demonstration.mp4', 'video/mp4', 838745, '7525c35e189f223419c100e16b8f5b6c86e7257dd38cbfaad5bfe865b0e10f89', 4, '2026-08-18 07:00:00', 'drv-7525c35e189f223419c100e1', 'https://drive.example/pems/gallery/da-nang/ai-lab-demonstration', NULL, NULL, 'GALLERY_IMAGE'),
-  (316, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/ai-lab-demonstration.jpg', 'can-tho-ai-lab-demonstration.jpg', 'image/jpeg', 838868, '03d822e966edf69922f15189363afeded6ca221c5be2c4aee566952f0a44c7ea', 4, '2026-08-18 07:00:00', 'drv-03d822e966edf69922f15189', 'https://drive.example/pems/gallery/can-tho/ai-lab-demonstration', NULL, 'https://drive.example/thumb/03d822e966edf69922f1', 'GALLERY_IMAGE'),
-  (317, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/robotics-classroom-session.jpg', 'ha-noi-robotics-classroom-session.jpg', 'image/jpeg', 838991, '800cb43cc4bde9bae2281e114d234b1144caaeb50fc927eb854444a1b15bb065', 4, '2026-08-18 07:00:00', 'drv-800cb43cc4bde9bae2281e11', 'https://drive.example/pems/gallery/ha-noi/robotics-classroom-session', NULL, 'https://drive.example/thumb/800cb43cc4bde9bae228', 'GALLERY_IMAGE'),
-  (318, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/robotics-classroom-session.jpg', 'ho-chi-minh-city-robotics-classroom-session.jpg', 'image/jpeg', 839114, '35056fca7671f18878796acc176feb85381c308f49aec8818344d814b1be0f95', 4, '2026-08-18 07:00:00', 'drv-35056fca7671f18878796acc', 'https://drive.example/pems/gallery/ho-chi-minh-city/robotics-classroom-session', NULL, 'https://drive.example/thumb/35056fca7671f1887879', 'GALLERY_IMAGE'),
-  (319, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/robotics-classroom-session.jpg', 'da-nang-robotics-classroom-session.jpg', 'image/jpeg', 839237, '1cbd72919f3ab3f09b4031a2da19b28072d7e429d51157433eafb0f642625fac', 4, '2026-08-18 07:00:00', 'drv-1cbd72919f3ab3f09b4031a2', 'https://drive.example/pems/gallery/da-nang/robotics-classroom-session', NULL, 'https://drive.example/thumb/1cbd72919f3ab3f09b40', 'GALLERY_IMAGE'),
-  (320, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/robotics-classroom-session.mp4', 'can-tho-robotics-classroom-session.mp4', 'video/mp4', 839360, 'e927f93fdfead02aa6e72694196e39ec10c7cc4dd3bafb7a21f092dc4f65a56e', 4, '2026-08-18 07:00:00', 'drv-e927f93fdfead02aa6e72694', 'https://drive.example/pems/gallery/can-tho/robotics-classroom-session', NULL, NULL, 'GALLERY_IMAGE'),
-  (321, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/green-campus-walkway-tour.jpg', 'ha-noi-green-campus-walkway-tour.jpg', 'image/jpeg', 839483, 'c63668f4bdce5c6cfb880ab05d0af9c8d4aada6dffcbbd996ed4ac59f5b411c8', 4, '2026-08-18 07:00:00', 'drv-c63668f4bdce5c6cfb880ab0', 'https://drive.example/pems/gallery/ha-noi/green-campus-walkway-tour', NULL, 'https://drive.example/thumb/c63668f4bdce5c6cfb88', 'GALLERY_IMAGE'),
-  (322, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/green-campus-walkway-tour.jpg', 'ho-chi-minh-city-green-campus-walkway-tour.jpg', 'image/jpeg', 839606, '69359cef3527a2d41f1af4ebc2846034c50e9589a30e592a79e3388bf7a7927f', 4, '2026-08-18 07:00:00', 'drv-69359cef3527a2d41f1af4eb', 'https://drive.example/pems/gallery/ho-chi-minh-city/green-campus-walkway-tour', NULL, 'https://drive.example/thumb/69359cef3527a2d41f1a', 'GALLERY_IMAGE'),
-  (323, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/green-campus-walkway-tour.jpg', 'da-nang-green-campus-walkway-tour.jpg', 'image/jpeg', 839729, '0e1f673b9841ab9d604bf0cfaa2ae033121db3db65f39114568a7f7ae3f77756', 4, '2026-08-18 07:00:00', 'drv-0e1f673b9841ab9d604bf0cf', 'https://drive.example/pems/gallery/da-nang/green-campus-walkway-tour', NULL, 'https://drive.example/thumb/0e1f673b9841ab9d604b', 'GALLERY_IMAGE'),
-  (324, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/green-campus-walkway-tour.jpg', 'can-tho-green-campus-walkway-tour.jpg', 'image/jpeg', 839852, 'b1c1a34b1f5b5d3539a14124ba56559d2ab035a402db579ddf75d69342f8467a', 4, '2026-08-18 07:00:00', 'drv-b1c1a34b1f5b5d3539a14124', 'https://drive.example/pems/gallery/can-tho/green-campus-walkway-tour', NULL, 'https://drive.example/thumb/b1c1a34b1f5b5d3539a1', 'GALLERY_IMAGE'),
-  (325, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/electric-shuttle-briefing.mp4', 'ha-noi-electric-shuttle-briefing.mp4', 'video/mp4', 839975, 'ba83079777cc9492641b3773c8ca916c14744420ce3cec2c80da3abd15c54e5a', 4, '2026-08-18 07:00:00', 'drv-ba83079777cc9492641b3773', 'https://drive.example/pems/gallery/ha-noi/electric-shuttle-briefing', NULL, NULL, 'GALLERY_IMAGE'),
-  (326, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/electric-shuttle-briefing.jpg', 'ho-chi-minh-city-electric-shuttle-briefing.jpg', 'image/jpeg', 840098, '98263a0caac4bc91b417c548efc786c84951068128ef7704e5deabb516d4dbb7', 4, '2026-08-18 07:00:00', 'drv-98263a0caac4bc91b417c548', 'https://drive.example/pems/gallery/ho-chi-minh-city/electric-shuttle-briefing', NULL, 'https://drive.example/thumb/98263a0caac4bc91b417', 'GALLERY_IMAGE'),
-  (327, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/electric-shuttle-briefing.jpg', 'da-nang-electric-shuttle-briefing.jpg', 'image/jpeg', 840221, '697289430e9d8febf7500697686e267c0db55814c67a0902d63bd0b6a012a550', 4, '2026-08-18 07:00:00', 'drv-697289430e9d8febf7500697', 'https://drive.example/pems/gallery/da-nang/electric-shuttle-briefing', NULL, 'https://drive.example/thumb/697289430e9d8febf750', 'GALLERY_IMAGE'),
-  (328, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/electric-shuttle-briefing.jpg', 'can-tho-electric-shuttle-briefing.jpg', 'image/jpeg', 840344, '2c413195a77a23a23e6d5f92545916db006838f66d0b8fa9a583a5a1ab8cae23', 4, '2026-08-18 07:00:00', 'drv-2c413195a77a23a23e6d5f92', 'https://drive.example/pems/gallery/can-tho/electric-shuttle-briefing', NULL, 'https://drive.example/thumb/2c413195a77a23a23e6d', 'GALLERY_IMAGE'),
-  (329, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/international-partnership-roundtable.jpg', 'ha-noi-international-partnership-roundtable.jpg', 'image/jpeg', 840467, '2fc9dd038615896ae1126b5444d974ea9720cc37fea0f729b62dd4c70038129b', 4, '2026-08-18 07:00:00', 'drv-2fc9dd038615896ae1126b54', 'https://drive.example/pems/gallery/ha-noi/international-partnership-roundtable', NULL, 'https://drive.example/thumb/2fc9dd038615896ae112', 'GALLERY_IMAGE'),
-  (330, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/international-partnership-roundtable.mp4', 'ho-chi-minh-city-international-partnership-roundtable.mp4', 'video/mp4', 840590, '520b49735943611d87d711787e02bedcdf7187adafe983e1b8762e76493b537d', 4, '2026-08-18 07:00:00', 'drv-520b49735943611d87d71178', 'https://drive.example/pems/gallery/ho-chi-minh-city/international-partnership-roundtable', NULL, NULL, 'GALLERY_IMAGE'),
-  (331, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/international-partnership-roundtable.jpg', 'da-nang-international-partnership-roundtable.jpg', 'image/jpeg', 840713, '394939acef30c653ae2dbb4660bc7c59336f039834b03f6d033c88670518e140', 4, '2026-08-18 07:00:00', 'drv-394939acef30c653ae2dbb46', 'https://drive.example/pems/gallery/da-nang/international-partnership-roundtable', NULL, 'https://drive.example/thumb/394939acef30c653ae2d', 'GALLERY_IMAGE'),
-  (332, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/international-partnership-roundtable.jpg', 'can-tho-international-partnership-roundtable.jpg', 'image/jpeg', 840836, 'b510bcf9ae4c17b1a12836095ca98d22d1bafec6e8f5fd6f1cd0ef5930b91674', 4, '2026-08-18 07:00:00', 'drv-b510bcf9ae4c17b1a1283609', 'https://drive.example/pems/gallery/can-tho/international-partnership-roundtable', NULL, 'https://drive.example/thumb/b510bcf9ae4c17b1a128', 'GALLERY_IMAGE'),
-  (333, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/industry-mentor-panel.jpg', 'ha-noi-industry-mentor-panel.jpg', 'image/jpeg', 840959, '63dec36bcdb3de939f7b746db361b33c3127eb54a0b2858f5b8767459d9359a0', 4, '2026-08-18 07:00:00', 'drv-63dec36bcdb3de939f7b746d', 'https://drive.example/pems/gallery/ha-noi/industry-mentor-panel', NULL, 'https://drive.example/thumb/63dec36bcdb3de939f7b', 'GALLERY_IMAGE'),
-  (334, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/industry-mentor-panel.jpg', 'ho-chi-minh-city-industry-mentor-panel.jpg', 'image/jpeg', 841082, 'a90ab597115aba40a503d2c8211ca09f5d6c3133d2a2dd2e0fc0080e40104a4b', 4, '2026-08-18 07:00:00', 'drv-a90ab597115aba40a503d2c8', 'https://drive.example/pems/gallery/ho-chi-minh-city/industry-mentor-panel', NULL, 'https://drive.example/thumb/a90ab597115aba40a503', 'GALLERY_IMAGE'),
-  (335, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/industry-mentor-panel.mp4', 'da-nang-industry-mentor-panel.mp4', 'video/mp4', 841205, 'bca61c5960685ec8b0b39377f3f64bdffab7aa8642719e5b43dbdd3182633569', 4, '2026-08-18 07:00:00', 'drv-bca61c5960685ec8b0b39377', 'https://drive.example/pems/gallery/da-nang/industry-mentor-panel', NULL, NULL, 'GALLERY_IMAGE'),
-  (336, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/industry-mentor-panel.jpg', 'can-tho-industry-mentor-panel.jpg', 'image/jpeg', 841328, '1f5eb24c90da514b466fbcc607274037f154c8eae5344cccf13f8a177d8927b9', 4, '2026-08-18 07:00:00', 'drv-1f5eb24c90da514b466fbcc6', 'https://drive.example/pems/gallery/can-tho/industry-mentor-panel', NULL, 'https://drive.example/thumb/1f5eb24c90da514b466f', 'GALLERY_IMAGE'),
-  (337, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/curriculum-mapping-workshop.jpg', 'ha-noi-curriculum-mapping-workshop.jpg', 'image/jpeg', 841451, 'c68d06dce63d7cc55c4e0ae58058fab95116ebecdcab720a3ea32760535fa937', 4, '2026-08-18 07:00:00', 'drv-c68d06dce63d7cc55c4e0ae5', 'https://drive.example/pems/gallery/ha-noi/curriculum-mapping-workshop', NULL, 'https://drive.example/thumb/c68d06dce63d7cc55c4e', 'GALLERY_IMAGE'),
-  (338, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/curriculum-mapping-workshop.jpg', 'ho-chi-minh-city-curriculum-mapping-workshop.jpg', 'image/jpeg', 841574, '0f0ba0eab72f51a87a1c75cd2a12857ad625655383ccd5ce09e618e98fe6141f', 4, '2026-08-18 07:00:00', 'drv-0f0ba0eab72f51a87a1c75cd', 'https://drive.example/pems/gallery/ho-chi-minh-city/curriculum-mapping-workshop', NULL, 'https://drive.example/thumb/0f0ba0eab72f51a87a1c', 'GALLERY_IMAGE'),
-  (339, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/curriculum-mapping-workshop.jpg', 'da-nang-curriculum-mapping-workshop.jpg', 'image/jpeg', 841697, '4530819756eeb800ee70cb59edc5c44b9c0f3dafc7ccf2a166963ae3a74aebaf', 4, '2026-08-18 07:00:00', 'drv-4530819756eeb800ee70cb59', 'https://drive.example/pems/gallery/da-nang/curriculum-mapping-workshop', NULL, 'https://drive.example/thumb/4530819756eeb800ee70', 'GALLERY_IMAGE'),
-  (340, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/curriculum-mapping-workshop.mp4', 'can-tho-curriculum-mapping-workshop.mp4', 'video/mp4', 841820, 'ae4db351d93d4eaa5249fd1548a577e5cd9d6720cef41a0737acf5364398588b', 4, '2026-08-18 07:00:00', 'drv-ae4db351d93d4eaa5249fd15', 'https://drive.example/pems/gallery/can-tho/curriculum-mapping-workshop', NULL, NULL, 'GALLERY_IMAGE'),
-  (341, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/student-project-showcase.jpg', 'ha-noi-student-project-showcase.jpg', 'image/jpeg', 841943, '72e18a6f0f600968032871ce18a0c665da179aa67f78a6f31bd2e2beae36677e', 4, '2026-08-18 07:00:00', 'drv-72e18a6f0f600968032871ce', 'https://drive.example/pems/gallery/ha-noi/student-project-showcase', NULL, 'https://drive.example/thumb/72e18a6f0f6009680328', 'GALLERY_IMAGE'),
-  (342, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/student-project-showcase.jpg', 'ho-chi-minh-city-student-project-showcase.jpg', 'image/jpeg', 842066, '21e7208547dee86812a819efc9c344b62ea8b31837ed3aea0990412e8c450463', 4, '2026-08-18 07:00:00', 'drv-21e7208547dee86812a819ef', 'https://drive.example/pems/gallery/ho-chi-minh-city/student-project-showcase', NULL, 'https://drive.example/thumb/21e7208547dee86812a8', 'GALLERY_IMAGE'),
-  (343, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/student-project-showcase.jpg', 'da-nang-student-project-showcase.jpg', 'image/jpeg', 842189, 'f46b34ed151b1915a34407d3a62ff8cd271e8fb82e36a52a2d2f12946796abdb', 4, '2026-08-18 07:00:00', 'drv-f46b34ed151b1915a34407d3', 'https://drive.example/pems/gallery/da-nang/student-project-showcase', NULL, 'https://drive.example/thumb/f46b34ed151b1915a344', 'GALLERY_IMAGE'),
-  (344, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/student-project-showcase.jpg', 'can-tho-student-project-showcase.jpg', 'image/jpeg', 842312, '107e1e21f9d1221d792eb23b04575ce70d932e9c805fde3d56ffb4bf8225535a', 4, '2026-08-18 07:00:00', 'drv-107e1e21f9d1221d792eb23b', 'https://drive.example/pems/gallery/can-tho/student-project-showcase', NULL, 'https://drive.example/thumb/107e1e21f9d1221d792e', 'GALLERY_IMAGE'),
-  (345, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/library-learning-space-tour.mp4', 'ha-noi-library-learning-space-tour.mp4', 'video/mp4', 842435, 'b3417e2270ec58a309c5db8bd24de2d3bb964653a261d50979e5c330caf3a5ab', 4, '2026-08-18 07:00:00', 'drv-b3417e2270ec58a309c5db8b', 'https://drive.example/pems/gallery/ha-noi/library-learning-space-tour', NULL, NULL, 'GALLERY_IMAGE'),
-  (346, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/library-learning-space-tour.jpg', 'ho-chi-minh-city-library-learning-space-tour.jpg', 'image/jpeg', 842558, 'd185db6171555f07f0833243f3ccbf12b69d97c27648b97acdf07b1c006ad3a1', 4, '2026-08-18 07:00:00', 'drv-d185db6171555f07f0833243', 'https://drive.example/pems/gallery/ho-chi-minh-city/library-learning-space-tour', NULL, 'https://drive.example/thumb/d185db6171555f07f083', 'GALLERY_IMAGE'),
-  (347, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/library-learning-space-tour.jpg', 'da-nang-library-learning-space-tour.jpg', 'image/jpeg', 842681, '2f5cffa05074e181ca63a391661b491ba8818592382d317dcab1a38363e053cf', 4, '2026-08-18 07:00:00', 'drv-2f5cffa05074e181ca63a391', 'https://drive.example/pems/gallery/da-nang/library-learning-space-tour', NULL, 'https://drive.example/thumb/2f5cffa05074e181ca63', 'GALLERY_IMAGE'),
-  (348, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/library-learning-space-tour.jpg', 'can-tho-library-learning-space-tour.jpg', 'image/jpeg', 842804, '200f36af4fba82f5a8afa9dfa01288ef80dc1dcb33bab663ec49616df7a9abf1', 4, '2026-08-18 07:00:00', 'drv-200f36af4fba82f5a8afa9df', 'https://drive.example/pems/gallery/can-tho/library-learning-space-tour', NULL, 'https://drive.example/thumb/200f36af4fba82f5a8af', 'GALLERY_IMAGE'),
-  (349, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/campus-sustainability-discussion.jpg', 'ha-noi-campus-sustainability-discussion.jpg', 'image/jpeg', 842927, '7cfbcbd7086b42e6fa4e32b9cc146d509b7c3bf95284d54f54e68bee1870326a', 4, '2026-08-18 07:00:00', 'drv-7cfbcbd7086b42e6fa4e32b9', 'https://drive.example/pems/gallery/ha-noi/campus-sustainability-discussion', NULL, 'https://drive.example/thumb/7cfbcbd7086b42e6fa4e', 'GALLERY_IMAGE'),
-  (350, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/campus-sustainability-discussion.mp4', 'ho-chi-minh-city-campus-sustainability-discussion.mp4', 'video/mp4', 843050, 'd54b22343177c943e3d697003f707f28b92e247fe58033b51f6c9c8ea6454ac0', 4, '2026-08-18 07:00:00', 'drv-d54b22343177c943e3d69700', 'https://drive.example/pems/gallery/ho-chi-minh-city/campus-sustainability-discussion', NULL, NULL, 'GALLERY_IMAGE'),
-  (351, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/campus-sustainability-discussion.jpg', 'da-nang-campus-sustainability-discussion.jpg', 'image/jpeg', 843173, 'bc5804aea79d02a2f043b57308ef04cee3d3180be6bfb7d6d10a0af5dc58839d', 4, '2026-08-18 07:00:00', 'drv-bc5804aea79d02a2f043b573', 'https://drive.example/pems/gallery/da-nang/campus-sustainability-discussion', NULL, 'https://drive.example/thumb/bc5804aea79d02a2f043', 'GALLERY_IMAGE'),
-  (352, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/campus-sustainability-discussion.jpg', 'can-tho-campus-sustainability-discussion.jpg', 'image/jpeg', 843296, 'ac07de80e9bffdc3b26f5f747bb36b699897af2c0f81c5ab5fcf7cac30073b7e', 4, '2026-08-18 07:00:00', 'drv-ac07de80e9bffdc3b26f5f74', 'https://drive.example/pems/gallery/can-tho/campus-sustainability-discussion', NULL, 'https://drive.example/thumb/ac07de80e9bffdc3b26f', 'GALLERY_IMAGE'),
-  (353, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/hospitality-training-demonstration.jpg', 'ha-noi-hospitality-training-demonstration.jpg', 'image/jpeg', 843419, '3e28ce2f4cd234565d8e700fdaa118a465dacfb4613f184d9bd04951d7ae735a', 4, '2026-08-18 07:00:00', 'drv-3e28ce2f4cd234565d8e700f', 'https://drive.example/pems/gallery/ha-noi/hospitality-training-demonstration', NULL, 'https://drive.example/thumb/3e28ce2f4cd234565d8e', 'GALLERY_IMAGE'),
-  (354, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/hospitality-training-demonstration.jpg', 'ho-chi-minh-city-hospitality-training-demonstration.jpg', 'image/jpeg', 843542, '26fefcd3e81a8f34f341c794d45bd94e0c53b56c51a31597f28a5093772afde7', 4, '2026-08-18 07:00:00', 'drv-26fefcd3e81a8f34f341c794', 'https://drive.example/pems/gallery/ho-chi-minh-city/hospitality-training-demonstration', NULL, 'https://drive.example/thumb/26fefcd3e81a8f34f341', 'GALLERY_IMAGE'),
-  (355, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/hospitality-training-demonstration.mp4', 'da-nang-hospitality-training-demonstration.mp4', 'video/mp4', 843665, '77ab27734e23168142ba08782c65f8a983cebe594a5991b49a66a76f12b250b0', 4, '2026-08-18 07:00:00', 'drv-77ab27734e23168142ba0878', 'https://drive.example/pems/gallery/da-nang/hospitality-training-demonstration', NULL, NULL, 'GALLERY_IMAGE'),
-  (356, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/hospitality-training-demonstration.jpg', 'can-tho-hospitality-training-demonstration.jpg', 'image/jpeg', 843788, '38128a565f8ac9bcddbae758752d6ef84b3936a14cb62072e7e1522b089331b0', 4, '2026-08-18 07:00:00', 'drv-38128a565f8ac9bcddbae758', 'https://drive.example/pems/gallery/can-tho/hospitality-training-demonstration', NULL, 'https://drive.example/thumb/38128a565f8ac9bcddba', 'GALLERY_IMAGE'),
-  (357, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/digital-art-studio-visit.jpg', 'ha-noi-digital-art-studio-visit.jpg', 'image/jpeg', 843911, '8f6962fc9480b6bac5f69c20dc2e1465965601bc0949cb333c1a47df0015ef9d', 4, '2026-08-18 07:00:00', 'drv-8f6962fc9480b6bac5f69c20', 'https://drive.example/pems/gallery/ha-noi/digital-art-studio-visit', NULL, 'https://drive.example/thumb/8f6962fc9480b6bac5f6', 'GALLERY_IMAGE'),
-  (358, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/digital-art-studio-visit.jpg', 'ho-chi-minh-city-digital-art-studio-visit.jpg', 'image/jpeg', 844034, '5868590ffd3b578f1b14955e91012b2facd020f4c81a916df88cb6a057747f0c', 4, '2026-08-18 07:00:00', 'drv-5868590ffd3b578f1b14955e', 'https://drive.example/pems/gallery/ho-chi-minh-city/digital-art-studio-visit', NULL, 'https://drive.example/thumb/5868590ffd3b578f1b14', 'GALLERY_IMAGE'),
-  (359, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/digital-art-studio-visit.jpg', 'da-nang-digital-art-studio-visit.jpg', 'image/jpeg', 844157, 'abb55196a8474e1d2659921b5b570922a28f082478c99825b670438286f5921a', 4, '2026-08-18 07:00:00', 'drv-abb55196a8474e1d2659921b', 'https://drive.example/pems/gallery/da-nang/digital-art-studio-visit', NULL, 'https://drive.example/thumb/abb55196a8474e1d2659', 'GALLERY_IMAGE'),
-  (360, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/digital-art-studio-visit.mp4', 'can-tho-digital-art-studio-visit.mp4', 'video/mp4', 844280, 'a616c717a1aa4700c784186b4dca20228688e075bcf09e43e56cbaf7db0a58ba', 4, '2026-08-18 07:00:00', 'drv-a616c717a1aa4700c784186b', 'https://drive.example/pems/gallery/can-tho/digital-art-studio-visit', NULL, NULL, 'GALLERY_IMAGE'),
-  (361, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/mou-signing-ceremony.jpg', 'ha-noi-mou-signing-ceremony.jpg', 'image/jpeg', 844403, '18799c13bb283c23aa6ba136662b00bf4700f30e48d556d5faceb8f614b69a91', 4, '2026-08-18 07:00:00', 'drv-18799c13bb283c23aa6ba136', 'https://drive.example/pems/gallery/ha-noi/mou-signing-ceremony', NULL, 'https://drive.example/thumb/18799c13bb283c23aa6b', 'GALLERY_IMAGE'),
-  (362, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/mou-signing-ceremony.jpg', 'ho-chi-minh-city-mou-signing-ceremony.jpg', 'image/jpeg', 844526, 'ca149598d98c93c6e24dd460336c92300625992f431fc222e35a071cc0321bb0', 4, '2026-08-18 07:00:00', 'drv-ca149598d98c93c6e24dd460', 'https://drive.example/pems/gallery/ho-chi-minh-city/mou-signing-ceremony', NULL, 'https://drive.example/thumb/ca149598d98c93c6e24d', 'GALLERY_IMAGE'),
-  (363, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/mou-signing-ceremony.jpg', 'da-nang-mou-signing-ceremony.jpg', 'image/jpeg', 844649, '9d708ed259add07317dfb060892172362ef8d51aad3e4e5b9f0f513ce97f1efc', 4, '2026-08-18 07:00:00', 'drv-9d708ed259add07317dfb060', 'https://drive.example/pems/gallery/da-nang/mou-signing-ceremony', NULL, 'https://drive.example/thumb/9d708ed259add07317df', 'GALLERY_IMAGE'),
-  (364, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/mou-signing-ceremony.jpg', 'can-tho-mou-signing-ceremony.jpg', 'image/jpeg', 844772, '760569554f3ee7130521a659ac192b45a8851c4f27390995d5f31e3d45de3e74', 4, '2026-08-18 07:00:00', 'drv-760569554f3ee7130521a659', 'https://drive.example/pems/gallery/can-tho/mou-signing-ceremony', NULL, 'https://drive.example/thumb/760569554f3ee7130521', 'GALLERY_IMAGE'),
-  (365, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/faculty-networking-session.mp4', 'ha-noi-faculty-networking-session.mp4', 'video/mp4', 844895, '6413a8c369f81218a11f54cb59e56690cf01a8604b3d7e7483cdb25504ff319d', 4, '2026-08-18 07:00:00', 'drv-6413a8c369f81218a11f54cb', 'https://drive.example/pems/gallery/ha-noi/faculty-networking-session', NULL, NULL, 'GALLERY_IMAGE'),
-  (366, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/faculty-networking-session.jpg', 'ho-chi-minh-city-faculty-networking-session.jpg', 'image/jpeg', 845018, '1d8984426458f6035bc2e05476f6b0747ae764ae3040a25fa79e15df712eae05', 4, '2026-08-18 07:00:00', 'drv-1d8984426458f6035bc2e054', 'https://drive.example/pems/gallery/ho-chi-minh-city/faculty-networking-session', NULL, 'https://drive.example/thumb/1d8984426458f6035bc2', 'GALLERY_IMAGE'),
-  (367, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/faculty-networking-session.jpg', 'da-nang-faculty-networking-session.jpg', 'image/jpeg', 845141, '38b58ab45c49b8bf852e99bd3eb05e984a1e1c8fe0ec2ecf8a76c1ec9f7a5bff', 4, '2026-08-18 07:00:00', 'drv-38b58ab45c49b8bf852e99bd', 'https://drive.example/pems/gallery/da-nang/faculty-networking-session', NULL, 'https://drive.example/thumb/38b58ab45c49b8bf852e', 'GALLERY_IMAGE'),
-  (368, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/faculty-networking-session.jpg', 'can-tho-faculty-networking-session.jpg', 'image/jpeg', 845264, '8f365fe82bdc42b1887d998da6fa9728274d3b4b1788c4e51bd977c115095c50', 4, '2026-08-18 07:00:00', 'drv-8f365fe82bdc42b1887d998d', 'https://drive.example/pems/gallery/can-tho/faculty-networking-session', NULL, 'https://drive.example/thumb/8f365fe82bdc42b1887d', 'GALLERY_IMAGE'),
-  (369, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/guest-lecture-audience.jpg', 'ha-noi-guest-lecture-audience.jpg', 'image/jpeg', 845387, 'a60af0d5a6f35fc2308bc396fb300f645eebb4886e2842bc0e4f932ee9f4515d', 4, '2026-08-18 07:00:00', 'drv-a60af0d5a6f35fc2308bc396', 'https://drive.example/pems/gallery/ha-noi/guest-lecture-audience', NULL, 'https://drive.example/thumb/a60af0d5a6f35fc2308b', 'GALLERY_IMAGE'),
-  (370, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/guest-lecture-audience.mp4', 'ho-chi-minh-city-guest-lecture-audience.mp4', 'video/mp4', 845510, '7652181a6657c401e6111ceff580d20d6652f2bc9599767b0dc3745b73106dde', 4, '2026-08-18 07:00:00', 'drv-7652181a6657c401e6111cef', 'https://drive.example/pems/gallery/ho-chi-minh-city/guest-lecture-audience', NULL, NULL, 'GALLERY_IMAGE'),
-  (371, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/guest-lecture-audience.jpg', 'da-nang-guest-lecture-audience.jpg', 'image/jpeg', 845633, '3fbf5a05e9a431ea9cc658002272d6aff3061e9c190c475ff262a9994c80b0af', 4, '2026-08-18 07:00:00', 'drv-3fbf5a05e9a431ea9cc65800', 'https://drive.example/pems/gallery/da-nang/guest-lecture-audience', NULL, 'https://drive.example/thumb/3fbf5a05e9a431ea9cc6', 'GALLERY_IMAGE'),
-  (372, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/guest-lecture-audience.jpg', 'can-tho-guest-lecture-audience.jpg', 'image/jpeg', 845756, 'b3e56c4d0faa80d0813c36e75778ad7142ecae907932b1e337c7475ce955b502', 4, '2026-08-18 07:00:00', 'drv-b3e56c4d0faa80d0813c36e7', 'https://drive.example/pems/gallery/can-tho/guest-lecture-audience', NULL, 'https://drive.example/thumb/b3e56c4d0faa80d0813c', 'GALLERY_IMAGE'),
-  (373, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/innovation-hub-tour.jpg', 'ha-noi-innovation-hub-tour.jpg', 'image/jpeg', 845879, 'ab37675f8c1cfcca1c30a7396c08321d778542f3719ec929ccdcdd9344a345cb', 4, '2026-08-18 07:00:00', 'drv-ab37675f8c1cfcca1c30a739', 'https://drive.example/pems/gallery/ha-noi/innovation-hub-tour', NULL, 'https://drive.example/thumb/ab37675f8c1cfcca1c30', 'GALLERY_IMAGE'),
-  (374, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/innovation-hub-tour.jpg', 'ho-chi-minh-city-innovation-hub-tour.jpg', 'image/jpeg', 846002, '6b21b35c2e0a65e8a96f95a012342a6678d506b2799c2bcfbf33a6973a2bfb73', 4, '2026-08-18 07:00:00', 'drv-6b21b35c2e0a65e8a96f95a0', 'https://drive.example/pems/gallery/ho-chi-minh-city/innovation-hub-tour', NULL, 'https://drive.example/thumb/6b21b35c2e0a65e8a96f', 'GALLERY_IMAGE'),
-  (375, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/innovation-hub-tour.mp4', 'da-nang-innovation-hub-tour.mp4', 'video/mp4', 846125, 'abd83cf668bfad7509b226c6699f498507531aae72ac39f5e2f050d1669ee709', 4, '2026-08-18 07:00:00', 'drv-abd83cf668bfad7509b226c6', 'https://drive.example/pems/gallery/da-nang/innovation-hub-tour', NULL, NULL, 'GALLERY_IMAGE'),
-  (376, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/innovation-hub-tour.jpg', 'can-tho-innovation-hub-tour.jpg', 'image/jpeg', 846248, 'eab23f36462c22338b99125de6f9c8bf4d645be9a53a77d6d268f3939c84e9bc', 4, '2026-08-18 07:00:00', 'drv-eab23f36462c22338b99125d', 'https://drive.example/pems/gallery/can-tho/innovation-hub-tour', NULL, 'https://drive.example/thumb/eab23f36462c22338b99', 'GALLERY_IMAGE'),
-  (377, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/delegation-group-photo.jpg', 'ha-noi-delegation-group-photo.jpg', 'image/jpeg', 846371, 'b2b4fe29020ee313aa3729d181900ec4f0f48b91cea2b031a02caee835231bb4', 4, '2026-08-18 07:00:00', 'drv-b2b4fe29020ee313aa3729d1', 'https://drive.example/pems/gallery/ha-noi/delegation-group-photo', NULL, 'https://drive.example/thumb/b2b4fe29020ee313aa37', 'GALLERY_IMAGE'),
-  (378, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/delegation-group-photo.jpg', 'ho-chi-minh-city-delegation-group-photo.jpg', 'image/jpeg', 846494, 'f89ee0d479bd5771b35001502540ebc62c67e3e2abbc71e50928b993c15c0e0b', 4, '2026-08-18 07:00:00', 'drv-f89ee0d479bd5771b3500150', 'https://drive.example/pems/gallery/ho-chi-minh-city/delegation-group-photo', NULL, 'https://drive.example/thumb/f89ee0d479bd5771b350', 'GALLERY_IMAGE'),
-  (379, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/delegation-group-photo.jpg', 'da-nang-delegation-group-photo.jpg', 'image/jpeg', 846617, '3a35180786a92039a2d0185b641bb951b6ef22327b56588165558c70705852d0', 4, '2026-08-18 07:00:00', 'drv-3a35180786a92039a2d0185b', 'https://drive.example/pems/gallery/da-nang/delegation-group-photo', NULL, 'https://drive.example/thumb/3a35180786a92039a2d0', 'GALLERY_IMAGE'),
-  (380, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/delegation-group-photo.mp4', 'can-tho-delegation-group-photo.mp4', 'video/mp4', 846740, '1703e0c30afe51e8f680c493bec8d223163ec611d791986d1fdde1d4058ae890', 4, '2026-08-18 07:00:00', 'drv-1703e0c30afe51e8f680c493', 'https://drive.example/pems/gallery/can-tho/delegation-group-photo', NULL, NULL, 'GALLERY_IMAGE'),
-  (381, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/research-collaboration-meeting.jpg', 'ha-noi-research-collaboration-meeting.jpg', 'image/jpeg', 846863, '74809af8ed23947d14cd4c50a6bd261cd8b7cd65af40f30ce899ddc82c1307a2', 4, '2026-08-18 07:00:00', 'drv-74809af8ed23947d14cd4c50', 'https://drive.example/pems/gallery/ha-noi/research-collaboration-meeting', NULL, 'https://drive.example/thumb/74809af8ed23947d14cd', 'GALLERY_IMAGE'),
-  (382, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/research-collaboration-meeting.jpg', 'ho-chi-minh-city-research-collaboration-meeting.jpg', 'image/jpeg', 846986, '0f090ebc76369f205a0de77a14851da5a68127de675f545fa6d66e272d3d703e', 4, '2026-08-18 07:00:00', 'drv-0f090ebc76369f205a0de77a', 'https://drive.example/pems/gallery/ho-chi-minh-city/research-collaboration-meeting', NULL, 'https://drive.example/thumb/0f090ebc76369f205a0d', 'GALLERY_IMAGE'),
-  (383, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/research-collaboration-meeting.jpg', 'da-nang-research-collaboration-meeting.jpg', 'image/jpeg', 847109, 'b4c87a501d8b5d04e29aec1dfd8512a81726771212d1883266c73ebd0c101567', 4, '2026-08-18 07:00:00', 'drv-b4c87a501d8b5d04e29aec1d', 'https://drive.example/pems/gallery/da-nang/research-collaboration-meeting', NULL, 'https://drive.example/thumb/b4c87a501d8b5d04e29a', 'GALLERY_IMAGE'),
-  (384, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/research-collaboration-meeting.jpg', 'can-tho-research-collaboration-meeting.jpg', 'image/jpeg', 847232, '90bb7c6e591f1cb3f30652aaff3cc8cd9eef36c46a4949153afdd7add96685af', 4, '2026-08-18 07:00:00', 'drv-90bb7c6e591f1cb3f30652aa', 'https://drive.example/pems/gallery/can-tho/research-collaboration-meeting', NULL, 'https://drive.example/thumb/90bb7c6e591f1cb3f306', 'GALLERY_IMAGE'),
-  (385, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/student-exchange-orientation.mp4', 'ha-noi-student-exchange-orientation.mp4', 'video/mp4', 847355, 'd6c0c95c2c5277d71f2cad1e5788a2d405af02070b96fa4aa1b004958ee07674', 4, '2026-08-18 07:00:00', 'drv-d6c0c95c2c5277d71f2cad1e', 'https://drive.example/pems/gallery/ha-noi/student-exchange-orientation', NULL, NULL, 'GALLERY_IMAGE'),
-  (386, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/student-exchange-orientation.jpg', 'ho-chi-minh-city-student-exchange-orientation.jpg', 'image/jpeg', 847478, '235c12e4147b18b4e79dab39b030525e290f8b118c8146cd409cf66943e3d695', 4, '2026-08-18 07:00:00', 'drv-235c12e4147b18b4e79dab39', 'https://drive.example/pems/gallery/ho-chi-minh-city/student-exchange-orientation', NULL, 'https://drive.example/thumb/235c12e4147b18b4e79d', 'GALLERY_IMAGE'),
-  (387, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/student-exchange-orientation.jpg', 'da-nang-student-exchange-orientation.jpg', 'image/jpeg', 847601, '69fd02fd6a1098c8b02b0b5408e2be37deae746ccf6b70c1c7060b1311f769d4', 4, '2026-08-18 07:00:00', 'drv-69fd02fd6a1098c8b02b0b54', 'https://drive.example/pems/gallery/da-nang/student-exchange-orientation', NULL, 'https://drive.example/thumb/69fd02fd6a1098c8b02b', 'GALLERY_IMAGE'),
-  (388, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/student-exchange-orientation.jpg', 'can-tho-student-exchange-orientation.jpg', 'image/jpeg', 847724, '6bb2e85bfdb6fb13a05e599ce8f69dda76192f2ee37e408857d569bd8a3c2d18', 4, '2026-08-18 07:00:00', 'drv-6bb2e85bfdb6fb13a05e599c', 'https://drive.example/pems/gallery/can-tho/student-exchange-orientation', NULL, 'https://drive.example/thumb/6bb2e85bfdb6fb13a05e', 'GALLERY_IMAGE'),
-  (389, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/career-services-presentation.jpg', 'ha-noi-career-services-presentation.jpg', 'image/jpeg', 847847, 'ff35f38687c2fb28ce0814f0985e9457a455852f428f108c21a2bf7b32a557fe', 4, '2026-08-18 07:00:00', 'drv-ff35f38687c2fb28ce0814f0', 'https://drive.example/pems/gallery/ha-noi/career-services-presentation', NULL, 'https://drive.example/thumb/ff35f38687c2fb28ce08', 'GALLERY_IMAGE'),
-  (390, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/career-services-presentation.mp4', 'ho-chi-minh-city-career-services-presentation.mp4', 'video/mp4', 847970, '5b6370ce2e1ff782d5a1e1eb464439e00e9522ce8365b7b0a21854b65580fb3c', 4, '2026-08-18 07:00:00', 'drv-5b6370ce2e1ff782d5a1e1eb', 'https://drive.example/pems/gallery/ho-chi-minh-city/career-services-presentation', NULL, NULL, 'GALLERY_IMAGE'),
-  (391, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/career-services-presentation.jpg', 'da-nang-career-services-presentation.jpg', 'image/jpeg', 848093, 'e9e95fb7e92087799a3b74bbc31cb6463f6275aadc5099640e57862ad778c1df', 4, '2026-08-18 07:00:00', 'drv-e9e95fb7e92087799a3b74bb', 'https://drive.example/pems/gallery/da-nang/career-services-presentation', NULL, 'https://drive.example/thumb/e9e95fb7e92087799a3b', 'GALLERY_IMAGE'),
-  (392, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/career-services-presentation.jpg', 'can-tho-career-services-presentation.jpg', 'image/jpeg', 848216, '16f397650ae1548adda0efb9bbf83851de5a2b4e65c135b5b73a3a50973e1607', 4, '2026-08-18 07:00:00', 'drv-16f397650ae1548adda0efb9', 'https://drive.example/pems/gallery/can-tho/career-services-presentation', NULL, 'https://drive.example/thumb/16f397650ae1548adda0', 'GALLERY_IMAGE'),
-  (393, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/community-engagement-session.jpg', 'ha-noi-community-engagement-session.jpg', 'image/jpeg', 848339, '8b366961bc377e33931d448cfea6f8c987561e763bf52b3ada854760a17d500e', 4, '2026-08-18 07:00:00', 'drv-8b366961bc377e33931d448c', 'https://drive.example/pems/gallery/ha-noi/community-engagement-session', NULL, 'https://drive.example/thumb/8b366961bc377e33931d', 'GALLERY_IMAGE'),
-  (394, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/community-engagement-session.jpg', 'ho-chi-minh-city-community-engagement-session.jpg', 'image/jpeg', 848462, 'f5abb4ba75c66e21dac7967e77fc23cec5e2601d7e71e0be4260ec8953461c7e', 4, '2026-08-18 07:00:00', 'drv-f5abb4ba75c66e21dac7967e', 'https://drive.example/pems/gallery/ho-chi-minh-city/community-engagement-session', NULL, 'https://drive.example/thumb/f5abb4ba75c66e21dac7', 'GALLERY_IMAGE'),
-  (395, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/community-engagement-session.mp4', 'da-nang-community-engagement-session.mp4', 'video/mp4', 848585, '1e55e8fe43e3f2ed9c2db9bb73831b9786810f385122c4a73c5cd3846d41bd1d', 4, '2026-08-18 07:00:00', 'drv-1e55e8fe43e3f2ed9c2db9bb', 'https://drive.example/pems/gallery/da-nang/community-engagement-session', NULL, NULL, 'GALLERY_IMAGE'),
-  (396, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/community-engagement-session.jpg', 'can-tho-community-engagement-session.jpg', 'image/jpeg', 848708, '1cffec45af5ea630e73df298fd0b1d758282beaa0d3bc0453d77e798698bfd66', 4, '2026-08-18 07:00:00', 'drv-1cffec45af5ea630e73df298', 'https://drive.example/pems/gallery/can-tho/community-engagement-session', NULL, 'https://drive.example/thumb/1cffec45af5ea630e73d', 'GALLERY_IMAGE'),
-  (397, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/maker-space-demonstration.jpg', 'ha-noi-maker-space-demonstration.jpg', 'image/jpeg', 848831, '168dfb8a2e2a6455f3578cf257d6fe52e9c7a0b523756063b8e7e46fd6c319f8', 4, '2026-08-18 07:00:00', 'drv-168dfb8a2e2a6455f3578cf2', 'https://drive.example/pems/gallery/ha-noi/maker-space-demonstration', NULL, 'https://drive.example/thumb/168dfb8a2e2a6455f357', 'GALLERY_IMAGE'),
-  (398, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/maker-space-demonstration.jpg', 'ho-chi-minh-city-maker-space-demonstration.jpg', 'image/jpeg', 848954, '49182a401d12ff2a2654f12f00a991bf9074ca135c0005581dd63cc0b11bd277', 4, '2026-08-18 07:00:00', 'drv-49182a401d12ff2a2654f12f', 'https://drive.example/pems/gallery/ho-chi-minh-city/maker-space-demonstration', NULL, 'https://drive.example/thumb/49182a401d12ff2a2654', 'GALLERY_IMAGE'),
-  (399, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/maker-space-demonstration.jpg', 'da-nang-maker-space-demonstration.jpg', 'image/jpeg', 849077, '6dec6a6ef30799b13f010567d2d226df91718f5f7e212ed75678bd5cbcdf5bd2', 4, '2026-08-18 07:00:00', 'drv-6dec6a6ef30799b13f010567', 'https://drive.example/pems/gallery/da-nang/maker-space-demonstration', NULL, 'https://drive.example/thumb/6dec6a6ef30799b13f01', 'GALLERY_IMAGE'),
-  (400, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/maker-space-demonstration.mp4', 'can-tho-maker-space-demonstration.mp4', 'video/mp4', 849200, 'e5bb14024c93a87e0be13fa20df68a650522f03bdb79efd51d102e6429cc0eaf', 4, '2026-08-18 07:00:00', 'drv-e5bb14024c93a87e0be13fa2', 'https://drive.example/pems/gallery/can-tho/maker-space-demonstration', NULL, NULL, 'GALLERY_IMAGE'),
-  (401, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/bilingual-campus-tour.jpg', 'ha-noi-bilingual-campus-tour.jpg', 'image/jpeg', 849323, '58b2d9cb984bee283ce64c57b36c2aa6acc03e76e12c758229fdef2d4043d7d0', 4, '2026-08-18 07:00:00', 'drv-58b2d9cb984bee283ce64c57', 'https://drive.example/pems/gallery/ha-noi/bilingual-campus-tour', NULL, 'https://drive.example/thumb/58b2d9cb984bee283ce6', 'GALLERY_IMAGE'),
-  (402, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/bilingual-campus-tour.jpg', 'ho-chi-minh-city-bilingual-campus-tour.jpg', 'image/jpeg', 849446, '9c6b60a4913c7c10917f8decc22c28e59359e5a93a16d8caaabe8097d90d85c7', 4, '2026-08-18 07:00:00', 'drv-9c6b60a4913c7c10917f8dec', 'https://drive.example/pems/gallery/ho-chi-minh-city/bilingual-campus-tour', NULL, 'https://drive.example/thumb/9c6b60a4913c7c10917f', 'GALLERY_IMAGE'),
-  (403, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/bilingual-campus-tour.jpg', 'da-nang-bilingual-campus-tour.jpg', 'image/jpeg', 849569, 'e32fc0986f267b7db446bb5c4f92cfcdc1fa25ff8a13111a3d86ea41d17967fb', 4, '2026-08-18 07:00:00', 'drv-e32fc0986f267b7db446bb5c', 'https://drive.example/pems/gallery/da-nang/bilingual-campus-tour', NULL, 'https://drive.example/thumb/e32fc0986f267b7db446', 'GALLERY_IMAGE'),
-  (404, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/bilingual-campus-tour.jpg', 'can-tho-bilingual-campus-tour.jpg', 'image/jpeg', 849692, 'b63ab787dcafa48194e6e5dd5aafc47e2c3c6f9b0e42c016caee3f27f0f6ca9b', 4, '2026-08-18 07:00:00', 'drv-b63ab787dcafa48194e6e5dd', 'https://drive.example/pems/gallery/can-tho/bilingual-campus-tour', NULL, 'https://drive.example/thumb/b63ab787dcafa48194e6', 'GALLERY_IMAGE'),
-  (405, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/closing-and-follow-up-session.mp4', 'ha-noi-closing-and-follow-up-session.mp4', 'video/mp4', 849815, 'ae099d4e461039daefd57d04eeeb8498fea3b9af0d7d5f2e1a513db40e2b1fb2', 4, '2026-08-18 07:00:00', 'drv-ae099d4e461039daefd57d04', 'https://drive.example/pems/gallery/ha-noi/closing-and-follow-up-session', NULL, NULL, 'GALLERY_IMAGE'),
-  (406, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/closing-and-follow-up-session.jpg', 'ho-chi-minh-city-closing-and-follow-up-session.jpg', 'image/jpeg', 849938, 'c6423825e4457eba664722162d18ac5d8a0a3d95555b56ca7eb337edbd71795b', 4, '2026-08-18 07:00:00', 'drv-c6423825e4457eba66472216', 'https://drive.example/pems/gallery/ho-chi-minh-city/closing-and-follow-up-session', NULL, 'https://drive.example/thumb/c6423825e4457eba6647', 'GALLERY_IMAGE'),
-  (407, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/closing-and-follow-up-session.jpg', 'da-nang-closing-and-follow-up-session.jpg', 'image/jpeg', 850061, 'aef79fcefdf1dff5cea28f6ed3a5865225e6fb12d12204ce604277ee284f9c0d', 4, '2026-08-18 07:00:00', 'drv-aef79fcefdf1dff5cea28f6e', 'https://drive.example/pems/gallery/da-nang/closing-and-follow-up-session', NULL, 'https://drive.example/thumb/aef79fcefdf1dff5cea2', 'GALLERY_IMAGE'),
-  (408, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/closing-and-follow-up-session.jpg', 'can-tho-closing-and-follow-up-session.jpg', 'image/jpeg', 850184, '96627dfa7254cc85c6d0252576bd968aceacb86265c52a00ebaaa9275e7b8536', 4, '2026-08-18 07:00:00', 'drv-96627dfa7254cc85c6d02525', 'https://drive.example/pems/gallery/can-tho/closing-and-follow-up-session', NULL, 'https://drive.example/thumb/96627dfa7254cc85c6d0', 'GALLERY_IMAGE'),
-  (409, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/partner-gift-exchange.jpg', 'ha-noi-partner-gift-exchange.jpg', 'image/jpeg', 850307, '2c72d6363cb3119485b8e7520f1ca5afc31da8abf11bdee9654ad1836c80f200', 4, '2026-08-18 07:00:00', 'drv-2c72d6363cb3119485b8e752', 'https://drive.example/pems/gallery/ha-noi/partner-gift-exchange', NULL, 'https://drive.example/thumb/2c72d6363cb3119485b8', 'GALLERY_IMAGE'),
-  (410, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/partner-gift-exchange.mp4', 'ho-chi-minh-city-partner-gift-exchange.mp4', 'video/mp4', 850430, '0fdaf81537de6ed76bb2c90fea244f8ecf629c93c70166abe8685281a3db79d9', 4, '2026-08-18 07:00:00', 'drv-0fdaf81537de6ed76bb2c90f', 'https://drive.example/pems/gallery/ho-chi-minh-city/partner-gift-exchange', NULL, NULL, 'GALLERY_IMAGE'),
-  (411, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/partner-gift-exchange.jpg', 'da-nang-partner-gift-exchange.jpg', 'image/jpeg', 850553, '574c9a3fce278c70fa6ba59a5bda92c4f1cedfdb1d948b0b26221045a1c5154a', 4, '2026-08-18 07:00:00', 'drv-574c9a3fce278c70fa6ba59a', 'https://drive.example/pems/gallery/da-nang/partner-gift-exchange', NULL, 'https://drive.example/thumb/574c9a3fce278c70fa6b', 'GALLERY_IMAGE'),
-  (412, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/partner-gift-exchange.jpg', 'can-tho-partner-gift-exchange.jpg', 'image/jpeg', 850676, '3e6addbcaa090ab2ca78c281b1679de8a273d746a622d298cf5a8a5a814aeec9', 4, '2026-08-18 07:00:00', 'drv-3e6addbcaa090ab2ca78c281', 'https://drive.example/pems/gallery/can-tho/partner-gift-exchange', NULL, 'https://drive.example/thumb/3e6addbcaa090ab2ca78', 'GALLERY_IMAGE'),
-  (413, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/international-office-team-photo.jpg', 'ha-noi-international-office-team-photo.jpg', 'image/jpeg', 850799, 'a93732f207dd1f5c670ef030af530a50c051de2fe1ea607ea9deda79f2b082b4', 4, '2026-08-18 07:00:00', 'drv-a93732f207dd1f5c670ef030', 'https://drive.example/pems/gallery/ha-noi/international-office-team-photo', NULL, 'https://drive.example/thumb/a93732f207dd1f5c670e', 'GALLERY_IMAGE'),
-  (414, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/international-office-team-photo.jpg', 'ho-chi-minh-city-international-office-team-photo.jpg', 'image/jpeg', 850922, '44719c93cdfebb113b6ae79f202671b5eba3e3fef2dbda5c57550f041dc691bf', 4, '2026-08-18 07:00:00', 'drv-44719c93cdfebb113b6ae79f', 'https://drive.example/pems/gallery/ho-chi-minh-city/international-office-team-photo', NULL, 'https://drive.example/thumb/44719c93cdfebb113b6a', 'GALLERY_IMAGE'),
-  (415, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/international-office-team-photo.mp4', 'da-nang-international-office-team-photo.mp4', 'video/mp4', 851045, '93755c684a16aa253abff9ad4e8163f5b87b21d955cef81c997a831bf5fb86e2', 4, '2026-08-18 07:00:00', 'drv-93755c684a16aa253abff9ad', 'https://drive.example/pems/gallery/da-nang/international-office-team-photo', NULL, NULL, 'GALLERY_IMAGE'),
-  (416, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/international-office-team-photo.jpg', 'can-tho-international-office-team-photo.jpg', 'image/jpeg', 851168, 'ec50d0f51e9dada1f9273a81ba7d2ea6d883dec6570618553aab854f3db63a60', 4, '2026-08-18 07:00:00', 'drv-ec50d0f51e9dada1f9273a81', 'https://drive.example/pems/gallery/can-tho/international-office-team-photo', NULL, 'https://drive.example/thumb/ec50d0f51e9dada1f927', 'GALLERY_IMAGE'),
-  (417, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ha-noi/2026/campus-aerial-welcome.jpg', 'ha-noi-campus-aerial-welcome.jpg', 'image/jpeg', 851291, '24b3120f0a195b0414b9198d7cbba2c39ad491ea091f25b8e6ed9b0695a6595b', 4, '2026-08-18 07:00:00', 'drv-24b3120f0a195b0414b9198d', 'https://drive.example/pems/gallery/ha-noi/campus-aerial-welcome', NULL, 'https://drive.example/thumb/24b3120f0a195b0414b9', 'GALLERY_IMAGE'),
-  (418, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/ho-chi-minh-city/2026/campus-aerial-welcome.jpg', 'ho-chi-minh-city-campus-aerial-welcome.jpg', 'image/jpeg', 851414, 'bd56281ecce2a9eacb5b98d89759338943a2613b644348a7b7f6ff2a08f433e9', 4, '2026-08-18 07:00:00', 'drv-bd56281ecce2a9eacb5b98d8', 'https://drive.example/pems/gallery/ho-chi-minh-city/campus-aerial-welcome', NULL, 'https://drive.example/thumb/bd56281ecce2a9eacb5b', 'GALLERY_IMAGE'),
-  (419, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/da-nang/2026/campus-aerial-welcome.jpg', 'da-nang-campus-aerial-welcome.jpg', 'image/jpeg', 851537, 'b1b459991da1b876642ef748fc6cc2fe4f5df5170dab91ab731f9fbd1975ddf3', 4, '2026-08-18 07:00:00', 'drv-b1b459991da1b876642ef748', 'https://drive.example/pems/gallery/da-nang/campus-aerial-welcome', NULL, 'https://drive.example/thumb/b1b459991da1b876642e', 'GALLERY_IMAGE'),
-  (420, 'GOOGLE_DRIVE', 'pems-public-gallery', 'gallery/can-tho/2026/campus-aerial-welcome.mp4', 'can-tho-campus-aerial-welcome.mp4', 'video/mp4', 851660, '262ae4b84d2cfdb289ab9bfb10284f5224a9d31d14a7696edb5c3e75931b27c1', 4, '2026-08-18 07:00:00', 'drv-262ae4b84d2cfdb289ab9bfb', 'https://drive.example/pems/gallery/can-tho/campus-aerial-welcome', NULL, NULL, 'GALLERY_IMAGE');
+
 INSERT INTO partner_contacts (contact_id, partner_id, full_name, email, phone, job_title, department_name, source_type, scanned_card_file_id, ocr_confidence, note, is_primary, status, created_at, created_by, updated_at, updated_by) VALUES
   (1, 1, 'Arjun Dubois', 'arjun.dubois@seoultech.example.kr', '+840000001', 'Partnership Manager', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của SeoulTech GEC.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (2, 1, 'Camila Ito', 'camila.ito@seoultech.example.kr', '+840100001', 'Mobility Officer', 'Student Mobility', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (3, 1, 'Elena Kumar', 'elena.kumar@seoultech.example.kr', '+840200001', 'Former Partnership Officer', 'Partnership Operations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (2, 1, 'Camila Ito', 'camila.ito@seoultech.example.kr', '+840100001', 'Mobility Officer', 'Student Mobility', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (3, 1, 'Elena Kumar', 'elena.kumar@seoultech.example.kr', '+840200001', 'Former Partnership Officer', 'Partnership Operations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (4, 2, 'Felix O''Connor', 'felix.o.connor@kyoto-robotics.example.jp', '+840000002', 'Global Engagement Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Kyoto RoboLab.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (5, 2, 'Haruto Schmidt', 'haruto.schmidt@kyoto-robotics.example.jp', '+840100002', 'Academic Partnership Specialist', 'Academic Affairs', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (6, 2, 'Javier Wang', 'javier.wang@kyoto-robotics.example.jp', '+840200002', 'Alumni Relations Adviser', 'External Relations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (5, 2, 'Haruto Schmidt', 'haruto.schmidt@kyoto-robotics.example.jp', '+840100002', 'Academic Partnership Specialist', 'Academic Affairs', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (6, 2, 'Javier Wang', 'javier.wang@kyoto-robotics.example.jp', '+840200002', 'Alumni Relations Adviser', 'External Relations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (7, 3, 'Kenji Johansson', 'kenji.johansson@greenmobility.example.sg', '+840000003', 'Programme Director', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của SGMC.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (8, 3, 'Lucas Taylor', 'lucas.taylor@greenmobility.example.sg', '+840100003', 'Project Liaison', 'Innovation Programmes', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (9, 3, 'Maya Murphy', 'maya.murphy@greenmobility.example.sg', '+840200003', 'Project Administrator', 'Programme Office', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (8, 3, 'Lucas Taylor', 'lucas.taylor@greenmobility.example.sg', '+840100003', 'Project Liaison', 'Innovation Programmes', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (9, 3, 'Maya Murphy', 'maya.murphy@greenmobility.example.sg', '+840200003', 'Project Administrator', 'Programme Office', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (10, 4, 'Mohammed Chen', 'mohammed.chen@asean-hospitality.example.org', '+840000004', 'Director of International Relations', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của AHN.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (11, 4, 'Noah Garcia', 'noah.garcia@asean-hospitality.example.org', '+840100004', 'Programme Coordinator', 'Global Partnerships', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (12, 4, 'Priya Khan', 'priya.khan@asean-hospitality.example.org', '+840200004', 'Former Programme Coordinator', 'International Cooperation', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (11, 4, 'Noah Garcia', 'noah.garcia@asean-hospitality.example.org', '+840100004', 'Programme Coordinator', 'Global Partnerships', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (12, 4, 'Priya Khan', 'priya.khan@asean-hospitality.example.org', '+840200004', 'Former Programme Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (13, 5, 'Samuel Martin', 'samuel.martin@maai.example.org', '+840000005', 'Partnership Manager', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của MAAI.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (14, 5, 'Sora Patel', 'sora.patel@maai.example.org', '+840100005', 'Mobility Officer', 'Student Mobility', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (15, 5, 'Valentina Smith', 'valentina.smith@maai.example.org', '+840200005', 'Former Partnership Officer', 'Partnership Operations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (14, 5, 'Sora Patel', 'sora.patel@maai.example.org', '+840100005', 'Mobility Officer', 'Student Mobility', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (15, 5, 'Valentina Smith', 'valentina.smith@maai.example.org', '+840200005', 'Former Partnership Officer', 'Partnership Operations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (16, 6, 'Zoe Yamada', 'zoe.yamada@nordic-sustainability.example.fi', '+840000006', 'Global Engagement Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của NSA.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (17, 6, 'Nora Martinez', 'nora.martinez@nordic-sustainability.example.fi', '+840100006', 'Academic Partnership Specialist', 'Academic Affairs', 'BUSINESS_CARD_OCR', 12, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (18, 6, 'Adrian Li', 'adrian.li@nordic-sustainability.example.fi', '+840200006', 'Alumni Relations Adviser', 'External Relations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (17, 6, 'Nora Martinez', 'nora.martinez@nordic-sustainability.example.fi', '+840100006', 'Academic Partnership Specialist', 'Academic Affairs', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (18, 6, 'Adrian Li', 'adrian.li@nordic-sustainability.example.fi', '+840200006', 'Alumni Relations Adviser', 'External Relations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (19, 101, 'Claire Anderson', 'claire.anderson@p-iit-delhi.example.org', '+840000101', 'Partnership Manager', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của IIT Delhi IO.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (20, 101, 'Amelia Costa', 'amelia.costa@p-iit-delhi.example.org', '+840100101', 'Mobility Officer', 'Student Mobility', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (21, 101, 'Arjun Hansen', 'arjun.hansen@p-iit-delhi.example.org', '+840200101', 'Former Partnership Officer', 'Partnership Operations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (20, 101, 'Amelia Costa', 'amelia.costa@p-iit-delhi.example.org', '+840100101', 'Mobility Officer', 'Student Mobility', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (21, 101, 'Arjun Hansen', 'arjun.hansen@p-iit-delhi.example.org', '+840200101', 'Former Partnership Officer', 'Partnership Operations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (22, 102, 'Camila Kobayashi', 'camila.kobayashi@p-polimi.example.org', '+840000102', 'Global Engagement Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Polimi Mobility.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (23, 102, 'Elena Ng', 'elena.ng@p-polimi.example.org', '+840100102', 'Academic Partnership Specialist', 'Academic Affairs', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (24, 102, 'Felix Sato', 'felix.sato@p-polimi.example.org', '+840200102', 'Alumni Relations Adviser', 'External Relations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (23, 102, 'Elena Ng', 'elena.ng@p-polimi.example.org', '+840100102', 'Academic Partnership Specialist', 'Academic Affairs', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (24, 102, 'Felix Sato', 'felix.sato@p-polimi.example.org', '+840200102', 'Alumni Relations Adviser', 'External Relations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (25, 103, 'Haruto Thompson', 'haruto.thompson@p-uts-aus.example.org', '+840000103', 'Programme Director', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của UTS Exchange.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (26, 103, 'Javier Zhang', 'javier.zhang@p-uts-aus.example.org', '+840100103', 'Project Liaison', 'Innovation Programmes', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (27, 103, 'Kenji Rahman', 'kenji.rahman@p-uts-aus.example.org', '+840200103', 'Project Administrator', 'Programme Office', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (26, 103, 'Javier Zhang', 'javier.zhang@p-uts-aus.example.org', '+840100103', 'Project Liaison', 'Innovation Programmes', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (27, 103, 'Kenji Rahman', 'kenji.rahman@p-uts-aus.example.org', '+840200103', 'Project Administrator', 'Programme Office', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (28, 104, 'Lucas Gonzalez', 'lucas.gonzalez@p-nordic-green.example.org', '+840000104', 'Director of International Relations', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Nordic Green.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (29, 104, 'Maya Brown', 'maya.brown@p-nordic-green.example.org', '+840100104', 'Programme Coordinator', 'Global Partnerships', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (30, 104, 'Mohammed Evans', 'mohammed.evans@p-nordic-green.example.org', '+840200104', 'Former Programme Coordinator', 'International Cooperation', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (29, 104, 'Maya Brown', 'maya.brown@p-nordic-green.example.org', '+840100104', 'Programme Coordinator', 'Global Partnerships', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (30, 104, 'Mohammed Evans', 'mohammed.evans@p-nordic-green.example.org', '+840200104', 'Former Programme Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (31, 105, 'Noah Jackson', 'noah.jackson@p-paris-digital.example.org', '+840000105', 'Partnership Manager', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Paris Digital.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (32, 105, 'Priya Lee', 'priya.lee@p-paris-digital.example.org', '+840100105', 'Mobility Officer', 'Student Mobility', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (33, 105, 'Samuel Park', 'samuel.park@p-paris-digital.example.org', '+840200105', 'Former Partnership Officer', 'Partnership Operations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (32, 105, 'Priya Lee', 'priya.lee@p-paris-digital.example.org', '+840100105', 'Mobility Officer', 'Student Mobility', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (33, 105, 'Samuel Park', 'samuel.park@p-paris-digital.example.org', '+840200105', 'Former Partnership Officer', 'Partnership Operations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (34, 106, 'Sora Singh', 'sora.singh@p-gulf-innov.example.org', '+840000106', 'Global Engagement Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Gulf InnovFund.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (35, 106, 'Valentina Wilson', 'valentina.wilson@p-gulf-innov.example.org', '+840100106', 'Academic Partnership Specialist', 'Academic Affairs', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (36, 106, 'Zoe Silva', 'zoe.silva@p-gulf-innov.example.org', '+840200106', 'Alumni Relations Adviser', 'External Relations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (35, 106, 'Valentina Wilson', 'valentina.wilson@p-gulf-innov.example.org', '+840100106', 'Academic Partnership Specialist', 'Academic Affairs', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (36, 106, 'Zoe Silva', 'zoe.silva@p-gulf-innov.example.org', '+840200106', 'Alumni Relations Adviser', 'External Relations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (37, 107, 'Nora Walker', 'nora.walker@p-seattle-edtech.example.org', '+840000107', 'Programme Director', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Seattle EdTech.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (38, 107, 'Adrian Ahmed', 'adrian.ahmed@p-seattle-edtech.example.org', '+840100107', 'Project Liaison', 'Innovation Programmes', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (39, 107, 'Claire Choi', 'claire.choi@p-seattle-edtech.example.org', '+840200107', 'Project Administrator', 'Programme Office', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (38, 107, 'Adrian Ahmed', 'adrian.ahmed@p-seattle-edtech.example.org', '+840100107', 'Project Liaison', 'Innovation Programmes', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (39, 107, 'Claire Choi', 'claire.choi@p-seattle-edtech.example.org', '+840200107', 'Project Administrator', 'Programme Office', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (40, 108, 'Amelia Gupta', 'amelia.gupta@p-lagos-tech.example.org', '+840000108', 'Director of International Relations', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Lagos Bridge.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (41, 108, 'Arjun Kim', 'arjun.kim@p-lagos-tech.example.org', '+840100108', 'Programme Coordinator', 'Global Partnerships', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (42, 108, 'Camila Miller', 'camila.miller@p-lagos-tech.example.org', '+840200108', 'Former Programme Coordinator', 'International Cooperation', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (41, 108, 'Arjun Kim', 'arjun.kim@p-lagos-tech.example.org', '+840100108', 'Programme Coordinator', 'Global Partnerships', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (42, 108, 'Camila Miller', 'camila.miller@p-lagos-tech.example.org', '+840200108', 'Former Programme Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (43, 109, 'Elena Rossi', 'elena.rossi@p-andes-exchange.example.org', '+840000109', 'Partnership Manager', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của Andes Exchange.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (44, 109, 'Felix Tan', 'felix.tan@p-andes-exchange.example.org', '+840100109', 'Mobility Officer', 'Student Mobility', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (45, 109, 'Haruto Young', 'haruto.young@p-andes-exchange.example.org', '+840200109', 'Former Partnership Officer', 'Partnership Operations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
+  (44, 109, 'Felix Tan', 'felix.tan@p-andes-exchange.example.org', '+840100109', 'Mobility Officer', 'Student Mobility', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (45, 109, 'Haruto Young', 'haruto.young@p-andes-exchange.example.org', '+840200109', 'Former Partnership Officer', 'Partnership Operations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4),
   (46, 110, 'Javier Nakamura', 'javier.nakamura@p-sg-ai.example.org', '+840000110', 'Global Engagement Coordinator', 'International Cooperation', 'MANUAL', NULL, NULL, 'Đầu mối chính phụ trách trao đổi hợp tác và điều phối đoàn của SG Applied AI.', TRUE, 'ACTIVE', '2026-04-13 08:00:00', 4, NULL, NULL),
-  (47, 110, 'Kenji Lim', 'kenji.lim@p-sg-ai.example.org', '+840100110', 'Academic Partnership Specialist', 'Academic Affairs', 'BUSINESS_CARD_OCR', 216, 92.5, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
-  (48, 110, 'Lucas Bianchi', 'lucas.bianchi@p-sg-ai.example.org', '+840200110', 'Alumni Relations Adviser', 'External Relations', 'IMPORT', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4);
-INSERT INTO documents (document_id, file_id, owner_type, owner_id, campus_id, title, description, document_category, status, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 212, 'GENERAL', NULL, 2, 'Hướng dẫn tiếp đón đoàn khách quốc tế', 'Tài liệu hướng dẫn quy trình đón khách, kiểm tra danh sách và phối hợp giữa các đơn vị.', 'COVERAGE_GENERAL', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (2, 213, 'GENERAL', NULL, 3, 'Quy định sử dụng hình ảnh trong hoạt động đối ngoại', 'Hướng dẫn thu thập đồng ý và phạm vi công bố ảnh của khách, sinh viên và cán bộ.', 'COVERAGE_GENERAL', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (3, 214, 'GENERAL', NULL, 4, 'Quy trình xử lý tình huống khẩn cấp khi tiếp khách', 'Danh sách đầu mối và các bước xử lý sự cố y tế, an ninh hoặc thay đổi lịch đột xuất.', 'COVERAGE_GENERAL', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (4, 215, 'VISIT', 3001, 5, 'Lịch trình làm việc đã thống nhất', 'Phiên bản lịch trình được Host và đầu mối đoàn khách xác nhận trước ngày diễn ra.', 'COVERAGE_VISIT', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (5, 216, 'VISIT', 3001, 1, 'Danh sách khách và thông tin ra vào campus', 'Danh sách thành viên đoàn phục vụ đăng ký thẻ khách và bố trí đón tiếp.', 'COVERAGE_VISIT', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (6, 217, 'VISIT', 3001, 2, 'Tài liệu giới thiệu chương trình đào tạo', 'Tài liệu gửi trước cho đoàn để chuẩn bị nội dung trao đổi với khoa chuyên môn.', 'COVERAGE_VISIT', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (7, 218, 'PARTNER', 101, 3, 'Hồ sơ hợp tác và đầu mối liên hệ', 'Tổng hợp thông tin đối tác, lĩnh vực hợp tác và đầu mối đang phụ trách.', 'COVERAGE_PARTNER', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (8, 219, 'PARTNER', 101, 4, 'Biên bản ghi nhớ hợp tác', 'Bản lưu biên bản ghi nhớ và các phụ lục còn hiệu lực giữa hai đơn vị.', 'COVERAGE_PARTNER', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (9, 220, 'PARTNER', 101, 5, 'Báo cáo hoạt động hợp tác gần nhất', 'Tổng hợp chương trình đã triển khai, kết quả và đề xuất bước tiếp theo.', 'COVERAGE_PARTNER', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (10, 211, 'MINUTES', 10001, 1, 'Biên bản phiên làm việc với đối tác', 'Nội dung thống nhất, đầu việc follow-up và thời hạn thực hiện sau buổi họp.', 'COVERAGE_MINUTES', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (11, 212, 'MINUTES', 10001, 2, 'Danh sách đầu việc sau chuyến thăm', 'Bảng phân công các nhiệm vụ cần hoàn tất và người chịu trách nhiệm.', 'COVERAGE_MINUTES', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (12, 213, 'MINUTES', 10001, 3, 'Tài liệu trình bày kèm biên bản', 'Tập hợp slide và tài liệu tham khảo được sử dụng trong phiên làm việc.', 'COVERAGE_MINUTES', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (13, 214, 'NEWS', NULL, 4, 'Bộ ảnh đã được duyệt để đăng tin', 'Các ảnh đã kiểm tra chất lượng và phạm vi đồng ý sử dụng.', 'COVERAGE_NEWS', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (14, 215, 'NEWS', NULL, 5, 'Bản thảo nội dung truyền thông', 'Nội dung bài viết đang được biên tập trước khi công bố.', 'COVERAGE_NEWS', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (15, 216, 'NEWS', NULL, 1, 'Tài liệu xác minh thông tin bài viết', 'Nguồn đối chiếu tên đối tác, diễn giả, thời gian và kết quả chương trình.', 'COVERAGE_NEWS', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (16, 217, 'LOGISTICS', NULL, 2, 'Biên bản bàn giao thiết bị', 'Xác nhận thiết bị đã được bàn giao, chạy thử và hoàn trả đúng tình trạng.', 'COVERAGE_LOGISTICS', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (17, 218, 'LOGISTICS', NULL, 3, 'Phiếu xác nhận phương tiện đón đoàn', 'Thông tin xe, lái xe, điểm đón và thời gian phục vụ.', 'COVERAGE_LOGISTICS', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (18, 219, 'LOGISTICS', NULL, 4, 'Danh sách suất ăn và yêu cầu đặc biệt', 'Số lượng suất ăn, lựa chọn ăn chay và ghi chú dị ứng đã xác nhận.', 'COVERAGE_LOGISTICS', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (19, 220, 'REPORT', NULL, 5, 'Báo cáo tổng hợp hoạt động tiếp khách', 'Số liệu chuyến thăm, trạng thái xử lý và kết quả phối hợp trong kỳ.', 'COVERAGE_REPORT', 'DRAFT', '2026-08-14 08:00:00', 4, NULL, NULL),
-  (20, 211, 'REPORT', NULL, 1, 'Báo cáo phản hồi sau chương trình', 'Tổng hợp đánh giá của khách, Host và các đơn vị hỗ trợ.', 'COVERAGE_REPORT', 'PUBLISHED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4),
-  (21, 212, 'REPORT', NULL, 2, 'Báo cáo chi phí hậu cần', 'Tổng hợp các hạng mục hậu cần, số lượng thực tế và chứng từ liên quan.', 'COVERAGE_REPORT', 'ARCHIVED', '2026-08-14 08:00:00', 4, '2026-08-14 09:00:00', 4);
+  (47, 110, 'Kenji Lim', 'kenji.lim@p-sg-ai.example.org', '+840100110', 'Academic Partnership Specialist', 'Academic Affairs', 'MANUAL', NULL, NULL, 'Thông tin được nhập từ danh thiếp và đã được nhân sự phụ trách đối chiếu trước khi sử dụng.', FALSE, 'ACTIVE', '2026-04-13 08:05:00', 4, '2026-04-13 09:00:00', 4),
+  (48, 110, 'Lucas Bianchi', 'lucas.bianchi@p-sg-ai.example.org', '+840200110', 'Alumni Relations Adviser', 'External Relations', 'MANUAL', NULL, NULL, 'Liên hệ cũ được lưu để tra cứu lịch sử; không còn được dùng làm đầu mối chính.', FALSE, 'INACTIVE', '2026-04-13 08:10:00', 4, '2026-05-10 09:00:00', 4);
+
 INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_date, status, completed_at, display_order, created_at, created_by, updated_at, updated_by) VALUES
   (1, 1, 'Xác nhận phương án xe đón đoàn với đầu mối khách', 'Chưa bắt đầu; người phụ trách cần xác nhận kế hoạch thực hiện và thời hạn hoàn tất.', '2026-08-11', 'TODO', NULL, 1, '2026-08-10 15:00:00', 4, NULL, NULL),
   (2, 1, 'Xác nhận lộ trình tham quan phòng thí nghiệm', 'Đang được thực hiện; các bên đã thống nhất đầu mối phối hợp và mốc cập nhật tiếp theo.', '2026-08-12', 'IN_PROGRESS', NULL, 2, '2026-08-10 15:00:00', 4, NULL, NULL),
@@ -9014,29 +8765,6 @@ INSERT INTO minute_action_items (action_item_id, minutes_id, title, note, due_da
 
 -- Photo face tags: curated examples linked to real image files and named people.
 -- The rows intentionally cover active, internal-user, guest, partner-contact and removed-tag cases.
-INSERT INTO photo_face_tags
-  (face_tag_id, file_id, tagged_user_id, visit_request_id, guest_member_id, partner_contact_id,
-   display_name, person_name_key, bounding_box_x, bounding_box_y, bounding_box_width,
-   bounding_box_height, tag_status, created_at, created_by, removed_at, removed_by)
-VALUES
-  (1, 7, 4, 1001, NULL, NULL, 'IC Staff Hà Nội', 'ic-staff-ha-noi', 0.0820, 0.1450, 0.1880, 0.3120, 'ACTIVE', '2026-04-01 09:20:00', 4, NULL, NULL),
-  (2, 7, NULL, 1001, 1, NULL, 'Kim Min Jae', 'kim-min-jae', 0.3140, 0.1380, 0.1760, 0.3040, 'ACTIVE', '2026-04-01 09:20:00', 4, NULL, NULL),
-  (3, 7, NULL, 1001, 2, NULL, 'Choi Eun Ji', 'choi-eun-ji', 0.5320, 0.1510, 0.1710, 0.2980, 'ACTIVE', '2026-04-01 09:20:00', 4, NULL, NULL),
-  (4, 8, 3, 1003, NULL, NULL, 'IC Staff Leader Hà Nội', 'ic-staff-leader-ha-noi', 0.1010, 0.1640, 0.1840, 0.3150, 'ACTIVE', '2026-04-01 09:35:00', 4, NULL, NULL),
-  (5, 8, NULL, 1003, 6, NULL, 'Lee Joon Ho', 'lee-joon-ho', 0.3370, 0.1560, 0.1790, 0.3060, 'ACTIVE', '2026-04-01 09:35:00', 4, NULL, NULL),
-  (6, 8, NULL, 1003, 7, NULL, 'Bae Min Su', 'bae-min-su', 0.5660, 0.1690, 0.1730, 0.3010, 'ACTIVE', '2026-04-01 09:35:00', 4, NULL, NULL),
-  (7, 9, 10, 2001, NULL, NULL, 'IC Staff TP.HCM', 'ic-staff-tp-hcm', 0.0870, 0.1420, 0.1920, 0.3190, 'ACTIVE', '2026-04-02 09:15:00', 10, NULL, NULL),
-  (8, 9, NULL, 2001, 20, NULL, 'Emily Smith', 'emily-smith', 0.3290, 0.1480, 0.1810, 0.3070, 'ACTIVE', '2026-04-02 09:15:00', 10, NULL, NULL),
-  (9, 9, NULL, 2001, 21, NULL, 'Nora Lim', 'nora-lim', 0.5520, 0.1530, 0.1760, 0.3030, 'ACTIVE', '2026-04-02 09:15:00', 10, NULL, NULL),
-  (10, 10, NULL, 2004, 26, 1, 'Lee Joon Ho', 'lee-joon-ho-seoultech', 0.1180, 0.1770, 0.1850, 0.3100, 'ACTIVE', '2026-06-16 12:20:00', 7, NULL, NULL),
-  (11, 10, NULL, 2004, 27, 2, 'Yoon Ha Neul', 'yoon-ha-neul', 0.3540, 0.1730, 0.1800, 0.3050, 'ACTIVE', '2026-06-16 12:20:00', 7, NULL, NULL),
-  (12, 11, 7, 2004, NULL, NULL, 'Student Buddy Hà Nội', 'student-buddy-ha-noi', 0.0940, 0.1850, 0.1770, 0.2990, 'ACTIVE', '2026-06-16 12:25:00', 7, NULL, NULL),
-  (13, 11, NULL, 2004, 26, NULL, 'Lee Joon Ho', 'lee-joon-ho-student-buddy-photo', 0.3310, 0.1810, 0.1760, 0.3020, 'ACTIVE', '2026-06-16 12:25:00', 7, NULL, NULL),
-  (14, 11, NULL, 2004, 27, NULL, 'Yoon Ha Neul', 'yoon-ha-neul-student-buddy-photo', 0.5560, 0.1790, 0.1720, 0.2980, 'ACTIVE', '2026-06-16 12:25:00', 7, NULL, NULL),
-  (15, 12, NULL, NULL, NULL, 2, 'Tanaka Aoi', 'tanaka-aoi-business-card', 0.1430, 0.2110, 0.4020, 0.5070, 'ACTIVE', '2026-06-10 13:15:00', 4, NULL, NULL),
-  (16, 8, NULL, 1003, 6, NULL, 'Lee Joon Ho', 'lee-joon-ho-old-box', 0.7410, 0.1030, 0.1220, 0.2140, 'REMOVED', '2026-04-01 09:35:00', 4, '2026-04-01 10:05:00', 4),
-  (17, 9, NULL, 2001, 20, NULL, 'Emily Smith', 'emily-smith-duplicate-box', 0.7340, 0.1210, 0.1180, 0.2080, 'REMOVED', '2026-04-02 09:15:00', 10, '2026-04-02 09:40:00', 10),
-  (18, 11, 7, 2004, NULL, NULL, 'Student Buddy Hà Nội', 'student-buddy-ha-noi-corrected', 0.0870, 0.1820, 0.1800, 0.3040, 'REMOVED', '2026-06-16 12:25:00', 7, '2026-06-16 12:40:00', 7);
 
 
 -- =============================================================
@@ -9492,7 +9220,7 @@ INSERT INTO partners (partner_id, owner_campus_id, partner_code, name, short_nam
 -- ---------------------------------------------------------------------
 INSERT INTO visit_logistics_item_handovers (handover_id, logistics_item_id, handover_type, borrower_signed_by, borrower_signed_at, provider_signed_by, provider_signed_at, item_condition, condition_note, attachment_file_id, created_at, created_by) VALUES
   (1, 9, 'BORROW', 4, '2026-06-15 08:45:00', 18, '2026-06-15 08:47:00', 'GOOD', 'Bên mượn và bên cho mượn đã ký nhận phòng họp trước khi sử dụng.', NULL, '2026-06-15 08:40:00', 18),
-  (2, 9, 'RETURN', 4, '2026-06-15 11:55:00', 18, '2026-06-15 11:58:00', 'GOOD', 'Phòng sạch, không còn tài liệu khách; biên bản dịch vụ đã đính kèm.', 6, '2026-06-15 11:50:00', 18),
+  (2, 9, 'RETURN', 4, '2026-06-15 11:55:00', 18, '2026-06-15 11:58:00', 'GOOD', 'Phòng sạch, không còn tài liệu khách; biên bản dịch vụ đã đính kèm.', NULL, '2026-06-15 11:50:00', 18),
   (3, 8, 'BORROW', 4, '2026-06-23 11:40:00', 18, '2026-06-23 11:42:00', 'GOOD', 'Lunch box đã bàn giao đúng số lượng; chưa có bước trả vì là vật tư tiêu hao.', NULL, '2026-06-23 11:35:00', 18),
   (4, 7, 'BORROW', NULL, NULL, 18, '2026-06-23 08:35:00', 'GOOD', 'Provider đã ký bàn giao màn LED; đang chờ bên mượn ký nhận qua email action.', NULL, '2026-06-23 08:30:00', 18),
   (5, 5, 'BORROW', NULL, NULL, NULL, NULL, NULL, 'Handover mượn micro được tạo trước để demo case chưa có chữ ký nào.', NULL, '2026-06-23 08:45:00', 17),
@@ -10390,15 +10118,16 @@ COMMIT;
 -- This file includes the original full fresh-create SQL and then replaces
 -- low-value demo News rows with a richer multilingual News seed covering:
 -- PUBLISHED / PENDING_REVIEW / REJECTED / HIDDEN, public list/detail,
--- dashboard review cases, Drive-backed cover/section files, section content,
--- and multi-language translations.
+-- dashboard review cases, section content and multi-language translations.
+-- File/image metadata is intentionally not seeded because this SQL package
+-- does not ship the corresponding binary objects.
 -- IMPORTANT: this is intended for DEV/STAGING fresh-create or reseed flows.
 -- =====================================================================
 
 -- =====================================================================
 -- PEMS NEWS RICH SEED RESET — DEV/STAGING ONLY
 -- Purpose: replace low-value demo News rows with richer, multi-case content
--- Includes: public/pending/rejected/hidden, multi-language, rich HTML, Drive-like files
+-- Includes: public/pending/rejected/hidden, multi-language and rich HTML.
 -- IMPORTANT: This script deletes all existing rows in news_section_files, news_content_sections, news_translations and news.
 -- Do NOT run on production data.
 -- =====================================================================
@@ -10410,104 +10139,29 @@ SET SQL_SAFE_UPDATES = 0;
 
 START TRANSACTION;
 
--- 1) Reset News module data only. File metadata from other modules is kept.
+-- 1) Reset News module data only and remove any legacy fake News file rows.
 DELETE FROM news_section_files;
 DELETE FROM news_content_sections;
 DELETE FROM news_translations;
 DELETE FROM news;
 DELETE FROM files WHERE object_key LIKE 'seed/news-rich/%' OR file_id BETWEEN 18001 AND 18099;
 
--- 2) Seed rich News file metadata. These rows represent Drive-backed files; replace fake external ids with real Drive files when running live E2E.
-INSERT INTO files (file_id, storage_provider, bucket_name, object_key, original_filename, mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at, external_file_id, web_view_url, download_url, thumbnail_url, file_purpose) VALUES
-  (18001, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/partner-roundtable-ecc2b198.jpg', 'partner-roundtable-cover.jpg', 'image/jpeg', 1800001, '39dd371540333414819e32f4fe863074a5771dc4be9dfe1d0c1c9956d55e82a2', 4, '2026-08-20 08:30:00', 'drv-39dd371540333414819e32f4', 'https://drive.example/pems/news/partner-visits/covers/partner-roundtable-ecc2b198.jpg', 'https://drive.example/uc?id=drv-39dd371540333414819e32f4', 'https://drive.example/thumb/39dd371540333414819e', 'NEWS_COVER'),
-  (18002, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/student-project-demo-96e0ff6d.jpg', 'student-project-demo-cover.jpg', 'image/jpeg', 1800002, '3c11c6f2d9b227307c3025466eff3bc1d759a70552ea9781f664dd1ec4aa7e98', 10, '2026-08-19 14:00:00', 'drv-3c11c6f2d9b227307c302546', 'https://drive.example/pems/news/partner-visits/covers/student-project-demo-96e0ff6d.jpg', 'https://drive.example/uc?id=drv-3c11c6f2d9b227307c302546', 'https://drive.example/thumb/3c11c6f2d9b227307c30', 'NEWS_COVER'),
-  (18003, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/green-campus-tour-c92956e2.jpg', 'green-campus-tour-cover.jpg', 'image/jpeg', 1800003, '22edfb160f50536ca0c35d52f87ac5d76cce1e1425c46164c412aab353a423fa', 12, '2026-08-18 09:20:00', 'drv-22edfb160f50536ca0c35d52', 'https://drive.example/pems/news/partner-visits/covers/green-campus-tour-c92956e2.jpg', 'https://drive.example/uc?id=drv-22edfb160f50536ca0c35d52', 'https://drive.example/thumb/22edfb160f50536ca0c3', 'NEWS_COVER'),
-  (18004, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/lab-equipment-demo-2ffb606a.jpg', 'lab-equipment-demo-cover.jpg', 'image/jpeg', 1800004, '8066a9daa1a251199d88dcd61d5a18db998160017516dfbc64fa4d83e07971c0', 14, '2026-08-17 13:20:00', 'drv-8066a9daa1a251199d88dcd6', 'https://drive.example/pems/news/partner-visits/covers/lab-equipment-demo-2ffb606a.jpg', 'https://drive.example/uc?id=drv-8066a9daa1a251199d88dcd6', 'https://drive.example/thumb/8066a9daa1a251199d88', 'NEWS_COVER'),
-  (18005, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/mou-signing-53ce3faf.jpg', 'mou-signing-cover.jpg', 'image/jpeg', 1800005, 'c1699b2c57328f37d5d6189e57dbae2e5a8eed07c47fb44221d161d9896fe57d', 16, '2026-08-16 10:00:00', 'drv-c1699b2c57328f37d5d6189e', 'https://drive.example/pems/news/partner-visits/covers/mou-signing-53ce3faf.jpg', 'https://drive.example/uc?id=drv-c1699b2c57328f37d5d6189e', 'https://drive.example/thumb/c1699b2c57328f37d5d6', 'NEWS_COVER'),
-  (18006, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/faculty-discussion-0a52e049.jpg', 'faculty-discussion-cover.jpg', 'image/jpeg', 1800006, '53509060e904080c302bd3bfd755021b03f9f0fe475c5e0f5b2a700e690ba9e1', 7, '2026-08-21 09:00:00', 'drv-53509060e904080c302bd3bf', 'https://drive.example/pems/news/partner-visits/covers/faculty-discussion-0a52e049.jpg', 'https://drive.example/uc?id=drv-53509060e904080c302bd3bf', 'https://drive.example/thumb/53509060e904080c302b', 'NEWS_COVER'),
-  (18007, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/student-buddy-support-349cf265.jpg', 'student-buddy-support-cover.jpg', 'image/jpeg', 1800007, '79f37e05a36bc66359e2d3af38712033f76fa6ebe599682c6ca2d718a74981af', 19, '2026-08-15 08:30:00', 'drv-79f37e05a36bc66359e2d3af', 'https://drive.example/pems/news/partner-visits/covers/student-buddy-support-349cf265.jpg', 'https://drive.example/uc?id=drv-79f37e05a36bc66359e2d3af', 'https://drive.example/thumb/79f37e05a36bc66359e2', 'NEWS_COVER'),
-  (18008, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/industry-mentor-session-0d38364f.jpg', 'industry-mentor-session-cover.jpg', 'image/jpeg', 1800008, '4ca87f0e2cea50b56caca8547beb5a130f67bf432dc7421ff32529ca368eb226', 154, '2026-08-13 09:00:00', 'drv-4ca87f0e2cea50b56caca854', 'https://drive.example/pems/news/partner-visits/covers/industry-mentor-session-0d38364f.jpg', 'https://drive.example/uc?id=drv-4ca87f0e2cea50b56caca854', 'https://drive.example/thumb/4ca87f0e2cea50b56cac', 'NEWS_COVER'),
-  (18009, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/closing-group-photo-07c8b5fb.jpg', 'closing-group-photo-cover.jpg', 'image/jpeg', 1800009, '0a1d64d15d8715e3f33652cc708a0b0f5d3de0636e18c9d0cc831edeac8ca512', 3, '2026-08-12 08:00:00', 'drv-0a1d64d15d8715e3f33652cc', 'https://drive.example/pems/news/partner-visits/covers/closing-group-photo-07c8b5fb.jpg', 'https://drive.example/uc?id=drv-0a1d64d15d8715e3f33652cc', 'https://drive.example/thumb/0a1d64d15d8715e3f336', 'NEWS_COVER'),
-  (18010, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/campus-learning-space-7a6026fd.jpg', 'campus-learning-space-cover.jpg', 'image/jpeg', 1800010, 'a4c6e8a2422644a0fa22bdbb421e26c98f870bb539b7a72d850f8c3dcaa70c3c', 10, '2026-08-11 10:10:00', 'drv-a4c6e8a2422644a0fa22bdbb', 'https://drive.example/pems/news/partner-visits/covers/campus-learning-space-7a6026fd.jpg', 'https://drive.example/uc?id=drv-a4c6e8a2422644a0fa22bdbb', 'https://drive.example/thumb/a4c6e8a2422644a0fa22', 'NEWS_COVER'),
-  (18011, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/follow-up-workshop-a10a30e0.jpg', 'follow-up-workshop-cover.jpg', 'image/jpeg', 1800011, '603a7bcf6ff3b955ce5c8daa9529cbb96191b04cf9fb34ce0147a485df74617e', 4, '2026-08-10 08:20:00', 'drv-603a7bcf6ff3b955ce5c8daa', 'https://drive.example/pems/news/partner-visits/covers/follow-up-workshop-a10a30e0.jpg', 'https://drive.example/uc?id=drv-603a7bcf6ff3b955ce5c8daa', 'https://drive.example/thumb/603a7bcf6ff3b955ce5c', 'NEWS_COVER'),
-  (18012, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/covers/delegation-arrival-1ec64cfe.jpg', 'delegation-arrival-cover.jpg', 'image/jpeg', 1800012, 'b04df2e4e6ec446c3432aa124452f7cb75914b5ab29170ae9dd210a7901fb330', 155, '2026-08-09 09:20:00', 'drv-b04df2e4e6ec446c3432aa12', 'https://drive.example/pems/news/partner-visits/covers/delegation-arrival-1ec64cfe.jpg', 'https://drive.example/uc?id=drv-b04df2e4e6ec446c3432aa12', 'https://drive.example/thumb/b04df2e4e6ec446c3432', 'NEWS_COVER'),
-  (18021, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/closing-group-photo-d1d635ae.jpg', 'closing-group-photo-inline.jpg', 'image/jpeg', 900011, 'b451a0a627e758e2de3ad5906c6cd11f428b5bad0377e0358daca9707d3c0851', 4, '2026-08-20 08:30:00', 'drv-b451a0a627e758e2de3ad590', 'https://drive.example/pems/news/partner-visits/inline/closing-group-photo-d1d635ae.jpg', 'https://drive.example/uc?id=drv-b451a0a627e758e2de3ad590', 'https://drive.example/thumb/b451a0a627e758e2de3a', 'NEWS_INLINE_IMAGE'),
-  (18022, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/campus-learning-space-f0dced10.jpg', 'campus-learning-space-inline.jpg', 'image/jpeg', 900012, 'a5adf7dcb4b7ea8b38a270f1527ef2d0b19e3d76443110667612281e0f790460', 4, '2026-08-20 08:30:00', 'drv-a5adf7dcb4b7ea8b38a270f1', 'https://drive.example/pems/news/partner-visits/inline/campus-learning-space-f0dced10.jpg', 'https://drive.example/uc?id=drv-a5adf7dcb4b7ea8b38a270f1', 'https://drive.example/thumb/a5adf7dcb4b7ea8b38a2', 'NEWS_INLINE_IMAGE'),
-  (18023, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/follow-up-workshop-570df8c7.jpg', 'follow-up-workshop-inline.jpg', 'image/jpeg', 900013, 'd88dc17563bef101146eb1ddf9b9d90416c58ca736922168a0e5a9f881f700b6', 4, '2026-08-20 08:30:00', 'drv-d88dc17563bef101146eb1dd', 'https://drive.example/pems/news/partner-visits/inline/follow-up-workshop-570df8c7.jpg', 'https://drive.example/uc?id=drv-d88dc17563bef101146eb1dd', 'https://drive.example/thumb/d88dc17563bef101146e', 'NEWS_INLINE_IMAGE'),
-  (18024, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/delegation-arrival-47d6fa4d.jpg', 'delegation-arrival-inline.jpg', 'image/jpeg', 900014, '86f490e001bb806dd6493f2150f5b8f60f9ef774017314195220f85ac4f9b57e', 4, '2026-08-20 08:30:00', 'drv-86f490e001bb806dd6493f21', 'https://drive.example/pems/news/partner-visits/inline/delegation-arrival-47d6fa4d.jpg', 'https://drive.example/uc?id=drv-86f490e001bb806dd6493f21', 'https://drive.example/thumb/86f490e001bb806dd649', 'NEWS_INLINE_IMAGE'),
-  (18025, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/partner-roundtable-321ceead.jpg', 'partner-roundtable-inline.jpg', 'image/jpeg', 900021, '07c4df8c8c23637361db113f28cba103e052772d72ddc9b4d5074dfc9d6961a3', 10, '2026-08-19 14:00:00', 'drv-07c4df8c8c23637361db113f', 'https://drive.example/pems/news/partner-visits/inline/partner-roundtable-321ceead.jpg', 'https://drive.example/uc?id=drv-07c4df8c8c23637361db113f', 'https://drive.example/thumb/07c4df8c8c23637361db', 'NEWS_INLINE_IMAGE'),
-  (18026, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-project-demo-b2a86b80.jpg', 'student-project-demo-inline.jpg', 'image/jpeg', 900022, 'f3927f6c0e7169e74ad36303b3fc4246560ade9bfc7648a33bc5d045c8b9b511', 10, '2026-08-19 14:00:00', 'drv-f3927f6c0e7169e74ad36303', 'https://drive.example/pems/news/partner-visits/inline/student-project-demo-b2a86b80.jpg', 'https://drive.example/uc?id=drv-f3927f6c0e7169e74ad36303', 'https://drive.example/thumb/f3927f6c0e7169e74ad3', 'NEWS_INLINE_IMAGE'),
-  (18027, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/green-campus-tour-9c8737c4.jpg', 'green-campus-tour-inline.jpg', 'image/jpeg', 900023, '0806c227da6b2ab4e32ff37a70954bebba960773ea68e17cd2d67cc56fad72db', 10, '2026-08-19 14:00:00', 'drv-0806c227da6b2ab4e32ff37a', 'https://drive.example/pems/news/partner-visits/inline/green-campus-tour-9c8737c4.jpg', 'https://drive.example/uc?id=drv-0806c227da6b2ab4e32ff37a', 'https://drive.example/thumb/0806c227da6b2ab4e32f', 'NEWS_INLINE_IMAGE'),
-  (18028, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/lab-equipment-demo-cef23c3f.jpg', 'lab-equipment-demo-inline.jpg', 'image/jpeg', 900024, 'aee98c60ec3422712e8bd04bff1af0d9be984176c7c77f44dc8f2c4a7be78a8b', 10, '2026-08-19 14:00:00', 'drv-aee98c60ec3422712e8bd04b', 'https://drive.example/pems/news/partner-visits/inline/lab-equipment-demo-cef23c3f.jpg', 'https://drive.example/uc?id=drv-aee98c60ec3422712e8bd04b', 'https://drive.example/thumb/aee98c60ec3422712e8b', 'NEWS_INLINE_IMAGE'),
-  (18029, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/mou-signing-9d0ab0bd.jpg', 'mou-signing-inline.jpg', 'image/jpeg', 900031, 'd67b7170c26e0f2713725b609535ebfd4f4878706ded254b0e9b839fd92c1164', 12, '2026-08-18 09:20:00', 'drv-d67b7170c26e0f2713725b60', 'https://drive.example/pems/news/partner-visits/inline/mou-signing-9d0ab0bd.jpg', 'https://drive.example/uc?id=drv-d67b7170c26e0f2713725b60', 'https://drive.example/thumb/d67b7170c26e0f271372', 'NEWS_INLINE_IMAGE'),
-  (18030, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/faculty-discussion-58c40ee7.jpg', 'faculty-discussion-inline.jpg', 'image/jpeg', 900032, 'b0e82fc31bdf22646f379de63f5c9d24e390975651c2e9fdb089bc99a4fa69f8', 12, '2026-08-18 09:20:00', 'drv-b0e82fc31bdf22646f379de6', 'https://drive.example/pems/news/partner-visits/inline/faculty-discussion-58c40ee7.jpg', 'https://drive.example/uc?id=drv-b0e82fc31bdf22646f379de6', 'https://drive.example/thumb/b0e82fc31bdf22646f37', 'NEWS_INLINE_IMAGE'),
-  (18031, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-buddy-support-014604ba.jpg', 'student-buddy-support-inline.jpg', 'image/jpeg', 900033, 'ee34b027b5b8658ff88bf5315aff46f8c0c439b26b71bcf5b46723f6570962ab', 12, '2026-08-18 09:20:00', 'drv-ee34b027b5b8658ff88bf531', 'https://drive.example/pems/news/partner-visits/inline/student-buddy-support-014604ba.jpg', 'https://drive.example/uc?id=drv-ee34b027b5b8658ff88bf531', 'https://drive.example/thumb/ee34b027b5b8658ff88b', 'NEWS_INLINE_IMAGE'),
-  (18032, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/industry-mentor-session-be42cc28.jpg', 'industry-mentor-session-inline.jpg', 'image/jpeg', 900034, '22e77fdba6da6cfbf3f8fb205bd46f0dbe76f69e678a12eec3644686d3d73697', 12, '2026-08-18 09:20:00', 'drv-22e77fdba6da6cfbf3f8fb20', 'https://drive.example/pems/news/partner-visits/inline/industry-mentor-session-be42cc28.jpg', 'https://drive.example/uc?id=drv-22e77fdba6da6cfbf3f8fb20', 'https://drive.example/thumb/22e77fdba6da6cfbf3f8', 'NEWS_INLINE_IMAGE'),
-  (18033, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/closing-group-photo-4e1fbe2d.jpg', 'closing-group-photo-inline.jpg', 'image/jpeg', 900041, '4b191e9adbad9d6e65633a2268d1ce4fe45fcbc1f6851c554f42ce79741d9baa', 14, '2026-08-17 13:20:00', 'drv-4b191e9adbad9d6e65633a22', 'https://drive.example/pems/news/partner-visits/inline/closing-group-photo-4e1fbe2d.jpg', 'https://drive.example/uc?id=drv-4b191e9adbad9d6e65633a22', 'https://drive.example/thumb/4b191e9adbad9d6e6563', 'NEWS_INLINE_IMAGE'),
-  (18034, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/campus-learning-space-24dcd2ad.jpg', 'campus-learning-space-inline.jpg', 'image/jpeg', 900042, '9e913cc3b333f36801fdac673d4fd346cdc9884bf539c73feed022822fc7896c', 14, '2026-08-17 13:20:00', 'drv-9e913cc3b333f36801fdac67', 'https://drive.example/pems/news/partner-visits/inline/campus-learning-space-24dcd2ad.jpg', 'https://drive.example/uc?id=drv-9e913cc3b333f36801fdac67', 'https://drive.example/thumb/9e913cc3b333f36801fd', 'NEWS_INLINE_IMAGE'),
-  (18035, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/follow-up-workshop-db145ef4.jpg', 'follow-up-workshop-inline.jpg', 'image/jpeg', 900043, 'b4d212bbf00edbc2f8ce153a9d6e36f0367eeda776ae2d7ee6292c3e6c2953e9', 14, '2026-08-17 13:20:00', 'drv-b4d212bbf00edbc2f8ce153a', 'https://drive.example/pems/news/partner-visits/inline/follow-up-workshop-db145ef4.jpg', 'https://drive.example/uc?id=drv-b4d212bbf00edbc2f8ce153a', 'https://drive.example/thumb/b4d212bbf00edbc2f8ce', 'NEWS_INLINE_IMAGE'),
-  (18036, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/delegation-arrival-fee2e4d1.jpg', 'delegation-arrival-inline.jpg', 'image/jpeg', 900044, '6eb849ea8b31880eeaa04d0193093a277726136997efc4a80bd580c9c90f367e', 14, '2026-08-17 13:20:00', 'drv-6eb849ea8b31880eeaa04d01', 'https://drive.example/pems/news/partner-visits/inline/delegation-arrival-fee2e4d1.jpg', 'https://drive.example/uc?id=drv-6eb849ea8b31880eeaa04d01', 'https://drive.example/thumb/6eb849ea8b31880eeaa0', 'NEWS_INLINE_IMAGE'),
-  (18037, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/partner-roundtable-aacfa383.jpg', 'partner-roundtable-inline.jpg', 'image/jpeg', 900051, 'e8b5d42c4819ac8ce81c72f75a850a76ecbad86a0dcaf499598eb88045d2ea1c', 16, '2026-08-16 10:00:00', 'drv-e8b5d42c4819ac8ce81c72f7', 'https://drive.example/pems/news/partner-visits/inline/partner-roundtable-aacfa383.jpg', 'https://drive.example/uc?id=drv-e8b5d42c4819ac8ce81c72f7', 'https://drive.example/thumb/e8b5d42c4819ac8ce81c', 'NEWS_INLINE_IMAGE'),
-  (18038, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-project-demo-15e7a100.jpg', 'student-project-demo-inline.jpg', 'image/jpeg', 900052, 'ea7a213bdfd434f7e55ef316e81fc9ee9d0fe4b667f3953834e4a7dc9a529c59', 16, '2026-08-16 10:00:00', 'drv-ea7a213bdfd434f7e55ef316', 'https://drive.example/pems/news/partner-visits/inline/student-project-demo-15e7a100.jpg', 'https://drive.example/uc?id=drv-ea7a213bdfd434f7e55ef316', 'https://drive.example/thumb/ea7a213bdfd434f7e55e', 'NEWS_INLINE_IMAGE'),
-  (18039, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/green-campus-tour-0c65552a.jpg', 'green-campus-tour-inline.jpg', 'image/jpeg', 900053, 'ec4421719c2f9073bb405f9686afe9db8f3eacb6fe49534435ed27f6b67c1989', 16, '2026-08-16 10:00:00', 'drv-ec4421719c2f9073bb405f96', 'https://drive.example/pems/news/partner-visits/inline/green-campus-tour-0c65552a.jpg', 'https://drive.example/uc?id=drv-ec4421719c2f9073bb405f96', 'https://drive.example/thumb/ec4421719c2f9073bb40', 'NEWS_INLINE_IMAGE'),
-  (18040, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/lab-equipment-demo-eefcecf5.jpg', 'lab-equipment-demo-inline.jpg', 'image/jpeg', 900054, 'a25e8fe77e0611e8d7244184d465445a52a9bd920a65fa26574d1d7680e1bdf2', 16, '2026-08-16 10:00:00', 'drv-a25e8fe77e0611e8d7244184', 'https://drive.example/pems/news/partner-visits/inline/lab-equipment-demo-eefcecf5.jpg', 'https://drive.example/uc?id=drv-a25e8fe77e0611e8d7244184', 'https://drive.example/thumb/a25e8fe77e0611e8d724', 'NEWS_INLINE_IMAGE'),
-  (18041, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/mou-signing-831b8241.jpg', 'mou-signing-inline.jpg', 'image/jpeg', 900061, 'f655670b86d82466a1e8dce58628944bfde3b5acffbe59ab94e353cc2827fb2c', 7, '2026-08-21 09:00:00', 'drv-f655670b86d82466a1e8dce5', 'https://drive.example/pems/news/partner-visits/inline/mou-signing-831b8241.jpg', 'https://drive.example/uc?id=drv-f655670b86d82466a1e8dce5', 'https://drive.example/thumb/f655670b86d82466a1e8', 'NEWS_INLINE_IMAGE'),
-  (18042, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/faculty-discussion-ba58134a.jpg', 'faculty-discussion-inline.jpg', 'image/jpeg', 900062, 'af071d8e18a650f28a7810032534762d4f7920fecf583952cddf6129b9c02463', 7, '2026-08-21 09:00:00', 'drv-af071d8e18a650f28a781003', 'https://drive.example/pems/news/partner-visits/inline/faculty-discussion-ba58134a.jpg', 'https://drive.example/uc?id=drv-af071d8e18a650f28a781003', 'https://drive.example/thumb/af071d8e18a650f28a78', 'NEWS_INLINE_IMAGE'),
-  (18043, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-buddy-support-f9a8ea52.jpg', 'student-buddy-support-inline.jpg', 'image/jpeg', 900063, '67c68c34c1aa17090304f2055e96ff086a0965d5a5e1dfc089f9605d43ca4128', 7, '2026-08-21 09:00:00', 'drv-67c68c34c1aa17090304f205', 'https://drive.example/pems/news/partner-visits/inline/student-buddy-support-f9a8ea52.jpg', 'https://drive.example/uc?id=drv-67c68c34c1aa17090304f205', 'https://drive.example/thumb/67c68c34c1aa17090304', 'NEWS_INLINE_IMAGE'),
-  (18044, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/industry-mentor-session-91f4b01a.jpg', 'industry-mentor-session-inline.jpg', 'image/jpeg', 900064, '3ba9711b1d17ff504656f8b158bdb768f7ea0fb78aebf9dd1a5ed7fbfa39be73', 7, '2026-08-21 09:00:00', 'drv-3ba9711b1d17ff504656f8b1', 'https://drive.example/pems/news/partner-visits/inline/industry-mentor-session-91f4b01a.jpg', 'https://drive.example/uc?id=drv-3ba9711b1d17ff504656f8b1', 'https://drive.example/thumb/3ba9711b1d17ff504656', 'NEWS_INLINE_IMAGE'),
-  (18045, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/closing-group-photo-a351f1a3.jpg', 'closing-group-photo-inline.jpg', 'image/jpeg', 900071, 'e32b3dfc50d5d30ed6a240388ccb92af83d67881970ff53cbd4b93537e5eb975', 19, '2026-08-15 08:30:00', 'drv-e32b3dfc50d5d30ed6a24038', 'https://drive.example/pems/news/partner-visits/inline/closing-group-photo-a351f1a3.jpg', 'https://drive.example/uc?id=drv-e32b3dfc50d5d30ed6a24038', 'https://drive.example/thumb/e32b3dfc50d5d30ed6a2', 'NEWS_INLINE_IMAGE'),
-  (18046, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/campus-learning-space-109c6e9a.jpg', 'campus-learning-space-inline.jpg', 'image/jpeg', 900072, 'bad58c2896ecaa28c25ff2fcdbfd0874acb5a33fc12983481539ba49df3630d4', 19, '2026-08-15 08:30:00', 'drv-bad58c2896ecaa28c25ff2fc', 'https://drive.example/pems/news/partner-visits/inline/campus-learning-space-109c6e9a.jpg', 'https://drive.example/uc?id=drv-bad58c2896ecaa28c25ff2fc', 'https://drive.example/thumb/bad58c2896ecaa28c25f', 'NEWS_INLINE_IMAGE'),
-  (18047, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/follow-up-workshop-3cb67a93.jpg', 'follow-up-workshop-inline.jpg', 'image/jpeg', 900073, '53db008e58356d19c24d3e6015351630adc523abe9edf1b118662a7213eb3acc', 19, '2026-08-15 08:30:00', 'drv-53db008e58356d19c24d3e60', 'https://drive.example/pems/news/partner-visits/inline/follow-up-workshop-3cb67a93.jpg', 'https://drive.example/uc?id=drv-53db008e58356d19c24d3e60', 'https://drive.example/thumb/53db008e58356d19c24d', 'NEWS_INLINE_IMAGE'),
-  (18048, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/delegation-arrival-86d73054.jpg', 'delegation-arrival-inline.jpg', 'image/jpeg', 900074, '8735c3506b774d449c92ca1586b59e6107ad74df1cf4634649d07f93338b3e0d', 19, '2026-08-15 08:30:00', 'drv-8735c3506b774d449c92ca15', 'https://drive.example/pems/news/partner-visits/inline/delegation-arrival-86d73054.jpg', 'https://drive.example/uc?id=drv-8735c3506b774d449c92ca15', 'https://drive.example/thumb/8735c3506b774d449c92', 'NEWS_INLINE_IMAGE'),
-  (18049, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/partner-roundtable-4b810000.jpg', 'partner-roundtable-inline.jpg', 'image/jpeg', 900081, '21c67ec16437d7e9fd529def1f567bc923d88b553e24db4aaaec6be5b9bbba82', 154, '2026-08-13 09:00:00', 'drv-21c67ec16437d7e9fd529def', 'https://drive.example/pems/news/partner-visits/inline/partner-roundtable-4b810000.jpg', 'https://drive.example/uc?id=drv-21c67ec16437d7e9fd529def', 'https://drive.example/thumb/21c67ec16437d7e9fd52', 'NEWS_INLINE_IMAGE'),
-  (18050, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-project-demo-5e8589d4.jpg', 'student-project-demo-inline.jpg', 'image/jpeg', 900082, 'bc710ac10ec7006462345eeec6d43929e96571640f8b086ca5d72a67ea44d85e', 154, '2026-08-13 09:00:00', 'drv-bc710ac10ec7006462345eee', 'https://drive.example/pems/news/partner-visits/inline/student-project-demo-5e8589d4.jpg', 'https://drive.example/uc?id=drv-bc710ac10ec7006462345eee', 'https://drive.example/thumb/bc710ac10ec700646234', 'NEWS_INLINE_IMAGE'),
-  (18051, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/green-campus-tour-a2a91c81.jpg', 'green-campus-tour-inline.jpg', 'image/jpeg', 900083, '28a0581aa9a4ecc2ecdb7aa45a2a307c0ac4bfb367a800e9ad3e7df5329ce4e6', 154, '2026-08-13 09:00:00', 'drv-28a0581aa9a4ecc2ecdb7aa4', 'https://drive.example/pems/news/partner-visits/inline/green-campus-tour-a2a91c81.jpg', 'https://drive.example/uc?id=drv-28a0581aa9a4ecc2ecdb7aa4', 'https://drive.example/thumb/28a0581aa9a4ecc2ecdb', 'NEWS_INLINE_IMAGE'),
-  (18052, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/lab-equipment-demo-d948777e.jpg', 'lab-equipment-demo-inline.jpg', 'image/jpeg', 900084, '8efa7b2d09c84e5fdcb742df9fa156d251ee9540a4f6f009bd6c124917dd3473', 154, '2026-08-13 09:00:00', 'drv-8efa7b2d09c84e5fdcb742df', 'https://drive.example/pems/news/partner-visits/inline/lab-equipment-demo-d948777e.jpg', 'https://drive.example/uc?id=drv-8efa7b2d09c84e5fdcb742df', 'https://drive.example/thumb/8efa7b2d09c84e5fdcb7', 'NEWS_INLINE_IMAGE'),
-  (18053, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/mou-signing-c52b59b1.jpg', 'mou-signing-inline.jpg', 'image/jpeg', 900091, 'e0a7e3ef0afcd8e7a388f796da145f6cf6a9a333e91cd587f663059eb81fea91', 3, '2026-08-12 08:00:00', 'drv-e0a7e3ef0afcd8e7a388f796', 'https://drive.example/pems/news/partner-visits/inline/mou-signing-c52b59b1.jpg', 'https://drive.example/uc?id=drv-e0a7e3ef0afcd8e7a388f796', 'https://drive.example/thumb/e0a7e3ef0afcd8e7a388', 'NEWS_INLINE_IMAGE'),
-  (18054, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/faculty-discussion-a760753a.jpg', 'faculty-discussion-inline.jpg', 'image/jpeg', 900092, '6a99abceee0dbe9a040339eb5713cc49ec03051729c1e64bc7621d55b2f2ae88', 3, '2026-08-12 08:00:00', 'drv-6a99abceee0dbe9a040339eb', 'https://drive.example/pems/news/partner-visits/inline/faculty-discussion-a760753a.jpg', 'https://drive.example/uc?id=drv-6a99abceee0dbe9a040339eb', 'https://drive.example/thumb/6a99abceee0dbe9a0403', 'NEWS_INLINE_IMAGE'),
-  (18055, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-buddy-support-0685c800.jpg', 'student-buddy-support-inline.jpg', 'image/jpeg', 900093, '50053bd896248698002f3577d4b719527f4fca14b0c2726317b99a60d5ccc35b', 3, '2026-08-12 08:00:00', 'drv-50053bd896248698002f3577', 'https://drive.example/pems/news/partner-visits/inline/student-buddy-support-0685c800.jpg', 'https://drive.example/uc?id=drv-50053bd896248698002f3577', 'https://drive.example/thumb/50053bd896248698002f', 'NEWS_INLINE_IMAGE'),
-  (18056, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/industry-mentor-session-44d67275.jpg', 'industry-mentor-session-inline.jpg', 'image/jpeg', 900094, '2947892c8f5159a1da55c0c92354cb93b3e4978a5711aba90b0443ac9647bd1d', 3, '2026-08-12 08:00:00', 'drv-2947892c8f5159a1da55c0c9', 'https://drive.example/pems/news/partner-visits/inline/industry-mentor-session-44d67275.jpg', 'https://drive.example/uc?id=drv-2947892c8f5159a1da55c0c9', 'https://drive.example/thumb/2947892c8f5159a1da55', 'NEWS_INLINE_IMAGE'),
-  (18057, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/closing-group-photo-aacce667.jpg', 'closing-group-photo-inline.jpg', 'image/jpeg', 900101, '9f2588f813fa97e97a20e7409d43930f9bc94049fccc3d3348dc98e9cbad76d4', 10, '2026-08-11 10:10:00', 'drv-9f2588f813fa97e97a20e740', 'https://drive.example/pems/news/partner-visits/inline/closing-group-photo-aacce667.jpg', 'https://drive.example/uc?id=drv-9f2588f813fa97e97a20e740', 'https://drive.example/thumb/9f2588f813fa97e97a20', 'NEWS_INLINE_IMAGE'),
-  (18058, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/campus-learning-space-d36a68fa.jpg', 'campus-learning-space-inline.jpg', 'image/jpeg', 900102, '636e3956f0f797385e3fa3f479835913cb80ab1c5583bec50dacd7ba0fadbd36', 10, '2026-08-11 10:10:00', 'drv-636e3956f0f797385e3fa3f4', 'https://drive.example/pems/news/partner-visits/inline/campus-learning-space-d36a68fa.jpg', 'https://drive.example/uc?id=drv-636e3956f0f797385e3fa3f4', 'https://drive.example/thumb/636e3956f0f797385e3f', 'NEWS_INLINE_IMAGE'),
-  (18059, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/follow-up-workshop-e4380b18.jpg', 'follow-up-workshop-inline.jpg', 'image/jpeg', 900103, '3c919f6ab08cd7f36217d991f6a2f409893322a447a2ceada1d4575ab2cf7919', 10, '2026-08-11 10:10:00', 'drv-3c919f6ab08cd7f36217d991', 'https://drive.example/pems/news/partner-visits/inline/follow-up-workshop-e4380b18.jpg', 'https://drive.example/uc?id=drv-3c919f6ab08cd7f36217d991', 'https://drive.example/thumb/3c919f6ab08cd7f36217', 'NEWS_INLINE_IMAGE'),
-  (18060, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/delegation-arrival-8e3904b8.jpg', 'delegation-arrival-inline.jpg', 'image/jpeg', 900104, 'b544f6802b43ea251f248604c00daedda6cb0755ed96779553c5dda60b26a389', 10, '2026-08-11 10:10:00', 'drv-b544f6802b43ea251f248604', 'https://drive.example/pems/news/partner-visits/inline/delegation-arrival-8e3904b8.jpg', 'https://drive.example/uc?id=drv-b544f6802b43ea251f248604', 'https://drive.example/thumb/b544f6802b43ea251f24', 'NEWS_INLINE_IMAGE'),
-  (18061, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/partner-roundtable-9c81f5e8.jpg', 'partner-roundtable-inline.jpg', 'image/jpeg', 900111, '71bbd0777a871f175ae632c0eb6cbcd8730e40d3ecb2f46646751f0c1bbfa5b5', 4, '2026-08-10 08:20:00', 'drv-71bbd0777a871f175ae632c0', 'https://drive.example/pems/news/partner-visits/inline/partner-roundtable-9c81f5e8.jpg', 'https://drive.example/uc?id=drv-71bbd0777a871f175ae632c0', 'https://drive.example/thumb/71bbd0777a871f175ae6', 'NEWS_INLINE_IMAGE'),
-  (18062, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-project-demo-2b360584.jpg', 'student-project-demo-inline.jpg', 'image/jpeg', 900112, '2e73fb8c3dde8cff26fae3a2b178fdf246e37b331452012cbe01d4b447f307cd', 4, '2026-08-10 08:20:00', 'drv-2e73fb8c3dde8cff26fae3a2', 'https://drive.example/pems/news/partner-visits/inline/student-project-demo-2b360584.jpg', 'https://drive.example/uc?id=drv-2e73fb8c3dde8cff26fae3a2', 'https://drive.example/thumb/2e73fb8c3dde8cff26fa', 'NEWS_INLINE_IMAGE'),
-  (18063, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/green-campus-tour-9374207c.jpg', 'green-campus-tour-inline.jpg', 'image/jpeg', 900113, 'c65c03f197f6c01537f49490c9b32cafd362ac23effe0af77656a9043f18afc0', 4, '2026-08-10 08:20:00', 'drv-c65c03f197f6c01537f49490', 'https://drive.example/pems/news/partner-visits/inline/green-campus-tour-9374207c.jpg', 'https://drive.example/uc?id=drv-c65c03f197f6c01537f49490', 'https://drive.example/thumb/c65c03f197f6c01537f4', 'NEWS_INLINE_IMAGE'),
-  (18064, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/lab-equipment-demo-d87811d4.jpg', 'lab-equipment-demo-inline.jpg', 'image/jpeg', 900114, 'f5975b64d8fabccb6667aaad469ec39ab90bb956a7c243e7641dfe4f8886785f', 4, '2026-08-10 08:20:00', 'drv-f5975b64d8fabccb6667aaad', 'https://drive.example/pems/news/partner-visits/inline/lab-equipment-demo-d87811d4.jpg', 'https://drive.example/uc?id=drv-f5975b64d8fabccb6667aaad', 'https://drive.example/thumb/f5975b64d8fabccb6667', 'NEWS_INLINE_IMAGE'),
-  (18065, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/mou-signing-a8fe4ea4.jpg', 'mou-signing-inline.jpg', 'image/jpeg', 900121, 'aa6df91d4553ccf72819f2918404177f6ac3faf5e161d929ce8e6e84b3b9e823', 155, '2026-08-09 09:20:00', 'drv-aa6df91d4553ccf72819f291', 'https://drive.example/pems/news/partner-visits/inline/mou-signing-a8fe4ea4.jpg', 'https://drive.example/uc?id=drv-aa6df91d4553ccf72819f291', 'https://drive.example/thumb/aa6df91d4553ccf72819', 'NEWS_INLINE_IMAGE'),
-  (18066, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/faculty-discussion-59587cb1.jpg', 'faculty-discussion-inline.jpg', 'image/jpeg', 900122, '762e2c2afef38e1da766a1094f9bcddc81c7d9c891c4c9c7640657cb72bac589', 155, '2026-08-09 09:20:00', 'drv-762e2c2afef38e1da766a109', 'https://drive.example/pems/news/partner-visits/inline/faculty-discussion-59587cb1.jpg', 'https://drive.example/uc?id=drv-762e2c2afef38e1da766a109', 'https://drive.example/thumb/762e2c2afef38e1da766', 'NEWS_INLINE_IMAGE'),
-  (18067, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/student-buddy-support-bd2aca6e.jpg', 'student-buddy-support-inline.jpg', 'image/jpeg', 900123, '0d3e97ad36658067fffe18d72c17bb05660796b40e7fe7fac147aa51d2183a34', 155, '2026-08-09 09:20:00', 'drv-0d3e97ad36658067fffe18d7', 'https://drive.example/pems/news/partner-visits/inline/student-buddy-support-bd2aca6e.jpg', 'https://drive.example/uc?id=drv-0d3e97ad36658067fffe18d7', 'https://drive.example/thumb/0d3e97ad36658067fffe', 'NEWS_INLINE_IMAGE'),
-  (18068, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/inline/industry-mentor-session-fbb2114b.jpg', 'industry-mentor-session-inline.jpg', 'image/jpeg', 900124, 'c09a4113c7e945eef221060606cb30add5eb0e70befe6b353cc81d0078d27992', 155, '2026-08-09 09:20:00', 'drv-c09a4113c7e945eef2210606', 'https://drive.example/pems/news/partner-visits/inline/industry-mentor-session-fbb2114b.jpg', 'https://drive.example/uc?id=drv-c09a4113c7e945eef2210606', 'https://drive.example/thumb/c09a4113c7e945eef221', 'NEWS_INLINE_IMAGE'),
-  (18081, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/closing-group-photo-4aec718f.pdf', 'closing-group-photo-attachment.pdf', 'application/pdf', 420100, '7deed0c0a36b3e8da9578326353f106f5bf01ac381d7702cf48b1f654ed132fa', 4, '2026-08-20 08:30:00', 'drv-7deed0c0a36b3e8da9578326', 'https://drive.example/pems/news/partner-visits/attachments/closing-group-photo-4aec718f.pdf', 'https://drive.example/uc?id=drv-7deed0c0a36b3e8da9578326', NULL, 'NEWS_ATTACHMENT'),
-  (18082, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/campus-learning-space-4d1ccd3b.pdf', 'campus-learning-space-attachment.pdf', 'application/pdf', 420200, '54a931e7386d1bae75dff7330218343004416c850302e1557b3df594bfe6e12d', 10, '2026-08-19 14:00:00', 'drv-54a931e7386d1bae75dff733', 'https://drive.example/pems/news/partner-visits/attachments/campus-learning-space-4d1ccd3b.pdf', 'https://drive.example/uc?id=drv-54a931e7386d1bae75dff733', NULL, 'NEWS_ATTACHMENT'),
-  (18083, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/follow-up-workshop-79a7e9a5.pdf', 'follow-up-workshop-attachment.pdf', 'application/pdf', 420300, '0eb346909098056c0fb43cdadda8cb37739f2d9001608e7332d600ea83ff5726', 12, '2026-08-18 09:20:00', 'drv-0eb346909098056c0fb43cda', 'https://drive.example/pems/news/partner-visits/attachments/follow-up-workshop-79a7e9a5.pdf', 'https://drive.example/uc?id=drv-0eb346909098056c0fb43cda', NULL, 'NEWS_ATTACHMENT'),
-  (18084, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/delegation-arrival-4f803c4f.pdf', 'delegation-arrival-attachment.pdf', 'application/pdf', 420400, '1814a07d4c2d65967f9a2ba95522830323321f423bc26e9d7b2e4b59744e8a8e', 14, '2026-08-17 13:20:00', 'drv-1814a07d4c2d65967f9a2ba9', 'https://drive.example/pems/news/partner-visits/attachments/delegation-arrival-4f803c4f.pdf', 'https://drive.example/uc?id=drv-1814a07d4c2d65967f9a2ba9', NULL, 'NEWS_ATTACHMENT'),
-  (18085, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/partner-roundtable-bfb1407c.pdf', 'partner-roundtable-attachment.pdf', 'application/pdf', 420500, '3b898f58bcb2e2ac39925be0434328872ae9e04ad6d828ea90a8975a54665679', 16, '2026-08-16 10:00:00', 'drv-3b898f58bcb2e2ac39925be0', 'https://drive.example/pems/news/partner-visits/attachments/partner-roundtable-bfb1407c.pdf', 'https://drive.example/uc?id=drv-3b898f58bcb2e2ac39925be0', NULL, 'NEWS_ATTACHMENT'),
-  (18086, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/student-project-demo-c8d01afd.pdf', 'student-project-demo-attachment.pdf', 'application/pdf', 420600, '18e0cb283209817512c667730ff9fbe5758cf710462919baf15190d8c872c1a8', 7, '2026-08-21 09:00:00', 'drv-18e0cb283209817512c66773', 'https://drive.example/pems/news/partner-visits/attachments/student-project-demo-c8d01afd.pdf', 'https://drive.example/uc?id=drv-18e0cb283209817512c66773', NULL, 'NEWS_ATTACHMENT'),
-  (18087, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/green-campus-tour-7e2e60da.pdf', 'green-campus-tour-attachment.pdf', 'application/pdf', 420700, '94cfdb7433b634b194627d37f0abee7d3a59da38e0604375908e484e93dc7b5e', 19, '2026-08-15 08:30:00', 'drv-94cfdb7433b634b194627d37', 'https://drive.example/pems/news/partner-visits/attachments/green-campus-tour-7e2e60da.pdf', 'https://drive.example/uc?id=drv-94cfdb7433b634b194627d37', NULL, 'NEWS_ATTACHMENT'),
-  (18088, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/lab-equipment-demo-f933272f.pdf', 'lab-equipment-demo-attachment.pdf', 'application/pdf', 420800, '808421821f7de7487192799ce76da8478970072a39f186ca22e64b6478404298', 154, '2026-08-13 09:00:00', 'drv-808421821f7de7487192799c', 'https://drive.example/pems/news/partner-visits/attachments/lab-equipment-demo-f933272f.pdf', 'https://drive.example/uc?id=drv-808421821f7de7487192799c', NULL, 'NEWS_ATTACHMENT'),
-  (18089, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/mou-signing-535f7638.pdf', 'mou-signing-attachment.pdf', 'application/pdf', 420900, '2ed4f18a187473638f940d2ee6c3e929fee90778c4864ffef4e822374d7bd158', 3, '2026-08-12 08:00:00', 'drv-2ed4f18a187473638f940d2e', 'https://drive.example/pems/news/partner-visits/attachments/mou-signing-535f7638.pdf', 'https://drive.example/uc?id=drv-2ed4f18a187473638f940d2e', NULL, 'NEWS_ATTACHMENT'),
-  (18090, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/faculty-discussion-7018f9f8.pdf', 'faculty-discussion-attachment.pdf', 'application/pdf', 421000, 'f36c4c33b3b1c1bd5b03558508e32c72d8ab38114facc2fc6d3305df729e3267', 10, '2026-08-11 10:10:00', 'drv-f36c4c33b3b1c1bd5b035585', 'https://drive.example/pems/news/partner-visits/attachments/faculty-discussion-7018f9f8.pdf', 'https://drive.example/uc?id=drv-f36c4c33b3b1c1bd5b035585', NULL, 'NEWS_ATTACHMENT'),
-  (18091, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/student-buddy-support-fe545219.pdf', 'student-buddy-support-attachment.pdf', 'application/pdf', 421100, '21b6b8e737aaaf71f16dd7ceb5feaa10e13d8d960d8c66d17d03c5a552f9fecd', 4, '2026-08-10 08:20:00', 'drv-21b6b8e737aaaf71f16dd7ce', 'https://drive.example/pems/news/partner-visits/attachments/student-buddy-support-fe545219.pdf', 'https://drive.example/uc?id=drv-21b6b8e737aaaf71f16dd7ce', NULL, 'NEWS_ATTACHMENT'),
-  (18092, 'GOOGLE_DRIVE', 'pems-content-drive', 'news/partner-visits/attachments/industry-mentor-session-98d77a2b.pdf', 'industry-mentor-session-attachment.pdf', 'application/pdf', 421200, '70d1e7295f694aa7d0068652ca892a62fa4f0ee408395622cab0040477c7afdb', 155, '2026-08-09 09:20:00', 'drv-70d1e7295f694aa7d0068652', 'https://drive.example/pems/news/partner-visits/attachments/industry-mentor-session-98d77a2b.pdf', 'https://drive.example/uc?id=drv-70d1e7295f694aa7d0068652', NULL, 'NEWS_ATTACHMENT');
-
--- 3) Seed News metadata across statuses and campuses.
+-- 2) Seed News metadata across statuses and campuses. cover_file_id is NULL.
 INSERT INTO news (news_id, campus_id, visit_instance_id, author_user_id, cover_file_id, status, submitted_at, reviewed_by, reviewed_at, review_note, published_at, is_featured, row_version, created_at, created_by, updated_at, updated_by) VALUES
-  (17001, 1, 5007, 4, 18001, 'PUBLISHED', '2026-08-20 08:30:00', 3, '2026-08-20 10:00:00', 'Đã duyệt public: nội dung có đầy đủ bối cảnh chuyến thăm, ảnh dùng đúng consent và không chứa thông tin nội bộ.', '2026-08-20 10:30:00', TRUE, 3, '2026-08-20 08:30:00', 4, '2026-08-20 10:30:00', 3),
-  (17002, 2, 5016, 10, 18002, 'PUBLISHED', '2026-08-19 14:00:00', 9, '2026-08-19 15:10:00', 'Nội dung đã loại bỏ thông tin kỹ thuật nội bộ và phù hợp đăng công khai.', '2026-08-19 15:45:00', FALSE, 2, '2026-08-19 14:00:00', 10, '2026-08-19 15:45:00', 9),
-  (17003, 3, 5025, 12, 18003, 'PUBLISHED', '2026-08-18 09:20:00', 11, '2026-08-18 11:00:00', 'Đã duyệt bản tin workshop robotics, các ảnh minh họa đã gắn qua news_section_files.', '2026-08-18 11:20:00', TRUE, 4, '2026-08-18 09:20:00', 12, '2026-08-18 11:20:00', 11),
-  (17004, 4, 5034, 14, 18004, 'PUBLISHED', '2026-08-17 13:20:00', 13, '2026-08-17 15:00:00', 'Bài viết đã kiểm tra thông tin đối tác và không nêu dữ liệu cá nhân nhạy cảm.', '2026-08-17 15:25:00', FALSE, 1, '2026-08-17 13:20:00', 14, '2026-08-17 15:25:00', 13),
-  (17005, 5, 5043, 16, 18005, 'PUBLISHED', '2026-08-16 10:00:00', 15, '2026-08-16 11:30:00', 'Bài viết phù hợp public, nhấn mạnh trải nghiệm hospitality và không công bố lịch trình chi tiết nội bộ.', '2026-08-16 12:00:00', FALSE, 1, '2026-08-16 10:00:00', 16, '2026-08-16 12:00:00', 15),
-  (17006, 1, 5006, 7, 18006, 'PENDING_REVIEW', '2026-08-21 09:00:00', NULL, NULL, NULL, NULL, FALSE, 0, '2026-08-21 09:00:00', 7, NULL, 7),
-  (17007, 2, 5015, 19, 18007, 'REJECTED', '2026-08-15 08:30:00', 9, '2026-08-15 10:00:00', 'Cần viết lại đoạn số liệu ngân sách và bỏ tên cá nhân chưa có consent trước khi gửi duyệt lại.', NULL, FALSE, 2, '2026-08-15 08:30:00', 19, '2026-08-15 10:00:00', 9),
-  (17008, 3, 5024, 154, 18008, 'HIDDEN', '2026-08-13 09:00:00', 11, '2026-08-13 11:00:00', 'Bài đã từng publish nhưng tạm ẩn để chờ đối tác xác nhận quyền sử dụng một số ảnh nhóm.', '2026-08-13 11:30:00', FALSE, 3, '2026-08-13 09:00:00', 154, '2026-08-13 11:30:00', 11),
-  (17009, 1, NULL, 3, 18009, 'PUBLISHED', '2026-08-12 08:00:00', 3, '2026-08-12 09:00:00', 'Bài truyền thông hệ thống về cải tiến quy trình, không gắn visit instance cụ thể.', '2026-08-12 09:30:00', TRUE, 1, '2026-08-12 08:00:00', 3, '2026-08-12 09:30:00', 3),
-  (17010, 2, NULL, 10, 18010, 'PENDING_REVIEW', '2026-08-11 10:10:00', NULL, NULL, NULL, NULL, FALSE, 0, '2026-08-11 10:10:00', 10, NULL, 10),
-  (17011, 1, 3007, 4, 18011, 'PUBLISHED', '2026-08-10 08:20:00', 3, '2026-08-10 10:00:00', 'Bản tin seminar AI đã được duyệt cùng các bản dịch tiếng Anh và tiếng Hàn.', '2026-08-10 10:40:00', FALSE, 2, '2026-08-10 08:20:00', 4, '2026-08-10 10:40:00', 3),
-  (17012, 4, 5033, 155, 18012, 'REJECTED', '2026-08-09 09:20:00', 13, '2026-08-09 11:00:00', 'Cần bổ sung nguồn thông tin cho số liệu phản hồi và chuyển phần nhận xét cá nhân sang cách viết trung lập hơn.', NULL, FALSE, 1, '2026-08-09 09:20:00', 155, '2026-08-09 11:00:00', 13);
+  (17001, 1, 5007, 4, NULL, 'PUBLISHED', '2026-08-20 08:30:00', 3, '2026-08-20 10:00:00', 'Đã duyệt public: nội dung có đầy đủ bối cảnh chuyến thăm, ảnh dùng đúng consent và không chứa thông tin nội bộ.', '2026-08-20 10:30:00', TRUE, 3, '2026-08-20 08:30:00', 4, '2026-08-20 10:30:00', 3),
+  (17002, 2, 5016, 10, NULL, 'PUBLISHED', '2026-08-19 14:00:00', 9, '2026-08-19 15:10:00', 'Nội dung đã loại bỏ thông tin kỹ thuật nội bộ và phù hợp đăng công khai.', '2026-08-19 15:45:00', FALSE, 2, '2026-08-19 14:00:00', 10, '2026-08-19 15:45:00', 9),
+  (17003, 3, 5025, 12, NULL, 'PUBLISHED', '2026-08-18 09:20:00', 11, '2026-08-18 11:00:00', 'Đã duyệt bản tin workshop robotics, các ảnh minh họa đã gắn qua news_section_files.', '2026-08-18 11:20:00', TRUE, 4, '2026-08-18 09:20:00', 12, '2026-08-18 11:20:00', 11),
+  (17004, 4, 5034, 14, NULL, 'PUBLISHED', '2026-08-17 13:20:00', 13, '2026-08-17 15:00:00', 'Bài viết đã kiểm tra thông tin đối tác và không nêu dữ liệu cá nhân nhạy cảm.', '2026-08-17 15:25:00', FALSE, 1, '2026-08-17 13:20:00', 14, '2026-08-17 15:25:00', 13),
+  (17005, 5, 5043, 16, NULL, 'PUBLISHED', '2026-08-16 10:00:00', 15, '2026-08-16 11:30:00', 'Bài viết phù hợp public, nhấn mạnh trải nghiệm hospitality và không công bố lịch trình chi tiết nội bộ.', '2026-08-16 12:00:00', FALSE, 1, '2026-08-16 10:00:00', 16, '2026-08-16 12:00:00', 15),
+  (17006, 1, 5006, 7, NULL, 'PENDING_REVIEW', '2026-08-21 09:00:00', NULL, NULL, NULL, NULL, FALSE, 0, '2026-08-21 09:00:00', 7, NULL, 7),
+  (17007, 2, 5015, 19, NULL, 'REJECTED', '2026-08-15 08:30:00', 9, '2026-08-15 10:00:00', 'Cần viết lại đoạn số liệu ngân sách và bỏ tên cá nhân chưa có consent trước khi gửi duyệt lại.', NULL, FALSE, 2, '2026-08-15 08:30:00', 19, '2026-08-15 10:00:00', 9),
+  (17008, 3, 5024, 154, NULL, 'HIDDEN', '2026-08-13 09:00:00', 11, '2026-08-13 11:00:00', 'Bài đã từng publish nhưng tạm ẩn để chờ đối tác xác nhận quyền sử dụng một số ảnh nhóm.', '2026-08-13 11:30:00', FALSE, 3, '2026-08-13 09:00:00', 154, '2026-08-13 11:30:00', 11),
+  (17009, 1, NULL, 3, NULL, 'PUBLISHED', '2026-08-12 08:00:00', 3, '2026-08-12 09:00:00', 'Bài truyền thông hệ thống về cải tiến quy trình, không gắn visit instance cụ thể.', '2026-08-12 09:30:00', TRUE, 1, '2026-08-12 08:00:00', 3, '2026-08-12 09:30:00', 3),
+  (17010, 2, NULL, 10, NULL, 'PENDING_REVIEW', '2026-08-11 10:10:00', NULL, NULL, NULL, NULL, FALSE, 0, '2026-08-11 10:10:00', 10, NULL, 10),
+  (17011, 1, 3007, 4, NULL, 'PUBLISHED', '2026-08-10 08:20:00', 3, '2026-08-10 10:00:00', 'Bản tin seminar AI đã được duyệt cùng các bản dịch tiếng Anh và tiếng Hàn.', '2026-08-10 10:40:00', FALSE, 2, '2026-08-10 08:20:00', 4, '2026-08-10 10:40:00', 3),
+  (17012, 4, 5033, 155, NULL, 'REJECTED', '2026-08-09 09:20:00', 13, '2026-08-09 11:00:00', 'Cần bổ sung nguồn thông tin cho số liệu phản hồi và chuyển phần nhận xét cá nhân sang cách viết trung lập hơn.', NULL, FALSE, 1, '2026-08-09 09:20:00', 155, '2026-08-09 11:00:00', 13);
 
--- 4) Seed multilingual titles/summaries. vi is primary; en/ja/ko/zh-CN cover language switch and translation cases.
+-- 3) Seed multilingual titles/summaries. vi is primary; en/ja/ko/zh-CN cover language switch and translation cases.
 INSERT INTO news_translations (news_translation_id, news_id, language_code, title, slug, summary, seo_title, seo_description, created_at, updated_at) VALUES
   (171001, 17001, 'vi', 'SeoulTech và FPTU Hà Nội mở rộng trao đổi sinh viên về AI ứng dụng', 'seoultech-fptu-ha-noi-mo-rong-trao-doi-sinh-vien-ai-ung-dung', 'Chuyến thăm của SeoulTech tại FPTU Hà Nội tập trung vào mô hình lớp học AI ứng dụng, hoạt động student buddy và kế hoạch trao đổi sinh viên trong học kỳ tới.', 'SeoulTech và FPTU Hà Nội mở rộng trao đổi sinh viên về AI ứng dụng', 'Chuyến thăm của SeoulTech tại FPTU Hà Nội tập trung vào mô hình lớp học AI ứng dụng, hoạt động student buddy và kế hoạch trao đổi sinh viên trong học kỳ tới.', '2026-08-20 08:30:00', '2026-08-20 10:30:00'),
   (171002, 17001, 'en', 'SeoulTech and FPTU Hanoi expand applied AI student exchange discussions', 'seoultech-fptu-hanoi-expand-applied-ai-student-exchange', 'The SeoulTech visit to FPTU Hanoi focused on applied AI classrooms, student buddy support and a practical exchange roadmap for the next semester.', 'SeoulTech and FPTU Hanoi expand applied AI student exchange discussions', 'The SeoulTech visit to FPTU Hanoi focused on applied AI classrooms, student buddy support and a practical exchange roadmap for the next semester.', '2026-08-20 08:30:00', '2026-08-20 10:30:00'),
@@ -10535,7 +10189,7 @@ INSERT INTO news_translations (news_translation_id, news_id, language_code, titl
   (171024, 17011, 'ko', 'FPTU 하노이와 Porto AI Hub, 응용 AI 세미나 시리즈 합의', 'fptu-hanoi-porto-ai-hub-applied-ai-seminar-ko', '응용 AI 세미나 시리즈는 학생들에게 국제 사례, 학술 토론, 실습 과제를 제공할 예정이다.', 'FPTU 하노이와 Porto AI Hub, 응용 AI 세미나 시리즈 합의', '응용 AI 세미나 시리즈는 학생들에게 국제 사례, 학술 토론, 실습 과제를 제공할 예정이다.', '2026-08-10 08:20:00', '2026-08-10 10:40:00'),
   (171025, 17012, 'vi', 'Bài follow-up cần bổ sung nguồn trước khi đăng public', 'bai-follow-up-can-bo-sung-nguon-truoc-khi-dang-public', 'Bản tin follow-up sau buổi làm việc tại Cần Thơ chưa được duyệt vì cần bổ sung nguồn cho số liệu phản hồi và điều chỉnh giọng văn.', 'Bài follow-up cần bổ sung nguồn trước khi đăng public', 'Bản tin follow-up sau buổi làm việc tại Cần Thơ chưa được duyệt vì cần bổ sung nguồn cho số liệu phản hồi và điều chỉnh giọng văn.', '2026-08-09 09:20:00', '2026-08-09 11:00:00');
 
--- 5) Seed long-form rich-text sections. No base64/data:image is used.
+-- 4) Seed long-form rich-text sections. No base64/data:image is used.
 INSERT INTO news_content_sections (section_id, news_translation_id, section_order, section_title, section_body_html, section_body_text, created_at, updated_at) VALUES
   (171001, 171001, 1, 'Bối cảnh chuyến thăm', '<p>Đoàn SeoulTech Global Engagement Center đã làm việc với đại diện FPTU Hà Nội trong khuôn khổ chương trình khảo sát mô hình đào tạo công nghệ tại Việt Nam. Nội dung trọng tâm là cách nhà trường kết hợp <strong>AI ứng dụng</strong>, học theo dự án và trải nghiệm doanh nghiệp trong chương trình đào tạo.</p><p>Hai bên dành thời gian trao đổi về khả năng thiết kế một học kỳ ngắn hạn cho sinh viên quốc tế, trong đó sinh viên được tham gia lớp chuyên đề, tham quan phòng lab và làm việc cùng nhóm sinh viên FPTU.</p>', 'Đoàn SeoulTech Global Engagement Center đã làm việc với đại diện FPTU Hà Nội trong khuôn khổ chương trình khảo sát mô hình đào tạo công nghệ tại Việt Nam. Nội dung trọng tâm là cách nhà trường kết hợp AI ứng dụng , học theo dự án và trải nghiệm doanh nghiệp trong chương trình đào tạo. Hai bên dành thời gian trao đổi về khả năng thiết kế một học kỳ ngắn hạn cho sinh viên quốc tế, trong đó sinh viên được tham gia lớp chuyên đề, tham quan phòng lab và làm việc cùng nhóm sinh viên FPTU.', '2026-08-20 08:30:00', '2026-08-20 10:30:00'),
   (171002, 171001, 2, 'Những điểm thống nhất chính', '<p>Cuộc họp ghi nhận ba nhóm nội dung có thể triển khai trước: trao đổi sinh viên ngắn hạn, seminar trực tuyến về AI trong giáo dục và hoạt động mentor giữa sinh viên hai trường. Đại diện hai bên thống nhất cần xây dựng lịch trình có mục tiêu học thuật rõ ràng thay vì chỉ dừng ở hoạt động tham quan.</p><ul><li>FPTU Hà Nội đề xuất mô hình 5 ngày kết hợp lab tour, workshop và thảo luận dự án.</li><li>SeoulTech quan tâm tới hoạt động sinh viên hỗ trợ sinh viên, đặc biệt là quy trình student buddy.</li><li>Hai bên sẽ trao đổi đề cương học phần thử nghiệm trước cuối tháng 9.</li></ul>', 'Cuộc họp ghi nhận ba nhóm nội dung có thể triển khai trước: trao đổi sinh viên ngắn hạn, seminar trực tuyến về AI trong giáo dục và hoạt động mentor giữa sinh viên hai trường. Đại diện hai bên thống nhất cần xây dựng lịch trình có mục tiêu học thuật rõ ràng thay vì chỉ dừng ở hoạt động tham quan. FPTU Hà Nội đề xuất mô hình 5 ngày kết hợp lab tour, workshop và thảo luận dự án. SeoulTech quan tâm tới hoạt động sinh viên hỗ trợ sinh viên, đặc biệt là quy trình student buddy. Hai bên sẽ trao đổi đề cương học phần thử nghiệm trước cuối tháng 9.', '2026-08-20 08:30:00', '2026-08-20 10:30:00'),
@@ -10615,107 +10269,17 @@ INSERT INTO news_content_sections (section_id, news_translation_id, section_orde
   (171076, 171025, 2, 'Điểm cần chỉnh sửa', '<p>Một số nhận định về mức độ hài lòng của khách cần có nguồn rõ ràng, chẳng hạn từ form feedback hoặc biên bản sau chuyến thăm. Ngoài ra, các câu nhận xét cá nhân nên chuyển sang giọng văn trung lập để phù hợp với trang public.</p>', 'Một số nhận định về mức độ hài lòng của khách cần có nguồn rõ ràng, chẳng hạn từ form feedback hoặc biên bản sau chuyến thăm. Ngoài ra, các câu nhận xét cá nhân nên chuyển sang giọng văn trung lập để phù hợp với trang public.', '2026-08-09 09:20:00', '2026-08-09 11:00:00'),
   (171077, 171025, 3, 'Hướng gửi lại', '<p>Người viết cần bổ sung liên kết tới dữ liệu feedback nội bộ, rút gọn đoạn đánh giá chủ quan và kiểm tra lại consent ảnh trước khi gửi duyệt lần tiếp theo.</p>', 'Người viết cần bổ sung liên kết tới dữ liệu feedback nội bộ, rút gọn đoạn đánh giá chủ quan và kiểm tra lại consent ảnh trước khi gửi duyệt lần tiếp theo.', '2026-08-09 09:20:00', '2026-08-09 11:00:00');
 
--- 6) Attach inline images and attachments to sections through news_section_files.
-INSERT INTO news_section_files (section_file_id, section_id, file_id, usage_type, display_order, created_at) VALUES
-  (172001, 171001, 18021, 'INLINE_IMAGE', 1, '2026-08-20 08:30:00'),
-  (172002, 171001, 18022, 'INLINE_IMAGE', 2, '2026-08-20 08:30:00'),
-  (172003, 171002, 18023, 'INLINE_IMAGE', 1, '2026-08-20 08:30:00'),
-  (172004, 171002, 18081, 'ATTACHMENT', 2, '2026-08-20 08:30:00'),
-  (172005, 171003, 18024, 'INLINE_IMAGE', 1, '2026-08-20 08:30:00'),
-  (172006, 171005, 18021, 'INLINE_IMAGE', 1, '2026-08-20 08:30:00'),
-  (172007, 171009, 18021, 'INLINE_IMAGE', 1, '2026-08-20 08:30:00'),
-  (172008, 171012, 18025, 'INLINE_IMAGE', 1, '2026-08-19 14:00:00'),
-  (172009, 171012, 18026, 'INLINE_IMAGE', 2, '2026-08-19 14:00:00'),
-  (172010, 171013, 18027, 'INLINE_IMAGE', 1, '2026-08-19 14:00:00'),
-  (172011, 171013, 18082, 'ATTACHMENT', 2, '2026-08-19 14:00:00'),
-  (172012, 171014, 18028, 'INLINE_IMAGE', 1, '2026-08-19 14:00:00'),
-  (172013, 171015, 18025, 'INLINE_IMAGE', 1, '2026-08-19 14:00:00'),
-  (172014, 171018, 18029, 'INLINE_IMAGE', 1, '2026-08-18 09:20:00'),
-  (172015, 171018, 18030, 'INLINE_IMAGE', 2, '2026-08-18 09:20:00'),
-  (172016, 171019, 18031, 'INLINE_IMAGE', 1, '2026-08-18 09:20:00'),
-  (172017, 171019, 18083, 'ATTACHMENT', 2, '2026-08-18 09:20:00'),
-  (172018, 171020, 18032, 'INLINE_IMAGE', 1, '2026-08-18 09:20:00'),
-  (172019, 171021, 18029, 'INLINE_IMAGE', 1, '2026-08-18 09:20:00'),
-  (172020, 171024, 18029, 'INLINE_IMAGE', 1, '2026-08-18 09:20:00'),
-  (172021, 171027, 18033, 'INLINE_IMAGE', 1, '2026-08-17 13:20:00'),
-  (172022, 171027, 18034, 'INLINE_IMAGE', 2, '2026-08-17 13:20:00'),
-  (172023, 171028, 18035, 'INLINE_IMAGE', 1, '2026-08-17 13:20:00'),
-  (172024, 171028, 18084, 'ATTACHMENT', 2, '2026-08-17 13:20:00'),
-  (172025, 171029, 18036, 'INLINE_IMAGE', 1, '2026-08-17 13:20:00'),
-  (172026, 171030, 18033, 'INLINE_IMAGE', 1, '2026-08-17 13:20:00'),
-  (172027, 171033, 18037, 'INLINE_IMAGE', 1, '2026-08-16 10:00:00'),
-  (172028, 171033, 18038, 'INLINE_IMAGE', 2, '2026-08-16 10:00:00'),
-  (172029, 171034, 18039, 'INLINE_IMAGE', 1, '2026-08-16 10:00:00'),
-  (172030, 171034, 18085, 'ATTACHMENT', 2, '2026-08-16 10:00:00'),
-  (172031, 171035, 18040, 'INLINE_IMAGE', 1, '2026-08-16 10:00:00'),
-  (172032, 171036, 18037, 'INLINE_IMAGE', 1, '2026-08-16 10:00:00'),
-  (172033, 171039, 18041, 'INLINE_IMAGE', 1, '2026-08-21 09:00:00'),
-  (172034, 171039, 18042, 'INLINE_IMAGE', 2, '2026-08-21 09:00:00'),
-  (172035, 171040, 18043, 'INLINE_IMAGE', 1, '2026-08-21 09:00:00'),
-  (172036, 171042, 18045, 'INLINE_IMAGE', 1, '2026-08-15 08:30:00'),
-  (172037, 171042, 18046, 'INLINE_IMAGE', 2, '2026-08-15 08:30:00'),
-  (172038, 171043, 18047, 'INLINE_IMAGE', 1, '2026-08-15 08:30:00'),
-  (172039, 171045, 18049, 'INLINE_IMAGE', 1, '2026-08-13 09:00:00'),
-  (172040, 171045, 18050, 'INLINE_IMAGE', 2, '2026-08-13 09:00:00'),
-  (172041, 171046, 18051, 'INLINE_IMAGE', 1, '2026-08-13 09:00:00'),
-  (172042, 171046, 18088, 'ATTACHMENT', 2, '2026-08-13 09:00:00'),
-  (172043, 171048, 18049, 'INLINE_IMAGE', 1, '2026-08-13 09:00:00'),
-  (172044, 171051, 18053, 'INLINE_IMAGE', 1, '2026-08-12 08:00:00'),
-  (172045, 171051, 18054, 'INLINE_IMAGE', 2, '2026-08-12 08:00:00'),
-  (172046, 171052, 18055, 'INLINE_IMAGE', 1, '2026-08-12 08:00:00'),
-  (172047, 171052, 18089, 'ATTACHMENT', 2, '2026-08-12 08:00:00'),
-  (172048, 171053, 18056, 'INLINE_IMAGE', 1, '2026-08-12 08:00:00'),
-  (172049, 171054, 18053, 'INLINE_IMAGE', 1, '2026-08-12 08:00:00'),
-  (172050, 171057, 18053, 'INLINE_IMAGE', 1, '2026-08-12 08:00:00'),
-  (172051, 171060, 18057, 'INLINE_IMAGE', 1, '2026-08-11 10:10:00'),
-  (172052, 171060, 18058, 'INLINE_IMAGE', 2, '2026-08-11 10:10:00'),
-  (172053, 171061, 18059, 'INLINE_IMAGE', 1, '2026-08-11 10:10:00'),
-  (172054, 171063, 18057, 'INLINE_IMAGE', 1, '2026-08-11 10:10:00'),
-  (172055, 171066, 18061, 'INLINE_IMAGE', 1, '2026-08-10 08:20:00'),
-  (172056, 171066, 18062, 'INLINE_IMAGE', 2, '2026-08-10 08:20:00'),
-  (172057, 171067, 18063, 'INLINE_IMAGE', 1, '2026-08-10 08:20:00'),
-  (172058, 171067, 18091, 'ATTACHMENT', 2, '2026-08-10 08:20:00'),
-  (172059, 171068, 18064, 'INLINE_IMAGE', 1, '2026-08-10 08:20:00'),
-  (172060, 171069, 18061, 'INLINE_IMAGE', 1, '2026-08-10 08:20:00'),
-  (172061, 171072, 18061, 'INLINE_IMAGE', 1, '2026-08-10 08:20:00'),
-  (172062, 171075, 18065, 'INLINE_IMAGE', 1, '2026-08-09 09:20:00'),
-  (172063, 171075, 18066, 'INLINE_IMAGE', 2, '2026-08-09 09:20:00'),
-  (172064, 171076, 18067, 'INLINE_IMAGE', 1, '2026-08-09 09:20:00'),
-  (172065, 171041, 18044, 'INLINE_IMAGE', 1, '2026-08-21 09:00:00'),
-  (172066, 171043, 18087, 'ATTACHMENT', 2, '2026-08-15 08:30:00'),
-  (172067, 171044, 18048, 'INLINE_IMAGE', 1, '2026-08-15 08:30:00'),
-  (172068, 171047, 18052, 'INLINE_IMAGE', 1, '2026-08-13 09:00:00'),
-  (172069, 171061, 18090, 'ATTACHMENT', 2, '2026-08-11 10:10:00'),
-  (172070, 171062, 18060, 'INLINE_IMAGE', 1, '2026-08-11 10:10:00'),
-  (172071, 171077, 18068, 'INLINE_IMAGE', 1, '2026-08-09 09:20:00'),
-  (172072, 171040, 18086, 'ATTACHMENT', 2, '2026-08-21 09:00:00'),
-  (172073, 171076, 18092, 'ATTACHMENT', 2, '2026-08-09 09:20:00');
-
--- 7) Validation helpers. Expected: data_image_rows = 0.
+-- 5) Validation helpers. Expected: data_image_rows = 0.
 SELECT status, COUNT(*) AS total FROM news GROUP BY status ORDER BY status;
 SELECT language_code, COUNT(*) AS translations FROM news_translations GROUP BY language_code ORDER BY language_code;
 SELECT COUNT(*) AS data_image_rows FROM news_content_sections WHERE section_body_html LIKE '%data:image%';
 SELECT n.news_id, nt.language_code, COUNT(s.section_id) AS section_count FROM news n JOIN news_translations nt ON nt.news_id = n.news_id LEFT JOIN news_content_sections s ON s.news_translation_id = nt.news_translation_id GROUP BY n.news_id, nt.language_code ORDER BY n.news_id, nt.language_code;
 
 -- Extra integrity checks for rich News seed. Expected values: all *_issues = 0.
-SELECT COUNT(*) AS duplicate_seed_file_id_issues
-FROM (
-  SELECT file_id FROM files WHERE file_id BETWEEN 18001 AND 18099 GROUP BY file_id HAVING COUNT(*) > 1
-) x;
-SELECT COUNT(*) AS duplicate_seed_object_key_issues
-FROM (
-  SELECT object_key FROM files WHERE object_key LIKE 'seed/news-rich/%' GROUP BY object_key HAVING COUNT(*) > 1
-) x;
-SELECT COUNT(*) AS orphan_news_cover_file_issues
-FROM news n
-LEFT JOIN files f ON f.file_id = n.cover_file_id
-WHERE n.news_id BETWEEN 17001 AND 17012 AND n.cover_file_id IS NOT NULL AND f.file_id IS NULL;
-SELECT COUNT(*) AS orphan_news_section_file_issues
-FROM news_section_files nsf
-LEFT JOIN news_content_sections s ON s.section_id = nsf.section_id
-LEFT JOIN files f ON f.file_id = nsf.file_id
-WHERE nsf.section_file_id BETWEEN 172001 AND 172999
-  AND (s.section_id IS NULL OR f.file_id IS NULL);
+SELECT COUNT(*) AS seeded_news_file_reference_issues
+FROM news
+WHERE news_id BETWEEN 17001 AND 17012
+  AND cover_file_id IS NOT NULL;
 SELECT COUNT(*) AS duplicate_news_translation_lang_issues
 FROM (
   SELECT news_id, language_code FROM news_translations WHERE news_id BETWEEN 17001 AND 17012 GROUP BY news_id, language_code HAVING COUNT(*) > 1
@@ -10724,17 +10288,6 @@ SELECT COUNT(*) AS duplicate_news_section_order_issues
 FROM (
   SELECT news_translation_id, section_order FROM news_content_sections WHERE section_id BETWEEN 171001 AND 171999 GROUP BY news_translation_id, section_order HAVING COUNT(*) > 1
 ) x;
-SELECT COUNT(*) AS duplicate_news_section_file_issues
-FROM (
-  SELECT section_id, file_id FROM news_section_files WHERE section_file_id BETWEEN 172001 AND 172999 GROUP BY section_id, file_id HAVING COUNT(*) > 1
-) x;
-SELECT COUNT(*) AS unlinked_seed_news_file_issues
-FROM files f
-LEFT JOIN news n ON n.cover_file_id = f.file_id
-LEFT JOIN news_section_files nsf ON nsf.file_id = f.file_id
-WHERE f.object_key LIKE 'seed/news-rich/%'
-  AND n.news_id IS NULL
-  AND nsf.section_file_id IS NULL;
 
 COMMIT;
 
@@ -16027,142 +15580,6 @@ VALUES
    CURRENT_TIMESTAMP - INTERVAL 20 DAY, @u_staff_hn,
    CURRENT_TIMESTAMP - INTERVAL 19 DAY, @u_staff_hn);
 
--- R5. One file per real document; no numbered coverage titles and no unrelated
--- document shares another document's file.
-INSERT INTO files
-  (file_id, storage_provider, bucket_name, object_key, original_filename,
-   mime_type, file_size, checksum_sha256, uploaded_by, uploaded_at,
-   external_file_id, web_view_url, download_url, thumbnail_url, file_purpose)
-VALUES
-  (61001, 'LOCAL', NULL, 'documents/visits/41003/osaka-ai-visit-schedule.pdf',
-   'Lich_trinh_Osaka_AI_Ha_Noi.pdf', 'application/pdf', 248312,
-   SHA2('seed-file-61001-osaka-schedule',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
-  (61002, 'LOCAL', NULL, 'documents/visits/41006/partnership-review-agenda-pack.pdf',
-   'Ho_so_lam_viec_UQ_Partnership_Review.pdf', 'application/pdf', 534880,
-   SHA2('seed-file-61002-uq-agenda',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 17 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
-  (61003, 'LOCAL', NULL, 'documents/minutes/49002/aalto-service-design-minutes.pdf',
-   'Bien_ban_Aalto_Service_Design.pdf', 'application/pdf', 312405,
-   SHA2('seed-file-61003-aalto-minutes',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT'),
-  (61004, 'LOCAL', NULL, 'documents/minutes/49003/uq-partnership-review-minutes.pdf',
-   'Bien_ban_UQ_Partnership_Review.pdf', 'application/pdf', 326701,
-   SHA2('seed-file-61004-uq-minutes',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 15 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT'),
-  (61005, 'LOCAL', NULL, 'documents/partners/profile-draft-cooperation-note.docx',
-   'Du_thao_de_xuat_hop_tac.docx',
-   'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 144822,
-   SHA2('seed-file-61005-partner-draft',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 30 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
-  (61006, 'LOCAL', NULL, 'documents/partners/signed-memorandum.pdf',
-   'Bien_ban_ghi_nho_da_ky.pdf', 'application/pdf', 682113,
-   SHA2('seed-file-61006-partner-published',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 25 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
-  (61007, 'LOCAL', NULL, 'documents/partners/archived-program-outline.pdf',
-   'De_cuong_chuong_trinh_2025_luu_tru.pdf', 'application/pdf', 290441,
-   SHA2('seed-file-61007-partner-archived',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 120 DAY, NULL, NULL, NULL, NULL, 'PARTNER_DOCUMENT'),
-  (61008, 'LOCAL', NULL, 'documents/logistics/48001/room-handover.pdf',
-   'Bien_ban_ban_giao_phong_hop.pdf', 'application/pdf', 201991,
-   SHA2('seed-file-61008-logistics-handover',256), @u_dept_hn,
-   CURRENT_TIMESTAMP - INTERVAL 16 DAY, NULL, NULL, NULL, NULL, 'LOGISTICS_HANDOVER'),
-  (61009, 'LOCAL', NULL, 'documents/logistics/48007/expense-evidence.pdf',
-   'Chung_tu_chi_phi_partnership_review.pdf', 'application/pdf', 488904,
-   SHA2('seed-file-61009-logistics-expense',256), @u_dept_hn,
-   CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, NULL, NULL, NULL, 'LOGISTICS_EXPENSE_EVIDENCE'),
-  (61010, 'LOCAL', NULL, 'reports/campus-operation-hanoi-2026-07.pdf',
-   'BaoCao_VanHanh_Campus_HaNoi_2026_07.pdf', 'application/pdf', 418102,
-   SHA2('seed-file-61010-report-campus',256), @u_ho,
-   CURRENT_TIMESTAMP - INTERVAL 4 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
-  (61011, 'LOCAL', NULL, 'reports/department-collaboration-training-2026-07.pdf',
-   'BaoCao_PhoiHop_PhongDaoTao_2026_07.pdf', 'application/pdf', 451220,
-   SHA2('seed-file-61011-report-department',256), @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
-  (61012, 'LOCAL', NULL, 'reports/department-invoice-training-2026-07.pdf',
-   'HoaDon_HauCan_PhongDaoTao_2026_07.pdf', 'application/pdf', 389744,
-   SHA2('seed-file-61012-report-invoice',256), @u_dept_lead_hn,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
-  (61013, 'LOCAL', NULL, 'reports/personnel-performance-training-2026-07.pdf',
-   'BaoCao_HieuSuat_NhanSu_PhongDaoTao_2026_07.pdf', 'application/pdf', 372901,
-   SHA2('seed-file-61013-report-personnel',256), @u_dept_lead_hn,
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, NULL, NULL, NULL, 'REPORT_ATTACHMENT'),
-  (61014, 'LOCAL', NULL, 'documents/visits/41028/hcm-campus-brief.pdf',
-   'Ho_so_tiep_doan_APAA_TPHCM.pdf', 'application/pdf', 417860,
-   SHA2('seed-file-61014-hcm-visit',256), @u_staff_hcm,
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, NULL, NULL, NULL, 'VISIT_REQUEST_ATTACHMENT'),
-  (61015, 'LOCAL', NULL, 'documents/minutes/49004/robotics-collaboration-minutes.pdf',
-   'Bien_ban_SeoulTech_Robotics.pdf', 'application/pdf', 341755,
-   SHA2('seed-file-61015-robotics-minutes',256), @u_staff_hn,
-   CURRENT_TIMESTAMP - INTERVAL 19 DAY, NULL, NULL, NULL, NULL, 'MINUTES_DOCUMENT');
-
-INSERT INTO documents
-  (document_id, file_id, owner_type, owner_id, campus_id, title, description,
-   document_category, status, created_at, created_by, updated_at, updated_by)
-VALUES
-  (62001, 61001, 'VISIT', 41003, 1,
-   'Lịch trình chính thức — Osaka AI Laboratories Academic Visit',
-   'Lịch theo campus Hà Nội gồm điểm đón, phiên chuyên môn, người phụ trách và phương án dự phòng.',
-   'SCHEDULE_REPORT', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn, NULL, NULL),
-  (62002, 61002, 'VISIT', 41006, 1,
-   'Hồ sơ làm việc — University of Queensland Partnership Review',
-   'Tài liệu chuẩn bị, chương trình và danh sách nội dung cần rà soát trong phiên partnership review.',
-   'VISIT_WORKING_PACK', 'ARCHIVED', CURRENT_TIMESTAMP - INTERVAL 17 DAY, @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 14 DAY, @u_sl_hn),
-  (62003, 61003, 'MINUTES', 49002, 1,
-   'Biên bản đã lưu — Aalto Service Design Delegation',
-   'Bản PDF phát hành từ nội dung minutes sau chuyến thăm.',
-   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_sl_hn, NULL, NULL),
-  (62004, 61004, 'MINUTES', 49003, 1,
-   'Biên bản đã lưu — University of Queensland Partnership Review',
-   'Biên bản chốt phụ lục chương trình, lịch trao đổi giảng viên và chỉ số đánh giá.',
-   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 15 DAY, @u_sl_hn, NULL, NULL),
-  (62005, 61005, 'PARTNER', @partner_document_owner, 1,
-   'Dự thảo đề xuất hợp tác học thuật',
-   'Bản đang chỉnh sửa, chưa phát hành ra ngoài nhóm phụ trách.',
-   'COOPERATION_PROPOSAL', 'DRAFT', CURRENT_TIMESTAMP - INTERVAL 30 DAY, @u_sl_hn, NULL, NULL),
-  (62006, 61006, 'PARTNER', @partner_document_owner, 1,
-   'Biên bản ghi nhớ hợp tác đã ký',
-   'Bản PDF chính thức đã được hai bên xác nhận.',
-   'SIGNED_MOU', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 25 DAY, @u_sl_hn, NULL, NULL),
-  (62007, 61007, 'PARTNER', @partner_document_owner, 1,
-   'Đề cương chương trình trao đổi năm 2025',
-   'Tài liệu kỳ trước được lưu để đối chiếu, không còn áp dụng cho kế hoạch hiện tại.',
-   'PROGRAM_OUTLINE', 'ARCHIVED', CURRENT_TIMESTAMP - INTERVAL 120 DAY, @u_sl_hn,
-   CURRENT_TIMESTAMP - INTERVAL 60 DAY, @u_sl_hn),
-  (62008, 61008, 'LOGISTICS', 48001, 1,
-   'Biên bản bàn giao phòng họp partnership review',
-   'Xác nhận tình trạng phòng, thiết bị và thời điểm bàn giao sau buổi làm việc.',
-   'LOGISTICS_HANDOVER', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_dept_hn, NULL, NULL),
-  (62009, 61009, 'LOGISTICS', 48007, 1,
-   'Chứng từ chi phí partnership review',
-   'Bộ chứng từ được Department Staff tập hợp để hoàn tất báo cáo chi phí.',
-   'EXPENSE_EVIDENCE', 'DRAFT', CURRENT_TIMESTAMP - INTERVAL 13 DAY, @u_dept_hn, NULL, NULL),
-  (62010, 61010, 'REPORT', NULL, 1,
-   'Báo cáo vận hành campus Hà Nội — tháng 07/2026',
-   'Báo cáo HO gửi Staff Leader, gồm số đoàn, trạng thái, khách, partner và feedback trong kỳ.',
-   'CAMPUS_OPERATION', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 4 DAY, @u_ho, NULL, NULL),
-  (62011, 61011, 'REPORT', NULL, 1,
-   'Báo cáo phối hợp Phòng Đào tạo Hà Nội — tháng 07/2026',
-   'Báo cáo Staff Leader gửi Department Leader về logistics, lời mời hỗ trợ và feedback.',
-   'DEPARTMENT_COLLABORATION', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 3 DAY, @u_sl_hn, NULL, NULL),
-  (62012, 61012, 'REPORT', NULL, 1,
-   'Hóa đơn hậu cần Phòng Đào tạo Hà Nội — tháng 07/2026',
-   'Tổng hợp các khoản chi hậu cần đã đối soát trong kỳ.',
-   'DEPARTMENT_INVOICE', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 2 DAY, @u_dept_lead_hn, NULL, NULL),
-  (62013, 61013, 'REPORT', NULL, 1,
-   'Báo cáo hiệu suất nhân sự Phòng Đào tạo — tháng 07/2026',
-   'Tổng hợp nhiệm vụ, mức độ hoàn thành và feedback của nhân sự được chọn.',
-   'PERSONNEL_PERFORMANCE', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_dept_lead_hn, NULL, NULL),
-  (62014, 61014, 'VISIT', 41028, 2,
-   'Hồ sơ tiếp đoàn APAA — campus TP.HCM',
-   'Tài liệu riêng của instance TP.HCM, không dùng thay cho hồ sơ campus Hà Nội trong cùng request.',
-   'VISIT_WORKING_PACK', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 1 DAY, @u_staff_hcm, NULL, NULL),
-  (62015, 61015, 'MINUTES', 49004, 1,
-   'Biên bản đã lưu — SeoulTech Robotics Collaboration Delegation',
-   'Biên bản workshop, log thử nghiệm và danh sách đề tài nghiên cứu chung.',
-   'MEETING_MINUTES', 'PUBLISHED', CURRENT_TIMESTAMP - INTERVAL 19 DAY, @u_staff_hn, NULL, NULL);
-
 INSERT INTO visit_logistics_item_handovers
   (handover_id, logistics_item_id, handover_type, borrower_signed_by,
    borrower_signed_at, provider_signed_by, provider_signed_at, item_condition,
@@ -16171,7 +15588,7 @@ VALUES
   (49501, 48001, 'RETURN', @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 16 DAY,
    @u_dept_hn, CURRENT_TIMESTAMP - INTERVAL 16 DAY, 'GOOD',
    'Phòng và thiết bị được hoàn trả đầy đủ, không phát sinh hư hỏng.',
-   61008, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_dept_hn);
+   NULL, CURRENT_TIMESTAMP - INTERVAL 16 DAY, @u_dept_hn);
 
 -- R5. Resolve template IDs by immutable code; never rely on catalog row IDs.
 SET @tpl_claim          := (SELECT email_template_id FROM email_templates WHERE template_code='VISIT_CONTACT_CLAIM');
@@ -16213,7 +15630,7 @@ VALUES
    CURRENT_TIMESTAMP - INTERVAL 5 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
    @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 5 DAY + INTERVAL 5 MINUTE,
    CURRENT_TIMESTAMP - INTERVAL 5 DAY),
-  (64003, @tpl_transfer, 'VisitRequestIdentityChange', 67003,
+  (64003, @tpl_claim, 'VisitRequestIdentityChange', 67003,
    'Bàn giao đầu mối cho VR-HN-2026-1003',
    '<p>Đầu mối hiện tại mời operations@osaka-ai.example tiếp nhận quyền quản lý Osaka AI Laboratories Academic Visit. Khối hành động bảo mật đã được loại khỏi lịch sử.</p>',
    'HTML', 'conversation-30e1878b-0c2a-53ba-85ee-6cb65a4aa4b5', 'resend-62fa7cae-8663-54be-ae4c-665281076102', 0,
@@ -16318,13 +15735,13 @@ VALUES
    CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, 'SENT', NULL,
    @u_staff_hn, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE,
    CURRENT_TIMESTAMP - INTERVAL 9 DAY),
-  (64018, @tpl_reminder_host, 'VISIT_PARTICIPANT', 44002,
+  (64018, @tpl_reminder_host, 'VISIT_INSTANCE', 42003,
    'Nhắc lịch tiếp đoàn Osaka AI Laboratories Academic Visit',
    '<p>Host được nhắc kiểm tra agenda, participant và logistics trước lịch đón đoàn.</p>',
    'HTML', 'conversation-20975c38-2ead-5f11-b1b6-f4c77443be05', 'resend-56078ea8-13d7-5fde-85c3-1ff9128a6333', 0,
    CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, 'SENT', NULL,
    NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (64019, @tpl_reminder_part, 'VISIT_PARTICIPANT', 44031,
+  (64019, @tpl_reminder_part, 'VISIT_INSTANCE', 42006,
    'Nhắc lịch tham gia University of Queensland Partnership Review',
    '<p>Student Buddy đã nhận lời được nhắc trước planned_start_at của đoàn.</p>',
    'HTML', 'conversation-f9fc357f-8bfa-571c-bf50-490e9672a3c6', 'resend-3335ee04-6d2f-5286-962d-10262d40f095', 0,
@@ -16366,33 +15783,7 @@ VALUES
    'HTML', 'conversation-9047f438-4be7-5fb8-abea-de662a7dbe23', 'resend-4200c55c-2627-5dc2-a748-4994e4e01058', 0,
    CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, 'SENT', NULL,
    NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY, CURRENT_TIMESTAMP - INTERVAL 13 DAY),
-  (64025, @tpl_report_campus, 'CAMPUS', 1,
-   'Báo cáo vận hành campus Hà Nội — tháng 07/2026',
-   '<p>Báo cáo vận hành campus Hà Nội đã được tạo và đính kèm.</p>',
-   'HTML', 'conversation-ed972837-0306-5110-a5e4-ddb75b800432', 'resend-bf36eb72-5ccd-5fda-98ab-121df08a3497', 0,
-   CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, 'SENT', NULL,
-   @u_ho, CURRENT_TIMESTAMP - INTERVAL 3 DAY, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
-  (64026, @tpl_report_collab, 'DEPARTMENT', 2,
-   'Báo cáo phối hợp Phòng Đào tạo Hà Nội — tháng 07/2026',
-   '<p>Báo cáo phối hợp Phòng Đào tạo Hà Nội đã được tạo và đính kèm.</p>',
-   'HTML', 'conversation-565593b7-5096-5202-8fd9-740818d3b55c', 'resend-a7ba1fe4-60da-5219-a41f-d19a57f0d458', 0,
-   CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, 'SENT', NULL,
-   @u_sl_hn, CURRENT_TIMESTAMP - INTERVAL 2 DAY, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
-  (64027, @tpl_report_invoice, 'DEPARTMENT', 2,
-   'Hóa đơn hậu cần Phòng Đào tạo Hà Nội — tháng 07/2026',
-   '<p>Báo cáo hóa đơn Phòng Đào tạo Hà Nội đã được tạo và đính kèm.</p>',
-   'HTML', 'conversation-526893c6-7f25-5245-85a5-8635d9037d42', 'resend-a9ed591a-6da6-5aa6-89a2-1362c6392a07', 0,
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, 'SENT', NULL,
-   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 1 DAY,
-   CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (64028, @tpl_report_person, 'USER', @u_dept_hn,
-   'Báo cáo hiệu suất nhân sự Phòng Đào tạo — tháng 07/2026',
-   '<p>Báo cáo hiệu suất nhân sự được chọn đã được tạo và đính kèm.</p>',
-   'HTML', 'conversation-cbab4579-5104-5da8-ac50-a09373fe7642', 'resend-d1f0df72-9c0d-5dc3-98df-5c86b57f6ef6', 0,
-   CURRENT_TIMESTAMP - INTERVAL 12 HOUR, NULL, 'SENT', NULL,
-   @u_dept_lead_hn, CURRENT_TIMESTAMP - INTERVAL 12 HOUR,
-   CURRENT_TIMESTAMP - INTERVAL 12 HOUR),
-  (64029, @tpl_reminder_host, 'VISIT_PARTICIPANT', 44002,
+  (64029, @tpl_reminder_host, 'VISIT_INSTANCE', 42003,
    'Nhắc lịch tiếp đoàn Osaka AI — lượt xếp hàng kế tiếp',
    '<p>Thông báo nhắc lịch đang chờ dispatcher xử lý.</p>',
    'HTML', NULL, NULL, 0, NULL, NULL, 'QUEUED', NULL,
@@ -16441,10 +15832,6 @@ VALUES
   (65022, 64022, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'resend-be4a249e-ff9c-5b2e-a980-05ac7d12ad56', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
   (65023, 64023, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'resend-5be43034-970e-51d5-a351-d25bf7587f1c', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
   (65024, 64024, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'resend-4200c55c-2627-5dc2-a748-4994e4e01058', NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 13 DAY),
-  (65025, 64025, @email_sl_hn, @name_sl_hn, 'TO', 'SENT', 'resend-bf36eb72-5ccd-5fda-98ab-121df08a3497', NULL, CURRENT_TIMESTAMP - INTERVAL 3 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
-  (65026, 64026, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'resend-a7ba1fe4-60da-5219-a41f-d19a57f0d458', NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
-  (65027, 64027, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'resend-a9ed591a-6da6-5aa6-89a2-1362c6392a07', NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (65028, 64028, @email_dept_hn, @name_dept_hn, 'TO', 'SENT', 'resend-d1f0df72-9c0d-5dc3-98df-5c86b57f6ef6', NULL, CURRENT_TIMESTAMP - INTERVAL 12 HOUR, NULL, CURRENT_TIMESTAMP - INTERVAL 12 HOUR),
   (65029, 64029, @email_sl_hn, @name_sl_hn, 'TO', 'QUEUED', NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 10 MINUTE),
   (65030, 64030, @email_dept_lead_hn, @name_dept_lead_hn, 'TO', 'SENT', 'resend-795eccde-6b5d-5c77-87ec-7b3a0d42c0c4', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 8 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY),
   (65031, 64031, @email_student_hn, @name_student_hn, 'TO', 'SENT', 'resend-cb949b2b-38aa-5a40-80c4-13dd758644e7', NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY + INTERVAL 5 MINUTE, NULL, CURRENT_TIMESTAMP - INTERVAL 9 DAY);
@@ -16499,17 +15886,6 @@ VALUES
   (66045, SHA2(CONCAT(UUID(),'-66045'),256), 'LOGISTICS_ASSIGNEE:48005', 'LOGISTICS_ASSIGNEE_RESPONSE', 'LOGISTICS_ITEM', 48005, 'DECLINE', @u_dept_hn, @email_dept_hn, 64022, 65022, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
   (66046, SHA2(CONCAT(UUID(),'-66046'),256), 'LOGISTICS_PROPOSAL:48006', 'LOGISTICS_PROPOSAL_RESPONSE', 'LOGISTICS_ITEM', 48006, 'APPROVE_PROPOSAL', @u_sl_hn, @email_sl_hn, 64023, 65023, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
   (66047, SHA2(CONCAT(UUID(),'-66047'),256), 'LOGISTICS_PROPOSAL:48006', 'LOGISTICS_PROPOSAL_RESPONSE', 'LOGISTICS_ITEM', 48006, 'REJECT_PROPOSAL', @u_sl_hn, @email_sl_hn, 64023, 65023, CURRENT_TIMESTAMP + INTERVAL 2 DAY, NULL, NULL, 'PENDING', NULL, NULL, NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY);
-
--- R7. Every report email is backed by a document/file created before send time.
-INSERT INTO sent_email_attachments
-  (sent_email_attachment_id, sent_email_id, file_id, attachment_type,
-   content_id, display_name, display_order, created_at)
-VALUES
-  (65501, 64025, 61010, 'ATTACHMENT', NULL, 'BaoCao_VanHanh_Campus_HaNoi_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 3 DAY),
-  (65502, 64026, 61011, 'ATTACHMENT', NULL, 'BaoCao_PhoiHop_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 2 DAY),
-  (65503, 64027, 61012, 'ATTACHMENT', NULL, 'HoaDon_HauCan_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 1 DAY),
-  (65504, 64028, 61013, 'ATTACHMENT', NULL, 'BaoCao_HieuSuat_NhanSu_PhongDaoTao_2026_07.pdf', 1, CURRENT_TIMESTAMP - INTERVAL 12 HOUR);
-
 
 COMMIT;
 
@@ -16844,6 +16220,345 @@ WHERE ic.status = 'APPLIED'
 DROP TEMPORARY TABLE IF EXISTS tmp_seed_operational_contact_repairs;
 
 -- ---------------------------------------------------------------------------
+-- R7.6. REBUILD EMAIL HISTORY FROM TEMPLATES + ENFORCE NO FAKE FILE SEED
+--
+-- All file/document/media INSERT blocks are physically absent from this file.
+-- Business rows use NULL for optional file foreign keys so the application uses
+-- its normal no-image/no-document fallback without an insert-then-delete cycle.
+--
+-- Sent-email history is rebuilt from the same email_templates rows used by
+-- SystemEmailDispatcher. Business variables are resolved from the related
+-- identity change / participant / visit instance / logistics item. One-time
+-- action blocks are intentionally absent from history snapshots.
+-- ---------------------------------------------------------------------------
+START TRANSACTION;
+
+-- Contact invitation token identity follows the related
+-- visit_request_identity_changes row instead of a hand-written story.
+UPDATE email_action_tokens eat
+JOIN sent_emails se ON se.sent_email_id = eat.sent_email_id
+JOIN visit_request_identity_changes ic ON ic.identity_change_id = se.related_id
+SET eat.action_group_key = CONCAT('VISIT_CONTACT_CLAIM:', ic.identity_change_id),
+    eat.action_context = 'VISIT_CONTACT_CLAIM',
+    eat.recipient_user_id = ic.new_user_id,
+    eat.recipient_email = ic.new_email_normalized
+WHERE se.sent_email_id BETWEEN 64001 AND 64003;
+
+UPDATE sent_email_recipients ser
+JOIN sent_emails se ON se.sent_email_id = ser.sent_email_id
+JOIN visit_request_identity_changes ic ON ic.identity_change_id = se.related_id
+LEFT JOIN users invited_user ON invited_user.user_id = ic.new_user_id
+LEFT JOIN visit_instance_form_details d ON d.visit_instance_id = ic.visit_instance_id
+SET ser.recipient_email = ic.new_email_normalized,
+    ser.recipient_name = COALESCE(
+      NULLIF(TRIM(invited_user.full_name), ''),
+      NULLIF(TRIM(d.operational_contact_full_name), ''),
+      NULLIF(TRIM(ser.recipient_name), ''),
+      ic.new_email_normalized
+    )
+WHERE se.sent_email_id BETWEEN 64001 AND 64003
+  AND ser.recipient_type = 'TO';
+
+-- The 64030 mail is a Department Leader invitation and its recipient/action
+-- token already point to the Department Leader. Align the related participant.
+UPDATE visit_participants
+SET user_id = @u_dept_lead_hn,
+    note = 'Department Leader được current host mời phối hợp giao lưu văn hóa; chưa phản hồi.',
+    updated_at = CURRENT_TIMESTAMP,
+    updated_by = @u_sl_hn
+WHERE participant_id = 44027;
+
+-- Start from the actual active template content and the same branded shell as
+-- EmailComposition.BrandedShell. The renderer below resolves every declared
+-- business variable from the related seed object.
+UPDATE sent_emails se
+JOIN email_templates et ON et.email_template_id = se.email_template_id
+SET se.subject = et.subject_vi,
+    se.body_snapshot = CONCAT(
+      '<!DOCTYPE html>\n<html lang="vi"><head><meta charset="UTF-8"></head>\n',
+      '<body style="font-family:Arial,sans-serif;background:#f4f6f9;margin:0;padding:20px">\n',
+      '  <div style="max-width:560px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">\n',
+      '    <div style="background:linear-gradient(135deg,#004c91,#013565);padding:28px 32px">\n',
+      '      <h1 style="color:#fff;margin:0;font-size:22px">PEMS — Campus Visit</h1>\n',
+      '      <p style="color:#b3c8e8;margin:6px 0 0;font-size:13px">FPT University</p>\n',
+      '    </div>\n    <div style="padding:32px;color:#374151;font-size:14px">',
+      REPLACE(et.body_vi, '{{actionBlock}}', ''),
+      '</div>\n    <div style="background:#f9fafb;padding:16px 32px;text-align:center">\n',
+      '      <p style="color:#9ca3af;font-size:11px;margin:0">© 2026 PEMS — FPT University. Không trả lời email này.</p>\n',
+      '    </div>\n  </div>\n</body></html>'
+    ),
+    se.body_format = 'HTML'
+WHERE se.sent_email_id BETWEEN 64001 AND 64031;
+
+DROP TEMPORARY TABLE IF EXISTS tmp_seed_email_render_variables;
+CREATE TEMPORARY TABLE tmp_seed_email_render_variables (
+  sent_email_id BIGINT UNSIGNED NOT NULL,
+  variable_name VARCHAR(100) NOT NULL,
+  variable_value LONGTEXT NOT NULL,
+  PRIMARY KEY (sent_email_id, variable_name)
+) ENGINE=InnoDB;
+
+-- Sender variables are resolved from sent_by; automated reminders use the
+-- configured PEMS system identity rather than inventing a staff sender.
+INSERT INTO tmp_seed_email_render_variables
+  (sent_email_id, variable_name, variable_value)
+SELECT
+  se.sent_email_id,
+  names.variable_name,
+  CASE names.variable_name
+    WHEN 'senderName' THEN COALESCE(NULLIF(TRIM(sender.full_name), ''), 'PEMS System')
+    WHEN 'senderRole' THEN COALESCE(NULLIF(TRIM(sender_role.name), ''), 'Hệ thống')
+    WHEN 'senderEmail' THEN COALESCE(NULLIF(TRIM(sender.email), ''), 'no-reply@mail.pems-fpt.site')
+    WHEN 'senderPhone' THEN COALESCE(sender.phone, '')
+    WHEN 'senderDepartment' THEN COALESCE(NULLIF(TRIM(sender_department.name), ''), 'Ban quản trị PEMS')
+    WHEN 'senderCampus' THEN COALESCE(NULLIF(TRIM(sender_campus.name), ''), 'FPT University')
+  END
+FROM sent_emails se
+LEFT JOIN users sender ON sender.user_id = se.sent_by
+LEFT JOIN roles sender_role ON sender_role.role_id = sender.role_id
+LEFT JOIN departments sender_department ON sender_department.department_id = sender.department_id
+LEFT JOIN campuses sender_campus ON sender_campus.campus_id = sender.primary_campus_id
+CROSS JOIN (
+  SELECT 'senderName' AS variable_name
+  UNION ALL SELECT 'senderRole'
+  UNION ALL SELECT 'senderEmail'
+  UNION ALL SELECT 'senderPhone'
+  UNION ALL SELECT 'senderDepartment'
+  UNION ALL SELECT 'senderCampus'
+) names
+WHERE se.sent_email_id BETWEEN 64001 AND 64031;
+
+-- Operational-contact claim variables.
+INSERT INTO tmp_seed_email_render_variables
+  (sent_email_id, variable_name, variable_value)
+SELECT
+  se.sent_email_id,
+  names.variable_name,
+  CASE names.variable_name
+    WHEN 'contactFullName' THEN COALESCE(
+      NULLIF(TRIM(invited_user.full_name), ''),
+      NULLIF(TRIM(ser.recipient_name), ''),
+      NULLIF(TRIM(d.operational_contact_full_name), ''),
+      ic.new_email_normalized
+    )
+    WHEN 'currentContactName' THEN COALESCE(
+      NULLIF(TRIM(old_user.full_name), ''),
+      NULLIF(TRIM(vr.registrant_full_name), ''),
+      'Đầu mối hiện tại'
+    )
+    WHEN 'requestCode' THEN vr.request_code
+    WHEN 'delegationName' THEN d.delegation_name
+    WHEN 'campusName' THEN campus.name
+    WHEN 'plannedTime' THEN CONCAT(
+      DATE_FORMAT(vrc.planned_start_at, '%H:%i %d/%m/%Y'),
+      ' - ', DATE_FORMAT(vrc.planned_end_at, '%H:%i %d/%m/%Y')
+    )
+  END
+FROM sent_emails se
+JOIN visit_request_identity_changes ic ON ic.identity_change_id = se.related_id
+JOIN visit_requests vr ON vr.visit_request_id = ic.visit_request_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = ic.visit_instance_id
+JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+JOIN campuses campus ON campus.campus_id = vrc.campus_id
+LEFT JOIN users invited_user ON invited_user.user_id = ic.new_user_id
+LEFT JOIN users old_user ON old_user.user_id = ic.old_user_id
+JOIN sent_email_recipients ser
+  ON ser.sent_email_id = se.sent_email_id AND ser.recipient_type = 'TO'
+CROSS JOIN (
+  SELECT 'contactFullName' AS variable_name
+  UNION ALL SELECT 'currentContactName'
+  UNION ALL SELECT 'requestCode'
+  UNION ALL SELECT 'delegationName'
+  UNION ALL SELECT 'campusName'
+  UNION ALL SELECT 'plannedTime'
+) names
+WHERE se.sent_email_id BETWEEN 64001 AND 64003;
+
+-- Participant invitation/assignment variables.
+INSERT INTO tmp_seed_email_render_variables
+  (sent_email_id, variable_name, variable_value)
+SELECT
+  se.sent_email_id,
+  names.variable_name,
+  CASE names.variable_name
+    WHEN 'recipientName' THEN COALESCE(NULLIF(TRIM(ser.recipient_name), ''), recipient.full_name)
+    WHEN 'delegationName' THEN d.delegation_name
+    WHEN 'campusName' THEN campus.name
+    WHEN 'plannedTime' THEN CONCAT(
+      DATE_FORMAT(vrc.planned_start_at, '%H:%i %d/%m/%Y'),
+      ' - ', DATE_FORMAT(vrc.planned_end_at, '%H:%i %d/%m/%Y')
+    )
+    WHEN 'hostName' THEN COALESCE(host_user.full_name, 'Người phụ trách tiếp đón')
+    WHEN 'roleLabel' THEN CASE vp.participant_role
+      WHEN 'IC_SUPPORT' THEN 'Hỗ trợ Hợp tác Quốc tế'
+      WHEN 'DEPT_SUPPORT' THEN 'Phối hợp phòng ban'
+      WHEN 'STUDENT' THEN 'Sinh viên hỗ trợ'
+      ELSE vp.participant_role
+    END
+    WHEN 'hostMessage' THEN COALESCE(NULLIF(TRIM(vp.note), ''), 'Vui lòng phản hồi để chốt thành phần tham gia.')
+    WHEN 'departmentName' THEN COALESCE(recipient_department.name, 'Phòng ban phối hợp')
+  END
+FROM sent_emails se
+JOIN visit_participants vp
+  ON se.related_type = 'VISIT_PARTICIPANT' AND vp.participant_id = se.related_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = vp.visit_instance_id
+JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+JOIN campuses campus ON campus.campus_id = vrc.campus_id
+JOIN users recipient ON recipient.user_id = vp.user_id
+LEFT JOIN departments recipient_department ON recipient_department.department_id = recipient.department_id
+LEFT JOIN users host_user ON host_user.user_id = vrc.current_host_user_id
+JOIN sent_email_recipients ser
+  ON ser.sent_email_id = se.sent_email_id AND ser.recipient_type = 'TO'
+CROSS JOIN (
+  SELECT 'recipientName' AS variable_name
+  UNION ALL SELECT 'delegationName'
+  UNION ALL SELECT 'campusName'
+  UNION ALL SELECT 'plannedTime'
+  UNION ALL SELECT 'hostName'
+  UNION ALL SELECT 'roleLabel'
+  UNION ALL SELECT 'hostMessage'
+  UNION ALL SELECT 'departmentName'
+) names
+WHERE se.sent_email_id BETWEEN 64001 AND 64031;
+
+-- Visit reminder variables. These rows use VISIT_INSTANCE, not a participant id.
+INSERT INTO tmp_seed_email_render_variables
+  (sent_email_id, variable_name, variable_value)
+SELECT
+  se.sent_email_id,
+  names.variable_name,
+  CASE names.variable_name
+    WHEN 'hostName' THEN COALESCE(host_user.full_name, 'Người phụ trách tiếp đón')
+    WHEN 'recipientName' THEN COALESCE(NULLIF(TRIM(ser.recipient_name), ''), 'Người tham gia')
+    WHEN 'delegationName' THEN d.delegation_name
+    WHEN 'campusName' THEN campus.name
+    WHEN 'plannedStart' THEN DATE_FORMAT(vrc.planned_start_at, '%H:%i %d/%m/%Y')
+    WHEN 'plannedEnd' THEN DATE_FORMAT(vrc.planned_end_at, '%H:%i %d/%m/%Y')
+  END
+FROM sent_emails se
+JOIN visit_request_campuses vrc
+  ON se.related_type = 'VISIT_INSTANCE' AND vrc.visit_instance_id = se.related_id
+JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+JOIN campuses campus ON campus.campus_id = vrc.campus_id
+LEFT JOIN users host_user ON host_user.user_id = vrc.current_host_user_id
+JOIN sent_email_recipients ser
+  ON ser.sent_email_id = se.sent_email_id AND ser.recipient_type = 'TO'
+CROSS JOIN (
+  SELECT 'hostName' AS variable_name
+  UNION ALL SELECT 'recipientName'
+  UNION ALL SELECT 'delegationName'
+  UNION ALL SELECT 'campusName'
+  UNION ALL SELECT 'plannedStart'
+  UNION ALL SELECT 'plannedEnd'
+) names
+WHERE se.sent_email_id IN (64018, 64019, 64029);
+
+-- Logistics variables come from the exact related item and its campus instance.
+INSERT INTO tmp_seed_email_render_variables
+  (sent_email_id, variable_name, variable_value)
+SELECT
+  se.sent_email_id,
+  names.variable_name,
+  CASE names.variable_name
+    WHEN 'departmentLeaderName' THEN COALESCE(NULLIF(TRIM(ser.recipient_name), ''), 'Trưởng phòng ban')
+    WHEN 'requesterName' THEN COALESCE(requester.full_name, 'Người phụ trách tiếp đón')
+    WHEN 'logisticsTitle' THEN item.title
+    WHEN 'logisticsItemType' THEN item.item_type
+    WHEN 'quantity' THEN CAST(item.quantity AS CHAR)
+    WHEN 'usageStartAt' THEN DATE_FORMAT(item.usage_start_at, '%H:%i %d/%m/%Y')
+    WHEN 'usageEndAt' THEN DATE_FORMAT(item.usage_end_at, '%H:%i %d/%m/%Y')
+    WHEN 'logisticsDescription' THEN COALESCE(NULLIF(TRIM(item.description), ''), 'Không có mô tả bổ sung.')
+    WHEN 'assigneeName' THEN COALESCE(NULLIF(TRIM(ser.recipient_name), ''), assignee.full_name, 'Nhân sự phụ trách')
+    WHEN 'dueAt' THEN COALESCE(DATE_FORMAT(item.due_at, '%H:%i %d/%m/%Y'), 'Chưa xác định')
+    WHEN 'campusName' THEN campus.name
+    WHEN 'delegationName' THEN d.delegation_name
+    WHEN 'hostName' THEN COALESCE(host_user.full_name, 'Người phụ trách tiếp đón')
+    WHEN 'departmentName' THEN COALESCE(department.name, 'Phòng ban phối hợp')
+    WHEN 'originalQuantity' THEN CAST(item.quantity AS CHAR)
+    WHEN 'proposedQuantity' THEN COALESCE(CAST(item.proposed_quantity AS CHAR), 'Chưa xác định')
+    WHEN 'proposedUsageStartAt' THEN COALESCE(DATE_FORMAT(item.proposed_usage_start_at, '%H:%i %d/%m/%Y'), 'Chưa xác định')
+    WHEN 'proposedUsageEndAt' THEN COALESCE(DATE_FORMAT(item.proposed_usage_end_at, '%H:%i %d/%m/%Y'), 'Chưa xác định')
+    WHEN 'proposedDescription' THEN COALESCE(NULLIF(TRIM(item.proposed_description), ''), 'Không có mô tả bổ sung.')
+    WHEN 'proposalNote' THEN COALESCE(NULLIF(TRIM(item.proposal_note), ''), 'Không có ghi chú bổ sung.')
+    WHEN 'recipientName' THEN COALESCE(NULLIF(TRIM(ser.recipient_name), ''), 'Người phụ trách')
+    WHEN 'itemTitle' THEN item.title
+  END
+FROM sent_emails se
+JOIN visit_logistics_items item
+  ON se.related_type = 'LOGISTICS_ITEM' AND item.logistics_item_id = se.related_id
+JOIN visit_request_campuses vrc ON vrc.visit_instance_id = item.visit_instance_id
+JOIN visit_instance_form_details d ON d.visit_instance_id = vrc.visit_instance_id
+JOIN campuses campus ON campus.campus_id = vrc.campus_id
+LEFT JOIN users requester ON requester.user_id = item.requested_by
+LEFT JOIN users assignee ON assignee.user_id = item.assigned_to_user_id
+LEFT JOIN users host_user ON host_user.user_id = vrc.current_host_user_id
+LEFT JOIN departments department ON department.department_id = item.requested_to_department_id
+JOIN sent_email_recipients ser
+  ON ser.sent_email_id = se.sent_email_id AND ser.recipient_type = 'TO'
+CROSS JOIN (
+  SELECT 'departmentLeaderName' AS variable_name
+  UNION ALL SELECT 'requesterName'
+  UNION ALL SELECT 'logisticsTitle'
+  UNION ALL SELECT 'logisticsItemType'
+  UNION ALL SELECT 'quantity'
+  UNION ALL SELECT 'usageStartAt'
+  UNION ALL SELECT 'usageEndAt'
+  UNION ALL SELECT 'logisticsDescription'
+  UNION ALL SELECT 'assigneeName'
+  UNION ALL SELECT 'dueAt'
+  UNION ALL SELECT 'campusName'
+  UNION ALL SELECT 'delegationName'
+  UNION ALL SELECT 'hostName'
+  UNION ALL SELECT 'departmentName'
+  UNION ALL SELECT 'originalQuantity'
+  UNION ALL SELECT 'proposedQuantity'
+  UNION ALL SELECT 'proposedUsageStartAt'
+  UNION ALL SELECT 'proposedUsageEndAt'
+  UNION ALL SELECT 'proposedDescription'
+  UNION ALL SELECT 'proposalNote'
+  UNION ALL SELECT 'recipientName'
+  UNION ALL SELECT 'itemTitle'
+) names
+WHERE se.sent_email_id BETWEEN 64001 AND 64031;
+
+DROP PROCEDURE IF EXISTS pems_seed_render_email_history;
+DELIMITER $$
+CREATE PROCEDURE pems_seed_render_email_history()
+BEGIN
+  DECLARE v_done BOOLEAN DEFAULT FALSE;
+  DECLARE v_sent_email_id BIGINT UNSIGNED;
+  DECLARE v_variable_name VARCHAR(100);
+  DECLARE v_variable_value LONGTEXT;
+
+  DECLARE render_cursor CURSOR FOR
+    SELECT sent_email_id, variable_name, variable_value
+    FROM tmp_seed_email_render_variables
+    ORDER BY sent_email_id, variable_name;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_done = TRUE;
+
+  OPEN render_cursor;
+  render_loop: LOOP
+    FETCH render_cursor INTO v_sent_email_id, v_variable_name, v_variable_value;
+    IF v_done THEN
+      LEAVE render_loop;
+    END IF;
+
+    UPDATE sent_emails
+    SET subject = REPLACE(subject, CONCAT('{{', v_variable_name, '}}'), v_variable_value),
+        body_snapshot = REPLACE(body_snapshot, CONCAT('{{', v_variable_name, '}}'), v_variable_value)
+    WHERE sent_email_id = v_sent_email_id;
+  END LOOP;
+  CLOSE render_cursor;
+END$$
+DELIMITER ;
+
+CALL pems_seed_render_email_history();
+DROP PROCEDURE IF EXISTS pems_seed_render_email_history;
+DROP TEMPORARY TABLE IF EXISTS tmp_seed_email_render_variables;
+
+COMMIT;
+
+-- ---------------------------------------------------------------------------
 -- R8. Code-grounded verification. Every invalid_* result below must be 0.
 -- ---------------------------------------------------------------------------
 SELECT 'invalid_01_automated_email_without_template' AS check_name, COUNT(*) AS issue_count
@@ -16860,9 +16575,11 @@ FROM sent_emails se
 JOIN email_templates et ON et.email_template_id=se.email_template_id
 WHERE (et.template_code IN (
          'VISIT_PARTICIPANT_INVITATION','VISIT_STUDENT_INVITATION',
-         'VISIT_DEPARTMENT_LEADER_INVITATION','VISIT_DEPARTMENT_STAFF_ASSIGNMENT',
-         'VISIT_REMINDER_HOST','VISIT_REMINDER_PARTICIPANTS'
+         'VISIT_DEPARTMENT_LEADER_INVITATION','VISIT_DEPARTMENT_STAFF_ASSIGNMENT'
        ) AND se.related_type<>'VISIT_PARTICIPANT')
+   OR (et.template_code IN (
+         'VISIT_REMINDER_HOST','VISIT_REMINDER_PARTICIPANTS'
+       ) AND se.related_type<>'VISIT_INSTANCE')
    OR (et.template_code IN (
          'LOGISTICS_REQUEST_TO_DEPARTMENT','LOGISTICS_ASSIGNEE_ASSIGNMENT',
          'LOGISTICS_CHANGE_PROPOSAL_TO_HOST','LOGISTICS_EXPENSE_REPORT_REMINDER'
@@ -17117,8 +16834,37 @@ WHERE ic.status = 'APPLIED'
     OR u.status <> 'ACTIVE'
   );
 
+SELECT 'invalid_26_non_materialized_file_seed' AS check_name, COUNT(*) AS issue_count
+FROM files;
+
+SELECT 'invalid_27_non_materialized_document_seed' AS check_name, COUNT(*) AS issue_count
+FROM documents;
+
+SELECT 'invalid_28_non_materialized_email_attachment_seed' AS check_name, COUNT(*) AS issue_count
+FROM sent_email_attachments;
+
+SELECT 'invalid_29_unresolved_email_template_variable' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails
+WHERE subject REGEXP '\\{\\{[^}]+\\}\\}'
+   OR body_snapshot REGEXP '\\{\\{[^}]+\\}\\}';
+
+SELECT 'invalid_30_email_history_not_rendered_from_template' AS check_name, COUNT(*) AS issue_count
+FROM sent_emails se
+JOIN email_templates et ON et.email_template_id = se.email_template_id
+WHERE se.sent_email_id BETWEEN 64001 AND 64031
+  AND (
+       se.body_format <> 'HTML'
+    OR se.body_snapshot NOT LIKE '<!DOCTYPE html>%PEMS — Campus Visit%'
+    OR se.subject IS NULL
+    OR TRIM(se.subject) = ''
+  );
+
+SELECT 'curated_email_history_rows' AS metric, COUNT(*) AS value
+FROM sent_emails
+WHERE sent_email_id BETWEEN 64001 AND 64031;
+
 -- Coverage output for role/relationship/status, template/event, visit-detail
--- email history, documents, contact claims and report attachments.
+-- email history and contact claims.
 SELECT role_code, relationship_type, reachable_status, COUNT(*) AS story_count
 FROM (
   SELECT r.role_code, 'REGISTRANT' AS relationship_type, vr.status AS reachable_status
@@ -17170,12 +16916,6 @@ GROUP BY vrc.visit_request_id, vrc.visit_instance_id
 HAVING logistics_email_count>0
 ORDER BY vrc.visit_instance_id;
 
-SELECT d.owner_type, d.status, d.campus_id, c.name AS campus_name, COUNT(*) AS document_count
-FROM documents d
-LEFT JOIN campuses c ON c.campus_id=d.campus_id
-GROUP BY d.owner_type, d.status, d.campus_id, c.name
-ORDER BY d.owner_type, d.status, d.campus_id;
-
 SELECT ic.identity_change_id, ic.visit_request_id, ic.change_kind, ic.status,
        ic.new_email_masked, ic.requested_at, ic.expires_at,
        COUNT(DISTINCT se.sent_email_id) AS email_count,
@@ -17188,17 +16928,6 @@ WHERE ic.identity_change_id BETWEEN 67001 AND 67003
 GROUP BY ic.identity_change_id, ic.visit_request_id, ic.change_kind, ic.status,
          ic.new_email_masked, ic.requested_at, ic.expires_at
 ORDER BY ic.identity_change_id;
-
-SELECT d.document_id, d.title AS report_document, f.original_filename AS file_name,
-       se.sent_email_id, et.template_code, ser.recipient_email
-FROM documents d
-JOIN files f ON f.file_id=d.file_id
-JOIN sent_email_attachments sea ON sea.file_id=f.file_id
-JOIN sent_emails se ON se.sent_email_id=sea.sent_email_id
-JOIN email_templates et ON et.email_template_id=se.email_template_id
-JOIN sent_email_recipients ser ON ser.sent_email_id=se.sent_email_id
-WHERE d.owner_type='REPORT'
-ORDER BY d.document_id, se.sent_email_id;
 
 -- ---------------------------------------------------------------------------
 -- Request status recomputed from the campuses, for every seeded request.
@@ -17714,4 +17443,3 @@ SELECT
   'curated_seed_quality_gate' AS check_name,
   'PASS' AS result,
   'Operational agendas, Host email senders, campus statuses, Visitor-only operational contacts, API integration seed minimalism, HO semantics and visible seed content are valid.' AS details;
-
