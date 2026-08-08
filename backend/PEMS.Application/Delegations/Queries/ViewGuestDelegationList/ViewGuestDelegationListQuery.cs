@@ -24,6 +24,17 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public DateTime? FromDate { get; init; }
     public DateTime? ToDate { get; init; }
     public bool CancelledOnly { get; init; }
+    /// <summary>
+    /// HO's "Chờ duyệt" filter row merges what used to be two separate dropdown options —
+    /// a campus still WAITING_REQUEST_APPROVAL, or a multi-campus request whose aggregate is
+    /// PARTIALLY_APPROVED — into the union of both, same set of rows either option used to return.
+    /// </summary>
+    public bool PendingApprovalAny { get; init; }
+    /// <summary>
+    /// HO's "Đã duyệt" filter row merges the other two former options — a campus ASSIGNED a host,
+    /// or a request whose aggregate is fully APPROVED — into the union of both.
+    /// </summary>
+    public bool ApprovedAny { get; init; }
     public string? Relation { get; init; }
     public bool? ReadOnlyOnly { get; init; }
     public bool? ActionableOnly { get; init; }

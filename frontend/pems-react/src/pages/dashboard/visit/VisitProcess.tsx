@@ -849,7 +849,9 @@ export function VisitProcess() {
     );
   }
 
-  const isVisitorOwner = perm?.relation === 'VISITOR_OWNER' || detail?.relation === 'VISITOR_OWNER';
+  // "OPERATIONAL_CONTACT" replaced the old request-wide "VISITOR_OWNER" relation (see
+  // VisitInstanceAccess.cs) — the confirmed contact of THIS campus, resolved per-instance.
+  const isVisitorOwner = perm?.relation === 'OPERATIONAL_CONTACT' || detail?.relation === 'OPERATIONAL_CONTACT';
 
   if (!hasNumericId || permLoadFailed || detailLoadError) {
     return (

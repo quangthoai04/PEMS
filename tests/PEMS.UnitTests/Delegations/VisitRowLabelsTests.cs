@@ -15,30 +15,31 @@ namespace PEMS.UnitTests.Delegations;
 public class VisitRowLabelsTests
 {
     [Theory]
-    [InlineData(VisitInstanceStatus.WaitingContactConfirmation, "Chờ đầu mối xác nhận")]
-    [InlineData(VisitInstanceStatus.WaitingRequestApproval, "Chờ xử lý tại cơ sở")]
+    [InlineData(VisitInstanceStatus.WaitingContactConfirmation, "Chờ xác nhận")]
+    [InlineData(VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt")]
     // ASSIGNED and BEFORE_VISIT are different steps and must read differently: the first says a
     // person has the campus, the second says they have started on it.
-    [InlineData(VisitInstanceStatus.Assigned, "Đã phân công người phụ trách")]
+    [InlineData(VisitInstanceStatus.Assigned, "Đã duyệt")]
     [InlineData(VisitInstanceStatus.BeforeVisit, "Đang chuẩn bị")]
-    [InlineData(VisitInstanceStatus.DuringVisit, "Đang tiếp khách")]
-    [InlineData(VisitInstanceStatus.AfterVisit, "Chờ đóng đoàn")]
-    [InlineData(VisitInstanceStatus.Closed, "Đã đóng đoàn")]
+    [InlineData(VisitInstanceStatus.DuringVisit, "Đang diễn ra")]
+    [InlineData(VisitInstanceStatus.AfterVisit, "Chờ đóng")]
+    [InlineData(VisitInstanceStatus.Closed, "Đã hoàn tất")]
     [InlineData(VisitInstanceStatus.Cancelled, "Đã hủy")]
-    [InlineData(VisitInstanceStatus.Rejected, "Đã bị từ chối")]
+    [InlineData(VisitInstanceStatus.Rejected, "Từ chối")]
     public void Campus_status_wins_over_the_request_aggregate(string campusStatus, string expected)
     {
         // The aggregate deliberately disagrees: a PARTIALLY_APPROVED request says nothing useful about
         // the campus the reader is actually looking at, so the instance has to win.
+        // No roleCode → the internal (Staff/Staff Leader) vocabulary, the shared default.
         Assert.Equal(expected, VisitRowLabels.Status(VisitRequestStatuses.PartiallyApproved, campusStatus));
     }
 
     [Theory]
-    [InlineData(VisitRequestStatuses.PendingContactConfirmation, "Chờ đầu mối xác nhận")]
-    [InlineData(VisitRequestStatuses.PendingApproval, "Chờ xử lý")]
+    [InlineData(VisitRequestStatuses.PendingContactConfirmation, "Chờ xác nhận")]
+    [InlineData(VisitRequestStatuses.PendingApproval, "Chờ duyệt")]
     [InlineData(VisitRequestStatuses.PartiallyApproved, "Duyệt một phần")]
     [InlineData(VisitRequestStatuses.Approved, "Đã duyệt")]
-    [InlineData(VisitRequestStatuses.Rejected, "Đã bị từ chối")]
+    [InlineData(VisitRequestStatuses.Rejected, "Từ chối")]
     [InlineData(VisitRequestStatuses.Cancelled, "Đã hủy")]
     public void Request_aggregate_is_used_when_the_row_is_not_one_campus(string requestStatus, string expected)
     {
@@ -49,6 +50,35 @@ public class VisitRowLabelsTests
     public void An_unknown_status_falls_back_to_the_raw_code_rather_than_an_empty_cell()
     {
         Assert.Equal("SOMETHING_NEW", VisitRowLabels.Status("SOMETHING_NEW", campusStatus: null));
+    }
+
+    [Theory]
+    // Visitor reads AFTER_VISIT as "waiting on my own feedback", not "waiting on staff paperwork" —
+    // the one campus-status word that reads differently for them.
+    [InlineData(VisitInstanceStatus.AfterVisit, "Chờ đánh giá")]
+    [InlineData(VisitInstanceStatus.Rejected, "Đã từ chối")]
+    [InlineData(VisitInstanceStatus.WaitingRequestApproval, "Chờ duyệt")]
+    [InlineData(VisitInstanceStatus.Assigned, "Đã duyệt")]
+    public void Visitor_reads_after_visit_and_rejected_differently(string campusStatus, string expected)
+    {
+        Assert.Equal(expected, VisitRowLabels.Status(VisitRequestStatuses.Approved, campusStatus, RoleCodes.Visitor));
+    }
+
+    [Theory]
+    // HO reads AFTER_VISIT the same as Staff ("Chờ đóng"), but Rejected the same as Visitor.
+    [InlineData(VisitInstanceStatus.AfterVisit, "Chờ đóng")]
+    [InlineData(VisitInstanceStatus.Rejected, "Đã từ chối")]
+    public void Ho_reads_after_visit_like_staff_but_rejected_like_visitor(string campusStatus, string expected)
+    {
+        Assert.Equal(expected, VisitRowLabels.Status(VisitRequestStatuses.Approved, campusStatus, RoleCodes.Ho));
+    }
+
+    [Fact]
+    public void Ho_merges_partially_approved_into_the_same_pending_word_as_waiting_request_approval()
+    {
+        // HO's monitoring view: a multi-campus request with any campus still undecided reads the
+        // same "Chờ duyệt" as a single campus that hasn't been touched yet — no separate word.
+        Assert.Equal("Chờ duyệt", VisitRowLabels.Status(VisitRequestStatuses.PartiallyApproved, campusStatus: null, RoleCodes.Ho));
     }
 
     [Theory]

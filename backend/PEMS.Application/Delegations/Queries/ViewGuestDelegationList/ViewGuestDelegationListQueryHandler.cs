@@ -159,7 +159,7 @@ public sealed class ViewGuestDelegationListQueryHandler
             item.TabType = ResolveTabType(itemTab, roleCode);
             item.CurrentUserRelation = ResolveRelation(item, itemTab, roleCode, isStaffLeader);
             item.RelationLabel = VisitRowLabels.Relation(item.CurrentUserRelation);
-            item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, item.CampusStatus);
+            item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, item.CampusStatus, roleCode);
             // Multi-campus SUMMARY row (no single instance of its own): visit_requests.status only
             // tracks the approval aggregate, so a request stuck at "Đã duyệt" forever even after
             // every campus finished was stale data. Re-derive from the campus instances themselves.
@@ -167,15 +167,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 && item.CampusProgressItems.Count > 0)
             {
                 var progressLabel = VisitRowLabels.MultiCampusProgress(
-                    item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus));
+                    item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus), roleCode);
                 if (progressLabel is not null) item.StatusLabel = progressLabel;
             }
-            // Visitor doesn't see the internal "chờ đóng đoàn" close-out step — from their side the
-            // reception already happened, and closing the delegation record is FPT's own paperwork.
-            // They see the same "đã hoàn tất" wording as CLOSED; the feedback star in the action
-            // column (fed by the AFTER_VISIT/CLOSED pending-feedback query) is what actually changes.
-            if (roleCode == RoleCodes.Visitor && item.CampusStatus == VisitInstanceStatus.AfterVisit)
-                item.StatusLabel = VisitRowLabels.Status(item.RequestStatus, VisitInstanceStatus.Closed);
             // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
             item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
@@ -871,6 +865,20 @@ public sealed class ViewGuestDelegationListQueryHandler
         if (request.CancelledOnly)
         {
             q = q.Where(vr => vr.Status == VisitRequestStatuses.Cancelled || vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.Cancelled));
+        }
+        else if (request.PendingApprovalAny)
+        {
+            // HO's "Chờ duyệt" row: union of the two former separate options (a campus still
+            // waiting, or a multi-campus request partially decided) — see the DTO doc comment.
+            q = q.Where(vr => vr.Status == VisitRequestStatuses.PartiallyApproved
+                || vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.WaitingRequestApproval));
+        }
+        else if (request.ApprovedAny)
+        {
+            // HO's "Đã duyệt" row: union of the two former separate options (a campus already
+            // assigned a host, or a request whose aggregate is fully approved).
+            q = q.Where(vr => vr.Status == VisitRequestStatuses.Approved
+                || vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.Assigned));
         }
         else
         {

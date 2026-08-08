@@ -236,7 +236,9 @@ public sealed class GetVisitProcessDetailQueryHandler
         var notifications = new List<VisitorNotificationDto>();
         var publicNews = new List<VisitorPublicNewsListItemDto>();
         
-        if (relation == "VISITOR_OWNER")
+        // "OPERATIONAL_CONTACT" replaced the old request-wide "VISITOR_OWNER" relation (see
+        // VisitInstanceAccess.cs) — this branch was silently dead until the rename was fixed here.
+        if (relation == VisitInstanceAccess.OperationalContact)
         {
             var reqId = instance.VisitRequestId;
             var instId = instance.VisitInstanceId;

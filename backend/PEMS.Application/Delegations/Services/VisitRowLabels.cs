@@ -22,45 +22,56 @@ public static class VisitRowLabels
     /// Process status. The campus instance wins when there is one — a request aggregate of
     /// PARTIALLY_APPROVED says nothing useful about the campus the reader is looking at.
     ///
-    /// Vocabulary shared by every role: Chờ đầu mối xác nhận · Chờ xử lý tại cơ sở · Đã phân công
-    /// người phụ trách · Đang chuẩn bị · Đang tiếp khách · Chờ đóng đoàn · Đã đóng đoàn ·
-    /// Đã bị từ chối · Đã hủy.
+    /// Vocabulary is shared by Staff/Staff Leader (and Department/Student, which read the same
+    /// internal wording — they never reach a role-specific branch of their own): Chờ xác nhận ·
+    /// Chờ duyệt · Đã duyệt · Đang chuẩn bị · Đang diễn ra · Chờ đóng · Đã hoàn tất · Từ chối ·
+    /// Đã hủy. Visitor and HO each read two words differently — see <paramref name="roleCode"/>:
+    ///   - Visitor sees "Chờ đánh giá" instead of "Chờ đóng" for AFTER_VISIT — from their side the
+    ///     visit itself is over, so "closing the delegation" (FPT's internal paperwork) reads as
+    ///     waiting on the feedback they still owe, not on staff.
+    ///   - Visitor and HO both read "Đã từ chối" (not "Từ chối") — the extra "đã" reads right for
+    ///     someone one step removed from the decision.
+    ///   - HO additionally reads PARTIALLY_APPROVED as "Chờ duyệt" rather than its own word — from
+    ///     HO's monitoring view a multi-campus request with any campus still undecided is simply
+    ///     still pending, same bucket as a single campus that hasn't been touched yet.
     ///
-    /// The REQUEST-level fallback (campusStatus null) keeps its own aggregate vocabulary — "Chờ xử
-    /// lý" / "Duyệt một phần" / "Đã duyệt" — because a summary row is answering a different
-    /// question from a campus row: "where is this request as a whole?", not "where is my campus?".
-    /// Per-campus movement underneath an aggregate is carried by the row's ChangeSummary/campus
-    /// indicators (see AttachChangeSummariesAsync) — a "something changed here" signal deliberately
-    /// separate from the status word.
+    /// The REQUEST-level fallback (campusStatus null) keeps its own aggregate vocabulary because a
+    /// summary row is answering a different question from a campus row: "where is this request as a
+    /// whole?", not "where is my campus?". Per-campus movement underneath an aggregate is carried by
+    /// the row's ChangeSummary/campus indicators (see AttachChangeSummariesAsync) — a "something
+    /// changed here" signal deliberately separate from the status word.
     /// </summary>
-    public static string Status(string requestStatus, string? campusStatus) => campusStatus switch
+    public static string Status(string requestStatus, string? campusStatus, string? roleCode = null) => campusStatus switch
     {
         VisitInstanceStatus.Cancelled => "Đã hủy",
-        VisitInstanceStatus.Rejected => "Đã bị từ chối",
+        VisitInstanceStatus.Rejected => RejectedLabel(roleCode),
         // Behind the confirmation gate: the campus is waiting for its operational contact to answer,
         // and until every campus has, no Staff Leader sees the request at all.
-        VisitInstanceStatus.WaitingContactConfirmation => "Chờ đầu mối xác nhận",
-        VisitInstanceStatus.WaitingRequestApproval => "Chờ xử lý tại cơ sở",
+        VisitInstanceStatus.WaitingContactConfirmation => "Chờ xác nhận",
+        VisitInstanceStatus.WaitingRequestApproval => "Chờ duyệt",
         // Approved with a person named, and that person has not started preparing yet. "Host" is the
         // internal word; the reader gets the Vietnamese one, like every other label here.
-        VisitInstanceStatus.Assigned => "Đã phân công người phụ trách",
+        VisitInstanceStatus.Assigned => "Đã duyệt",
         VisitInstanceStatus.BeforeVisit => "Đang chuẩn bị",
-        VisitInstanceStatus.DuringVisit => "Đang tiếp khách",
-        VisitInstanceStatus.AfterVisit => "Chờ đóng đoàn",
-        VisitInstanceStatus.Closed => "Đã đóng đoàn",
+        VisitInstanceStatus.DuringVisit => "Đang diễn ra",
+        VisitInstanceStatus.AfterVisit => roleCode == RoleCodes.Visitor ? "Chờ đánh giá" : "Chờ đóng",
+        VisitInstanceStatus.Closed => "Đã hoàn tất",
         _ => requestStatus switch
         {
             VisitRequestStatuses.Cancelled => "Đã hủy",
-            VisitRequestStatuses.Rejected => "Đã bị từ chối",
+            VisitRequestStatuses.Rejected => RejectedLabel(roleCode),
             // The whole request is behind the confirmation gate. Without this the summary row a
             // registrant/HO sees would fall through and print the raw enum.
-            VisitRequestStatuses.PendingContactConfirmation => "Chờ đầu mối xác nhận",
-            VisitRequestStatuses.PendingApproval => "Chờ xử lý",
-            VisitRequestStatuses.PartiallyApproved => "Duyệt một phần",
+            VisitRequestStatuses.PendingContactConfirmation => "Chờ xác nhận",
+            VisitRequestStatuses.PendingApproval => "Chờ duyệt",
+            VisitRequestStatuses.PartiallyApproved => roleCode == RoleCodes.Ho ? "Chờ duyệt" : "Duyệt một phần",
             VisitRequestStatuses.Approved => "Đã duyệt",
             _ => requestStatus,
         },
     };
+
+    private static string RejectedLabel(string? roleCode) =>
+        roleCode == RoleCodes.Visitor || roleCode == RoleCodes.Ho ? "Đã từ chối" : "Từ chối";
 
     // Same order a single campus instance moves through, once decided — used to pick the ONE
     // status a multi-campus SUMMARY row (no single instance of its own) should show.
@@ -82,18 +93,18 @@ public static class VisitRowLabels
     ///
     /// Shows whichever campus is LEAST progressed (Rejected/Cancelled instances excluded — they
     /// are a different, already-terminal outcome for that campus, not "still in progress"): the
-    /// whole delegation is not "Đã đóng đoàn" until every live campus is, mirroring how the single-
+    /// whole delegation is not "Đã hoàn tất" until every live campus is, mirroring how the single-
     /// campus badge already reads. Null when there is nothing left to rank (e.g. every campus
     /// Rejected/Cancelled — <see cref="Status"/>'s own requestStatus branch already covers that).
     /// </summary>
-    public static string? MultiCampusProgress(IEnumerable<string?> campusInstanceStatuses)
+    public static string? MultiCampusProgress(IEnumerable<string?> campusInstanceStatuses, string? roleCode = null)
     {
         var leastProgressed = campusInstanceStatuses
             .Select(s => System.Array.IndexOf(ProgressOrder, s))
             .Where(rank => rank >= 0)
             .DefaultIfEmpty(-1)
             .Min();
-        return leastProgressed < 0 ? null : Status(VisitRequestStatuses.Approved, ProgressOrder[leastProgressed]);
+        return leastProgressed < 0 ? null : Status(VisitRequestStatuses.Approved, ProgressOrder[leastProgressed], roleCode);
     }
 
     /// <summary>
