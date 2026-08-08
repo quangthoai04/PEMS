@@ -565,11 +565,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     try {
       setIsLoading(true);
       setListError(null);
-      // Students/Depts only have the attending view; Visitors have owner + registered.
+      // Students/Depts only have the attending view; Visitors have owner + registered + all
+      // (merged) — 'all' must pass through so the backend's QueryAllMergedAsync runs instead of
+      // silently collapsing to 'responsible' and dropping the registered-only rows.
       const effectiveTab = (isStudent || isDept)
         ? 'attending'
         : isVisitor
-          ? (targetTab === 'registered' ? 'registered' : 'responsible')
+          ? (targetTab === 'registered' || targetTab === 'all' ? targetTab : 'responsible')
           : targetTab;
       const params: Record<string, unknown> = {
         tab: effectiveTab,
