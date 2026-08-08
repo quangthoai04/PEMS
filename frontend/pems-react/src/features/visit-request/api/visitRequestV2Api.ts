@@ -280,6 +280,22 @@ export interface ResolvedCampusVisit {
   allowedActions?: string[];
   /** Per-campus verdicts INCLUDING refused ones — lets the UI disable with a real reason. */
   capabilities?: VisitActionCapability[];
+  /**
+   * True when a change this viewer submits for THIS campus is approved in the same call, because they
+   * are both the requester side and the campus's current Host.
+   *
+   * It changes a LABEL — "Cập nhật" instead of "Gửi đề xuất thay đổi" — and nothing else. The browser
+   * still calls the same endpoint and the backend still writes the amendment and its decision. Never
+   * infer this from a role: it used to be `user.roleCode === 'STAFF'` here, which was wrong for a staff
+   * account that happened to be the registrant and hosted nothing.
+   */
+  amendmentSelfApproves?: boolean;
+  /**
+   * True when the viewer is this campus's Staff Leader, so they may file a start inside the 72-hour
+   * registration floor (after confirming) and may approve in the same call as an edit. A hint for the
+   * UI only — the backend decides both again.
+   */
+  canOverrideScheduleLeadTime?: boolean;
 }
 
 /**
@@ -402,6 +418,57 @@ export const updatePendingVisitRequestV2 = (visitRequestId: number, edit: V2Edit
 
 export const resubmitVisitRequestV2 = (visitRequestId: number, edit: V2EditPayload) =>
   httpClient.post<V2EditResponse>(`/v2/visit-requests/${visitRequestId}/resubmit`, edit).then(r => r.data);
+
+// ── Per-campus pending edit ──────────────────────────────────────────────────
+
+/** The Host a "Lưu và duyệt" names. Approving without one is not a thing the backend accepts. */
+export interface V2ApproveAfterSave {
+  hostUserId: number;
+  decisionNote?: string | null;
+}
+
+export interface V2InstancePendingEditPayload {
+  content: V2CampusVisitEdit;
+  /**
+   * The campus Staff Leader's explicit "yes, this schedule, with less than 72 hours' notice". Sent only
+   * after the backend has ASKED for it (409 LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED) and the user has
+   * said yes — never pre-set, because the backend honours it for that leader alone and setting it
+   * hopefully would only hide a refusal the user needs to see.
+   */
+  overrideLeadTimeConfirmed?: boolean;
+  approveAfterSave?: V2ApproveAfterSave | null;
+}
+
+export interface V2InstancePendingEditResponse {
+  visitRequestId: number;
+  visitInstanceId: number;
+  visitRequestStatus: string;
+  visitInstanceStatus: string;
+  instanceRowVersion: number;
+  requestRowVersion: number;
+  approved: boolean;
+  hostUserId: number | null;
+  message: string;
+}
+
+/**
+ * Edits ONE campus that is still waiting for its decision, leaving every sibling untouched.
+ *
+ * Deliberately NOT the request-wide `/pending-edit`: that one needs EVERY campus still waiting, so on a
+ * mixed request (one approved, one waiting, one refused) it disappears — and until this existed the
+ * waiting campus had no way to be corrected at all.
+ */
+export const updatePendingVisitInstance = (
+  visitRequestId: number,
+  visitInstanceId: number,
+  body: V2InstancePendingEditPayload,
+) =>
+  httpClient
+    .put<V2InstancePendingEditResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/pending-edit`,
+      body,
+    )
+    .then(r => r.data);
 
 // ── Per-campus operational contact: confirmation (72h) and transfer (24h) ────
 //

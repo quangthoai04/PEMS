@@ -1,0 +1,286 @@
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import EditPendingCampusV2Page from '../../../pages/dashboard/visit/EditPendingCampusV2Page';
+import type { ResolvedCampusVisit, ResolvedVisitForm } from '../api/visitRequestV2Api';
+
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
+vi.mock('../api/visitRequestV2Api', () => ({
+  getVisitRequestFormV2: vi.fn(),
+  updatePendingVisitInstance: vi.fn(),
+}));
+
+vi.mock('../../delegations/api/delegationsApi', () => ({
+  delegationsApi: { getHostCandidates: vi.fn() },
+}));
+
+vi.mock('../hooks/useRegistrationCampuses', () => ({
+  useRegistrationCampuses: () => ({
+    campuses: [
+      { campusId: 1, campusCode: 'HN', campusName: 'FPTU Hà Nội', city: null },
+      { campusId: 2, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh', city: null },
+    ],
+    loading: false,
+    error: false,
+  }),
+}));
+
+import { getVisitRequestFormV2, updatePendingVisitInstance } from '../api/visitRequestV2Api';
+import { delegationsApi } from '../../delegations/api/delegationsApi';
+
+/** Far enough out that the 72-hour floor is satisfied by the EXISTING schedule. */
+const FAR_START = '2027-09-01T09:00:00';
+const FAR_END = '2027-09-01T11:30:00';
+
+const campus = (
+  id: number,
+  code: string,
+  name: string,
+  status: string,
+  allowedActions: string[],
+  overrides: Partial<ResolvedCampusVisit> = {},
+): ResolvedCampusVisit => ({
+  visitInstanceId: id, campusId: id, campusCode: code, campusName: name,
+  plannedStartAt: FAR_START, plannedEndAt: FAR_END,
+  instanceStatus: status, currentHostUserId: null, currentHostName: null, decidedByUserId: null,
+  decidedByName: null, decidedAt: null, decisionActorRole: null, decisionNote: null,
+  delegationName: `Đoàn ${code}`, visitType: 'MEETING', visitTypeOther: null,
+  purpose: 'Trao đổi hợp tác', workingContent: 'Nội dung làm việc',
+  visitors: [{ guestMemberId: id * 10, memberType: 'VISITOR', fullName: `Khách ${code}`, organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
+  supportMembers: [],
+  operationalContact: {
+    fullName: `OP ${code}`, organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
+    phone: '+84912345678', email: 'op@example.com',
+    confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
+  },
+  currentHost: null, proposedHost: null,
+  hostSelection: { canProposeSelfAsHost: false, canProposeOtherHost: false, canWaitForLaterAssignment: false, canUpdateProposedHost: false },
+  workingLanguage: 'VI', transportationNote: null, mediaConsentStatus: 'DECLINED',
+  notes: `Ghi chú ${code}`,
+  formRevision: 1, approvalRevision: 0, rowVersion: 4, activeAmendment: null,
+  cancelledByUserId: null, cancelledByName: null, cancelledAt: null,
+  cancellationActorType: null, cancellationSource: null, cancellationReason: null,
+  allowedActions,
+  ...overrides,
+} as ResolvedCampusVisit);
+
+/**
+ * The shape this screen exists for: HN already ASSIGNED, HCM still waiting. The request aggregate reads
+ * PARTIALLY_APPROVED, which is exactly the state in which the whole-request edit is refused.
+ */
+const mixedForm = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => ({
+  visitRequestId: 5, requestCode: 'VR-5', rowVersion: 7,
+  hasMixedCampusDetails: true, visitScope: 'MULTI_CAMPUS', requestStatus: 'PARTIALLY_APPROVED',
+  createdSource: 'PUBLIC', submittedAt: '2026-07-15T08:00:00', partnerId: null,
+  cancelledByUserId: null, cancelledByName: null, cancelledAt: null, cancellationReason: null,
+  registrant: { fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP', phone: '+84912345678', email: 'reg@x.vn', nationality: 'VN' },
+  confirmationSummary: { total: 2, confirmed: 2, pending: 0, declined: 0, expired: 0, gateOpen: true },
+  requestOutcome: { code: 'IN_PROGRESS', total: 2, accepted: 1, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
+  campusVisits: [
+    campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+    campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS']),
+  ],
+  viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+  ...overrides,
+});
+
+const renderPage = (instanceId = 2) =>
+  render(
+    <MemoryRouter initialEntries={[`/dashboard/visit/v2/5/campus/${instanceId}/edit`]}>
+      <Routes>
+        <Route
+          path="/dashboard/visit/v2/:visitRequestId/campus/:visitInstanceId/edit"
+          element={<EditPendingCampusV2Page />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+const axiosError = (status: number, errorCode: string, message = 'nope') =>
+  Object.assign(new Error(String(status)), {
+    isAxiosError: true,
+    response: { status, data: { errorCode, message } },
+  });
+
+describe('EditPendingCampusV2Page', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /**
+   * The dead end this screen removes. On a mixed request the whole-request edit is refused because a
+   * sibling has been decided, and before this existed the campus still WAITING had no action at all.
+   */
+  it('opens on the waiting campus of a mixed request and edits only that campus', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    vi.mocked(updatePendingVisitInstance).mockResolvedValue({
+      visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+      visitInstanceStatus: 'WAITING_REQUEST_APPROVAL', instanceRowVersion: 5, requestRowVersion: 8,
+      approved: false, hostUserId: null, message: 'Đã cập nhật',
+    } as never);
+
+    renderPage();
+    expect(await screen.findByDisplayValue('Đoàn HCM')).toBeInTheDocument();
+    // Only the named campus is on screen — a sibling appearing here would be a sibling this form could
+    // overwrite.
+    expect(screen.queryByDisplayValue('Đoàn HN')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
+    const [requestId, instanceId, body] = vi.mocked(updatePendingVisitInstance).mock.calls[0];
+    expect(requestId).toBe(5);
+    expect(instanceId).toBe(2);
+    // The INSTANCE's own version is the concurrency token: a sibling being decided bumps the request
+    // version and must not make this save look stale.
+    expect(body.content.visitInstanceId).toBe(2);
+    expect(body.content.expectedRowVersion).toBe(4);
+    expect(body.content.campusId).toBe('HCM');
+    expect(body.overrideLeadTimeConfirmed).toBe(false);
+    expect(body.approveAfterSave).toBeNull();
+  });
+
+  it('refuses to render when the backend did not grant EDIT_PENDING_CAMPUS for this campus', async () => {
+    // The ASSIGNED campus. Its own actions are safe-edit and amendments; offering this form would be
+    // promising an edit the backend refuses.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    renderPage(1);
+    expect(await screen.findByTestId('pending-campus-not-editable')).toBeInTheDocument();
+    expect(screen.queryByTestId('pending-campus-save')).not.toBeInTheDocument();
+  });
+
+  it('offers no add/remove campus control — the campus set is fixed', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    expect(screen.queryByRole('button', { name: /Add campus/ })).not.toBeInTheDocument();
+    expect(screen.queryAllByLabelText(/Remove this campus/)).toHaveLength(0);
+  });
+
+  // ── The 72-hour floor and the Staff Leader's override ────────────────────────────────────────
+
+  /**
+   * A requester-side editor gets NO confirmation dialog: for them the answer is simply no, and offering
+   * "continue anyway" would promise something the backend will not honour.
+   */
+  it('refuses a requester-side move inside 72 hours locally, without calling the API', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    // Move the visit to TOMORROW, keeping the 09:00–11:30 times. The picker owns the date and time as
+    // two controls; changing the date alone is the smallest edit that puts the start inside the floor.
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = new Date(Date.now() + 24 * 3600_000);
+    const isoDate = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+    fireEvent.change(screen.getByTestId('campus-0-start-date'), { target: { value: isoDate } });
+
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(screen.getByTestId('pending-campus-leadtime-error')).toBeInTheDocument());
+    expect(updatePendingVisitInstance).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The Staff Leader's path. The client does NOT decide the override — it sends the ordinary request,
+   * the backend answers "confirm this", and only then does the dialog appear. Confirming re-sends the
+   * SAME payload with the flag rather than skipping the call.
+   */
+  it('asks the Staff Leader to confirm a sub-72h schedule, then re-sends with the flag', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+        }),
+      ],
+    }));
+    vi.mocked(updatePendingVisitInstance)
+      .mockRejectedValueOnce(axiosError(409, 'LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED', 'Chưa đủ 72 giờ'))
+      .mockResolvedValueOnce({
+        visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+        visitInstanceStatus: 'WAITING_REQUEST_APPROVAL', instanceRowVersion: 5, requestRowVersion: 8,
+        approved: false, hostUserId: null, message: 'Đã cập nhật',
+      } as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    // The TRANSLATED sentence, not the server's: the backend answers in Vietnamese and the shared
+    // error helper drops raw Vietnamese in English mode, which would have left this dialog showing a
+    // generic "data conflicts with an existing record".
+    expect(await screen.findByTestId('pending-campus-override-body'))
+      .toHaveTextContent(/72-hour minimum notice/i);
+    expect(vi.mocked(updatePendingVisitInstance).mock.calls[0][2].overrideLeadTimeConfirmed).toBe(false);
+
+    fireEvent.click(screen.getByTestId('pending-campus-override-confirm'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(updatePendingVisitInstance).mock.calls[1][2].overrideLeadTimeConfirmed).toBe(true);
+  });
+
+  it('shows no save-and-approve button to somebody who is not this campus’s Staff Leader', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    expect(screen.queryByTestId('pending-campus-save-approve')).not.toBeInTheDocument();
+  });
+
+  /**
+   * "Lưu và duyệt" is ONE call. Two calls — save, then approve — can leave the campus rewritten and
+   * still waiting when the approval is refused, with the leader believing they approved it.
+   */
+  it('sends the edit and the approval in a single call, with the chosen host', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+        }),
+      ],
+    }));
+    vi.mocked(delegationsApi.getHostCandidates).mockResolvedValue([
+      { userId: 77, fullName: 'Host A', email: 'a@fpt.edu.vn', campusId: 2, departmentName: 'IC', subRole: null, hasScheduleConflict: false, conflictCount: 0, conflicts: [] },
+    ] as never);
+    vi.mocked(updatePendingVisitInstance).mockResolvedValue({
+      visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+      visitInstanceStatus: 'ASSIGNED', instanceRowVersion: 5, requestRowVersion: 8,
+      approved: true, hostUserId: 77, message: 'Đã duyệt',
+    } as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    fireEvent.click(screen.getByTestId('pending-campus-save-approve'));
+    await screen.findByTestId('pending-campus-host-77');
+    fireEvent.click(screen.getByTestId('pending-campus-host-77'));
+    fireEvent.click(screen.getByTestId('pending-campus-host-confirm'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(updatePendingVisitInstance).mock.calls[0][2].approveAfterSave).toEqual({
+      hostUserId: 77, decisionNote: null,
+    });
+  });
+
+  it('shows a reload action when the campus was decided while the form was open', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    vi.mocked(updatePendingVisitInstance).mockRejectedValue(
+      axiosError(409, 'PENDING_CAMPUS_NOT_EDITABLE', 'Cơ sở đã được xử lý'));
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    // Matched on the CODE, not the status: this arrives as a 409 like a version conflict does, and
+    // collapsing the two would tell the user to reload when the real answer is "somebody decided it".
+    expect(await screen.findByTestId('pending-campus-edit-error'))
+      .toHaveTextContent(/no longer waiting for a decision/i);
+    expect(screen.getByRole('button', { name: /Reload latest data/ })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});

@@ -284,7 +284,7 @@
     "open": "Propose change",
     "openUpdate": "Update information",
     "title": "Propose a change — {{campus}}",
-    "activeStaysNote": "If you are Staff, your proposal is automatically approved and applied. If you are a Visitor, the content stays unchanged until the Host or Staff Leader approves it.",
+    "activeStaysNote": "The active content stays unchanged until this campus’s Host approves the proposal. If you are that Host, the change applies immediately and is still recorded in the history.",
     "reason": "Reason for the change",
     "submit": "Submit proposal",
     "errAlreadyPending": "This campus already has a pending proposal. Please wait for it or withdraw the current one.",
@@ -456,7 +456,8 @@
     "saveEdit": "Save changes",
     "saveResubmit": "Resubmit request",
     "openEdit": "Edit request",
-    "openResubmit": "Edit & resubmit"
+    "openResubmit": "Edit & resubmit",
+    "campusSetFixed": "The campus set is fixed once the request exists — only each campus’s content is editable."
   },
   "history": {
     "loading": "Loading history…",
@@ -942,5 +943,25 @@
       "confirmInstance": "Confirm cancelling this campus",
       "confirmMultiCampus": "Confirm cancelling all"
     }
+  },
+  "pendingCampusEdit": {
+    "open": "Edit this campus",
+    "title": "Edit campus — {{campus}}",
+    "subtitle": "Only this campus changes. The other campuses of request {{code}} keep their status, host and schedule.",
+    "campusFixed": "The campus cannot be swapped. Create a new request to visit a different campus.",
+    "save": "Save",
+    "saveAndApprove": "Save and approve",
+    "leaderHint": "You are the Staff Leader for this campus: save to leave it waiting for your decision, or save and approve now (a host is required).",
+    "notEditable": "This campus is no longer waiting for a decision, so it cannot be edited here.",
+    "overrideTitle": "New schedule is under 72 hours",
+    "overrideBody": "The new schedule does not meet the 72-hour minimum notice. As this campus’s Staff Leader you can confirm and continue.",
+    "overrideConfirm": "Confirm and continue",
+    "overrideCancel": "Go back",
+    "hostTitle": "Choose the host — {{campus}}",
+    "hostRequired": "Approving requires naming the official host for this campus.",
+    "hostNone": "This campus has nobody eligible to host.",
+    "hostLoadFailed": "Could not load the host list. Please try again.",
+    "hostConflict": "Schedule conflict ({{count}})",
+    "decisionNote": "Decision note (optional)"
   }
 }

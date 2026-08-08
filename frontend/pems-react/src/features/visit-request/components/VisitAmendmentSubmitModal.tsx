@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { HelpCircle, Plus, Trash2, X } from 'lucide-react';
 import {
   submitAmendment,
@@ -60,14 +59,20 @@ function diffMembers(current: EditableMember[], originalByKey: Map<string, strin
 
 /**
  * Amendment proposal for ONE campus (plan §9.5 / §16.6). Approval-sensitive fields — including the
- * guest/support member lists — the current content stays active until a Staff Leader approves. Reason is
- * required. Member edits are scoped to THIS instance (deep-cloned, stable keys). Stable backend codes map
- * to steady messages.
+ * guest/support member lists — the current content stays active until the campus's current HOST
+ * approves. Reason is required. Member edits are scoped to THIS instance (deep-cloned, stable keys).
+ * Stable backend codes map to steady messages.
  */
 export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onClose, onSubmitted }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
-  const { user } = useAuthContext();
-  const isStaff = user?.roleCode?.toUpperCase() === 'STAFF';
+  /**
+   * Whether this submission is decided in the same call, straight from the backend's per-campus
+   * verdict: the viewer is the requester side AND this campus's current Host, so there is nobody to
+   * wait for. It was `user.roleCode === 'STAFF'` — a role, which is not the question. A staff account
+   * that merely registered the request hosts nothing, saw "Cập nhật", and got a proposal that sat
+   * waiting for somebody else.
+   */
+  const selfApproves = campus.amendmentSelfApproves === true;
 
   const [delegationName, setDelegationName] = useState(campus.delegationName);
   const [visitType, setVisitType] = useState(campus.visitType);
@@ -235,7 +240,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center text-base font-extrabold text-[#004c91]">
-            {isStaff ? t('visitRequestV2:amend.titleUpdate', { campus: campus.campusName, defaultValue: `Cập nhật thông tin — ${campus.campusName}` }) : t('visitRequestV2:amend.title', { campus: campus.campusName })}
+            {selfApproves ? t('visitRequestV2:amend.titleUpdate', { campus: campus.campusName, defaultValue: `Cập nhật thông tin — ${campus.campusName}` }) : t('visitRequestV2:amend.title', { campus: campus.campusName })}
             <span title={t('visitRequestV2:amend.activeStaysNote')} className="ml-2 flex items-center">
               <HelpCircle className="h-4 w-4 text-slate-400" />
             </span>
@@ -323,7 +328,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           </button>
           <button type="button" data-testid="amendment-submit" disabled={busy || !reasonValid || !hasVisitor} onClick={() => void submit()}
             className="rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-50">
-            {isStaff ? t('visitRequestV2:amend.submitUpdate', { defaultValue: 'Cập nhật' }) : t('visitRequestV2:amend.submit')}
+            {selfApproves ? t('visitRequestV2:amend.submitUpdate', { defaultValue: 'Cập nhật' }) : t('visitRequestV2:amend.submit')}
           </button>
         </div>
       </div>

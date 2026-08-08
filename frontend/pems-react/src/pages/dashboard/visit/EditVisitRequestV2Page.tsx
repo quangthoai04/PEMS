@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useForm, useFieldArray, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, ArrowLeft, Loader2, Plus, RefreshCw, Send } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, RefreshCw, Send } from 'lucide-react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,9 +20,7 @@ import {
 import {
   applyContentToAllCampuses,
   buildV2EditPayload,
-  campusVisitHasUserContent,
   cloneCampusVisitContent,
-  createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
   resolvedFormToV2Schema,
@@ -63,7 +61,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
-  const [pendingRemove, setPendingRemove] = useState<number | null>(null);
   const [applyPrompt, setApplyPrompt] = useState<{ sourceIndex: number; overwritten: string[] } | null>(null);
   const requestRowVersionRef = useRef<number>(0);
   const cardRefs = useRef(new Map<string, HTMLDivElement | null>());
@@ -159,20 +156,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
-
-  const addCampus = () => {
-    if (campusVisitFields.fields.length >= campusLimit) return;
-    const fresh = createEmptyCampusVisit();
-    campusVisitFields.append(fresh);
-    setOpenKeys(prev => new Set(prev).add(fresh.clientKey));
-  };
-
-  const requestRemove = (index: number) => {
-    if (campusVisitFields.fields.length <= 1) return;
-    const cv = form.getValues('campusVisits')[index];
-    if (cv && campusVisitHasUserContent(cv)) setPendingRemove(index);
-    else campusVisitFields.remove(index);
-  };
 
   const copyInto = (targetIndex: number, sourceIndex: number) => {
     const current = form.getValues('campusVisits');
@@ -280,7 +263,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
 
   const { register, formState: { errors } } = form;
   const regErr = errors.registerInfo;
-  const allowAddRemove = mode === 'edit'; // resubmit keeps the campus set fixed
   // Campus CODEs already spoken for, so a campus cannot be picked twice in one request (the schema
   // rejects duplicates too — this keeps the user from choosing one in the first place).
   const takenCampusCodes = (form.watch('campusVisits') ?? [])
@@ -327,7 +309,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
         </FormSection>
 
 
-        <FormSection id="v2e-campuses" title={t('visitRequestV2:sections.campuses')} description={allowAddRemove ? t('visitRequestV2:sections.campusesDesc') : t('visitRequestV2:edit.resubmitCampusFixed')}>
+        {/* The campus set is fixed from the moment the request exists — for editing AND for
+            resubmitting. Adding one is a new request; dropping one is a cancellation of that campus,
+            which is its own workflow with its own notifications. The backend refuses a payload whose
+            campus set differs from the stored one, so hiding these controls is the UI agreeing with
+            the rule rather than the rule itself. */}
+        <FormSection id="v2e-campuses" title={t('visitRequestV2:sections.campuses')} description={t('visitRequestV2:edit.campusSetFixed')}>
           <div className="space-y-4">
             {campusVisitFields.fields.map((field, index) => {
               const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || field.id;
@@ -359,8 +346,8 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                       .map(i => ({ index: i, label: campusLabel(form.getValues('campusVisits')[i], i) }))}
                     onCopyFrom={source => copyInto(index, source)}
                     onApplyToAll={() => requestApplyToAll(index)}
-                    onRemove={() => requestRemove(index)}
-                    canRemove={allowAddRemove && campusVisitFields.fields.length > 1}
+                    onRemove={() => {}}
+                    canRemove={false}
                     showErrors={showErrors}
                     // The same floor the schema above was built with — and the same one create uses,
                     // so the picker, the resolver and the backend cannot disagree.
@@ -370,16 +357,6 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
               );
             })}
           </div>
-          {allowAddRemove && (
-            <button
-              type="button"
-              disabled={campusVisitFields.fields.length >= campusLimit}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-[#004c91]/40 px-4 py-2.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-40"
-              onClick={addCampus}
-            >
-              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: campusLimit })}
-            </button>
-          )}
         </FormSection>
 
         {submitError && (
@@ -434,18 +411,9 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
         </div>
       )}
 
-      {pendingRemove !== null && (
-        <div role="dialog" aria-modal="true" aria-labelledby="v2e-remove-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h3 id="v2e-remove-title" className="text-base font-extrabold text-slate-900">{t('visitRequestV2:remove.title')}</h3>
-            <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:remove.body', { campus: campusLabel(form.getValues('campusVisits')[pendingRemove], pendingRemove) })}</p>
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold" onClick={() => setPendingRemove(null)}>{t('visitRequestV2:common.cancel')}</button>
-              <button type="button" className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white" onClick={() => { campusVisitFields.remove(pendingRemove); setPendingRemove(null); }}>{t('visitRequestV2:remove.confirm')}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The "remove this campus?" dialog used to live here. There is nothing left for it to confirm:
+          a campus cannot be dropped from a request that exists, so the control that opened it is gone
+          and the backend refuses the payload that would have followed. */}
     </div>
   );
 }

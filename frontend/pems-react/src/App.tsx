@@ -10,6 +10,7 @@ import ConfirmEmailPage from './pages/account/ConfirmEmailPage';
 import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
 import VisitRequestV2DetailPage from './pages/dashboard/visit/VisitRequestV2DetailPage';
 import EditVisitRequestV2Page from './pages/dashboard/visit/EditVisitRequestV2Page';
+import EditPendingCampusV2Page from './pages/dashboard/visit/EditPendingCampusV2Page';
 import { Toaster } from 'react-hot-toast';
 import { Header } from './components/layout/Header';
 import { Footer } from './components/layout/Footer';
@@ -258,6 +259,9 @@ export default function App() {
             <Route path="visit/v2/:visitRequestId" element={<RouteAccessGuard routeKey="VISIT_DETAIL"><VisitRequestV2DetailPage /></RouteAccessGuard>} />
             <Route path="visit/v2/:visitRequestId/edit" element={<RouteAccessGuard routeKey="VISIT_EDIT"><EditVisitRequestV2Page mode="edit" /></RouteAccessGuard>} />
             <Route path="visit/v2/:visitRequestId/resubmit" element={<RouteAccessGuard routeKey="VISIT_EDIT"><EditVisitRequestV2Page mode="resubmit" /></RouteAccessGuard>} />
+            {/* One campus of a request that may well be mixed. Same guard as the whole-request edit —
+                the screen itself renders only on the backend's EDIT_PENDING_CAMPUS verdict. */}
+            <Route path="visit/v2/:visitRequestId/campus/:visitInstanceId/edit" element={<RouteAccessGuard routeKey="VISIT_EDIT"><EditPendingCampusV2Page /></RouteAccessGuard>} />
             <Route path="visit/agenda-templates" element={<RouteAccessGuard routeKey="AGENDA_TEMPLATE"><AgendaTemplateManagement /></RouteAccessGuard>} />
             {/* Ảnh đoàn khách: guard chỉ chặn theo role; ảnh của instance nào thuộc về ai
                 do backend quyết định theo assignment. */}

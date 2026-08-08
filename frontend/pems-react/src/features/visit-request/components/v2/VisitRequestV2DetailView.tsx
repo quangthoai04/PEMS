@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
-import { useAuthContext } from '../../../../shared/auth/AuthContext';
 import { useTranslation } from 'react-i18next';
 import {
   getVisitRequestFormV2,
@@ -42,8 +41,10 @@ interface Props {
  */
 export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
-  const { user } = useAuthContext();
-  const isStaff = user?.roleCode === 'STAFF';
+  // Nothing on this screen is decided from the signed-in role any more. Whether a change is applied
+  // straight away is a per-campus fact — requester side AND that campus's Host — and the backend says
+  // so through `amendmentSelfApproves`; a role check here told a staff registrant who hosted nothing
+  // that their proposal would apply immediately, and it did not.
 
   const [data, setData] = useState<ResolvedVisitForm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -274,10 +275,15 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
               const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
               const canTransferHost = hasAction(cv.allowedActions, VisitV2Action.TransferHost);
+              // The per-campus door for a campus still waiting for its decision. It is the action that
+              // makes a MIXED request workable: the request-level "Sửa đơn" above is refused as soon as
+              // one campus has been decided, and this campus has not been.
+              const canEditPendingCampus = hasAction(cv.allowedActions, VisitV2Action.EditPendingCampus);
               // Per-campus verdicts: these belong to THIS card, not to the request. A sibling that is
               // under way says nothing about this campus, and a global button could not express that.
               const amendCap = capabilityFor(cv.capabilities, VisitV2Action.SubmitAmendment);
               const transferCap = capabilityFor(cv.capabilities, VisitV2Action.TransferHost);
+              const editPendingCampusCap = capabilityFor(cv.capabilities, VisitV2Action.EditPendingCampus);
               return (
                 <CampusVisitDetailCard
                   key={cv.visitInstanceId}
@@ -295,6 +301,28 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                     />
                   )}
                   <div className="flex flex-wrap items-start gap-2">
+                    {/* A campus still waiting for its answer. Navigation, not a submit — the screen it
+                        opens edits this campus alone and leaves every sibling untouched. */}
+                    {canEditPendingCampus ? (
+                      <Link
+                        data-testid={`pending-campus-edit-open-${cv.visitInstanceId}`}
+                        to={`/dashboard/visit/v2/${data.visitRequestId}/campus/${cv.visitInstanceId}/edit`}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"
+                      >
+                        <PencilLine className="h-4 w-4" aria-hidden /> {t('visitRequestV2:pendingCampusEdit.open')}
+                      </Link>
+                    ) : (
+                      <VisitActionButton
+                        capability={editPendingCampusCap}
+                        granted={false}
+                        onClick={() => {}}
+                        data-testid={`pending-campus-edit-open-${cv.visitInstanceId}`}
+                        icon={<PencilLine className="h-4 w-4" aria-hidden />}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91]"
+                      >
+                        {t('visitRequestV2:pendingCampusEdit.open')}
+                      </VisitActionButton>
+                    )}
                     <VisitActionButton
                       capability={amendCap}
                       granted={canSubmitAmendment}
@@ -303,7 +331,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       icon={<PencilLine className="h-4 w-4" aria-hidden />}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#f37021] px-3 py-1.5 text-sm font-bold text-[#f37021] hover:bg-[#f37021]/5"
                     >
-                      {isStaff ? t('visitRequestV2:amend.openUpdate') : t('visitRequestV2:amend.open')}
+                      {/* "Cập nhật" when the backend says this viewer's change is applied in the same
+                          call — they are the requester side AND this campus's Host, so there is nobody
+                          to wait for. It used to read `user.roleCode === 'STAFF'`, which promised
+                          instant application to any staff account, including one that hosted nothing. */}
+                      {cv.amendmentSelfApproves ? t('visitRequestV2:amend.openUpdate') : t('visitRequestV2:amend.open')}
                     </VisitActionButton>
                     <VisitActionButton
                       capability={transferCap}

@@ -30,6 +30,13 @@ export const VisitV2Action = {
    * only renders what it is told.
    */
   ResubmitRejectedInstance: 'RESUBMIT_REJECTED_INSTANCE',
+  /**
+   * Edit ONE campus still waiting for its decision. Instance scope, and the only edit that survives on
+   * a MIXED request: `EditPendingRequest` above needs EVERY campus still waiting, so on a request with
+   * one campus already approved it is refused — and the campus nobody has answered yet still has to be
+   * correctable. Granted to the registrant, this campus's contact, and this campus's Staff Leader.
+   */
+  EditPendingCampus: 'EDIT_PENDING_CAMPUS',
   UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',
   ResendContactConfirmation: 'RESEND_OPERATIONAL_CONTACT_CONFIRMATION',
   ReplaceOperationalContact: 'REPLACE_OPERATIONAL_CONTACT',
@@ -76,6 +83,26 @@ export const VisitMutationErrorCode = {
   CutoffReached: 'VISIT_MUTATION_CUTOFF_REACHED',
   LifecycleNotAllowed: 'VISIT_MUTATION_LIFECYCLE_NOT_ALLOWED',
   RelationNotAllowed: 'VISIT_MUTATION_RELATION_NOT_ALLOWED',
+  /**
+   * The schedule is inside the 72-hour registration floor and the actor MAY file it anyway — they just
+   * have to say so. Only ever returned to the campus's Staff Leader; for anyone else the same schedule
+   * is a plain INVALID_VISIT_TIME. The confirmation dialog is offered on THIS code alone, so a genuine
+   * refusal can never be turned into a "continue anyway".
+   */
+  LeadTimeOverrideRequired: 'LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED',
+  /** The actor is not the campus's current Host, and the amendment decision belongs to whoever is. */
+  NotCurrentHost: 'NOT_CURRENT_HOST',
+} as const;
+
+/** Campus-set + per-campus edit refusals, matched by code. */
+export const VisitEditErrorCode = {
+  /** Add / remove / swap of a campus after the request exists. Always a form-level message. */
+  CampusSetImmutable: 'VISIT_REQUEST_CAMPUS_SET_IMMUTABLE',
+  /** This campus is no longer waiting for its decision, so the per-campus edit no longer applies. */
+  PendingCampusNotEditable: 'PENDING_CAMPUS_NOT_EDITABLE',
+  InvalidVisitTime: 'INVALID_VISIT_TIME',
+  InstanceVersionConflict: 'VISIT_INSTANCE_VERSION_CONFLICT',
+  RequestVersionConflict: 'VISIT_REQUEST_VERSION_CONFLICT',
 } as const;
 
 // ── Amendment stable error codes (matched by code, never message text) ──────────

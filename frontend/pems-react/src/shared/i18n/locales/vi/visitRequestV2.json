@@ -284,7 +284,7 @@
     "open": "Đề xuất thay đổi",
     "openUpdate": "Cập nhật thông tin",
     "title": "Đề xuất thay đổi — {{campus}}",
-    "activeStaysNote": "Nếu bạn là Staff, đề xuất sẽ tự động được duyệt và áp dụng ngay. Nếu bạn là Khách, nội dung chỉ thay đổi sau khi Host duyệt.",
+    "activeStaysNote": "Nội dung đang hiệu lực giữ nguyên cho đến khi Host phụ trách cơ sở duyệt đề xuất. Nếu bạn chính là Host của cơ sở này, thay đổi được áp dụng ngay và vẫn được lưu vào lịch sử.",
     "reason": "Lý do đề xuất",
     "submit": "Gửi đề xuất",
     "errAlreadyPending": "Cơ sở này đã có một đề xuất đang chờ duyệt. Vui lòng chờ xử lý hoặc rút đề xuất hiện tại.",
@@ -456,7 +456,8 @@
     "saveEdit": "Lưu thay đổi",
     "saveResubmit": "Gửi lại đơn",
     "openEdit": "Sửa đơn",
-    "openResubmit": "Sửa & gửi lại đơn"
+    "openResubmit": "Sửa & gửi lại đơn",
+    "campusSetFixed": "Danh sách cơ sở cố định sau khi đơn được tạo — chỉ chỉnh sửa nội dung từng cơ sở."
   },
   "history": {
     "loading": "Đang tải lịch sử…",
@@ -942,5 +943,25 @@
       "confirmInstance": "Xác nhận hủy cơ sở này",
       "confirmMultiCampus": "Xác nhận hủy toàn bộ"
     }
+  },
+  "pendingCampusEdit": {
+    "open": "Sửa thông tin cơ sở",
+    "title": "Sửa thông tin cơ sở — {{campus}}",
+    "subtitle": "Chỉ cơ sở này thay đổi. Các cơ sở khác của đơn {{code}} giữ nguyên trạng thái, host và lịch.",
+    "campusFixed": "Không thể đổi sang cơ sở khác. Nếu muốn thăm cơ sở khác, vui lòng tạo đơn mới.",
+    "save": "Lưu",
+    "saveAndApprove": "Lưu và duyệt",
+    "leaderHint": "Bạn là Staff Leader phụ trách cơ sở này: có thể lưu để cơ sở tiếp tục chờ duyệt, hoặc lưu và duyệt ngay (phải chọn host).",
+    "notEditable": "Cơ sở này không còn ở trạng thái chờ duyệt nên không thể sửa bằng chức năng này.",
+    "overrideTitle": "Lịch mới chưa đủ 72 giờ",
+    "overrideBody": "Lịch mới không đáp ứng thời gian đăng ký trước tối thiểu 72 giờ. Với quyền Staff Leader của cơ sở này, bạn có thể xác nhận để tiếp tục.",
+    "overrideConfirm": "Xác nhận và tiếp tục",
+    "overrideCancel": "Quay lại",
+    "hostTitle": "Chọn host phụ trách — {{campus}}",
+    "hostRequired": "Khi duyệt, bắt buộc phải gán host chính thức cho cơ sở này.",
+    "hostNone": "Cơ sở này chưa có nhân sự nào đủ điều kiện làm host.",
+    "hostLoadFailed": "Không tải được danh sách host. Vui lòng thử lại.",
+    "hostConflict": "Trùng lịch ({{count}})",
+    "decisionNote": "Ghi chú quyết định (tùy chọn)"
   }
 }

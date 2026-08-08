@@ -132,18 +132,29 @@ describe('EditVisitRequestV2Page', () => {
     expect(updatePendingVisitRequestV2).not.toHaveBeenCalled();
   });
 
-  it('pending-edit allows adding a campus (new campus has a null instance id in the payload)', async () => {
-    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
-    vi.mocked(updatePendingVisitRequestV2).mockResolvedValue({
-      visitRequestId: 5, status: 'PENDING_APPROVAL', visitScope: 'MULTI_CAMPUS',
-      hasMixedCampusDetails: false, requestRowVersion: 8, instances: [], message: 'ok',
-    } as never);
+  /**
+   * The campus set is chosen once, at create, and is fixed from the moment the request exists — for
+   * editing as well as for resubmitting. This screen used to offer both an "Add campus" button and a
+   * per-card "Remove this campus"; a request's identity (its scope, its fingerprint, the invitations
+   * already sent to a campus about to be dropped) is not something an edit gets to rewrite underneath
+   * everyone holding a link to it.
+   *
+   * The backend refuses a payload whose campus set differs from the stored one, so this asserts the UI
+   * agreeing with the rule rather than the rule itself.
+   */
+  it('offers no way to add or remove a campus while editing (TC-CAMPUS-IMMUTABLE-01)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({
+      visitScope: 'MULTI_CAMPUS',
+      campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN'), campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM')],
+    }));
 
     renderAt('edit');
     await screen.findByDisplayValue('Đoàn HN');
-    fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
-    // The new (empty) card would fail validation, so this asserts the add path via the field count only:
-    expect(screen.getAllByLabelText(/Remove this campus/).length).toBeGreaterThanOrEqual(1);
+
+    expect(screen.queryByRole('button', { name: /Add campus/ })).not.toBeInTheDocument();
+    // Two campuses on screen, and neither carries a remove control — the multi-campus case is the one
+    // where a remove button would have been offered at all.
+    expect(screen.queryAllByLabelText(/Remove this campus/)).toHaveLength(0);
   });
 
   it('shows a stable conflict message and a reload action on a 409', async () => {
@@ -178,10 +189,14 @@ describe('EditVisitRequestV2Page', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/no longer editable/i);
   });
 
-  // ── Campus ceiling + campus picker (fix plan §4–§5) ──────────────────────────────────────────
-  // The mocked hook above serves TWO campuses open for registration, which is the number these
-  // assertions are about: the screen used to count against a hard-coded 10.
-  describe('the campus ceiling is however many campuses are open for registration', () => {
+  // ── The campus PICKER, on cards that already exist ────────────────────────────────────────────
+  //
+  // The "campus ceiling" suite that used to live here exercised the Add-campus button: how it counted
+  // against the campuses open for registration, what a freshly-added card offered, and which options
+  // it excluded. None of that has a subject any more — a campus cannot be added to a request that
+  // exists — so it was removed rather than rewritten around a button that is gone. What remains worth
+  // asserting is that an EXISTING card still cannot be pointed at a different campus.
+  describe('an existing campus card cannot be pointed at a different campus', () => {
     /** Campus selects are the ones offering the "select a campus" placeholder. */
     const campusSelects = () =>
       screen.getAllByRole('combobox').filter(el =>
@@ -189,16 +204,17 @@ describe('EditVisitRequestV2Page', () => {
         && Array.from((el as HTMLSelectElement).options)
           .some(o => o.value === '' && /Select campus/i.test(o.text)));
 
-    it('counts against the ACTIVE campuses, not a hard-coded 10 (TC-CAMPUS-01)', async () => {
+    it('offers exactly one campus select per existing campus, already answered (TC-CAMPUS-IMMUTABLE-02)', async () => {
       vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
       renderAt('edit');
       await screen.findByDisplayValue('Đoàn HN');
 
-      expect(screen.getByRole('button', { name: /Add campus/ })).toHaveTextContent('1/2');
-      expect(screen.queryByRole('button', { name: /10/ })).not.toBeInTheDocument();
+      const selects = campusSelects();
+      expect(selects).toHaveLength(1);
+      expect((selects[0] as HTMLSelectElement).value).toBe('HN');
     });
 
-    it('disables Add campus once every open campus is already in the request (TC-CAMPUS-02)', async () => {
+    it('does not offer a campus that is already part of the request (TC-CAMPUS-04)', async () => {
       vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({
         visitScope: 'MULTI_CAMPUS',
         campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN'), campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM')],
@@ -206,62 +222,10 @@ describe('EditVisitRequestV2Page', () => {
       renderAt('edit');
       await screen.findByDisplayValue('Đoàn HN');
 
-      expect(screen.getByRole('button', { name: /Add campus/ })).toBeDisabled();
-    });
-
-    it('a NEW row starts unselected — no campus name over an empty campusId (TC-CAMPUS-03)', async () => {
-      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
-      renderAt('edit');
-      await screen.findByDisplayValue('Đoàn HN');
-
-      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
-
       await waitFor(() => expect(campusSelects()).toHaveLength(2));
-      const fresh = campusSelects()[1] as HTMLSelectElement;
-      expect(fresh.value).toBe('');
-      expect(fresh.options[fresh.selectedIndex].text).toMatch(/Select campus/i);
-    });
-
-    /**
-     * TC-CAMPUS-02. The reported bug was a card that READ as chosen while the form behind it still
-     * held nothing, so saving produced "Vui lòng chọn cơ sở" over a box showing a campus name.
-     *
-     * The assertion is deliberately not on the `<select>` alone — that is the half that was already
-     * "right" and lied. `campus-edit-card-{code}` is rendered from the WATCHED form value, so it
-     * changing to `campus-edit-card-HCM` is the form state itself answering. From there to the payload
-     * is `buildV2EditPayload`, covered field-by-field in visitRequestV2Form.test.ts.
-     */
-    it('choosing a campus on the new card updates the form state behind it (TC-CAMPUS-02)', async () => {
-      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
-      renderAt('edit');
-      await screen.findByDisplayValue('Đoàn HN');
-
-      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
-      await waitFor(() => expect(campusSelects()).toHaveLength(2));
-      // Before choosing, the card is identified as the unselected one.
-      expect(screen.getByTestId('campus-edit-card-new')).toBeInTheDocument();
-
-      const fresh = campusSelects()[1] as HTMLSelectElement;
-      fireEvent.change(fresh, { target: { value: 'HCM' } });
-
-      await waitFor(() => expect(screen.getByTestId('campus-edit-card-HCM')).toBeInTheDocument());
-      expect(fresh.value).toBe('HCM');
-      expect(fresh.options[fresh.selectedIndex].text).toBe('FPTU Hồ Chí Minh');
-      expect(screen.queryByTestId('campus-edit-card-new')).not.toBeInTheDocument();
-      expect(screen.queryByText(/Vui lòng chọn cơ sở/)).not.toBeInTheDocument();
-    });
-
-    it('a campus already chosen is not offered on another card (TC-CAMPUS-04)', async () => {
-      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
-      renderAt('edit');
-      await screen.findByDisplayValue('Đoàn HN');
-
-      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
-
-      await waitFor(() => expect(campusSelects()).toHaveLength(2));
+      // The second card holds HCM, so HN — held by the first — is not on its menu.
       const optionValues = Array.from((campusSelects()[1] as HTMLSelectElement).options).map(o => o.value);
-      expect(optionValues).not.toContain('HN'); // taken by card 1
-      expect(optionValues).toContain('HCM');
+      expect(optionValues).not.toContain('HN');
     });
   });
 
