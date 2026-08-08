@@ -228,7 +228,7 @@ public sealed class V2ListNextTaskAndTransferTests
             Assert.Equal("APPROVE_AND_ASSIGN_HOST", row.NextTask.ActionCode);
             Assert.Contains("APPROVE_AND_ASSIGN_HOST", row.AllowedActions);
             // Status, relation and task are three separate values, none of them a copy of another.
-            Assert.Equal("Chờ xử lý tại cơ sở", row.StatusLabel);
+            Assert.Equal("Chờ duyệt", row.StatusLabel);
             Assert.Equal("Bạn có quyền duyệt tại cơ sở", row.RelationLabel);
 
             // No Host yet ⇒ nothing to hand over, and the verdict says exactly that rather than vanishing.
@@ -268,7 +268,7 @@ public sealed class V2ListNextTaskAndTransferTests
             // every setup mutation refuses until then.
             Assert.Equal(VisitNextTaskCodes.StartPreparation, row.NextTask!.Code);
             Assert.Equal("START_PREPARATION", row.NextTask.ActionCode);
-            Assert.Equal("Đã phân công người phụ trách", row.StatusLabel);
+            Assert.Equal("Đã duyệt", row.StatusLabel);
             Assert.Equal("Bạn phụ trách tiếp đón", row.RelationLabel);
         }
         finally { await CleanupAsync(requestId); }

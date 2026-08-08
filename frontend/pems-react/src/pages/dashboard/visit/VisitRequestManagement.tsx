@@ -105,20 +105,20 @@ const ActionIconButton = ({
 // (the attending tab builds its own rows) and keeps the module testable in isolation.
 const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | null) => {
   if (campStatus === 'CANCELLED' || reqStatus === 'CANCELLED') return 'Đã hủy';
-  if (campStatus === 'REJECTED') return 'Đã bị từ chối';
+  if (campStatus === 'REJECTED') return 'Từ chối';
   // Behind the per-campus confirmation gate: this campus is waiting on its own operational
   // contact, and no campus is processed until every one of them has answered.
-  if (campStatus === 'WAITING_CONTACT_CONFIRMATION') return 'Chờ đầu mối xác nhận';
-  if (campStatus === 'WAITING_REQUEST_APPROVAL') return 'Chờ xử lý tại cơ sở';
-  if (campStatus === 'ASSIGNED') return 'Đã phân công người phụ trách';
+  if (campStatus === 'WAITING_CONTACT_CONFIRMATION') return 'Chờ xác nhận';
+  if (campStatus === 'WAITING_REQUEST_APPROVAL') return 'Chờ duyệt';
+  if (campStatus === 'ASSIGNED') return 'Đã duyệt';
   if (campStatus === 'BEFORE_VISIT') return 'Đang chuẩn bị';
-  if (campStatus === 'DURING_VISIT') return 'Đang tiếp khách';
-  if (campStatus === 'AFTER_VISIT') return 'Chờ đóng đoàn';
-  if (campStatus === 'CLOSED') return 'Đã đóng đoàn';
+  if (campStatus === 'DURING_VISIT') return 'Đang diễn ra';
+  if (campStatus === 'AFTER_VISIT') return 'Chờ đóng';
+  if (campStatus === 'CLOSED') return 'Đã hoàn tất';
   // Request-level rows (không có campusStatus): dùng aggregate (xem VisitRowLabels.Status).
-  if (reqStatus === 'PENDING_CONTACT_CONFIRMATION') return 'Chờ đầu mối xác nhận';
-  if (reqStatus === 'REJECTED') return 'Đã bị từ chối';
-  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ xử lý';
+  if (reqStatus === 'PENDING_CONTACT_CONFIRMATION') return 'Chờ xác nhận';
+  if (reqStatus === 'REJECTED') return 'Từ chối';
+  if (reqStatus === 'PENDING_APPROVAL') return 'Chờ duyệt';
   if (reqStatus === 'PARTIALLY_APPROVED') return 'Duyệt một phần';
   if (reqStatus === 'APPROVED') return 'Đã duyệt';
   return reqStatus ?? '-';
@@ -127,18 +127,26 @@ const getVietnameseStatus = (reqStatus?: string | null, campStatus?: string | nu
 // Map campus instanceStatus CODE → nhãn tiếng Việt + class badge (dùng cho accordion liên cơ sở).
 // Chỉ để render hiển thị; KHÔNG dùng để gate action (action lấy từ boolean backend trả về).
 const CAMPUS_STATUS_LABELS: Record<string, string> = {
+  WAITING_CONTACT_CONFIRMATION: 'Chờ xác nhận',
   WAITING_REQUEST_APPROVAL: 'Chờ duyệt',
   ASSIGNED: 'Đã duyệt',
   BEFORE_VISIT: 'Đang chuẩn bị',
   DURING_VISIT: 'Đang diễn ra',
-  AFTER_VISIT: 'Chờ đóng đoàn',
+  AFTER_VISIT: 'Chờ đóng',
   CLOSED: 'Đã hoàn tất',
   CANCELLED: 'Đã hủy',
   REJECTED: 'Từ chối',
 };
-const getCampusStatusLabel = (status?: string | null) => (status && CAMPUS_STATUS_LABELS[status]) || status || '-';
+// Visitor reads AFTER_VISIT as "Chờ đánh giá" (their own feedback, still owed) instead of the
+// staff-facing "Chờ đóng" — same split as getStatusBadge's afterLabel, applied to the per-campus
+// accordion row so a multi-campus Visitor sees consistent wording between summary and detail.
+const getCampusStatusLabel = (status?: string | null, isVisitorView?: boolean) =>
+  (status === 'AFTER_VISIT' && isVisitorView)
+    ? 'Chờ đánh giá'
+    : (status && CAMPUS_STATUS_LABELS[status]) || status || '-';
 // Maps the same codes to the bilingual statusBadge.* i18n keys, for EN rendering of the campus accordion.
 const CAMPUS_STATUS_KIND: Record<string, string> = {
+  WAITING_CONTACT_CONFIRMATION: 'awaitingConfirmation',
   WAITING_REQUEST_APPROVAL: 'pending',
   ASSIGNED: 'assigned',
   BEFORE_VISIT: 'before',
@@ -150,6 +158,7 @@ const CAMPUS_STATUS_KIND: Record<string, string> = {
 };
 const getCampusStatusBadgeClass = (status?: string | null) => {
   switch (status) {
+    case 'WAITING_CONTACT_CONFIRMATION': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
     case 'WAITING_REQUEST_APPROVAL': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
     case 'ASSIGNED': return 'bg-cyan-50 text-cyan-700 border-cyan-200';
     case 'BEFORE_VISIT': return 'bg-blue-50 text-blue-700 border-blue-200';
@@ -575,6 +584,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       if (targetFilters.status) {
         const option = filterConfig.statusOptions.find((o) => o.value === targetFilters.status);
         if (option?.cancelledOnly) params.cancelledOnly = true;
+        if (option?.pendingApprovalAny) params.pendingApprovalAny = true;
+        if (option?.approvedAny) params.approvedAny = true;
         if (option?.requestStatus) params.requestStatus = option.requestStatus;
         if (option?.campusStatus) params.campusStatus = option.campusStatus;
         if (option?.visitScope) params.visitScope = option.visitScope;
@@ -1143,7 +1154,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     // ── Layer 2: what the reader IS to this row. One badge, from the backend's relationLabel —
     //    kept separate from the status badge (layer 1) and from "việc cần làm" (layer 3), because a
-    //    single chip that tried to be all three is what made "Chờ xử lý tại cơ sở" read as an
+    //    single chip that tried to be all three is what made "Chờ duyệt" read as an
     //    instruction to the visitor who could do nothing about it. ──
     if (rowTab(row) === 'registered') {
       badges.push(chip('registered', resolveRelationLabel(row) || tt('visitRequestV2:list.badges.registeredRelation'), 'bg-slate-50 text-slate-600 border-slate-200'));
@@ -1182,7 +1193,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         return <span title="Đơn đã bị từ chối" className={`${base} bg-red-50 text-red-700 border-red-200`}>Đơn đã bị từ chối</span>;
       }
       if (isClosed) {
-        return <span title="Chuyến thăm đã hoàn tất" className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>Đã đóng đoàn</span>;
+        return <span title="Chuyến thăm đã hoàn tất" className={`${base} bg-slate-100 text-slate-700 border-slate-300`}>Đã hoàn tất</span>;
       }
 
       let text = row.statusText;
@@ -1202,14 +1213,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // (bỏ kiểu "Đã duyệt · Đã phân công Host"). Trong màn vận hành theo campus/role ưu tiên
     // visit_request_campuses.status; request status chỉ dùng cho quyết định tổng.
     //
-    // Vocabulary chung mọi role: Chờ đầu mối xác nhận · Chờ xử lý tại cơ sở · Đã phân công người
-    // phụ trách · Đang chuẩn bị · Đang tiếp khách · Chờ đóng đoàn · Đã đóng đoàn · Đã bị từ chối ·
-    // Đã hủy — khớp VisitRowLabels.Status backend. `kind` chỉ chọn MÀU badge — và (chỉ khi tiếng
-    // Anh) chọn key i18n, vì bản tiếng Việt luôn ưu tiên statusLabel backend bên dưới.
+    // Vocabulary dùng chung Staff/Staff Leader (mặc định — Department/Student đọc cùng chữ vì
+    // không có nhánh role riêng): Chờ xác nhận · Chờ duyệt · Đã duyệt · Đang chuẩn bị ·
+    // Đang diễn ra · Chờ đóng · Đã hoàn tất · Từ chối · Đã hủy — khớp VisitRowLabels.Status
+    // backend. Visitor và HO đọc khác 2 chữ (AFTER_VISIT/REJECTED) — xem afterLabel/afterTitle và
+    // RejectedLabel phía backend; `kind` chỉ chọn MÀU + routing, không chọn chữ (chữ luôn ưu tiên
+    // statusLabel backend, đã role-aware).
     type StatusKind = 'pending' | 'pendingRequest' | 'rejected' | 'cancelled' | 'assigned'
       | 'before' | 'during' | 'after' | 'closed' | 'approved' | 'awaitingConfirmation';
     let kind: StatusKind;
-    // Chờ đầu mối xác nhận đứng trước mọi nhánh khác — khớp thứ tự ưu tiên của
+    // Chờ xác nhận đứng trước mọi nhánh khác — khớp thứ tự ưu tiên của
     // VisitRowLabels.Status backend: đầu mối chưa xác nhận thì mọi trạng thái bên dưới đều chưa
     // có ý nghĩa, TRỪ khi đã bị hủy trước khi kịp xác nhận. Tín hiệu là trạng thái TỪNG CƠ SỞ
     // (hoặc aggregate của đơn) — KHÔNG phải một đầu mối cấp đơn.
@@ -1245,10 +1258,6 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       if (leastCode) kind = kindByCode[leastCode];
     }
 
-    // Visitor không thấy bước nội bộ "chờ đóng đoàn" — với họ chuyến thăm đã xong, phần đóng hồ
-    // sơ là việc nội bộ của trường. Khớp override phía backend cho statusLabel (Handle()).
-    if (isVisitor && kind === 'after') kind = 'closed';
-
     let cancelledText = tt('visitRequestV2:list.statusBadge.cancelled.label');
     if (kind === 'cancelled') {
       const actor = (row as any).cancellationActorType;
@@ -1256,6 +1265,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       else if (actor === 'HOST') cancelledText = tt('visitRequestV2:list.statusBadge.cancelledByHost');
       else if (actor === 'SYSTEM') cancelledText = tt('visitRequestV2:list.statusBadge.cancelledBySystem');
     }
+
+    // AFTER_VISIT reads differently for Visitor ("Chờ đánh giá" — the feedback they still owe)
+    // than for every other role ("Chờ đóng" — the paperwork staff still owe). Both keep the same
+    // `kind`/color/routing; only the two i18n keys they read from differ, same pattern as cancelledText.
+    const afterLabel = isVisitor
+      ? tt('visitRequestV2:list.statusBadge.afterVisitor.label')
+      : tt('visitRequestV2:list.statusBadge.after.label');
+    const afterTitle = isVisitor
+      ? tt('visitRequestV2:list.statusBadge.afterVisitor.title')
+      : tt('visitRequestV2:list.statusBadge.after.title');
 
     const labelByKind: Record<StatusKind, string> = {
       pending: tt('visitRequestV2:list.statusBadge.pending.label'),
@@ -1265,7 +1284,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       assigned: tt('visitRequestV2:list.statusBadge.assigned.label'),
       before: tt('visitRequestV2:list.statusBadge.before.label'),
       during: tt('visitRequestV2:list.statusBadge.during.label'),
-      after: tt('visitRequestV2:list.statusBadge.after.label'),
+      after: afterLabel,
       closed: tt('visitRequestV2:list.statusBadge.closed.label'),
       approved: tt('visitRequestV2:list.statusBadge.approved.label'),
       awaitingConfirmation: tt('visitRequestV2:list.statusBadge.awaitingConfirmation.label'),
@@ -1293,7 +1312,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       assigned: tt('visitRequestV2:list.statusBadge.assigned.title'),
       before: tt('visitRequestV2:list.statusBadge.before.title'),
       during: tt('visitRequestV2:list.statusBadge.during.title'),
-      after: tt('visitRequestV2:list.statusBadge.after.title'),
+      after: afterTitle,
       closed: tt('visitRequestV2:list.statusBadge.closed.title'),
       approved: tt('visitRequestV2:list.statusBadge.approved.title'),
       awaitingConfirmation: tt('visitRequestV2:list.statusBadge.awaitingConfirmation.title'),
@@ -1646,7 +1665,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 : item.instanceStatus === 'AFTER_VISIT'
                   ? 'after'
                   : 'before',
-            status: getCampusStatusLabel(item.instanceStatus),
+            status: getCampusStatusLabel(item.instanceStatus, isVisitor),
             isReadOnly: isHO || isStaffLeaderNotHost || item.instanceStatus === 'CLOSED',
           },
         });
@@ -1740,8 +1759,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className="lg:py-1 lg:px-3 lg:flex lg:justify-center mt-2 lg:mt-0">
                   <span className={`inline-flex justify-center whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${getCampusStatusBadgeClass(item.instanceStatus)}`}>
                     {isEnglish && item.instanceStatus && CAMPUS_STATUS_KIND[item.instanceStatus]
-                      ? tt(`visitRequestV2:list.statusBadge.${CAMPUS_STATUS_KIND[item.instanceStatus]}.label`)
-                      : getCampusStatusLabel(item.instanceStatus)}
+                      ? tt(`visitRequestV2:list.statusBadge.${
+                          item.instanceStatus === 'AFTER_VISIT' && isVisitor ? 'afterVisitor' : CAMPUS_STATUS_KIND[item.instanceStatus]
+                        }.label`)
+                      : getCampusStatusLabel(item.instanceStatus, isVisitor)}
                   </span>
                 </div>
 

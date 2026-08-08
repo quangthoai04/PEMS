@@ -1395,6 +1395,10 @@ export type VisitStatusFilterOption = {
   campusStatuses?: string[];
   visitScope?: string;
   cancelledOnly?: boolean;
+  /** HO's merged "Chờ duyệt" row — union of WAITING_REQUEST_APPROVAL campus + PARTIALLY_APPROVED request. */
+  pendingApprovalAny?: boolean;
+  /** HO's merged "Đã duyệt" row — union of ASSIGNED campus + APPROVED request. */
+  approvedAny?: boolean;
   relation?: string;
   readOnlyOnly?: boolean;
   actionableOnly?: boolean;

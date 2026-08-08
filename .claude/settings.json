@@ -40,7 +40,8 @@
       "Bash(xargs cat)",
       "Bash(/c/Python313/python -c ' *)",
       "Bash(PYTHONIOENCODING=utf-8 /c/Python313/python -c ' *)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/vi/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "\\tmp"

@@ -712,31 +712,35 @@
     },
     "statusOptions": {
       "awaitingConfirmation": {
-        "label": "Chờ đầu mối xác nhận",
+        "label": "Chờ xác nhận",
         "description": "Cơ sở đang chờ đầu mối đoàn khách xác nhận qua link email"
       },
       "pendingApproval": {
-        "label": "Chờ xử lý tại cơ sở",
+        "label": "Chờ duyệt",
         "description": "Cơ sở đang chờ Staff Leader duyệt và chọn người phụ trách"
       },
       "approved": {
         "label": "Đã duyệt",
-        "description": "Đơn đã được duyệt (bao gồm đang chuẩn bị, đang tiếp khách hoặc đã đóng đoàn)"
+        "description": "Đơn đã được duyệt (bao gồm đang chuẩn bị, đang diễn ra, chờ đánh giá hoặc đã hoàn tất)"
       },
       "beforeVisit": {
         "label": "Đang chuẩn bị",
         "description": "Người phụ trách đã bắt đầu chuẩn bị đón tiếp"
       },
       "duringVisit": {
-        "label": "Đang tiếp khách",
+        "label": "Đang diễn ra",
         "description": "Đoàn đang trong quá trình thăm tại cơ sở"
       },
+      "afterVisit": {
+        "label": "Chờ đánh giá",
+        "description": "Chuyến thăm đã kết thúc, đang chờ bạn đánh giá trải nghiệm"
+      },
       "closed": {
-        "label": "Đã đóng đoàn",
+        "label": "Đã hoàn tất",
         "description": "Đoàn đã hoàn tất toàn bộ chuyến thăm và thủ tục"
       },
       "rejected": {
-        "label": "Đã bị từ chối",
+        "label": "Đã từ chối",
         "description": "Đơn/cơ sở đã bị từ chối"
       },
       "cancelled": {
@@ -801,15 +805,15 @@
     },
     "statusBadge": {
       "pending": {
-        "label": "Chờ xử lý tại cơ sở",
+        "label": "Chờ duyệt",
         "title": "Cơ sở đang chờ Staff Leader duyệt và phân công người phụ trách tiếp đón"
       },
       "pendingRequest": {
-        "label": "Chờ xử lý",
+        "label": "Chờ duyệt",
         "title": "Đơn đang chờ xử lý tại các cơ sở"
       },
       "rejected": {
-        "label": "Đã bị từ chối",
+        "label": "Đã từ chối",
         "title": "Đã bị từ chối tiếp nhận"
       },
       "cancelled": {
@@ -820,7 +824,7 @@
       "cancelledByHost": "Đã hủy bởi người phụ trách",
       "cancelledBySystem": "Hệ thống đã hủy",
       "assigned": {
-        "label": "Đã phân công người phụ trách",
+        "label": "Đã duyệt",
         "title": "Đã duyệt và có người phụ trách tiếp đón, chờ bắt đầu chuẩn bị"
       },
       "before": {
@@ -828,15 +832,19 @@
         "title": "Đang trong giai đoạn chuẩn bị đón tiếp"
       },
       "during": {
-        "label": "Đang tiếp khách",
+        "label": "Đang diễn ra",
         "title": "Đoàn đang được tiếp khách tại cơ sở"
       },
       "after": {
-        "label": "Chờ đóng đoàn",
+        "label": "Chờ đóng",
         "title": "Đoàn đã kết thúc, chờ đóng đoàn/hoàn tất hồ sơ"
       },
+      "afterVisitor": {
+        "label": "Chờ đánh giá",
+        "title": "Chuyến thăm đã kết thúc, đang chờ bạn đánh giá trải nghiệm"
+      },
       "closed": {
-        "label": "Đã đóng đoàn",
+        "label": "Đã hoàn tất",
         "title": "Đoàn đã hoàn tất toàn bộ quy trình"
       },
       "approved": {
@@ -844,7 +852,7 @@
         "title": "Tất cả cơ sở đã xử lý xong và có cơ sở tiếp nhận"
       },
       "awaitingConfirmation": {
-        "label": "Chờ đầu mối xác nhận",
+        "label": "Chờ xác nhận",
         "title": "Cơ sở đang chờ đầu mối đoàn khách xác nhận qua link email"
       }
     },
