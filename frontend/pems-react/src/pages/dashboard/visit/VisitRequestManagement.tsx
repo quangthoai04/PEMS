@@ -852,18 +852,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       return;
     }
 
-    if (actions.includes('VIEW_RECEPTION_DETAIL')) {
-      if (row.visitInstanceId) {
-        navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId}`);
-        return;
-      }
-      if (row.visitScope === 'MULTI_CAMPUS') {
-        toggleExpanded(row.visitRequestId);
-        return;
-      }
-      return;
-    }
-
+    // OPEN_HOST_PROCESS/OPEN_PROCESS_SUMMARY được ưu tiên TRƯỚC VIEW_RECEPTION_DETAIL — khớp thứ
+    // tự getProcessActionTitle đã dùng cho tooltip. Backend cấp VIEW_RECEPTION_DETAIL cho bất kỳ
+    // ai đứng tên đăng ký/đầu mối, không phân biệt role (một IC Staff/Staff Leader tạo đơn hộ đối
+    // tác vẫn được cấp), nên 1 dòng có thể mang CẢ HAI action cùng lúc. Trang reception-detail chỉ
+    // render cho quan hệ OPERATIONAL_CONTACT thật (VisitProcess.tsx) — một tài khoản nội bộ đưa
+    // vào đó luôn bị từ chối vì quan hệ thật của họ là HOST/STAFF_LEADER, nên phải ưu tiên đường
+    // Host/Summary nội bộ trước, VIEW_RECEPTION_DETAIL chỉ còn là fallback cho khách thật.
+    //
     // OPEN_HOST_PROCESS được ưu tiên trước OPEN_PROCESS_SUMMARY: Staff Leader có thể ĐỒNG
     // THỜI là Host của chính instance này (backend thêm cả 2 action) — khi đó phải vào trang
     // Setup (có thể thao tác) thay vì bị ép về Báo cáo tổng hợp read-only. OPEN_PROCESS_SUMMARY
@@ -898,6 +894,18 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       }
     } else if (actions.includes('OPEN_PROCESS_SUMMARY')) {
       navTo(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
+      return;
+    }
+
+    if (actions.includes('VIEW_RECEPTION_DETAIL')) {
+      if (row.visitInstanceId) {
+        navTo(`/dashboard/visit/reception-detail/${row.visitInstanceId}`);
+        return;
+      }
+      if (row.visitScope === 'MULTI_CAMPUS') {
+        toggleExpanded(row.visitRequestId);
+        return;
+      }
       return;
     }
 
