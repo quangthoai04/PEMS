@@ -36,7 +36,15 @@ public sealed class UserProvisionService : IUserProvisionService
 
         if (existing is not null)
         {
-            EnsureExistingAccountUsableAsVisitor(existing.RoleCode, existing.Status);
+            // Provisioning only ever runs for the REGISTRANT (the create service invites operational
+            // contacts instead of provisioning them), so a refusal here is reported against the
+            // registrant — not with the contact's code, which used to be thrown from this backstop and
+            // would have pointed the form at the wrong input.
+            EnsureUsableAsVisitor(
+                existing.RoleCode,
+                existing.Status,
+                VisitRequestErrorMessages.RegistrantEmailNotEligible,
+                VisitRequestErrorCodes.RegistrantEmailBelongsToInternalAccount);
             return existing.UserId;
         }
 
@@ -80,7 +88,11 @@ public sealed class UserProvisionService : IUserProvisionService
         if (existing is null)
             return;
 
-        EnsureExistingAccountUsableAsVisitor(existing.RoleCode, existing.Status);
+        EnsureUsableAsVisitor(
+            existing.RoleCode,
+            existing.Status,
+            VisitRequestErrorMessages.ContactEmailNotEligible,
+            VisitRequestErrorCodes.ContactEmailCannotBeUsedForVisitorAccount);
     }
 
     public async Task ValidateRegistrantEmailUsableForPublicFlowAsync(
@@ -98,35 +110,35 @@ public sealed class UserProvisionService : IUserProvisionService
         if (existing is null)
             return;
 
-        // Internal accounts must never be OTP-provisioned/repurposed through the public form.
-        // Deliberately does NOT reveal which internal role owns the email.
-        if (!string.Equals(existing.RoleCode, RoleCodes.Visitor, StringComparison.OrdinalIgnoreCase))
-            throw new ConflictException(
-                "Email này thuộc tài khoản nội bộ FPTU. Vui lòng đăng nhập cổng nội bộ và dùng chức năng Tạo đoàn khách trong hệ thống.",
-                VisitRequestErrorCodes.RegistrantEmailBelongsToInternalAccount);
-
-        if (!string.Equals(existing.Status, UserStatuses.Active, StringComparison.OrdinalIgnoreCase))
-            throw new BusinessRuleException(
-                "Tài khoản VISITOR tương ứng với email này hiện không hoạt động. Vui lòng liên hệ FPTU để được hỗ trợ.",
-                VisitRequestErrorCodes.VisitorAccountInactive);
+        EnsureUsableAsVisitor(
+            existing.RoleCode,
+            existing.Status,
+            VisitRequestErrorMessages.RegistrantEmailNotEligible,
+            VisitRequestErrorCodes.RegistrantEmailBelongsToInternalAccount);
     }
 
     /// <summary>
-    /// Guards the rule that a contact email may only be linked when it belongs to an ACTIVE
-    /// VISITOR account. Throws otherwise; never mutates the account.
+    /// Guards the rule that an address may only be linked when it belongs to an ACTIVE VISITOR
+    /// account. Throws otherwise; never mutates the account.
+    ///
+    /// <para>The caller supplies the sentence and the code, because the same check answers two
+    /// different questions — "can this be the registrant?" and "can this be a campus's operational
+    /// contact?" — and an error that names the wrong field sends the user to the wrong input.</para>
     /// </summary>
-    private static void EnsureExistingAccountUsableAsVisitor(string roleCode, string status)
+    private static void EnsureUsableAsVisitor(
+        string roleCode, string status, string notEligibleMessage, string notEligibleCode)
     {
-        // Internal account (ADMIN/HO/STAFF/DEPARTMENT/STUDENT) — must not be repurposed.
+        // Internal account (ADMIN/HO/STAFF/DEPARTMENT/STUDENT) — must not be repurposed. WHICH role
+        // owns the address is never revealed.
         if (!string.Equals(roleCode, RoleCodes.Visitor, StringComparison.OrdinalIgnoreCase))
-            throw new ConflictException(
-                "Email đầu mối liên hệ không thể dùng để tạo tài khoản VISITOR. Vui lòng nhập email khác hoặc liên hệ FPTU để được hỗ trợ.",
-                VisitRequestErrorCodes.ContactEmailCannotBeUsedForVisitorAccount);
+            throw new ConflictException(notEligibleMessage, notEligibleCode);
 
-        // Existing VISITOR must be ACTIVE to be linked.
+        // Existing VISITOR must be ACTIVE to be linked. A separate code, because this one IS worth
+        // telling apart: the address is the right KIND of account, it has simply been disabled, and
+        // the way forward is support rather than a different address.
         if (!string.Equals(status, UserStatuses.Active, StringComparison.OrdinalIgnoreCase))
             throw new BusinessRuleException(
-                "Tài khoản VISITOR tương ứng với email này hiện không hoạt động. Vui lòng nhập email khác hoặc liên hệ FPTU để được hỗ trợ.",
+                VisitRequestErrorMessages.AccountInactive,
                 VisitRequestErrorCodes.VisitorAccountInactive);
     }
 }

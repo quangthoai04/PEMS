@@ -163,11 +163,12 @@ describe('VisitRequestV2Modal', () => {
 
     fireEvent.click(screen.getByTestId('v2-modal-close'));
 
-    // Two honest ways on: keep filling it in, or leave — and leaving deletes the stored draft.
+    // Two honest ways on: keep filling it in, or leave. Leaving still deletes the stored draft —
+    // the button just no longer carries a second line saying so.
     expect(screen.queryByTestId('v2-modal-save-draft')).toBeNull();
     expect(screen.getByTestId('v2-modal-continue-editing')).toBeTruthy();
     expect(screen.getByTestId('v2-modal-discard').textContent)
-      .toContain('visitRequestV2:draft.exitDeletesDraft');
+      .toBe('visitRequest:cancelConfirm.discard');
     expect(onClose).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('v2-modal-discard'));

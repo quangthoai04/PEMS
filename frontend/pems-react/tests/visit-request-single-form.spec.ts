@@ -297,7 +297,7 @@ test.describe('UC17 single-form public visit request', () => {
     await expect(page.locator('input[name="registerInfo.fullName"]')).toHaveValue('Nguyễn Văn Test');
     await expect(
       page
-        .getByText('Email đầu mối liên hệ này không thể dùng để tạo tài khoản Visitor. Vui lòng dùng email khác.')
+        .getByText('Không thể sử dụng email này cho đầu mối của đoàn. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.')
         .first()
     ).toBeVisible();
     await expect(page.locator('input[name="contactPoint.email"]')).toHaveValue('registrant@example.com');

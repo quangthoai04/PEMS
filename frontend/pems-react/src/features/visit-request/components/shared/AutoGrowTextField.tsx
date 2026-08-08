@@ -94,6 +94,10 @@ export const AutoGrowTextField: React.FC<Props> = ({
         placeholder={placeholder}
         aria-label={ariaLabel}
         data-testid={testId}
+        // Names, delegations and job titles are Vietnamese proper nouns the browser's dictionary
+        // does not know: every one of them came back underlined in red, which on a form that marks
+        // its real errors in red reads as "the system rejected this".
+        spellCheck={false}
         onChange={e => { onChange(e.target.value.replace(/[\r\n]+/g, ' ')); resize(); }}
         onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
         onPaste={e => {

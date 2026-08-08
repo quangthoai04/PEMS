@@ -306,18 +306,17 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 >
                   {t('visitRequest:cancelConfirm.continue')}
                 </button>
+                {/* The label alone. What "thoát không lưu" does is unchanged — the stored draft
+                    still goes with the edits — but the prompt above already frames the choice, and
+                    the second line under the button was read as a warning about losing work that
+                    the two buttons beside it exist to prevent. */}
                 <button
                   type="button"
                   data-testid="v2-modal-discard"
                   onClick={closeWithoutSaving}
-                  className="flex w-full flex-col items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
+                  className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-bold text-red-600 transition-colors hover:bg-red-50"
                 >
                   {t('visitRequest:cancelConfirm.discard')}
-                  {/* Spelled out on the button itself: this deletes the saved draft too, and a user
-                      who has one has no other way of knowing that before they click. */}
-                  <span className="mt-0.5 text-xs font-medium text-red-500/90">
-                    {t('visitRequestV2:draft.exitDeletesDraft')}
-                  </span>
                 </button>
               </div>
             </motion.div>

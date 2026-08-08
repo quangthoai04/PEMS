@@ -120,10 +120,25 @@ public sealed class CreateVisitRequestV2CommandHandler
         // An internal creator may not appoint THEMSELF as any campus's operational contact: the whole
         // point of the gate is that somebody outside FPTU confirms they will run the visit, and a
         // Staff Leader self-appointing would clear it without anyone confirming anything.
-        if (isInternal && contactsByEmail.Any(g => string.Equals(g.Key, registrantEmail, StringComparison.OrdinalIgnoreCase)))
-            throw new BusinessRuleException(
-                "Nhân sự nội bộ không thể là đầu mối vận hành của đoàn khách. Vui lòng nhập một người khác (tài khoản VISITOR).",
-                VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
+        //
+        // Reported as a field error on the campus cards that actually named that address — the same
+        // shape as the contact check below. It used to be one banner sentence for the whole form, so
+        // on a three-campus request the user was told "somebody internal cannot be the contact" with
+        // nothing saying which card to look at, and the sentence named the account type on top of it.
+        if (isInternal)
+        {
+            var selfContactCampuses = contactsByEmail
+                .Where(g => string.Equals(g.Key, registrantEmail, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(g => g)
+                .Select(c => c.Index)
+                .ToList();
+            if (selfContactCampuses.Count > 0)
+                throw new ValidationException(
+                    selfContactCampuses.ToDictionary(
+                        index => $"CampusVisits[{index}].OperationalContact.Email",
+                        _ => new[] { VisitRequestErrorMessages.ContactEmailNotEligible }),
+                    VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
+        }
 
         if (isInternal)
         {

@@ -228,7 +228,12 @@ describe('visit request v2: the submission state machine (plan §16)', () => {
     // Not presented as a wrong OTP — the code was correct.
     expect(result.current.stage).toBe('CREATE_FAILED');
     expect(result.current.sessionToken).toBeNull();
-    expect(result.current.submitError).toBeTruthy();
+    // "Back to the FIELD" literally: the rejection is on the campus input the server named, and the
+    // summary above the button counts it. There is no second copy of it in the banner — that used to
+    // repeat the same sentence in a place that could not say which campus it was about.
+    expect(result.current.form.formState.errors.campusVisits?.[0]?.campus?.message).toBeTruthy();
+    expect(result.current.validationErrorCount).toBe(1);
+    expect(result.current.submitError).toBeNull();
     expect(loadVisitRequestV2Draft()).not.toBeNull();
   });
 

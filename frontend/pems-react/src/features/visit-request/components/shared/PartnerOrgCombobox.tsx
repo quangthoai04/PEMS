@@ -178,6 +178,9 @@ export const PartnerOrgCombobox: React.FC<PartnerOrgComboboxProps> = ({
           placeholder={placeholder ?? t('visitRequest:select.partnerComboPlaceholder')}
           className={`w-full bg-transparent py-2.5 text-sm font-medium outline-none placeholder:font-normal placeholder:text-gray-400 ${disabled ? 'cursor-not-allowed text-slate-500' : 'text-gray-900'}`}
           autoComplete="off"
+          // Vietnamese organization names are not in the browser's dictionary; underlining them in
+          // red beside a field that turns red when it is invalid says the wrong thing entirely.
+          spellCheck={false}
           disabled={disabled}
           readOnly={disabled}
         />

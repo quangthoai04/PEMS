@@ -240,7 +240,7 @@
     "contactActive": "Confirmed",
     "contactPending": "Awaiting confirmation",
     "partner": "Partner",
-    "partnerExisting": "Existing partner (ID {{id}})",
+    "partnerExisting": "Existing partner",
     "partnerNew": "New organization (not linked to a partner)",
     "aggregateStatus": "Request status",
     "submitted": "Submitted, awaiting campus approval",

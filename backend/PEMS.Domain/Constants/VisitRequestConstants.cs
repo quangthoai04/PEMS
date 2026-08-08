@@ -187,3 +187,38 @@ public static class VisitRequestErrorCodes
     // moving an instance to another campus is remove + add, never an in-place mutation).
     public const string InstanceEditInvalid = "VISIT_INSTANCE_EDIT_INVALID";
 }
+
+/// <summary>
+/// Fallback sentences for the refusals a GUEST can trigger by typing an address into the public
+/// registration form. The client normally renders <c>errors:api.&lt;CODE&gt;</c> in the user's own
+/// language; these are what a caller sees when it cannot, so they have to be safe to show as-is.
+///
+/// <para>Two rules govern the wording. It names the FIELD the user must change, because the form is
+/// long and carries several addresses. And it says nothing about the account behind the address — no
+/// role, no account type, no id, and no "sign in to the internal portal" (which is not even true:
+/// signing in elsewhere does not make an internal account eligible to be a delegation's contact).
+/// A public form that answered "this one is internal" would let anyone test addresses against the
+/// staff directory.</para>
+///
+/// <para>Kept here rather than beside each <c>throw</c>: the same sentence is raised from the
+/// provisioning guard and from the authenticated create handler, and when two copies of one sentence
+/// drift the user gets two different answers to the same question.</para>
+/// </summary>
+public static class VisitRequestErrorMessages
+{
+    /// <summary>The address may not be a campus's operational contact ("Đầu mối của đoàn").</summary>
+    public const string ContactEmailNotEligible =
+        "Không thể sử dụng email này cho đầu mối của đoàn. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.";
+
+    /// <summary>The address may not be the registrant of a public submission.</summary>
+    public const string RegistrantEmailNotEligible =
+        "Không thể sử dụng email này cho người đăng ký. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.";
+
+    /// <summary>
+    /// The address belongs to an account that exists and is of the right kind but has been
+    /// deactivated. Deliberately a different answer from the two above: another address is not the
+    /// only way forward here, and the account type is not disclosed either.
+    /// </summary>
+    public const string AccountInactive =
+        "Tài khoản gắn với email này hiện không hoạt động. Vui lòng nhập email khác hoặc liên hệ FPTU để được hỗ trợ.";
+}

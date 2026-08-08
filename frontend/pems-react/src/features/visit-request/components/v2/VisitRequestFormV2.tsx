@@ -306,7 +306,20 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   }, [isSelfRegistrant]);
 
   return (
-    <form ref={formRef} id="visit-request-v2-form" onSubmit={vm.onSubmit} noValidate className="space-y-6">
+    // `spellCheck={false}` is set HERE, on the form, and inherited by every control inside it (the
+    // attribute's "inherit" default is what the HTML spec defines): Vietnamese prose in "Mục đích"
+    // or "Nội dung làm việc" was being underlined in red by the browser's own English dictionary,
+    // which on a form that also marks its real errors in red reads as "this data is wrong". The
+    // rest of the site keeps its spell checking — this is not a global switch — and nothing about
+    // autocomplete, Unicode input or validation changes.
+    <form
+      ref={formRef}
+      id="visit-request-v2-form"
+      onSubmit={vm.onSubmit}
+      noValidate
+      spellCheck={false}
+      className="space-y-6"
+    >
       {/* ── Restore Draft Modal ── */}
       <AnimatePresence>
         {vm.draftAvailableAt !== null && (
@@ -370,6 +383,27 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         />
       )}
 
+      {/* ── Everything the user can change, locked as ONE unit while a submit is in flight ──
+          A native `disabled` fieldset, not pointer-events or an overlay: it disables every control
+          it contains — inputs, textareas, selects, comboboxes, date/time pickers, add/remove campus,
+          the Excel import, the quick-fill buttons — for the mouse AND the keyboard, which is what a
+          CSS-only lock quietly fails to do. The payload left the browser as a deep clone taken at
+          submit time, so this is not about protecting the request in flight; it is about the screen
+          never claiming to hold data that is not what was sent. `vm.isSubmitting` is the SAME state
+          the submit button reads (stage === 'SENDING_OTP'), so the lock cannot outlive the request
+          or lift before it: a failure puts the stage back and every field is editable again with
+          the user's typing untouched. */}
+      <fieldset
+        disabled={vm.isSubmitting}
+        // `disabled` covers everything the browser recognises as a control. `inert` covers the rest:
+        // the organization/nationality pickers are react-select, whose menu opens from a <div>, and
+        // a disabled fieldset says nothing about a div. Together they take clicks, keystrokes and
+        // focus off the whole block — leaving one of them out leaves a way to edit the form while
+        // its data is being sent.
+        inert={vm.isSubmitting}
+        data-testid="v2-form-fields"
+        className="min-w-0 space-y-6"
+      >
       {/* ── Reviewing the form with the challenge still in hand (plan §12) ──
           The user stepped out of the modal to check something. The code in their inbox is still
           valid and the session token is still held — going back in costs them nothing. */}
@@ -475,7 +509,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         )}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
           <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
-            <input data-testid="v2-registrant-fullName" {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
+            {/* Named explicitly as well as inheriting it from the form: a Vietnamese name is the
+                first thing typed into this form and the first thing the dictionary underlines. */}
+            <input data-testid="v2-registrant-fullName" spellCheck={false} {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
           </FormField>
           {/* Free-solo partner/organization search: picking a known partner links partnerId,
               typing anything else keeps the text as a manually entered organization. */}
@@ -499,7 +535,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             />
           </FormField>
           <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
-            <input data-testid="v2-registrant-jobTitle" {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
+            <input data-testid="v2-registrant-jobTitle" spellCheck={false} {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
           </FormField>
           <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
             <Controller
@@ -599,6 +635,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: campusLimit })}
         </button>
       </FormSection>
+      </fieldset>
 
       {/* ── Submit ──
           When the host supplies a footer node (the modal shell), the actions are portalled into
@@ -610,6 +647,19 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{vm.submitError}</span>
+            </div>
+          )}
+          {/* How much is left — read from the CURRENT validation result on every render, so fixing a
+              field takes it from 11 to 10 straight away and the banner disappears of its own accord
+              once the last one is fixed. It is never a count remembered from an earlier submit. */}
+          {vm.showValidationSummary && (
+            <div
+              role="alert"
+              data-testid="v2-error-summary"
+              className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{t('validation:fixErrorsCount', { count: vm.validationErrorCount })}</span>
             </div>
           )}
           <div className="flex flex-col-reverse items-center justify-between gap-4 pt-2 sm:flex-row sm:pt-4">

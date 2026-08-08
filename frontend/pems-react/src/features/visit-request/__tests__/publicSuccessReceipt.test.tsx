@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import i18n from '../../../shared/i18n/config';
 import type { V2CreateResponse } from '../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
@@ -164,31 +164,13 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
     expect(screen.getByTestId('campus-summary-0')).toHaveTextContent('Đoàn Bất Biến');
   });
 
-  it('copies the request code to the clipboard and says so', async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-
+  it('offers no "copy the code" action, and still shows the code itself', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
-    await act(async () => { fireEvent.click(screen.getByTestId('v2-success-copy')); });
 
-    expect(writeText).toHaveBeenCalledWith('VR2026072629B9DFF');
-    await waitFor(() =>
-      expect(screen.getByTestId('v2-success-copy-status')).toHaveTextContent(/copied/i));
-  });
-
-  it('admits it when the browser refuses the clipboard, and shows the code to copy by hand', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) }, configurable: true,
-    });
-
-    render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
-    await act(async () => { fireEvent.click(screen.getByTestId('v2-success-copy')); });
-
-    await waitFor(() => {
-      const status = screen.getByTestId('v2-success-copy-status');
-      expect(status).toHaveTextContent(/blocked automatic copying/i);
-      expect(status).toHaveTextContent('VR2026072629B9DFF');
-    });
+    expect(screen.queryByTestId('v2-success-copy')).toBeNull();
+    expect(screen.queryByTestId('v2-success-copy-status')).toBeNull();
+    // The code is the point of the receipt: it stays on screen as ordinary, selectable text.
+    expect(screen.getByTestId('v2-success-code')).toHaveTextContent('VR2026072629B9DFF');
   });
 
   it('offers no dashboard action to a visitor who has no session to use it with', () => {
@@ -221,8 +203,8 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} onClose={vi.fn()} />);
 
     expect(screen.getByTestId('v2-success-review')).toHaveTextContent('Xem lại thông tin đã gửi');
-    expect(screen.getByTestId('v2-success-copy')).toHaveTextContent('Sao chép mã đơn');
     expect(screen.getByTestId('v2-success-close')).toHaveTextContent('Đóng');
+    expect(screen.queryByTestId('v2-success-copy')).toBeNull();
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 });

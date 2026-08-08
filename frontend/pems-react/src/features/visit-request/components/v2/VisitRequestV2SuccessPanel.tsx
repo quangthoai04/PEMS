@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Check, CheckCircle2, ClipboardCopy, ExternalLink, FilePlus2, Info, List, X } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FilePlus2, Info, List, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestV2SubmittedSummary } from './VisitRequestV2SubmittedSummary';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
-import { showSuccessToast } from '../../../../shared/utils/toast';
 import { useRegistrationCampuses } from '../../hooks/useRegistrationCampuses';
 import type { V2CreateResponse } from '../../api/visitRequestV2Api';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
@@ -46,8 +45,6 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
 }) => {
   const { t } = useTranslation(['visitRequestV2']);
   const [showSubmitted, setShowSubmitted] = useState(false);
-  /** null = not attempted; true = in the clipboard; false = the browser refused (no permission). */
-  const [copied, setCopied] = useState<boolean | null>(null);
   const { campuses } = useRegistrationCampuses();
 
   // The lookup-recovered receipt (an uncertain result that turned out COMPLETED) knows the request
@@ -72,19 +69,6 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
       return email ? `${name} (${email})` : name;
     })
     .join(', ');
-
-  const copyCode = async () => {
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      showSuccessToast(t('visitRequestV2:success.codeCopied'), 'v2-code-copied');
-    } catch {
-      // Clipboard access can be denied outright (insecure origin, permission policy). Saying
-      // "copied" when nothing was copied is worse than admitting it — the code stays selectable.
-      setCopied(false);
-    }
-  };
 
   // Names, not a count — "Campuses: 1" tells the reader nothing they can act on; "Hà Nội" does.
   // Read from the submitted snapshot (always present, even on a lookup-recovered receipt) rather
@@ -193,14 +177,8 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
                 : t('visitRequestV2:success.reviewSubmitted')}
             </button>
           )}
-          {/* The code is the whole point of the receipt — copying it must not depend on the user
-              selecting text by hand on a phone. */}
-          {code && (
-            <button type="button" data-testid="v2-success-copy" onClick={() => void copyCode()} className={actionBtn}>
-              {copied ? <Check className="h-4 w-4 text-green-600" /> : <ClipboardCopy className="h-4 w-4" />}
-              {t('visitRequestV2:success.copyCode')}
-            </button>
-          )}
+          {/* No "copy the code" action: the code is on the receipt above (and in the summary and
+              the confirmation email), where it can be selected like any other text. */}
           {onCreateAnother && (
             <button type="button" data-testid="v2-success-new" onClick={onCreateAnother} className={actionBtn}>
               <FilePlus2 className="h-4 w-4" /> {t('visitRequestV2:success.createAnother')}
@@ -212,18 +190,6 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
             </button>
           )}
         </div>
-
-        {copied !== null && (
-          <p
-            data-testid="v2-success-copy-status"
-            role="status"
-            className={`mt-2 text-sm font-semibold ${copied ? 'text-green-800' : 'text-amber-800'}`}
-          >
-            {copied
-              ? t('visitRequestV2:success.codeCopied')
-              : t('visitRequestV2:success.codeCopyFailed', { code })}
-          </p>
-        )}
 
         {footer && <div className="mt-6">{footer}</div>}
       </div>

@@ -37,11 +37,21 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   workingLanguage: 'VI',
   transportationNote: '',
-  // Consent to being filmed/photographed is OPT-IN, so a card nobody has answered starts refused.
-  // This matches the column (`media_consent_status ... NOT NULL DEFAULT 'DECLINED'`) and the entity
-  // (`MediaConsentStatus = "DECLINED"`). Starting on 'AGREED' meant a form whose consent field was
-  // never touched still submitted permission to publish the delegation's images.
-  mediaConsentStatus: 'DECLINED',
+  /**
+   * The value a NEW campus card is born with — "Đồng ý", the answer nearly every delegation gives,
+   * so the common case is not a box everyone has to change by hand. It is a visible select with both
+   * options side by side and a tooltip saying what is being agreed to, not a hidden assumption, and
+   * the value the user leaves it on is exactly what the payload carries.
+   *
+   * This is the ONE place the born value is written down: `visitRequestV2DraftStorage` reads it from
+   * here to decide whether the consent field has been touched, rather than repeating the literal.
+   * The two used to be separate constants and drifted apart, which made answering the question read
+   * as "nothing changed" and silently cost the user their draft.
+   *
+   * A campus loaded from the server keeps whatever it was saved with (`resolvedFormToV2Schema`), and
+   * a restored draft keeps the user's own answer — neither is overwritten by this default.
+   */
+  mediaConsentStatus: 'AGREED',
   notes: '',
 });
 

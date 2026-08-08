@@ -240,7 +240,7 @@
     "contactActive": "Đã xác nhận",
     "contactPending": "Chờ xác nhận",
     "partner": "Đối tác",
-    "partnerExisting": "Đối tác đã có trong hệ thống (ID {{id}})",
+    "partnerExisting": "Đối tác đã có trong hệ thống",
     "partnerNew": "Tổ chức mới (chưa liên kết đối tác)",
     "aggregateStatus": "Trạng thái đơn",
     "submitted": "Đã gửi, chờ các cơ sở duyệt",

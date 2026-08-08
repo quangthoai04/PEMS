@@ -74,6 +74,10 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         ref={ref}
         rows={minRows}
         value={value}
+        // Free Vietnamese prose ("Mục đích", "Nội dung làm việc"): the browser spell checker has no
+        // Vietnamese dictionary here and red-underlines nearly every word, which is indistinguishable
+        // from the form saying the value is invalid. Before `...rest`, so a caller can still opt in.
+        spellCheck={false}
         onChange={e => { onChange(e.target.value); resize(); }}
         onFocus={e => { setFocused(true); resize(); if (onFocus) onFocus(e); }}
         onBlur={e => { setFocused(false); if (onBlur) onBlur(e); }}

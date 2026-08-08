@@ -155,6 +155,22 @@ function otpRateLimitMessage(
 const IDEMPOTENCY_KEY_REUSED = 'IDEMPOTENCY_KEY_REUSED';
 
 /**
+ * Backend codes that identify ONE input by themselves, for the refusals that arrive as a plain
+ * code + message with no field dictionary.
+ *
+ * Deliberately short. Anything that can be about more than one field — every per-campus rule, where
+ * only the server knows which campus named the offending value — must send its own
+ * `CampusVisits[i]...` paths instead; guessing those here would put a red message on the wrong
+ * campus card, which is worse than the banner this list exists to replace.
+ */
+const SINGLE_FIELD_ERROR_PATHS: Record<string, FieldPath<VisitRequestV2Schema>> = {
+  // The public form may only be filed by an external guest/partner, and both of these are decided by
+  // looking up the REGISTRANT address alone (see UserProvisionService.ValidateRegistrantEmail…).
+  REGISTRANT_EMAIL_BELONGS_TO_INTERNAL_ACCOUNT: 'registerInfo.email',
+  VISITOR_ACCOUNT_INACTIVE: 'registerInfo.email',
+};
+
+/**
  * Where a submit intent has got to (plan §3). Exactly one of these is true at any moment.
  *
  * CREATE_UNCERTAIN is the one that did not exist before and matters most: when the verify call
@@ -370,6 +386,26 @@ export const useVisitRequestFormV2 = (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [i18n.language]);
 
+  /**
+   * How many fields are invalid RIGHT NOW — DERIVED from the live error tree on every render, never
+   * a number captured at the moment a submit failed.
+   *
+   * The banner used to be a finished sentence frozen into `submitError` by the invalid-submit
+   * handler, so it went on saying "11 fields left" while the user emptied that list one field at a
+   * time, and only another submit could correct it. React Hook Form re-runs the resolver for a field
+   * as it changes once the form has been submitted (`reValidateMode: 'onChange'`) and drops the
+   * error when it passes — including errors the SERVER put there — so reading the count off
+   * `formState.errors` makes it fall as fields are fixed and reach zero, which is what makes the
+   * banner go away without a second submit.
+   */
+  const validationErrorCount = countFieldErrors(form.formState.errors);
+  /**
+   * …but only after a submit has been attempted. A form nobody has submitted owes the user no list
+   * of everything it is still missing, and `setValue(..., { shouldValidate: true })` — the profile
+   * autofill — can put errors on the tree before they have ever pressed the button.
+   */
+  const showValidationSummary = form.formState.isSubmitted && validationErrorCount > 0;
+
   // ── Draft: hydrate once (with global→per-campus migration), then autosave ──
   const hydrateDraft = useCallback((): boolean => {
     const { draft, migratedFromGlobalDraft: migrated } = loadVisitRequestV2DraftWithMigration(draftNamespace);
@@ -555,6 +591,13 @@ export const useVisitRequestFormV2 = (
       const current = form.getValues('campusVisits');
       if (current.length <= 1) return false;
       campusVisitFields.remove(index);
+      // A card that is gone cannot still be "a field that needs attention". Removing it takes its
+      // values away, but the ERROR tree keeps an entry at the index that no longer exists — so the
+      // summary went on counting a card nobody could see or fix, and the form could not be cleared
+      // of errors by any action the user was able to take. Re-running the resolver for the array is
+      // the same validation everything else here uses; it just has to be asked for, because a
+      // structural change is not a field change and nothing triggers it by itself.
+      if (form.formState.isSubmitted) void form.trigger('campusVisits');
       showSuccessToast(t('visitRequestV2:card.removeCampusSuccess'));
       return true;
     },
@@ -607,7 +650,22 @@ export const useVisitRequestFormV2 = (
   const applyServerFieldErrors = useCallback(
     (error: unknown): boolean => {
       const fieldErrors = getApiFieldErrors(error);
-      if (!fieldErrors) return false;
+      // A refusal that names exactly ONE field on its own. The per-campus errors below carry their
+      // own paths (they have to — only the server knows WHICH campus named a rejected address), but
+      // a refusal about the registrant's own mailbox can only ever be about one input, and it used
+      // to arrive as a bare code with no `errors` dictionary at all. That left the form with nowhere
+      // to put it, so it fell through to the banner at the bottom of a long page — the user was told
+      // an email was unusable with nothing pointing at which of the form's several email boxes.
+      if (!fieldErrors) {
+        const path = SINGLE_FIELD_ERROR_PATHS[getApiErrorCode(error) ?? ''];
+        if (!path) return false;
+        form.setError(path, {
+          type: 'server',
+          message: translateErrorCode(getApiErrorCode(error)) ?? getApiErrorMessage(error),
+        });
+        setFocusErrorsToken(n => n + 1);
+        return true;
+      }
       // The raw string in `messages[0]` is whatever language the backend happened to write it in
       // (usually Vietnamese) — safe on a Vietnamese-only screen, but wrong the moment the UI is
       // switched to English. When the response also carries a stable `errorCode` with a matching
@@ -680,11 +738,11 @@ export const useVisitRequestFormV2 = (
         if (getApiErrorCode(error) === IDEMPOTENCY_KEY_REUSED) submissionIdRef.current = null;
         saveDraftNow({ submissionId: submissionIdRef.current });
         const mapped = applyServerFieldErrors(error);
-        if (mapped) {
-          setSubmitError(t('validation:fixErrorsBeforeContinue'));
-        } else {
-          setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
-        }
+        // A refusal that landed ON a field says everything it needs to say there, and the summary
+        // above the button counts it like any other. Repeating a second sentence in the banner —
+        // "please fill in all required fields correctly" — was one more thing to read that named
+        // neither the field nor the reason.
+        setSubmitError(mapped ? null : getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
         setStage('CREATE_FAILED');
         if (!mapped) console.error('v2 authenticated create failed', getApiErrorCode(error));
       }
@@ -693,6 +751,12 @@ export const useVisitRequestFormV2 = (
   );
 
   const onSubmit = form.handleSubmit(async data => {
+    // ONE submit at a time. The button is disabled and the fields are locked for as long as the
+    // request is in flight, but a second click landing in the same tick — or an Enter arriving from
+    // a control the lock has not reached — would otherwise start a second create: a duplicate
+    // request, or a second OTP burnt against the same challenge. Read through the ref because this
+    // callback is created once per render and would otherwise judge a stale stage.
+    if (stageRef.current === 'SENDING_OTP' || stageRef.current === 'VERIFYING_OTP') return;
     // Authenticated SELF-registration is the only case the session alone can authorise: the JWT
     // proves this mailbox and nothing else. Naming somebody else as registrant falls through to the
     // OTP challenge below — the same initiate/verify pair the public submit uses — so that person
@@ -743,11 +807,10 @@ export const useVisitRequestFormV2 = (
       if (getApiErrorCode(error) === IDEMPOTENCY_KEY_REUSED) submissionIdRef.current = null;
       saveDraftNow({ submissionId: submissionIdRef.current });
       const mapped = applyServerFieldErrors(error);
-      if (mapped) {
-        setSubmitError(t('validation:fixErrorsBeforeContinue'));
-      } else {
-        setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
-      }
+      // Landed on a field (a rejected contact address on one campus card, a registrant address the
+      // public flow cannot use) → the field says it, and the summary counts it. Only a failure with
+      // no field to blame — the mail transport, a gateway — belongs in the banner.
+      setSubmitError(mapped ? null : getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
       // Initiate creates nothing, so a failure here is never "uncertain": there is no request to
       // wonder about, only a code that did not arrive.
       setStage('CREATE_FAILED');
@@ -759,12 +822,12 @@ export const useVisitRequestFormV2 = (
       const idx = campusErrors.findIndex(e => e != null);
       if (idx >= 0) setFirstErrorCampusIndex(idx);
     }
-    // "Fill in all required fields" says nothing about how much is left. A count does, and it is
-    // the difference between "one more box" and "I have barely started".
-    const count = countFieldErrors(errors);
-    setSubmitError(count > 0
-      ? t('validation:fixErrorsCount', { count })
-      : t('validation:fixErrorsBeforeContinue'));
+    // How much is left is said by `validationErrorCount`, which is recomputed from the live error
+    // tree — NOT written into `submitError` here. A sentence stored at this moment would still be on
+    // screen, with this moment's number, long after the user had fixed the fields it counted.
+    // `submitError` is cleared instead: it belongs to the last SERVER answer, and this submit never
+    // reached the server.
+    setSubmitError(null);
     setFocusErrorsToken(n => n + 1);
     onInvalid?.(errors);
   });
@@ -817,11 +880,21 @@ export const useVisitRequestFormV2 = (
         // A non-OTP business rejection (e.g. campus deactivated meanwhile) closes the modal
         // and surfaces on the form so the user can fix the data. The code was RIGHT — presenting
         // this as "wrong OTP" would send the user hunting through their inbox for nothing.
-        if (axios.isAxiosError(error) && error.response?.status === 400 && getApiFieldErrors(error)) {
+        //
+        // Two shapes count as "a rejection about the data": field errors, and the handful of codes
+        // that name one input on their own (an address the flow cannot accept). Without the second,
+        // a refusal about the registrant's own mailbox — which no verification code can fix — was
+        // shown inside the OTP modal, where it read as "your code was wrong".
+        if (axios.isAxiosError(error)
+          && ((error.response?.status === 400 && getApiFieldErrors(error))
+            || (code !== null && code in SINGLE_FIELD_ERROR_PATHS))) {
           setSessionToken(null);
           resetOtpChallengeState();
-          applyServerFieldErrors(error);
-          setSubmitError(getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
+          const mapped = applyServerFieldErrors(error);
+          // The modal has just closed on the user, so something has to explain why — but only when
+          // the reason could not be put on a field. When it could, that red line under the input is
+          // the explanation, and the banner would repeat it word for word.
+          setSubmitError(mapped ? null : getApiErrorMessage(error, t('toast:visitRequest.submitFailed')));
           setStage('CREATE_FAILED');
         } else {
           setOtpError(
@@ -1097,6 +1170,13 @@ export const useVisitRequestFormV2 = (
     isSubmitting: stage === 'SENDING_OTP',
     submitError,
     setSubmitError,
+    /**
+     * Fields invalid RIGHT NOW, recomputed every render from `formState.errors` — the number the
+     * summary banner states, and the reason it corrects itself while the user types.
+     */
+    validationErrorCount,
+    /** Whether that banner belongs on screen at all (nothing before the first submit attempt). */
+    showValidationSummary,
     firstErrorCampusIndex,
     setFirstErrorCampusIndex,
     /** Increments on every invalid submit — the form moves the caret to the first bad field. */

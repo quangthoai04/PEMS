@@ -100,6 +100,42 @@ describe('VisitRequestV2SubmittedSummary', () => {
     expect(screen.getByText(/Same across all campuses/i)).toBeInTheDocument();
   });
 
+  /**
+   * The receipt used to print "Đối tác đã có trong hệ thống (ID 109)". That number is the partners
+   * table's primary key: it means nothing to the person reading their receipt, and it is not a
+   * detail an internal system should hand out. The link itself is unchanged — `partnerId` is still
+   * what the payload carried and what the backend joined on; it simply is not rendered.
+   */
+  it('names the linked partner without ever showing its database id', () => {
+    const linked: VisitRequestV2Schema = {
+      ...values([campus({ clientKey: 'a', campus: 'HN' })]),
+      partnerSelectionMode: 'EXISTING_PARTNER',
+      partnerId: 109,
+      registerInfo: {
+        fullName: 'Registrant', organization: 'Andes University Exchange Office', jobTitle: 'Head',
+        phone: '+84911111111', email: 'reg@example.com', nationality: 'VN',
+      },
+    };
+    render(<VisitRequestV2SubmittedSummary
+      response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }], false)}
+      values={linked} />);
+
+    const partner = screen.getByTestId('v2-summary-partner-existing');
+    expect(partner).toHaveTextContent('Andes University Exchange Office');
+    expect(partner).toHaveTextContent(/Existing partner/i);
+    expect(partner.textContent).not.toMatch(/109/);
+    expect(screen.queryByText(/ID\s*109/i)).toBeNull();
+  });
+
+  it('says "new organization" when nothing was linked, and shows no id there either', () => {
+    render(<VisitRequestV2SubmittedSummary
+      response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }], false)}
+      values={values([campus({ clientKey: 'a', campus: 'HN' })])} />);
+
+    expect(screen.queryByTestId('v2-summary-partner-existing')).toBeNull();
+    expect(screen.getByText(/New organization/i)).toBeInTheDocument();
+  });
+
   it('renders a blank optional operational contact org/email without crashing', () => {
     const cvs = [campus({ clientKey: 'a', campus: 'HN',
       operationalContact: { fullName: 'Op Only', organization: '', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000009', email: '' } })];

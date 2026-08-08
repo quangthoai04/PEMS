@@ -195,6 +195,20 @@ export const CampusVisitCard: React.FC<Props> = ({
     fields.append(rows);
   };
 
+  /**
+   * Removes ONE person row and re-validates the list it belonged to.
+   *
+   * The values shift correctly on their own; the error tree does not always follow, and an entry
+   * left at an index that no longer exists is an error nobody can see and nobody can fix — it just
+   * keeps the "N fields need attention" count above zero for ever. Re-running the resolver for the
+   * list is the same validation the rest of the form uses; a structural change simply has to ask
+   * for it, and only once the form has been submitted (before that there are no errors to correct).
+   */
+  const removePersonRow = (kind: 'visitors' | 'supportTeam', rowIndex: number) => {
+    (kind === 'visitors' ? visitorFields : supportFields).remove(rowIndex);
+    if (form.formState.isSubmitted) void form.trigger(`${base}.${kind}`);
+  };
+
   /** Whether the last import for this section still holds rows a replace could use. */
   const canReplaceFrom = (kind: 'visitors' | 'supportTeam') => {
     const report = excelState[kind].report;
@@ -799,7 +813,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           {personTable(
             'visitors',
             visitorFields.fields,
-            i => visitorFields.remove(i),
+            i => removePersonRow('visitors', i),
             () => true,
             () => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
           )}
@@ -871,7 +885,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           {personTable(
             'supportTeam',
             supportFields.fields,
-            i => supportFields.remove(i),
+            i => removePersonRow('supportTeam', i),
             () => true,
             () => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
           )}

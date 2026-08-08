@@ -421,8 +421,15 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
             registrantEmailOverride: _staffEmail);
 
         var response = await StaffClient().PostAsJsonAsync("/api/v2/visit-requests", payload);
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        // Reported against the campus card that named the address, like every other refusal about a
+        // contact email — it used to be one banner sentence with no field and no campus in it.
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(VisitRequestErrorCodes.InternalRegistrantCannotBeContact, await ErrorCodeOf(response));
+        var selfContactErrors = await FieldErrorsOf(response);
+        var selfContactMessage = Assert.Single(
+            Assert.Contains("CampusVisits[0].OperationalContact.Email", selfContactErrors));
+        // Says which answer to change and what a good one looks like — never the account behind it.
+        Assert.Equal(VisitRequestErrorMessages.ContactEmailNotEligible, selfContactMessage);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -446,7 +453,11 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var fieldErrors = await FieldErrorsOf(response);
         var message = Assert.Single(Assert.Contains("CampusVisits[0].OperationalContact.Email", fieldErrors));
-        Assert.Contains("VISITOR", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(VisitRequestErrorMessages.ContactEmailNotEligible, message);
+        // The answer must not describe the account it looked up: no role, no account type, and no
+        // "sign in to the internal portal", which is both wrong advice and an enumeration oracle.
+        Assert.DoesNotContain("VISITOR", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("nội bộ", message, StringComparison.OrdinalIgnoreCase);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

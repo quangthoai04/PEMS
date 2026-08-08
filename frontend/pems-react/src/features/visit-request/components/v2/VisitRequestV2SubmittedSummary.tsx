@@ -186,10 +186,21 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
           </Field>
           <Field label={t('visitRequestV2:summary.aggregateStatus')}>{t('visitRequestV2:summary.submitted')}</Field>
           <Field label={t('visitRequestV2:summary.campusCount')}>{response.instances.length}</Field>
+          {/* The organization NAME the user picked, with "already in our system" as the note under
+              it — never the partner's primary key. `partnerId` is still what the payload carries and
+              what the backend links against; it is simply not a fact this reader can do anything
+              with, and printing "(ID 109)" on a receipt exposes an internal identifier for nothing.
+              The name comes from the submitted snapshot: selecting a partner in the combobox is what
+              wrote it into `registerInfo.organization`. */}
           <Field label={t('visitRequestV2:summary.partner')}>
-            {values.partnerSelectionMode === 'EXISTING_PARTNER' && values.partnerId != null
-              ? t('visitRequestV2:summary.partnerExisting', { id: values.partnerId })
-              : t('visitRequestV2:summary.partnerNew')}
+            {values.partnerSelectionMode === 'EXISTING_PARTNER' && values.partnerId != null ? (
+              <span data-testid="v2-summary-partner-existing">
+                {values.registerInfo.organization?.trim() && (
+                  <span className="font-semibold">{values.registerInfo.organization.trim()}<br /></span>
+                )}
+                <span className="text-xs text-slate-500">{t('visitRequestV2:summary.partnerExisting')}</span>
+              </span>
+            ) : t('visitRequestV2:summary.partnerNew')}
           </Field>
           <Field label={t('visitRequestV2:summary.registrant')}>
             {person(values.registerInfo)}

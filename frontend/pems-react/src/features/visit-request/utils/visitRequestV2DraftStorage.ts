@@ -1,4 +1,5 @@
 import type { VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
+import { createEmptyCampusVisit } from './visitRequestV2Form';
 
 /**
  * Draft storage for the per-campus form v2.
@@ -78,13 +79,20 @@ export interface SaveV2DraftOptions {
 }
 
 /**
- * The values a card is BORN with (`createEmptyCampusVisit`) — and the request-level selection mode a
- * form starts on. A field still sitting on one of these is a field nobody has touched; anything else
- * is a choice the user made, and a choice is worth keeping.
+ * The values a card is BORN with — and the request-level selection mode a form starts on. A field
+ * still sitting on one of these is a field nobody has touched; anything else is a choice the user
+ * made, and a choice is worth keeping.
+ *
+ * READ from `createEmptyCampusVisit` rather than repeated as literals. When they were two separate
+ * copies of the same three values they drifted: the born card said one thing, this file said
+ * another, and the field the two disagreed about (the media consent) then read as "untouched" no
+ * matter what the user answered — so a form whose only edit was that answer was silently declared
+ * empty and never written to disk.
  */
-const UNTOUCHED_VISIT_TYPE = 'CAMPUS_TOUR';
-const UNTOUCHED_WORKING_LANGUAGE = 'VI';
-const UNTOUCHED_MEDIA_CONSENT = 'DECLINED';
+const BORN_CAMPUS_VISIT = createEmptyCampusVisit('untouched-sentinel');
+const UNTOUCHED_VISIT_TYPE = BORN_CAMPUS_VISIT.visitType;
+const UNTOUCHED_WORKING_LANGUAGE = BORN_CAMPUS_VISIT.workingLanguage;
+const UNTOUCHED_MEDIA_CONSENT = BORN_CAMPUS_VISIT.mediaConsentStatus;
 const UNTOUCHED_PARTNER_MODE = 'NEW_ORGANIZATION';
 
 const filled = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
