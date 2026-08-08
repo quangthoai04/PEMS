@@ -187,7 +187,7 @@ test.describe('Real-stack FULL-DOM: list terminology, next task and scoped hando
       .find(r => r.visitInstanceId === hnInstance)!;
     expect(waiting.nextTask.code).toBe('REVIEW_AND_ASSIGN');
     expect(waiting.nextTask.requiresAction).toBe(true);
-    expect(waiting.statusLabel).toBe('Chờ xử lý tại cơ sở');
+    expect(waiting.statusLabel).toBe('Chờ duyệt');
     expect(waiting.relationLabel).toBe('Bạn có quyền duyệt tại cơ sở');
 
     // The same campus, same moment, to the visitor who filed it: nothing to do.
@@ -215,7 +215,7 @@ test.describe('Real-stack FULL-DOM: list terminology, next task and scoped hando
     const assigned = (await listRow(request, 'campus_leader_hn', requestCode))
       .find(r => r.visitInstanceId === hnInstance)!;
     expect(assigned.nextTask.code).toBe('START_PREPARATION');
-    expect(assigned.statusLabel).toBe('Đã phân công người phụ trách');
+    expect(assigned.statusLabel).toBe('Đã duyệt');
     expect(assigned.relationLabel).toBe('Bạn phụ trách tiếp đón');
   });
 

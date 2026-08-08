@@ -10,6 +10,16 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 
+/**
+ * Three of the cases below mock `react-quill-new` and then dynamically import the screen that mounts
+ * it, which is the most expensive thing this suite does — and the default 5s budget was never chosen
+ * for it. Alone the file finishes in ~3s, but vitest runs files in parallel workers, so under a full
+ * run these three sit close enough to the limit that whichever one loses the scheduling race times
+ * out; the failure moved between them run to run, and disabling file parallelism made all 123 files
+ * pass. Nothing here asserts speed, so the budget is raised rather than the assertions relaxed.
+ */
+vi.setConfig({ testTimeout: 20_000 });
+
 // ── 1. The sanitizer, on the five required cases ──────────────────────────────
 
 describe('sanitizeHtml — the five required vectors', () => {
