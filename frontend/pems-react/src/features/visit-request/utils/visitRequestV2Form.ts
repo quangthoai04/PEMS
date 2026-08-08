@@ -37,7 +37,11 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   workingLanguage: 'VI',
   transportationNote: '',
-  mediaConsentStatus: 'AGREED',
+  // Consent to being filmed/photographed is OPT-IN, so a card nobody has answered starts refused.
+  // This matches the column (`media_consent_status ... NOT NULL DEFAULT 'DECLINED'`) and the entity
+  // (`MediaConsentStatus = "DECLINED"`). Starting on 'AGREED' meant a form whose consent field was
+  // never touched still submitted permission to publish the delegation's images.
+  mediaConsentStatus: 'DECLINED',
   notes: '',
 });
 

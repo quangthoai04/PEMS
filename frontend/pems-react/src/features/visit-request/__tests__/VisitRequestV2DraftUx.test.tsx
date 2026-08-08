@@ -752,3 +752,94 @@ describe('the campus card offers exactly one free-text note', () => {
       expect(screen.queryByText('visitRequestV2:card.mediaNote')).toBeNull();
     });
 });
+
+/**
+ * Media consent is the one enum on the card whose default carries a real-world promise, so it gets
+ * its own end-to-end pass over the draft/dirty machinery.
+ *
+ * The card used to be born 'AGREED' while the column is `NOT NULL DEFAULT 'DECLINED'` and the entity
+ * is `= "DECLINED"`. Two things followed from that single mismatch: a form nobody had touched still
+ * submitted permission to publish the delegation's images, and — because "untouched" was measured
+ * against the wrong value — actually answering the question read as no change at all, so closing the
+ * modal threw the answer away without asking and no draft was written.
+ */
+describe('media consent survives the draft round trip', () => {
+  const renderModal = (onClose = vi.fn()) => {
+    const utils = render(
+      <VisitRequestV2Modal isOpen onClose={onClose} mode="public" draftNamespace={NS} onSuccess={vi.fn()} />,
+    );
+    return { ...utils, onClose };
+  };
+
+  const consentSelect = (): HTMLSelectElement => {
+    const wrapper = screen.getByText('visitRequestV2:card.mediaConsent').closest('div.flex.flex-col.gap-2');
+    return wrapper!.querySelector('select') as HTMLSelectElement;
+  };
+
+  const clickClose = () => fireEvent.click(screen.getByTestId('v2-modal-close'));
+  const promptShown = () => screen.queryByTestId('v2-modal-discard') !== null;
+
+  const baseline = (): VisitRequestV2Schema => ({
+    registerInfo: { fullName: '', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
+    partnerSelectionMode: 'NEW_ORGANIZATION',
+    partnerId: null,
+    campusVisits: [createEmptyCampusVisit('ck-1')],
+  });
+
+  const withConsent = (status: 'AGREED' | 'DECLINED'): VisitRequestV2Schema => ({
+    ...baseline(),
+    campusVisits: [{ ...createEmptyCampusVisit('ck-1'), mediaConsentStatus: status }],
+  });
+
+  beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+
+  it('MEDIA-DRAFT-01: an untouched form starts refused and writes no draft', () => {
+    // The default is the answer that promises nothing, and it agrees with the column and the entity.
+    expect(createEmptyCampusVisit('ck-1').mediaConsentStatus).toBe('DECLINED');
+    expect(hasMeaningfulV2Data(baseline())).toBe(false);
+    expect(saveVisitRequestV2Draft(baseline(), undefined, NS).success).toBe(false);
+    expect(loadVisitRequestV2Draft(NS)).toBeNull();
+  });
+
+  it('MEDIA-DRAFT-02: answering the consent question on its own is meaningful', () => {
+    expect(hasMeaningfulV2Data(withConsent('AGREED'))).toBe(true);
+  });
+
+  it('MEDIA-DRAFT-03: a consent-only answer warns before the modal closes', async () => {
+    const { onClose } = renderModal();
+    await act(async () => { fireEvent.change(consentSelect(), { target: { value: 'AGREED' } }); });
+
+    clickClose();
+
+    expect(promptShown()).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('MEDIA-DRAFT-04: a consent-only answer is persisted', () => {
+    expect(saveVisitRequestV2Draft(withConsent('AGREED'), undefined, NS).success).toBe(true);
+    expect(loadVisitRequestV2Draft(NS)).not.toBeNull();
+  });
+
+  it('MEDIA-DRAFT-05: the restored draft still carries the answer', () => {
+    saveVisitRequestV2Draft(withConsent('AGREED'), undefined, NS);
+
+    const restored = loadVisitRequestV2Draft(NS);
+    // Sanitising must not drop it on the way out, which is what made the answer look untouched.
+    expect(restored?.data.campusVisits?.[0]?.mediaConsentStatus).toBe('AGREED');
+  });
+
+  it('MEDIA-DRAFT-06: answering and then changing back leaves nothing dirty', async () => {
+    // Canonical-value comparison, not a sticky "was clicked" flag: returning to the default with the
+    // rest of the form untouched means there is genuinely nothing to keep.
+    expect(hasMeaningfulV2Data(withConsent('DECLINED'))).toBe(false);
+
+    const { onClose } = renderModal();
+    await act(async () => { fireEvent.change(consentSelect(), { target: { value: 'AGREED' } }); });
+    await act(async () => { fireEvent.change(consentSelect(), { target: { value: 'DECLINED' } }); });
+
+    clickClose();
+
+    expect(promptShown()).toBe(false);
+    expect(onClose).toHaveBeenCalled();
+  });
+});

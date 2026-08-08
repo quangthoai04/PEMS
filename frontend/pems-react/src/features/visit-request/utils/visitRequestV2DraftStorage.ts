@@ -84,7 +84,7 @@ export interface SaveV2DraftOptions {
  */
 const UNTOUCHED_VISIT_TYPE = 'CAMPUS_TOUR';
 const UNTOUCHED_WORKING_LANGUAGE = 'VI';
-const UNTOUCHED_MEDIA_CONSENT = 'AGREED';
+const UNTOUCHED_MEDIA_CONSENT = 'DECLINED';
 const UNTOUCHED_PARTNER_MODE = 'NEW_ORGANIZATION';
 
 const filled = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
