@@ -155,9 +155,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
 
     if (item.actionType === 'OPEN_VISITOR_FEEDBACK_MODAL' && item.visitInstanceId) {
       setIsOpen(false);
-      const reqId = item.visitRequestId ? `visitRequestId=${item.visitRequestId}&` : '';
-      navigate(`/dashboard/visit?${reqId}feedbackVisitInstanceId=${item.visitInstanceId}`);
-      onNavigate?.();
+      setVisitorFeedbackVisitInstanceId(item.visitInstanceId);
       return;
     }
 
