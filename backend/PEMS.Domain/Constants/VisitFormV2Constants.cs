@@ -147,6 +147,8 @@ public static class OperationalContactErrorCodes
     public const string ChangeConflict = "OPERATIONAL_CONTACT_CHANGE_CONFLICT";
     /// <summary>The account is not ACTIVE, so it cannot take the contact role.</summary>
     public const string AccountInactive = "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE";
+    /// <summary>A metadata-only save that would write exactly what is already stored.</summary>
+    public const string ProfileNoChanges = "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES";
 }
 
 /// <summary>Scope / decision error codes shared by the campus-approval endpoints (plan §5.2).</summary>

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Emails;
@@ -100,7 +101,7 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
         {
             var variables = new Dictionary<string, string>
             {
-                ["contactFullName"] = change.NewEmailNormalized!,
+                ["contactFullName"] = InvitedPersonName(change, campus.CurrentContactName),
                 ["requestCode"] = campus.RequestCode,
                 ["delegationName"] = campus.DelegationName,
                 ["campusName"] = campus.CampusName,
@@ -143,6 +144,44 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
 
         return raw;
     }
+
+    /// <summary>
+    /// The name to greet the INVITED person by.
+    ///
+    /// <para>
+    /// It used to be <c>change.NewEmailNormalized</c> — the invitation opened "Kính gửi
+    /// anh.nguyen@example.com", which is not a person's name and reads as machine-generated to exactly
+    /// the reader who is being asked to take on a responsibility. The name is already stored: every
+    /// writer of an invitation captures the proposed person's details in
+    /// <c>pending_snapshot_json</c>, so that is the source.
+    /// </para>
+    /// <para>
+    /// Order matters, and the second step is deliberately restricted to INITIAL_CONFIRMATION. There the
+    /// campus's own snapshot IS the invited person (creation and the pre-decision replace both write the
+    /// campus row and then invite that same address), so it is a correct fallback. For a TRANSFER the
+    /// campus snapshot is the person handing the role OVER — it is passed separately as
+    /// <c>currentContactName</c> — and greeting person B by person A's name would be worse than
+    /// greeting them neutrally.
+    /// </para>
+    /// </summary>
+    private static string InvitedPersonName(
+        Domain.Entities.Delegations.VisitRequestIdentityChange change, string? campusContactName)
+    {
+        var fromSnapshot = PendingContactSnapshot.Read(change.PendingSnapshotJson)?.ResolvedFullName;
+        if (!string.IsNullOrWhiteSpace(fromSnapshot))
+            return fromSnapshot!.Trim();
+
+        if (change.ChangeKind != IdentityChangeKinds.Transfer
+            && !string.IsNullOrWhiteSpace(campusContactName))
+            return campusContactName!.Trim();
+
+        // Legacy rows written before the snapshot existed, and rows the retention sweep has redacted.
+        // A neutral form of address is the honest answer — never the address itself.
+        return NeutralSalutation;
+    }
+
+    /// <summary>Used when no name is recoverable. Vietnamese business mail opens this way.</summary>
+    private const string NeutralSalutation = "Quý Anh/Chị";
 
     public async Task<Domain.Entities.Delegations.VisitRequestIdentityChange?> LockChangeAsync(
         ulong identityChangeId, CancellationToken cancellationToken)

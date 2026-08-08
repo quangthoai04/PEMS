@@ -62,6 +62,8 @@ public sealed class GetOperationalContactStateQueryHandler
             })
             .FirstOrDefaultAsync(cancellationToken);
 
+        var profileDifference = await ProfileDifferenceAsync(instance, actorId, cancellationToken);
+
         if (pending is null)
             return new OperationalContactStateResponse(
                 visit.VisitRequestId, instance.VisitInstanceId, instance.Status,
@@ -69,7 +71,7 @@ public sealed class GetOperationalContactStateQueryHandler
                 instance.OperationalContactUserId is null ? null : confirmedMasked,
                 instance.OperationalContactConfirmedAt,
                 instance.OperationalContactConfirmationSource,
-                null, null, null, null, 0, 0);
+                null, null, null, null, 0, 0, profileDifference);
 
         // An overdue-but-not-yet-swept invitation reads EXPIRED; the sweep settles the row later.
         var effective = pending.ExpiresAt <= _clock.VietnamNow
@@ -83,8 +85,59 @@ public sealed class GetOperationalContactStateQueryHandler
             instance.OperationalContactConfirmedAt,
             instance.OperationalContactConfirmationSource,
             pending.ChangeKind, effective, pending.NewEmailMasked,
-            pending.ExpiresAt, pending.ResendCount, pending.TokenVersion);
+            pending.ExpiresAt, pending.ResendCount, pending.TokenVersion, profileDifference);
     }
+
+    /// <summary>
+    /// Offers a profile reconciliation to the ONE person entitled to it: the signed-in account that this
+    /// campus's contact relation points at (plan v10 §6.1, §6.3).
+    ///
+    /// <para>
+    /// The identity test is the relation, never the snapshot's email text — an address written on a form
+    /// is not proof of who is reading it. So the registrant, a Staff Leader and the holder of a sibling
+    /// campus all get null here, whatever the snapshot happens to say.
+    /// </para>
+    /// <para>
+    /// Comparison is on trimmed text, and on phone digits rather than punctuation, so
+    /// <c>+84 912 345 678</c> and <c>+84912345678</c> are the same number and do not raise a prompt that
+    /// offers to change nothing (§6.1).
+    /// </para>
+    /// </summary>
+    private async Task<OperationalContactProfileDifference?> ProfileDifferenceAsync(
+        VisitRequestCampus instance, ulong actorId, CancellationToken ct)
+    {
+        if (instance.OperationalContactUserId != actorId) return null;
+
+        var detail = instance.FormDetail;
+        if (detail is null) return null;
+
+        var account = await _db.Users.AsNoTracking()
+            .Where(u => u.UserId == actorId)
+            .Select(u => new { u.FullName, u.Phone })
+            .FirstOrDefaultAsync(ct);
+        if (account is null) return null;
+
+        var nameDiffers = !string.Equals(
+            (account.FullName ?? string.Empty).Trim(),
+            (detail.OperationalContactFullName ?? string.Empty).Trim(),
+            StringComparison.Ordinal);
+
+        var phoneDiffers = !string.Equals(
+            DigitsOf(account.Phone), DigitsOf(detail.OperationalContactPhone), StringComparison.Ordinal);
+
+        if (!nameDiffers && !phoneDiffers) return null;
+
+        return new OperationalContactProfileDifference(
+            nameDiffers, phoneDiffers,
+            account.FullName, account.Phone,
+            detail.OperationalContactFullName, detail.OperationalContactPhone);
+    }
+
+    /// <summary>A phone reduced to its digits, so formatting alone never counts as a difference.</summary>
+    private static string DigitsOf(string? phone)
+        => string.IsNullOrWhiteSpace(phone)
+            ? string.Empty
+            : new string(phone.Where(char.IsDigit).ToArray());
 }
 
 /// <summary>

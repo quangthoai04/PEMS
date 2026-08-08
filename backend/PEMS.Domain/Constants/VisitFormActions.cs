@@ -28,6 +28,16 @@ public static class VisitFormActions
     // sibling. The frontend decided from `viewer.relation` alone before, so it offered buttons the
     // backend would refuse (a resend past its cap, a transfer inside the lead time, a second change
     // while one is pending).
+    /// <summary>
+    /// Registrant / this campus's current contact may correct the contact's DETAILS — name,
+    /// organization, job title, phone. Never the address, which is what the two codes below are for.
+    ///
+    /// <para>
+    /// Its window is much wider than theirs on purpose: nothing about authority moves, so an approved
+    /// campus starting tomorrow still qualifies. Only a cancelled or rejected campus does not.
+    /// </para>
+    /// </summary>
+    public const string UpdateOperationalContactProfile = "UPDATE_OPERATIONAL_CONTACT_PROFILE";
     /// <summary>Registrant may re-send THIS campus's outstanding invitation (cap 5, with cooldown).</summary>
     public const string ResendOperationalContactConfirmation = "RESEND_OPERATIONAL_CONTACT_CONFIRMATION";
     /// <summary>Registrant may correct THIS campus's contact outright while the campus is undecided.</summary>

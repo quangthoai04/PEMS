@@ -381,10 +381,18 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
 
     [Fact]
     /// <summary>
-    /// Correcting the contact NAME or PHONE is a change to that campus, not to the request, so it is
-    /// recorded as an instance revision. Only the address is locked.
+    /// The contact's NAME and PHONE are refused here too (repair v3 §2.2). They used to be editable, on
+    /// the reasoning that correcting a typo in a name is not a change of who runs the campus — true, and
+    /// it made the request-edit form a second, silent writer of contact data.
+    ///
+    /// <para>
+    /// Editing a visit request and managing its operational contact are two workflows now, with two
+    /// screens and two endpoints. The contact snapshot still travels in this payload so an UNCHANGED one
+    /// round-trips; anything else is refused before a single row is written, under its own code so the
+    /// UI can say which workflow the user wants.
+    /// </para>
     /// </summary>
-    public async Task Contact_name_phone_change_writes_an_instance_revision()
+    public async Task Contact_name_and_phone_cannot_be_edited_through_the_request_form()
     {
         await RunAsync(async (db, create, edit) =>
         {
@@ -393,10 +401,41 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             var renamed = Keep(InstanceOf(r, "HN"),
                 Campus("HN", contactName: "Tên Mới", contactPhone: "+84999"));
 
-            await edit.ApplyPendingEditAsync(r, Edit(r, renamed), Registrant, Now, default);
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyPendingEditAsync(r, Edit(r, renamed), Registrant, Now, default));
+            Assert.Equal("IMMUTABLE_CONTACT_PROFILE", ex.ErrorCode);
+
+            // Refused during validation, so nothing was written: not the contact, and not the campus
+            // revision an applied edit would have recorded.
+            var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceId);
+            Assert.Equal("Op Contact", detail.OperationalContactFullName);
+            var revisions = await db.VisitInstanceFormRevisionHistories
+                .Where(h => h.VisitInstanceId == instanceId).ToListAsync();
+            Assert.DoesNotContain(revisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit);
+        });
+    }
+
+    [Fact]
+    /// <summary>
+    /// The other half of the same rule: an edit that leaves the contact exactly as it is must still go
+    /// through. Every save from the edit screen carries the snapshot, so a guard that could not tell
+    /// "unchanged" from "changed" would block ordinary edits entirely.
+    /// </summary>
+    public async Task An_edit_that_leaves_the_contact_alone_still_applies()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var instanceId = InstanceOf(r, "HN").VisitInstanceId;
+            // The stored phone is normalised to E.164 on create, so the payload echoes the national form
+            // a client would have been served — same number, different spelling, and not a mutation.
+            var edited = Keep(InstanceOf(r, "HN"), Campus("HN", purpose: "Mục đích mới"));
+
+            await edit.ApplyPendingEditAsync(r, Edit(r, edited), Registrant, Now, default);
 
             var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceId);
-            Assert.Equal("Tên Mới", detail.OperationalContactFullName);
+            Assert.Equal("Mục đích mới", detail.Purpose);
+            Assert.Equal("Op Contact", detail.OperationalContactFullName);
             var revisions = await db.VisitInstanceFormRevisionHistories
                 .Where(h => h.VisitInstanceId == instanceId).ToListAsync();
             Assert.Contains(revisions, h => h.SourceType == FormRevisionSourceTypes.PendingEdit);

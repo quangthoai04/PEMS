@@ -106,6 +106,8 @@
     "FACE_SCAN_GUEST_NOT_IN_INSTANCE": "Một hoặc nhiều khách không thuộc đúng đoàn của chuyến thăm này.",
     "FACE_SCAN_INVALID_FACE_ITEM": "Mỗi khuôn mặt phải được gán một khách hoặc đánh dấu bỏ qua.",
     "FACE_SCAN_RATE_LIMITED": "Bạn quét quá nhanh. Vui lòng thử lại sau ít phút.",
-    "FACE_SCAN_QUOTA_EXCEEDED": "Đã hết hạn mức quét khuôn mặt trong tháng."
+    "FACE_SCAN_QUOTA_EXCEEDED": "Đã hết hạn mức quét khuôn mặt trong tháng.",
+    "IMMUTABLE_CONTACT_PROFILE": "Không sửa được thông tin đầu mối vận hành trong biểu mẫu đăng ký. Hãy dùng chức năng “Chỉnh sửa đầu mối” ở màn hình chi tiết đơn.",
+    "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Chưa có thay đổi nào để lưu cho đầu mối vận hành."
   }
 }

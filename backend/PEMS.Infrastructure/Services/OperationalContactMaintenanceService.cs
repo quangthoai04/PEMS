@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.VisitNotifications;
 using PEMS.Application.EmailActions;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -17,12 +18,19 @@ public sealed class OperationalContactMaintenanceService : IOperationalContactMa
 
     private readonly IApplicationDbContext _db;
     private readonly ILogger<OperationalContactMaintenanceService> _logger;
+    private readonly ContactInvitationExpiryEmail _expiryEmail;
+    private readonly RecoverableVisitEmailSender _mailer;
 
     public OperationalContactMaintenanceService(
-        IApplicationDbContext db, ILogger<OperationalContactMaintenanceService> logger)
+        IApplicationDbContext db,
+        ILogger<OperationalContactMaintenanceService> logger,
+        ContactInvitationExpiryEmail expiryEmail,
+        RecoverableVisitEmailSender mailer)
     {
         _db = db;
         _logger = logger;
+        _expiryEmail = expiryEmail;
+        _mailer = mailer;
     }
 
     public async Task<OperationalContactMaintenanceResult> RunOnceAsync(
@@ -88,6 +96,26 @@ public sealed class OperationalContactMaintenanceService : IOperationalContactMa
 
         await _db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
+
+        // ── Tell the registrant, once per invitation, AFTER the expiry is committed ──────────────
+        //
+        // The transition happens exactly once: the SELECT above takes only PENDING rows and holds them
+        // FOR UPDATE, so a row reaches EXPIRED once however many sweeps run, and the send hangs off that
+        // single transition rather than off a "find expired rows" query, which would re-send every tick.
+        //
+        // But that alone made the notification LOSSY, and it is the reason this goes through the
+        // recoverable sender. If the message fails here, no later sweep will ever see the row again —
+        // it is EXPIRED now, and this query only takes PENDING. The sender records the failed attempt in
+        // the email history, and the recovery sweep looks for EXPIRED invitations with no successful
+        // message, which is a question that can still be answered tomorrow. Reverting EXPIRED back to
+        // PENDING to force a retry would be the alternative, and it would falsify the invitation's state
+        // to solve a mail problem.
+        //
+        // Sent after the commit for the same reason as everywhere else: the dispatcher shares this
+        // DbContext and saves, and a message must never describe a state a rollback undid.
+        foreach (var claim in due)
+            await _mailer.SendOnceAsync(_expiryEmail, claim.IdentityChangeId, ct);
+
         return due.Count;
     }
 

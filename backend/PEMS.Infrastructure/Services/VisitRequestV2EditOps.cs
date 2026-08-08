@@ -93,7 +93,23 @@ internal static class VisitRequestV2EditOps
             });
     }
 
-    /// <summary>Overwrites an existing instance's form detail from the edit content and bumps its form_revision.</summary>
+    /// <summary>
+    /// Overwrites an EXISTING instance's form detail from the edit content and bumps its form_revision.
+    ///
+    /// <para>
+    /// The five <c>operational_contact_*</c> columns are deliberately absent. They belong to the
+    /// contact-management workflow, which owns its own endpoint, its own concurrency check and its own
+    /// audit entry; a request edit only carries the snapshot so an unchanged payload round-trips, and
+    /// <c>EnsureContactSnapshotUnchanged</c> has already refused the call if any of them differs. Not
+    /// writing them at all is what makes that guard the only thing standing between this path and the
+    /// contact — rather than a guard sitting in front of an assignment that would still be correct if
+    /// somebody removed it.
+    /// </para>
+    /// <para>
+    /// Only <see cref="BuildFormDetail"/> writes them, and only for a campus being ADDED, which has no
+    /// contact yet and no invitation bound to anything.
+    /// </para>
+    /// </summary>
     public static void ApplyFormDetail(
         VisitInstanceFormDetail detail, CampusVisitEditV2Dto content, System.DateTime now, ulong? actorId)
     {
@@ -102,12 +118,6 @@ internal static class VisitRequestV2EditOps
         detail.VisitTypeOther = content.VisitType == "OTHER" ? content.VisitTypeOther : null;
         detail.Purpose = content.Purpose;
         detail.WorkingContent = content.WorkingContent;
-        detail.OperationalContactFullName = content.OperationalContact.FullName;
-        // Org is optional — blank normalizes to NULL (the DB CHECK rejects an empty string).
-        detail.OperationalContactOrganization = Clean(content.OperationalContact.Organization);
-        detail.OperationalContactJobTitle = content.OperationalContact.JobTitle.Trim();
-        detail.OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone);
-        detail.OperationalContactEmail = Clean(content.OperationalContact.Email)!;
         detail.WorkingLanguage = content.WorkingLanguage;
         detail.TransportationNote = Clean(content.TransportationNote);
         detail.MediaConsentStatus = content.MediaConsentStatus;

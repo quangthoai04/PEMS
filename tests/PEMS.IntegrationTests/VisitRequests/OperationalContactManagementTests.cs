@@ -1,0 +1,722 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using MediatR;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using PEMS.Application.Common.DTOs;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Options;
+using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Commands.OperationalContact;
+using PEMS.Application.Delegations.Services;
+using PEMS.Application.Emails.Common;
+using PEMS.Application.Notifications.Common;
+using PEMS.Domain.Constants;
+using PEMS.Infrastructure.Email;
+using PEMS.Infrastructure.Persistence;
+using PEMS.Infrastructure.Services;
+using Xunit;
+
+namespace PEMS.IntegrationTests.VisitRequests;
+
+/// <summary>
+/// Contact management as its own workflow, separate from editing the request (repair v3 §4–§6, §17).
+///
+/// <para>
+/// The subject is the fork. One form, five fields, one save — and the SERVER decides what the save
+/// means by comparing the submitted address with the stored one. Everything that used to go through
+/// <c>ReplaceOperationalContactCommand</c> regardless: correcting a typo in a name superseded the live
+/// invitation, dropped the campus's confirmed contact, re-closed the global gate for every campus on
+/// the request and sent a confirmation email. This suite pins that a metadata correction now does none
+/// of those things, and that an address change still does all of them.
+/// </para>
+///
+/// Each test creates its own committed request and cascade-deletes it in <c>finally</c>.
+/// </summary>
+public sealed class OperationalContactManagementTests
+{
+    private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager
+        .GetDisposableConnectionString(
+            "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
+
+    private const ulong Registrant = 8;
+    private static bool? _dbUp;
+    private static readonly DateTime Now = DateTime.Now;
+
+    private static ApplicationDbContext NewContext()
+        => new(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseMySql(ConnString, ServerVersion.AutoDetect(ConnString)).Options);
+
+    private static void RequireDb()
+    {
+        if (_dbUp is null)
+        {
+            try { using var db = NewContext(); _dbUp = db.Database.CanConnect(); }
+            catch { _dbUp = false; }
+        }
+        Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable.");
+    }
+
+    private sealed class FakeUser : ICurrentUserService
+    {
+        private readonly ulong _id;
+        private readonly string? _email;
+        public FakeUser(ulong id, string? email = null) { _id = id; _email = email; }
+        public bool IsAuthenticated => true;
+        public ulong? UserId => _id;
+        public string? Email => _email;
+        public ulong? RoleId => null;
+        public string? RoleCode => RoleCodes.Visitor;
+        public string? SubRole => null;
+        public ulong? PrimaryCampusId => null;
+        public ulong? DepartmentId => null;
+        public ulong? SessionId => null;
+        public string? LoginPortal => null;
+    }
+
+    private sealed class FixedClock : IDateTimeService
+    {
+        public DateTime UtcNow => DateTime.UtcNow;
+        public DateTime VietnamNow => Now;
+    }
+
+    private sealed class NoopNotifications : INotificationService
+    {
+        public Task CreateManyAsync(IEnumerable<CreateNotificationRequest> r, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateManyAsync(IEnumerable<CreateNotificationItem> i, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateAsync(ulong r, string t, string? m, string nt, string? rt, ulong? ri, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateAsync(CreateNotificationRequest r, CancellationToken ct) => Task.CompletedTask;
+    }
+
+    /// <summary>Records every outbound message. What matters most in this suite is when it stays empty.</summary>
+    private sealed class FakeEmail : IEmailService
+    {
+        public List<(string To, string Subject, string Html)> Sent { get; } = new();
+
+        public Task SendAsync(string toEmail, string subject, string htmlBody, CancellationToken ct = default)
+        { Sent.Add((toEmail, subject, htmlBody)); return Task.CompletedTask; }
+
+        public Task<EmailDeliveryResult> TrySendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Record(message); return Task.FromResult(EmailDeliveryResult.Sent()); }
+
+        public Task SendAsync(OutboundEmail message, CancellationToken ct = default)
+        { Record(message); return Task.CompletedTask; }
+
+        private void Record(OutboundEmail message)
+            => Sent.Add((message.To.Count > 0 ? message.To[0].Email : string.Empty,
+                         message.Subject ?? string.Empty, message.Body ?? string.Empty));
+
+        public Task<EmailDeliveryResult> TrySendAsync(
+            string toEmail, string subject, string htmlBody, CancellationToken ct = default)
+            => Task.FromResult(EmailDeliveryResult.Sent());
+    }
+
+    private static readonly IConfiguration EmptyConfig = new ConfigurationBuilder().Build();
+    private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
+
+    private static EmailActionTokenService Tokens() => new(EmptyConfig);
+
+    private static OperationalContactInvitationService Invitations(ApplicationDbContext db, FakeEmail email)
+        => new(db, Tokens(),
+            new SystemEmailDispatcher(db, new EmailTemplateRenderer(db), email),
+            new FixedClock(), NullLogger<OperationalContactInvitationService>.Instance, EmptyConfig);
+
+    /// <summary>
+    /// The branching save, wired to the three real handlers behind a tiny in-process dispatcher.
+    ///
+    /// <para>
+    /// Deliberately the real handlers rather than fakes: the whole point of the fork is WHICH one runs,
+    /// and a test that stubbed them would prove only that the comparison in the router works, not that
+    /// the branch it chose has the effects the plan requires.
+    /// </para>
+    /// </summary>
+    private static SaveOperationalContactCommandHandler Save(
+        ApplicationDbContext db, ulong actor, FakeEmail email)
+        => new(db, new InProcessSender(db, actor, email), new FakeUser(actor), WriteOn);
+
+    private sealed class InProcessSender : ISender
+    {
+        private readonly ApplicationDbContext _db;
+        private readonly ulong _actor;
+        private readonly FakeEmail _email;
+
+        public InProcessSender(ApplicationDbContext db, ulong actor, FakeEmail email)
+        { _db = db; _actor = actor; _email = email; }
+
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken ct = default)
+            => request switch
+            {
+                UpdateOperationalContactProfileCommand c => Cast<TResponse>(
+                    new UpdateOperationalContactProfileCommandHandler(
+                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email), WriteOn)
+                        .Handle(c, ct)),
+                ReplaceOperationalContactCommand c => Cast<TResponse>(
+                    new ReplaceOperationalContactCommandHandler(
+                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email),
+                        new VisitRequestAggregateStatusService(_db), new NoopNotifications(),
+                        NullLogger<ReplaceOperationalContactCommandHandler>.Instance, WriteOn)
+                        .Handle(c, ct)),
+                InitiateOperationalContactTransferCommand c => Cast<TResponse>(
+                    new InitiateOperationalContactTransferCommandHandler(
+                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email), WriteOn)
+                        .Handle(c, ct)),
+                _ => throw new NotSupportedException(request.GetType().Name),
+            };
+
+        private static async Task<TResponse> Cast<TResponse>(Task<OperationalContactManageResponse> task)
+            => (TResponse)(object)await task;
+
+        public Task<object?> Send(object request, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task Send<TRequest>(TRequest request, CancellationToken ct = default)
+            where TRequest : IRequest
+            => throw new NotSupportedException();
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> r, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public IAsyncEnumerable<object?> CreateStream(object r, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    private static AcceptOperationalContactConfirmationCommandHandler Accept(
+        ApplicationDbContext db, ulong actor, string actorEmail, FakeEmail email)
+        => new(db, new FakeUser(actor, actorEmail), new FixedClock(), Tokens(), Invitations(db, email),
+            new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db),
+            new NoopNotifications(),
+            NullLogger<AcceptOperationalContactConfirmationCommandHandler>.Instance, WriteOn);
+
+    // ── Data helpers ──────────────────────────────────────────────────────────────
+
+    private static async Task<(ulong UserId, string Email)> VisitorUserAsync(ApplicationDbContext db)
+    {
+        var row = await db.Users.AsNoTracking()
+            .Where(u => u.Role.RoleCode == RoleCodes.Visitor && u.Status == UserStatuses.Active
+                        && u.UserId != Registrant)
+            .OrderBy(u => u.UserId)
+            .Select(u => new { u.UserId, u.Email })
+            .FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException("This database needs an ACTIVE VISITOR besides user 8.");
+        return (row.UserId, row.Email!);
+    }
+
+    private static CampusVisitFormDto Campus(string code, string contactEmail)
+    {
+        var start = Now.AddDays(25);
+        return new CampusVisitFormDto(
+            code, start, start.AddMinutes(120), "Đoàn đầu mối", "MEETING", null, "Thăm", "Nội dung",
+            new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
+            new List<SupportTeamMemberDto>(),
+            new ContactPointDto("Đầu mối " + code, "OrgB", "Trưởng phòng Hợp tác", "+84912345678", contactEmail),
+            "EN", null, "DECLINED", null, null);
+    }
+
+    private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
+    {
+        using var db = NewContext();
+        var handler = new CreateVisitRequestV2CommandHandler(
+            db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
+            new NoopNotifications(), new CreateVisitRequestV2CommandTests.RecordingInvitationService(),
+            new UserProvisionService(db),
+            NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
+            new PerCampusFormV2Options { Enabled = true }, WriteOn,
+            new VisitRequestAggregateStatusService(db),
+            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+
+        var form = new VisitRequestFormDataV2(
+            "OM" + Guid.NewGuid().ToString("N"),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            null, campuses.ToList());
+        return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
+    }
+
+    private sealed record CampusRow(
+        ulong InstanceId, string Status, ulong? ContactUserId, DateTime? ConfirmedAt,
+        string? ConfirmationSource, int RowVersion);
+
+    private static async Task<CampusRow> CampusStateAsync(ulong requestId)
+    {
+        using var db = NewContext();
+        var c = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(x => x.VisitRequestId == requestId)
+            .OrderBy(x => x.VisitInstanceId)
+            .FirstAsync();
+        return new CampusRow(c.VisitInstanceId, c.Status, c.OperationalContactUserId,
+            c.OperationalContactConfirmedAt, c.OperationalContactConfirmationSource, c.RowVersion);
+    }
+
+    private static async Task<PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail> DetailAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        return await db.VisitInstanceFormDetails.AsNoTracking().FirstAsync(d => d.VisitInstanceId == instanceId);
+    }
+
+    private static async Task<List<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange>> ChangesAsync(ulong requestId)
+    {
+        using var db = NewContext();
+        return await db.VisitRequestIdentityChanges.AsNoTracking()
+            .Where(c => c.VisitRequestId == requestId)
+            .OrderBy(c => c.IdentityChangeId).ToListAsync();
+    }
+
+    private static async Task<int> TokenCountAsync(ulong changeId)
+    {
+        using var db = NewContext();
+        return await db.EmailActionTokens.AsNoTracking()
+            .CountAsync(t => t.TargetType == EmailActionTargetTypes.VisitRequestIdentityChange
+                             && t.TargetId == changeId);
+    }
+
+    private static async Task CleanupAsync(ulong requestId)
+    {
+        if (requestId == 0) return;
+        using var db = NewContext();
+        async Task Del(string sql) => await db.Database.ExecuteSqlRawAsync(sql, requestId);
+        await Del("DELETE FROM email_action_tokens WHERE target_type = 'VISIT_REQUEST_IDENTITY_CHANGE' AND target_id IN (SELECT identity_change_id FROM visit_request_identity_changes WHERE visit_request_id = {0})");
+        await Del("DELETE FROM visit_request_identity_change_events WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_request_identity_changes WHERE visit_request_id = {0}");
+        await Del("DELETE FROM notifications WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_form_revision_history WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_form_details WHERE visit_instance_id IN (SELECT visit_instance_id FROM visit_request_campuses WHERE visit_request_id = {0})");
+        await Del("DELETE FROM visit_request_campuses WHERE visit_request_id = {0}");
+        await Del("DELETE alc FROM audit_log_changes alc JOIN audit_logs al ON al.audit_log_id = alc.audit_log_id WHERE al.visit_request_id = {0}");
+        await Del("DELETE FROM audit_logs WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_requests WHERE visit_request_id = {0}");
+    }
+
+    /// <summary>The five fields as the detail screen would submit them, starting from what is stored.</summary>
+    private static SaveOperationalContactCommand SaveOf(
+        ulong requestId, ulong instanceId, PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail d,
+        string? fullName = null, string? organization = null, string? jobTitle = null,
+        string? phone = null, string? email = null, int? rowVersion = null)
+        => new(requestId, instanceId,
+            fullName ?? d.OperationalContactFullName!,
+            organization ?? d.OperationalContactOrganization,
+            jobTitle ?? d.OperationalContactJobTitle!,
+            phone ?? d.OperationalContactPhone,
+            email ?? d.OperationalContactEmail,
+            Reason: null, ExpectedRowVersion: rowVersion);
+
+    // ── Path A: same address ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// TC-META-01. The correction everybody makes: a name spelt right, a new phone number. It writes
+    /// four columns and does nothing else — and "nothing else" is nine separate assertions because
+    /// every one of them used to happen.
+    /// </summary>
+    [Fact]
+    public async Task Same_address_with_changed_details_updates_the_snapshot_and_nothing_else()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var changesBefore = await ChangesAsync(requestId);
+            var invitation = Assert.Single(changesBefore);
+
+            var mail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        fullName: "Nguyễn Văn Sửa", organization: "Đơn vị mới",
+                        jobTitle: "Phó phòng", phone: "+84900000001"),
+                    CancellationToken.None);
+
+            // What it DID: the four columns.
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal("Nguyễn Văn Sửa", after.OperationalContactFullName);
+            Assert.Equal("Đơn vị mới", after.OperationalContactOrganization);
+            Assert.Equal("Phó phòng", after.OperationalContactJobTitle);
+            Assert.Equal("+84900000001", after.OperationalContactPhone);
+            // The address is untouched, and so is the revision counter — this is not a new version of
+            // what the campus is being asked to host.
+            Assert.Equal(detail.OperationalContactEmail, after.OperationalContactEmail);
+            Assert.Equal(detail.FormRevision, after.FormRevision);
+
+            // What it did NOT do.
+            Assert.Empty(mail.Sent);                                        // no confirmation email
+            var changesAfter = await ChangesAsync(requestId);
+            Assert.Single(changesAfter);                                    // no new identity change
+            Assert.Equal(IdentityChangeStatuses.Pending, changesAfter[0].Status);
+            Assert.Equal(invitation.TokenVersion, changesAfter[0].TokenVersion);
+            Assert.Equal(invitation.ResendCount, changesAfter[0].ResendCount);
+            Assert.Equal(invitation.ExpiresAt, changesAfter[0].ExpiresAt);
+            Assert.Equal(0, await TokenCountAsync(invitation.IdentityChangeId)); // no new link minted
+
+            var campus = await CampusStateAsync(requestId);
+            Assert.Equal(before.Status, campus.Status);                      // no lifecycle move
+            Assert.Equal(before.ContactUserId, campus.ContactUserId);        // nobody's authority moved
+            Assert.Equal(before.ConfirmedAt, campus.ConfirmedAt);
+            Assert.Equal(before.ConfirmationSource, campus.ConfirmationSource);
+
+            // The pending invitation's snapshot follows the correction, so accepting it later writes the
+            // corrected details rather than silently undoing them.
+            var snapshot = JsonDocument.Parse(changesAfter[0].PendingSnapshotJson!).RootElement;
+            Assert.Equal("Nguyễn Văn Sửa", snapshot.GetProperty("fullName").GetString());
+            Assert.Equal("Phó phòng", snapshot.GetProperty("jobTitle").GetString());
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-META-02. Case and surrounding whitespace do not make a different person, and a correction that
+    /// happened to retype the address in a different case must not email them to prove who they are.
+    /// </summary>
+    [Fact]
+    public async Task An_address_differing_only_in_case_or_whitespace_is_the_same_identity()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        phone: "+84900000002",
+                        email: "  " + contactEmail.ToUpperInvariant() + " "),
+                    CancellationToken.None);
+
+            Assert.Empty(mail.Sent);
+            Assert.Single(await ChangesAsync(requestId));
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal("+84900000002", after.OperationalContactPhone);
+            Assert.Equal(detail.OperationalContactEmail, after.OperationalContactEmail);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-META-03. An invitation that has already lapsed must not come back to life because somebody
+    /// fixed a job title. Resending is an explicit act with its own button and its own rate limit.
+    /// </summary>
+    [Fact]
+    public async Task An_expired_invitation_is_not_revived_by_a_metadata_correction()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_identity_changes SET status = 'EXPIRED' WHERE visit_request_id = {0}",
+                    requestId);
+
+            var mail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, jobTitle: "Giám đốc"),
+                    CancellationToken.None);
+
+            Assert.Empty(mail.Sent);
+            var change = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(IdentityChangeStatuses.Expired, change.Status);     // still expired
+            Assert.Equal("Giám đốc", (await DetailAsync(before.InstanceId)).OperationalContactJobTitle);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-META-04. A stale modal — opened, left, submitted after somebody else saved — is refused rather
+    /// than allowed to write back the values it read minutes ago.
+    /// </summary>
+    [Fact]
+    public async Task A_stale_form_cannot_overwrite_newer_contact_information()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        fullName: "Người sửa trước", rowVersion: before.RowVersion),
+                    CancellationToken.None);
+
+            var stale = await Assert.ThrowsAsync<ConflictException>(async () =>
+            {
+                using var db = NewContext();
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        fullName: "Người sửa sau", rowVersion: before.RowVersion),
+                    CancellationToken.None);
+            });
+            Assert.Equal(VisitRequestErrorCodes.InstanceVersionConflict, stale.ErrorCode);
+            Assert.Equal("Người sửa trước", (await DetailAsync(before.InstanceId)).OperationalContactFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-META-05. A save that would write exactly what is stored is refused rather than reported as a
+    /// change — an audit trail full of no-op "updates" is an audit trail nobody can read.
+    /// </summary>
+    [Fact]
+    public async Task A_save_that_changes_nothing_is_refused_with_a_stable_code()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var noop = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, before.InstanceId, detail), CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.ProfileNoChanges, noop.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Path B: changed address ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// TC-IDENTITY-01. Before a decision, a new address is a replace: the campus loses its contact, a
+    /// fresh INITIAL_CONFIRMATION goes out, and the old invitation is superseded rather than left live.
+    /// </summary>
+    [Fact]
+    public async Task A_changed_address_before_a_decision_runs_the_canonical_replace()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var successor = "oc-new-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var mail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        fullName: "Người kế nhiệm", email: successor),
+                    CancellationToken.None);
+
+            // A confirmation email, to the NEW address — this branch is the one that mails.
+            var sent = Assert.Single(mail.Sent);
+            Assert.Equal(successor, sent.To);
+
+            var changes = await ChangesAsync(requestId);
+            Assert.Equal(2, changes.Count);
+            Assert.Equal(IdentityChangeStatuses.Superseded, changes[0].Status);
+            Assert.Equal(IdentityChangeKinds.InitialConfirmation, changes[1].ChangeKind);
+            Assert.Equal(IdentityChangeStatuses.Pending, changes[1].Status);
+            Assert.Equal(successor, changes[1].NewEmailNormalized);
+
+            var campus = await CampusStateAsync(requestId);
+            Assert.Null(campus.ContactUserId);                                   // the gate re-closes
+            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, campus.Status);
+            Assert.Equal(successor, (await DetailAsync(before.InstanceId)).OperationalContactEmail);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-IDENTITY-02. Once the campus has been decided, a new address is a HANDOVER, and the defining
+    /// property is that nothing moves yet: the current contact still holds the campus, the campus keeps
+    /// its status, and the snapshot still names the person who is there today.
+    ///
+    /// <para>
+    /// The campus is driven to BEFORE_VISIT the way the database allows — confirm the contact through
+    /// the real accept handler, then the two transitions a Staff Leader's approval and the Host's
+    /// "start preparation" would have made. Going through those two commands instead would put a Staff
+    /// Leader, a host assignment and an approval decision inside a test about a contact handover.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_changed_address_after_a_decision_proposes_a_transfer_and_moves_nothing_yet()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            // The invited person accepts, so the campus has a real confirmed contact to hand over.
+            var mail = new FakeEmail();
+            string token;
+            using (var db = NewContext())
+                token = (await Invitations(db, mail).SendInvitationAsync(
+                    invitation.IdentityChangeId, CancellationToken.None))!;
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+
+            await DriveToBeforeVisitAsync(created.InstanceId);
+
+            var decided = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.BeforeVisit, decided.Status);
+            Assert.Equal(contactId, decided.ContactUserId);
+
+            var detail = await DetailAsync(decided.InstanceId);
+            var successor = "oc-take-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var handoverMail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, handoverMail).Handle(
+                    SaveOf(requestId, decided.InstanceId, detail,
+                        fullName: "Người nhận bàn giao", email: successor),
+                    CancellationToken.None);
+
+            // A TRANSFER was raised, and the invitation went to the proposed person.
+            var pending = (await ChangesAsync(requestId))
+                .Single(c => c.Status == IdentityChangeStatuses.Pending);
+            Assert.Equal(IdentityChangeKinds.Transfer, pending.ChangeKind);
+            Assert.Equal(successor, pending.NewEmailNormalized);
+            Assert.Equal(contactId, pending.OldUserId);
+            Assert.Equal(successor, Assert.Single(handoverMail.Sent).To);
+
+            // Nothing moved. This is the whole difference from a replace.
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(contactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.BeforeVisit, after.Status);
+            var snapshot = await DetailAsync(decided.InstanceId);
+            Assert.Equal(detail.OperationalContactEmail, snapshot.OperationalContactEmail);
+            Assert.Equal(detail.OperationalContactFullName, snapshot.OperationalContactFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-META-06. The case the plan calls out by name: an APPROVED campus starting inside 72 hours still
+    /// accepts a metadata correction. The registration lead time is a rule about when a visit may be
+    /// SCHEDULED and has nothing to say about a phone number — least of all on the day it matters most.
+    /// </summary>
+    [Fact]
+    public async Task An_approved_campus_starting_inside_72h_still_accepts_a_metadata_correction()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            string token;
+            using (var db = NewContext())
+                token = (await Invitations(db, mail).SendInvitationAsync(
+                    invitation.IdentityChangeId, CancellationToken.None))!;
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+
+            await DriveToBeforeVisitAsync(created.InstanceId);
+
+            // The visit is now 40 hours out — inside both the 72h registration floor and the 24h
+            // transfer lead time.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_campuses SET planned_start_at = {0}, planned_end_at = {1} WHERE visit_instance_id = {2}",
+                    Now.AddHours(40), Now.AddHours(42), created.InstanceId);
+
+            var detail = await DetailAsync(created.InstanceId);
+            var quietMail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, quietMail).Handle(
+                    SaveOf(requestId, created.InstanceId, detail, phone: "+84900000009"),
+                    CancellationToken.None);
+
+            Assert.Equal("+84900000009", (await DetailAsync(created.InstanceId)).OperationalContactPhone);
+            Assert.Empty(quietMail.Sent);
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.BeforeVisit, after.Status);
+            Assert.Equal(contactId, after.ContactUserId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// WAITING_REQUEST_APPROVAL → ASSIGNED → BEFORE_VISIT, satisfying what the database insists on at
+    /// each step: a Staff Leader OF THIS CAMPUS as the decider, an official host assigned by then, and
+    /// two separate updates because the trigger only lets BEFORE_VISIT be entered from ASSIGNED.
+    ///
+    /// <para>
+    /// The decider is looked up rather than passed in: the trigger checks that <c>decided_by</c> really
+    /// is a Staff Leader of the campus, and a campus that could be registered against at all is
+    /// guaranteed to have one — campus availability at create time requires it.
+    /// </para>
+    /// </summary>
+    private static async Task DriveToBeforeVisitAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        var campusId = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == instanceId).Select(c => c.CampusId).FirstAsync();
+
+        var leaderId = await db.Users.AsNoTracking()
+            .Where(u => u.Role.RoleCode == RoleCodes.Staff
+                        && u.SubRole == UserSubRoles.Leader
+                        && u.Status == UserStatuses.Active
+                        && u.PrimaryCampusId == campusId)
+            .OrderBy(u => u.UserId).Select(u => (ulong?)u.UserId).FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException(
+                $"Campus {campusId} has no ACTIVE Staff Leader, so no request could have been registered against it.");
+
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE visit_request_campuses SET status = 'ASSIGNED', decided_by = {1}, decided_at = {2}, " +
+            "decision_actor_role = 'STAFF_LEADER', decision_note = 'test approval', " +
+            "current_host_user_id = {1}, host_assigned_by = {1}, host_assigned_at = {2} " +
+            "WHERE visit_instance_id = {0}",
+            instanceId, leaderId, Now);
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE visit_request_campuses SET status = 'BEFORE_VISIT' WHERE visit_instance_id = {0}",
+            instanceId);
+    }
+}

@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import {
   cancelOperationalContactChange,
   getOperationalContactState,
-  initiateOperationalContactTransfer,
-  replaceOperationalContact,
   resendOperationalContactConfirmation,
+  saveOperationalContact,
   type OperationalContactState,
+  type ResolvedOperationalContact,
 } from '../api/visitRequestV2Api';
 import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
+import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
@@ -25,13 +26,22 @@ interface Props {
   visitInstanceId: number;
   /** True once an account actually holds this campus — decides confirmation vs transfer actions. */
   contactConfirmed: boolean;
-  /** The contact's email: shown in the state line, and compared to block a same-address transfer. */
-  contactEmail?: string | null;
   /**
-   * Request-level `viewer.allowedActions` from the backend. Each button is rendered ONLY when its own
-   * code is present — never from role, relation or status. The five codes mirror the guards in the
-   * claim/transfer handlers (actor, lifecycle window, resend cap, one-pending-change), so the panel no
-   * longer offers a resend past its cap or a transfer the backend would refuse.
+   * THIS campus's current contact snapshot. The form opens on it (plan §4), so a user correcting a
+   * phone number is not asked to retype the other four fields — and retyping is how an address gets
+   * "changed" by a typo and turns an ordinary correction into a confirmation email.
+   */
+  contact: ResolvedOperationalContact;
+  /**
+   * The campus instance's rowVersion as last read. Sent with a metadata-only save so a modal left open
+   * while somebody else edited cannot overwrite the newer values.
+   */
+  rowVersion?: number;
+  /**
+   * The backend's verdict for THIS campus (`campusVisit.allowedActions`). Each control is rendered ONLY
+   * when its own code is present — never from role, relation or status. The codes mirror the guards in
+   * the contact handlers, so the panel cannot offer a resend past its cap or a transfer inside the lead
+   * time.
    */
   allowedActions: string[] | undefined;
   onChanged?: () => void;
@@ -40,15 +50,14 @@ interface Props {
 interface ContactFormState {
   fullName: string;
   organization: string;
+  jobTitle: string;
   phone: string;
   email: string;
   reason: string;
 }
 
-const emptyForm: ContactFormState = { fullName: '', organization: '', phone: '', email: '', reason: '' };
-
-/** Mirrors the FluentValidation limits on both commands — the backend stays the authority. */
-const MAX = { fullName: 150, organization: 200, phone: 50, email: 150, reason: 500 } as const;
+/** Mirrors the FluentValidation limits on the commands — the backend stays the authority. */
+const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email: 150, reason: 500 } as const;
 
 const labelCls = 'block text-xs font-semibold text-slate-500';
 const fieldCls =
@@ -56,76 +65,99 @@ const fieldCls =
   'transition-colors focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]';
 
 /**
- * The contact-role workflow, rendered INSIDE the contact section rather than as its own card.
+ * The operational-contact management workflow for ONE campus, rendered INSIDE that campus's contact
+ * section on the DETAIL screen. This is the only place a contact is managed: the request-edit form
+ * shows the contact read-only and offers nothing, because editing a visit request and deciding who
+ * runs a campus are two different acts with two different consequences.
  *
- * While the contact is PENDING_CONFIRMATION: resend the INITIAL_CLAIM (72h) or replace the invited
- * email (typo fix). Once ACTIVE: propose a 24h TRANSFER — the current owner keeps every right until
- * the invited person explicitly accepts; the panel shows/cancels/resends the pending transfer.
+ * One form, five fields, one save. What the save MEANS is the server's to decide from the address:
  *
- * The form stays closed until asked for and then opens inline, two columns on desktop and one on
- * mobile: five stacked full-width rows turned a small handover into a page of its own.
+ * - same address → the details are corrected. Nothing is emailed, nothing is invited, nobody's
+ *   authority moves, and an approved campus starting tomorrow is still allowed it.
+ * - different address → somebody has to accept. Before the campus is decided that is a replace; after,
+ *   a transfer in which the current contact keeps every right until the new person says yes.
  *
- * Feedback follows the house rule: the outcome of a mutation is a toast (the panel may be scrolled
- * out of view by the time the server answers), while a failure to LOAD the transfer state stays
- * inline with a retry — it used to be swallowed into "no pending transfer", which silently hid a
- * transfer that really was in flight and invited the user to start a second one.
+ * The panel does not classify the edit itself — it cannot know the stored address for certain, and a
+ * wrong guess either emails a stranger about a typo or hands over a campus silently. It only warns,
+ * before the user commits, which of the two they appear to be doing.
  */
 export default function ContactIdentityActions({
   visitRequestId,
   visitInstanceId,
   contactConfirmed,
-  contactEmail,
+  contact,
+  rowVersion,
   allowedActions,
   onChanged,
 }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'validation']);
   const isPending = !contactConfirmed;
+  const contactEmail = contact.email || null;
 
   const can = useMemo(() => ({
-    resendClaim: hasAction(allowedActions, VisitV2Action.ResendContactClaim),
-    replaceContact: hasAction(allowedActions, VisitV2Action.ReplacePendingContact),
-    initiateTransfer: hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-    resendTransfer: hasAction(allowedActions, VisitV2Action.ResendContactTransfer),
-    cancelTransfer: hasAction(allowedActions, VisitV2Action.CancelContactTransfer),
+    edit: hasAction(allowedActions, VisitV2Action.UpdateContactProfile)
+      || hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
+      || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+    /** Whether changing the ADDRESS is on the table, as opposed to correcting the details only. */
+    changeIdentity: hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
+      || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+    /** After a decision, a new address is a handover rather than a correction — worth saying so. */
+    transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
+      && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+    resend: hasAction(allowedActions, VisitV2Action.ResendContactConfirmation),
+    cancelChange: hasAction(allowedActions, VisitV2Action.CancelContactChange),
   }), [allowedActions]);
-  const hasAnyAction = Object.values(can).some(Boolean);
+  const hasAnyAction = can.edit || can.resend || can.cancelChange;
 
-  const [transfer, setTransfer] = useState<OperationalContactState | null>(null);
+  const [state, setState] = useState<OperationalContactState | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showForm, setShowForm] = useState<'replace' | 'transfer' | null>(null);
-  const [form, setForm] = useState<ContactFormState>(emptyForm);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<ContactFormState | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  // Only worth asking when a transfer action is on the table at all.
-  const transferRelevant = can.resendTransfer || can.cancelTransfer || can.initiateTransfer;
-  const refreshTransfer = useCallback(async () => {
-    if (!transferRelevant) return;
+  const refreshState = useCallback(async () => {
+    if (!hasAnyAction) return;
     setLoading(true);
     setLoadError(false);
     try {
-      setTransfer(await getOperationalContactState(visitRequestId, visitInstanceId));
+      setState(await getOperationalContactState(visitRequestId, visitInstanceId));
     } catch {
-      // NOT "no transfer" — we simply do not know, and saying "none" would be a guess that leads the
-      // user into starting a duplicate transfer.
-      setTransfer(null);
+      // NOT "no pending change" — we simply do not know, and saying "none" would be a guess that leads
+      // the user into starting a duplicate invitation.
+      setState(null);
       setLoadError(true);
     } finally {
       setLoading(false);
     }
-  }, [visitRequestId, visitInstanceId, transferRelevant]);
+  }, [visitRequestId, visitInstanceId, hasAnyAction]);
 
   useEffect(() => {
-    void refreshTransfer();
-  }, [refreshTransfer]);
+    void refreshState();
+  }, [refreshState]);
 
   if (!hasAnyAction) return null;
 
+  const openForm = () => {
+    // Opens on what is stored (plan §4). Retyping four correct fields to fix a fifth is how a correct
+    // address acquires a typo — and a typo in the address is not a correction, it is a handover.
+    setForm({
+      fullName: contact.fullName ?? '',
+      organization: contact.organization ?? '',
+      jobTitle: contact.jobTitle ?? '',
+      phone: contact.phone ?? '',
+      email: contact.email ?? '',
+      reason: '',
+    });
+    setEmailError(null);
+    setShowForm(true);
+  };
+
   const closeForm = () => {
     // Only this form's own scratch data — the visit-request draft is a different thing entirely.
-    setShowForm(null);
-    setForm(emptyForm);
+    setShowForm(false);
+    setForm(null);
     setEmailError(null);
   };
 
@@ -136,7 +168,7 @@ export default function ContactIdentityActions({
       const result = await fn();
       showSuccessToast(result.message);
       closeForm();
-      await refreshTransfer();
+      await refreshState();
       onChanged?.();
     } catch (err: unknown) {
       showErrorToast(getApiErrorMessage(err, t('visitRequestV2:contact.actionFailed')));
@@ -145,34 +177,32 @@ export default function ContactIdentityActions({
     }
   };
 
-  const submitForm = (mode: 'replace' | 'transfer') => {
-    // Transferring to the address that already holds the role is refused by the backend
-    // (EMAIL_UNCHANGED). Saying so here costs one comparison and saves a round trip.
-    if (mode === 'transfer' && isSameEmailIdentity(form.email, contactEmail)) {
-      setEmailError(t('visitRequestV2:contact.transferEmailUnchanged'));
+  /** True when the typed address is a DIFFERENT identity from the stored one (case/space-insensitive). */
+  const identityChanging = form != null && !isSameEmailIdentity(form.email, contactEmail);
+
+  const submitForm = () => {
+    if (!form) return;
+    if (identityChanging && !can.changeIdentity) {
+      setEmailError(t('visitRequestV2:contact.identityChangeNotAllowed'));
       return;
     }
     setEmailError(null);
     void run(() =>
-      mode === 'replace'
-        ? replaceOperationalContact(visitRequestId, visitInstanceId, {
-            fullName: form.fullName,
-            organization: form.organization,
-            phone: form.phone,
-            email: form.email,
-          })
-        : initiateOperationalContactTransfer(visitRequestId, visitInstanceId, {
-            fullName: form.fullName,
-            organization: form.organization,
-            phone: form.phone,
-            email: form.email,
-            reason: form.reason || undefined,
-          }),
+      saveOperationalContact(visitRequestId, visitInstanceId, {
+        fullName: form.fullName,
+        organization: form.organization,
+        jobTitle: form.jobTitle,
+        phone: form.phone,
+        email: form.email,
+        reason: form.reason || undefined,
+        // Only meaningful on the metadata branch; the server ignores it on the other two.
+        expectedRowVersion: rowVersion,
+      }),
     );
   };
 
   const textField = (
-    field: 'fullName' | 'organization' | 'phone' | 'email',
+    field: 'fullName' | 'organization' | 'jobTitle' | 'phone' | 'email',
     label: string,
     required: boolean,
   ) => (
@@ -183,23 +213,25 @@ export default function ContactIdentityActions({
       </label>
       <input
         id={`ci-${field}`}
+        data-testid={`contact-field-${field}`}
         type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}
         inputMode={field === 'phone' ? 'tel' : undefined}
         placeholder={field === 'phone' ? '0912345678' : undefined}
         required={required}
         maxLength={MAX[field]}
         className={fieldCls}
-        value={form[field]}
+        value={form?.[field] ?? ''}
         onChange={e => {
           const { value } = e.target;
-          setForm(f => ({ ...f, [field]: value }));
+          setForm(f => (f ? { ...f, [field]: value } : f));
           if (field === 'email') setEmailError(null);
         }}
         aria-invalid={field === 'email' && emailError ? true : undefined}
         aria-describedby={
           field === 'email' && emailError ? 'ci-email-error'
-            : field === 'phone' ? 'ci-phone-hint'
-              : undefined
+            : field === 'email' ? 'ci-email-hint'
+              : field === 'phone' ? 'ci-phone-hint'
+                : undefined
         }
       />
       {/* The accepted shapes, stated up front. This form is server-validated, so the alternative is
@@ -207,6 +239,13 @@ export default function ContactIdentityActions({
       {field === 'phone' && (
         <p id="ci-phone-hint" className="mt-1 text-xs font-medium text-slate-500">
           {t('validation:phoneHint')}
+        </p>
+      )}
+      {/* Says what the address DOES before it is changed, not after. Once the save has gone through,
+          an invitation is already out and "did you mean to do that?" is too late to be useful. */}
+      {field === 'email' && !emailError && (
+        <p id="ci-email-hint" className="mt-1 text-xs font-medium text-slate-500">
+          {t('visitRequestV2:contact.emailIdentityHint')}
         </p>
       )}
       {field === 'email' && emailError && (
@@ -217,43 +256,52 @@ export default function ContactIdentityActions({
     </div>
   );
 
-  const contactForm = (mode: 'replace' | 'transfer') => (
+  const contactForm = (
     <form
       className="mt-3 max-w-4xl"
-      data-testid={`contact-form-${mode}`}
+      data-testid="contact-form"
       onSubmit={e => {
         e.preventDefault();
-        submitForm(mode);
+        submitForm();
       }}
     >
       {/* Two columns from the tablet breakpoint up, one below it — no horizontal scroll on mobile. */}
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2" data-testid="contact-form-grid">
         {textField('fullName', t('visitRequestV2:person.fullName'), true)}
         {textField('organization', t('visitRequestV2:person.organization'), false)}
-        {textField('phone', t('visitRequestV2:card.phone'), true)}
+        {textField('jobTitle', t('visitRequestV2:person.jobTitle'), true)}
+        {textField('phone', t('visitRequestV2:card.phone'), false)}
         {textField('email', t('visitRequestV2:card.email'), true)}
-
-        {mode === 'transfer' && (
-          <div className="md:col-span-2" data-testid="contact-form-reason">
-            <label htmlFor="ci-reason" className={labelCls}>
-              {t('visitRequestV2:contact.transferReason')}
-            </label>
-            <div className="mt-1">
-              <AutoGrowTextarea
-                id="ci-reason"
-                minRows={2}
-                maxLength={MAX.reason}
-                value={form.reason}
-                onChange={value => setForm(f => ({ ...f, reason: value }))}
-              />
-            </div>
-          </div>
-        )}
       </div>
 
-      {mode === 'transfer' && (
-        <p className="mt-3 text-xs text-amber-700" role="note">
-          {t('visitRequestV2:contact.transferKeepsRights')}
+      {/* The reason travels with a handover, so it is asked for only when the address has actually
+          changed on a decided campus — which is the only branch that stores it. */}
+      {identityChanging && can.transferOnly && (
+        <div className="mt-4 max-w-2xl" data-testid="contact-form-reason">
+          <label htmlFor="ci-reason" className={labelCls}>
+            {t('visitRequestV2:contact.transferReason')}
+          </label>
+          <div className="mt-1">
+            <AutoGrowTextarea
+              id="ci-reason"
+              minRows={2}
+              maxLength={MAX.reason}
+              value={form?.reason ?? ''}
+              onChange={value => setForm(f => (f ? { ...f, reason: value } : f))}
+            />
+          </div>
+        </div>
+      )}
+
+      {identityChanging && (
+        <p
+          className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800"
+          role="note"
+          data-testid="contact-identity-warning"
+        >
+          {can.transferOnly
+            ? t('visitRequestV2:contact.transferKeepsRights')
+            : t('visitRequestV2:contact.replaceReopensGate')}
         </p>
       )}
 
@@ -276,15 +324,16 @@ export default function ContactIdentityActions({
           {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
           {busy
             ? t('visitRequestV2:contact.sending')
-            : mode === 'replace'
-              ? t('visitRequestV2:contact.replaceSubmit')
-              : t('visitRequestV2:contact.transferSubmit')}
+            : identityChanging
+              ? t('visitRequestV2:contact.saveIdentityChange')
+              : t('visitRequestV2:contact.saveProfile')}
         </button>
       </div>
     </form>
   );
 
-  const pendingTransfer = (transfer?.pendingChangeKind === 'TRANSFER') === true;
+  const pendingTransfer = state?.pendingChangeKind === 'TRANSFER';
+  const pendingLive = state?.pendingChangeStatus === 'PENDING';
 
   return (
     <div
@@ -294,6 +343,17 @@ export default function ContactIdentityActions({
       <p className="text-xs font-bold uppercase tracking-wide text-[#004c91]">
         {t('visitRequestV2:contact.manageTitle')}
       </p>
+
+      {/* Offered only to the contact themselves — the server withholds `profileDifference` from
+          everybody else, so this cannot appear on a registrant's screen. */}
+      {state?.profileDifference && (
+        <div className="mt-3">
+          <ContactProfileSyncPrompt
+            difference={state.profileDifference}
+            onSynced={() => void refreshState()}
+          />
+        </div>
+      )}
 
       {loading && (
         <p role="status" className="mt-2 flex items-center gap-2 text-sm text-slate-500">
@@ -310,7 +370,7 @@ export default function ContactIdentityActions({
           <button
             type="button"
             data-testid="contact-transfer-retry"
-            onClick={() => void refreshTransfer()}
+            onClick={() => void refreshState()}
             className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-bold text-amber-800 hover:bg-amber-100"
           >
             <RefreshCw className="h-4 w-4" aria-hidden /> {t('visitRequestV2:detail.retry')}
@@ -324,11 +384,13 @@ export default function ContactIdentityActions({
         </p>
       )}
 
-      {pendingTransfer && (
-        <p className="mt-2 text-sm text-amber-700">
+      {/* A pending TRANSFER names an address that does NOT yet hold the campus. Saying so explicitly
+          is what keeps the block above from reading as "this is the contact now" (plan §14). */}
+      {pendingTransfer && pendingLive && (
+        <p className="mt-2 text-sm text-amber-700" data-testid="contact-transfer-pending">
           {t('visitRequestV2:contact.transferPending', {
-            email: transfer?.pendingEmailMasked ?? '',
-            expiresAt: transfer?.expiresAt ? formatVietnamDateTime(transfer.expiresAt) : '',
+            email: state?.pendingEmailMasked ?? '',
+            expiresAt: state?.expiresAt ? formatVietnamDateTime(state.expiresAt) : '',
           })}
         </p>
       )}
@@ -338,10 +400,20 @@ export default function ContactIdentityActions({
       )}
 
       {showForm ? (
-        contactForm(showForm)
+        contactForm
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          {can.resendClaim && (
+          {can.edit && (
+            <button
+              type="button"
+              data-testid="contact-edit-open"
+              className="rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"
+              onClick={openForm}
+            >
+              {t('visitRequestV2:contact.editOpen')}
+            </button>
+          )}
+          {can.resend && (
             <button
               type="button"
               disabled={busy}
@@ -352,28 +424,7 @@ export default function ContactIdentityActions({
               {t('visitRequestV2:contact.resendInvitation')}
             </button>
           )}
-          {can.replaceContact && (
-            <button
-              type="button"
-              data-testid="contact-replace-open"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              onClick={() => setShowForm('replace')}
-            >
-              {t('visitRequestV2:contact.replaceOpen')}
-            </button>
-          )}
-          {can.resendTransfer && (
-            <button
-              type="button"
-              disabled={busy}
-              data-testid="contact-resend-transfer"
-              className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
-              onClick={() => void run(() => resendOperationalContactConfirmation(visitRequestId, visitInstanceId))}
-            >
-              {t('visitRequestV2:contact.resendInvitation')}
-            </button>
-          )}
-          {can.cancelTransfer && (
+          {can.cancelChange && (
             <button
               type="button"
               disabled={busy}
@@ -382,16 +433,6 @@ export default function ContactIdentityActions({
               onClick={() => void run(() => cancelOperationalContactChange(visitRequestId, visitInstanceId))}
             >
               {t('visitRequestV2:contact.cancelTransfer')}
-            </button>
-          )}
-          {can.initiateTransfer && (
-            <button
-              type="button"
-              data-testid="contact-transfer-open"
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              onClick={() => setShowForm('transfer')}
-            >
-              {t('visitRequestV2:contact.transferOpen')}
             </button>
           )}
         </div>

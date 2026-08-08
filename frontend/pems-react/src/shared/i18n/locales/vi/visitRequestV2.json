@@ -1,4 +1,11 @@
 {
+  "profileSync": {
+    "question": "Thông tin liên hệ trong yêu cầu này khác hồ sơ PEMS của bạn. Bạn có muốn cập nhật hồ sơ cá nhân không?",
+    "apply": "Cập nhật hồ sơ cá nhân",
+    "keep": "Giữ nguyên hồ sơ",
+    "updated": "Đã cập nhật hồ sơ cá nhân của bạn.",
+    "updateFailed": "Không thể cập nhật hồ sơ cá nhân. Vui lòng thử lại."
+  },
   "page": {
     "title": "Đăng ký tham quan theo từng cơ sở",
     "subtitle": "Mỗi cơ sở là một phần nội dung độc lập: thời gian, đoàn khách, đầu mối phối hợp và yêu cầu riêng."
@@ -68,7 +75,7 @@
     "supportTeam": "Nhân sự hỗ trợ",
     "addSupport": "Thêm nhân sự hỗ trợ",
     "operationalContact": "Đầu mối của đoàn",
-    "operationalContactHint": "Chỉ dùng để phối hợp tại cơ sở này — không phải tài khoản đăng nhập",
+    "operationalContactHint": "Đầu mối dùng để phối hợp tại cơ sở này, không nhất thiết là tài khoản đang đăng nhập. Với đầu mối đã có, hãy chỉnh sửa tại Chi tiết đơn → Quản lý đầu mối. Email mới cần được chính đầu mối xác nhận trước khi được liên kết hoặc tạo tài khoản.",
     "quickFillRegistrant": "Dùng người đăng ký",
     "quickFillPrimaryContact": "Dùng đầu mối đoàn khách",
     "quickFillCopiedRegistrant": "Đã sao chép thông tin người đăng ký.",
@@ -564,7 +571,13 @@
     "cancelTransfer": "Hủy lời mời chuyển giao",
     "loadingTransfer": "Đang kiểm tra lời mời chuyển giao…",
     "transferLoadFailed": "Không kiểm tra được trạng thái chuyển giao. Chưa thể khẳng định có lời mời đang chờ hay không.",
-    "actionFailed": "Không thể thực hiện thao tác. Vui lòng thử lại."
+    "actionFailed": "Không thể thực hiện thao tác. Vui lòng thử lại.",
+    "editOpen": "Chỉnh sửa đầu mối",
+    "saveProfile": "Lưu thông tin đầu mối",
+    "saveIdentityChange": "Đổi người & gửi lời mời xác nhận",
+    "emailIdentityHint": "Giữ nguyên email: chỉ cập nhật thông tin, không gửi email xác nhận. Đổi email nghĩa là đổi người phụ trách và người mới phải xác nhận.",
+    "replaceReopensGate": "Email mới khác email hiện tại nên đây là đổi người phụ trách: cơ sở này sẽ chờ người mới xác nhận, và toàn bộ đơn tạm dừng ở cổng xác nhận cho tới khi đủ đầu mối.",
+    "identityChangeNotAllowed": "Lúc này chưa thể đổi email đầu mối của cơ sở. Anh/chị vẫn sửa được họ tên, đơn vị, chức vụ và số điện thoại."
   },
   "outcome": {
     "title": "Tình trạng hiện tại",

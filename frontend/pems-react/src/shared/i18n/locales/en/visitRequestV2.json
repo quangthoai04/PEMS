@@ -1,4 +1,11 @@
 {
+  "profileSync": {
+    "question": "The contact details on this request differ from your PEMS profile. Would you like to update your personal profile?",
+    "apply": "Update my profile",
+    "keep": "Keep my profile",
+    "updated": "Your profile has been updated.",
+    "updateFailed": "Could not update your profile. Please try again."
+  },
   "page": {
     "title": "Per-campus visit registration",
     "subtitle": "Each campus is an independent section: its own schedule, guest list, working contact and requirements."
@@ -68,7 +75,7 @@
     "supportTeam": "Support staff",
     "addSupport": "Add support member",
     "operationalContact": "Delegation contact",
-    "operationalContactHint": "Coordination only at this campus — never a login account",
+    "operationalContactHint": "The contact coordinates this campus and need not be the account you are signed in as. For a contact that already exists, edit it under Request detail → Manage the contact role. A new email must be confirmed by the contact themselves before it can be linked or given an account.",
     "quickFillRegistrant": "Use registrant",
     "quickFillPrimaryContact": "Use the guest-side contact",
     "quickFillCopiedRegistrant": "Copied the registrant's details.",
@@ -564,7 +571,13 @@
     "cancelTransfer": "Cancel the transfer invitation",
     "loadingTransfer": "Checking for a pending transfer…",
     "transferLoadFailed": "Could not check the transfer status. Whether an invitation is pending is currently unknown.",
-    "actionFailed": "The action could not be completed. Please try again."
+    "actionFailed": "The action could not be completed. Please try again.",
+    "editOpen": "Edit the contact",
+    "saveProfile": "Save contact details",
+    "saveIdentityChange": "Change the person & send a confirmation",
+    "emailIdentityHint": "Keep the address: only the details are updated and no confirmation email is sent. Changing the address changes who runs this campus, and the new person has to accept.",
+    "replaceReopensGate": "The address differs from the current one, so this changes who runs the campus: it will wait for the new person to confirm, and the whole request pauses at the confirmation gate until every campus has a contact.",
+    "identityChangeNotAllowed": "The contact address cannot be changed for this campus right now. Name, organization, job title and phone can still be corrected."
   },
   "outcome": {
     "title": "Current status",

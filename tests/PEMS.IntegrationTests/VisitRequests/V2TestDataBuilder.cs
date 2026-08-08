@@ -117,9 +117,14 @@ public static class V2TestDataBuilder
                 ["workingContent"] = "Edited Working Content",
                 ["visitors"] = OneGuest(),
                 ["externalSupportMembers"] = Array.Empty<object>(),
+                // Echoes the SEEDED contact exactly. An edit payload carries the contact snapshot for
+                // round-tripping only — the request-edit path refuses to write any of the five fields
+                // (IMMUTABLE_CONTACT_IDENTITY for the address, IMMUTABLE_CONTACT_PROFILE for the rest),
+                // because contact management is its own workflow with its own endpoint. A builder that
+                // sent a DIFFERENT name here would make every edit test a 422.
                 ["operationalContact"] = new Dictionary<string, object?>
                 {
-                    ["fullName"] = "Edit Operational Contact",
+                    ["fullName"] = "Integration Contact",
                     ["organization"] = "FPT",
                     ["jobTitle"] = "Trưởng phòng Hợp tác",
                     ["phone"] = "0999999999",

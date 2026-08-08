@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
@@ -79,17 +79,34 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     void markVisitChangesSeen(visitRequestId).catch(() => {});
   }, [data, visitRequestId]);
 
-  // The edit/resubmit page navigates here with its success message in router state. Nothing consumed
-  // it, so a successful save landed on a silent screen. Show it exactly once and clear the state
-  // immediately — otherwise a back/forward or a refresh would replay a stale confirmation.
+  // The edit/resubmit page navigates here with its success message in router state, and THIS is the
+  // one place that turns it into a toast — the form deliberately shows none of its own, so a save
+  // produces exactly one confirmation.
+  //
+  // Shown once and the state cleared immediately, so a back/forward or a refresh cannot replay a stale
+  // confirmation. The ref is what makes "once" true rather than nearly true: under StrictMode the
+  // effect runs, cleans up and runs again on mount, both times reading the router state the first pass
+  // has not finished clearing — which is how one save produced two identical toasts. The toast id is
+  // belt and braces; react-hot-toast collapses repeats of the same id into one.
   const location = useLocation();
   const navigate = useNavigate();
+  const consumedFlashRef = useRef<string | null>(null);
   useEffect(() => {
     const flash = (location.state as { flash?: string } | null)?.flash;
-    if (!flash) return;
-    showSuccessToast(flash);
+    if (!flash || consumedFlashRef.current === flash) return;
+    consumedFlashRef.current = flash;
+    showSuccessToast(flash, `v2-detail-flash-${visitRequestId}`);
     navigate(location.pathname, { replace: true, state: null });
-  }, [location.state, location.pathname, navigate]);
+  }, [location.state, location.pathname, navigate, visitRequestId]);
+
+  // Deep link from the edit form's "Thay đổi đầu mối": the campus contact panels are far down a long
+  // screen and only exist once the request has loaded, so the scroll waits for the data rather than
+  // firing at mount and landing on a skeleton.
+  useEffect(() => {
+    if (!data || !location.hash) return;
+    const target = document.getElementById(location.hash.slice(1));
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [data, location.hash]);
 
   if (loading) {
     return (

@@ -126,6 +126,9 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.queryByText('Varies by campus')).not.toBeInTheDocument();
   });
 
+  // The codes below are the ones PEMS.Domain.Constants.VisitFormActions actually emits. They used to be
+  // a parallel, shorter set that matched nothing the backend sends, so the panel rendered nothing in
+  // production while this test passed against a fixture that agreed with the frontend's own mistake.
   it('contact actions follow the backend action codes, not the viewer relation', async () => {
     // A REGISTRANT with no contact action code granted (for instance inside the 24h window, or with
     // the request already cancelled) must see NOTHING — the relation alone never earns a button.
@@ -136,7 +139,7 @@ describe('VisitRequestV2DetailView', () => {
     unmountBare();
 
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
-      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'] })],
+      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_OPERATIONAL_CONTACT_TRANSFER'] })],
       viewer: {
         relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
         allowedActions: ['VIEW'],
@@ -158,7 +161,7 @@ describe('VisitRequestV2DetailView', () => {
     // One business object, one card. The old standalone panel produced a second contact heading
     // above sections 1 and 2, which is what made the screen look like it repeated itself.
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
-      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_CONTACT_TRANSFER'] })],
+      campusVisits: [campusFixture({ allowedActions: ['VIEW', 'INITIATE_OPERATIONAL_CONTACT_TRANSFER'] })],
       viewer: {
         relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
         allowedActions: ['VIEW'],

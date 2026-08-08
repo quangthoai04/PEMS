@@ -110,6 +110,28 @@ internal static class OperationalContactGuards
     }
 
     /// <summary>
+    /// The campus may have its contact's DETAILS corrected — a far wider window than replacing or
+    /// transferring, because nothing about authority moves.
+    ///
+    /// <para>
+    /// Everything except a dead campus qualifies, and deliberately so. An approved campus starting in
+    /// six hours is precisely when a corrected phone number matters most, so the transfer lead time has
+    /// no business here; nor does the visit-registration lead time, which is a rule about when a visit
+    /// may be SCHEDULED. What is refused is a campus nobody will act on — cancelled or rejected — where
+    /// editing the contact would write to a record the workflow has finished with.
+    /// </para>
+    /// </summary>
+    public static void EnsureProfileUpdateAllowed(VisitRequest visit, VisitRequestCampus instance)
+    {
+        EnsureRequestLive(visit);
+
+        if (instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected)
+            throw new ConflictException(
+                "Lịch thăm tại cơ sở này đã kết thúc quy trình nên không thể sửa thông tin đầu mối vận hành.",
+                OperationalContactErrorCodes.ChangeConflict);
+    }
+
+    /// <summary>
     /// The campus has a decision and has not started, so its contact may be handed over. Blocked once
     /// the visit is running or finished, and inside the lead time — a handover on the morning of the
     /// visit leaves nobody who has actually been briefed.

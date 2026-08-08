@@ -16,6 +16,13 @@ vi.mock('../api/visitRequestV2Api', () => ({
   resubmitVisitRequestV2: vi.fn(),
 }));
 
+// Real helpers except the success toast, which this screen must NOT raise: the message travels in
+// router state and the detail screen shows it exactly once (fix plan §6).
+vi.mock('../../../shared/utils/toast', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../shared/utils/toast')>();
+  return { ...actual, showSuccessToast: vi.fn() };
+});
+
 vi.mock('../hooks/useRegistrationCampuses', () => ({
   useRegistrationCampuses: () => ({
     campuses: [
@@ -32,6 +39,7 @@ import {
   updatePendingVisitRequestV2,
   resubmitVisitRequestV2,
 } from '../api/visitRequestV2Api';
+import { showSuccessToast } from '../../../shared/utils/toast';
 
 const campus = (id: number, code: string, name: string, rowVersion: number, delegation: string) => ({
   visitInstanceId: id, campusId: id, campusCode: code, campusName: name,
@@ -168,6 +176,154 @@ describe('EditVisitRequestV2Page', () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ requestStatus: 'REJECTED' }));
     renderAt('edit');
     expect(await screen.findByRole('alert')).toHaveTextContent(/no longer editable/i);
+  });
+
+  // ── Campus ceiling + campus picker (fix plan §4–§5) ──────────────────────────────────────────
+  // The mocked hook above serves TWO campuses open for registration, which is the number these
+  // assertions are about: the screen used to count against a hard-coded 10.
+  describe('the campus ceiling is however many campuses are open for registration', () => {
+    /** Campus selects are the ones offering the "select a campus" placeholder. */
+    const campusSelects = () =>
+      screen.getAllByRole('combobox').filter(el =>
+        el.tagName === 'SELECT'
+        && Array.from((el as HTMLSelectElement).options)
+          .some(o => o.value === '' && /Select campus/i.test(o.text)));
+
+    it('counts against the ACTIVE campuses, not a hard-coded 10 (TC-CAMPUS-01)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      expect(screen.getByRole('button', { name: /Add campus/ })).toHaveTextContent('1/2');
+      expect(screen.queryByRole('button', { name: /10/ })).not.toBeInTheDocument();
+    });
+
+    it('disables Add campus once every open campus is already in the request (TC-CAMPUS-02)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({
+        visitScope: 'MULTI_CAMPUS',
+        campusVisits: [campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN'), campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM')],
+      }));
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      expect(screen.getByRole('button', { name: /Add campus/ })).toBeDisabled();
+    });
+
+    it('a NEW row starts unselected — no campus name over an empty campusId (TC-CAMPUS-03)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
+
+      await waitFor(() => expect(campusSelects()).toHaveLength(2));
+      const fresh = campusSelects()[1] as HTMLSelectElement;
+      expect(fresh.value).toBe('');
+      expect(fresh.options[fresh.selectedIndex].text).toMatch(/Select campus/i);
+    });
+
+    /**
+     * TC-CAMPUS-02. The reported bug was a card that READ as chosen while the form behind it still
+     * held nothing, so saving produced "Vui lòng chọn cơ sở" over a box showing a campus name.
+     *
+     * The assertion is deliberately not on the `<select>` alone — that is the half that was already
+     * "right" and lied. `campus-edit-card-{code}` is rendered from the WATCHED form value, so it
+     * changing to `campus-edit-card-HCM` is the form state itself answering. From there to the payload
+     * is `buildV2EditPayload`, covered field-by-field in visitRequestV2Form.test.ts.
+     */
+    it('choosing a campus on the new card updates the form state behind it (TC-CAMPUS-02)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
+      await waitFor(() => expect(campusSelects()).toHaveLength(2));
+      // Before choosing, the card is identified as the unselected one.
+      expect(screen.getByTestId('campus-edit-card-new')).toBeInTheDocument();
+
+      const fresh = campusSelects()[1] as HTMLSelectElement;
+      fireEvent.change(fresh, { target: { value: 'HCM' } });
+
+      await waitFor(() => expect(screen.getByTestId('campus-edit-card-HCM')).toBeInTheDocument());
+      expect(fresh.value).toBe('HCM');
+      expect(fresh.options[fresh.selectedIndex].text).toBe('FPTU Hồ Chí Minh');
+      expect(screen.queryByTestId('campus-edit-card-new')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Vui lòng chọn cơ sở/)).not.toBeInTheDocument();
+    });
+
+    it('a campus already chosen is not offered on another card (TC-CAMPUS-04)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      fireEvent.click(screen.getByRole('button', { name: /Add campus/ }));
+
+      await waitFor(() => expect(campusSelects()).toHaveLength(2));
+      const optionValues = Array.from((campusSelects()[1] as HTMLSelectElement).options).map(o => o.value);
+      expect(optionValues).not.toContain('HN'); // taken by card 1
+      expect(optionValues).toContain('HCM');
+    });
+  });
+
+  // ── Contact separation (repair v3 §2.1, §17 UI) ──────────────────────────────────────────────
+  //
+  // Editing a visit request and managing its operational contact are two workflows. This screen owns
+  // the first and must not offer any part of the second — not an input, not a disabled input, and not
+  // a button that jumps to it. A read-only summary is what remains, because who coordinates a campus
+  // is worth SEEING while editing it.
+  it('shows an existing campus contact read-only, with no editable field (TC-CONTACT-UI-01)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+    renderAt('edit');
+    await screen.findByDisplayValue('Đoàn HN');
+
+    const summary = screen.getByTestId('campus-opcontact-readonly-0');
+    expect(summary).toBeInTheDocument();
+    expect(summary.querySelector('input')).toBeNull();
+    expect(screen.getByTestId('campus-opcontact-readonly-email-0').textContent).toContain('op@example.com');
+    expect(screen.getByTestId('campus-opcontact-readonly-jobTitle-0').textContent)
+      .toContain('Trưởng phòng Hợp tác');
+
+    // None of the five fields exists as a control on this screen any more.
+    for (const id of [
+      'campus-opcontact-email-0', 'campus-opcontact-phone-0',
+      'campus-opcontact-name', 'campus-opcontact-org', 'campus-opcontact-jobtitle',
+    ]) {
+      expect(screen.queryByTestId(id)).not.toBeInTheDocument();
+    }
+  });
+
+  it('offers no contact-management control in the edit form at all (TC-CONTACT-UI-02)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+    renderAt('edit');
+    await screen.findByDisplayValue('Đoàn HN');
+
+    // The "Thay đổi đầu mối" button and its confirm dialog are gone: a second door into a workflow
+    // that has one is how contact editing kept leaking back into the request form.
+    expect(screen.queryByTestId('campus-opcontact-change-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('v2e-contact-change-confirm')).not.toBeInTheDocument();
+    // Quick-fill writes contact fields, so it has nothing to do here either.
+    expect(screen.queryByTestId('campus-opcontact-use-registrant-0')).not.toBeInTheDocument();
+  });
+
+  // ── Success feedback (fix plan §6) ───────────────────────────────────────────────────────────
+  // The form raises NO toast of its own: the message travels in router state and the detail screen is
+  // its single owner. Two owners is exactly how one save produced two identical toasts.
+  it('hands the success message to the detail screen instead of toasting it here (TC-TOAST-01)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+    vi.mocked(updatePendingVisitRequestV2).mockResolvedValue({
+      visitRequestId: 5, status: 'PENDING_APPROVAL', visitScope: 'SINGLE_CAMPUS',
+      hasMixedCampusDetails: false, requestRowVersion: 8, instances: [], message: 'Đã cập nhật',
+    } as never);
+
+    renderAt('edit');
+    await screen.findByDisplayValue('Đoàn HN');
+    fireEvent.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(
+      '/dashboard/visit/v2/5',
+      { replace: true, state: { flash: 'Đã cập nhật' } },
+    ));
+    expect(showSuccessToast).not.toHaveBeenCalled();
   });
 
   // Pins the same regression VisitRequestFormV2CopyApply.test.tsx pins for create mode:

@@ -1139,6 +1139,15 @@ public sealed class OperationalContactConfirmationWorkflowTests
             Assert.Contains(instance.PlannedStartAt.ToString("HH:mm dd/MM/yyyy"), body);
             Assert.Contains(instance.PlannedEndAt.ToString("HH:mm dd/MM/yyyy"), body);
 
+            // Repair v3 §8. The invitation greets a PERSON. `contactFullName` used to be assigned
+            // change.NewEmailNormalized, so it opened "Kính gửi oc-render-1a2b3c@external.example" —
+            // not a name, and it read as machine-generated to exactly the reader being asked to take on
+            // a responsibility. The name was already stored in pending_snapshot_json all along.
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking()
+                .FirstAsync(d => d.VisitInstanceId == instanceId);
+            Assert.Contains(detail.OperationalContactFullName!, body);
+            Assert.DoesNotContain(contact, body);
+
             // A placeholder that survived into the body means a variable was declared and not supplied.
             Assert.DoesNotContain("{{", sent.Html);
         }
@@ -1196,6 +1205,12 @@ public sealed class OperationalContactConfirmationWorkflowTests
                     OldEmailNormalized = contactEmail.ToLowerInvariant(),
                     NewEmailNormalized = successor,
                     NewEmailMasked = successor[..2] + "***",
+                    // The proposed person's own details, exactly as the transfer command writes them.
+                    // For a TRANSFER this is the ONLY place the invitee's name exists: the campus
+                    // snapshot still describes the person handing the role over.
+                    PendingSnapshotJson =
+                        "{\"fullName\":\"Người Nhận Bàn Giao\",\"organization\":\"OrgC\"," +
+                        "\"jobTitle\":\"Trưởng phòng\",\"phone\":\"+8493\",\"email\":\"" + successor + "\"}",
                     Status = IdentityChangeStatuses.Pending,
                     ExpectedRequestRowVersion = (uint)instance.RowVersion,
                     RequestedBy = contactId,
@@ -1230,6 +1245,13 @@ public sealed class OperationalContactConfirmationWorkflowTests
             // An invitation to REPLACE somebody is unverifiable — and indistinguishable from a phishing
             // mail — if it will not say who is being replaced.
             Assert.Contains(detail.OperationalContactFullName!, body);
+
+            // Repair v3 §8, the harder half. The person being GREETED is the invitee, whose name comes
+            // from the pending snapshot — never the outgoing contact's name (they are named separately,
+            // as the person handing over) and never the address. The two names are different strings
+            // here precisely so a mix-up cannot pass.
+            Assert.Contains("Người Nhận Bàn Giao", body);
+            Assert.DoesNotContain(successor, body);
         }
         finally { await CleanupAsync(requestId); }
     }

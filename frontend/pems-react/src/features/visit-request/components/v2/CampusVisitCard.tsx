@@ -70,8 +70,24 @@ interface Props {
   onRemove: () => void;
   canRemove: boolean;
   showErrors?: boolean;
-  /** 72h for a new submit, 24h for visitor edit/resubmit — same source as the Zod schema. */
+  /** Minimum notice a schedule may be set with — the same source as the Zod schema. */
   minAdvanceHours?: number;
+  /**
+   * Renders the operational contact as a read-only summary instead of a set of inputs.
+   *
+   * <p>Set for a campus that ALREADY EXISTS on the request being edited. That campus's contact is not
+   * this form's to write — the backend refuses every one of the five fields through the edit path
+   * (IMMUTABLE_CONTACT_IDENTITY for the address, IMMUTABLE_CONTACT_PROFILE for the rest) — and it is
+   * managed on the detail screen, where changing the address can ask the new person to accept.</p>
+   *
+   * <p>A summary rather than nothing at all, because who coordinates a campus is worth seeing while
+   * editing it. A summary rather than disabled inputs, because a greyed-out field still looks like a
+   * field somebody could enable.</p>
+   *
+   * <p>Left false for a campus being ADDED here: it has no contact yet, nobody has been invited, and
+   * naming one is part of adding the campus.</p>
+   */
+  contactReadOnly?: boolean;
   /**
    * Authenticated create only: who will process THIS campus. Omitted entirely for the public
    * form, which never renders internal processing controls and never sends a processing intent.
@@ -106,6 +122,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   canRemove,
   showErrors,
   minAdvanceHours = V2_MIN_ADVANCE_HOURS_CREATE,
+  contactReadOnly = false,
   processing,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
@@ -579,20 +596,35 @@ export const CampusVisitCard: React.FC<Props> = ({
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
           <div className="col-span-12 xl:col-span-3">
             <FormField label={t('visitRequestV2:card.campus')} required error={fieldError('campus')} showValidIcon={false}>
-              <select
-                {...register(`${base}.campus`)}
-                className={inputCls(!!fieldError('campus'), !!campusCode, false)}
-                disabled={campusesLoading}
-              >
-                <option value="">{t('visitRequestV2:card.campusPlaceholder')}</option>
-                {campuses
-                  // Hide campuses already taken by another card; this card keeps its own selection.
-                  .filter(c => c.campusCode === campusCode
-                    || !takenCampusCodes.includes(c.campusCode.toUpperCase()))
-                  .map(c => (
-                    <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
-                  ))}
-              </select>
+              {/* CONTROLLED, not `register()`-bound. An uncontrolled select shows whatever the browser
+                  picked — the first option — until something writes its value, and the option list here
+                  arrives asynchronously: on a fresh card that made the box read as a real campus while
+                  the form still held '', and on a hydrated card it did the reverse. Driving `value`
+                  from the form state makes the label and `campusId` the same fact by construction. */}
+              <Controller
+                name={`${base}.campus`}
+                control={control}
+                render={({ field }) => (
+                  <select
+                    name={field.name}
+                    ref={field.ref}
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    className={inputCls(!!fieldError('campus'), !!campusCode, false)}
+                    disabled={campusesLoading}
+                  >
+                    <option value="">{t('visitRequestV2:card.campusPlaceholder')}</option>
+                    {campuses
+                      // Hide campuses already taken by another card; this card keeps its own selection.
+                      .filter(c => c.campusCode === campusCode
+                        || !takenCampusCodes.includes(c.campusCode.toUpperCase()))
+                      .map(c => (
+                        <option key={c.campusCode} value={c.campusCode}>{c.campusName}</option>
+                      ))}
+                  </select>
+                )}
+              />
             </FormField>
           </div>
 
@@ -897,20 +929,58 @@ export const CampusVisitCard: React.FC<Props> = ({
             </span>
             {/* Both sources are offered because both happen: sometimes the registrant coordinates the
                 campus themselves, sometimes the request's primary contact does, and they are often
-                two different people. One button could only ever serve half the cases. */}
-            <span className="flex flex-wrap items-center gap-2 sm:ml-auto">
-              <button
-                type="button"
-                data-testid={`campus-opcontact-use-registrant-${index}`}
-                disabled={!canQuickFillFrom('registrant')}
-                onClick={() => requestQuickFill('registrant')}
-                className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 sm:px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillRegistrant')}
-              </button>
-            </span>
+                two different people. One button could only ever serve half the cases.
+                Absent when the contact is read-only — copying into fields nobody can save is a button
+                that does nothing. */}
+            {!contactReadOnly && (
+              <span className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-use-registrant-${index}`}
+                  disabled={!canQuickFillFrom('registrant')}
+                  onClick={() => requestQuickFill('registrant')}
+                  className="inline-flex items-center gap-1.5 rounded-xl border-2 border-slate-200 bg-white px-3 sm:px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Copy className="h-4 w-4" /> {t('visitRequestV2:card.quickFillRegistrant')}
+                </button>
+              </span>
+            )}
           </legend>
 
+          {/* ── Read-only summary: an EXISTING campus's contact, shown but not editable here ──
+              Five labelled values and nothing else. No input, no disabled input, and no button that
+              jumps to it — a control here would be a second door into a workflow that has one, and
+              the last version of this card had exactly that.
+              Where the workflow does live is said in the legend's `?` tooltip rather than as a
+              standing paragraph: it is guidance for the person who wonders, not a caption the same
+              reader has to scroll past on every campus of every visit (plan §6). */}
+          {contactReadOnly ? (
+            <div
+              data-testid={`campus-opcontact-readonly-${index}`}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+            >
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                {([
+                  ['fullName', t('visitRequestV2:person.fullName')],
+                  ['organization', t('visitRequestV2:person.organization')],
+                  ['jobTitle', t('visitRequestV2:person.jobTitle')],
+                  ['phone', t('visitRequestV2:card.phone')],
+                  ['email', t('visitRequestV2:card.email')],
+                ] as const).map(([field, label]) => (
+                  <div key={field} className="min-w-0">
+                    <dt className="text-xs font-medium text-slate-500">{label}</dt>
+                    <dd
+                      className="break-words text-sm font-semibold text-slate-900"
+                      data-testid={`campus-opcontact-readonly-${field}-${index}`}
+                    >
+                      {watch(`${base}.operationalContact.${field}`) || '—'}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : (
+          <>
           {quickFilledFrom && (
             <p data-testid={`campus-opcontact-copied-${index}`} className="mb-2 text-xs font-medium text-slate-500">
               {t(quickFilledFrom === 'registrant'
@@ -1018,10 +1088,23 @@ export const CampusVisitCard: React.FC<Props> = ({
                 testId={`campus-opcontact-phone-${index}`}
               />
             </FormField>
-            <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:card.email')} required error={fieldError('operationalContact.email')} showValidIcon={false}>
-              <input type="email" {...register(`${base}.operationalContact.email`)} className={inputCls(!!fieldError('operationalContact.email'), false, false)} />
+            <FormField
+              className="col-span-12 lg:col-span-3 xl:col-span-3"
+              label={t('visitRequestV2:card.email')}
+              required
+              error={fieldError('operationalContact.email')}
+              showValidIcon={false}
+            >
+              <input
+                type="email"
+                data-testid={`campus-opcontact-email-${index}`}
+                {...register(`${base}.operationalContact.email`)}
+                className={inputCls(!!fieldError('operationalContact.email'), false, false)}
+              />
             </FormField>
           </div>
+          </>
+          )}
         </fieldset>
 
         {/* Additional requirements */}

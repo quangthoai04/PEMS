@@ -355,21 +355,35 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
-    /// Changes ONE campus's operational contact BEFORE that campus is decided. A new address clears
-    /// the campus relation and re-closes the global confirmation gate until it is answered.
+    /// Saves ONE campus's operational contact. The SERVER decides what the save means, by comparing the
+    /// submitted address with the stored one.
+    ///
+    /// <para>
+    /// Same address → the person's details are corrected and nothing else happens: no invitation, no
+    /// email, no change to who holds the campus. Different address → the canonical identity workflow
+    /// runs, which is a replace while the campus is undecided (clears the relation, re-closes the global
+    /// gate until answered) and a transfer once it has been decided (nothing moves until the invited
+    /// person accepts).
+    /// </para>
+    /// <para>
+    /// One endpoint on purpose. Two would ask the CLIENT to classify the edit, and a client that got it
+    /// wrong would either send a confirmation email for a corrected phone number or change who runs a
+    /// campus without one.
+    /// </para>
     /// </summary>
     [HttpPut("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact")]
     [Authorize]
-    public async Task<IActionResult> ReplaceOperationalContact(
+    public async Task<IActionResult> SaveOperationalContact(
         ulong visitRequestId,
         ulong visitInstanceId,
         [FromBody] OperationalContactPayload body,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
-            new PEMS.Application.Delegations.Commands.OperationalContact.ReplaceOperationalContactCommand(
+            new PEMS.Application.Delegations.Commands.OperationalContact.SaveOperationalContactCommand(
                 visitRequestId, visitInstanceId,
-                body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email),
+                body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email,
+                body.Reason, body.ExpectedRowVersion),
             cancellationToken);
         return Ok(result);
     }
@@ -445,9 +459,19 @@ public sealed class VisitRequestsController : ControllerBase
     /// <summary>Optional free-text reason for declining or cancelling an invitation.</summary>
     public sealed record DeclineOperationalContactRequest(string? Reason);
 
-    /// <summary>The contact details written onto ONE campus. Organization is optional.</summary>
+    /// <summary>
+    /// The five contact fields as the user filled them in, for ONE campus. Organization is optional.
+    ///
+    /// <para>
+    /// <c>Reason</c> is used only if the save turns out to be a transfer, and
+    /// <c>ExpectedRowVersion</c> only if it turns out to be a metadata correction — the client sends
+    /// what it has and the server decides which of the two, if either, applies. Both are optional so an
+    /// older client keeps working.
+    /// </para>
+    /// </summary>
     public sealed record OperationalContactPayload(
-        string FullName, string? Organization, string JobTitle, string? Phone, string Email);
+        string FullName, string? Organization, string JobTitle, string? Phone, string Email,
+        string? Reason = null, int? ExpectedRowVersion = null);
 
     /// <summary>A transfer proposal: the same details, plus why the campus is changing hands.</summary>
     public sealed record OperationalContactTransferPayload(

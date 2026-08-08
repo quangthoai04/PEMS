@@ -696,6 +696,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
         if (instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected)
             return actions;
 
+        // ── Correcting the contact's DETAILS is available wherever the campus is still live, to the
+        //    registrant and to the person currently holding it — mirrors EnsureProfileUpdateAllowed +
+        //    EnsureMayManageContact(allowCurrentContact: true). It is listed first because it is the
+        //    common case: most contact edits are a corrected phone number, not a change of person. ──
+        actions.Add(VisitFormActions.UpdateOperationalContactProfile);
+
         // ── Undecided campus → REPLACE territory (registrant only; EnsureReplaceWindowOpen). ──
         var replaceable = instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
             or VisitInstanceStatuses.WaitingRequestApproval;

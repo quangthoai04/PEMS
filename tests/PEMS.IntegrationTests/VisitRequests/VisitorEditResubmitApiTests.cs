@@ -211,7 +211,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
         Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
         // The contact snapshot lives on the campus, and the edit must not have touched it.
-        Assert.Equal("Edit Operational Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
+        Assert.Equal("Integration Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
         Assert.Equal(1u, visit.ResubmissionCount);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
@@ -397,7 +397,7 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
 
         // Pure V2: the edited name lands on the campus instance's own detail, not on the request row.
         Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
-        Assert.Equal("Edit Operational Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
+        Assert.Equal("Integration Contact", visit.CampusInstances.Single().FormDetail!.OperationalContactFullName);
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
 

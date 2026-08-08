@@ -441,6 +441,23 @@ export interface OperationalContactActionResponse {
 }
 
 /** Owner-side view of ONE campus's contact state. Masked address only — never read back in full. */
+/**
+ * How this visit describes the signed-in contact versus what their PEMS profile says.
+ *
+ * Sent ONLY to the account the campus's contact relation points at — the server returns null for
+ * everyone else, so a registrant never sees an offer to tidy up somebody else's identity.
+ * Only the two fields the account schema owns are compared: there is no organization or job-title
+ * column on a user, and email is identity rather than profile.
+ */
+export interface OperationalContactProfileDifference {
+  fullNameDiffers: boolean;
+  phoneDiffers: boolean;
+  accountFullName: string | null;
+  accountPhone: string | null;
+  snapshotFullName: string | null;
+  snapshotPhone: string | null;
+}
+
 export interface OperationalContactState {
   visitRequestId: number;
   visitInstanceId: number;
@@ -455,6 +472,12 @@ export interface OperationalContactState {
   expiresAt: string | null;
   resendCount: number;
   tokenVersion: number;
+  /**
+   * Null/absent when there is nothing to reconcile, or when the viewer is not the contact themselves.
+   * Optional so a response from an older server — which simply omits it — is still a valid state
+   * rather than a parse error.
+   */
+  profileDifference?: OperationalContactProfileDifference | null;
 }
 
 export interface OperationalContactManageResponse extends OperationalContactState {
@@ -462,9 +485,17 @@ export interface OperationalContactManageResponse extends OperationalContactStat
   message: string;
 }
 
+/**
+ * The five contact fields as the user filled them in.
+ *
+ * `jobTitle` is required and was MISSING from this type, so every replace and every transfer left it
+ * out of the body and the backend's own validator refused the call with "Chức vụ đầu mối vận hành
+ * không được để trống" — a field the form never showed.
+ */
 export interface OperationalContactInput {
   fullName: string;
   organization?: string | null;
+  jobTitle: string;
   phone: string;
   email: string;
 }
@@ -499,9 +530,27 @@ export const resendOperationalContactConfirmation = (visitRequestId: number, vis
       `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact-confirmation/resend`)
     .then(r => r.data);
 
-/** Change WHO is invited, before the campus is decided. Re-closes the global gate until answered. */
-export const replaceOperationalContact = (
-  visitRequestId: number, visitInstanceId: number, body: OperationalContactInput,
+/**
+ * Saves ONE campus's operational contact. The SERVER decides what the save means by comparing the
+ * submitted address with the stored one:
+ *
+ * - same address → the person's details are corrected. No invitation, no email, no change to who holds
+ *   the campus, no effect on approval.
+ * - different address → the canonical identity workflow. A replace while the campus is undecided, a
+ *   transfer once it has been decided — and in a transfer nothing moves until the invited person
+ *   accepts.
+ *
+ * The client deliberately does NOT classify the edit. It cannot: only the stored address decides, and a
+ * client that guessed wrong would either email somebody about a corrected phone number or change who
+ * runs a campus without asking anyone.
+ *
+ * `reason` is used only if the save turns out to be a transfer; `expectedRowVersion` only if it turns
+ * out to be a correction, where it stops a stale form overwriting newer data.
+ */
+export const saveOperationalContact = (
+  visitRequestId: number,
+  visitInstanceId: number,
+  body: OperationalContactInput & { reason?: string; expectedRowVersion?: number },
 ) =>
   httpClient
     .put<OperationalContactManageResponse>(

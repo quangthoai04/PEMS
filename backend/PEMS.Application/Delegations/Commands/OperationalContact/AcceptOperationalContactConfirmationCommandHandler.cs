@@ -1,6 +1,5 @@
 using System;
 using System.Linq;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -9,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.EmailActions;
 using PEMS.Application.Notifications.Common;
@@ -291,16 +291,16 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
 
         // The proposed person's details replace the campus snapshot. The campus lifecycle does NOT
         // move: a decided campus stays decided, with its host and schedule intact.
-        var snapshot = ReadSnapshot(change.PendingSnapshotJson);
+        var snapshot = PendingContactSnapshot.Read(change.PendingSnapshotJson);
         var detail = instance.FormDetail;
         if (detail is not null)
         {
-            detail.OperationalContactFullName = snapshot?.FullName ?? actor.FullName;
-            detail.OperationalContactOrganization = snapshot?.Organization;
+            detail.OperationalContactFullName = snapshot?.ResolvedFullName ?? actor.FullName;
+            detail.OperationalContactOrganization = snapshot?.ResolvedOrganization;
             // Keep whatever the campus already had when the snapshot is unreadable: the columns are
             // NOT NULL, and an accepted transfer must not fail on a field nobody disputed.
-            detail.OperationalContactJobTitle = snapshot?.JobTitle ?? detail.OperationalContactJobTitle;
-            detail.OperationalContactPhone = snapshot?.Phone ?? detail.OperationalContactPhone;
+            detail.OperationalContactJobTitle = snapshot?.ResolvedJobTitle ?? detail.OperationalContactJobTitle;
+            detail.OperationalContactPhone = snapshot?.ResolvedPhone ?? detail.OperationalContactPhone;
             detail.OperationalContactEmail = change.NewEmailNormalized!;
         }
     }
@@ -395,29 +395,4 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
         }
     }
 
-    internal static PendingContactSnapshot? ReadSnapshot(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<PendingContactSnapshot>(
-                json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        }
-        catch (JsonException)
-        {
-            // A snapshot that cannot be read must not block a legitimate acceptance; the account and
-            // the invited address — the things that actually decide authority — are unaffected.
-            return null;
-        }
-    }
-
-    internal sealed class PendingContactSnapshot
-    {
-        public string? FullName { get; set; }
-        public string? Organization { get; set; }
-        public string? JobTitle { get; set; }
-        public string? Phone { get; set; }
-        public string? Email { get; set; }
-    }
 }
