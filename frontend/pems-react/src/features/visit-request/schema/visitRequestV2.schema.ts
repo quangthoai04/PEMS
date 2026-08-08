@@ -27,9 +27,24 @@ export const V2_MIN_DURATION_MINUTES = 30;
 export const V2_MAX_CAMPUSES = 10;
 /** Mirrors CampusVisitFormDtoValidator.MaxMembers (per campus, visitors and support separately). */
 export const V2_MAX_MEMBERS_PER_CAMPUS = 200;
-/** Public submit needs 72h advance; Visitor edit/resubmit only 24h (same as v1). */
-export const V2_MIN_ADVANCE_HOURS_CREATE = 72;
-export const V2_MIN_ADVANCE_HOURS_EDIT = 24;
+/**
+ * Minimum notice a visit may be SCHEDULED with, mirroring `VisitMutationPolicy.MinScheduleLeadHours`.
+ * One number for every path that files a schedule for approval — create, pending-edit and resubmit —
+ * because a Staff Leader needs the same three days' warning however the request reached them.
+ *
+ * Measured from NOW, never from when the request was first filed: a request created on the 1st for the
+ * 10th was valid then, and resubmitting it on the 9th is a fresh ask with one day's notice. The backend
+ * re-checks this against its own clock and is the authority; these constants only keep the picker and
+ * the resolver from disagreeing with it on screen.
+ */
+export const V2_MIN_ADVANCE_HOURS = 72;
+/**
+ * The create and edit screens keep their own names for it, but both now resolve to the SAME number.
+ * Edit used to be 24 while create was 72, which meant a request could be edited into a slot it could
+ * never have been created for.
+ */
+export const V2_MIN_ADVANCE_HOURS_CREATE = V2_MIN_ADVANCE_HOURS;
+export const V2_MIN_ADVANCE_HOURS_EDIT = V2_MIN_ADVANCE_HOURS;
 
 const defaultT: ValidationTranslator = (key, options) =>
   i18n.t(key, { ns: 'validation', ...options }) as string;

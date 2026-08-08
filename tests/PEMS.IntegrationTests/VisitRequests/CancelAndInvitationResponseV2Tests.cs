@@ -18,6 +18,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -137,8 +138,22 @@ public sealed class CancelAndInvitationResponseV2Tests
             new ContactPointDto($"Đầu mối {delegationName}", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "VI", null, "DECLINED", null, null);
 
+    /// <summary>
+    /// How far forward a set of campuses has to be FILED so create accepts it. A visit cannot be created
+    /// inside <see cref="VisitMutationPolicy.MinScheduleLeadHours"/>; it only ends up hours from its date
+    /// by the date approaching. The schedule is shifted back by the same amount immediately after, so
+    /// durations and relative order survive — the cancel window these cases test is a different rule.
+    /// </summary>
+    private static TimeSpan LeadTimeShift(IEnumerable<CampusVisitFormDto> campuses)
+    {
+        var earliest = campuses.Min(c => c.PlannedStartAt);
+        var floor = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(5);
+        return earliest < floor ? floor - earliest : TimeSpan.Zero;
+    }
+
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
+        var shift = LeadTimeShift(campuses);
         using var db = NewContext();
         var actor = new FakeUser(Registrant);
         var handler = new CreateVisitRequestV2CommandHandler(
@@ -151,8 +166,26 @@ public sealed class CancelAndInvitationResponseV2Tests
         var form = new VisitRequestFormDataV2(
             "CX" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            null, campuses.ToList());
+            null, campuses
+                .Select(c => shift == TimeSpan.Zero
+                    ? c
+                    : c with { PlannedStartAt = c.PlannedStartAt + shift, PlannedEndAt = c.PlannedEndAt + shift })
+                .ToList());
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
+
+        if (shift != TimeSpan.Zero)
+        {
+            using var patch = NewContext();
+            var instances = await patch.VisitRequestCampuses
+                .Where(c => c.VisitRequestId == created.VisitRequestId).ToListAsync();
+            foreach (var instance in instances)
+            {
+                instance.PlannedStartAt -= shift;
+                instance.PlannedEndAt -= shift;
+            }
+            await patch.SaveChangesAsync();
+        }
+
         return created.VisitRequestId;
     }
 

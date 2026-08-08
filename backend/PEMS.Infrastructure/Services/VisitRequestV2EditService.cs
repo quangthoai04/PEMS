@@ -33,15 +33,33 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     private const int MinDurationMinutes = 30;
 
     /// <summary>
-    /// Minimum lead time a NEW or CHANGED schedule must leave. Shared with every other self-service
-    /// mutation via <see cref="VisitMutationPolicy.RequiredLeadHours"/> — a schedule the user may still
-    /// edit but may not schedule INTO would be a rule that contradicts itself.
+    /// Minimum lead time a NEW or CHANGED schedule must leave, measured from the moment of THIS action.
+    ///
+    /// <para>
+    /// This is <see cref="VisitMutationPolicy.MinScheduleLeadHours"/> — the floor on a schedule being
+    /// filed for approval — and NOT <see cref="VisitMutationPolicy.RequiredLeadHours"/>, which decides
+    /// whether the action itself is still open. It used to be the latter, which quietly made "how late
+    /// may I edit" and "how soon may the visit be" the same six hours: a request could be edited into a
+    /// slot the campus had no time to prepare for. Create enforces the same floor, so the three write
+    /// paths agree.
+    /// </para>
     /// </summary>
-    private const int EditWindowHours = VisitMutationPolicy.RequiredLeadHours;
+    private const int EditWindowHours = VisitMutationPolicy.MinScheduleLeadHours;
 
     private readonly IApplicationDbContext _db;
 
-    public VisitRequestV2EditService(IApplicationDbContext db) => _db = db;
+    /// <summary>
+    /// The canonical aggregate recompute. Held here so an instance resubmit can DERIVE the request
+    /// status from its campuses instead of naming one — with a sibling already approved the answer is
+    /// PARTIALLY_APPROVED, which no single hardcoded value in this class could have been.
+    /// </summary>
+    private readonly IVisitRequestAggregateStatusService _aggregateStatus;
+
+    public VisitRequestV2EditService(IApplicationDbContext db, IVisitRequestAggregateStatusService aggregateStatus)
+    {
+        _db = db;
+        _aggregateStatus = aggregateStatus;
+    }
 
     public async Task<V2EditResult> ApplyPendingEditAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
@@ -111,6 +129,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 throw new BusinessRuleException(
                     "Đơn đã có cơ sở được xử lý (duyệt/từ chối/hủy) nên không thể sửa.",
                     VisitRequestErrorCodes.VisitRequestNotEditable);
+            // Refused during VALIDATION, before anything is written: an attempt to edit contact data
+            // through this path is not a partial edit to be undone, it is a payload that does not
+            // belong here at all.
+            if (instance.FormDetail is not null)
+                EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
         }
 
         // ── 5. Removed instances = present on the request but absent from the payload ──
@@ -119,18 +142,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         foreach (var gone in removed)
             await EnsureInstanceRemovableAsync(gone, ct);
 
-        // ── 6. Schedule validation (pending-edit window: every start ≥ now + 24h) ──
-        foreach (var cv in edit.CampusVisits)
-        {
-            if (cv.PlannedEndAt <= cv.PlannedStartAt)
-                throw new BusinessRuleException("Thời gian kết thúc phải sau thời gian bắt đầu.", VisitRequestErrorCodes.InvalidVisitTime);
-            if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
-                throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
-            if (cv.PlannedStartAt < now.AddHours(EditWindowHours))
-                throw new BusinessRuleException(
-                    $"Thời gian bắt đầu mới phải cách hiện tại ít nhất {EditWindowHours} giờ.",
-                    VisitRequestErrorCodes.InvalidVisitTime);
-        }
+        // ── 6. Schedule validation (pending-edit: every start ≥ now + MinScheduleLeadHours) ──
+        ValidateSchedules(edit, now);
 
         // ── 7. Added campuses: full operational-availability recheck (ACTIVE + IC dept + one Staff Leader) ──
         var addedSnapshots = new Dictionary<string, CampusAvailabilitySnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -214,7 +227,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                     NewValueText = $"form_revision={detail.FormRevision + 1}",
                     CreatedAt = now,
                 });
-                EnsureContactEmailUnchanged(detail, content.OperationalContact);
                 VisitRequestV2EditOps.ApplyFormDetail(detail, content, now, actorId);
                 // Full-replace THIS instance's members only; legacy shared rows survive via copy-on-write.
                 newMembers = VisitRequestV2EditOps.StageReplaceMembers(
@@ -460,25 +472,24 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                     VisitRequestErrorCodes.ResubmitCampusListChanged);
         }
 
-        // ── 3. Per-instance optimistic concurrency ──
+        // ── 3. Per-instance optimistic concurrency + contact-snapshot immutability ──
         foreach (var (content, instance) in pairs)
+        {
             if (content.ExpectedRowVersion is null || content.ExpectedRowVersion != instance.RowVersion)
                 throw new ConflictException(
                     "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
                     VisitRequestErrorCodes.InstanceVersionConflict);
-
-        // ── 4. New schedule: every start ≥ now + 24h, end > start, ≥ 30 min ──
-        foreach (var cv in edit.CampusVisits)
-        {
-            if (cv.PlannedEndAt <= cv.PlannedStartAt)
-                throw new BusinessRuleException("Thời gian kết thúc phải sau thời gian bắt đầu.", VisitRequestErrorCodes.InvalidVisitTime);
-            if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
-                throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
-            if (cv.PlannedStartAt < now.AddHours(EditWindowHours))
-                throw new BusinessRuleException(
-                    $"Thời gian bắt đầu mới phải cách hiện tại ít nhất {EditWindowHours} giờ.",
-                    VisitRequestErrorCodes.InvalidVisitTime);
+            // Resubmit rewrites content wholesale, which makes it the other path a contact edit could
+            // sneak in through. Same guard, same codes, same place in the sequence: before any write.
+            if (instance.FormDetail is not null)
+                EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
         }
+
+        // ── 4. New schedule: end > start, ≥ 30 min, and every start ≥ NOW + MinScheduleLeadHours.
+        //       Measured from this moment, never from when the request was originally filed: a request
+        //       created on the 1st for the 10th was valid then, and resubmitting it on the 9th is a
+        //       fresh ask that the campus has one day to answer. ──
+        ValidateSchedules(edit, now);
 
         // ── 5. Every campus must STILL be operationally available (re-entry uses the same bar as create) ──
         var campusIds = request.CampusInstances.Select(c => c.CampusId).ToList();
@@ -586,7 +597,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members)>();
         foreach (var (content, instance) in pairs)
         {
-            EnsureContactEmailUnchanged(instance.FormDetail!, content.OperationalContact);
             VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
             var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
                 _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
@@ -656,6 +666,195 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         return new V2EditResult(scope, hasMixed, request.RowVersion);
     }
 
+    /// <inheritdoc />
+    public async Task<V2EditResult> ApplyInstanceResubmitAsync(
+        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        ulong actorId, DateTime now, CancellationToken ct)
+    {
+        // ── 1. Only THIS campus need be rejected. Deliberately not the whole-request gate: a campus
+        //       refused beside one that was approved is exactly the case this exists for. ──
+        if (request.Status == VisitRequestStatuses.Cancelled)
+            throw new BusinessRuleException(
+                "Đơn đã bị hủy nên không thể gửi lại cơ sở này.",
+                VisitRequestErrorCodes.VisitRequestNotResubmittable);
+
+        if (instance.Status != VisitInstanceStatuses.Rejected)
+            throw new BusinessRuleException(
+                "Chỉ có thể gửi lại cơ sở đang ở trạng thái bị từ chối.",
+                VisitRequestErrorCodes.VisitRequestNotResubmittable);
+
+        // ── 2. The campus may not be swapped: the payload must name the campus this instance already is.
+        //       Wanting a different campus is a new request, exactly as for the whole-request resubmit. ──
+        var campusCode = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
+        var namedCampusId = await _db.Campuses
+            .Where(c => c.CampusCode == campusCode)
+            .Select(c => (ulong?)c.CampusId)
+            .FirstOrDefaultAsync(ct);
+        if (namedCampusId is null || namedCampusId != instance.CampusId)
+            throw new BusinessRuleException(
+                "Không thể đổi cơ sở khi gửi lại. Nếu muốn thăm cơ sở khác, vui lòng tạo đơn đăng ký mới.",
+                VisitRequestErrorCodes.ResubmitCampusListChanged);
+
+        // ── 3. Optimistic concurrency on the INSTANCE. The request row version is deliberately not the
+        //       guard here: a sibling campus being decided bumps it, and that must not brick a resubmit
+        //       of this one. ──
+        if (content.ExpectedRowVersion is null || content.ExpectedRowVersion != instance.RowVersion)
+            throw new ConflictException(
+                "Lịch thăm tại cơ sở này đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
+                VisitRequestErrorCodes.InstanceVersionConflict);
+
+        // Resubmit rewrites content wholesale, which makes it another path a contact edit could sneak
+        // through. Same guard, same codes, before any write.
+        if (instance.FormDetail is not null)
+            EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
+
+        // ── 4. Registration lead time. This IS a resubmit, so the 72h floor applies to the new start
+        //       (plan §17) — measured from now, never from when the request was first filed. ──
+        ValidateSchedule(content, now);
+
+        // ── 5. The campus must still be able to take a visit at all — same bar as create. ──
+        var availability = await CampusAvailabilityEvaluator.EvaluateAsync(_db, new[] { instance.CampusId }, ct);
+        var snapshot = availability.TryGetValue(instance.CampusId, out var snap)
+            ? snap
+            : throw new BusinessRuleException("Cơ sở không tồn tại.", VisitRequestErrorCodes.CampusNotFound);
+        if (!string.Equals(snapshot.Status, EntityStatuses.Active, StringComparison.OrdinalIgnoreCase))
+            throw new BusinessRuleException($"Cơ sở '{snapshot.CampusCode}' hiện không hoạt động.", VisitRequestErrorCodes.CampusInactive);
+        if (snapshot.ValidStaffLeaderCount == 0)
+            throw new BusinessRuleException($"Cơ sở {snapshot.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận lại yêu cầu.", VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
+        if (!snapshot.IsAvailableForVisitRegistration)
+            throw new BusinessRuleException($"Cấu hình tiếp nhận của cơ sở {snapshot.Name} không hợp lệ.", VisitRequestErrorCodes.CampusStaffLeaderConfigurationInvalid);
+
+        // ─────────────────────────────────────────────────────────────────────────────
+        // Apply. The rejection is snapshotted to audit before it is cleared — the DB refuses to hold
+        // decision metadata on a campus that is back in review, so clearing it is not optional.
+        // ─────────────────────────────────────────────────────────────────────────────
+        var correlationId = Guid.NewGuid().ToString("N");
+        var audit = new AuditLog
+        {
+            ActorUserId = actorId,
+            Action = "RESUBMIT_REJECTED_VISIT_INSTANCE_V2",
+            EntityType = "VisitRequestCampus",
+            EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            CorrelationId = correlationId,
+            SourceType = "RESUBMIT",
+            CreatedAt = now,
+        };
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "visit_request_campuses.status",
+            OldValueText = VisitInstanceStatuses.Rejected,
+            NewValueText = VisitInstanceStatuses.WaitingRequestApproval,
+            CreatedAt = now,
+        });
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "campus_decision_before_resubmit_json",
+            OldValueText = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                visitInstanceId = instance.VisitInstanceId,
+                campusId = instance.CampusId,
+                oldStatus = instance.Status,
+                decidedBy = instance.DecidedBy,
+                decidedAt = instance.DecidedAt,
+                decisionActorRole = instance.DecisionActorRole,
+                decisionNote = instance.DecisionNote,
+            }),
+            NewValueText = "cleared_for_resubmission",
+            CreatedAt = now,
+        });
+        _db.AuditLogs.Add(audit);
+
+        // ── Phase 1: THIS campus only. Every sibling's status, decision, host and schedule are
+        //    untouched — the loop that would have reset them does not exist here. ──
+        VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
+        var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
+            _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
+
+        instance.PlannedStartAt = content.PlannedStartAt;
+        instance.PlannedEndAt = content.PlannedEndAt;
+        instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
+        instance.DecisionActorRole = null;
+        instance.DecisionSource = null;
+        instance.DecidedBy = null;
+        instance.DecidedAt = null;
+        instance.DecisionNote = null;
+        instance.CurrentHostUserId = null;
+        instance.HostAssignedBy = null;
+        instance.HostAssignedAt = null;
+        instance.CancelledBy = null;
+        instance.CancelledAt = null;
+        instance.CancellationActorType = null;
+        instance.CancellationSource = null;
+        instance.CancellationReason = null;
+        instance.CoordinatorUserId = snapshot.ValidStaffLeaderUserId!.Value;
+        instance.CoordinatorAssignedBy = actorId;
+        instance.CoordinatorAssignedAt = now;
+        instance.RowVersion += 1;
+        instance.UpdatedAt = now;
+        instance.UpdatedBy = actorId;
+
+        // ── Phase 2: recompute the aggregate FROM the campuses, never assumed. With a sibling already
+        //    approved this lands on PARTIALLY_APPROVED; with the rest still rejected, PENDING_APPROVAL.
+        //    The same answer the AFTER UPDATE trigger computes, so EF's write and the trigger's agree. ──
+        _aggregateStatus.Apply(request);
+
+        // Request-level bookkeeping. resubmission_count is display/audit only — nothing validates or
+        // limits on it (audited v9 §5) — and the request genuinely was resubmitted, so it counts.
+        request.ResubmissionCount += 1;
+        request.LastResubmittedAt = now;
+        request.LastResubmittedBy = actorId;
+        request.RowVersion += 1;
+        request.UpdatedAt = now;
+        request.UpdatedBy = actorId;
+
+        await _db.SaveChangesAsync(ct);
+
+        // ── Phase 3: member links + a RESUBMIT revision snapshot for THIS instance. ──
+        VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
+        _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
+        {
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            FormRevision = instance.FormDetail!.FormRevision,
+            ApprovalRevision = instance.FormDetail.ApprovalRevision,
+            SourceType = "RESUBMIT",
+            SnapshotJson = VisitRequestV2EditOps.SnapshotJson(instance.FormDetail, newMembers),
+            AppliedBy = actorId,
+            AppliedAt = now,
+            Reason = correlationId,
+        });
+
+        await _db.SaveChangesAsync(ct);
+
+        return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
+    }
+
+    /// <summary>
+    /// The schedule rules for ONE campus: end after start, at least 30 minutes, and a start no sooner
+    /// than <see cref="EditWindowHours"/> from now. Same numbers as the multi-campus check, applied to
+    /// the single campus an instance resubmit carries.
+    /// </summary>
+    private static void ValidateSchedule(CampusVisitEditV2Dto content, DateTime now)
+    {
+        var campus = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
+        if (content.PlannedEndAt <= content.PlannedStartAt)
+            throw new BusinessRuleException(
+                $"Cơ sở {campus}: thời gian kết thúc phải sau thời gian bắt đầu.",
+                VisitRequestErrorCodes.InvalidVisitTime);
+        if ((content.PlannedEndAt - content.PlannedStartAt).TotalMinutes < 30)
+            throw new BusinessRuleException(
+                $"Cơ sở {campus}: thời lượng tối thiểu là 30 phút.",
+                VisitRequestErrorCodes.InvalidVisitTime);
+        var earliestAllowedStart = now.AddHours(EditWindowHours);
+        if (content.PlannedStartAt < earliestAllowedStart)
+            throw new BusinessRuleException(
+                $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart)}",
+                VisitRequestErrorCodes.InvalidVisitTime);
+    }
+
     /// <summary>
     /// Locks the request row (<c>SELECT … FOR UPDATE</c>) and compares the payload's expected version AND the
     /// tracked entity's loaded version against the CURRENT committed row_version. Concurrent writers serialize
@@ -678,6 +877,38 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
     /// <summary>Registrant snapshot, partner and BOTH account-binding emails are immutable in a form edit.
     /// Changing the primary-contact identity is the Phase D identity workflow, never a pending edit.</summary>
+    /// <summary>
+    /// The schedule rules both write paths share: end after start, at least 30 minutes, and a start no
+    /// sooner than <see cref="EditWindowHours"/> from <paramref name="now"/>.
+    ///
+    /// <para>
+    /// Every campus in the payload is checked and the FIRST failure refuses the whole action — an edit
+    /// or a resubmit is one atomic ask, and a half-applied one would leave the request describing a
+    /// visit nobody agreed to. The message names the campus so a multi-campus payload does not send the
+    /// user hunting through the cards for which one is too soon.
+    /// </para>
+    /// </summary>
+    private static void ValidateSchedules(VisitRequestEditV2Dto edit, DateTime now)
+    {
+        var earliestAllowedStart = now.AddHours(EditWindowHours);
+        foreach (var cv in edit.CampusVisits)
+        {
+            var campus = (cv.CampusId ?? string.Empty).Trim().ToUpperInvariant();
+            if (cv.PlannedEndAt <= cv.PlannedStartAt)
+                throw new BusinessRuleException(
+                    $"Cơ sở {campus}: thời gian kết thúc phải sau thời gian bắt đầu.",
+                    VisitRequestErrorCodes.InvalidVisitTime);
+            if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
+                throw new BusinessRuleException(
+                    $"Cơ sở {campus}: mỗi buổi thăm phải kéo dài tối thiểu {MinDurationMinutes} phút.",
+                    VisitRequestErrorCodes.InvalidVisitTime);
+            if (cv.PlannedStartAt < earliestAllowedStart)
+                throw new BusinessRuleException(
+                    $"Cơ sở {campus}: {VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart)}",
+                    VisitRequestErrorCodes.InvalidVisitTime);
+        }
+    }
+
     private static void ValidateImmutableFields(VisitRequest request, VisitRequestEditV2Dto edit)
     {
         var r = edit.Registrant;
@@ -703,27 +934,38 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             throw new BusinessRuleException(
                 "Thông tin người đăng ký không được phép thay đổi.", "IMMUTABLE_REGISTRANT_INFO");
         }
-        // The contact EMAIL is checked per campus by EnsureContactEmailUnchanged, called from both
-        // apply paths — there is no request-level address left to compare here.
+        // The contact snapshot is checked per campus by EnsureContactSnapshotUnchanged, called from the
+        // validation phase of both apply paths — there is no request-level address left to compare here.
     }
 
     /// <summary>
-    /// A campus's operational-contact email is immutable in a form edit.
+    /// A campus's WHOLE operational-contact snapshot is immutable in a form edit — the address and the
+    /// four details beside it.
     ///
     /// <para>
-    /// That address is the only thing this campus's confirmation invitation is bound to, and the
-    /// person behind it has either already accepted or is being asked to. Letting a form edit swap it
-    /// would hand the campus to a different address with nobody confirming anything — the exact hole
-    /// the per-campus confirmation exists to close. Changing it is a replace (before the decision) or
-    /// a transfer (after it), both of which re-open the confirmation.
+    /// The address first, and under its own code: it is the only thing this campus's confirmation
+    /// invitation is bound to, and the person behind it has either already accepted or is being asked
+    /// to. Letting a form edit swap it would hand the campus to a different address with nobody
+    /// confirming anything — the exact hole the per-campus confirmation exists to close. Changing it is
+    /// a replace (before the decision) or a transfer (after it), both of which re-open the confirmation.
     /// </para>
-    ///
     /// <para>
-    /// Name, organization and phone ARE editable here: they are display data, and correcting a typo
-    /// in a contact's name is not a change of who runs the campus.
+    /// Name, organization, job title and phone are refused too, and that is the change. They used to be
+    /// editable here on the reasoning that "correcting a typo in a contact's name is not a change of who
+    /// runs the campus" — true, but it made the request-edit form a second, silent writer of contact
+    /// data. Editing a visit request and managing its operational contact are two workflows now: this
+    /// path carries a contact snapshot only so an unchanged payload still round-trips, and anything else
+    /// belongs to the contact-management screen, whose metadata path writes exactly these four fields
+    /// with its own concurrency check and its own audit entry.
+    /// </para>
+    /// <para>
+    /// Both sides are normalised the way <c>ApplyFormDetail</c> would have STORED them before comparing.
+    /// The point is to refuse a real mutation, not to refuse the same phone number written nationally
+    /// rather than in E.164, or a value that differs only by whitespace — a client echoing back what it
+    /// was served must never trip this.
     /// </para>
     /// </summary>
-    private static void EnsureContactEmailUnchanged(
+    private static void EnsureContactSnapshotUnchanged(
         VisitInstanceFormDetail detail, ContactPointDto incomingContact)
     {
         var current = VisitRequestFingerprintBuilder.NormalizeEmail(detail.OperationalContactEmail);
@@ -735,7 +977,29 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 "Hãy dùng chức năng đổi/chuyển giao đầu mối để người mới xác nhận.",
                 "IMMUTABLE_CONTACT_IDENTITY");
         }
+
+        var changed =
+            !SameText(detail.OperationalContactFullName, incomingContact.FullName)
+            || !SameText(detail.OperationalContactOrganization, incomingContact.Organization)
+            || !SameText(detail.OperationalContactJobTitle, incomingContact.JobTitle)
+            || !SameText(PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
+                         PhoneNumber.NormalizeOrOriginal(incomingContact.Phone));
+
+        if (changed)
+        {
+            throw new BusinessRuleException(
+                "Không được phép sửa thông tin đầu mối vận hành của cơ sở trong biểu mẫu đăng ký. " +
+                "Hãy dùng chức năng chỉnh sửa đầu mối ở màn hình chi tiết đơn.",
+                "IMMUTABLE_CONTACT_PROFILE");
+        }
     }
+
+    /// <summary>Trimmed comparison in which null, empty and whitespace are all "no value".</summary>
+    private static bool SameText(string? stored, string? incoming)
+        => string.Equals(
+            string.IsNullOrWhiteSpace(stored) ? string.Empty : stored.Trim(),
+            string.IsNullOrWhiteSpace(incoming) ? string.Empty : incoming.Trim(),
+            StringComparison.Ordinal);
 
     /// <summary>
     /// Request-level mutable fields. There are none left: the contact snapshot moved onto each campus

@@ -16,6 +16,17 @@ public static class VisitFormActions
     public const string EditPendingRequest = "EDIT_PENDING_REQUEST";
     /// <summary>Registrant/ACTIVE contact may edit &amp; resubmit a fully-rejected request.</summary>
     public const string ResubmitRejectedRequest = "RESUBMIT_REJECTED_REQUEST";
+
+    /// <summary>
+    /// Send ONE rejected campus back for review, leaving its siblings alone.
+    ///
+    /// <para>
+    /// Distinct from <see cref="ResubmitRejectedRequest"/>, which needs EVERY campus rejected and
+    /// revives the whole request. This one is offered on a campus that was refused beside one that was
+    /// approved — and is offered to the person running that campus, not only to the registrant.
+    /// </para>
+    /// </summary>
+    public const string ResubmitRejectedInstance = "RESUBMIT_REJECTED_INSTANCE";
     /// <summary>Registrant/ACTIVE contact may apply a safe/privacy edit (v2, request not cancelled).</summary>
     public const string SubmitSafeEdit = "SUBMIT_SAFE_EDIT";
 

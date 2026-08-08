@@ -23,6 +23,25 @@ public enum VisitMutationAction
     TransferHost,
 }
 
+/// <summary>
+/// The one wording for "this start time is too soon", used by create, pending-edit and resubmit so the
+/// three paths cannot describe the same rule three ways.
+///
+/// <para>
+/// The sentence names the EARLIEST ALLOWED START rather than only the number of hours: "ít nhất 72 giờ"
+/// on its own leaves the reader doing arithmetic against a clock they cannot see, and the answer they
+/// need is a date they can type back into the form. <c>BusinessRuleException</c> carries no metadata
+/// slot, so both facts travel in the message — the error CODE stays
+/// <c>INVALID_VISIT_TIME</c> and the API contract is unchanged.
+/// </para>
+/// </summary>
+public static class VisitScheduleMessages
+{
+    public static string LeadTimeNotMet(DateTime earliestAllowedStart) =>
+        $"Thời gian bắt đầu phải cách thời điểm hiện tại ít nhất {VisitMutationPolicy.MinScheduleLeadHours} giờ " +
+        $"(sớm nhất là {earliestAllowedStart:HH:mm dd/MM/yyyy}).";
+}
+
 /// <summary>Who is asking, in business terms rather than role names.</summary>
 public static class VisitViewerRelations
 {
@@ -93,6 +112,25 @@ public static class VisitMutationPolicy
 {
     /// <summary>Minimum lead time before a campus starts, shared by every self-service mutation.</summary>
     public const int RequiredLeadHours = 6;
+
+    /// <summary>
+    /// Minimum lead time a schedule may be SET TO. Distinct from <see cref="RequiredLeadHours"/> on
+    /// purpose, and the two answer different questions:
+    ///
+    /// <list type="bullet">
+    /// <item><description><see cref="RequiredLeadHours"/> — "is this action still open?" (may I touch a
+    /// request whose campus starts in 8 hours). A cutoff on the EXISTING schedule.</description></item>
+    /// <item><description><see cref="MinScheduleLeadHours"/> — "may the visit be scheduled for this
+    /// moment?" A floor on the PROPOSED schedule, so a Staff Leader always has three days' notice on
+    /// anything they are asked to approve.</description></item>
+    /// </list>
+    ///
+    /// Every path that files a schedule for approval measures against this one: create, pending-edit and
+    /// resubmit. It is deliberately measured from the moment of the ACTION, never from when the request
+    /// was first filed — a request that was valid on the 1st and resubmitted on the 9th gets the same
+    /// three days of notice as a brand-new one.
+    /// </summary>
+    public const int MinScheduleLeadHours = 72;
 
     /// <summary>Campus states that are decided and have not started — where post-approval actions live.
     /// Both ASSIGNED (Host named, preparation not started) and BEFORE_VISIT (Host preparing) qualify:

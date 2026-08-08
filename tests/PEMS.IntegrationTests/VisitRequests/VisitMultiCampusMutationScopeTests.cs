@@ -102,10 +102,21 @@ public sealed class VisitMultiCampusMutationScopeTests
     /// <summary>
     /// A two-campus request where HN is <paramref name="hnStatus"/> and CT is <paramref name="ctStatus"/>,
     /// built through the real transition order so the DB triggers see legitimate moves.
+    ///
+    /// <para>
+    /// The request is FILED with distant dates and the schedule is then moved onto the ones the test
+    /// asked for. A visit cannot be created inside
+    /// <see cref="VisitMutationPolicy.MinScheduleLeadHours"/> — a campus reaches "an hour ago" or "five
+    /// hours away" by the date arriving, not by being filed that way. What these cases test is the
+    /// ACTION cutoff and the lifecycle scope, which are different rules and still need those states.
+    /// </para>
     /// </summary>
     private static async Task<(ulong RequestId, ulong Hn, ulong Ct)> CreateMixedAsync(
         string hnStatus, string ctStatus, DateTime hnStart, DateTime ctStart)
     {
+        // Far enough out that create accepts them whatever dates the test is aiming for.
+        var filedHn = Now.AddDays(40);
+        var filedCt = Now.AddDays(41);
         ulong requestId;
         using (var db = NewContext())
         {
@@ -119,7 +130,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             var form = new VisitRequestFormDataV2(
                 "MC" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                null, new List<CampusVisitFormDto> { Campus("HN", hnStart), Campus("HCM", ctStart) });
+                null, new List<CampusVisitFormDto> { Campus("HN", filedHn), Campus("HCM", filedCt) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
 
@@ -128,6 +139,20 @@ public sealed class VisitMultiCampusMutationScopeTests
             var visit = await db.VisitRequests.Include(v => v.CampusInstances)
                 .SingleAsync(v => v.VisitRequestId == requestId);
             var ordered = visit.CampusInstances.OrderBy(c => c.CampusId).ToList();
+
+            // Time passing, as it does: the filed dates move onto the ones this test is about, keeping
+            // each campus's own duration. Done before the decisions below so the agenda rows they may
+            // insert carry the real schedule.
+            void Reschedule(Domain.Entities.Delegations.VisitRequestCampus instance, DateTime start)
+            {
+                var duration = instance.PlannedEndAt - instance.PlannedStartAt;
+                instance.PlannedStartAt = start;
+                instance.PlannedEndAt = start + duration;
+            }
+
+            Reschedule(ordered[0], hnStart);
+            Reschedule(ordered[1], ctStart);
+            await db.SaveChangesAsync();
 
             // Approving always lands on ASSIGNED, whatever the test ultimately wants: BEFORE_VISIT may
             // only be entered from ASSIGNED and DURING_VISIT only from BEFORE_VISIT, and the DB enforces

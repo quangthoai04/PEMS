@@ -84,7 +84,7 @@ public sealed class ResubmitRejectedVisitRequestV2CommandTests
     private static ResubmitRejectedVisitRequestV2CommandHandler Handler(
         ApplicationDbContext db, ulong actor, bool read = true, bool write = true,
         INotificationService? notifications = null)
-        => new(db, new FakeUser(actor), new FixedClock(), new VisitRequestV2EditService(db),
+        => new(db, new FakeUser(actor), new FixedClock(), new VisitRequestV2EditService(db, new PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService(db)),
             notifications ?? new RecordingNotifications(),
             NullLogger<ResubmitRejectedVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });

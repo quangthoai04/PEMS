@@ -11,14 +11,30 @@ export const VisitV2Action = {
   EditPendingRequest: 'EDIT_PENDING_REQUEST',
   ResubmitRejectedRequest: 'RESUBMIT_REJECTED_REQUEST',
   SubmitSafeEdit: 'SUBMIT_SAFE_EDIT',
-  // primary-contact identity workflow (viewer.allowedActions). The panel used to decide these from
-  // viewer.relation, which is why it could offer a resend past its cap or a transfer inside the 24h
-  // window — decisions only the backend's own guards can make correctly.
-  ResendContactClaim: 'RESEND_CONTACT_CLAIM',
-  ReplacePendingContact: 'REPLACE_PENDING_CONTACT',
-  InitiateContactTransfer: 'INITIATE_CONTACT_TRANSFER',
-  ResendContactTransfer: 'RESEND_CONTACT_TRANSFER',
-  CancelContactTransfer: 'CANCEL_CONTACT_TRANSFER',
+  // ── Operational-contact workflow. INSTANCE scope (campusVisit.allowedActions) ──
+  //
+  // The strings MUST be the ones PEMS.Domain.Constants.VisitFormActions emits. They were not: this
+  // file spelled them RESEND_CONTACT_CLAIM / REPLACE_PENDING_CONTACT / INITIATE_CONTACT_TRANSFER /
+  // CANCEL_CONTACT_TRANSFER while the backend sends RESEND_OPERATIONAL_CONTACT_CONFIRMATION /
+  // REPLACE_OPERATIONAL_CONTACT / INITIATE_OPERATIONAL_CONTACT_TRANSFER /
+  // CANCEL_OPERATIONAL_CONTACT_CHANGE. Nothing matched, `hasAnyAction` was false for every viewer, and
+  // the contact panel on the detail screen rendered nothing at all — which is why managing a contact
+  // appeared to have no home and drifted back into the request-edit form.
+  //
+  // There is no RESEND_CONTACT_TRANSFER: one resend code covers both kinds, because the invitation
+  // itself knows which it is.
+  /**
+   * Send ONE rejected campus back for review. Instance scope, and NOT the same thing as
+   * ResubmitRejectedRequest above — that one needs every campus rejected and revives the whole
+   * request. The backend decides who gets this (registrant or the campus's own contact); the browser
+   * only renders what it is told.
+   */
+  ResubmitRejectedInstance: 'RESUBMIT_REJECTED_INSTANCE',
+  UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',
+  ResendContactConfirmation: 'RESEND_OPERATIONAL_CONTACT_CONFIRMATION',
+  ReplaceOperationalContact: 'REPLACE_OPERATIONAL_CONTACT',
+  InitiateContactTransfer: 'INITIATE_OPERATIONAL_CONTACT_TRANSFER',
+  CancelContactChange: 'CANCEL_OPERATIONAL_CONTACT_CHANGE',
   // per instance (campusVisit.allowedActions)
   SubmitAmendment: 'SUBMIT_AMENDMENT',
   ApproveAmendment: 'APPROVE_AMENDMENT',

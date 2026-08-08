@@ -9,6 +9,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
@@ -81,7 +82,11 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         }
 
         // ── Per-campus schedule validation (DB/clock-dependent; structural rules already ran in the validator) ──
-        var earliestAllowedStart = vietnamNow.AddDays(-1);
+        //    The minimum lead time is enforced HERE, against the server's own clock, and not merely in the
+        //    form: it used to accept anything that was not already in the past, so a direct API call — or a
+        //    form filled in while the deadline passed — could file a visit for tomorrow morning and leave a
+        //    Staff Leader no time to arrange it. Same floor as pending-edit and resubmit.
+        var earliestAllowedStart = vietnamNow.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
         foreach (var cv in form.CampusVisits)
         {
             if (cv.PlannedEndAt <= cv.PlannedStartAt)
@@ -89,7 +94,9 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
                 throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
             if (cv.PlannedStartAt < earliestAllowedStart)
-                throw new BusinessRuleException("Thời gian thăm không được ở quá khứ.", VisitRequestErrorCodes.InvalidVisitTime);
+                throw new BusinessRuleException(
+                    VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart),
+                    VisitRequestErrorCodes.InvalidVisitTime);
         }
 
         // ── Partner (optional) resolves the registrant organisation display, same as v1 ──

@@ -84,7 +84,7 @@ public sealed class UpdatePendingVisitRequestV2CommandTests
     private static UpdatePendingVisitRequestV2CommandHandler Handler(
         ApplicationDbContext db, ulong actor, bool read = true, bool write = true,
         INotificationService? notifications = null)
-        => new(db, new FakeUser(actor), new FixedClock(), new VisitRequestV2EditService(db),
+        => new(db, new FakeUser(actor), new FixedClock(), new VisitRequestV2EditService(db, new PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService(db)),
             notifications ?? new RecordingNotifications(),
             NullLogger<UpdatePendingVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write });

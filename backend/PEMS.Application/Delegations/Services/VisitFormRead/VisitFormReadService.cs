@@ -693,7 +693,17 @@ public sealed class VisitFormReadService : IVisitFormReadService
             return actions;
         if (request.Status == VisitRequestStatuses.Cancelled)
             return actions;
-        if (instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected)
+
+        // ── A REJECTED campus has no contact workflow left — but it does have one thing its guest side
+        //    can still do: ask for it to be looked at again. Offered here, from the SERVER, so the
+        //    browser never has to infer the right from a role (plan v11 §5.2). ──
+        if (instance.Status == VisitInstanceStatuses.Rejected)
+        {
+            actions.Add(VisitFormActions.ResubmitRejectedInstance);
+            return actions;
+        }
+
+        if (instance.Status == VisitInstanceStatuses.Cancelled)
             return actions;
 
         // ── Correcting the contact's DETAILS is available wherever the campus is still live, to the

@@ -111,7 +111,7 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            await body(db, new VisitRequestV2CreateService(db), new VisitRequestV2EditService(db));
+            await body(db, new VisitRequestV2CreateService(db), new VisitRequestV2EditService(db, new PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService(db)));
         }
         finally
         {
@@ -278,9 +278,16 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
     }
 
     /// <summary>
-    /// A resubmit proposes a NEW schedule, and that schedule answers to the shared lead time. The
-    /// window used to be a local 24h here; it is now VisitMutationPolicy.RequiredLeadHours, so the
-    /// boundary is asserted against the policy rather than a number copied beside it.
+    /// A resubmit proposes a NEW schedule, and that schedule answers to the shared SCHEDULING floor —
+    /// <see cref="VisitMutationPolicy.MinScheduleLeadHours"/>, the same one create and pending-edit use,
+    /// measured from the moment of the resubmit rather than from when the request was first filed.
+    ///
+    /// <para>
+    /// Asserted against the policy constant rather than a number copied beside it. It used to point at
+    /// <c>RequiredLeadHours</c>, which is a different rule: how late the ACTION stays open, not how soon
+    /// the visit may be. Reading the same constant for both quietly let a request be resubmitted into a
+    /// slot it could never have been created for.
+    /// </para>
     /// </summary>
     [Fact]
     public async Task New_schedule_inside_the_lead_time_is_rejected()
@@ -291,7 +298,7 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             await RejectAllAsync(db, r);
             var hn = InstanceOf(r, "HN");
 
-            var tooSoon = Now.AddHours(VisitMutationPolicy.RequiredLeadHours).AddMinutes(-1);
+            var tooSoon = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-1);
             var soon = Campus("HN") with { PlannedStartAt = tooSoon, PlannedEndAt = tooSoon.AddHours(2) };
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, soon)), Registrant, Now, default));
@@ -312,10 +319,46 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             await RejectAllAsync(db, r);
             var hn = InstanceOf(r, "HN");
 
-            var exactly = Now.AddHours(VisitMutationPolicy.RequiredLeadHours);
+            var exactly = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
             var slot = Campus("HN") with { PlannedStartAt = exactly, PlannedEndAt = exactly.AddHours(2) };
             var result = await edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, slot)), Registrant, Now, default);
             Assert.NotNull(result);
+        });
+    }
+
+    /// <summary>
+    /// The rule that makes resubmit different from every other check here: validity is re-decided at the
+    /// moment of the RESUBMIT, not inherited from when the request was filed (TC-TIME-05).
+    ///
+    /// <para>
+    /// The schedule below never changes. It was comfortably valid when the request was created, sat
+    /// through a rejection, and by the time the registrant comes back the visit is 71 hours away — so
+    /// the unchanged content is now refused, and the registrant has to propose a new date. Nothing about
+    /// the payload says this; only the clock does.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Unchanged_schedule_is_re_validated_against_the_time_of_the_resubmit()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var content = Campus("HN");
+            var r = await create.CreateV2Async(CreateForm(content), Registrant, "VISITOR_SUBMITTED", Now, default);
+            await RejectAllAsync(db, r);
+            var hn = InstanceOf(r, "HN");
+
+            // The registrant comes back with the visit 71 hours away — valid at create time, too late now.
+            var lateResubmitAt = content.PlannedStartAt
+                .AddHours(-(VisitMutationPolicy.MinScheduleLeadHours - 1));
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, content)), Registrant, lateResubmitAt, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+
+            // …and the same untouched content still goes through while there is enough notice left.
+            var earlyResubmitAt = content.PlannedStartAt
+                .AddHours(-(VisitMutationPolicy.MinScheduleLeadHours + 1));
+            var ok = await edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, content)), Registrant, earlyResubmitAt, default);
+            Assert.NotNull(ok);
         });
     }
 
@@ -339,6 +382,45 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyResubmitAsync(r, bad, Registrant, Now, default));
             Assert.Equal("IMMUTABLE_CONTACT_IDENTITY", ex.ErrorCode);
+        });
+    }
+
+    /// <summary>
+    /// Resubmit rewrites every campus's content wholesale, which makes it the other path a contact edit
+    /// could arrive through — so the same guard runs here, refusing the four detail fields under their
+    /// own code (repair v3 §2.2, §17 "Request Edit backend").
+    /// </summary>
+    [Fact]
+    public async Task Contact_details_cannot_be_edited_through_a_resubmit_either()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var instanceId = InstanceOf(r, "HN").VisitInstanceId;
+            await RejectAllAsync(db, r);
+
+            var bad = Edit(r, Slot(InstanceOf(r, "HN"), Campus("HN"))) with
+            {
+                CampusVisits = new List<CampusVisitEditV2Dto>
+                {
+                    // Same address, different details — the case that used to be allowed through.
+                    Slot(InstanceOf(r, "HN"), Campus("HN") with
+                    {
+                        OperationalContact = new ContactPointDto(
+                            "Tên Khác", "OpOrg", "Trưởng phòng Hợp tác", "+84987654321",
+                            V2SeedActor.Email(Registrant)),
+                    }),
+                },
+            };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(r, bad, Registrant, Now, default));
+            Assert.Equal("IMMUTABLE_CONTACT_PROFILE", ex.ErrorCode);
+
+            // Refused during validation: the request is still REJECTED and the contact still says what
+            // it said. A half-applied resubmit would leave a request describing a visit nobody agreed to.
+            var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceId);
+            Assert.Equal("Op Contact", detail.OperationalContactFullName);
+            Assert.Equal(VisitRequestStatuses.Rejected, r.Status);
         });
     }
 }

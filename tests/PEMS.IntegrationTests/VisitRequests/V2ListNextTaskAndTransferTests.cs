@@ -97,8 +97,20 @@ public sealed class V2ListNextTaskAndTransferTests
             "EN", null, "DECLINED", null, null);
 
     /// <summary>A committed 2-campus request, left fully PENDING (every campus WAITING_REQUEST_APPROVAL).</summary>
+    /// <summary>
+    /// Files a two-campus request and leaves HN at <paramref name="start"/> (HCM a day later).
+    ///
+    /// <para>
+    /// It is FILED with a distant date and the schedule is then moved onto the requested one, because a
+    /// visit cannot be created inside the minimum lead time
+    /// (<see cref="VisitMutationPolicy.MinScheduleLeadHours"/>) — it reaches "five hours away" by the
+    /// date approaching. The cases below that need a campus that close are about the ACTION cutoff,
+    /// which is a different rule and still needs that state.
+    /// </para>
+    /// </summary>
     private static async Task<ulong> CreatePendingAsync(DateTime start, string tag)
     {
+        var filedStart = Now.AddDays(40);
         using var db = NewContext();
         var handler = new CreateVisitRequestV2CommandHandler(
             db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
@@ -113,10 +125,29 @@ public sealed class V2ListNextTaskAndTransferTests
             null,
             new List<CampusVisitFormDto>
             {
-                Campus("HN", start, $"Đoàn HN {tag}"),
-                Campus("HCM", start.AddDays(1), $"Đoàn HCM {tag}"),
+                Campus("HN", filedStart, $"Đoàn HN {tag}"),
+                Campus("HCM", filedStart.AddDays(1), $"Đoàn HCM {tag}"),
             });
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
+
+        // Time passing, as it does: the filed dates move onto the ones this test is about.
+        if (start != filedStart)
+        {
+            using var patch = NewContext();
+            // Ordered by the filed dates, so the earlier one (HN) keeps being the earlier one.
+            var instances = await patch.VisitRequestCampuses
+                .Where(c => c.VisitRequestId == created.VisitRequestId)
+                .OrderBy(c => c.PlannedStartAt)
+                .ToListAsync();
+            for (var i = 0; i < instances.Count; i++)
+            {
+                var duration = instances[i].PlannedEndAt - instances[i].PlannedStartAt;
+                instances[i].PlannedStartAt = start.AddDays(i);
+                instances[i].PlannedEndAt = instances[i].PlannedStartAt + duration;
+            }
+            await patch.SaveChangesAsync();
+        }
+
         return created.VisitRequestId;
     }
 

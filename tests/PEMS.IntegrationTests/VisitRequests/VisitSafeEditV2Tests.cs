@@ -103,8 +103,41 @@ public sealed class VisitSafeEditV2Tests
             new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", "Xe 16 chỗ", media, null, null);
 
+    /// <summary>
+    /// How far forward a set of campuses has to be FILED so the create service accepts it. A visit
+    /// cannot be created inside <see cref="VisitMutationPolicy.MinScheduleLeadHours"/>; a request only
+    /// ends up that close to its date by the date approaching. The schedule is shifted back by the same
+    /// amount straight after, so relative order and durations survive and the request lands exactly
+    /// where the test wants it — which is what these cases are about: the ACTION cutoff, a different
+    /// rule from the scheduling floor.
+    /// </summary>
+    private static TimeSpan LeadTimeShift(IEnumerable<CampusVisitFormDto> campuses)
+    {
+        var earliest = campuses.Min(c => c.PlannedStartAt);
+        var floor = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(5);
+        return earliest < floor ? floor - earliest : TimeSpan.Zero;
+    }
+
+    private static CampusVisitFormDto Shifted(CampusVisitFormDto c, TimeSpan by) =>
+        by == TimeSpan.Zero ? c : c with { PlannedStartAt = c.PlannedStartAt + by, PlannedEndAt = c.PlannedEndAt + by };
+
+    /// <summary>Moves a committed request's schedule back by <paramref name="by"/> — "time passed".</summary>
+    private static async Task RewindScheduleAsync(ulong requestId, TimeSpan by)
+    {
+        if (by == TimeSpan.Zero) return;
+        using var db = NewContext();
+        var instances = await db.VisitRequestCampuses.Where(c => c.VisitRequestId == requestId).ToListAsync();
+        foreach (var instance in instances)
+        {
+            instance.PlannedStartAt -= by;
+            instance.PlannedEndAt -= by;
+        }
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<ulong> CreateAsync(params CampusVisitFormDto[] campuses)
     {
+        var shift = LeadTimeShift(campuses);
         using var db = NewContext();
         var handler = new CreateVisitRequestV2CommandHandler(
             db, new FakeUser(Registrant), new FixedClock(), new VisitRequestV2CreateService(db),
@@ -116,8 +149,9 @@ public sealed class VisitSafeEditV2Tests
         var form = new VisitRequestFormDataV2(
             "SE" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-            null, campuses.ToList());
+            null, campuses.Select(c => Shifted(c, shift)).ToList());
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
+        await RewindScheduleAsync(created.VisitRequestId, shift);
         return created.VisitRequestId;
     }
 

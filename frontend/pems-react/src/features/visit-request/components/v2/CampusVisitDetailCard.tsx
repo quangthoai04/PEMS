@@ -3,6 +3,7 @@ import { Building2, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ResolvedCampusVisit } from '../../api/visitRequestV2Api';
 import ContactIdentityActions from '../ContactIdentityActions';
+import InstanceResubmitPanel from '../InstanceResubmitPanel';
 import OperationalContactReadOnly from './OperationalContactReadOnly';
 import ReceptionHostReadOnly from './ReceptionHostReadOnly';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
@@ -147,7 +148,8 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             and the contact is never rendered as one joined string: a screen that merges them puts
             the wrong phone number under the wrong heading, which is how somebody ends up ringing a
             guest to ask about room bookings. */}
-        <div>
+        {/* Named so the edit form's "Thay đổi đầu mối" can land on THIS campus's contact block. */}
+        <div id={`contact-${campus.visitInstanceId}`} className="scroll-mt-24">
           <OperationalContactReadOnly
             contact={campus.operationalContact}
             visitInstanceId={campus.visitInstanceId}
@@ -162,9 +164,21 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
               visitRequestId={visitRequestId}
               visitInstanceId={campus.visitInstanceId}
               contactConfirmed={campus.operationalContact.confirmationStatus === 'CONFIRMED'}
-              contactEmail={campus.operationalContact.email || null}
+              contact={campus.operationalContact}
+              rowVersion={campus.rowVersion}
               allowedActions={campus.allowedActions}
               onChanged={onContactChanged}
+            />
+          )}
+
+          {/* A refused campus can be sent back for review from here, by whoever the backend says may
+              do it. Instance-scoped on purpose: the request-wide resubmit would drag an approved
+              sibling back into review along with it. */}
+          {visitRequestId != null && (
+            <InstanceResubmitPanel
+              visitRequestId={visitRequestId}
+              campusVisit={campus}
+              onResubmitted={() => onContactChanged?.()}
             />
           )}
         </div>

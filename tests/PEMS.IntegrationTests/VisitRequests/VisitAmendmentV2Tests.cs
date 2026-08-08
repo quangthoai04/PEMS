@@ -108,6 +108,10 @@ public sealed class VisitAmendmentV2Tests
     /// using the real transition order. Returns (requestId, instanceA=HN, instanceB=HCM).</summary>
     private static async Task<(ulong RequestId, ulong InstanceA, ulong InstanceB)> CreateApprovedAsync(DateTime start)
     {
+        // FILED far out, then moved onto the date the test wants: a visit cannot be created inside
+        // VisitMutationPolicy.MinScheduleLeadHours, it gets that close by the date approaching. The
+        // late-window case below is about the AMENDMENT cutoff, which is a different rule.
+        var filedStart = Now.AddDays(40);
         ulong requestId;
         using (var db = NewContext())
         {
@@ -121,13 +125,22 @@ public sealed class VisitAmendmentV2Tests
             var form = new VisitRequestFormDataV2(
                 "AM" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                null, new List<CampusVisitFormDto> { Campus("HN", start), Campus("HCM", start.AddDays(1)) });
+                null, new List<CampusVisitFormDto> { Campus("HN", filedStart), Campus("HCM", filedStart.AddDays(1)) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
         using (var db = NewContext())
         {
             var visit = await db.VisitRequests.Include(v => v.CampusInstances)
                 .SingleAsync(v => v.VisitRequestId == requestId);
+            // Time passing, as it does — HN onto `start`, HCM a day behind it, each keeping its duration.
+            var ordered = visit.CampusInstances.OrderBy(c => c.PlannedStartAt).ToList();
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var duration = ordered[i].PlannedEndAt - ordered[i].PlannedStartAt;
+                ordered[i].PlannedStartAt = start.AddDays(i);
+                ordered[i].PlannedEndAt = ordered[i].PlannedStartAt + duration;
+            }
+
             foreach (var instance in visit.CampusInstances)
             {
                 instance.Status = VisitInstanceStatuses.Assigned;
@@ -219,6 +232,44 @@ public sealed class VisitAmendmentV2Tests
     }
 
     // ── Tests ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// An APPROVED campus a day away can still be amended. The 72-hour rule is about how far ahead a
+    /// visit may be BOOKED, and asking it of a booking that already exists would close the amendment
+    /// window on every visit inside three days — which is exactly when changes actually happen
+    /// (repair prompt v2 §11.4, TC-72H-06/07).
+    ///
+    /// <para>
+    /// The amendment answers to its OWN policy instead: <c>VisitMutationPolicy.RequiredLeadHours</c>,
+    /// six hours, asserted here by the fact that a campus 24 hours out is comfortably inside it. The
+    /// companion architecture test pins the same boundary structurally, so a future caller reaching for
+    /// the registration floor from this flow fails there too.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task An_approved_campus_inside_72h_can_still_be_amended()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            // Well inside the 72h REGISTRATION floor, well outside the 6h ACTION cutoff.
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddHours(24));
+            var proposal = await BaselineProposalAsync(instanceA, b => b.Purpose = "Đổi nội dung làm việc");
+
+            using (var db = NewContext())
+                await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var amendment = await db.VisitInstanceAmendments.AsNoTracking()
+                    .SingleAsync(a => a.VisitInstanceId == instanceA);
+                Assert.Equal(AmendmentStatuses.PendingApproval, amendment.Status);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
 
     [Fact]
     public async Task Submit_stores_pending_proposal_without_touching_active_and_guards_duplicates()

@@ -100,7 +100,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
         await using var tx = await db.Database.BeginTransactionAsync();
         try
         {
-            await body(db, new VisitRequestV2CreateService(db), new VisitRequestV2EditService(db));
+            await body(db, new VisitRequestV2CreateService(db), new VisitRequestV2EditService(db, new PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService(db)));
         }
         finally
         {
@@ -351,6 +351,66 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
 
             await edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, Campus("HN", durationMinutes: 30))), Registrant, Now, default);
             Assert.Equal(30, (InstanceOf(r, "HN").PlannedEndAt - InstanceOf(r, "HN").PlannedStartAt).TotalMinutes);
+        });
+    }
+
+    /// <summary>
+    /// A pending edit answers to the SCHEDULING floor, and to the same one create uses
+    /// (<see cref="VisitMutationPolicy.MinScheduleLeadHours"/>). It used to answer to
+    /// <c>RequiredLeadHours</c> — how late the action stays open — which let a request be edited into a
+    /// slot it could never have been created for. Exactly on the boundary is inside the window
+    /// (TC-TIME-01/02/04).
+    /// </summary>
+    [Fact]
+    public async Task Edited_schedule_answers_to_the_scheduling_lead_time()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+
+            var tooSoon = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-1);
+            var soon = Campus("HN") with { PlannedStartAt = tooSoon, PlannedEndAt = tooSoon.AddHours(2) };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, soon)), Registrant, Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            // The refusal names the campus and the earliest date that WOULD work — a bare "at least 72
+            // hours" leaves the user doing arithmetic against a clock they cannot see.
+            Assert.Contains("HN", ex.Message);
+            Assert.Contains(VisitMutationPolicy.MinScheduleLeadHours.ToString(), ex.Message);
+
+            var exactly = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
+            var onTheLine = Campus("HN") with { PlannedStartAt = exactly, PlannedEndAt = exactly.AddHours(2) };
+            await edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, onTheLine)), Registrant, Now, default);
+            Assert.Equal(exactly, InstanceOf(r, "HN").PlannedStartAt);
+        });
+    }
+
+    /// <summary>
+    /// Multi-campus is ATOMIC: one campus inside the lead time refuses the whole edit, and the message
+    /// names which one rather than leaving the user to compare cards (TC-TIME-06).
+    /// </summary>
+    [Fact]
+    public async Task One_campus_inside_the_lead_time_refuses_the_whole_edit()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            var originalHnStart = hn.PlannedStartAt;
+
+            var tooSoon = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-1);
+            var badHcm = Campus("HCM") with { PlannedStartAt = tooSoon, PlannedEndAt = tooSoon.AddHours(2) };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyPendingEditAsync(
+                    r, Edit(r, Keep(hn, Campus("HN")), Keep(hcm, badHcm)), Registrant, Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            Assert.Contains("HCM", ex.Message);
+            // Nothing was applied — the good campus is untouched, not half-saved.
+            Assert.Equal(originalHnStart, InstanceOf(r, "HN").PlannedStartAt);
         });
     }
 

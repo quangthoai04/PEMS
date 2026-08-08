@@ -98,9 +98,22 @@ public sealed class VisitHostTransferV2Tests
             new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
 
-    /// <summary>Creates a request and drives every campus to ASSIGNED with the campus leader self-hosting.</summary>
+    /// <summary>
+    /// Creates a request and drives every campus to ASSIGNED with the campus leader self-hosting, with
+    /// the campus finally sitting at <paramref name="start"/>.
+    ///
+    /// <para>
+    /// The request is FILED with a comfortably distant date and the schedule is then moved onto the one
+    /// the test wants, because that is the only way this state arises in production: a visit cannot be
+    /// created inside the minimum lead time (VisitMutationPolicy.MinScheduleLeadHours), it gets there by
+    /// the date approaching. Cases here that hand over a campus "in five hours" are about the ACTION
+    /// cutoff, a different rule, and they still need a campus five hours away to test it.
+    /// </para>
+    /// </summary>
     private static async Task<(ulong RequestId, ulong InstanceId, ulong LeaderId)> CreateApprovedAsync(DateTime start)
     {
+        // Far enough out that the create service accepts it whatever `start` the test is aiming for.
+        var filedStart = Now.AddDays(30);
         ulong requestId;
         using (var db = NewContext())
         {
@@ -114,7 +127,7 @@ public sealed class VisitHostTransferV2Tests
             var form = new VisitRequestFormDataV2(
                 "HT" + Guid.NewGuid().ToString("N"),
                 new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                null, new List<CampusVisitFormDto> { Campus("HN", start) });
+                null, new List<CampusVisitFormDto> { Campus("HN", filedStart) });
             requestId = (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
         }
 
@@ -125,6 +138,9 @@ public sealed class VisitHostTransferV2Tests
                 .SingleAsync(v => v.VisitRequestId == requestId);
             var instance = visit.CampusInstances.Single();
             leaderId = instance.CoordinatorUserId!.Value;
+            // Time passing, as it does: the filed date moves onto the one this test is about.
+            instance.PlannedStartAt = start;
+            instance.PlannedEndAt = start.AddMinutes(120);
             instance.Status = VisitInstanceStatuses.Assigned;
             instance.CurrentHostUserId = leaderId;   // leader self-hosts
             instance.HostAssignedBy = leaderId;

@@ -518,6 +518,45 @@ export const declineOperationalContactInvitation = (token: string, reason?: stri
       `/operational-contact-confirmations/${encodeURIComponent(token)}/decline`, { reason })
     .then(r => r.data);
 
+export interface ResubmitInstanceResponse {
+  visitRequestId: number;
+  visitInstanceId: number;
+  visitRequestStatus: string;
+  visitInstanceStatus: string;
+  instanceRowVersion: number;
+  message: string;
+}
+
+/**
+ * Sends ONE rejected campus back for review.
+ *
+ * Deliberately NOT the request-wide `/resubmit`: that endpoint requires every campus of the request to
+ * be rejected and resets all of them, which would drag an approved sibling — host, schedule and all —
+ * back into review because a different campus said no.
+ */
+export const resubmitVisitInstance = (
+  visitRequestId: number,
+  visitInstanceId: number,
+  content: unknown,
+) =>
+  httpClient
+    .post<ResubmitInstanceResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/resubmit`,
+      content,
+    )
+    .then((r) => r.data);
+
+/**
+ * Copies the two approved fields onto the signed-in user's OWN account profile.
+ *
+ * The canonical self-service profile command: it takes no target user — the server resolves the caller
+ * from the session — so this cannot express "update someone else". Deliberately not routed through any
+ * operational-contact handler; a contact snapshot and an account profile are different things, and the
+ * one endpoint that may write an account is the one that already validates account fields.
+ */
+export const syncOwnAccountProfile = (payload: { fullName?: string; phone?: string }) =>
+  httpClient.post('/profiles/updateprofile', payload).then((r) => r.data);
+
 export const getOperationalContactState = (visitRequestId: number, visitInstanceId: number) =>
   httpClient
     .get<OperationalContactState>(

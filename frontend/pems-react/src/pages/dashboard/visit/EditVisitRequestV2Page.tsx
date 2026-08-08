@@ -83,10 +83,24 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     setCardVersion(prev => ({ ...prev, [clientKey]: (prev[clientKey] ?? 0) + 1 }));
   }, []);
 
+  /**
+   * How many campuses this request may hold: however many are currently open for registration, exactly
+   * as create computes it (`V2_MAX_CAMPUSES` is only the payload backstop). It used to be a hard-coded
+   * 10 here, so a five-campus university offered "Thêm cơ sở (2/10)" and let the user add rows for
+   * campuses that do not exist. Falls back to the backstop only while the list is still loading.
+   */
+  const campusLimit = campuses.length > 0
+    ? Math.min(campuses.length, V2_MAX_CAMPUSES)
+    : V2_MAX_CAMPUSES;
+
   const schema = useMemo(
-    () => buildVisitRequestV2Schema(V2_MIN_ADVANCE_HOURS_EDIT, (key, opts) => t(key, { ns: 'validation', ...opts })),
+    () => buildVisitRequestV2Schema(
+      V2_MIN_ADVANCE_HOURS_EDIT,
+      (key, opts) => t(key, { ns: 'validation', ...opts }),
+      campusLimit,
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, i18n.language],
+    [t, i18n.language, campusLimit],
   );
 
   const form = useForm<VisitRequestV2Schema>({
@@ -147,7 +161,7 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     });
 
   const addCampus = () => {
-    if (campusVisitFields.fields.length >= V2_MAX_CAMPUSES) return;
+    if (campusVisitFields.fields.length >= campusLimit) return;
     const fresh = createEmptyCampusVisit();
     campusVisitFields.append(fresh);
     setOpenKeys(prev => new Set(prev).add(fresh.clientKey));
@@ -267,6 +281,11 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
   const { register, formState: { errors } } = form;
   const regErr = errors.registerInfo;
   const allowAddRemove = mode === 'edit'; // resubmit keeps the campus set fixed
+  // Campus CODEs already spoken for, so a campus cannot be picked twice in one request (the schema
+  // rejects duplicates too — this keeps the user from choosing one in the first place).
+  const takenCampusCodes = (form.watch('campusVisits') ?? [])
+    .map(cv => (cv.campus || '').toUpperCase())
+    .filter(Boolean);
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6">
@@ -312,6 +331,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
           <div className="space-y-4">
             {campusVisitFields.fields.map((field, index) => {
               const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || field.id;
+              // An EXISTING campus already has an operational contact, and none of that contact's five
+              // fields is this form's to write: the backend refuses all of them here, and managing them
+              // — including handing the campus to a different address, which the new person must accept
+              // — belongs to the detail screen. Shown read-only, offered nowhere. A campus being ADDED
+              // has no contact yet, so naming one is part of adding it.
+              const instanceId = form.getValues(`campusVisits.${index}.visitInstanceId`) ?? null;
               // A copy/apply-to-all patches this card's form values correctly, but register()-bound
               // inputs and the nested visitors/supportTeam field arrays only re-read fresh values on
               // mount — folding the bump counter into the key forces that remount (cardVersion).
@@ -326,6 +351,8 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                     onToggle={() => toggleCard(clientKey)}
                     campuses={campuses}
                     campusesLoading={campusesLoading}
+                    takenCampusCodes={takenCampusCodes}
+                    contactReadOnly={instanceId != null}
                     copySources={campusVisitFields.fields
                       .map((_, i) => i)
                       .filter(i => i !== index)
@@ -335,8 +362,8 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                     onRemove={() => requestRemove(index)}
                     canRemove={allowAddRemove && campusVisitFields.fields.length > 1}
                     showErrors={showErrors}
-                    // Editing/resubmitting only needs 24h notice — the same floor the schema
-                    // above was built with, so the picker and the resolver cannot disagree.
+                    // The same floor the schema above was built with — and the same one create uses,
+                    // so the picker, the resolver and the backend cannot disagree.
                     minAdvanceHours={V2_MIN_ADVANCE_HOURS_EDIT}
                   />
                 </div>
@@ -346,11 +373,11 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
           {allowAddRemove && (
             <button
               type="button"
-              disabled={campusVisitFields.fields.length >= V2_MAX_CAMPUSES}
+              disabled={campusVisitFields.fields.length >= campusLimit}
               className="mt-4 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-[#004c91]/40 px-4 py-2.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5 disabled:opacity-40"
               onClick={addCampus}
             >
-              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: V2_MAX_CAMPUSES })}
+              <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addCampus', { count: campusVisitFields.fields.length, max: campusLimit })}
             </button>
           )}
         </FormSection>

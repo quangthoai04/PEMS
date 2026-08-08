@@ -1,4 +1,14 @@
 {
+  "instanceResubmit": {
+    "title": "Cơ sở này đã bị từ chối",
+    "reason": "Lý do",
+    "open": "Chỉnh sửa & gửi lại cơ sở này",
+    "leadTimeHint": "Thời gian bắt đầu mới phải cách hiện tại ít nhất 72 giờ.",
+    "submit": "Gửi lại cơ sở này",
+    "cancel": "Hủy",
+    "success": "Đã gửi lại yêu cầu tại cơ sở này.",
+    "failed": "Không thể gửi lại cơ sở này. Vui lòng thử lại."
+  },
   "profileSync": {
     "question": "Thông tin liên hệ trong yêu cầu này khác hồ sơ PEMS của bạn. Bạn có muốn cập nhật hồ sơ cá nhân không?",
     "apply": "Cập nhật hồ sơ cá nhân",

@@ -1,4 +1,14 @@
 {
+  "instanceResubmit": {
+    "title": "This campus was declined",
+    "reason": "Reason",
+    "open": "Edit & resubmit this campus",
+    "leadTimeHint": "The new start time must be at least 72 hours from now.",
+    "submit": "Resubmit this campus",
+    "cancel": "Cancel",
+    "success": "This campus has been resubmitted for review.",
+    "failed": "Could not resubmit this campus. Please try again."
+  },
   "profileSync": {
     "question": "The contact details on this request differ from your PEMS profile. Would you like to update your personal profile?",
     "apply": "Update my profile",

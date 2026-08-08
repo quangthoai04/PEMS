@@ -272,6 +272,31 @@ public sealed class VisitRequestsController : ControllerBase
     }
 
     /// <summary>
+    /// Per-campus form v2 RESUBMIT of ONE rejected campus, leaving every sibling untouched.
+    ///
+    /// <para>
+    /// Separate from the whole-request resubmit above because that one requires EVERY campus to be
+    /// rejected and resets all of them. Open to the registrant and to the confirmed operational contact
+    /// of THIS campus — the handler proves the campus belongs to the request and that the caller holds
+    /// that campus, so naming a sibling is refused rather than quietly accepted.
+    /// </para>
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/resubmit")]
+    [Authorize]
+    public async Task<IActionResult> ResubmitInstanceFormV2(
+        ulong visitRequestId,
+        ulong visitInstanceId,
+        [FromBody] PEMS.Application.Common.DTOs.CampusVisitEditV2Dto content,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.ResubmitRejectedVisitInstanceV2
+                .ResubmitRejectedVisitInstanceV2Command(visitRequestId, visitInstanceId, content),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Visitor edits &amp; resubmits a fully-rejected request. The campus set must stay the
     /// same; old decisions are snapshotted to audit before being cleared.
     /// </summary>

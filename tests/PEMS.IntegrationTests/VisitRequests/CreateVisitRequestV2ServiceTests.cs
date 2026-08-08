@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
 using Xunit;
@@ -283,6 +284,49 @@ public sealed class CreateVisitRequestV2ServiceTests
         Assert.All(ok.CampusInstances, c => Assert.NotNull(c.FormDetail));
         await tx2.RollbackAsync();
         await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Create answers to the SAME scheduling floor as pending-edit and resubmit
+    /// (<see cref="VisitMutationPolicy.MinScheduleLeadHours"/>), enforced here against the server's own
+    /// clock (TC-TIME-01/02/03).
+    ///
+    /// <para>
+    /// This check used to be "not in the past" and nothing more, so the 72 hours lived only in the
+    /// browser: a direct API call — or a form filled in while the deadline slipped past — could file a
+    /// visit for tomorrow morning and leave the Staff Leader no time to arrange it. Exactly on the
+    /// boundary is inside the window; one minute short of it is not.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Start_inside_the_scheduling_lead_time_fails_and_exactly_on_it_passes()
+    {
+        RequireDb();
+
+        var tooSoon = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-1);
+        using (var db = NewContext())
+        using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+                Form(Campus("HN") with { PlannedStartAt = tooSoon, PlannedEndAt = tooSoon.AddHours(2) }),
+                Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+            Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            // The message carries what the caller needs to fix it: the rule, and the earliest date that
+            // would be accepted. BusinessRuleException has no metadata slot, so both travel in the text.
+            Assert.Contains(VisitMutationPolicy.MinScheduleLeadHours.ToString(), ex.Message);
+            await tx.RollbackAsync();
+        }
+
+        var exactly = Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
+        using (var db = NewContext())
+        using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            var ok = await Svc(db).CreateV2Async(
+                Form(Campus("HN") with { PlannedStartAt = exactly, PlannedEndAt = exactly.AddHours(2) }),
+                Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            Assert.Single(ok.CampusInstances);
+            await tx.RollbackAsync();
+        }
     }
 
     [Fact]

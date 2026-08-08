@@ -31,4 +31,24 @@ public interface IVisitRequestV2EditService
 
     Task<V2EditResult> ApplyResubmitAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, System.DateTime now, CancellationToken ct);
+
+    /// <summary>
+    /// Sends ONE rejected campus back for review, leaving every sibling exactly as it was.
+    ///
+    /// <para>
+    /// The whole-request <see cref="ApplyResubmitAsync"/> cannot express this: it refuses unless EVERY
+    /// campus is rejected, and it resets every one of them. That is the right shape when a request was
+    /// refused outright, and the wrong shape entirely when one campus said no and another already said
+    /// yes and assigned a host — which is the case the operational contact of the refused campus is
+    /// looking at.
+    /// </para>
+    /// <para>
+    /// The aggregate is recomputed from the campuses rather than assumed, so a request with one campus
+    /// back in review and one already approved lands on PARTIALLY_APPROVED, the same value the database
+    /// trigger computes for itself.
+    /// </para>
+    /// </summary>
+    Task<V2EditResult> ApplyInstanceResubmitAsync(
+        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        ulong actorId, System.DateTime now, CancellationToken ct);
 }
