@@ -84,6 +84,17 @@ public static class SystemEmailTemplates
     public const string VisitRequestOtp = "VISIT_REQUEST_OTP";
     public const string VisitContactClaim = "VISIT_CONTACT_CLAIM";
     public const string VisitContactTransfer = "VISIT_CONTACT_TRANSFER";
+    /// <summary>
+    /// One campus has declined, told to the person who filed the request. Deliberately campus-scoped:
+    /// the request itself may still be waiting on, or already accepted by, its other campuses.
+    /// </summary>
+    public const string VisitCampusRejected = "VISIT_CAMPUS_REJECTED";
+    /// <summary>
+    /// Nobody answered a contact invitation before it lapsed, told to the person who sent it. A
+    /// different event from a rejection and from the visit's own lead time: an invitation expiring is a
+    /// person not replying, and only the registrant can resend it or name somebody else.
+    /// </summary>
+    public const string VisitContactInvitationExpired = "VISIT_CONTACT_INVITATION_EXPIRED";
 
     // ── VISIT_PARTICIPANT ────────────────────────────────────────────────────
     public const string VisitParticipantInvitation = "VISIT_PARTICIPANT_INVITATION";
@@ -166,6 +177,18 @@ public static class SystemEmailTemplates
             Single(VisitContactTransfer, EmailTemplatePurposes.VisitRequest, sensitive: true,
                 "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime",
                 "currentContactName"),
+            // Neither of the two below carries a token or a personal link, so neither is "sensitive".
+            // Both are still one-per-person: they name a campus decision and a contact's address, which
+            // is content about a particular request rather than an announcement.
+            //
+            // campusName and plannedTime are load-bearing, not decoration: a request can be refused by
+            // one campus and accepted by another, so a message that named only the request would be
+            // read as "the whole thing is off" — the exact overstatement this template exists to avoid.
+            Single(VisitCampusRejected, EmailTemplatePurposes.VisitRequest, sensitive: false,
+                "recipientName", "requestCode", "delegationName", "campusName", "plannedTime", "reason"),
+            Single(VisitContactInvitationExpired, EmailTemplatePurposes.VisitRequest, sensitive: false,
+                "recipientName", "requestCode", "delegationName", "campusName",
+                "pendingContactEmailMasked"),
 
             // VISIT_PARTICIPANT — each invitee gets their own accept/decline token.
             Single(VisitParticipantInvitation, EmailTemplatePurposes.VisitParticipant, sensitive: true,

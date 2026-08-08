@@ -238,8 +238,19 @@ public sealed class SystemEmailDispatcherBoundaryTests
             var row = await ReadBackAsync(result.SentEmailId);
             Assert.Equal("FAILED", row!.Status);
             Assert.Null(row.SentAt);
-            Assert.Equal("Email delivery failed.", row.ErrorMessage);
+
+            // The machine code is kept alongside the human message, because it is the only thing that
+            // later tells a recovery sweep whether this failure happened before the provider was
+            // contacted — and SMTP_SEND_FAILED says it did not (plan §41).
+            Assert.Equal("[SMTP_SEND_FAILED] Email delivery failed.", row.ErrorMessage);
+            Assert.Equal("SMTP_SEND_FAILED", EmailAttemptRecord.CodeOf(row.ErrorMessage));
+            Assert.Equal(EmailAttemptOutcome.Unknown,
+                EmailAttemptRecord.Classify(row.Status, row.ErrorMessage));
+
+            // The recipient row keeps the plain human message: it is what a person reads, and it has no
+            // part in the retry decision.
             Assert.Equal("FAILED", Assert.Single(row.Recipients).DeliveryStatus);
+            Assert.Equal("Email delivery failed.", row.Recipients.Single().ErrorMessage);
 
             // The committed business change survives the email failure — confirmed from another context.
             using (var verify = NewContext())

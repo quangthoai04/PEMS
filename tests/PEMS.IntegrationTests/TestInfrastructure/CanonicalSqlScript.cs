@@ -613,8 +613,26 @@ public static class CanonicalSqlScript
     //
     // No DDL: no table, column, index, constraint, trigger or seed row differs. Still 81 base tables,
     // 33 triggers, 252 foreign keys, 31 email templates.
+    //
+    // (2026-08-08) Repinned for TWO NEW SEED ROWS and nothing else — no DDL, and no existing row
+    // touched. Both are email templates that close a send point the audit found missing:
+    //
+    //   • VISIT_CAMPUS_REJECTED (70032) — a Staff Leader declines ONE campus and the registrant is
+    //     told by email, not only by a dashboard notification. Scoped to that campus, because the
+    //     request may still be waiting on, or already accepted by, its siblings.
+    //   • VISIT_CONTACT_INVITATION_EXPIRED (70033) — a contact invitation lapsed unanswered, told to
+    //     the registrant, who is the only person who can resend it or name somebody else.
+    //
+    // Each also gets an email_contact_policies row (OPTIONAL / CAMPUS_DEFAULT), the same shape the two
+    // existing VISIT_CONTACT_* templates carry. email-template-defaults.json holds the identical
+    // wording so EmailTemplateDefaultsParityTests stays green, 02_sync_templates.sql stages both so a
+    // sync run converges rather than deleting them, and
+    // patches/2026-08-08_email_visit_rejection_and_contact_expiry.sql brings an already-imported
+    // database up without a re-import.
+    //
+    // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
     public const string ExpectedSha256 =
-        "004d629ee4574b9bbacb046df1033875e70588b44aa10b12382e95ba9d533c3c";
+        "b612c3a9881b383244b4b56624d425402ead4cfdf36924a517d0a916d1efedb8";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

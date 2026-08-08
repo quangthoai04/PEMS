@@ -28,7 +28,10 @@ public sealed class SystemEmailG4ClosureTests
 {
     // 31 since VISIT_SETUP_PROGRESS_UPDATE joined the REPORT group: the Host's manual preparation
     // update to the guest side, which carries the Schedule Report as its attachment.
-    private const int CatalogSize = 31;
+    // 33 since 2026-08-08: VISIT_CAMPUS_REJECTED and VISIT_CONTACT_INVITATION_EXPIRED closed the two
+    // send points the audit found missing — a campus rejection and a lapsed contact invitation were
+    // both raised as in-app notifications only, so the guest side learned of them by logging in.
+    private const int CatalogSize = 33;
 
     /// <summary>The catalog as the plan fixed it. Written out so a rename cannot pass silently.</summary>
     private static readonly string[] Catalog =
@@ -42,6 +45,10 @@ public sealed class SystemEmailG4ClosureTests
         "DEPT_LEADERSHIP_GRANTED", "DEPT_LEADERSHIP_HANDED_OVER",
         "AUTH_PASSWORD_RESET_OTP",
         "VISIT_REQUEST_OTP", "VISIT_CONTACT_CLAIM", "VISIT_CONTACT_TRANSFER",
+        // The two guest-facing outcomes that had a dashboard notification and no mail: a campus
+        // declining (scoped to that campus, never the whole request) and a contact invitation lapsing
+        // unanswered (told to the registrant, who is the only one who can resend or replace it).
+        "VISIT_CAMPUS_REJECTED", "VISIT_CONTACT_INVITATION_EXPIRED",
         "VISIT_PARTICIPANT_INVITATION", "VISIT_STUDENT_INVITATION",
         "VISIT_DEPARTMENT_LEADER_INVITATION", "VISIT_DEPARTMENT_STAFF_ASSIGNMENT",
         "LOGISTICS_REQUEST_TO_DEPARTMENT", "LOGISTICS_ASSIGNEE_ASSIGNMENT",

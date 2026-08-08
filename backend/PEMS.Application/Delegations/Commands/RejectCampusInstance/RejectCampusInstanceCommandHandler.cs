@@ -24,12 +24,16 @@ public sealed class RejectCampusInstanceCommandHandler
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly IVisitFormReadService _formReadService;
+    private readonly PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail _rejectionEmail;
+    private readonly PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender _mailer;
 
     public RejectCampusInstanceCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
         IVisitRequestAggregateStatusService aggregateStatus,
         PEMS.Application.Notifications.Common.INotificationService notificationService,
-        IVisitFormReadService formReadService)
+        IVisitFormReadService formReadService,
+        PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail rejectionEmail,
+        PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender mailer)
     {
         _db = db;
         _currentUser = currentUser;
@@ -37,6 +41,8 @@ public sealed class RejectCampusInstanceCommandHandler
         _aggregateStatus = aggregateStatus;
         _notificationService = notificationService;
         _formReadService = formReadService;
+        _rejectionEmail = rejectionEmail;
+        _mailer = mailer;
     }
 
     public async Task<RejectCampusInstanceResponse> Handle(
@@ -108,10 +114,15 @@ public sealed class RejectCampusInstanceCommandHandler
         // Same per-campus audit context as the approve decision — see CampusDecisionAudit. The free-text
         // reason is NOT copied here: it already lives on the instance, and this column is a short
         // structured summary, not a second copy of staff-authored prose.
-        _db.AuditLogs.Add(new AuditLog
+        //
+        // It is also THE identity of this rejection for notification purposes: the same campus may be
+        // rejected again after a resubmit, and each rejection owes the registrant its own email. The row
+        // is never updated and never deleted, so its id stays the right answer for as long as the
+        // recovery sweep might ask (plan §37).
+        var rejectionEvent = new AuditLog
         {
             ActorUserId = actorId,
-            Action = "REJECT_CAMPUS_INSTANCE",
+            Action = PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail.RejectionAuditAction,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CampusId = instance.CampusId,
@@ -120,7 +131,8 @@ public sealed class RejectCampusInstanceCommandHandler
             SourceType = CampusDecisionAudit.SourceType,
             Reason = "decision=REJECTED",
             CreatedAt = now
-        });
+        };
+        _db.AuditLogs.Add(rejectionEvent);
 
         await _db.SaveChangesAsync(cancellationToken);
 
@@ -228,6 +240,27 @@ public sealed class RejectCampusInstanceCommandHandler
 
         await tx.CommitAsync(cancellationToken);
 
+        // ── The registrant's email, sent only after the decision is committed ────────────────────
+        //
+        // Strictly after the commit, for two reasons: a message must never describe a rejection a
+        // rollback then undid, and the dispatcher shares this DbContext and saves — inside the
+        // transaction it would have written whatever else was still tracked.
+        //
+        // Sent through the recoverable sender rather than directly, which is what makes a failure here
+        // survivable. A rejection cannot be retried by rejecting again: this handler is the only writer
+        // of REJECTED and it refuses unless the campus is still WAITING_REQUEST_APPROVAL, so a second
+        // call conflicts long before reaching this line. The sender keys "already notified" off the
+        // email history instead, so the recovery sweep can finish the job later without the decision
+        // being replayed — and cannot send a second message once one has succeeded.
+        //
+        // Keyed on THIS rejection's audit row, so an earlier rejection of the same campus that was
+        // notified successfully cannot mark this one as already done (plan §37).
+        //
+        // It never throws. The campus IS rejected and the response says so; a mail-server problem is
+        // recorded on its own rows and does not turn a completed decision into an error the Staff
+        // Leader would retry into a conflict (plan §11).
+        await _mailer.SendOnceAsync(_rejectionEmail, rejectionEvent.AuditLogId, cancellationToken);
+
         return new RejectCampusInstanceResponse(
             visit.VisitRequestId,
             instance.VisitInstanceId,
@@ -235,4 +268,5 @@ public sealed class RejectCampusInstanceCommandHandler
             instance.Status,
             "Đã từ chối tiếp nhận tại cơ sở này.");
     }
+
 }

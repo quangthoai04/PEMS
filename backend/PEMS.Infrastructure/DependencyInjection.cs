@@ -163,6 +163,18 @@ public static class DependencyInjection
         services.AddScoped<IOperationalContactInvitationService, OperationalContactInvitationService>();
         services.AddScoped<IOperationalContactMaintenanceService, OperationalContactMaintenanceService>();
 
+        // Post-commit visit notifications that must survive a mail failure. The two builders describe
+        // the messages; the sender enforces "at most one successful send per transition"; the recovery
+        // service finds transitions whose message never got out. Registered together because they are
+        // one mechanism — a send point that used the builder without the sender would lose the
+        // at-most-once guarantee, and the sweep would then re-send what it already sent.
+        services.AddScoped<PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail>();
+        services.AddScoped<PEMS.Application.Delegations.VisitNotifications.ContactInvitationExpiryEmail>();
+        services.AddScoped<PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender>();
+        services.AddScoped<PEMS.Application.Delegations.VisitNotifications.IEmailRecoveryLock,
+            MySqlEmailRecoveryLock>();
+        services.AddScoped<IVisitNotificationRecoveryService, VisitNotificationRecoveryService>();
+
         // Per-campus v2 safe edit + amendments (plan §16.6, Phase E).
         services.AddScoped<IVisitSafeEditService, VisitSafeEditService>();
         services.AddScoped<IVisitAmendmentService, VisitAmendmentService>();
@@ -212,6 +224,10 @@ public static class DependencyInjection
 
         // Background job — operational-contact invitation expiry (72h / 24h) + retention redaction (90d).
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.OperationalContactMaintenanceHostedService>();
+
+        // Background job — visit notifications whose transition committed but whose message failed.
+        // Separate from the sweep above on purpose: see the hosted service's own remarks.
+        services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitNotificationRecoveryHostedService>();
 
         // Background job — pending-amendment expiry (window passed / instance started), plan §16.6.
         services.AddHostedService<PEMS.Infrastructure.BackgroundJobs.VisitAmendmentExpiryHostedService>();

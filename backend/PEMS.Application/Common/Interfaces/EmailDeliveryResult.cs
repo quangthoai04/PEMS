@@ -67,11 +67,117 @@ public static class EmailDeliveryCodes
     /// <summary>The SMTP client threw. What the provider did with the message is NOT known.</summary>
     public const string SmtpSendFailed = "SMTP_SEND_FAILED";
 
+    /// <summary>Resend is off or has no API key. The HTTP call was never made.</summary>
+    public const string ResendMisconfigured = "RESEND_MISCONFIGURED";
+
+    /// <summary>The stored Resend key could not be decrypted. The HTTP call was never made.</summary>
+    public const string ResendCredentialError = "RESEND_CREDENTIAL_ERROR";
+
+    /// <summary>
+    /// Resend rejected the request OR the connection to it failed. The two share a code, so the second
+    /// case — a socket that died after the request was written — keeps the whole code ambiguous.
+    /// </summary>
+    public const string ResendSendFailed = "RESEND_SEND_FAILED";
+
     /// <summary>
     /// True only for outcomes decided before the provider was contacted. Deliberately a closed list:
     /// a code nobody has classified reads as "unknown", which is the safe direction to be wrong in.
     /// </summary>
     public static bool ProvesNothingWasSent(EmailDeliveryResult delivery)
         => delivery.Status == EmailDeliveryStatus.Skipped
-           || delivery.Code is SmtpDisabled or SmtpMisconfigured;
+           || ProvesNothingWasSent(delivery.Code);
+
+    /// <summary>The same closed list, asked of a code recovered from a stored row.</summary>
+    public static bool ProvesNothingWasSent(string? code)
+        => code is SmtpDisabled or SmtpMisconfigured
+                or ResendMisconfigured or ResendCredentialError;
+}
+
+/// <summary>
+/// What a stored <c>sent_emails</c> row proves about whether its message reached a provider — the
+/// question a retry has to answer once the <see cref="EmailDeliveryResult"/> itself is long gone.
+///
+/// <para>
+/// The in-memory <see cref="EmailDeliveryCodes.ProvesNothingWasSent(EmailDeliveryResult)"/> answers it
+/// for the caller that is still holding the result. A recovery sweep running an hour or a week later
+/// holds only the row, so the machine code has to survive INTO that row — which is why
+/// <see cref="Format"/> writes it there and <see cref="CodeOf"/> reads it back.
+/// </para>
+/// </summary>
+public enum EmailAttemptOutcome
+{
+    /// <summary>The provider accepted it. Complete — never retry (plan §40 class C).</summary>
+    Accepted,
+
+    /// <summary>
+    /// Decided before anything was dispatched: SMTP off, no host, no API key. Retrying is provably
+    /// safe because there is provably no first copy (plan §40 classes A and B).
+    /// </summary>
+    ProvenNotDispatched,
+
+    /// <summary>
+    /// The outbound call may have reached the provider and its acceptance cannot be established — a
+    /// client exception, or a row still QUEUED because the process died between writing it and
+    /// recording the outcome. The recipient may already hold the message, so an automatic resend is
+    /// NOT allowed (plan §40 class D, §42).
+    /// </summary>
+    Unknown,
+}
+
+/// <summary>
+/// Reads and writes the delivery outcome of a stored <c>sent_emails</c> row.
+///
+/// <para>
+/// The row already carried the human-safe message; what it did not carry was the machine code that
+/// says whether a retry is safe, so every failure looked alike to anything reading the table later.
+/// The code is non-secret by the contract on <see cref="EmailDeliveryResult"/> — it is the one part of
+/// the outcome that is safe to persist verbatim — so it is written as a bracketed prefix and parsed
+/// back off the front. A row with no prefix (written before this, or by something else) yields a null
+/// code and therefore classifies as <see cref="EmailAttemptOutcome.Unknown"/>: the safe direction.
+/// </para>
+/// </summary>
+public static class EmailAttemptRecord
+{
+    /// <summary>The <c>sent_emails.status</c> value meaning the provider accepted the message.</summary>
+    public const string SentStatus = "SENT";
+
+    /// <summary>The <c>sent_emails.status</c> value a row is written with before dispatch.</summary>
+    public const string QueuedStatus = "QUEUED";
+
+    /// <summary>The <c>sent_emails.status</c> value for an attempt that did not succeed.</summary>
+    public const string FailedStatus = "FAILED";
+
+    /// <summary>Renders the outcome for <c>sent_emails.error_message</c>, keeping the machine code.</summary>
+    public static string? Format(EmailDeliveryResult delivery)
+        => string.IsNullOrWhiteSpace(delivery.Code)
+            ? delivery.SafeMessage
+            : $"[{delivery.Code}] {delivery.SafeMessage}".TrimEnd();
+
+    /// <summary>The machine code a stored message was written with, or null when it carries none.</summary>
+    public static string? CodeOf(string? errorMessage)
+    {
+        if (string.IsNullOrEmpty(errorMessage) || errorMessage[0] != '[') return null;
+        var end = errorMessage.IndexOf(']');
+        return end > 1 ? errorMessage[1..end] : null;
+    }
+
+    /// <summary>
+    /// Classifies one stored attempt.
+    ///
+    /// <para>
+    /// QUEUED is the interesting case, because two very different things leave it there. A SKIPPED send
+    /// records its reason, so a QUEUED row WITH a message is an environment that never dispatches mail.
+    /// A QUEUED row with NO message is a row that was written and then never spoken of again — the
+    /// crash window of plan §42 — and the message may well have gone out.
+    /// </para>
+    /// </summary>
+    public static EmailAttemptOutcome Classify(string? status, string? errorMessage)
+    {
+        if (status == SentStatus) return EmailAttemptOutcome.Accepted;
+
+        var code = CodeOf(errorMessage);
+        if (EmailDeliveryCodes.ProvesNothingWasSent(code)) return EmailAttemptOutcome.ProvenNotDispatched;
+
+        return EmailAttemptOutcome.Unknown;
+    }
 }

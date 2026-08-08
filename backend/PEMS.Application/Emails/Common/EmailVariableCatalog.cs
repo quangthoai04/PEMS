@@ -77,6 +77,11 @@ public static class EmailVariableCatalog
             V("effectiveDate", "Ngày hiệu lực", "Effective date", "01/09/2026", "1 Sep 2026"),
             V("reason", "Lý do", "Reason", "Điều chuyển công tác", "Internal reassignment"),
             V("oldEmailMasked", "Email cũ (đã che)", "Previous email (masked)", "n***@fpt.edu.vn", "n***@fpt.edu.vn"),
+            // The address an unanswered contact invitation was sent to. MASKED, like every other address
+            // this catalog prints: the message goes to the registrant, and telling them which invitation
+            // lapsed does not require handing them a third party's full address back in writing.
+            V("pendingContactEmailMasked", "Email đầu mối chờ xác nhận (đã che)",
+              "Pending contact email (masked)", "b***@partner.edu.vn", "b***@partner.edu.vn"),
             V("expiresInHours", "Hiệu lực (giờ)", "Valid for (hours)", "24", "24"),
             V("expireMinutes", "Hiệu lực (phút)", "Valid for (minutes)", "10", "10"),
 

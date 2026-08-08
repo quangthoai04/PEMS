@@ -303,8 +303,10 @@ public class EmailRecipientPolicyEnforcerTests
         // Catalog decision DL-02: every code has a real production caller. 26 + the 4 DEPT_* codes
         // added when the Department-Leader personnel module stopped composing its own HTML and moved
         // onto the dispatcher (disable / enable / leadership granted / leadership handed over)
-        // + VISIT_SETUP_PROGRESS_UPDATE, the Host's manual preparation update to the guest.
-        => Assert.Equal(31, SystemEmailTemplates.AllCodes.Count);
+        // + VISIT_SETUP_PROGRESS_UPDATE, the Host's manual preparation update to the guest
+        // + VISIT_CAMPUS_REJECTED and VISIT_CONTACT_INVITATION_EXPIRED, the two guest-facing events
+        //   that had a notification but no mail (2026-08-08).
+        => Assert.Equal(33, SystemEmailTemplates.AllCodes.Count);
 
     [Fact]
     public void Registry_has_no_duplicate_codes()

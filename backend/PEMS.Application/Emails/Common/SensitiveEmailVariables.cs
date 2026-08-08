@@ -53,6 +53,9 @@ public static class SensitiveEmailVariables
             // in the history, which is where a department goes to re-read what it agreed to do.
             "logisticsDescription",
             "logisticsItemType", "logisticsTitle", "newRoleName", "oldEmailMasked", "oldRoleName",
+            // Already masked where it is produced, exactly like oldEmailMasked beside it: it names
+            // WHICH invitation lapsed without putting a third party's full address in a stored body.
+            "pendingContactEmailMasked",
             "originalQuantity", "periodFrom", "periodTo", "personName", "plannedEnd", "plannedStart",
             "plannedTime",
             // The change-proposal counter-offer. These are business figures the Host is being asked to

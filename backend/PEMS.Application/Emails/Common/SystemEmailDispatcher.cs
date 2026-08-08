@@ -291,9 +291,12 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
                 }
                 break;
 
+            // The machine code is kept alongside the human message (EmailAttemptRecord.Format). It is
+            // the only thing that later tells a recovery sweep whether this failure happened BEFORE the
+            // provider was contacted — and by then the EmailDeliveryResult itself is long gone.
             case EmailDeliveryStatus.Failed:
                 sentEmail.Status = "FAILED";
-                sentEmail.ErrorMessage = delivery.SafeMessage;
+                sentEmail.ErrorMessage = EmailAttemptRecord.Format(delivery);
                 if (recipient is not null)
                 {
                     recipient.DeliveryStatus = "FAILED";
@@ -303,7 +306,7 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
 
             default: // Skipped
                 sentEmail.Status = "QUEUED";
-                sentEmail.ErrorMessage = delivery.SafeMessage;
+                sentEmail.ErrorMessage = EmailAttemptRecord.Format(delivery);
                 if (recipient is not null) recipient.DeliveryStatus = "QUEUED";
                 break;
         }

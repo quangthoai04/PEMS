@@ -123,9 +123,54 @@ public sealed class CampusApprovalDecisionV2Tests
             new MySqlUserMutationLockService(db));
 
     private static RejectCampusInstanceCommandHandler RejectHandler(
-        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
+        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications,
+        RecordingDispatcher? dispatcher = null)
         => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
-            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()));
+            new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
+            // The rejection email is built from the campus and sent through the recoverable sender —
+            // the same two objects the container wires, so what these tests exercise is what runs.
+            new PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail(db),
+            new PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender(
+                db, dispatcher ?? new RecordingDispatcher(), new GrantingLock(), new FixedClock(),
+                NullLogger<PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender>.Instance));
+
+    /// <summary>Always grants: these tests send one message at a time.</summary>
+    private sealed class GrantingLock : PEMS.Application.Delegations.VisitNotifications.IEmailRecoveryLock
+    {
+        public Task<IAsyncDisposable?> TryAcquireAsync(string key, CancellationToken ct)
+            => Task.FromResult<IAsyncDisposable?>(new Handle());
+
+        private sealed class Handle : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Captures what the rejection email would have been, without rendering or sending one. The
+    /// dispatcher is called AFTER the transaction commits, so for the cases that only care about the
+    /// decision it just has to not throw; the two cases that DO care read <see cref="Sent"/>.
+    /// </summary>
+    internal sealed class RecordingDispatcher : PEMS.Application.Emails.Common.ISystemEmailDispatcher
+    {
+        public List<PEMS.Application.Emails.Common.SystemEmailRequest> Sent { get; } = new();
+
+        public Task<PEMS.Application.Emails.Common.SystemEmailDispatchResult> SendAsync(
+            PEMS.Application.Emails.Common.SystemEmailRequest request, CancellationToken cancellationToken = default)
+        {
+            Sent.Add(request);
+            return Task.FromResult(new PEMS.Application.Emails.Common.SystemEmailDispatchResult(
+                PEMS.Application.Common.Interfaces.EmailDeliveryResult.Sent(), SentEmailId: 0, EmailTemplateId: 0));
+        }
+
+        public Task<PEMS.Application.Emails.Common.PreparedSystemEmail> PrepareAsync(
+            PEMS.Application.Emails.Common.SystemEmailRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<PEMS.Application.Common.Interfaces.EmailDeliveryResult> DeliverAsync(
+            PEMS.Application.Emails.Common.PreparedSystemEmail prepared, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
 
     /// <summary>
     /// One campus with content that is unique to it, so a leaked sibling value is unmistakable.
@@ -485,6 +530,93 @@ public sealed class CampusApprovalDecisionV2Tests
                                 && a.SourceType == CampusDecisionAudit.SourceType)
                     .ToListAsync());
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Reject: the registrant's email (repair prompt §7) ─────────────────────────
+
+    /// <summary>
+    /// A rejection reaches the registrant by EMAIL, not only as a dashboard notification, and it says
+    /// which campus refused and why (TC-REJECT-MAIL-01).
+    ///
+    /// <para>
+    /// One message per rejection: this handler is the only writer of REJECTED and refuses unless the
+    /// campus is still waiting, so there is no second path that could send a duplicate — and the
+    /// aggregate recompute that follows sends nothing of its own (TC-REJECT-MAIL-03).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Rejecting_a_campus_emails_the_registrant_once_with_the_campus_and_the_reason()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(26);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn HN riêng"));
+            var before = await StateAsync(requestId);
+            var dispatcher = new RecordingDispatcher();
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), dispatcher)
+                    .Handle(new RejectCampusInstanceCommand(
+                        requestId, before[CampusHn].VisitInstanceId, "Cơ sở đang sửa chữa"), CancellationToken.None);
+
+            var mail = Assert.Single(dispatcher.Sent);
+            Assert.Equal(
+                PEMS.Application.Emails.Common.SystemEmailTemplates.VisitCampusRejected, mail.TemplateCode);
+            // TO is the REGISTRANT — the one who can edit and resubmit.
+            Assert.Equal(V2SeedActor.Email(Registrant), mail.To.Email);
+            Assert.Equal("Cơ sở đang sửa chữa", mail.Variables["reason"]);
+            Assert.False(string.IsNullOrWhiteSpace(mail.Variables["campusName"]));
+            Assert.False(string.IsNullOrWhiteSpace(mail.Variables["requestCode"]));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// With a sibling still pending, the mail is about ONE campus and never claims the request as a
+    /// whole was refused (TC-REJECT-MAIL-02). The variables are the assertion: the body is built from
+    /// them, so a campus-scoped variable set cannot render a request-wide sentence.
+    /// </summary>
+    [Fact]
+    public async Task The_rejection_email_names_one_campus_while_a_sibling_is_still_pending()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(26);
+            requestId = await CreateAsync(
+                Campus("HN", start, "Đoàn HN riêng"),
+                Campus("DN", start.AddDays(2), "Đoàn DN riêng"));
+            var before = await StateAsync(requestId);
+            var dispatcher = new RecordingDispatcher();
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderDn, CampusDn), new RecordingNotifications(), dispatcher)
+                    .Handle(new RejectCampusInstanceCommand(
+                        requestId, before[CampusDn].VisitInstanceId, "Trùng lịch"), CancellationToken.None);
+
+            // The request itself is still PENDING_APPROVAL — HN has not been decided.
+            Assert.Equal(VisitRequestStatuses.PendingApproval, await RequestStatusAsync(requestId));
+
+            var mail = Assert.Single(dispatcher.Sent);
+
+            // Filed against THIS rejection's audit row, not against the campus: the same campus can be
+            // rejected again after a resubmit, and each of those owes its own message (plan §37).
+            Assert.Equal("VisitCampusRejectionEvent", mail.RelatedType);
+            using (var db = NewContext())
+            {
+                var evt = await db.AuditLogs.AsNoTracking()
+                    .SingleAsync(a => a.AuditLogId == mail.RelatedId);
+                Assert.Equal("REJECT_CAMPUS_INSTANCE", evt.Action);
+                Assert.Equal(before[CampusDn].VisitInstanceId, evt.VisitInstanceId);
+            }
+
+            // The delegation named is DN's own, never HN's, and never a request-level value.
+            Assert.Equal("Đoàn DN riêng", mail.Variables["delegationName"]);
         }
         finally { await CleanupAsync(requestId); }
     }
