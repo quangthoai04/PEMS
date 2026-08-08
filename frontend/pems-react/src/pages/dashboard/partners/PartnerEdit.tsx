@@ -2,15 +2,19 @@
  * PartnerEdit — cập nhật hồ sơ đối tác (PUT /api/partners/{id}).
  * Cập nhật một hồ sơ REJECTED sẽ tự nộp lại (backend chuyển về PENDING_APPROVAL).
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertTriangle, Info, Languages, RotateCw } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Info, Languages, RotateCw, Upload, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { PartnerType } from '../../../features/partners/types/partners.types';
 import { PARTNER_TYPE_LABELS } from '../../../features/partners/types/partners.types';
+import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
+import { CitySelect } from '../../../features/partners/components/CitySelect';
 import { usePartnerBilingualTranslate } from './usePartnerBilingualTranslate';
 import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
+import { SmartImage } from '../news/components/SmartImage';
+import { validateFile } from '../../../shared/utils/fileValidation';
 import {
   getApiErrorMessage,
   showLoadingToast,
@@ -43,6 +47,16 @@ export function PartnerEdit() {
   const [cooperationStatus, setCooperationStatus] = useState('POTENTIAL');
   const [visibility, setVisibility] = useState('INTERNAL');
   const [submitting, setSubmitting] = useState(false);
+
+  const [logoFileId, setLogoFileId] = useState<number | null>(null);
+  const [coverFileId, setCoverFileId] = useState<number | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  // Reverting a failed upload's preview goes back to what was actually saved, not just null.
+  const savedLogoUrl = useRef<string | null>(null);
+  const savedCoverUrl = useRef<string | null>(null);
 
   // Bilingual editor. `hadEnglishAtEditStart` freezes whether an EN translation already existed
   // when this page loaded — the EN column is then shown immediately (both translations loaded
@@ -87,6 +101,44 @@ export function PartnerEdit() {
     else toast.error('Không thể dịch tự động. Vui lòng thử lại.');
   }
 
+  const handleCountryChange = (next: string) => {
+    if (country.trim() && next.trim().toLowerCase() !== country.trim().toLowerCase()) {
+      setCity('');
+    }
+    setCountry(next);
+  };
+
+  // Uploads immediately on pick (mirrors the News cover-image editor): preview switches to the local
+  // blob right away, then to the saved Drive URL's fileId once the upload resolves. The fileId only
+  // changes on success, so a failed upload can't corrupt what gets saved by "Lưu thay đổi".
+  async function handleImageSelect(kind: 'logo' | 'cover', file: File | undefined) {
+    if (!file || !id) return;
+    const check = validateFile(file, kind === 'logo' ? 'PARTNER_LOGO' : 'PARTNER_COVER');
+    if (!check.ok) {
+      toast.error(check.message || 'Tệp không hợp lệ.');
+      return;
+    }
+
+    const setPreview = kind === 'logo' ? setLogoPreview : setCoverPreview;
+    const setUploading = kind === 'logo' ? setUploadingLogo : setUploadingCover;
+    const setFileId = kind === 'logo' ? setLogoFileId : setCoverFileId;
+    const savedUrl = kind === 'logo' ? savedLogoUrl : savedCoverUrl;
+
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const uploaded = kind === 'logo'
+        ? await partnersApi.uploadLogo(id, file)
+        : await partnersApi.uploadCover(id, file);
+      setFileId(uploaded.fileId);
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Tải ảnh lên thất bại.'));
+      setPreview(savedUrl.current);
+    } finally {
+      setUploading(false);
+    }
+  }
+
   useEffect(() => {
     if (!id) return;
     (async () => {
@@ -109,6 +161,12 @@ export function PartnerEdit() {
         setVisibility(partner.visibility);
         setWasRejected(partner.profileStatus === 'REJECTED');
         setProfileStatus(partner.profileStatus);
+        setLogoFileId(partner.logoFileId ?? null);
+        setCoverFileId(partner.coverFileId ?? null);
+        setLogoPreview(partner.logoUrl ?? null);
+        setCoverPreview(partner.coverUrl ?? null);
+        savedLogoUrl.current = partner.logoUrl ?? null;
+        savedCoverUrl.current = partner.coverUrl ?? null;
         setHadEnglishAtEditStart(!!partner.hasEnglishTranslation);
         setEnglishName(partner.englishName ?? '');
         setEnglishShortName(partner.englishShortName ?? '');
@@ -144,6 +202,8 @@ export function PartnerEdit() {
         partnerType,
         cooperationStatus,
         visibility: visibility as 'PRIVATE' | 'INTERNAL' | 'PUBLIC',
+        logoFileId,
+        coverFileId,
         // Omitted entirely when the EN panel was never opened for a partner that has no EN yet —
         // the backend then auto-translates once and stores the result, same rule as create.
         ...(showEnglishColumn
@@ -178,7 +238,7 @@ export function PartnerEdit() {
   }
 
   return (
-    <div className="w-full pb-12 max-w-4xl">
+    <div className="w-full pb-12 max-w-4xl mx-auto">
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard/partners')} className="hover:text-[#004c91] cursor-pointer">
           Quản lý đối tác
@@ -240,6 +300,50 @@ export function PartnerEdit() {
 
       <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label className={labelCls}>Logo</label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {logoPreview
+                    ? <SmartImage src={logoPreview} alt="Logo đối tác" className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-6 h-6 text-gray-300" />}
+                </div>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-600 hover:bg-gray-50 ${uploadingLogo ? 'opacity-50' : 'cursor-pointer'}`}>
+                  {uploadingLogo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {uploadingLogo ? 'Đang tải...' : logoPreview ? 'Đổi ảnh' : 'Chọn ảnh'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={uploadingLogo}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleImageSelect('logo', f); }}
+                  />
+                </label>
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Ảnh bìa</label>
+              <div className="flex items-center gap-4">
+                <div className="w-32 h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {coverPreview
+                    ? <SmartImage src={coverPreview} alt="Ảnh bìa đối tác" className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-6 h-6 text-gray-300" />}
+                </div>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-600 hover:bg-gray-50 ${uploadingCover ? 'opacity-50' : 'cursor-pointer'}`}>
+                  {uploadingCover ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  {uploadingCover ? 'Đang tải...' : coverPreview ? 'Đổi ảnh' : 'Chọn ảnh'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={uploadingCover}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleImageSelect('cover', f); }}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
           <div className="md:col-span-2">
             <label className={labelCls}>
               Tên đối tác *{showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
@@ -261,9 +365,13 @@ export function PartnerEdit() {
               }
             />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Mã đối tác</label>
-            <input className={inputCls} value={partnerCode} onChange={(e) => setPartnerCode(e.target.value)} maxLength={50} />
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<input className={inputCls} value={partnerCode} onChange={(e) => setPartnerCode(e.target.value)} maxLength={50} />}
+              right={null}
+            />
           </div>
           <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>
@@ -286,25 +394,57 @@ export function PartnerEdit() {
               }
             />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Quốc gia</label>
-            <input className={inputCls} value={country} onChange={(e) => setCountry(e.target.value)} maxLength={100} />
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <CountrySelect
+                  storeLang="vi"
+                  value={country}
+                  onChange={handleCountryChange}
+                  placeholder="Chọn hoặc nhập quốc gia..."
+                />
+              }
+              right={null}
+            />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Thành phố</label>
-            <input className={inputCls} value={city} onChange={(e) => setCity(e.target.value)} maxLength={100} />
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <CitySelect
+                  country={country}
+                  value={city}
+                  onChange={setCity}
+                  placeholder="Chọn hoặc nhập thành phố..."
+                />
+              }
+              right={null}
+            />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Website</label>
-            <input className={inputCls} value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} maxLength={500} />
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={<input className={inputCls} value={websiteUrl} onChange={(e) => setWebsiteUrl(e.target.value)} maxLength={500} />}
+              right={null}
+            />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Loại đối tác</label>
-            <select className={inputCls} value={partnerType} onChange={(e) => setPartnerType(e.target.value as PartnerType)}>
-              {Object.entries(PARTNER_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <select className={inputCls} value={partnerType} onChange={(e) => setPartnerType(e.target.value as PartnerType)}>
+                  {Object.entries(PARTNER_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              }
+              right={null}
+            />
           </div>
           <div className="md:col-span-2">
             <label className={labelCls}>
@@ -348,25 +488,37 @@ export function PartnerEdit() {
               }
             />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Trạng thái hợp tác</label>
-            <select className={inputCls} value={cooperationStatus} onChange={(e) => setCooperationStatus(e.target.value)}>
-              <option value="POTENTIAL">Tiềm năng</option>
-              <option value="ACTIVE">Đang hợp tác</option>
-              <option value="INACTIVE">Ngưng hợp tác</option>
-              <option value="BLACKLISTED">Danh sách đen</option>
-            </select>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <select className={inputCls} value={cooperationStatus} onChange={(e) => setCooperationStatus(e.target.value)}>
+                  <option value="POTENTIAL">Tiềm năng</option>
+                  <option value="ACTIVE">Đang hợp tác</option>
+                  <option value="INACTIVE">Ngưng hợp tác</option>
+                  <option value="BLACKLISTED">Danh sách đen</option>
+                </select>
+              }
+              right={null}
+            />
           </div>
-          <div>
+          <div className={showEnglishColumn ? 'md:col-span-2' : undefined}>
             <label className={labelCls}>Chế độ hiển thị</label>
-            <select className={inputCls} value={visibility} onChange={(e) => setVisibility(e.target.value)}>
-              <option value="PRIVATE">Riêng tư (PRIVATE)</option>
-              <option value="INTERNAL">Nội bộ (INTERNAL)</option>
-              {/* PUBLIC hợp lệ chỉ khi hồ sơ đã APPROVED và không phải resubmission */}
-              {profileStatus === 'APPROVED' && !wasRejected && (
-                <option value="PUBLIC">Công khai (PUBLIC)</option>
-              )}
-            </select>
+            <BilingualColumns
+              showEnglish={showEnglishColumn}
+              left={
+                <select className={inputCls} value={visibility} onChange={(e) => setVisibility(e.target.value)}>
+                  <option value="PRIVATE">Riêng tư (PRIVATE)</option>
+                  <option value="INTERNAL">Nội bộ (INTERNAL)</option>
+                  {/* PUBLIC hợp lệ chỉ khi hồ sơ đã APPROVED và không phải resubmission */}
+                  {profileStatus === 'APPROVED' && !wasRejected && (
+                    <option value="PUBLIC">Công khai (PUBLIC)</option>
+                  )}
+                </select>
+              }
+              right={null}
+            />
           </div>
         </div>
 

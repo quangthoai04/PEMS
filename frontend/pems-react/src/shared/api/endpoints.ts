@@ -137,6 +137,8 @@ export const API_ENDPOINTS = {
     aliases: (id: string | number) => `/partners/${id}/aliases`,
     alias: (id: string | number, aliasId: string | number) => `/partners/${id}/aliases/${aliasId}`,
     documents: (id: string | number) => `/partners/${id}/documents`,
+    logoUpload: (id: string | number) => `/partners/${id}/logo-upload`,
+    coverUpload: (id: string | number) => `/partners/${id}/cover-upload`,
   },
   visitPartnerLinks: {
     list: (visitInstanceId: string | number) => `/visit-instances/${visitInstanceId}/partner-links`,

@@ -44,6 +44,9 @@ public sealed class GoogleDriveFolderResolver : IFileStorageFolderResolver
             FilePurpose.VisitRequestAttachment => _options.VisitRequestDocumentFolderId,
             FilePurpose.VisitRequestPhoto => _options.VisitRequestPhotoFolderId,
             FilePurpose.PartnerDocument => _options.DocumentPartnerFolderId,
+            // Logo/cover land in the same partner root as PARTNER_DOCUMENT; the upload handler nests
+            // them one level deeper under a per-partner-code subfolder (see UploadPartnerImageCommandHandler).
+            FilePurpose.PartnerLogo or FilePurpose.PartnerCover => _options.DocumentPartnerFolderId,
             FilePurpose.LogisticsAttachment => _options.DocumentPartnerFolderId,
             FilePurpose.BusinessCard => _options.DocumentPartnerFolderId,
             _ => _options.DocumentPartnerFolderId,

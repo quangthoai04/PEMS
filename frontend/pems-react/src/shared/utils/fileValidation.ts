@@ -13,7 +13,9 @@ export type FilePurpose =
   | 'DOCUMENT'
   | 'MINUTES_ATTACHMENT'
   | 'VISIT_REQUEST_ATTACHMENT'
-  | 'VISIT_REQUEST_PHOTO';
+  | 'VISIT_REQUEST_PHOTO'
+  | 'PARTNER_LOGO'
+  | 'PARTNER_COVER';
 
 export interface FileValidationRule {
   maxSizeBytes: number;
@@ -42,6 +44,8 @@ export function getFileValidationRule(purpose: FilePurpose): FileValidationRule 
       return { maxSizeBytes: 2 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'GALLERY_IMAGE':
     case 'NEWS_IMAGE':
+    case 'PARTNER_LOGO':
+    case 'PARTNER_COVER':
       return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'VISIT_REQUEST_PHOTO':
       // Canonical visit-photo contract — MUST match the backend rule

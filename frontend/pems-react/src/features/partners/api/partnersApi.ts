@@ -1,5 +1,6 @@
 import httpClient from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
+import { uploadFileToEndpoint, type UploadedFileResponse } from '../../../shared/api/fileUploadApi';
 import type {
   CreatePartnerContactPayload,
   CreatePartnerRequest,
@@ -62,6 +63,16 @@ export const partnersApi = {
   async updatePartner(partnerId: number | string, payload: UpdatePartnerRequest) {
     const { data } = await httpClient.put(API_ENDPOINTS.partners.update(partnerId), payload);
     return data as { partnerId: number; profileStatus: string };
+  },
+
+  /** Uploads a partner logo to Drive (đối tác/{mã đối tác}/Ảnh 1); returns the fileId to save via updatePartner. */
+  async uploadLogo(partnerId: number | string, file: File): Promise<UploadedFileResponse> {
+    return uploadFileToEndpoint(API_ENDPOINTS.partners.logoUpload(partnerId), 'file', file);
+  },
+
+  /** Uploads a partner cover image to Drive (đối tác/{mã đối tác}/Ảnh 2); returns the fileId to save via updatePartner. */
+  async uploadCover(partnerId: number | string, file: File): Promise<UploadedFileResponse> {
+    return uploadFileToEndpoint(API_ENDPOINTS.partners.coverUpload(partnerId), 'file', file);
   },
 
   async approvePartner(partnerId: number | string, reviewNote?: string, makePublic = false) {

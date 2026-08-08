@@ -41,6 +41,10 @@ public enum FilePurpose
     /// </summary>
     VisitRequestPhoto,
     PartnerDocument,
+    /// <summary>Partner logo, stored under <c>DocumentPartnerFolderId / {partner_code} / Ảnh 1</c>.</summary>
+    PartnerLogo,
+    /// <summary>Partner cover image, same folder as <see cref="PartnerLogo"/>, named "Ảnh 2".</summary>
+    PartnerCover,
     LogisticsAttachment,
     BusinessCard,
     /// <summary>
@@ -92,6 +96,8 @@ public static class FilePurposeDbValues
     public const string VisitRequestAttachment = "VISIT_REQUEST_ATTACHMENT";
     public const string VisitRequestPhoto = "VISIT_REQUEST_PHOTO";
     public const string PartnerDocument = "PARTNER_DOCUMENT";
+    public const string PartnerLogo = "PARTNER_LOGO";
+    public const string PartnerCover = "PARTNER_COVER";
     public const string LogisticsAttachment = "LOGISTICS_ATTACHMENT";
     public const string BusinessCard = "BUSINESS_CARD";
     public const string ReportAttachment = "REPORT_ATTACHMENT";
@@ -123,6 +129,8 @@ public static class FilePurposeExtensions
         FilePurpose.VisitRequestAttachment => FilePurposeDbValues.VisitRequestAttachment,
         FilePurpose.VisitRequestPhoto => FilePurposeDbValues.VisitRequestPhoto,
         FilePurpose.PartnerDocument => FilePurposeDbValues.PartnerDocument,
+        FilePurpose.PartnerLogo => FilePurposeDbValues.PartnerLogo,
+        FilePurpose.PartnerCover => FilePurposeDbValues.PartnerCover,
         FilePurpose.LogisticsAttachment => FilePurposeDbValues.LogisticsAttachment,
         FilePurpose.BusinessCard => FilePurposeDbValues.BusinessCard,
         FilePurpose.ReportAttachment => FilePurposeDbValues.ReportAttachment,
@@ -149,7 +157,7 @@ public static class FilePurposeExtensions
         FilePurpose.MinutesAttachment => "minutes",
         FilePurpose.VisitRequestAttachment => "visit-requests",
         FilePurpose.VisitRequestPhoto => "visit-photos",
-        FilePurpose.PartnerDocument => "partners",
+        FilePurpose.PartnerDocument or FilePurpose.PartnerLogo or FilePurpose.PartnerCover => "partners",
         FilePurpose.LogisticsAttachment => "logistics",
         FilePurpose.BusinessCard => "business-cards",
         FilePurpose.ReportAttachment => "reports",

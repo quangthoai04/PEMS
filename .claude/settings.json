@@ -44,7 +44,9 @@
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/vi/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/en/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
       "Bash(node -e ' *)",
-      "Bash(wc -l /tmp_tsc_out.txt)"
+      "Bash(wc -l /tmp_tsc_out.txt)",
+      "Bash(xargs grep -l \"partners\" -i)",
+      "Bash(tail -20 /tmp_tsc_out.txt)"
     ],
     "additionalDirectories": [
       "\\tmp"

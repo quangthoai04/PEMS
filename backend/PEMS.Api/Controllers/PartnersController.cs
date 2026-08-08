@@ -1,5 +1,6 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEMS.Application.Partners.Aliases.Commands.CreatePartnerAlias;
 using PEMS.Application.Partners.Aliases.Commands.DeactivatePartnerAlias;
@@ -16,11 +17,13 @@ using PEMS.Application.Partners.Contacts.Commands.UpdatePartnerContact;
 using PEMS.Application.Partners.Contacts.Queries.GetPartnerContacts;
 using PEMS.Application.Partners.Documents.Commands.UploadPartnerDocument;
 using PEMS.Application.Partners.Documents.Queries.GetPartnerDocuments;
+using PEMS.Application.Partners.Commands.UploadPartnerImage;
 using PEMS.Application.Partners.Queries.GetPartnerDetail;
 using PEMS.Application.Partners.Queries.GetPartnerVisitHistory;
 using PEMS.Application.Partners.Queries.GetPartners;
 using PEMS.Application.Partners.Queries.GetPendingPartnerApprovals;
 using PEMS.Application.Partners.Queries.MatchPartner;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -92,6 +95,36 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> TranslatePartnerDraft(
             [FromBody] TranslatePartnerDraftCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
+
+        // Uploads logo/cover to Drive (đối tác/{mã đối tác}/Ảnh 1|2) and returns the fileId to include
+        // as logoFileId/coverFileId in the following PUT /api/partners/{partnerId} save.
+        [HttpPost("{partnerId}/logo-upload")]
+        [RequestSizeLimit(6 * 1024 * 1024)]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadLogo(ulong partnerId, IFormFile file, CancellationToken cancellationToken)
+            => await UploadPartnerImageAsync(partnerId, PartnerImageKind.Logo, file, cancellationToken);
+
+        [HttpPost("{partnerId}/cover-upload")]
+        [RequestSizeLimit(6 * 1024 * 1024)]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UploadCover(ulong partnerId, IFormFile file, CancellationToken cancellationToken)
+            => await UploadPartnerImageAsync(partnerId, PartnerImageKind.Cover, file, cancellationToken);
+
+        private async Task<IActionResult> UploadPartnerImageAsync(
+            ulong partnerId, PartnerImageKind kind, IFormFile file, CancellationToken cancellationToken)
+        {
+            if (file is null || file.Length == 0)
+                return BadRequest(new { message = "Vui lòng chọn ảnh." });
+
+            using var ms = new MemoryStream();
+            await file.CopyToAsync(ms, cancellationToken);
+
+            var result = await _mediator.Send(
+                new UploadPartnerImageCommand(partnerId, kind, ms.ToArray(), file.FileName, file.ContentType),
+                cancellationToken);
+
+            return Ok(result);
+        }
 
         // ── Contacts ────────────────────────────────────────────────────
 

@@ -65,6 +65,10 @@ export interface PartnerDetail {
   visibility: PartnerVisibility;
   logoFileId?: number | null;
   coverFileId?: number | null;
+  /** Backend proxy URL (`/api/files/{id}/content`) for `logoFileId`, or null. */
+  logoUrl?: string | null;
+  /** Backend proxy URL (`/api/files/{id}/content`) for `coverFileId`, or null. */
+  coverUrl?: string | null;
   publicSlug?: string | null;
   ownerCampusId: number;
   ownerCampusName: string;

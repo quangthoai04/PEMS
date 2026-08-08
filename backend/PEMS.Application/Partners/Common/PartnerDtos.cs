@@ -56,6 +56,10 @@ public sealed class PartnerDetailDto
     public string Visibility { get; set; } = string.Empty;
     public ulong? LogoFileId { get; set; }
     public ulong? CoverFileId { get; set; }
+    /// <summary>Backend proxy URL (<c>/api/files/{id}/content</c>) for <see cref="LogoFileId"/>, or null.</summary>
+    public string? LogoUrl { get; set; }
+    /// <summary>Backend proxy URL (<c>/api/files/{id}/content</c>) for <see cref="CoverFileId"/>, or null.</summary>
+    public string? CoverUrl { get; set; }
     public string? PublicSlug { get; set; }
     public ulong OwnerCampusId { get; set; }
     public string OwnerCampusName { get; set; } = string.Empty;

@@ -78,6 +78,8 @@ public sealed class GetPartnerDetailQueryHandler : IRequestHandler<GetPartnerDet
             Visibility = partner.Visibility,
             LogoFileId = partner.LogoFileId,
             CoverFileId = partner.CoverFileId,
+            LogoUrl = PartnerFileUrls.ContentOrNull(partner.LogoFileId),
+            CoverUrl = PartnerFileUrls.ContentOrNull(partner.CoverFileId),
             PublicSlug = partner.PublicSlug,
             OwnerCampusId = partner.OwnerCampusId,
             OwnerCampusName = campusName,
