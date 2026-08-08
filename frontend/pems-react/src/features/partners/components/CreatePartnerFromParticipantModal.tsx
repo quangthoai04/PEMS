@@ -200,7 +200,7 @@ function CandidateDetailPanel({
         <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400 mb-1">Vì sao được gợi ý</p>
         <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${tier.cls}`}>
-            {tier.label} · {Math.round(candidate.matchScore)}%
+            {tier.label}
           </span>
           {candidate.matchReason && <span>Lý do: {candidate.matchReason}</span>}
         </div>
@@ -466,7 +466,7 @@ export function CreatePartnerFromParticipantModal({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border whitespace-nowrap ${tier.cls}`}>
-                              {tier.label} · {Math.round(c.matchScore)}%
+                              {tier.label}
                             </span>
                             {statusBadge(c.profileStatus)}
                           </div>

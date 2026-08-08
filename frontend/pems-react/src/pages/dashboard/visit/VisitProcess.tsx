@@ -1987,7 +1987,7 @@ export function VisitProcess() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl w-full max-w-3xl h-[85vh] relative z-10 shadow-2xl border border-gray-100 flex flex-col overflow-hidden"
+              className="bg-white rounded-2xl w-full max-w-5xl h-[92vh] relative z-10 shadow-2xl border border-gray-100 flex flex-col overflow-hidden"
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
