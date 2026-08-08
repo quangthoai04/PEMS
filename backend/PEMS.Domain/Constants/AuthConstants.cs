@@ -241,6 +241,14 @@ public static class SessionRevokeReasons
 
     /// <summary>UC-86: the user's primary campus was disabled, so every active session is revoked.</summary>
     public const string CampusDisabled = "CAMPUS_DISABLED";
+
+    /// <summary>
+    /// ADMIN security-locked the account (ACTIVE → LOCKED), so every active session is revoked
+    /// immediately. Kept distinct from <see cref="AccountDeactivated"/>: the two are the same
+    /// mechanism but not the same event, and an operator reading <c>user_sessions.revoked_reason</c>
+    /// needs to tell a security incident from a personnel change. Free-text column — no schema change.
+    /// </summary>
+    public const string AccountSecurityLocked = "ACCOUNT_SECURITY_LOCKED";
 }
 
 public static class CreatedViaValues

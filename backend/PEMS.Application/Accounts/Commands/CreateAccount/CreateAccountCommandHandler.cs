@@ -46,6 +46,15 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
 
     public async Task<CreateAccountResponse> Handle(CreateAccountCommand request, CancellationToken cancellationToken)
     {
+        // ── Caller authorization runs FIRST, before anything is normalized, read or written.
+        //    Account provisioning belongs to HO and Staff Leader; ADMIN is Global Read + Security
+        //    Control only (ADMIN_ACCOUNT_MANAGEMENT spec §11). A refused request must leave the
+        //    database untouched and must not normalize an email, reserve a slot, issue a
+        //    confirmation token, send a mail, write an audit row or raise a notification.
+        //    Fail-closed: every role other than the two intended creators is refused here rather
+        //    than relying on the dashboard route to hide the screen. ──
+        EnsureCallerMayCreateAccounts();
+
         // Identity is normalized once, then used for every comparison, the insert, the audit entry
         // and the notification email — a direct API call never bypasses the shared rules.
         var email = AccountIdentityRules.NormalizeEmail(request.Email);
@@ -84,9 +93,6 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                 throw new ConflictException(
                     AccountIdentityRules.EmailAlreadyUsedMessage, AccountErrorCodes.EmailAlreadyExists);
         }
-
-        var isStaffLeaderCaller = _currentUser.RoleCode == RoleCodes.Staff
-            && _currentUser.SubRole == UserSubRoles.Leader;
 
         var targetRole = (request.RoleCode ?? string.Empty).Trim().ToUpperInvariant();
         var subRole = request.SubRole;
@@ -155,87 +161,17 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                 _db, request.RoleCode, subRole, request.PrimaryCampusId, departmentId,
                 privileged, actorCampus, cancellationToken);
         }
-        else if (_currentUser.RoleCode == RoleCodes.Admin)
-        {
-            // ── Admin scope: ADMIN / HO / STAFF / STUDENT / VISITOR, for any campus. STAFF and HO
-            //    reuse the exact same safe case-matrix HO's own flow uses (single Trưởng phòng IC /
-            //    single HO per campus). DEPARTMENT is intentionally out of scope here — that shape
-            //    is created by a Staff Leader for their own campus. ──
-            if (targetRole == RoleCodes.Department)
-            {
-                throw new ForbiddenException("Admin không tạo tài khoản Trưởng phòng ban qua chức năng này.");
-            }
-            else if (targetRole == RoleCodes.Staff)
-            {
-                if (request.PrimaryCampusId is null)
-                    throw new ValidationException("Vui lòng chọn cơ sở.");
-
-                var requestedSubRole = (request.SubRole ?? string.Empty).Trim().ToUpperInvariant();
-                if (requestedSubRole == UserSubRoles.Leader)
-                {
-                    var availability = await StaffLeaderAvailability.ResolveAsync(
-                        _db, request.PrimaryCampusId.Value, cancellationToken);
-                    var resolvedIcDeptId = StaffLeaderAvailability.EnsureCanCreate(availability);
-
-                    subRole = UserSubRoles.Leader;
-                    departmentId = resolvedIcDeptId;
-                    assignsCampusIcHead = true;
-                    icCampusId = request.PrimaryCampusId.Value;
-                    icDepartmentId = resolvedIcDeptId;
-                }
-                else if (requestedSubRole == UserSubRoles.Staff)
-                {
-                    subRole = UserSubRoles.Staff;
-                    departmentId = await AccountProvisioningRules.FindActiveIcDepartmentAsync(
-                        _db, request.PrimaryCampusId.Value, cancellationToken);
-                }
-                else
-                {
-                    throw new ValidationException(
-                        "Vui lòng chọn chức vụ (Trưởng phòng IC hoặc Nhân viên IC) cho vai trò STAFF.");
-                }
-            }
-            else if (targetRole == RoleCodes.Ho)
-            {
-                if (request.PrimaryCampusId is null)
-                    throw new ValidationException("Vui lòng chọn cơ sở.");
-
-                var hoAvailability = await HoCampusAvailability.ResolveAsync(
-                    _db, request.PrimaryCampusId.Value, cancellationToken);
-                HoCampusAvailability.EnsureCanCreate(hoAvailability);
-
-                subRole = null;
-                departmentId = null;
-                enforcesUniqueHoPerCampus = true;
-                hoCampusId = request.PrimaryCampusId.Value;
-            }
-            else
-            {
-                // ADMIN / STUDENT / VISITOR — plain shape, no sub-role or department.
-                subRole = null;
-                departmentId = null;
-            }
-
-            shape = await AccountProvisioningRules.ResolveAsync(
-                _db, request.RoleCode, subRole, request.PrimaryCampusId, departmentId,
-                privileged, actorCampus, cancellationToken);
-        }
-        else if (isStaffLeaderCaller)
+        else
         {
             // ── UC-96-SL Staff Leader scope: campus is forced to the leader's own campus,
-            //    and only STAFF/STAFF, DEPARTMENT/LEADER or STUDENT may be created. ──
+            //    and only STAFF/STAFF, DEPARTMENT/LEADER or STUDENT may be created. This is the only
+            //    other caller EnsureCallerMayCreateAccounts lets through. ──
             if (actorCampus is null)
                 throw new ForbiddenException(
                     "Tài khoản của bạn chưa được gán cơ sở nên không thể tạo tài khoản.");
 
             shape = await AccountProvisioningRules.ResolveStaffLeaderTargetAsync(
                 _db, request.RoleCode, request.DepartmentId, actorCampus.Value, cancellationToken);
-        }
-        else
-        {
-            shape = await AccountProvisioningRules.ResolveAsync(
-                _db, request.RoleCode, subRole, request.PrimaryCampusId, departmentId,
-                privileged, actorCampus, cancellationToken);
         }
 
         // ── UC-96-SL: a Department Leader assigned to a department becomes its head.
@@ -506,6 +442,33 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         {
             return "FAILED";
         }
+    }
+
+    /// <summary>
+    /// The two roles that provision accounts: HO and a Staff Leader (STAFF/LEADER). ADMIN is refused
+    /// with its own code so the client can say WHY rather than showing a generic "no permission";
+    /// every other role gets the generic refusal. Runs before any read or write, so a refused caller
+    /// leaves no trace beyond the 403 itself.
+    /// </summary>
+    private void EnsureCallerMayCreateAccounts()
+    {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+            throw new AuthBusinessException(
+                AccountErrorCodes.AccountListForbidden,
+                "Bạn cần đăng nhập để thực hiện thao tác này.", 401);
+
+        if (_currentUser.RoleCode == RoleCodes.Admin)
+            throw new AuthBusinessException(
+                AccountErrorCodes.AdminAccountCreationNotAllowed,
+                "ADMIN chỉ được xem tài khoản và xử lý khóa bảo mật; không được tạo tài khoản.", 403);
+
+        if (_currentUser.RoleCode == RoleCodes.Ho)
+            return;
+
+        if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader)
+            return;
+
+        throw new ForbiddenException("Bạn không có quyền tạo tài khoản.");
     }
 
     private static string? Clean(string? value)

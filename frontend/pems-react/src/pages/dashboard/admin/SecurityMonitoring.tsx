@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Shield, Search, ChevronDown, ChevronLeft, ChevronRight, Loader2, RefreshCw, Info,
 } from 'lucide-react';
@@ -81,7 +81,16 @@ const EMPTY_FILTERS: Filters = {
 
 export function SecurityMonitoring() {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [searchParams] = useSearchParams();
+
+  // `?keyword=` lets the account detail drawer open this page already scoped to one account (it
+  // sends the account's email). Email is the right key here rather than a user id: a security event
+  // records the address it was attempted AGAINST (`email_snapshot`) even when no account resolved,
+  // so filtering by email also surfaces attempts that never linked to a user row. It seeds the
+  // VISIBLE search box, so the operator can see the scope and clear it.
+  const [filters, setFilters] = useState<Filters>(
+    () => ({ ...EMPTY_FILTERS, keyword: searchParams.get('keyword') ?? '' }),
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
@@ -162,6 +171,7 @@ export function SecurityMonitoring() {
                 type="text"
                 value={filters.keyword}
                 onChange={(e) => setFilter('keyword')(e.target.value)}
+                aria-label="Tìm theo email / họ tên"
                 placeholder="Tìm theo email / họ tên..."
                 className="w-full pl-11 pr-4 py-2.5 rounded-xl border-none focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all text-sm shadow-inner bg-white/10 text-white placeholder:text-blue-200"
               />

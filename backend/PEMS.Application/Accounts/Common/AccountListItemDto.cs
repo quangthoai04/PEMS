@@ -68,4 +68,31 @@ public sealed class AccountListItemDto
     /// (SELF_ACCOUNT | ACCOUNT_LOCKED | TARGET_ROLE_NOT_MANAGEABLE | NO_PERMISSION). Null otherwise.
     /// </summary>
     public string? EditBasicInfoDisabledReason { get; init; }
+
+    /// <summary>
+    /// True when the caller may SECURITY-lock this row (ACTIVE → LOCKED). ADMIN only, target ACTIVE,
+    /// never the caller's own row (ADMIN_ACCOUNT_MANAGEMENT spec §23).
+    ///
+    /// <para>
+    /// Deliberately separate from <see cref="CanManageStatus"/>, which keeps its original meaning —
+    /// the business ACTIVE ↔ INACTIVE toggle owned by HO / Staff Leader. Overloading one flag with
+    /// both meanings is what would let an ADMIN's security lock render as a personnel toggle (and an
+    /// HO's toggle render as a lock) on any screen that only reads the flag.
+    /// </para>
+    /// </summary>
+    public bool CanSecurityLock { get; init; }
+
+    /// <summary>
+    /// True when the caller may SECURITY-unlock this row (LOCKED → ACTIVE). ADMIN only, target
+    /// LOCKED, never the caller's own row.
+    /// </summary>
+    public bool CanSecurityUnlock { get; init; }
+
+    /// <summary>
+    /// For an ADMIN caller with neither security action available, why — SELF_ACCOUNT |
+    /// ACCOUNT_INACTIVE | ACCOUNT_PENDING_EMAIL_CONFIRMATION | NO_PERMISSION. Null when an action is
+    /// offered, and null for HO / Staff Leader (for whom security actions are simply not part of the
+    /// screen, which is not a "disabled reason" to explain).
+    /// </summary>
+    public string? SecurityActionDisabledReason { get; init; }
 }

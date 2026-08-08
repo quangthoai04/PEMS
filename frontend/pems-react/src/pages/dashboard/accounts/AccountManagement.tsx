@@ -10,7 +10,7 @@ import {
   Users, UserCheck, UserX, Clock, Search,
   Shield, CheckCircle, XCircle, MoreVertical, Eye,
   Edit, Key, RefreshCw, Plus, X, UserCog, Briefcase, GraduationCap,
-  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle, Mail, Lock
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp, UserCircle, Mail, Lock, Unlock, ShieldAlert
 } from 'lucide-react';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { useAccountList } from '../../../features/account-management/hooks/useAccountList';
@@ -60,6 +60,8 @@ import { PendingEmailEditConfirmModal } from '../../../features/account-manageme
 import { ReplaceStaffLeaderModal } from '../../../features/account-management/components/ReplaceStaffLeaderModal';
 import { RelatedVisitorsTab } from '../../../features/account-management/components/RelatedVisitorsTab';
 
+// Seed values for the mock "Chờ duyệt" tab only. The real screens read campuses from
+// getActiveCampuses() — a hard-coded five would go stale the day a campus is added or renamed.
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
 
@@ -71,6 +73,38 @@ const STATUS_FILTER_TO_DB: Record<string, string> = {
   Locked: 'LOCKED',
   PendingEmail: 'PENDING_EMAIL_CONFIRMATION',
 };
+
+// ── ADMIN security lock / unlock (spec §17/§19) ──────────────────────────────────────────────────
+// The reason is what turns a status change into a security record, so it is mandatory in BOTH
+// directions and the common ones are offered as a list — a free-text box alone produces "test" and
+// "abc" in the audit trail. "Khác" opens a description field; the backend still receives a single
+// `reason` string, so no lookup table is introduced anywhere.
+const SECURITY_REASON_OTHER = 'Khác';
+const SECURITY_LOCK_REASONS = [
+  'Phát hiện đăng nhập bất thường',
+  'Nghi ngờ tài khoản bị xâm nhập',
+  'Yêu cầu điều tra bảo mật',
+  'Vi phạm chính sách bảo mật',
+  SECURITY_REASON_OTHER,
+];
+const SECURITY_UNLOCK_REASONS = [
+  'Đã xác minh chủ tài khoản',
+  'Không phát hiện rủi ro',
+  'Điều tra hoàn tất',
+  SECURITY_REASON_OTHER,
+];
+
+// Why a row offers ADMIN no security action. Shown on the "—" placeholder rather than as a row of
+// disabled buttons (spec §35): the explanation belongs where somebody looks for the missing action.
+const SECURITY_DISABLED_TOOLTIPS: Record<string, string> = {
+  SELF_ACCOUNT: 'Bạn không thể khóa hoặc mở khóa tài khoản của chính mình.',
+  ACCOUNT_INACTIVE: 'Tài khoản đang vô hiệu hóa theo nghiệp vụ nên không cần khóa bảo mật.',
+  ACCOUNT_PENDING_EMAIL_CONFIRMATION: 'Tài khoản đang chờ xác nhận email.',
+  NO_PERMISSION: 'Bạn không có quyền thực hiện thao tác bảo mật trên tài khoản này.',
+};
+const securityActionTooltip = (reason?: string | null): string =>
+  (reason ? SECURITY_DISABLED_TOOLTIPS[reason] : undefined)
+  ?? 'Tài khoản này hiện không có thao tác bảo mật nào.';
 
 // UC-100-SL — isolated role-edit state (never mutates the account-detail snapshot).
 // departmentId/studentCode are the dependent fields for DEPARTMENT / STUDENT respectively.
@@ -185,8 +219,18 @@ export function AccountManagement() {
 
   // ADMIN/HO xem toàn quốc mặc định; các role campus-scoped mặc định campus của mình.
   const defaultCampus = (isHO || isRealAdmin) ? "" : (user?.campus || "Hà Nội");
-  const [allFilters, setAllFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: "INTERNAL" });
-  const [pendingFilters, setPendingFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: "INTERNAL" });
+
+  // ADMIN mở màn ở "Tất cả tài khoản": vai trò của ADMIN là quan sát TOÀN hệ thống, nên mặc định
+  // lọc sẵn ra tài khoản nội bộ sẽ giấu mất tài khoản khách ngay từ lần nhìn đầu tiên.
+  //
+  // CHỈ cho ADMIN. Hai role kia không dùng được giá trị này:
+  //  · Staff Leader không có lựa chọn "Tất cả tài khoản" (nội bộ và khách là hai endpoint / hai bảng
+  //    khác nhau, xem StaffLeaderAccountType) — đặt 'ALL' sẽ cho <select> một value không tồn tại.
+  //  · HO không thấy bộ lọc này và chỉ làm việc với tài khoản nội bộ; đổi mặc định sẽ lặng lẽ kéo
+  //    tài khoản khách vào danh sách của HO trong khi HO không có cách nào lọc chúng ra.
+  const defaultAccountType = isRealAdmin ? "ALL" : "INTERNAL";
+  const [allFilters, setAllFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: defaultAccountType });
+  const [pendingFilters, setPendingFilters] = useState({ search: "", campus: defaultCampus, role: "", status: "", accountType: defaultAccountType });
   
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -206,9 +250,18 @@ export function AccountManagement() {
   const setAccountTypeFilter = (val: string) => setCurrentFilters(prev => ({
     ...prev,
     accountType: val,
-    // Leaving VISITOR (to INTERNAL or ALL) drops the now-meaningless role=VISITOR filter,
-    // otherwise "Tất cả tài khoản" would still silently show only Visitor rows.
-    role: val !== 'VISITOR' && prev.role === 'VISITOR' ? '' : prev.role,
+    // The role filter is cleared on ENTERING "Tài khoản khách", because it is hidden there: a guest
+    // has no sub-role, so "khách + vai trò" narrows nothing, and a filter the operator cannot see is
+    // a filter they cannot undo. Cleared on the way OUT to INTERNAL too — that mode drops "Khách"
+    // from the dropdown, so a lingering role=VISITOR would point at an option that no longer exists
+    // and show an empty list with no visible cause.
+    role: val === 'VISITOR' || (val === 'INTERNAL' && prev.role === 'VISITOR') ? '' : prev.role,
+    // Same reasoning for the campus filter, and here it is not merely redundant but actively wrong:
+    // a guest account has no campus at all, so any campus other than "Toàn quốc" would filter the
+    // guest list down to nothing while the control saying so is hidden. Reset to "Toàn quốc" on the
+    // way in. Not restored on the way out — "Toàn quốc" is a valid, visible starting point, unlike
+    // role=VISITOR which would dangle at a removed option.
+    campus: val === 'VISITOR' && (isHO || isRealAdmin) ? '' : prev.campus,
   }));
 
   // A Staff Leader's Visitor mode is a different screen, not a filtered view of the internal one:
@@ -221,11 +274,21 @@ export function AccountManagement() {
   const accountManagementSubtitle = isVisitorMode
     ? 'Danh sách tài khoản khách có yêu cầu tham quan liên quan đến cơ sở'
     : 'Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở';
-  const setRoleFilter = (val: string) => setCurrentFilters(prev => ({
-    ...prev,
-    role: val,
-    accountType: val === 'VISITOR' ? 'VISITOR' : (prev.accountType === 'VISITOR' && val ? 'INTERNAL' : prev.accountType),
-  }));
+
+  // ADMIN = Global Read + Security Control. The subtitle has to say that, because the screen looks
+  // like a personnel console and is not one: ADMIN observes every account and acts only on their
+  // access. Wording that promises "tạo và quản lý nhân sự" would describe HO / Staff Leader's job.
+  const adminSubtitle = 'Theo dõi tài khoản và xử lý các vấn đề bảo mật trên toàn hệ thống.';
+  // Picking a role NEVER rewrites the account-type filter. The two answer different questions —
+  // "which kind of account" vs "which role" — and narrowing by role=Khách while "Tất cả tài khoản"
+  // is selected is a perfectly sensible thing to ask for. The old version forced accountType to
+  // VISITOR on that pick, which also stripped every internal role out of this very dropdown, so a
+  // single choice silently rewrote two other controls and could not be undone by re-picking.
+  //
+  // The reverse direction still couples, and has to: at accountType=VISITOR the dropdown below
+  // offers only "Khách", so a role left pointing at STUDENT would be a value with no option — see
+  // setAccountTypeFilter.
+  const setRoleFilter = (val: string) => setCurrentFilters(prev => ({ ...prev, role: val }));
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -391,6 +454,9 @@ export function AccountManagement() {
     return () => { active = false; };
   }, [isHO, isRealAdmin]);
 
+  // (campusSelectOptions removed: the detail drawer's "Cơ sở trực thuộc" is a locked DisplayField
+  // now, so it prints data.campus directly and no longer needs an option list to render it.)
+
   // Debounce the keyword so we don't call the API on every keystroke.
   const debouncedSearch = useDebounce(searchQuery, 450);
 
@@ -460,9 +526,13 @@ export function AccountManagement() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
 
-  // ADMIN LOCK/UNLOCK — flow riêng, tách khỏi toggle ACTIVE↔INACTIVE, có nhập lý do.
+  // ADMIN security lock/unlock — a flow of its own, deliberately not the ACTIVE↔INACTIVE toggle:
+  // different owner (ADMIN vs HO/SL), different meaning (access security vs personnel status),
+  // mandatory reason, and it revokes every session. `lockReasonPreset` is the picked list entry;
+  // `lockReasonDetail` is only used when that entry is "Khác".
   const [lockTarget, setLockTarget] = useState<any | null>(null);
-  const [lockReason, setLockReason] = useState('');
+  const [lockReasonPreset, setLockReasonPreset] = useState('');
+  const [lockReasonDetail, setLockReasonDetail] = useState('');
   const [lockError, setLockError] = useState<string | null>(null);
   const [lockSaving, setLockSaving] = useState(false);
 
@@ -584,6 +654,13 @@ export function AccountManagement() {
       canManageStatus: a.canManageStatus,
       canEditBasicInfo: a.canEditBasicInfo,
       isCurrentUser: a.isCurrentUser,
+      // ADMIN security control. Read strictly from the backend answer (`=== true`) rather than
+      // re-derived from status + isCurrentUser here: the server owns the state matrix, and a client
+      // that guesses it eventually offers a button the API then refuses. An older/absent flag
+      // therefore means "no action", which is the safe direction to be wrong in.
+      canSecurityLock: a.canSecurityLock === true,
+      canSecurityUnlock: a.canSecurityUnlock === true,
+      securityActionDisabledReason: a.securityActionDisabledReason ?? null,
     })));
   }, [accountsData, activeTab]);
 
@@ -677,6 +754,13 @@ export function AccountManagement() {
     ? slStats
     : [...statsBase, { label: "Yêu cầu chờ duyệt", value: pendingAccounts.length.toString(), icon: Clock, color: "text-[#f37021]", bg: "bg-white border-gray-100 shadow-sm outline-none", iconBg: "bg-orange-50", onClick: () => { setActiveTab('pending'); setPendingFilters(prev => ({ ...prev, status: '', role: '', search: '' })); scrollToTable(); } }];
 
+  // ADMIN does not provision accounts — that is HO / Staff Leader's job (spec §7). The button is not
+  // merely disabled: an ADMIN has no path to creation at all, and a greyed-out control would suggest
+  // one exists behind some condition. `tileCount` keeps the grid honest once it is gone, so ADMIN's
+  // four stat cards fill their row instead of leaving a hole where the button used to be.
+  const showCreateAccountButton = !isRealAdmin;
+  const tileCount = stats.length + (showCreateAccountButton ? 1 : 0);
+
 
   // The "all" tab is server-driven (UC-95/UC-99): the API already applied scope,
   // search, filters and paging. The "pending" tab stays client-side (out of scope).
@@ -769,13 +853,41 @@ export function AccountManagement() {
     loadStatistics();
   };
 
-  // ADMIN LOCK/UNLOCK — flow riêng: LOCKED ↔ ACTIVE với lý do; backend tự thu hồi
-  // toàn bộ phiên khi tài khoản rời trạng thái ACTIVE và chặn khóa Admin cuối cùng.
-  const confirmLockToggle = async () => {
+  // ── ADMIN security lock / unlock ────────────────────────────────────────────────────────────
+  // Which of the two a row offers is the BACKEND's answer (canSecurityLock / canSecurityUnlock),
+  // not something re-derived from the displayed status: the server owns the ACTIVE→LOCKED /
+  // LOCKED→ACTIVE matrix and re-checks it on submit, so deriving it twice only creates a second
+  // place to get it wrong.
+  const isUnlockAction = lockTarget?.canSecurityUnlock === true;
+
+  const openSecurityAction = (acc: any) => {
+    setLockError(null);
+    setLockReasonPreset('');
+    setLockReasonDetail('');
+    setLockTarget(acc);
+  };
+
+  const closeSecurityAction = () => {
+    setLockTarget(null);
+    setLockReasonPreset('');
+    setLockReasonDetail('');
+    setLockError(null);
+  };
+
+  /** The single `reason` string sent to the API: the picked entry, or its description under "Khác". */
+  const resolvedSecurityReason = (lockReasonPreset === SECURITY_REASON_OTHER
+    ? lockReasonDetail
+    : lockReasonPreset).trim();
+
+  const confirmSecurityAction = async () => {
     if (!lockTarget) return;
-    const nextStatus = lockTarget.status === 'Locked' ? 'ACTIVE' : 'LOCKED';
-    if (nextStatus === 'LOCKED' && !lockReason.trim()) {
-      setLockError('Vui lòng nhập lý do khóa tài khoản.');
+    const nextStatus = isUnlockAction ? 'ACTIVE' : 'LOCKED';
+    // Required in BOTH directions (spec §17/§19) — an unlock with no stated reason leaves the audit
+    // trail saying an account was re-opened and nothing about why.
+    if (!resolvedSecurityReason) {
+      setLockError(lockReasonPreset === SECURITY_REASON_OTHER
+        ? 'Vui lòng mô tả lý do.'
+        : isUnlockAction ? 'Vui lòng chọn lý do mở khóa.' : 'Vui lòng chọn lý do khóa.');
       return;
     }
     setLockSaving(true);
@@ -783,18 +895,17 @@ export function AccountManagement() {
     const result = await manageAccountStatus({
       userId: lockTarget.userId ?? lockTarget.id,
       status: nextStatus,
-      reason: lockReason.trim() || null,
+      reason: resolvedSecurityReason,
     });
     setLockSaving(false);
     if (!result) {
-      setLockError('Không thể cập nhật trạng thái khóa. Vui lòng thử lại.');
+      setLockError('Không thể cập nhật trạng thái bảo mật. Vui lòng thử lại.');
       return;
     }
-    setLockTarget(null);
-    setLockReason('');
+    closeSecurityAction();
     pushToast('success', nextStatus === 'LOCKED'
       ? 'Đã khóa tài khoản và thu hồi toàn bộ phiên đăng nhập.'
-      : 'Đã mở khóa tài khoản.');
+      : 'Đã mở khóa tài khoản. Người dùng cần đăng nhập lại.');
     refetchAccounts();
     loadStatistics();
   };
@@ -831,6 +942,15 @@ export function AccountManagement() {
       studentId: details.studentCode ?? prev?.studentId ?? null,
       rawStatus: details.status,
       lastLoginAt: details.lastLoginAt,
+      createdVia: details.createdVia,
+      createdAt: details.createdAt ? details.createdAt.substring(0, 10) : prev?.createdAt,
+      updatedAt: details.updatedAt,
+      nationality: details.nationality ?? prev?.nationality ?? null,
+      // Non-sensitive security context for the ADMIN read-only review. Provider TYPES only — the
+      // detail projection never carries a token, a subject id or a hash. Under Google-SSO-only
+      // sign-in this is the security field that still MEANS something: an account still carrying
+      // LOCAL_PASSWORD is the anomaly worth looking at.
+      providers: details.providers ?? [],
       // HO_BASIC_INFO — detail is authoritative for the edit-basic-info permission.
       canEditBasicInfo: details.canEditBasicInfo ?? prev?.canEditBasicInfo ?? false,
       // Pending-account actions. Taken from the detail response and NOT carried over from `prev`: an
@@ -1598,6 +1718,9 @@ export function AccountManagement() {
               {accountManagementSubtitle}
             </p>
           )}
+          {isRealAdmin && (
+            <p className="mt-1 max-w-3xl text-sm text-gray-500">{adminSubtitle}</p>
+          )}
         </div>
       </div>
 
@@ -1606,10 +1729,10 @@ export function AccountManagement() {
           Hidden entirely in Visitor mode: the counters are internal-account totals (showing them
           over a Visitor list would read as Visitor figures), and the tab is read-only, so there is
           no account to create from it. */}
-      {!isVisitorMode && (
+      {!isVisitorMode && tileCount > 0 && (
       <div className={stats.length === 0
         ? 'flex justify-end mb-8'
-        : `grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${stats.length === 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
+        : `grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 ${tileCount <= 4 ? 'lg:grid-cols-4' : tileCount === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4 mb-8 items-stretch`}>
         {stats.map((stat: any, idx) => {
           const Icon = stat.icon;
 
@@ -1640,7 +1763,9 @@ export function AccountManagement() {
         })}
 
         {/* Card 5: Tạo tài khoản mới. Standing alone (HO) it is a normal action button, not a card
-            the size of a stat tile — so it drops to a compact padding/icon/text scale. */}
+            the size of a stat tile — so it drops to a compact padding/icon/text scale. Absent for
+            ADMIN entirely (spec §7): account provisioning belongs to HO / Staff Leader. */}
+        {showCreateAccountButton && (
         <button
           onClick={() => {
             setCreateError(null);
@@ -1660,6 +1785,7 @@ export function AccountManagement() {
             Tạo tài khoản mới
           </h3>
         </button>
+        )}
       </div>
       )}
 
@@ -1715,10 +1841,15 @@ export function AccountManagement() {
             />
           </div>
           
-          {(isHO || isRealAdmin) && (
+          {/* Hidden while the list is scoped to guest accounts, for the same reason as the role
+              filter below: a guest belongs to no campus, so every option except "Toàn quốc" would
+              empty the list. setAccountTypeFilter resets the value on the way in so the hidden
+              control cannot be the invisible cause of a blank table. */}
+          {(isHO || isRealAdmin) && accountTypeFilter !== 'VISITOR' && (
             <div className="relative">
               <select
                 value={campusFilter}
+                aria-label="Cơ sở"
                 onChange={(e) => setCampusFilter(e.target.value)}
                 className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
               >
@@ -1738,13 +1869,11 @@ export function AccountManagement() {
           <div className="relative">
             <select
               value={accountTypeFilter}
-              onChange={(e) => {
-                const val = e.target.value;
-                setAccountTypeFilter(val);
-                // Staff Leader: the Visitor tab has no role filter at all, so nothing is carried
-                // over. Only ADMIN's shared list needs roleCode=VISITOR to narrow itself.
-                if (val === 'VISITOR' && !isStaffLeader) setRoleFilter('VISITOR');
-              }}
+              // "Tài khoản khách" already IS the whole answer — a guest account has no sub-role to
+              // narrow further — so the role filter disappears in that mode and its value is
+              // cleared by setAccountTypeFilter. Nothing narrows the list from behind a hidden
+              // control.
+              onChange={(e) => setAccountTypeFilter(e.target.value)}
               aria-label="Loại tài khoản"
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
@@ -1756,38 +1885,46 @@ export function AccountManagement() {
           </div>
           )}
 
+          {/* Hidden while the list is scoped to guest accounts: VISITOR has no sub-role, so the only
+              entries this dropdown could still offer are "Tất cả Vai trò" and "Khách" — two ways to
+              say what the account-type filter has already said. */}
+          {accountTypeFilter !== 'VISITOR' && (
           <div className="relative">
             <select
               value={roleFilter}
-              onChange={(e) => {
-                const val = e.target.value;
-                setRoleFilter(val);
-                if (val === 'VISITOR') {
-                  setAccountTypeFilter('VISITOR');
-                } else if (val && val !== 'VISITOR' && accountTypeFilter === 'VISITOR') {
-                  setAccountTypeFilter('INTERNAL');
-                }
-              }}
+              aria-label="Vai trò"
+              // Sets the role and nothing else — the account-type filter beside it keeps whatever
+              // the operator chose. See setRoleFilter.
+              onChange={(e) => setRoleFilter(e.target.value)}
               className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               <option className="text-gray-900" value="">Tất cả Vai trò</option>
               {ROLES.filter(r => {
                 if (accountTypeFilter === 'INTERNAL' && r === 'VISITOR') return false;
-                if (accountTypeFilter === 'VISITOR' && r !== 'VISITOR') return false;
+                // No VISITOR-mode case: this whole dropdown is unmounted in that mode.
                 if (isRealAdmin) return true; // ADMIN xem mọi role
                 if (isHO) return ['HO', 'STAFF'].includes(r);
                 if (isStaffLeader) return ['STAFF', 'DEPARTMENT', 'STUDENT', 'VISITOR'].includes(r);
                 return r !== 'HO';
               }).map(r => (
                 <option className="text-gray-900" key={r} value={r}>
-                  {/* STAFF reads differently per viewer: the only STAFF accounts HO manages are the
-                      campus IC leaders, while a Staff Leader is filtering their own IC members. */}
-                  {r === 'STAFF' ? (isHO ? 'Trưởng phòng IC' : 'Nhân sự phòng IC') : r === 'DEPARTMENT' ? 'Trưởng phòng ban' : r === 'STUDENT' ? 'Sinh viên' : r === 'HO' ? 'Cán bộ HO' : r === 'ADMIN' ? 'Quản trị viên' : r}
+                  {/* Two entries read differently per viewer, because the SAME role code covers a
+                      different set of accounts on each screen:
+                      · STAFF — the only STAFF accounts HO manages are the campus IC leaders, while a
+                        Staff Leader is filtering their own IC members.
+                      · DEPARTMENT — a Staff Leader's list holds only DEPARTMENT/LEADER rows, so
+                        "Trưởng phòng ban" is exact for them. ADMIN's list is system-wide and this
+                        filter matches the role code alone, i.e. leaders AND their staff — hence
+                        "Nhân sự phòng ban khác", which is what it actually returns.
+                      VISITOR was the one entry still showing its raw code in a list of Vietnamese
+                      labels; "Khách" is the same wording the create-summary already uses. */}
+                  {r === 'STAFF' ? (isHO ? 'Trưởng phòng IC' : 'Nhân sự phòng IC') : r === 'DEPARTMENT' ? (isRealAdmin ? 'Nhân sự phòng ban khác' : 'Trưởng phòng ban') : r === 'STUDENT' ? 'Sinh viên' : r === 'HO' ? 'Cán bộ HO' : r === 'ADMIN' ? 'Quản trị viên' : r === 'VISITOR' ? 'Khách' : r}
                 </option>
               ))}
             </select>
             <ChevronDown className="w-4 h-4 absolute right-4 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
           </div>
+          )}
 
           {activeTab === 'all' && (
             <div className="relative">
@@ -1862,7 +1999,16 @@ export function AccountManagement() {
                         </div>
                       </td>
                       <td className="p-5 text-[13px] font-medium text-gray-600 truncate max-w-[200px] text-center">{acc.email}</td>
-                      {!isStaff && <td className="p-5 text-[13px] font-bold text-gray-700 text-center">{acc.campus}</td>}
+                      {/* A VISITOR belongs to no campus by design (AccountProvisioningRules gives the
+                          role no primary_campus_id), so this cell is legitimately empty for every
+                          guest row. An empty cell reads as missing data; the dash says "none", which
+                          is the actual answer. Keyed off the value rather than the role so any other
+                          campus-less row gets the same treatment. */}
+                      {!isStaff && (
+                        <td className="p-5 text-[13px] font-bold text-gray-700 text-center">
+                          {acc.campus || <span className="text-gray-400 font-black text-lg leading-none">—</span>}
+                        </td>
+                      )}
                       <td className="p-5 text-center">
                         <span className={`inline-flex px-3 py-1.5 rounded-lg border shadow-sm font-bold text-[10px] tracking-wider uppercase ${getRoleStyle(acc.role)}`}>
                           {acc.role}
@@ -1917,6 +2063,42 @@ export function AccountManagement() {
                                     </button>
                                   </>
                                 )
+                              ) : isRealAdmin ? (
+                                /* ADMIN row actions = Eye (above) + exactly ONE security action, or
+                                   none. No business ACTIVE/INACTIVE toggle, and no row of disabled
+                                   icons (spec §35): an ACTIVE account can be locked, a LOCKED one
+                                   unlocked, and INACTIVE / PENDING / the caller's own row simply
+                                   offer nothing. Both flags come from the backend capability. */
+                                <>
+                                  {acc.canSecurityLock && (
+                                    <button
+                                      onClick={() => openSecurityAction(acc)}
+                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
+                                      title="Khóa bảo mật"
+                                      aria-label={`Khóa bảo mật ${acc.email}`}
+                                    >
+                                      <Lock className="w-[18px] h-[18px]" />
+                                    </button>
+                                  )}
+                                  {acc.canSecurityUnlock && (
+                                    <button
+                                      onClick={() => openSecurityAction(acc)}
+                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-[#0aa14f] hover:bg-[#eaffe4] rounded-full transition-all outline-none"
+                                      title="Mở khóa bảo mật"
+                                      aria-label={`Mở khóa bảo mật ${acc.email}`}
+                                    >
+                                      <Unlock className="w-[18px] h-[18px]" />
+                                    </button>
+                                  )}
+                                  {!acc.canSecurityLock && !acc.canSecurityUnlock && (
+                                    <span
+                                      className="text-gray-300 text-sm"
+                                      title={securityActionTooltip(acc.securityActionDisabledReason)}
+                                    >
+                                      —
+                                    </span>
+                                  )}
+                                </>
                               ) : (
                                 <>
                                   {((!isServerTab || acc.canManageStatus) && acc.status !== 'Pending') ? (
@@ -1926,28 +2108,8 @@ export function AccountManagement() {
                                         <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform ${acc.status === 'Active' ? 'translate-x-5' : 'translate-x-0'} shadow-sm`}></div>
                                       </div>
                                     </label>
-                                  ) : !(isRealAdmin && acc.status === 'Locked') && (
+                                  ) : (
                                     <span className="text-gray-300 text-sm">—</span>
-                                  )}
-                                  {/* LOCK/UNLOCK — flow riêng của ADMIN (khác toggle ACTIVE↔INACTIVE),
-                                      không tự khóa chính mình; backend re-check toàn bộ. */}
-                                  {isRealAdmin && !acc.isCurrentUser && acc.status === 'Active' && (
-                                    <button
-                                      onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
-                                      className="flex items-center justify-center p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-full transition-all outline-none"
-                                      title="Khóa tài khoản (bảo mật)"
-                                    >
-                                      <Key className="w-4.5 h-4.5" />
-                                    </button>
-                                  )}
-                                  {isRealAdmin && !acc.isCurrentUser && acc.status === 'Locked' && (
-                                    <button
-                                      onClick={() => { setLockError(null); setLockReason(''); setLockTarget(acc); }}
-                                      className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-[#0aa14f] border border-[#0aa14f]/40 hover:bg-[#eaffe4] transition-colors outline-none"
-                                      title="Mở khóa tài khoản"
-                                    >
-                                      Mở khóa
-                                    </button>
                                   )}
                                 </>
                               )}
@@ -2150,13 +2312,13 @@ export function AccountManagement() {
                   </div>
                 )}
 
-                {/* Replace Staff Leader (HO / ADMIN) — the HO list only shows HO + Staff Leaders, so
-                    a STAFF row there is always the campus IC Head; ADMIN's list also shows regular
-                    IC staff, so it additionally checks the sub-role is LEADER. Hidden while the
-                    leader is still awaiting email confirmation: there is no seated leader to replace
-                    yet, only one to activate (or cancel), so the resend above is the action that
-                    applies. */}
-                {(isHO || (isRealAdmin && String(selectedAccount.rawSubRole ?? '').toUpperCase() === 'LEADER'))
+                {/* Replace Staff Leader — HO only (spec §15): seating the campus IC head is personnel
+                    management, not security control, so ADMIN no longer offers it. The HO list only
+                    shows HO + Staff Leaders, so a STAFF row there is always the campus IC Head.
+                    Hidden while the leader is still awaiting email confirmation: there is no seated
+                    leader to replace yet, only one to activate (or cancel), so the resend above is
+                    the action that applies. */}
+                {isHO
                   && selectedAccount.role === 'STAFF' && selectedAccount.campusId && !isPendingEmailConfirmation && (
                   <button
                     onClick={() => {
@@ -2187,10 +2349,12 @@ export function AccountManagement() {
                   <UserCog className="w-6 h-6" /> {isEditingProfile ? 'Chỉnh sửa thông tin tài khoản' : 'Thông tin chi tiết'}
                 </h3>
                 <div className="flex items-center gap-3">
-                  {/* Chỉnh sửa: HO → basic info (canEditBasicInfo); Staff Leader/ADMIN → role (canUpdateRole). */}
+                  {/* Chỉnh sửa: HO → basic info (canEditBasicInfo); Staff Leader → role (canUpdateRole).
+                      ADMIN has no edit affordance at all — its detail view is read-only (spec §8):
+                      identity, organization and account metadata are all owned by HO / Staff Leader. */}
                   {!isEditingProfile && !selectedAccount.isCurrentUser && (
                     (isHO && selectedAccount.canEditBasicInfo === true) ||
-                    ((isStaffLeader || isRealAdmin) && selectedAccount.canUpdateRole !== false)
+                    (isStaffLeader && selectedAccount.canUpdateRole !== false)
                   ) && (
                     <button
                       onClick={handleEditClick}
@@ -2218,64 +2382,10 @@ export function AccountManagement() {
                     : selectedAccount.role;
                   const isEdit = isEditingProfile;
 
-                  const Input = ({ label, value, field, type="text", disabled=false }: any) => (
-                    <div className="flex flex-col min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{label}</span>
-                      {isEdit ? (
-                        <input
-                          type={type}
-                          value={value || ''}
-                          onChange={(e) => setEditForm({...editForm, [field]: e.target.value})}
-                          disabled={disabled}
-                          className={`px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
-                        />
-                      ) : (
-                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value || '-'}</span>
-                      )}
-                    </div>
-                  );
-
-                  const Select = ({ label, value, field, options, disabled=false }: any) => (
-                    <div className="flex flex-col min-w-0">
-                      <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{label}</span>
-                      {isEdit ? (
-                        <div className="relative">
-                          <select 
-                            value={value || ''}
-                            onChange={(e) => setEditForm({...editForm, [field]: e.target.value})}
-                            disabled={disabled}
-                            className={`px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 transition-all appearance-none w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
-                          >
-                            {value && !options.some((opt: any) => String(opt.value) === String(value)) && (
-                              <option value={value}>{value}</option>
-                            )}
-                            {options.map((opt: any) => (
-                              <option key={opt.value} value={opt.value} disabled={opt.disabled}>{opt.label}</option>
-                            ))}
-                          </select>
-                          <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                        </div>
-                      ) : (
-                        <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value || '-'}</span>
-                      )}
-                    </div>
-                  );
-
-                  const HighlightInput = ({ label, value, field, colSpan, disabled=false }: any) => (
-                    <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
-                      <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-[#004c91]/80">{label}</span>
-                      {isEdit ? (
-                       <input 
-                          value={value || ''}
-                          onChange={(e) => setEditForm({...editForm, [field]: e.target.value})}
-                          disabled={disabled}
-                          className={`px-3 py-2 border border-blue-200 rounded-lg text-sm font-black text-[#004c91] focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-blue-50/30 transition-all w-full ${disabled ? 'opacity-70 cursor-not-allowed' : 'focus:bg-white'}`}
-                        />
-                      ) : (
-                        <span className="block text-sm font-black text-[#004c91] bg-blue-50/30 p-2.5 rounded-lg border border-blue-100 break-words">{value || '-'}</span>
-                      )}
-                    </div>
-                  );
+                  // NOTE: the local Input / Select / HighlightInput components were removed with the
+                  // read-only redesign of viewGrid below. They were used by viewGrid alone, and their
+                  // `isEdit ? <input> : <span>` branch could never take the input side there — the edit
+                  // path is editGrid, which builds its inputs inline so typing cannot remount them.
 
                   // ── One visual language for the whole edit grid (spec §4.6) ──────────────────
                   // Which fields a caller may actually change varies by role, sub-role and campus
@@ -2611,49 +2721,155 @@ export function AccountManagement() {
                   );
 
                   // ── View mode (read-only detail): the original layout, keyed on the real role. ──
+                  //
+                  // The FIELD CHROME here is per-viewer, and deliberately so:
+                  //
+                  // · ADMIN — filled slate + lock glyph on every field. ADMIN's drawer is read-only end
+                  //   to end (global read + security control), and there is no edit mode behind it, so
+                  //   the fields must say "locked" once and mean it. Previously they rendered on
+                  //   `bg-gray-50/50` with a hairline border, which beside a white modal reads as an
+                  //   input box — an operator clicking "Họ và tên", getting no caret and concluding the
+                  //   drawer is broken was the failure mode.
+                  //
+                  // · HO / Staff Leader — the lighter original chrome, unchanged. Their drawer IS the
+                  //   way in to an edit mode they actually have ("Chỉnh sửa thông tin"), so painting
+                  //   every field as permanently locked would contradict the button sitting above it.
+                  //   Their locked-vs-editable language lives in editGrid, where the distinction is real.
+                  //
+                  // Trạng thái tài khoản is outside this either way: it is a status PILL, not a value in
+                  // a box, and a lock on it would suggest the status is frozen when it is in fact
+                  // changed from the list row (enable/disable, security lock).
+                  const ViewField = ({ label, value, highlight = false, colSpan = false }: any) =>
+                    isRealAdmin ? (
+                      <DisplayField label={label} value={value} highlight={highlight} colSpan={colSpan} />
+                    ) : (
+                      <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
+                        <span className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${highlight ? 'text-[#004c91]/80' : 'text-gray-500'}`}>{label}</span>
+                        <span className={`block text-sm p-2.5 rounded-lg border break-words ${highlight ? 'font-black text-[#004c91] bg-blue-50/30 border-blue-100' : 'font-bold text-gray-900 bg-gray-50/50 border-gray-100'}`}>
+                          {value === null || value === undefined || value === '' ? '-' : value}
+                        </span>
+                      </div>
+                    );
+
                   const viewGrid = (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
-                      <Input label="Họ và tên" value={data.name} field="name" disabled={isEdit} />
-                      <Input label="Email" value={data.email} field="email" type="email" disabled={isEdit} />
-                      <Select label="Giới tính" value={genderLabel(data.gender)} field="gender" options={[{value: 'Nam', label:'Nam'}, {value:'Nữ', label:'Nữ'}, {value:'Khác', label:'Khác'}, {value:'Không xác định', label:'Không xác định'}]} disabled={isEdit} />
-                      <Input label="Số điện thoại" value={data.phone} field="phone" disabled={isEdit} />
+                    <div data-testid="detail-view-grid" className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
+                      <ViewField label="Họ và tên" value={data.name} />
+                      <ViewField label="Email" value={data.email} />
+                      <ViewField label="Giới tính" value={genderLabel(data.gender)} />
+                      <ViewField label="Số điện thoại" value={data.phone} />
+                      {/* Quốc tịch belongs to the guest block below and nowhere else: for an internal
+                          account it is not part of what this screen is for, and it was empty ("-") on
+                          nearly every such row anyway. */}
                       {(isHO || isRealAdmin || isStaffLeader) && (
-                        <Select label="Vai trò" value={roleValue} field="role" disabled={true} options={roleSelectOptions} />
+                        <ViewField label="Vai trò" value={roleValue} />
                       )}
 
                       <StatusField />
 
                       {data.role === 'STUDENT' && (
                         <>
-                          <HighlightInput label="Mã số sinh viên (MSSV)" value={data.studentId} field="studentId" disabled={isEdit} />
-                          <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                          <ViewField label="Mã số sinh viên (MSSV)" value={data.studentId} highlight />
+                          <ViewField label="Cơ sở trực thuộc" value={data.campus} />
                         </>
                       )}
 
                       {(data.role === 'STAFF' || data.role === 'DEPARTMENT') && (
                         <>
-                          <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
-                          <Select label="Chức vụ" value={subRoleLabel(data.subRole)} field="subRole" options={[{value:'Trưởng phòng', label:'Trưởng phòng'}, {value:'Nhân viên', label:'Nhân viên'}]} disabled={isEdit} />
-                          <Select label="Phòng ban" value={data.department} field="department" options={data.department ? [{value:data.department, label:data.department}] : []} disabled={isEdit} />
+                          <ViewField label="Cơ sở trực thuộc" value={data.campus} />
+                          <ViewField label="Chức vụ" value={subRoleLabel(data.subRole)} />
+                          <ViewField label="Phòng ban" value={data.department} />
                         </>
                       )}
 
                       {(data.role === 'ADMIN' || data.role === 'HO') && (
-                        <Select label="Cơ sở trực thuộc" value={data.campus} field="campus" options={CAMPUSES.map(c=>({value:c,label:c}))} disabled={isEdit} />
+                        <ViewField label="Cơ sở trực thuộc" value={data.campus} />
                       )}
 
                       {data.role === 'VISITOR' && (
                         <>
-                          <Input label="Quốc tịch" value={data.nationality} field="nationality" disabled={isEdit} />
-                          <HighlightInput label="Đơn vị công tác / Doanh nghiệp" value={data.organization} field="organization" colSpan={true} disabled={isEdit} />
+                          <ViewField label="Quốc tịch" value={data.nationality} />
+                          {/* "Đơn vị công tác / Doanh nghiệp" is dropped for ADMIN at the owner's
+                              request, and kept for everyone else. Removed from the DRAWER only —
+                              data.organization still comes back from the detail API, so nothing
+                              downstream loses it. */}
+                          {!isRealAdmin && (
+                            <ViewField label="Đơn vị công tác / Doanh nghiệp" value={data.organization} colSpan highlight />
+                          )}
                         </>
                       )}
                     </div>
                   );
 
+                  // ── ADMIN read-only account + security panel (spec §8.3/§8.4/§9) ──────────────
+                  // ADMIN's job on this screen is to judge whether an account's ACCESS is sound, and
+                  // the fields above do not answer that. These do — and every one of them is already
+                  // in the safe detail projection: no hash, no token, no provider subject, nothing
+                  // that would be a leak if this modal were screenshotted. Read-only throughout; the
+                  // lock/unlock action lives on the list row, not here.
+                  const adminSecurityPanel = isRealAdmin && !isEdit ? (
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-5 w-full border-t border-gray-100 pt-6">
+                      <div className="md:col-span-2 flex items-center gap-2 text-[#004c91]">
+                        <ShieldAlert className="w-4 h-4" />
+                        <h4 className="text-xs font-black uppercase tracking-wider">Thông tin tài khoản &amp; bảo mật</h4>
+                      </div>
+                      <DisplayField label="Nguồn tạo" value={data.createdVia} />
+                      <DisplayField label="Ngày tạo" value={data.createdAt} />
+                      <DisplayField
+                        label="Ngày cập nhật"
+                        value={data.updatedAt ? String(data.updatedAt).substring(0, 10) : null}
+                      />
+                      <DisplayField
+                        label="Lần đăng nhập cuối"
+                        value={data.lastLoginAt ? String(data.lastLoginAt).replace('T', ' ').substring(0, 16) : 'Chưa từng đăng nhập'}
+                      />
+                      <DisplayField
+                        label="Phương thức đăng nhập"
+                        value={(data.providers ?? []).length ? (data.providers as string[]).join(', ') : null}
+                      />
+                      {/* "Số lần đăng nhập thất bại" and "Tạm khóa đến" were removed: users.failed_login_count
+                          and users.locked_until are written by the PASSWORD sign-in handler alone
+                          (LoginViaCredentialsCommandHandler), and production signs in through Google SSO,
+                          which only ever READS locked_until to block a session. Both boxes would therefore
+                          be frozen forever — "-" for the lockout, and a permanent "0" for the counter that
+                          reads as "nobody has attacked this account" when in truth nothing is being
+                          counted. A field that cannot become true is worse than an absent one on a screen
+                          ADMIN uses to judge whether an account's access is sound. The failed-SSO trail
+                          lives in the login/security logs, reachable from the buttons below. */}
+
+                      {/* Straight to the modules ADMIN already has, rather than a second copy of them
+                          inside this modal — and carrying the account across, so the answer to "what
+                          has been happening to THIS account" is one click away instead of a retype.
+                          The email travels as `?keyword=`, which both pages read into their own visible
+                          search box: the scope is stated on screen and can be cleared there, never a
+                          narrowing applied from behind the operator's back. Email rather than a user id
+                          because a security event stores the address it was attempted against even when
+                          no account matched — those attempts belong in this answer too. */}
+                      <div className="md:col-span-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/dashboard/admin/sessions?keyword=${encodeURIComponent(data.email ?? '')}`)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-[#004c91]/40 bg-white px-3.5 py-2 text-xs font-bold text-[#004c91] transition-colors hover:bg-blue-50 outline-none"
+                        >
+                          <UserCircle className="w-3.5 h-3.5" /> Xem phiên đăng nhập
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/dashboard/admin/security?keyword=${encodeURIComponent(data.email ?? '')}`)}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-[#004c91]/40 bg-white px-3.5 py-2 text-xs font-bold text-[#004c91] transition-colors hover:bg-blue-50 outline-none"
+                        >
+                          <Shield className="w-3.5 h-3.5" /> Xem nhật ký bảo mật
+                        </button>
+                        <p className="w-full text-[11px] leading-snug text-gray-400">
+                          Mở module quản trị tương ứng, đã lọc sẵn theo <span className="font-bold text-gray-500">{data.email}</span>.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null;
+
                   return (
                     <>
                       {isEdit ? editGrid : viewGrid}
+                      {adminSecurityPanel}
 
                       {isEditingProfile && (
                         <div className="mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -3255,42 +3471,99 @@ export function AccountManagement() {
         />
       )}
 
-      {/* ADMIN LOCK/UNLOCK — flow riêng với lý do bắt buộc khi khóa */}
+      {/* ADMIN security lock / unlock. Restates the target so a mis-clicked row is caught before the
+          action, and states the CONSEQUENCE, not just the state change: a lock ends every live
+          session, an unlock restores none of them. Reason mandatory both ways. */}
       {lockTarget && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative">
+          <div
+            className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 relative"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isUnlockAction ? 'Mở khóa tài khoản' : 'Khóa tài khoản vì lý do bảo mật'}
+          >
             <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-2">
-              <h2 className="text-xl font-black text-gray-800">
-                {lockTarget.status === 'Locked' ? '🔓 Mở khóa tài khoản' : '🔒 Khóa tài khoản (bảo mật)'}
+              {isUnlockAction
+                ? <Unlock className="w-5 h-5 text-[#0aa14f]" />
+                : <ShieldAlert className="w-5 h-5 text-red-500" />}
+              <h2 className="text-lg font-black text-gray-800">
+                {isUnlockAction ? 'Mở khóa tài khoản?' : 'Khóa tài khoản vì lý do bảo mật?'}
               </h2>
               <button
-                onClick={() => setLockTarget(null)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none"
+                onClick={closeSecurityAction}
+                disabled={lockSaving}
+                aria-label="Đóng"
+                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors outline-none disabled:opacity-60"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 text-gray-700 leading-relaxed text-[15px]">
-              {lockTarget.status === 'Locked' ? (
-                <>Mở khóa tài khoản <strong className="text-[#004c91]">{lockTarget.email}</strong>? Tài khoản sẽ trở lại trạng thái <strong className="text-[#0aa14f]">ACTIVE</strong> và người dùng có thể đăng nhập lại.</>
-              ) : (
-                <>Khóa tài khoản <strong className="text-[#004c91]">{lockTarget.email}</strong> vì lý do bảo mật? Toàn bộ phiên đăng nhập sẽ bị thu hồi ngay lập tức và tài khoản không thể đăng nhập cho đến khi được mở khóa.</>
-              )}
+              <p>
+                {isUnlockAction
+                  ? 'Người dùng sẽ có thể đăng nhập lại. Các phiên cũ không được khôi phục.'
+                  : 'Tài khoản sẽ bị đăng xuất khỏi tất cả phiên đang hoạt động và không thể đăng nhập cho đến khi được mở khóa.'}
+              </p>
+
+              {/* The account being acted on, spelled out (spec §17.1). */}
+              <dl className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+                <div className="flex gap-2">
+                  <dt className="w-20 shrink-0 font-bold text-gray-500">Họ tên</dt>
+                  <dd className="min-w-0 break-words font-bold text-[#004c91]">{lockTarget.name || '-'}</dd>
+                </div>
+                <div className="mt-1.5 flex gap-2">
+                  <dt className="w-20 shrink-0 font-bold text-gray-500">Email</dt>
+                  <dd className="min-w-0 break-all font-bold text-[#004c91]">{lockTarget.email || '-'}</dd>
+                </div>
+                <div className="mt-1.5 flex gap-2">
+                  <dt className="w-20 shrink-0 font-bold text-gray-500">Vai trò</dt>
+                  <dd className="min-w-0 break-words font-medium text-gray-800">{lockTarget.roleName || lockTarget.role || '-'}</dd>
+                </div>
+                <div className="mt-1.5 flex gap-2">
+                  <dt className="w-20 shrink-0 font-bold text-gray-500">Cơ sở</dt>
+                  <dd className="min-w-0 break-words font-medium text-gray-800">{lockTarget.campus || '-'}</dd>
+                </div>
+              </dl>
+
               <div className="mt-4">
-                <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">
-                  Lý do {lockTarget.status === 'Locked' ? '(tùy chọn)' : '(bắt buộc)'}
+                <label
+                  htmlFor="security-reason"
+                  className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500"
+                >
+                  {isUnlockAction ? 'Lý do mở khóa' : 'Lý do khóa'} <span className="text-red-500">*</span>
                 </label>
-                <textarea
-                  rows={2}
-                  value={lockReason}
-                  onChange={(e) => setLockReason(e.target.value)}
-                  placeholder="VD: Nghi ngờ lộ mật khẩu / đăng nhập bất thường..."
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all resize-none"
-                />
+                <div className="relative">
+                  <select
+                    id="security-reason"
+                    value={lockReasonPreset}
+                    onChange={(e) => { setLockReasonPreset(e.target.value); setLockError(null); }}
+                    disabled={lockSaving}
+                    className="w-full appearance-none px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all disabled:opacity-60"
+                  >
+                    <option value="">-- Chọn lý do --</option>
+                    {(isUnlockAction ? SECURITY_UNLOCK_REASONS : SECURITY_LOCK_REASONS).map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                </div>
+
+                {lockReasonPreset === SECURITY_REASON_OTHER && (
+                  <textarea
+                    rows={2}
+                    value={lockReasonDetail}
+                    onChange={(e) => { setLockReasonDetail(e.target.value); setLockError(null); }}
+                    disabled={lockSaving}
+                    aria-label="Mô tả lý do"
+                    placeholder="Mô tả lý do..."
+                    className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all resize-none disabled:opacity-60"
+                  />
+                )}
               </div>
+
               {lockError && (
-                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
                   {lockError}
                 </div>
               )}
@@ -3298,17 +3571,18 @@ export function AccountManagement() {
 
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3 rounded-b-2xl">
               <button
-                onClick={() => setLockTarget(null)}
-                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none"
+                onClick={closeSecurityAction}
+                disabled={lockSaving}
+                className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-100 transition-colors outline-none disabled:opacity-60"
               >
                 Hủy
               </button>
               <button
-                onClick={confirmLockToggle}
+                onClick={() => void confirmSecurityAction()}
                 disabled={lockSaving}
-                className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed ${lockTarget.status === 'Locked' ? 'bg-[#0aa14f] hover:bg-[#088c44]' : 'bg-red-500 hover:bg-red-600'}`}
+                className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-sm transition-all outline-none disabled:opacity-60 disabled:cursor-not-allowed ${isUnlockAction ? 'bg-[#0aa14f] hover:bg-[#088c44]' : 'bg-red-500 hover:bg-red-600'}`}
               >
-                {lockSaving ? 'Đang xử lý...' : lockTarget.status === 'Locked' ? 'Mở khóa' : 'Khóa tài khoản'}
+                {lockSaving ? 'Đang xử lý...' : isUnlockAction ? 'Mở khóa' : 'Khóa bảo mật'}
               </button>
             </div>
           </div>

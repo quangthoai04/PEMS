@@ -53,6 +53,23 @@ export interface AccountListItem {
   canEditBasicInfo?: boolean;
   /** When canEditBasicInfo is false (HO caller), the reason (SELF_ACCOUNT | ACCOUNT_LOCKED | ...). */
   editBasicInfoDisabledReason?: string | null;
+
+  /**
+   * ADMIN security control — true when this row may be security-locked (ACTIVE → LOCKED).
+   *
+   * Kept apart from `canManageStatus`, which keeps meaning the BUSINESS ACTIVE ↔ INACTIVE toggle
+   * owned by HO / Staff Leader. One flag cannot mean both without the UI eventually rendering a
+   * security lock as a personnel toggle.
+   */
+  canSecurityLock?: boolean;
+  /** ADMIN security control — true when this row may be unlocked (LOCKED → ACTIVE). */
+  canSecurityUnlock?: boolean;
+  /**
+   * For an ADMIN caller with no security action available, why: SELF_ACCOUNT | ACCOUNT_INACTIVE |
+   * ACCOUNT_PENDING_EMAIL_CONFIRMATION | NO_PERMISSION. Null when an action is offered, and null for
+   * HO / Staff Leader (security actions are not part of their screen at all).
+   */
+  securityActionDisabledReason?: string | null;
 }
 
 /** UC-95/UC-99 — query string params accepted by GET /accounts/viewaccountlist. */
@@ -318,6 +335,7 @@ export interface AccountDetails {
   email: string;
   phone?: string | null;
   gender?: string | null;
+  nationality?: string | null;
   roleCode: string;
   roleName: string;
   subRole?: string | null;
@@ -334,6 +352,10 @@ export interface AccountDetails {
   createdAt: string;
   updatedAt?: string | null;
   lastLoginAt?: string | null;
+
+  /** Linked sign-in methods (LOCAL_PASSWORD / GOOGLE_SSO / FEID) — provider TYPE only, no secrets. */
+  providers?: string[];
+
   /** HO_BASIC_INFO — true when an HO caller may edit this account's full name / email. */
   canEditBasicInfo?: boolean;
   editBasicInfoDisabledReason?: string | null;

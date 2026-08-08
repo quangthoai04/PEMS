@@ -275,6 +275,15 @@ internal static class AccountListQueryExecutor
         var canUpdateRolePerm = accessPolicy.CanAccessAccountManagement(currentUser);
         var canManageStatusPerm = accessPolicy.CanAccessAccountManagement(currentUser);
 
+        // ── ADMIN = Global Read + Security Control (ADMIN_ACCOUNT_MANAGEMENT spec §23/§43.4). The rows
+        //    ADMIN sees stay system-wide; what changes is what ADMIN may DO with them. Every business
+        //    capability is answered false here — creating, re-roling, editing identity and the
+        //    ACTIVE ↔ INACTIVE toggle are personnel management, owned by HO / Staff Leader — and the
+        //    two security capabilities take their place. The frontend renders from these flags, and
+        //    every mutation re-checks the same rules server-side, so a client that ignores them gains
+        //    nothing. ──
+        var isAdminCaller = roleCode == RoleCodes.Admin;
+
         var items = rows.Select(r =>
         {
             var rowIsHigh = r.RoleCode == RoleCodes.Admin || r.RoleCode == RoleCodes.Ho;
@@ -295,12 +304,41 @@ internal static class AccountListQueryExecutor
             string? hideStatusToggleReason = null;
             if (!canManageStatusPerm)
                 hideStatusToggleReason = "NO_PERMISSION";
+            else if (isAdminCaller)
+                // Not "no permission": ADMIN has full authority over this account's SECURITY state
+                // and none over its business status. The reason says which, so the UI can explain the
+                // absence instead of implying ADMIN was denied something.
+                hideStatusToggleReason = "ADMIN_SECURITY_ONLY";
             else if (isCurrentUser)
                 hideStatusToggleReason = "SELF_ACCOUNT";
             else if (!inActionScope)
                 hideStatusToggleReason = "TARGET_ROLE_NOT_MANAGEABLE";
             else if (r.Status == UserStatuses.Locked)
                 hideStatusToggleReason = "ACCOUNT_LOCKED";
+
+            // ── Security lock/unlock availability (spec §23). Mirrors ResolveAdminSecurityAction in
+            //    ManageAccountStatusCommandHandler exactly: ACTIVE can be locked, LOCKED can be
+            //    unlocked, INACTIVE and PENDING can be neither, and never one's own row. Getting this
+            //    wrong in either direction is a real failure — an offered button that 403s is worse
+            //    than no button, and a withheld one hides the only action ADMIN has on that account. ──
+            var canSecurityLock = false;
+            var canSecurityUnlock = false;
+            string? securityActionDisabledReason = null;
+            if (isAdminCaller)
+            {
+                if (!canViewDetailsPerm)
+                    securityActionDisabledReason = "NO_PERMISSION";
+                else if (isCurrentUser)
+                    securityActionDisabledReason = "SELF_ACCOUNT";
+                else if (r.Status == UserStatuses.Active)
+                    canSecurityLock = true;
+                else if (r.Status == UserStatuses.Locked)
+                    canSecurityUnlock = true;
+                else if (r.Status == UserStatuses.Inactive)
+                    securityActionDisabledReason = "ACCOUNT_INACTIVE";
+                else
+                    securityActionDisabledReason = "ACCOUNT_PENDING_EMAIL_CONFIRMATION";
+            }
 
             // ── HO basic-info edit permission + reason (HO_BASIC_INFO spec §11). Only meaningful
             //    for an HO caller: target not self, not LOCKED, and HO or STAFF/LEADER. ──
@@ -346,12 +384,17 @@ internal static class AccountListQueryExecutor
                 CreatedAt = r.CreatedAt,
                 UpdatedAt = r.UpdatedAt,
                 CanViewDetails = canViewDetailsPerm && inActionScope,
-                CanUpdateRole = canUpdateRolePerm && inActionScope && !isCurrentUser,
+                // ADMIN reads globally and controls security; it does not re-role, rename or
+                // enable/disable anybody. Those three answers are false for every row it sees.
+                CanUpdateRole = !isAdminCaller && canUpdateRolePerm && inActionScope && !isCurrentUser,
                 CanManageStatus = hideStatusToggleReason is null,
                 HideStatusToggleReason = hideStatusToggleReason,
                 IsCurrentUser = isCurrentUser,
                 CanEditBasicInfo = canEditBasicInfo,
-                EditBasicInfoDisabledReason = editBasicInfoDisabledReason
+                EditBasicInfoDisabledReason = editBasicInfoDisabledReason,
+                CanSecurityLock = canSecurityLock,
+                CanSecurityUnlock = canSecurityUnlock,
+                SecurityActionDisabledReason = securityActionDisabledReason
             };
         }).ToList();
 
