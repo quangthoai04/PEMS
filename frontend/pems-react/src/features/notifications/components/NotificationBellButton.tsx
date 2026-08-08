@@ -85,9 +85,12 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
     // Student/IC Staff KHÔNG phải Host của đoàn này (IC Staff đôi khi là Host đoàn khác,
     // nên không thể chặn theo role tĩnh). Trang Host Operation chỉ dành cho đúng Host của
     // đoàn, nên loại notification này luôn rewrite về trang danh sách "Quản lý tiếp khách"
-    // lọc đúng đơn, bất kể role.
+    // lọc đúng đơn, bất kể role. Bắt buộc kèm tab=attending: mặc định trang này rơi vào tab
+    // "Tất cả các loại đơn" (Staff/Staff Leader) — nơi dòng attending bị đánh dấu read-only
+    // (backend BuildAllowedActions không có participantId/trạng thái mời để tính nút Chấp
+    // nhận), nên nếu không ép tab, nút "Nhận lời" sẽ biến mất cho tới khi user tự đổi tab.
     if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}&tab=attending`;
     }
 
     // Student/Department không bao giờ là Host (theo thiết kế vai trò) — trang "Quy trình tiếp

@@ -31,6 +31,8 @@ import { notificationsApi } from '../../../../features/notifications/api/notific
 import { useNotifications } from '../../../../features/notifications/context/NotificationsContext';
 import { getNotificationLink } from '../../../../features/notifications/components/NotificationBellButton';
 import { NotificationDetailModal } from '../../../../features/notifications/components/NotificationDetailModal';
+import { HostFeedbackModal } from '../../../../features/feedbacks/components/HostFeedbackModal';
+import { VisitorFeedbackDetailModal } from '../../../../features/feedbacks/components/VisitorFeedbackDetailModal';
 import type { NotificationItem } from '../../../../features/notifications/types/notification.types';
 import { matchCalendarChangeNotifs } from '../../../../features/notifications/utils/calendarChangeNotifs';
 import { useAuth } from '../../../../shared/hooks/useAuth';
@@ -227,6 +229,11 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const { markAsRead: markNotificationRead } = useNotifications();
   const [changeNotifs, setChangeNotifs] = useState<NotificationItem[]>([]);
   const [changeNotifDetail, setChangeNotifDetail] = useState<NotificationItem | null>(null);
+  // Feedback nhận được (Visitor đánh giá / Host chấm điểm) phải mở modal xem nội dung — không
+  // điều hướng sang trang setup đoàn (xem SubmitVisitFeedbackCommandHandler.cs, cùng pattern
+  // NotificationsPage.tsx / NotificationBellButton.tsx).
+  const [hostFeedbackVisitInstanceId, setHostFeedbackVisitInstanceId] = useState<number | null>(null);
+  const [visitorFeedbackVisitInstanceId, setVisitorFeedbackVisitInstanceId] = useState<number | null>(null);
 
   const fetchChangeNotifs = useCallback(async () => {
     try {
@@ -247,6 +254,14 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
   const handleChangeNotifClick = async (n: NotificationItem) => {
     try { await markNotificationRead(n.notificationId); } catch { /* ignore */ }
     setChangeNotifs(prev => prev.filter(x => x.notificationId !== n.notificationId));
+    if (n.actionType === 'OPEN_HOST_FEEDBACK_MODAL' && n.visitInstanceId) {
+      setHostFeedbackVisitInstanceId(n.visitInstanceId);
+      return;
+    }
+    if (n.actionType === 'OPEN_VISITOR_FEEDBACK_MODAL' && n.visitInstanceId) {
+      setVisitorFeedbackVisitInstanceId(n.visitInstanceId);
+      return;
+    }
     const link = getNotificationLink(n, authUser);
     if (link) {
       setDetailInstanceId(null);
@@ -861,6 +876,18 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
       />
 
       <NotificationDetailModal item={changeNotifDetail} onClose={() => setChangeNotifDetail(null)} />
+
+      <HostFeedbackModal
+        open={hostFeedbackVisitInstanceId !== null}
+        visitInstanceId={hostFeedbackVisitInstanceId}
+        onClose={() => setHostFeedbackVisitInstanceId(null)}
+      />
+
+      <VisitorFeedbackDetailModal
+        open={visitorFeedbackVisitInstanceId !== null}
+        visitInstanceId={visitorFeedbackVisitInstanceId}
+        onClose={() => setVisitorFeedbackVisitInstanceId(null)}
+      />
 
       {/* ── Duyệt & gán host trong một bước (campus-independent approval, không gửi email) ── */}
       {assign.open && assign.detail && (

@@ -43,7 +43,8 @@
       "Bash(git diff *)",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/vi/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/shared/i18n/locales/en/visitRequestV2.json','utf8'\\)\\); console.log\\('OK'\\)\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(wc -l /tmp_tsc_out.txt)"
     ],
     "additionalDirectories": [
       "\\tmp"
