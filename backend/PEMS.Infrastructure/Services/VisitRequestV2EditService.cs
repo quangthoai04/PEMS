@@ -186,6 +186,12 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             if (!contentChanged && !scheduleChanged)
                 continue; // untouched sibling: no member churn, no revision bump, no row-version bump
 
+            // This campus IS about to move to revision N+1. Capture revision N first if the chain is
+            // missing it (legacy/seed data), while the schedule, the detail and the member links all
+            // still hold their pre-edit values — three lines below, the schedule is already gone.
+            await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+                _db, request, instance, detail, actorId, now, ct);
+
             if (scheduleChanged)
             {
                 audit.Changes.Add(new AuditLogChange
@@ -223,6 +229,10 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         }
 
         // ── 7. Request-level common fields (mutable subset only) + canonical recompute ──
+        // Captured BEFORE the write, used only if the write turns out to change something (see the
+        // revision block further down). ApplyCommonFields rewrites the registrant columns in place, so
+        // this string is the last moment the "before" exists anywhere.
+        var requestBaselineJson = VisitRevisionBaselineGuard.CaptureRequestSnapshot(request);
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
 
         var finalContents = edit.CampusVisits.Select(c => c.ToFormDto()).ToList();
@@ -264,6 +274,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         if (commonChanged)
         {
+            // The chain needs a first link before this becomes its second. Uses the snapshot captured
+            // above, because the registrant columns now hold the AFTER values.
+            await VisitRevisionBaselineGuard.EnsureRequestBaselineAsync(
+                _db, request, requestBaselineJson, actorId, now, ct);
+
             var nextRevision = (await _db.VisitRequestRevisionHistories
                 .Where(r => r.VisitRequestId == request.VisitRequestId)
                 .MaxAsync(r => (uint?)r.RequestRevision, ct) ?? 0) + 1;
@@ -437,6 +452,15 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail),
             scope, finalContents);
 
+        // Baselines BEFORE anything is overwritten. The campuses first, while their details, schedules
+        // and member links still hold the rejected content — phase 2 below replaces all three, and
+        // after that the "before" for this resubmit's revision would be unrecoverable.
+        foreach (var (_, instance) in pairs)
+            if (instance.FormDetail is { } rejectedDetail)
+                await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+                    _db, request, instance, rejectedDetail, actorId, now, ct);
+
+        var requestBaselineJson = VisitRevisionBaselineGuard.CaptureRequestSnapshot(request);
         var commonChanged = ApplyCommonFields(request, edit, audit, now);
         request.VisitScope = scope;
         request.HasMixedCampusDetails = hasMixed;
@@ -509,6 +533,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             });
         }
 
+        // A resubmit ALWAYS writes a request revision, so the chain always needs its first link —
+        // unconditionally here, unlike the pending edit which only writes one when something changed.
+        await VisitRevisionBaselineGuard.EnsureRequestBaselineAsync(
+            _db, request, requestBaselineJson, actorId, now, ct);
+
         var nextRevision = (await _db.VisitRequestRevisionHistories
             .Where(r => r.VisitRequestId == request.VisitRequestId)
             .MaxAsync(r => (uint?)r.RequestRevision, ct) ?? 0) + 1;
@@ -544,9 +573,13 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             throw new BusinessRuleException(
                 "Đơn đã bị hủy nên không thể sửa cơ sở này.",
                 VisitRequestErrorCodes.PendingCampusNotEditable);
-        if (instance.Status != VisitInstanceStatuses.WaitingRequestApproval)
+        // Either PRE-DECISION stage. A campus still waiting for its operational contact to confirm has
+        // been decided by nobody, exactly like one waiting for approval — same door, same rule as
+        // VisitMutationPolicy.IsPreDecision, which is what granted the capability the UI rendered.
+        if (instance.Status is not (VisitInstanceStatuses.WaitingContactConfirmation
+                                 or VisitInstanceStatuses.WaitingRequestApproval))
             throw new BusinessRuleException(
-                "Chỉ có thể sửa cơ sở đang chờ duyệt bằng chức năng này.",
+                "Chỉ có thể sửa cơ sở khi cơ sở đó chưa được duyệt.",
                 VisitRequestErrorCodes.PendingCampusNotEditable);
 
         // ── 2. The campus may not be swapped — that is an add and a remove wearing one payload. ──
@@ -616,6 +649,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             CreatedAt = now,
         };
         _db.AuditLogs.Add(audit);
+
+        // Revision N+1 is about to be written for this campus. Capture N first if the chain is
+        // missing it, while the detail, the schedule and the member links are all still pre-edit.
+        await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+            _db, request, instance, detail, actorId, now, ct);
 
         List<VisitGuestMember> newMembers = new();
         if (contentChanged)
@@ -1007,30 +1045,40 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         }
     }
 
+    /// <summary>
+    /// What an edit may NOT touch about the registrant: the address, and the partner the request is
+    /// filed under.
+    ///
+    /// <para>
+    /// The five descriptive fields beside them — name, organization, job title, nationality, phone —
+    /// ARE editable, and used not to be. That refusal was a contract drift, not a rule: the edit form
+    /// has always rendered them as inputs, so a registrant correcting a misspelt name or a changed
+    /// phone number got "Thông tin người đăng ký không được phép thay đổi" for doing exactly what the
+    /// screen invited. They are a SNAPSHOT of who filed this request, stored on the request row; they
+    /// are not the account, and <see cref="ApplyCommonFields"/> writes them without touching the
+    /// <c>users</c> profile behind <see cref="VisitRequest.RegistrantUserId"/>.
+    /// </para>
+    /// <para>
+    /// The address stays immutable because it is IDENTITY, not description: it is what the account
+    /// binding was resolved from, what an OTP was verified against, and what every notification about
+    /// this request is addressed to. Changing who the registrant is means a new request. The partner
+    /// stays immutable for the same reason — it decides whose organisation the visit is booked under.
+    /// </para>
+    /// </summary>
     private static void ValidateImmutableFields(VisitRequest request, VisitRequestEditV2Dto edit)
     {
         var r = edit.Registrant;
-        if (!string.Equals(request.RegistrantFullName, r.FullName, StringComparison.Ordinal) ||
-            !string.Equals(request.RegistrantNationality, r.Nationality, StringComparison.Ordinal) ||
-            !string.Equals(request.RegistrantJobTitle, r.JobTitle, StringComparison.Ordinal) ||
-            // Compare NORMALIZED phones so the same number in national vs E.164 form is treated as
-            // unchanged — the stored value is E.164 (create normalizes it), and a direct API edit
-            // sending "0912345678" must not read as an immutable-field violation.
-            !string.Equals(PhoneNumber.NormalizeOrOriginal(request.RegistrantPhone),
-                           PhoneNumber.NormalizeOrOriginal(r.Phone), StringComparison.Ordinal) ||
-            !string.Equals(request.RegistrantEmail, r.Email, StringComparison.OrdinalIgnoreCase) ||
-            request.PartnerId != edit.PartnerId)
+        if (!string.Equals(request.RegistrantEmail, r.Email, StringComparison.OrdinalIgnoreCase))
         {
             throw new BusinessRuleException(
-                "Thông tin người đăng ký không được phép thay đổi.", "IMMUTABLE_REGISTRANT_INFO");
+                "Không được phép đổi email người đăng ký trong biểu mẫu. " +
+                "Email là danh tính đã xác thực của đơn; muốn đổi người đăng ký thì phải tạo đơn mới.",
+                "IMMUTABLE_REGISTRANT_EMAIL");
         }
-        // Without a partner the organization is the registrant's own snapshot — immutable like the rest.
-        // With a partner it is derived from the partner row, so the payload echo is not compared.
-        if (!request.PartnerId.HasValue
-            && !string.Equals(request.RegistrantOrganization, r.Organization, StringComparison.Ordinal))
+        if (request.PartnerId != edit.PartnerId)
         {
             throw new BusinessRuleException(
-                "Thông tin người đăng ký không được phép thay đổi.", "IMMUTABLE_REGISTRANT_INFO");
+                "Không được phép đổi đối tác của đơn đăng ký.", "IMMUTABLE_REGISTRANT_PARTNER");
         }
         // The contact snapshot is checked per campus by EnsureContactSnapshotUnchanged, called from the
         // validation phase of both apply paths — there is no request-level address left to compare here.
@@ -1100,14 +1148,84 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             StringComparison.Ordinal);
 
     /// <summary>
-    /// Request-level mutable fields. There are none left: the contact snapshot moved onto each campus
-    /// and is written by <c>VisitRequestV2EditOps.ApplyFormDetail</c> along with the rest of that
-    /// campus’s content, so an edit that only changes a contact name shows up as a change to THAT
-    /// campus rather than to the request. Kept as a named no-op so the two call sites keep reading in
-    /// the same shape as the instance loop beside them.
+    /// Request-level mutable fields: the registrant's DESCRIPTIVE snapshot. Returns true when
+    /// something actually moved, which is what makes the caller append a
+    /// <c>visit_request_revision_history</c> row — an unchanged payload must not manufacture a
+    /// revision, or every save would add a history entry with an empty diff.
+    ///
+    /// <para>
+    /// Each campus's operational contact is NOT here: that snapshot moved onto the campus and is
+    /// written by <c>VisitRequestV2EditOps.ApplyFormDetail</c>, so a contact correction shows up as a
+    /// change to THAT campus rather than to the request.
+    /// </para>
+    /// <para>
+    /// This writes the request's own columns and nothing else. It never touches the <c>users</c> row
+    /// behind <c>RegistrantUserId</c>: the account's profile is the person's, maintained where they
+    /// maintain it, while these five columns record who filed THIS request — including the common case
+    /// where a Visitor files on behalf of somebody whose details are not their own account's.
+    /// </para>
+    /// <para>
+    /// Comparison is normalised the way the value is STORED (trimmed text; E.164 phone), so a client
+    /// echoing back what it was served never registers as a change, and "0912345678" against a stored
+    /// "+84912345678" is the same number rather than an edit.
+    /// </para>
     /// </summary>
     private static bool ApplyCommonFields(VisitRequest request, VisitRequestEditV2Dto edit, AuditLog audit, DateTime now)
-        => false;
+    {
+        var r = edit.Registrant;
+        var changed = false;
+
+        void Track(string field, string? oldValue, string? newValue)
+        {
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = field,
+                OldValueText = oldValue,
+                NewValueText = newValue,
+                CreatedAt = now,
+            });
+            changed = true;
+        }
+
+        // Full name, nationality, organisation and job title are NOT NULL columns and required at
+        // create. A blank incoming value is therefore "the client did not send this", never "clear
+        // it" — clearing a required column through an optional-looking omission is how a request
+        // ends up with no registrant name at all.
+        void ApplyRequired(string? incoming, string current, Action<string> assign, string field)
+        {
+            if (string.IsNullOrWhiteSpace(incoming)) return;
+            var value = incoming.Trim();
+            if (string.Equals(current, value, StringComparison.Ordinal)) return;
+            Track(field, current, value);
+            assign(value);
+        }
+
+        ApplyRequired(r.FullName, request.RegistrantFullName,
+            v => request.RegistrantFullName = v, "registrantFullName");
+        ApplyRequired(r.Nationality, request.RegistrantNationality,
+            v => request.RegistrantNationality = v, "registrantNationality");
+        ApplyRequired(r.JobTitle, request.RegistrantJobTitle,
+            v => request.RegistrantJobTitle = v, "registrantJobTitle");
+
+        // With a partner the organisation is DERIVED from the partner row, so the payload's echo of it
+        // is not a value the registrant owns and must not overwrite anything.
+        if (!request.PartnerId.HasValue)
+            ApplyRequired(r.Organization, request.RegistrantOrganization,
+                v => request.RegistrantOrganization = v, "registrantOrganization");
+
+        // Phone IS nullable and optional, so here a blank really does mean "remove it". Stored the way
+        // create stores it (E.164) so the two paths cannot disagree about the same number.
+        var phone = string.IsNullOrWhiteSpace(r.Phone)
+            ? null
+            : PhoneNumber.NormalizeOrOriginal(r.Phone.Trim());
+        if (!string.Equals(request.RegistrantPhone, phone, StringComparison.Ordinal))
+        {
+            Track("registrantPhone", request.RegistrantPhone, phone);
+            request.RegistrantPhone = phone;
+        }
+
+        return changed;
+    }
 
     /// <summary>Rebuilds the CURRENT canonical content of one instance (detail + linked members) for change detection.</summary>
     private static CampusVisitFormDto CurrentContentOf(

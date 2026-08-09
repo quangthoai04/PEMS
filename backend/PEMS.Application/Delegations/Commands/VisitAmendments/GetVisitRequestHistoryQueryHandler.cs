@@ -121,9 +121,15 @@ public sealed class GetVisitRequestHistoryQueryHandler
         }
 
         // ── Instance revisions (applied, immutable) ──
+        // Recovered baselines are excluded. They are written by VisitRevisionBaselineGuard purely so
+        // the NEXT revision has something to diff against on data whose chain was never complete —
+        // nobody performed them, and rendering one as "đã sửa nội dung" would put a user action in
+        // the timeline that never happened. They remain fully readable AS the before-side of the real
+        // revision that follows them, which is the only job they have.
         var instanceRevisions = await _db.VisitInstanceFormRevisionHistories.AsNoTracking()
             .Where(r => r.VisitRequestId == visit.VisitRequestId
-                        && visibleInstanceIds.Contains(r.VisitInstanceId))
+                        && visibleInstanceIds.Contains(r.VisitInstanceId)
+                        && r.Reason != RecoveredBaselineReason)
             .Select(r => new { r.RevisionHistoryId, r.VisitInstanceId, r.FormRevision, r.ApprovalRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
             .ToListAsync(cancellationToken);
         foreach (var r in instanceRevisions)
@@ -140,7 +146,8 @@ public sealed class GetVisitRequestHistoryQueryHandler
         if (includeRequestLevel)
         {
             var requestRevisions = await _db.VisitRequestRevisionHistories.AsNoTracking()
-                .Where(r => r.VisitRequestId == visit.VisitRequestId)
+                .Where(r => r.VisitRequestId == visit.VisitRequestId
+                            && r.Reason != RecoveredBaselineReason)
                 .Select(r => new { r.RequestRevisionHistoryId, r.RequestRevision, r.SourceType, r.AppliedBy, r.AppliedAt })
                 .ToListAsync(cancellationToken);
             foreach (var r in requestRevisions)
@@ -320,6 +327,13 @@ public sealed class GetVisitRequestHistoryQueryHandler
     /// indistinguishable from an ordinary edit. Revision 1 is still a creation for rows written before
     /// <c>source_type</c> was populated.
     /// </summary>
+    /// <summary>
+    /// Marker written by <c>VisitRevisionBaselineGuard</c> on a recovered baseline row. Mirrors its
+    /// <c>BaselineReason</c> constant — Application cannot reference Infrastructure, and the value is
+    /// a stored string rather than a shared symbol.
+    /// </summary>
+    private const string RecoveredBaselineReason = "RECOVERED_BASELINE";
+
     private static string InstanceRevisionCode(string? sourceType, uint formRevision) => sourceType switch
     {
         FormRevisionSourceTypes.Create => VisitHistoryEventCodes.InstanceContentCreated,

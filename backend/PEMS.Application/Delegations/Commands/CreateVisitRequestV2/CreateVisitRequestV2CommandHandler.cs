@@ -224,6 +224,9 @@ public sealed class CreateVisitRequestV2CommandHandler
         var now = _clock.VietnamNow;
         VisitRequest created;
         IReadOnlyList<ProposedHostActivation> activations = System.Array.Empty<ProposedHostActivation>();
+        // Minted inside the transaction below, dispatched after it commits.
+        IReadOnlyList<V2CreateNotifier.MintedInvitation> invitations =
+            System.Array.Empty<V2CreateNotifier.MintedInvitation>();
 
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
@@ -285,6 +288,15 @@ public sealed class CreateVisitRequestV2CommandHandler
                     }
                 }
 
+                // ── The links for the campuses that DO have to confirm, minted inside this
+                //    transaction so the request and the only means of answering it commit together.
+                //    A create that committed first and minted afterwards could leave every such campus
+                //    stuck at the contact gate holding a PENDING claim with no link. ──
+                invitations = await V2CreateNotifier.MintOperationalContactInvitationsAsync(
+                    _db, _contactInvitations, created, cancellationToken);
+                if (invitations.Count > 0)
+                    await _db.SaveChangesAsync(cancellationToken);
+
                 await tx.CommitAsync(cancellationToken);
             }
             catch (DbUpdateException)
@@ -300,13 +312,14 @@ public sealed class CreateVisitRequestV2CommandHandler
             }
         }
 
-        // ── Post-commit notifications + INITIAL_CLAIM invitation (only on the first successful create).
-        //    Dispatched AFTER commit so a rollback never notifies/invites; a same-submission replay takes
-        //    the idempotent return paths above and never re-sends. Best-effort; see V2CreateNotifier. ──
+        // ── Post-commit notifications + INITIAL_CLAIM invitation emails (only on the first successful
+        //    create). Dispatched AFTER commit so a rollback never notifies/emails; a same-submission
+        //    replay takes the idempotent return paths above and never re-sends. Best-effort: the links
+        //    are already durable, so a mail failure is a resend, not a lost invitation. ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
-        await V2CreateNotifier.SendOperationalContactInvitationsAfterCommitAsync(
-            _db, _contactInvitations, _logger, created, cancellationToken);
+        await V2CreateNotifier.DispatchOperationalContactInvitationsAfterCommitAsync(
+            _contactInvitations, _logger, invitations, created, cancellationToken);
 
         // Proposals that were stored but NOT activated (the gate is still shut) are announced as
         // proposals — never as "you have been assigned". §7.3 is explicit that the two must not read

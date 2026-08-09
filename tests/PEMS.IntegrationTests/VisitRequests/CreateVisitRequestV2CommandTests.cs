@@ -92,11 +92,18 @@ public sealed class CreateVisitRequestV2CommandTests
     internal sealed class RecordingInvitationService : IOperationalContactInvitationService
     {
         public List<ulong> Invitations { get; } = new();
-        public Task<string?> SendInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
+        // The two halves of the same act: callers mint inside their transaction and dispatch after it.
+        // Recorded on the MINT, which is the moment an invitation becomes real.
+        public Task<OperationalContactInvitationTokens?> MintInvitationTokensAsync(
+            ulong identityChangeId, CancellationToken cancellationToken)
         {
             Invitations.Add(identityChangeId);
-            return Task.FromResult<string?>(null);
+            return Task.FromResult<OperationalContactInvitationTokens?>(
+                new OperationalContactInvitationTokens($"accept-{identityChangeId}", $"decline-{identityChangeId}"));
         }
+        public Task DispatchInvitationEmailAsync(
+            ulong identityChangeId, OperationalContactInvitationTokens tokens, CancellationToken cancellationToken)
+            => Task.CompletedTask;
         public Task<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?> LockChangeAsync(
             ulong identityChangeId, CancellationToken cancellationToken)
             => Task.FromResult<PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange?>(null);

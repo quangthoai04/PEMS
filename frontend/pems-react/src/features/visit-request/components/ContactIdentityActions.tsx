@@ -4,12 +4,13 @@ import { useTranslation } from 'react-i18next';
 import {
   cancelOperationalContactChange,
   getOperationalContactState,
+  reinviteOperationalContactConfirmation,
   resendOperationalContactConfirmation,
   saveOperationalContact,
   type OperationalContactState,
   type ResolvedOperationalContact,
 } from '../api/visitRequestV2Api';
-import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
+import { errorCodeOf, hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
@@ -59,6 +60,24 @@ interface ContactFormState {
 /** Mirrors the FluentValidation limits on the commands — the backend stays the authority. */
 const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email: 150, reason: 500 } as const;
 
+/**
+ * Mã lỗi ổn định của backend → câu i18n cụ thể.
+ *
+ * Chỉ những trường hợp NGHIỆP VỤ đã biết mới nằm ở đây; lỗi lạ vẫn đi qua đường generic để không
+ * che mất sự cố thật. Khoá theo mã, KHÔNG parse message — message có thể đổi, mã thì không.
+ */
+const CONTACT_ERROR_KEYS: Record<string, string> = {
+  OPERATIONAL_CONTACT_CHANGE_CONFLICT: 'visitRequestV2:contact.errorChangeConflict',
+  OPERATIONAL_CONTACT_ALREADY_CONFIRMED: 'visitRequestV2:contact.errorAlreadyConfirmed',
+  OPERATIONAL_CONTACT_CONFIRMATION_NOT_FOUND: 'visitRequestV2:contact.errorInvitationNotFound',
+  OPERATIONAL_CONTACT_CONFIRMATION_EXPIRED: 'visitRequestV2:contact.errorInvitationExpired',
+  OPERATIONAL_CONTACT_CONFIRMATION_SUPERSEDED: 'visitRequestV2:contact.errorInvitationSuperseded',
+  OPERATIONAL_CONTACT_CONFIRMATION_RATE_LIMITED: 'visitRequestV2:contact.errorRateLimited',
+  OPERATIONAL_CONTACT_ACCOUNT_INACTIVE: 'visitRequestV2:contact.errorAccountInactive',
+  OPERATIONAL_CONTACT_PROFILE_NO_CHANGES: 'visitRequestV2:contact.errorNoChanges',
+  VISIT_INSTANCE_VERSION_CONFLICT: 'visitRequestV2:contact.errorVersionConflict',
+};
+
 const labelCls = 'block text-xs font-semibold text-slate-500';
 const fieldCls =
   'mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ' +
@@ -105,9 +124,11 @@ export default function ContactIdentityActions({
     transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
       && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
     resend: hasAction(allowedActions, VisitV2Action.ResendContactConfirmation),
+    /** Không còn lời mời nào sống — phải mở lời mời MỚI, không phải "gửi lại". */
+    reinvite: hasAction(allowedActions, VisitV2Action.ReinviteContactConfirmation),
     cancelChange: hasAction(allowedActions, VisitV2Action.CancelContactChange),
   }), [allowedActions]);
-  const hasAnyAction = can.edit || can.resend || can.cancelChange;
+  const hasAnyAction = can.edit || can.resend || can.reinvite || can.cancelChange;
 
   const [state, setState] = useState<OperationalContactState | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -116,6 +137,9 @@ export default function ContactIdentityActions({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ContactFormState | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  // Hủy lời mời có HẬU QUẢ khác nhau tùy loại lời mời, và không hoàn tác được — nên hỏi trước,
+  // với đúng câu mô tả hậu quả của loại đang chờ (approval-gate: không auto-pick im lặng).
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const refreshState = useCallback(async () => {
     if (!hasAnyAction) return;
@@ -171,7 +195,21 @@ export default function ContactIdentityActions({
       await refreshState();
       onChanged?.();
     } catch (err: unknown) {
-      showErrorToast(getApiErrorMessage(err, t('visitRequestV2:contact.actionFailed')));
+      // Các xung đột nghiệp vụ ĐÃ BIẾT phải nói đúng chuyện, không rơi về "Đã xảy ra lỗi. Vui lòng
+      // thử lại." — câu đó vừa vô nghĩa (thử lại sẽ hỏng y hệt) vừa che mất việc thao tác có thể đã
+      // thành công một phần. Map theo MÃ ổn định của backend, không parse message.
+      const code = errorCodeOf(err);
+      const known = code ? CONTACT_ERROR_KEYS[code] : undefined;
+      if (known) {
+        showErrorToast(t(known));
+        // Trạng thái phía server đã khác với những gì màn hình đang hiển thị (đã có lời mời chờ, đã
+        // có người xác nhận, lời mời đã bị thay...) — tải lại để người dùng thấy đúng thực tế thay
+        // vì bấm lại vào một nút không còn hợp lệ.
+        await refreshState();
+        onChanged?.();
+      } else {
+        showErrorToast(getApiErrorMessage(err, t('visitRequestV2:contact.actionFailed')));
+      }
     } finally {
       setBusy(false);
     }
@@ -374,6 +412,18 @@ export default function ContactIdentityActions({
     ? t('visitRequestV2:contact.cancelTransfer')
     : t('visitRequestV2:contact.cancelConfirmation');
 
+  /**
+   * Không có ai giữ cơ sở VÀ không có lời mời nào đang chờ.
+   *
+   * Đây là trạng thái sau khi hủy lời mời xác nhận, và nó KHÁC "đang chờ xác nhận": không ai sẽ trả
+   * lời, vì không có email nào đang bay. Trước đây cả hai đều hiện cùng một câu "chưa xác nhận lời
+   * mời (hiệu lực 72 giờ)", nên người đăng ký ngồi đợi một email không tồn tại. Backend nay phân
+   * biệt qua `NO_ACTIVE_INVITATION`; ở đây suy từ state đã tải (chính xác hơn vì có cả trạng thái
+   * hết hạn chưa quét), và chỉ khi state đọc được — không biết thì không khẳng định.
+   */
+  const noActiveInvitation =
+    !contactConfirmed && !loadError && state != null && !pendingLive;
+
   return (
     <div
       data-testid={`contact-identity-actions-${visitInstanceId}`}
@@ -417,10 +467,19 @@ export default function ContactIdentityActions({
         </div>
       )}
 
+      {/* "Đang chờ xác nhận" chỉ đúng khi thực sự có lời mời đang bay. Nếu không còn lời mời nào
+          (vừa hủy / đã từ chối / hết hạn) thì nói thẳng là chưa có lời mời hiệu lực và cơ sở vẫn
+          đang chặn cổng xác nhận — người đăng ký cần HÀNH ĐỘNG, không phải chờ. */}
       {isPending && (
-        <p className="mt-2 text-sm text-amber-700">
-          {t('visitRequestV2:contact.pendingNotice', { email: contactEmail ?? '' })}
-        </p>
+        noActiveInvitation ? (
+          <p className="mt-2 text-sm text-amber-700" data-testid="contact-no-active-invitation">
+            {t('visitRequestV2:contact.noActiveInvitationNotice')}
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-amber-700">
+            {t('visitRequestV2:contact.pendingNotice', { email: contactEmail ?? '' })}
+          </p>
+        )
       )}
 
       {/* A pending TRANSFER names an address that does NOT yet hold the campus. Saying so explicitly
@@ -463,17 +522,70 @@ export default function ContactIdentityActions({
               {t('visitRequestV2:contact.resendInvitation')}
             </button>
           )}
+          {can.reinvite && (
+            <button
+              type="button"
+              disabled={busy}
+              data-testid="contact-reinvite"
+              className="rounded-lg bg-[#f37021] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
+              onClick={() => void run(() => reinviteOperationalContactConfirmation(visitRequestId, visitInstanceId))}
+            >
+              {t('visitRequestV2:contact.reinvite')}
+            </button>
+          )}
           {can.cancelChange && (
             <button
               type="button"
               disabled={busy}
               data-testid="contact-cancel-transfer"
               className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
-              onClick={() => void run(() => cancelOperationalContactChange(visitRequestId, visitInstanceId))}
+              onClick={() => setConfirmCancel(true)}
             >
               {cancelLabel}
             </button>
           )}
+        </div>
+      )}
+
+      {/* Hủy lời mời không hoàn tác được và hậu quả khác hẳn nhau giữa hai loại — nên hỏi trước,
+          bằng đúng câu mô tả hậu quả của loại đang chờ. */}
+      {confirmCancel && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="contact-cancel-confirm"
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <h4 className="text-base font-bold text-slate-800">{cancelLabel}</h4>
+            <p className="mt-2 whitespace-pre-line text-sm text-slate-600">
+              {pendingKind === 'TRANSFER'
+                ? t('visitRequestV2:contact.cancelTransferConsequence')
+                : t('visitRequestV2:contact.cancelConfirmationConsequence')}
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                onClick={() => setConfirmCancel(false)}
+              >
+                {t('visitRequestV2:common.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                data-testid="contact-cancel-confirm-submit"
+                className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                onClick={() => {
+                  setConfirmCancel(false);
+                  void run(() => cancelOperationalContactChange(visitRequestId, visitInstanceId));
+                }}
+              >
+                {t('visitRequestV2:contact.cancelConfirmAction')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

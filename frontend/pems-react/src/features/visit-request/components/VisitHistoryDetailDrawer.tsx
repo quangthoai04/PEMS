@@ -242,10 +242,23 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
               </ul>
             )}
 
+            {/* Danh sách rỗng có HAI nguyên nhân hoàn toàn khác nhau, và backend nói rõ là cái nào
+                qua `comparisonStatus`. Trước đây cả hai đều in "không có thay đổi chi tiết nào được
+                ghi nhận" — nói với người vừa sửa đơn rằng họ không sửa gì. */}
             {detail.fieldChanges.length === 0 && detail.collectionChanges.length === 0 && (
-              <p data-testid="history-detail-empty" className="text-sm italic text-slate-400">
-                {t('visitRequestV2:historyDetail.noChanges')}
-              </p>
+              detail.comparisonStatus === 'PREVIOUS_REVISION_MISSING' ? (
+                <p
+                  role="alert"
+                  data-testid="history-detail-baseline-missing"
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                >
+                  {t('visitRequestV2:historyDetail.previousRevisionMissing')}
+                </p>
+              ) : (
+                <p data-testid="history-detail-empty" className="text-sm italic text-slate-400">
+                  {t('visitRequestV2:historyDetail.noChanges')}
+                </p>
+              )
             )}
           </>
         )}

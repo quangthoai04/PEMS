@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 using PEMS.Application.Delegations.Common;
@@ -13,11 +14,17 @@ public sealed class GetVisitProcessPermissionsQueryHandler
 {
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    // The earliest-start gate is a TIME rule, so this handler needs a clock. It used to have none,
+    // which is precisely why CanStartVisit could not express the rule and the button was offered days
+    // early — the frontend then asked for a transition the command refuses.
+    private readonly IDateTimeService _clock;
 
-    public GetVisitProcessPermissionsQueryHandler(IApplicationDbContext db, ICurrentUserService currentUser)
+    public GetVisitProcessPermissionsQueryHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
     {
         _db = db;
         _currentUser = currentUser;
+        _clock = clock;
     }
 
     public async Task<VisitProcessPermissionDto> Handle(
@@ -32,6 +39,10 @@ public sealed class GetVisitProcessPermissionsQueryHandler
 
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            // Media consent lives on the per-campus detail, and the news eligibility verdict below
+            // reads it. Without the include it is null, which the evaluator correctly treats as
+            // "consent not agreed" — and every campus would lose its create-news flag.
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
@@ -94,11 +105,13 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             && hostAssigned;
         // Minutes: Host OR an accepted (IC/Dept/Student) participant — never Visitor/HO/Staff Leader.
         bool minutesEditor = (isHost || isAcceptedParticipant) && isLive;
-        // News: Host, accepted IC Staff, or accepted Student. Department participant does NOT create news.
-        bool newsCreator = (isHost
-            || (isAcceptedParticipant && (acceptedParticipantRole == ParticipantRoles.IcSupport
-                                          || acceptedParticipantRole == ParticipantRoles.Student)))
-            && isLive;
+        // News: the SAME canonical verdict the process list, the Create-News preset and the create
+        // command use. This flag used to be its own rule — Host / accepted IC / Student AND isLive,
+        // with no writing window and no media-consent or news-required gate — so it could read true
+        // at BEFORE_VISIT for a visit whose guest had refused media coverage, on a campus where the
+        // create endpoint refuses outright.
+        bool newsCreator = PEMS.Application.Delegations.News.VisitNewsAccess.Evaluate(
+            instance, visit, _currentUser, acceptedParticipantRole).CanCreate;
 
         // A pure Visitor owner must NEVER see the internal operational tabs (Before/During/After,
         // Minutes) of a CANCELLED campus — only the public-safe original request / cancellation reason.
@@ -147,9 +160,27 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanStartPreparation = canStartPreparation,
 
             // Operational stage transitions — Host only, live instance (see CompleteVisitStageCommand).
-            // BEFORE_VISIT only: "finish preparation" presupposes preparation started.
+            // BEFORE_VISIT only: "finish preparation" presupposes preparation started. And not before
+            // T-6h — the same policy the command enforces, so the button is disabled rather than
+            // clickable-then-409.
             CanStartVisit = isHost && isLive
-                && instance.Status == VisitInstanceStatus.BeforeVisit,
+                && instance.Status == VisitInstanceStatus.BeforeVisit
+                && VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(
+                    _clock.VietnamNow, instance.PlannedStartAt),
+            // Returned throughout BEFORE_VISIT, including while the window is shut, because that is
+            // exactly when the UI needs it: a disabled button that says WHEN it opens is far better
+            // than one that only says no. Derived from the CURRENT schedule, so an amendment that
+            // moves the visit moves this with it.
+            StartVisitAvailableAt = instance.Status == VisitInstanceStatus.BeforeVisit
+                ? VisitStageTransitionPolicy.StartVisitAvailableAt(instance.PlannedStartAt)
+                : null,
+            StartVisitDisabledReasonCode =
+                isHost && isLive
+                && instance.Status == VisitInstanceStatus.BeforeVisit
+                && !VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(
+                    _clock.VietnamNow, instance.PlannedStartAt)
+                    ? VisitRequestErrorCodes.VisitStartWindowNotOpen
+                    : null,
             CanCompleteVisit = isHost && isLive && instance.Status == VisitInstanceStatus.DuringVisit,
             // Đóng đoàn nằm ở tab "Sau tiếp khách": Host đóng khi đoàn đã kết thúc (AFTER_VISIT).
             CanCloseVisit = isHost && isLive && instance.Status == VisitInstanceStatus.AfterVisit,

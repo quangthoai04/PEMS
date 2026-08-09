@@ -74,11 +74,19 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
     public async Task<OperationalContactActionResponse> Handle(
         AcceptOperationalContactConfirmationCommand request, CancellationToken cancellationToken)
     {
-        var actorId = OperationalContactGuards.RequireAuthenticated(_writeFlag, _currentUser);
-        var changeId = await OperationalContactGuards.ResolveChangeIdAsync(
-                           _db, _tokens, request.Token, cancellationToken)
-                       ?? throw new ConflictException(
-                           "Liên kết không hợp lệ.", OperationalContactErrorCodes.ConfirmationNotFound);
+        // Session actor normally; a token-proven actor when the public (no-login) handler delegates here.
+        var actorId = OperationalContactGuards.ResolveActor(_writeFlag, _currentUser, request.ActingUserId);
+        // From a link, or — for a signed-in invitee answering inside the product — from the
+        // invitation id, with the session standing in for the token. Either way the identity check
+        // below (EnsureActorMayTakeContactRole) is what actually authorizes the answer.
+        var changeId = request.Token is null
+            ? request.IdentityChangeId
+              ?? throw new ConflictException(
+                  "Thiếu thông tin lời mời.", OperationalContactErrorCodes.ConfirmationNotFound)
+            : await OperationalContactGuards.ResolveChangeIdAsync(
+                  _db, _tokens, request.Token, cancellationToken)
+              ?? throw new ConflictException(
+                  "Liên kết không hợp lệ.", OperationalContactErrorCodes.ConfirmationNotFound);
 
         var now = _clock.VietnamNow;
         var correlationId = Guid.NewGuid().ToString("N");
@@ -115,8 +123,15 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
 
             OperationalContactGuards.EnsurePending(change, now);
 
-            var token = await OperationalContactGuards.LoadLiveTokenAsync(
-                _db, _tokens, request.Token, changeId, now, cancellationToken);
+            // The link must be an ACCEPT link. An invitation now carries one per answer, so the
+            // decline link cannot be turned into an acceptance by posting it here. A signed-in
+            // invitee answering without a link has no token to consume — every outstanding link of
+            // this invitation is invalidated below regardless of how the answer arrived.
+            var token = request.Token is null
+                ? null
+                : await OperationalContactGuards.LoadLiveTokenAsync(
+                    _db, _tokens, request.Token, changeId, now, cancellationToken,
+                    requiredIntendedAction: EmailIntendedActions.Accept);
 
             var actor = await _db.Users.Include(u => u.Role)
                 .FirstOrDefaultAsync(u => u.UserId == actorId, cancellationToken)
@@ -142,10 +157,13 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
             change.NewUserId = actorId;
             change.UpdatedAt = now;
 
-            token.UsedAt = now;
-            token.UsedAction = EmailIntendedActions.Accept;
-            token.ResultStatus = EmailActionResultStatuses.Success;
-            token.RecipientUserId = actorId;
+            if (token is not null)
+            {
+                token.UsedAt = now;
+                token.UsedAction = EmailIntendedActions.Accept;
+                token.ResultStatus = EmailActionResultStatuses.Success;
+                token.RecipientUserId = actorId;
+            }
 
             // Every other outstanding link of this invitation (from a resend) dies with the answer.
             await EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(

@@ -128,6 +128,22 @@ public sealed class OperationalContactManagementTests
             new FixedClock(), NullLogger<OperationalContactInvitationService>.Instance, EmptyConfig);
 
     /// <summary>
+    /// Issues an invitation the way every production caller does — mint, make the links durable, then
+    /// send — and returns its ACCEPT link. There is no mint-and-send convenience on the service any
+    /// more: a token minted after somebody else's commit is exactly the bug the split prevents.
+    /// </summary>
+    private static async Task<string> IssueInvitationAsync(
+        ApplicationDbContext db, FakeEmail email, ulong identityChangeId)
+    {
+        var invitations = Invitations(db, email);
+        var tokens = await invitations.MintInvitationTokensAsync(identityChangeId, CancellationToken.None);
+        Assert.NotNull(tokens);
+        await db.SaveChangesAsync(CancellationToken.None);
+        await invitations.DispatchInvitationEmailAsync(identityChangeId, tokens!, CancellationToken.None);
+        return tokens!.AcceptToken;
+    }
+
+    /// <summary>
     /// The branching save, wired to the three real handlers behind a tiny in-process dispatcher.
     ///
     /// <para>
@@ -588,8 +604,7 @@ public sealed class OperationalContactManagementTests
             var mail = new FakeEmail();
             string token;
             using (var db = NewContext())
-                token = (await Invitations(db, mail).SendInvitationAsync(
-                    invitation.IdentityChangeId, CancellationToken.None))!;
+                token = await IssueInvitationAsync(db, mail, invitation.IdentityChangeId);
             using (var db = NewContext())
                 await Accept(db, contactId, contactEmail, mail).Handle(
                     new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
@@ -652,8 +667,7 @@ public sealed class OperationalContactManagementTests
             var mail = new FakeEmail();
             string token;
             using (var db = NewContext())
-                token = (await Invitations(db, mail).SendInvitationAsync(
-                    invitation.IdentityChangeId, CancellationToken.None))!;
+                token = await IssueInvitationAsync(db, mail, invitation.IdentityChangeId);
             using (var db = NewContext())
                 await Accept(db, contactId, contactEmail, mail).Handle(
                     new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);

@@ -42,5 +42,16 @@
     "notFoundMsg": "Bài viết không tồn tại hoặc chưa được công khai.",
     "goBack": "Quay lại",
     "copyright": "© Bản quyền thuộc về Phòng Hợp tác Quốc tế - Đại học FPT"
+  },
+  "visitEligibility": {
+    "notInScope": "Bạn không thuộc chuyến tiếp khách này nên không thể viết tin cho chuyến.",
+    "participantRoleNotAllowed": "Vai trò tham gia của bạn không được phép tạo bài tin cho chuyến này.",
+    "notInWritingWindow": "Chuyến thăm chưa đến giai đoạn có thể viết tin (từ Sau tiếp khách trở đi).",
+    "newsNotRequired": "Chuyến thăm này đã được xác nhận không cần bài tin tức.",
+    "mediaConsentDenied": "Không thể tạo bài tin do khách không đồng ý sử dụng nội dung truyền thông.",
+    "alreadyExists": "Bạn đã có bài tin tức cho chuyến thăm này.",
+    "unknown": "Chuyến tiếp khách này hiện chưa thể viết tin. Vui lòng liên hệ quản trị viên nếu bạn cho rằng đây là nhầm lẫn.",
+    "openExisting": "Mở bài viết hiện có",
+    "loadFailed": "Không thể tải thông tin chuyến tiếp khách. Vui lòng thử lại."
   }
 }

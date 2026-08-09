@@ -315,7 +315,15 @@ describe('ContactIdentityActions', () => {
     });
     renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
 
+    // Hủy lời mời KHÔNG hoàn tác được và hậu quả khác nhau giữa hai loại, nên nút chỉ mở hộp xác
+    // nhận; chỉ khi người dùng đồng ý ở đó thì lệnh mới chạy.
     fireEvent.click(await screen.findByTestId('contact-cancel-transfer'));
+    expect(cancelOperationalContactChange).not.toHaveBeenCalled();
+
+    // Hộp xác nhận nói đúng hậu quả của loại TRANSFER: đầu mối hiện tại giữ nguyên quyền.
+    expect(await screen.findByTestId('contact-cancel-confirm')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('contact-cancel-confirm-submit'));
     await waitFor(() => expect(showSuccessToast).toHaveBeenCalledWith('Đã hủy lời mời chuyển giao.'));
   });
 });

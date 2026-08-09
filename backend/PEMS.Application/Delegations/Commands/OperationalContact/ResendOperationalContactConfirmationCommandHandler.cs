@@ -15,10 +15,12 @@ namespace PEMS.Application.Delegations.Commands.OperationalContact;
 /// <summary>
 /// Re-sends the pending invitation of ONE campus.
 ///
-/// The old link dies FIRST, inside the transaction, and <c>token_version</c> is bumped before the new
-/// one is minted. That ordering is the whole point: two live links for the same campus would let a
-/// stale email win a race against the current one, and the version is what makes the new invitation
-/// distinguishable in the dispatcher's dedupe key.
+/// The old link dies FIRST, <c>token_version</c> is bumped, and the new link is minted — all three in
+/// ONE transaction, with only the email left outside it. The ordering is what keeps two live links
+/// from racing each other for the same campus (and the version is what makes the new invitation
+/// distinguishable in the dispatcher's dedupe key); the shared transaction is what keeps a failed mint
+/// from committing the kill on its own, which would strand the invitee with dead links and the
+/// registrant with a pending change they cannot replace.
 ///
 /// Rate limited on two axes — a hard cap per invitation and a cooldown since the last link was
 /// actually minted — because an invitation the registrant can fire at will is a spam channel pointed
@@ -52,6 +54,8 @@ public sealed class ResendOperationalContactConfirmationCommandHandler
         var correlationId = Guid.NewGuid().ToString("N");
 
         ulong changeId;
+        // Minted inside the transaction below, dispatched after it commits.
+        OperationalContactInvitationTokens invitationTokens;
         OperationalContactManageResponse response;
 
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
@@ -113,7 +117,24 @@ public sealed class ResendOperationalContactConfirmationCommandHandler
                 CreatedAt = now,
             });
 
+            // Flush the kill + the bump so the mint below reads the version it is minting FOR, and so
+            // the new token rows cannot be mistaken for the ones just invalidated.
             await _db.SaveChangesAsync(cancellationToken);
+
+            // ── The replacement link is part of THIS transaction, and for resend that is not a
+            //    refinement — it is the whole correctness of the operation. Every outstanding link for
+            //    this campus has just been marked invalid a few lines up. Minting the new one after the
+            //    commit means a mint failure lands on a campus whose invitation is still PENDING, whose
+            //    old links are dead, and whose new link never existed: the invitee's email is now a
+            //    row of broken URLs, and the registrant cannot re-invite either, because a pending
+            //    change already occupies the campus. Minted here, that failure rolls the invalidation
+            //    and the version bump back with it, and the previous links keep working.
+            invitationTokens = OperationalContactGuards.RequireMintedLinks(
+                await _invitations.MintInvitationTokensAsync(
+                    change.IdentityChangeId, cancellationToken),
+                change.IdentityChangeId);
+            await _db.SaveChangesAsync(cancellationToken);
+
             await tx.CommitAsync(cancellationToken);
 
             changeId = change.IdentityChangeId;
@@ -125,9 +146,10 @@ public sealed class ResendOperationalContactConfirmationCommandHandler
                 "Đã gửi lại lời mời xác nhận cho cơ sở này. Liên kết cũ không còn hiệu lực.");
         }
 
-        // AFTER commit: mint the fresh token and send. A failure here leaves the invitation valid and
-        // resendable rather than half-applied.
-        await _invitations.SendInvitationAsync(changeId, cancellationToken);
+        // AFTER commit: only the delivery. The new link is durable by now, so a mail-provider failure
+        // leaves a resend that WORKED — the invitee can still be given the link, and another resend
+        // (subject to the same cooldown and cap) is a retry rather than a repair.
+        await _invitations.DispatchInvitationEmailAsync(changeId, invitationTokens, cancellationToken);
 
         return response;
     }

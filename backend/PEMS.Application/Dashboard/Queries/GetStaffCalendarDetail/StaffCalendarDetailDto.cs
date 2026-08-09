@@ -32,6 +32,16 @@ public sealed class StaffCalendarDetailDto
     public string DisplayStatus { get; set; } = default!;
     public string ColorType { get; set; } = default!;
 
+    /// <summary>
+    /// Optimistic-concurrency token of this campus instance, as rendered in the modal. The modal is
+    /// a REVIEW surface — it shows the delegation, the schedule and the purpose, and offers approve
+    /// and reject beside them — so the decision it sends must carry the version it displayed, or the
+    /// Staff Leader can approve content the guest changed while the modal was open. Echoed back as
+    /// <c>expectedInstanceRowVersion</c>; the backend answers 409
+    /// <c>VISIT_INSTANCE_VERSION_CONFLICT</c> when it has moved.
+    /// </summary>
+    public int RowVersion { get; set; }
+
     public ulong CampusId { get; set; }
     public string CampusName { get; set; } = default!;
     public DateTime PlannedStartAt { get; set; }

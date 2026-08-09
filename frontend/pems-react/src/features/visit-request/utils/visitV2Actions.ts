@@ -39,6 +39,13 @@ export const VisitV2Action = {
   EditPendingCampus: 'EDIT_PENDING_CAMPUS',
   UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',
   ResendContactConfirmation: 'RESEND_OPERATIONAL_CONTACT_CONFIRMATION',
+  /**
+   * Mở lời mời xác nhận MỚI cho đúng email cơ sở đang có, khi lời mời trước đã kết thúc mà không
+   * ai trả lời (hủy / từ chối / hết hạn). Khác `ResendContactConfirmation` — cái đó phát lại token
+   * cho lời mời vẫn đang PENDING. Hai action không bao giờ xuất hiện cùng lúc: một cơ sở hoặc đang
+   * có lời mời sống, hoặc không.
+   */
+  ReinviteContactConfirmation: 'REINVITE_OPERATIONAL_CONTACT_CONFIRMATION',
   ReplaceOperationalContact: 'REPLACE_OPERATIONAL_CONTACT',
   InitiateContactTransfer: 'INITIATE_OPERATIONAL_CONTACT_TRANSFER',
   CancelContactChange: 'CANCEL_OPERATIONAL_CONTACT_CHANGE',

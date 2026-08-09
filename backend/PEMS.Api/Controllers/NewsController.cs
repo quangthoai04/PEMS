@@ -104,16 +104,24 @@ namespace PEMS.Api.Controllers
         }
 
         // Create News support: get eligible closed visit instances
+        /// <param name="visitInstanceId">
+        /// Optional. The ONE campus the Create-News page was opened for (<c>?visitInstanceId=</c>).
+        /// Adds `requested` to the response — the canonical verdict for that campus WITH its reason
+        /// code — so the page states the single true cause instead of deriving a guess from the
+        /// campus being absent from the list.
+        /// </param>
         [HttpGet("eligible-visit-instances")]
         [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Staff, EffectiveRole.Student)]
         public async Task<IActionResult> GetEligibleVisitInstances(
             [FromQuery] bool includeAlreadyHasNews = false,
+            [FromQuery] ulong? visitInstanceId = null,
             CancellationToken cancellationToken = default)
         {
             var q = new PEMS.Application.News.Queries.GetEligibleVisitInstancesForNews
                 .GetEligibleVisitInstancesForNewsQuery
             {
-                IncludeAlreadyHasNews = includeAlreadyHasNews
+                IncludeAlreadyHasNews = includeAlreadyHasNews,
+                VisitInstanceId = visitInstanceId
             };
             var result = await _mediator.Send(q, cancellationToken);
             return Ok(result);

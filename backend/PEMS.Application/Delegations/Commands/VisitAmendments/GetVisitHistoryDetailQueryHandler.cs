@@ -176,7 +176,13 @@ public sealed class GetVisitHistoryDetailQueryHandler
             previous?.FormRevision,
             row.FormRevision,
             fields,
-            collections);
+            collections,
+            // Revision 1 IS the creation — there is no earlier state and none is missing, so an empty
+            // diff there is correct rather than unavailable. Above revision 1, a null previous means
+            // the chain is broken and the drawer must say so instead of claiming nothing changed.
+            ComparisonStatus: previous is not null || row.FormRevision <= 1
+                ? VisitHistoryComparisonStatuses.Available
+                : VisitHistoryComparisonStatuses.PreviousRevisionMissing);
     }
 
     // ── Request-level revision: the shared registrant/contact block ──
@@ -210,7 +216,10 @@ public sealed class GetVisitHistoryDetailQueryHandler
             previous?.RequestRevision,
             row.RequestRevision,
             fields,
-            Array.Empty<VisitHistoryCollectionChangeDto>());
+            Array.Empty<VisitHistoryCollectionChangeDto>(),
+            ComparisonStatus: previous is not null || row.RequestRevision <= 1
+                ? VisitHistoryComparisonStatuses.Available
+                : VisitHistoryComparisonStatuses.PreviousRevisionMissing);
     }
 
     // ── Amendment: the immutable change rows ARE the diff ──

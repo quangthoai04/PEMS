@@ -42,5 +42,16 @@
     "notFoundMsg": "The article does not exist or has not been published.",
     "goBack": "Go back",
     "copyright": "© Copyright by International Relations Department - FPT University"
+  },
+  "visitEligibility": {
+    "notInScope": "You are not part of this visit, so you cannot write news for it.",
+    "participantRoleNotAllowed": "Your participation role is not allowed to write news for this visit.",
+    "notInWritingWindow": "This visit has not reached the stage where news can be written (After visit onwards).",
+    "newsNotRequired": "This visit has been confirmed as not requiring a news article.",
+    "mediaConsentDenied": "News cannot be created because the guests did not agree to media coverage.",
+    "alreadyExists": "You already have a news article for this visit.",
+    "unknown": "News cannot be written for this visit right now. Please contact an administrator if you believe this is a mistake.",
+    "openExisting": "Open my existing article",
+    "loadFailed": "Unable to load the visit information. Please try again."
   }
 }

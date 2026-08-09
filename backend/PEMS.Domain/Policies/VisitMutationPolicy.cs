@@ -208,6 +208,16 @@ public static class VisitMutationPolicy
         instanceStatus is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
 
     /// <summary>
+    /// The two stages BEFORE any Staff Leader has decided this campus: waiting for its operational
+    /// contact to confirm, and waiting for the approval decision itself. Both are "nothing has been
+    /// decided", which is the only thing a pending edit needs to be true — the difference between them
+    /// is who the request is currently waiting ON, not whether its content is still provisional.
+    /// </summary>
+    private static bool IsPreDecision(string instanceStatus) =>
+        instanceStatus is VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval;
+
+    /// <summary>
     /// The campuses whose lifecycle and start time govern a REQUEST-level action (safe edit of the
     /// shared registrant/contact block, pending edit, resubmit).
     ///
@@ -267,16 +277,26 @@ public static class VisitMutationPolicy
 
         var lifecycleOk = context.Action switch
         {
+            // BOTH pre-decision stages, not just the second one. A request waiting for its operational
+            // contacts to confirm is a request nobody has decided anything about — it is the stage where
+            // the registrant is MOST likely to notice a mistake, because it is the stage where somebody
+            // else is reading the invitation for the first time and asking about it. Refusing an edit
+            // here froze the request precisely when it was still entirely provisional, and the service
+            // layer had already treated the two stages alike; only this guard disagreed.
+            //
+            // Nothing about the contact workflow moves with it: the contact snapshot is immutable in a
+            // form edit (EnsureContactSnapshotUnchanged), so outstanding invitations keep their address,
+            // their token and their expiry, and the campus stays behind the gate until it confirms.
             VisitMutationAction.EditPendingRequest =>
-                context.RequestStatus == VisitRequestStatuses.PendingApproval
-                && context.InstanceStatus == VisitInstanceStatuses.WaitingRequestApproval,
+                context.RequestStatus is VisitRequestStatuses.PendingContactConfirmation
+                    or VisitRequestStatuses.PendingApproval
+                && IsPreDecision(context.InstanceStatus),
 
             // Deliberately says NOTHING about the request status. A request whose siblings are already
             // approved sits at PARTIALLY_APPROVED, and that aggregate is precisely what must not decide
             // whether the campus still waiting for its own answer can be corrected. The only question is
-            // the target campus's own state.
-            VisitMutationAction.EditPendingCampus =>
-                context.InstanceStatus == VisitInstanceStatuses.WaitingRequestApproval,
+            // the target campus's own state — either pre-decision stage of it.
+            VisitMutationAction.EditPendingCampus => IsPreDecision(context.InstanceStatus),
 
             VisitMutationAction.ResubmitRejectedRequest =>
                 context.RequestStatus == VisitRequestStatuses.Rejected
@@ -364,7 +384,7 @@ public static class VisitMutationPolicy
         VisitInstanceStatuses.Cancelled => "Cơ sở này đã bị hủy nên không thể thay đổi.",
         VisitInstanceStatuses.Rejected when context.Action != VisitMutationAction.ResubmitRejectedRequest =>
             "Cơ sở này đã bị từ chối; hãy dùng chức năng sửa và gửi lại đơn.",
-        VisitInstanceStatuses.WaitingRequestApproval
+        VisitInstanceStatuses.WaitingRequestApproval or VisitInstanceStatuses.WaitingContactConfirmation
             when context.Action is not (VisitMutationAction.EditPendingRequest or VisitMutationAction.EditPendingCampus) =>
             "Cơ sở này chưa được duyệt; hãy dùng chức năng sửa thông tin cơ sở đang chờ duyệt.",
         _ => "Trạng thái hiện tại không cho phép thực hiện thao tác này.",

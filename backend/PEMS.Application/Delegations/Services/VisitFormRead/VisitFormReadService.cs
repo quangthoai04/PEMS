@@ -497,9 +497,13 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     instanceScope: false));
             }
 
+            // Either pre-decision stage — the registrant may correct a request that is still waiting on
+            // its operational contacts just as much as one waiting on approval (VisitMutationPolicy
+            // agrees, and so does the command guard).
             AddRequestCapability(
                 VisitMutationAction.EditPendingRequest, VisitFormActions.EditPendingRequest,
-                c => c.Status == VisitInstanceStatuses.WaitingRequestApproval);
+                c => c.Status is VisitInstanceStatuses.WaitingContactConfirmation
+                               or VisitInstanceStatuses.WaitingRequestApproval);
             AddRequestCapability(
                 VisitMutationAction.ResubmitRejectedRequest, VisitFormActions.ResubmitRejectedRequest,
                 c => c.Status == VisitInstanceStatuses.Rejected);
@@ -584,7 +588,16 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 ? "TRANSFER_PENDING"
                 : "CONFIRMED";
 
-        return hasPending ? "PENDING" : "PENDING";
+        // Nobody holds the campus. The two ways that happens are NOT the same situation and used to
+        // report the same word:
+        //
+        //   PENDING              — an invitation is out; somebody is being waited on.
+        //   NO_ACTIVE_INVITATION — nobody is being waited on. The invitation was cancelled (or expired
+        //                          and swept) and no new one has been sent.
+        //
+        // Both leave the gate shut, but only the second one requires the registrant to DO something,
+        // and calling it "pending" told them to sit and wait for an email nobody was going to answer.
+        return hasPending ? "PENDING" : "NO_ACTIVE_INVITATION";
     }
 
     private static ResolvedCurrentHostDto? BuildCurrentHost(
@@ -733,7 +746,19 @@ public sealed class VisitFormReadService : IVisitFormReadService
             actions.Add(VisitFormActions.InitiateOperationalContactTransfer);
 
         if (pending is null)
+        {
+            // ── No live invitation, and nobody holds the campus: the registrant has to send a NEW one.
+            //    This is the state a cancel leaves behind, and it used to offer nothing at all — the
+            //    contact form re-saved with the same address is classified as an unchanged address, so
+            //    it mints no token and sends no mail, and the registrant was stuck with a campus that
+            //    could never confirm. Offered only where ReinviteOperationalContactConfirmation would
+            //    accept the call: registrant, undecided campus, no confirmed contact. ──
+            if (isRegistrant
+                && replaceable
+                && instance.OperationalContactUserId is null)
+                actions.Add(VisitFormActions.ReinviteOperationalContactConfirmation);
             return actions;
+        }
 
         // Resend stops at the cap rather than offering a button that returns RATE_LIMITED, and never
         // resurrects an invitation that has already expired.
@@ -955,8 +980,17 @@ public sealed class VisitFormReadService : IVisitFormReadService
         foreach (var id in operated) authorized.Add(id);
         if (operated.Count > 0) relation = VisitInstanceAccess.OperationalContact;
 
-        // Staff Leader → only their own-campus instance(s).
-        if (isStaffLeader && primaryCampusId.HasValue)
+        // Staff Leader → only their own-campus instance(s), and ONLY once the GLOBAL confirmation
+        // gate is open. The gate is a property of the REQUEST, not of a campus: this leader's own
+        // campus can already have its contact confirmed (WAITING_REQUEST_APPROVAL) while a sibling
+        // still has nobody, and until every campus has confirmed, no Staff Leader of any campus may
+        // read the request through their leader relation. The review queue filters those rows out,
+        // but a queue is not authorization — a guessed URL has to be refused here too.
+        //
+        // The registrant branch returned above, so a Staff Leader who submitted this request keeps
+        // full access to it through REGISTRANT: the gate only ever withholds the reviewer relation.
+        if (isStaffLeader && primaryCampusId.HasValue
+            && !VisitRequestStatuses.IsBehindContactGate(request.Status))
         {
             foreach (var c in instances.Where(c => c.CampusId == primaryCampusId.Value))
                 authorized.Add(c.VisitInstanceId);

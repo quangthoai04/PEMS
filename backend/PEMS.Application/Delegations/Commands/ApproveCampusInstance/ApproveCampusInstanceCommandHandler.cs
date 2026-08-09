@@ -70,6 +70,12 @@ public sealed class ApproveCampusInstanceCommandHandler
         CampusApprovalOutcome outcome;
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
         {
+            // Inside the transaction, before anything is written: the leader must be approving the
+            // revision they actually reviewed. Locking here also serializes two leaders racing on the
+            // same campus, so the loser reads the winner's committed decision instead of overwriting it.
+            await VisitInstanceConcurrencyGuard.EnsureUnchangedAsync(
+                _db, instance, request.ExpectedInstanceRowVersion, cancellationToken);
+
             outcome = await _approval.ApproveAndAssignHostAsync(
                 visit, instance, request.HostUserId, request.DecisionNote, actorId, now, cancellationToken);
             await tx.CommitAsync(cancellationToken);

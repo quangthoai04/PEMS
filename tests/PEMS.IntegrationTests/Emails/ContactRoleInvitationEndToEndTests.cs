@@ -31,6 +31,11 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
     private static readonly DateTime Expires = new(2026, 8, 1, 17, 30, 0);
     private const string ClaimUrl = "https://pems.test/visit-contact-claim/RAW-CLAIM-TOKEN";
     private const string TransferUrl = "https://pems.test/visit-contact-transfer/RAW-TRANSFER-TOKEN";
+    // An invitation carries one link per answer now (accept / decline), each with its own single-use
+    // token, so the page learns which button was pressed from the token rather than from a query
+    // parameter a scanner could flip.
+    private const string ClaimDeclineUrl = "https://pems.test/visit-contact-claim/RAW-CLAIM-DECLINE-TOKEN";
+    private const string TransferDeclineUrl = "https://pems.test/visit-contact-transfer/RAW-TRANSFER-DECLINE-TOKEN";
 
     /// <summary>
     /// The campus and the window are part of both invitations: the contact role is held per campus, so
@@ -53,7 +58,8 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
         },
         TrustedBlocks: new Dictionary<string, string>
         {
-            [EmailTrustedBlocks.ActionBlock] = EmailComposition.ContactRoleInvitationBlock(ClaimUrl, Expires),
+            [EmailTrustedBlocks.ActionBlock] =
+                EmailComposition.ContactRoleInvitationBlock(ClaimUrl, ClaimDeclineUrl, Expires),
         },
         RelatedType: "VisitRequestIdentityChange",
         RelatedId: 4242);
@@ -72,7 +78,8 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
         },
         TrustedBlocks: new Dictionary<string, string>
         {
-            [EmailTrustedBlocks.ActionBlock] = EmailComposition.ContactRoleInvitationBlock(TransferUrl, Expires),
+            [EmailTrustedBlocks.ActionBlock] =
+                EmailComposition.ContactRoleInvitationBlock(TransferUrl, TransferDeclineUrl, Expires),
         },
         RelatedType: "VisitRequestIdentityChange",
         RelatedId: 4243);

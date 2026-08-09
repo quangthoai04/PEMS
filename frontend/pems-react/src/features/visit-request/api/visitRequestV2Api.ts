@@ -490,7 +490,19 @@ export interface OperationalContactInvitationInfo {
   plannedStartAt: string | null;
   plannedEndAt: string | null;
   expiresAt: string | null;
+  /**
+   * Người nhận có BẮT BUỘC phải đăng nhập trước khi trả lời không. Nay là `false` cho lời mời thường:
+   * token đã dùng-một-lần, gắn với đúng một hành động và đúng một email do NGƯỜI ĐĂNG KÝ chọn — bắt
+   * khách bên ngoài tạo tài khoản Google chỉ để nói có/không chính là lý do lời mời không ai trả lời.
+   * Đăng nhập vẫn dùng được, chỉ không còn là con đường duy nhất.
+   */
   requiresGoogleLoginEmailMatch: boolean;
+  /**
+   * Liên kết này mang câu trả lời nào — ACCEPT hay DECLINE. Email có một liên kết cho mỗi câu trả
+   * lời, nên trang chỉ hiện đúng hành động người dùng đã bấm, thay vì cả hai nút mà một cái token
+   * của họ không thực hiện được.
+   */
+  intendedAction?: 'ACCEPT' | 'DECLINE' | null;
 }
 
 /** The outcome for the ONE campus that was answered. */
@@ -579,10 +591,86 @@ export const acceptOperationalContactInvitation = (token: string) =>
       `/operational-contact-confirmations/${encodeURIComponent(token)}/accept`)
     .then(r => r.data);
 
+/**
+ * Trả lời lời mời KHÔNG cần đăng nhập, từ trang xác nhận mà nút trong email mở ra.
+ *
+ * POST, không bao giờ GET: liên kết trong email chỉ MỞ TRANG, còn hành động chỉ chạy khi người thật
+ * bấm trên trang — nếu GET mà thay đổi dữ liệu thì Outlook/Gmail/Defender quét link sẽ "trả lời" lời
+ * mời thay người nhận.
+ *
+ * Backend nhận diện người trả lời từ chính token (dùng-một-lần, gắn đúng một hành động, gắn đúng
+ * email do người đăng ký chọn) rồi liên kết/khởi tạo tài khoản tương ứng khi chấp nhận.
+ */
+export const publicAcceptOperationalContactInvitation = (token: string) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/public/operational-contact-confirmations/${encodeURIComponent(token)}/accept`)
+    .then(r => r.data);
+
+/** Từ chối không cần đăng nhập. Không tạo tài khoản: từ chối một vai trò không phải lý do để có tài khoản. */
+export const publicDeclineOperationalContactInvitation = (token: string, reason?: string) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/public/operational-contact-confirmations/${encodeURIComponent(token)}/decline`, { reason })
+    .then(r => r.data);
+
 export const declineOperationalContactInvitation = (token: string, reason?: string) =>
   httpClient
     .post<OperationalContactActionResponse>(
       `/operational-contact-confirmations/${encodeURIComponent(token)}/decline`, { reason })
+    .then(r => r.data);
+
+// ── "Lời mời đầu mối của tôi" — the signed-in invitee's own surface ──────────
+//
+// The same two answers, reached WITHOUT a link. Somebody who is already using PEMS and whose account
+// address is the invited one should not have to go back to their inbox and find an email to say yes.
+//
+// It is NOT a widening of what a pending invitee may read: they hold no relation the system has
+// granted until they accept, `VisitFormReadService` still refuses them the full request, and these
+// three endpoints are the only ones this screen calls. What the list carries is the limited summary a
+// person needs in order to decide — which request, which campus, when, who is asking, how long the
+// invitation lasts. No form content, no sibling campus, no token.
+
+/** One outstanding invitation addressed to the signed-in account. Mirrors `MyOperationalContactInvitationDto`. */
+export interface MyOperationalContactInvitation {
+  identityChangeId: number;
+  visitRequestId: number;
+  visitInstanceId: number;
+  /** INITIAL_CONFIRMATION | TRANSFER — the invitation knows which; the screen never decides it. */
+  kind: string;
+  requestCode: string | null;
+  campusName: string | null;
+  delegationName: string | null;
+  plannedStartAt: string | null;
+  plannedEndAt: string | null;
+  /** Who is asking — enough to recognise an unexpected invitation. Their address is NOT included. */
+  registrantFullName: string | null;
+  registrantOrganization: string | null;
+  expiresAt: string;
+}
+
+/**
+ * The invitations still ANSWERABLE by the signed-in account: PENDING, not overdue, on a campus and a
+ * request that are both still live. The backend filters all of that, so this list can never offer an
+ * action the accept would then refuse.
+ */
+export const getMyOperationalContactInvitations = () =>
+  httpClient
+    .get<MyOperationalContactInvitation[]>('/v2/me/operational-contact-invitations')
+    .then(r => r.data);
+
+/** Accept ONE of the signed-in invitee's own invitations, by id rather than by link. */
+export const acceptMyOperationalContactInvitation = (identityChangeId: number) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/v2/me/operational-contact-invitations/${identityChangeId}/accept`)
+    .then(r => r.data);
+
+/** Decline ONE of the signed-in invitee's own invitations, by id rather than by link. */
+export const declineMyOperationalContactInvitation = (identityChangeId: number, reason?: string) =>
+  httpClient
+    .post<OperationalContactActionResponse>(
+      `/v2/me/operational-contact-invitations/${identityChangeId}/decline`, { reason })
     .then(r => r.data);
 
 export interface ResubmitInstanceResponse {
@@ -634,6 +722,20 @@ export const resendOperationalContactConfirmation = (visitRequestId: number, vis
   httpClient
     .post<OperationalContactManageResponse>(
       `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact-confirmation/resend`)
+    .then(r => r.data);
+
+/**
+ * Mở lời mời xác nhận MỚI cho đúng email cơ sở đang có, khi lời mời trước đã kết thúc mà không ai
+ * trả lời (hủy / từ chối / hết hạn) nên không còn gì để "gửi lại".
+ *
+ * Khác `resendOperationalContactConfirmation`: cái đó phát lại token trên lời mời vẫn PENDING và
+ * tính vào hạn mức gửi lại. Cái này tạo identity change mới với token và hạn hiệu lực mới. Backend
+ * từ chối nếu cơ sở đã có đầu mối xác nhận, hoặc đang có lời mời chờ trả lời.
+ */
+export const reinviteOperationalContactConfirmation = (visitRequestId: number, visitInstanceId: number) =>
+  httpClient
+    .post<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact-confirmation/reinvite`)
     .then(r => r.data);
 
 /**
@@ -881,6 +983,15 @@ export interface VisitHistoryDetail {
   afterRevision: number | null;
   fieldChanges: VisitHistoryFieldChange[];
   collectionChanges: VisitHistoryCollectionChange[];
+  /**
+   * Vì sao danh sách thay đổi trông như vậy — do BACKEND nói, không phải client suy diễn:
+   *
+   * - `AVAILABLE`: tìm được cả hai phiên bản và đã so sánh. Rỗng nghĩa là thật sự không đổi gì.
+   * - `PREVIOUS_REVISION_MISSING`: không có snapshot của phiên bản trước để so. Rỗng ở đây nghĩa là
+   *   "không biết đã đổi gì", KHÁC hẳn "không đổi gì".
+   * - `NOT_APPLICABLE`: sự kiện này không phải diff phiên bản (đổi đầu mối, bàn giao host...).
+   */
+  comparisonStatus?: 'AVAILABLE' | 'PREVIOUS_REVISION_MISSING' | 'NOT_APPLICABLE';
 }
 
 /**

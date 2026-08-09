@@ -60,6 +60,7 @@ import { VisitRequestManagement } from './pages/dashboard/visit/VisitRequestMana
 import { VisitPhotoManagement } from './pages/dashboard/visit/VisitPhotoManagement';
 import { DeptLeadVisitTasksPage } from './pages/dashboard/visit/DeptLeadVisitTasksPage';
 import { VisitParticipantInvitationDetail } from './pages/dashboard/visit/VisitParticipantInvitationDetail';
+import { MyContactInvitationsPage } from './pages/dashboard/visit/MyContactInvitationsPage';
 import { AgendaTemplateManagement } from './pages/dashboard/visit/AgendaTemplateManagement';
 import { CreateVisitRequestEntry } from './pages/dashboard/visit/CreateVisitRequestEntry';
 
@@ -254,6 +255,11 @@ export default function App() {
               }
             />
             <Route path="visit/invitations/:participantId" element={<RouteAccessGuard routeKey="VISIT_INVITATION"><VisitParticipantInvitationDetail /></RouteAccessGuard>} />
+            {/* "Lời mời đầu mối của tôi" — người đã đăng nhập trả lời lời mời gửi tới chính email
+                tài khoản mình, không phải quay lại hộp thư tìm email. Đây KHÔNG phải màn chi tiết
+                đơn: người được mời chưa nắm quan hệ nào cho tới khi xác nhận, nên trang chỉ gọi
+                đúng ba endpoint lời-mời và không mở đơn ra. */}
+            <Route path="visit/contact-invitations" element={<RouteAccessGuard routeKey="VISIT_CONTACT_INVITATIONS"><MyContactInvitationsPage /></RouteAccessGuard>} />
             <Route path="visit/department-tasks/:participantId" element={<RouteAccessGuard routeKey="VISIT_INVITATION"><VisitParticipantInvitationDetail /></RouteAccessGuard>} />
             <Route path="visit/create" element={<RouteAccessGuard routeKey="VISIT_CREATE"><CreateVisitRequestEntry /></RouteAccessGuard>} />
             <Route path="visit/v2/:visitRequestId" element={<RouteAccessGuard routeKey="VISIT_DETAIL"><VisitRequestV2DetailPage /></RouteAccessGuard>} />

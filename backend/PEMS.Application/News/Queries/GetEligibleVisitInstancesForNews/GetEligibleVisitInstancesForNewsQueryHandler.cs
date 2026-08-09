@@ -38,12 +38,16 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
         if (!isAllowed)
             throw new ForbiddenException("Only Staff and Student can create news.");
 
-        // Step 1: Find visit instances current user has ACCEPTED (participant) hoặc đang là Host
-        var acceptedInstanceIds = await _dbContext.VisitParticipants
+        // Step 1: Candidate instances — the ones this user has ANY writer-side relation to. Note this
+        // is only a CANDIDATE set: which of them the user may actually write for is decided in step 2
+        // by the canonical evaluator, not by predicates repeated here.
+        var participantRoleByInstance = await _dbContext.VisitParticipants
             .AsNoTracking()
-            .Where(vp => vp.UserId == currentUserId && vp.Status == ParticipantStatuses.Accepted)
-            .Select(vp => vp.VisitInstanceId)
-            .ToListAsync(cancellationToken);
+            .Where(vp => vp.UserId == currentUserId
+                         && vp.Status == ParticipantStatuses.Accepted
+                         && !vp.IsHost)
+            .Select(vp => new { vp.VisitInstanceId, vp.ParticipantRole })
+            .ToDictionaryAsync(x => x.VisitInstanceId, x => x.ParticipantRole, cancellationToken);
 
         var hostedInstanceIds = await _dbContext.VisitRequestCampuses
             .AsNoTracking()
@@ -51,22 +55,44 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             .Select(vrc => vrc.VisitInstanceId)
             .ToListAsync(cancellationToken);
 
-        var relatedInstanceIds = acceptedInstanceIds.Union(hostedInstanceIds).ToList();
-        if (relatedInstanceIds.Count == 0)
-            return new GetEligibleVisitInstancesResponse();
+        var relatedInstanceIds = participantRoleByInstance.Keys.Union(hostedInstanceIds).ToList();
 
-        // Step 2: Writing window — AFTER_VISIT hoặc CLOSED (bài viết sau tiếp khách; PUBLISHED là
-        // điều kiện đóng đoàn nên phải viết được TRƯỚC khi đóng). Bỏ chuyến không yêu cầu tin tức
-        // và chuyến khách không đồng ý truyền thông (backend create cũng chặn).
-        var eligibleInstances = await _dbContext.VisitRequestCampuses
+        // Step 1b: the ONE campus the caller arrived with, answered separately and always — including
+        // when the list below turns out empty, because "your list is empty" is not a reason either.
+        var requested = request.VisitInstanceId is { } requestedInstanceId
+            ? await EvaluateRequestedAsync(
+                requestedInstanceId,
+                currentUserId,
+                participantRoleByInstance.TryGetValue(requestedInstanceId, out var requestedRole)
+                    ? requestedRole
+                    : null,
+                cancellationToken)
+            : null;
+
+        if (relatedInstanceIds.Count == 0)
+            return new GetEligibleVisitInstancesResponse { Requested = requested };
+
+        // Step 2: ONE eligibility verdict per candidate, from the SAME evaluator the process list, the
+        // process permissions and the create command use.
+        //
+        // This step used to re-implement the business rules in LINQ, and its copy had drifted: it
+        // applied the writing window, news_not_required and media consent, but accepted ANY accepted
+        // participant — so a DEPT_SUPPORT was offered a visit the create command would refuse. Going
+        // through the evaluator is what makes "Process says I can, Create News says I cannot"
+        // impossible rather than merely unlikely. The candidate set above is narrow, so the
+        // in-memory pass is over a handful of rows, not a table scan.
+        var candidates = await _dbContext.VisitRequestCampuses
             .AsNoTracking()
-            .Where(vrc => relatedInstanceIds.Contains(vrc.VisitInstanceId)
-                       && (vrc.Status == VisitInstanceStatuses.AfterVisit
-                           || vrc.Status == VisitInstanceStatuses.Closed)
-                       && !vrc.NewsNotRequired
-                       // Per-campus consent: only campuses the guest agreed to are eligible.
-                       && vrc.FormDetail != null
-                       && vrc.FormDetail.MediaConsentStatus == PEMS.Shared.MediaConsentStatus.Agreed)
+            .Include(vrc => vrc.VisitRequest)
+            .Include(vrc => vrc.FormDetail)
+            .Where(vrc => relatedInstanceIds.Contains(vrc.VisitInstanceId))
+            .ToListAsync(cancellationToken);
+
+        var eligibleInstances = candidates
+            .Where(vrc => PEMS.Application.Delegations.News.VisitNewsAccess.Evaluate(
+                vrc, vrc.VisitRequest, _currentUser,
+                participantRoleByInstance.TryGetValue(vrc.VisitInstanceId, out var role) ? role : null)
+                .CanCreate)
             .Select(vrc => new
             {
                 vrc.VisitInstanceId,
@@ -77,10 +103,10 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
                 vrc.ClosedAt,
                 vrc.Status
             })
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         if (eligibleInstances.Count == 0)
-            return new GetEligibleVisitInstancesResponse();
+            return new GetEligibleVisitInstancesResponse { Requested = requested };
 
         var instanceIds = eligibleInstances.Select(v => v.VisitInstanceId).ToList();
         var requestIds  = eligibleInstances.Select(v => v.VisitRequestId).Distinct().ToList();
@@ -136,6 +162,64 @@ public sealed class GetEligibleVisitInstancesForNewsQueryHandler
             });
         }
 
-        return new GetEligibleVisitInstancesResponse { Items = items };
+        return new GetEligibleVisitInstancesResponse { Items = items, Requested = requested };
+    }
+
+    /// <summary>
+    /// The canonical verdict for ONE campus, reason code included.
+    ///
+    /// <para>
+    /// It re-uses <c>VisitNewsAccess.Evaluate</c> and adds no rule of its own — the point of this
+    /// endpoint is that the Create-News page stops deriving a cause from the ABSENCE of an item in a
+    /// list. The evaluator reports the FIRST thing standing in the way, so somebody outside the visit
+    /// is told that, rather than being told about media consent for a visit they have no part in.
+    /// </para>
+    /// </summary>
+    private async Task<RequestedVisitInstanceEligibilityDto> EvaluateRequestedAsync(
+        ulong visitInstanceId,
+        ulong currentUserId,
+        string? acceptedParticipantRole,
+        CancellationToken cancellationToken)
+    {
+        var instance = await _dbContext.VisitRequestCampuses
+            .AsNoTracking()
+            .Include(vrc => vrc.VisitRequest)
+            .Include(vrc => vrc.FormDetail)
+            .FirstOrDefaultAsync(vrc => vrc.VisitInstanceId == visitInstanceId, cancellationToken);
+
+        // An id that names nothing answers exactly as an id the caller has no relation to. "Không tìm
+        // thấy chuyến" and "chuyến này không phải của bạn" are different sentences, and being able to
+        // tell them apart is how a caller enumerates campuses they were never part of.
+        if (instance is null)
+            return new RequestedVisitInstanceEligibilityDto
+            {
+                VisitInstanceId = visitInstanceId,
+                CanCreate = false,
+                ReasonCode = PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.NotInScope,
+            };
+
+        // Đã có bài tính THEO TÁC GIẢ — bài của người khác cho cùng chuyến không chặn quyền viết của
+        // người đang đăng nhập (cùng quy tắc CreateNewsCommandHandler áp dụng khi thật sự tạo).
+        var existingNews = await _dbContext.News
+            .AsNoTracking()
+            .Where(n => n.VisitInstanceId == visitInstanceId && n.AuthorUserId == currentUserId)
+            .Select(n => new { n.NewsId, n.Status })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var verdict = PEMS.Application.Delegations.News.VisitNewsAccess.Evaluate(
+            instance, instance.VisitRequest, _currentUser, acceptedParticipantRole,
+            alreadyHasOwnNews: existingNews is not null);
+
+        return new RequestedVisitInstanceEligibilityDto
+        {
+            VisitInstanceId = visitInstanceId,
+            CanCreate = verdict.CanCreate,
+            ReasonCode = verdict.ReasonCode,
+            HasNews = existingNews is not null,
+            ExistingNewsId = existingNews?.NewsId,
+            CanEditExisting = existingNews is not null
+                && (existingNews.Status == NewsConstants.Status.PendingReview
+                    || existingNews.Status == NewsConstants.Status.Rejected),
+        };
     }
 }

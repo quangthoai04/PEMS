@@ -36,7 +36,7 @@ import { ParticipantInvitationSection } from '../../../features/delegations/comp
 import { LogisticsRequestSection } from '../../../features/delegations/components/LogisticsRequestSection';
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { VisitorVisitDetailPage } from './VisitorVisitDetailPage';
-import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
+import { formatVietnamTime, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
 import { StaleDataBanner } from '../../../shared/components/state';
 import { canSubmitReminders } from './visitProcessGuards';
@@ -709,6 +709,38 @@ export function VisitProcess() {
         <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-bold text-emerald-700">
           <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
           <span>{opts.doneLabel}</span>
+        </div>
+      );
+    }
+    // ── Chưa tới giờ, chứ không phải không được phép ──────────────────────────────────────────
+    // Riêng BEFORE → DURING có cửa sổ thời gian: sớm nhất là 6 giờ trước giờ bắt đầu dự kiến.
+    // Ẩn nút đi thì Host không hiểu vì sao "đã chuẩn bị xong mà không chuyển được"; nên hiện nút
+    // DISABLED kèm đúng mốc mở. Backend vẫn là nơi quyết định (409 VISIT_START_WINDOW_NOT_OPEN).
+    if (!opts.canDo
+        && opts.stage === 'before'
+        && perm.startVisitDisabledReasonCode === 'VISIT_START_WINDOW_NOT_OPEN') {
+      return (
+        <div
+          data-testid="stage-before-window-closed"
+          className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p className="text-sm font-medium text-amber-800 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span>
+              Đã hoàn tất công tác chuẩn bị.
+              {perm.startVisitAvailableAt
+                ? ` Có thể chuyển sang Trong tiếp khách từ ${formatVietnamDateTime(perm.startVisitAvailableAt)} (6 giờ trước thời gian bắt đầu).`
+                : ' Chờ đến thời điểm được phép bắt đầu tiếp khách.'}
+            </span>
+          </p>
+          <button
+            type="button"
+            disabled
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none whitespace-nowrap opacity-50 cursor-not-allowed"
+          >
+            <ArrowRightCircle className="w-4 h-4" />
+            {opts.label}
+          </button>
         </div>
       );
     }

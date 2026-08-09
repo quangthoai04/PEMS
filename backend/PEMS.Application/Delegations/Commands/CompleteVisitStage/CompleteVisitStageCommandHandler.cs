@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
@@ -73,6 +74,22 @@ public sealed class CompleteVisitStageCommandHandler
                         VisitRequestErrorCodes.VisitPreparationNotStarted);
                 if (instance.Status != VisitInstanceStatus.BeforeVisit)
                     throw new ConflictException("Không thể bắt đầu tiếp khách. Cơ sở chưa ở giai đoạn chuẩn bị.");
+
+                // ── The earliest-start gate. Preparation may be finished days ahead — and should be —
+                //    but the STATUS must not run ahead of the visit: every other screen reads it to
+                //    decide whether the delegation is here. Read from the instance's CURRENT
+                //    planned_start_at inside this request, so a schedule changed since the Host opened
+                //    the page is the one that decides. Backend is the authority: the permission flag
+                //    and the disabled button exist so this refusal is rare, not so it can be skipped. ──
+                if (!VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(now, instance.PlannedStartAt))
+                {
+                    var availableAt = VisitStageTransitionPolicy.StartVisitAvailableAt(instance.PlannedStartAt);
+                    throw new ConflictException(
+                        "Chưa thể chuyển sang giai đoạn Trong tiếp khách. " +
+                        $"Bạn chỉ có thể bắt đầu từ {availableAt:HH:mm dd/MM/yyyy} " +
+                        $"({VisitStageTransitionPolicy.StartVisitEarlyWindowHours} giờ trước thời gian dự kiến của chuyến thăm).",
+                        VisitRequestErrorCodes.VisitStartWindowNotOpen);
+                }
 
                 // Precondition: no mandatory preparation item may still be blocking. Today the only
                 // persisted blocking item is a participant invitation still awaiting a response

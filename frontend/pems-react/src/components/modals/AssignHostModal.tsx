@@ -10,6 +10,10 @@ import { motion } from 'motion/react';
 import { X, AlertTriangle, Check, Users, Loader2, Search, UserCheck } from 'lucide-react';
 import { delegationsApi } from '../../features/delegations/api/delegationsApi';
 import type { HostCandidate } from '../../features/delegations/types/delegations.types';
+import {
+  isInstanceVersionConflict,
+  INSTANCE_VERSION_CONFLICT_MESSAGE,
+} from '../../features/visit-request/utils/decisionConflict';
 
 import { formatVietnamDateTime } from '../../shared/utils/vietnamTime';
 type AssignHostModalProps = {
@@ -21,8 +25,20 @@ type AssignHostModalProps = {
   delegationName?: string | null;
   currentHostUserId?: number | null;
   customTitle?: string;
+  /**
+   * rowVersion của campus ĐÚNG NHƯ màn hình duyệt đang hiển thị. Gửi kèm để backend từ chối
+   * (409 VISIT_INSTANCE_VERSION_CONFLICT) nếu khách đã sửa đơn sau khi màn hình mở — người duyệt
+   * không bao giờ được phê duyệt nội dung họ chưa đọc.
+   */
+  expectedInstanceRowVersion?: number | null;
   onClose: () => void;
   onConfirmed: () => void;
+  /**
+   * Gọi khi backend trả 409 phiên bản cũ và người dùng bấm "Tải phiên bản mới". Bên gọi có nhiệm
+   * vụ tải lại đơn/campus. KHÔNG tự động duyệt lại sau khi tải — người duyệt phải đọc lại rồi
+   * bấm quyết định lần nữa.
+   */
+  onReloadRequested?: () => void;
 };
 
 const formatDateTime = (value?: string | null) => {
@@ -31,7 +47,8 @@ const formatDateTime = (value?: string | null) => {
 };
 
 export function AssignHostModal({
-  isOpen, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle, onClose, onConfirmed,
+  isOpen, visitRequestId, visitInstanceId, delegationName, currentHostUserId, customTitle,
+  expectedInstanceRowVersion, onClose, onConfirmed, onReloadRequested,
 }: AssignHostModalProps) {
   const [candidates, setCandidates] = useState<HostCandidate[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +61,9 @@ export function AssignHostModal({
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Confirm overlay shown when assigning a host that has a schedule conflict.
   const [confirmConflict, setConfirmConflict] = useState(false);
+  // Backend đã từ chối vì phiên bản campus cũ. Đây là trạng thái CHẶN: nút duyệt bị khoá cho tới
+  // khi người dùng tải bản mới và đọc lại — không auto-retry, không tự duyệt sau khi reload.
+  const [versionConflict, setVersionConflict] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 300);
@@ -92,14 +112,22 @@ export function AssignHostModal({
   };
 
   const doApprove = async () => {
-    if (!selectedId || !visitInstanceId) return;
+    if (!selectedId || !visitInstanceId || versionConflict) return;
     setConfirmConflict(false);
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      await delegationsApi.approveCampusInstance(visitRequestId, visitInstanceId, selectedId, decisionNote);
+      await delegationsApi.approveCampusInstance(
+        visitRequestId, visitInstanceId, selectedId, decisionNote, expectedInstanceRowVersion);
       onConfirmed();
     } catch (e: any) {
+      // Xung đột phiên bản KHÔNG phải lỗi để "thử lại": nội dung đã khác với bản người duyệt đọc.
+      // Khoá hành động quyết định và chỉ chừa lối ra là tải lại rồi xem lại.
+      if (isInstanceVersionConflict(e)) {
+        setVersionConflict(true);
+        setSubmitError(INSTANCE_VERSION_CONFLICT_MESSAGE);
+        return;
+      }
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
       setSubmitError(`Không thể duyệt & phân công người phụ trách. ${msg}`);
     } finally {
@@ -235,7 +263,28 @@ export function AssignHostModal({
             />
           </div>
 
-          {submitError && <p className="text-red-500 text-sm mt-3">{submitError}</p>}
+          {/* Xung đột phiên bản: thông báo CHẶN, không phải lỗi thoáng qua. Lối ra duy nhất là tải
+              bản mới rồi đọc lại — nên nó thay chỗ dòng lỗi thường và khoá nút duyệt bên dưới. */}
+          {versionConflict ? (
+            <div
+              role="alert"
+              className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900"
+            >
+              <p className="flex items-start gap-2 font-semibold">
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                {INSTANCE_VERSION_CONFLICT_MESSAGE}
+              </p>
+              <button
+                type="button"
+                onClick={() => { onReloadRequested?.(); onClose(); }}
+                className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white outline-none transition-colors hover:bg-amber-700 cursor-pointer"
+              >
+                Tải phiên bản mới
+              </button>
+            </div>
+          ) : (
+            submitError && <p className="text-red-500 text-sm mt-3">{submitError}</p>
+          )}
         </div>
 
         <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100 flex-shrink-0">
@@ -250,7 +299,7 @@ export function AssignHostModal({
           <button
             type="button"
             onClick={attemptConfirm}
-            disabled={!selectedId || isSubmitting}
+            disabled={!selectedId || isSubmitting || versionConflict}
             className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}

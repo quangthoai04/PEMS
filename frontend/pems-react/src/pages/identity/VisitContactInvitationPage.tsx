@@ -4,6 +4,8 @@ import { useAuth } from '../../shared/hooks/useAuth';
 import {
   acceptOperationalContactInvitation,
   declineOperationalContactInvitation,
+  publicAcceptOperationalContactInvitation,
+  publicDeclineOperationalContactInvitation,
   getOperationalContactInvitationInfo,
   type OperationalContactInvitationInfo,
 } from '../../features/visit-request/api/visitRequestV2Api';
@@ -87,9 +89,19 @@ export default function VisitContactInvitationPage({ kind }: Props) {
     try {
       // One pair of endpoints for both kinds: the invitation decides the effect, not the URL the
       // recipient happened to be sent.
+      //
+      // Signed in → the authenticated pair, where the session's address must match the invitation.
+      // Not signed in → the PUBLIC pair, where the single-use, action-bound, address-bound token is
+      // the authorization. The invited person is usually an external guest with no PEMS account, and
+      // demanding one before they may answer is why invitations went unanswered and campuses stayed
+      // behind the confirmation gate.
       const result = action === 'accept'
-        ? await acceptOperationalContactInvitation(token)
-        : await declineOperationalContactInvitation(token, declineReason || undefined);
+        ? (isAuthenticated
+            ? await acceptOperationalContactInvitation(token)
+            : await publicAcceptOperationalContactInvitation(token))
+        : (isAuthenticated
+            ? await declineOperationalContactInvitation(token, declineReason || undefined)
+            : await publicDeclineOperationalContactInvitation(token, declineReason || undefined));
       setOutcome({ ok: action === 'accept', message: result.message });
     } catch (err: unknown) {
       const message =
@@ -185,26 +197,33 @@ export default function VisitContactInvitationPage({ kind }: Props) {
               <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 p-4 text-sm text-amber-800 dark:text-amber-200" role="alert">
                 {statusBanner(info.status)}
               </div>
-            ) : !isAuthenticated ? (
-              <div className="mt-6 space-y-3">
-                <p className="text-sm text-gray-600 dark:text-gray-300" role="note">
-                  Để xác nhận, hãy đăng nhập bằng <b>đúng tài khoản Google của email được mời</b> ({info.maskedEmail}).
-                  Đăng nhập không tự động chấp nhận lời mời — bạn vẫn phải bấm xác nhận sau đó.
-                </p>
-                <button
-                  type="button"
-                  className="w-full rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700"
-                  onClick={() => navigate(`/?login=true&returnUrl=${encodeURIComponent(window.location.pathname)}`)}
-                >
-                  Đăng nhập bằng Google
-                </button>
-              </div>
             ) : (
               <div className="mt-6 space-y-3">
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Đang đăng nhập: <b>{user?.email ?? user?.fullName ?? 'tài khoản hiện tại'}</b>. Nếu đây không phải
-                  email được mời, hãy đăng xuất và đăng nhập đúng tài khoản trước khi xác nhận.
-                </p>
+                {/* Đăng nhập là LỰA CHỌN, không phải rào chắn. Liên kết trong email đã là bằng chứng
+                    đủ mạnh cho đúng một hành động này: dùng-một-lần, gắn đúng một câu trả lời, và gắn
+                    email do NGƯỜI ĐĂNG KÝ chọn. Bắt khách bên ngoài tạo tài khoản Google trước khi
+                    được nói có/không chính là lý do lời mời không ai trả lời và cơ sở kẹt ở cổng xác
+                    nhận. Ai đã có tài khoản PEMS thì vẫn đi đường đăng nhập như cũ. */}
+                {isAuthenticated ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Đang đăng nhập: <b>{user?.email ?? user?.fullName ?? 'tài khoản hiện tại'}</b>. Nếu đây không phải
+                    email được mời, hãy đăng xuất và đăng nhập đúng tài khoản trước khi xác nhận.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600 dark:text-gray-300" role="note">
+                      Bạn <b>không cần đăng nhập</b> để trả lời lời mời này — liên kết trong email đã xác định
+                      người nhận ({info.maskedEmail}) và chỉ dùng được một lần.
+                    </p>
+                    <button
+                      type="button"
+                      className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                      onClick={() => navigate(`/?login=true&returnUrl=${encodeURIComponent(window.location.pathname)}`)}
+                    >
+                      Hoặc đăng nhập bằng Google (nếu bạn đã có tài khoản PEMS)
+                    </button>
+                  </div>
+                )}
                 {declineMode ? (
                   <div className="space-y-2">
                     <label htmlFor="decline-reason" className="text-sm text-gray-600 dark:text-gray-300">

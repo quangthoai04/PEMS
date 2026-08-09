@@ -113,14 +113,26 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByText('FPTU Hồ Chí Minh')).toBeInTheDocument();
     expect(screen.getByTestId('campus-status-11')).toBeInTheDocument();
 
-    // Opening HCM shows ITS content — it never inherits HN's delegation name — and closes HN.
+    // Opening HCM shows ITS content — it never inherits HN's delegation name — and LEAVES HN OPEN.
+    // Each campus is independent: comparing two campuses of one request side by side is the ordinary
+    // thing to do here, and it used to be impossible because opening one shut the other.
     fireEvent.click(screen.getByTestId('campus-detail-toggle-11'));
     expect(await screen.findByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
     expect(screen.getByText('Host HCM')).toBeInTheDocument();
-    expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
+    expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
 
-    // Clicking the open campus again closes everything — a deliberate state, not a bounce back to
-    // campus 1.
+    // Closing HN touches HN alone.
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-10'));
+    expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
+    expect(screen.getByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
+
+    // And re-opening it brings it back beside HCM rather than replacing it.
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-10'));
+    expect(await screen.findByText('Đoàn ĐH ABC')).toBeInTheDocument();
+    expect(screen.getByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
+
+    // Closing every card is still reachable — "show me nothing but the headers" is a real choice.
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-10'));
     fireEvent.click(screen.getByTestId('campus-detail-toggle-11'));
     expect(screen.queryByText('Đoàn HCM khác hẳn')).not.toBeInTheDocument();
     expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();

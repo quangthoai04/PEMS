@@ -71,49 +71,53 @@ public sealed class CreateNewsCommandHandler
         {
             var visitInstanceId = request.VisitInstanceId.Value;
 
-            // Step 2: Load visit instance (+ media consent / news_not_required flags)
+            // ── Steps 2-4: ONE canonical eligibility verdict, the same one the process list and the
+            //    Create-News preset read. This handler is the final authority and re-derives it from
+            //    the database rather than trusting anything the client sent — but it must derive the
+            //    SAME rule, and it used to derive its own: it accepted ANY accepted participant, so a
+            //    DEPT_SUPPORT could post through the API something the button correctly never showed
+            //    them, while the list omitted media consent and offered a button this then refused. ──
             var visitInstance = await _dbContext.VisitRequestCampuses
                 .AsNoTracking()
-                .Where(vrc => vrc.VisitInstanceId == visitInstanceId)
-                .Select(vrc => new
-                {
-                    vrc.VisitInstanceId,
-                    vrc.CampusId,
-                    vrc.Status,
-                    vrc.CurrentHostUserId,
-                    vrc.NewsNotRequired,
-                    // Per-campus consent: THIS instance's detail, not a request-wide value.
-                    MediaConsentStatus = vrc.FormDetail != null ? vrc.FormDetail.MediaConsentStatus : null
-                })
-                .FirstOrDefaultAsync(cancellationToken)
+                .Include(vrc => vrc.VisitRequest)
+                .Include(vrc => vrc.FormDetail)
+                .FirstOrDefaultAsync(vrc => vrc.VisitInstanceId == visitInstanceId, cancellationToken)
                 ?? throw new NotFoundException("Chuyến tiếp khách", visitInstanceId);
 
-            // Step 3: Writing window — from AFTER_VISIT onward (news được viết SAU tiếp khách và là
-            // một điều kiện đóng đoàn, nên phải mở TRƯỚC khi đóng; sau khi đóng vẫn được viết thêm).
-            if (visitInstance.Status != VisitInstanceStatuses.AfterVisit
-                && visitInstance.Status != VisitInstanceStatuses.Closed)
-                throw new ConflictException(
-                    "Chỉ có thể tạo tin tức từ giai đoạn Sau tiếp khách của chuyến tiếp khách.");
-
-            if (visitInstance.NewsNotRequired)
-                throw new ConflictException("Chuyến tiếp khách này đã được xác nhận không yêu cầu tin tức.");
-
-            if (visitInstance.MediaConsentStatus != PEMS.Shared.MediaConsentStatus.Agreed)
-                throw new ConflictException("Khách không đồng ý truyền thông, không thể tạo bài tin tức.");
-
-            // Step 4: Current user must be the Host or an ACCEPTED participant of the instance
-            var isHost = visitInstance.CurrentHostUserId == currentUserId;
-            var isParticipant = isHost || await _dbContext.VisitParticipants
+            var participantRole = await _dbContext.VisitParticipants
                 .AsNoTracking()
-                .AnyAsync(vp =>
-                    vp.VisitInstanceId == visitInstanceId &&
-                    vp.UserId == currentUserId &&
-                    vp.Status == ParticipantStatuses.Accepted,
-                    cancellationToken);
+                .Where(vp => vp.VisitInstanceId == visitInstanceId
+                             && vp.UserId == currentUserId
+                             && vp.Status == ParticipantStatuses.Accepted
+                             && !vp.IsHost)
+                .Select(vp => vp.ParticipantRole)
+                .FirstOrDefaultAsync(cancellationToken);
 
-            if (!isParticipant)
-                throw new ForbiddenException(
-                    "Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia.");
+            var eligibility = PEMS.Application.Delegations.News.VisitNewsAccess.Evaluate(
+                visitInstance, visitInstance.VisitRequest, _currentUser, participantRole);
+
+            if (!eligibility.CanCreate)
+                throw eligibility.ReasonCode switch
+                {
+                    PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.NotInScope
+                        or PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.ParticipantRoleNotAllowed
+                        => new ForbiddenException(
+                            "Bạn không phải người phụ trách hoặc thành phần được phép viết tin cho chuyến này."),
+                    PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.NotInWritingWindow
+                        => new ConflictException(
+                            "Chuyến thăm chưa đến giai đoạn có thể viết tin.",
+                            eligibility.ReasonCode),
+                    PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.NewsNotRequired
+                        => new ConflictException(
+                            "Chuyến này đã được xác nhận không cần bài tin tức.",
+                            eligibility.ReasonCode),
+                    PEMS.Application.Delegations.News.VisitNewsAccess.ReasonCodes.MediaConsentDenied
+                        => new ConflictException(
+                            "Khách không đồng ý truyền thông.",
+                            eligibility.ReasonCode),
+                    _ => new ConflictException(
+                        "Chuyến tiếp khách này chưa đủ điều kiện để viết tin tức.", eligibility.ReasonCode),
+                };
 
             // Step 5: One news per AUTHOR per visit instance — nhiều người cùng chuyến đều được viết
             // bài riêng (Host + các participant), nhưng mỗi người chỉ một bài; sửa bài hiện có nếu đã tạo.

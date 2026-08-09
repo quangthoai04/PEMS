@@ -84,6 +84,12 @@ export interface StaffCalendarDetail {
   campusStatus: string | null;
   displayStatus: string;
   colorType: StaffCalendarColorType;
+  /**
+   * Phiên bản campus ĐÚNG NHƯ modal đang hiển thị. Modal này là màn hình REVIEW (có nội dung đoàn
+   * khách + nút duyệt/từ chối), nên quyết định gửi đi phải kèm phiên bản đã đọc — nếu khách sửa
+   * trong lúc modal mở, backend trả 409 VISIT_INSTANCE_VERSION_CONFLICT thay vì duyệt bản mới.
+   */
+  rowVersion: number;
   campusId: number;
   campusName: string;
   plannedStartAt: string;
