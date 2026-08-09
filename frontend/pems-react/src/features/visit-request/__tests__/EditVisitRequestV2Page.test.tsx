@@ -189,6 +189,79 @@ describe('EditVisitRequestV2Page', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/no longer editable/i);
   });
 
+  // ── PENDING_CONTACT_CONFIRMATION edit-route gate (route policy drift fix) ───────────────────────
+  //
+  // A request whose campuses are still waiting for their operational contact
+  // (PENDING_CONTACT_CONFIRMATION) is exactly as un-decided as one waiting for Staff Leader approval
+  // (PENDING_APPROVAL) — UpdatePendingVisitRequestV2CommandHandler accepts a pending-edit on either
+  // (VisitMutationGuard.EnsureRequestLevelAllowed against WAITING_CONTACT_CONFIRMATION /
+  // WAITING_REQUEST_APPROVAL campuses). This screen's own EDITABLE_STATUSES set used to omit
+  // PENDING_CONTACT_CONFIRMATION, so the registrant hit "This request is no longer editable" even
+  // though the backend would have accepted their save — a frontend-only policy drift.
+  describe('PENDING_CONTACT_CONFIRMATION is edit-compatible (route policy drift fix)', () => {
+    it('opens the edit form for the reported case: PENDING_CONTACT_CONFIRMATION + REGISTRANT (T01)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({
+        requestStatus: 'PENDING_CONTACT_CONFIRMATION',
+        campusVisits: [{
+          ...campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN'),
+          instanceStatus: 'WAITING_CONTACT_CONFIRMATION',
+        }],
+      }));
+
+      renderAt('edit');
+
+      expect(await screen.findByDisplayValue('Đoàn HN')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Save changes/ })).toBeInTheDocument();
+      expect(screen.queryByText('This request is no longer editable. Please go back.')).not.toBeInTheDocument();
+    });
+
+    // Technical debt: bare "PENDING" is not among the canonical request statuses in
+    // VisitRequestStatuses (backend) — only PENDING_CONTACT_CONFIRMATION / PENDING_APPROVAL /
+    // PARTIALLY_APPROVED / APPROVED / REJECTED / CANCELLED. Kept here as a legacy compatibility
+    // alias rather than removed, since proving no caller/fixture still relies on it is outside this
+    // fix's scope; this test documents and pins the current (kept) behavior.
+    it('legacy "PENDING" status still opens the edit form (T03)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ requestStatus: 'PENDING' }));
+      renderAt('edit');
+      expect(await screen.findByDisplayValue('Đoàn HN')).toBeInTheDocument();
+    });
+
+    it.each(['APPROVED', 'CANCELLED'])('%s does not open the pending-edit form (T06)', async requestStatus => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ requestStatus }));
+      renderAt('edit');
+      expect(await screen.findByRole('alert')).toHaveTextContent(/no longer editable/i);
+      expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument();
+    });
+
+    it('a backend GET refusal (403) is shown as-is, never bypassed by the local status set (T07)', async () => {
+      const forbidden = Object.assign(new Error('403'), {
+        isAxiosError: true,
+        response: { status: 403, data: { message: 'forbidden' } },
+      });
+      vi.mocked(getVisitRequestFormV2).mockRejectedValue(forbidden);
+
+      renderAt('edit');
+
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(screen.queryByDisplayValue('Đoàn HN')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument();
+    });
+
+    // VISITOR_OWNER is a legacy relation string (VisitInstanceAccess.cs: "replaces the old
+    // request-wide VISITOR_OWNER") that this endpoint's own read model
+    // (VisitFormReadService.ComputeScopeAsync) never actually returns for a whole-request viewer —
+    // only "REGISTRANT" is. This test pins the current (unchanged, pre-existing) behavior as a
+    // harmless no-op rather than an intentional widening of who may edit (T08).
+    it('VISITOR_OWNER relation is accepted unchanged — legacy no-op, not a widened grant (T08)', async () => {
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({
+        requestStatus: 'PENDING_CONTACT_CONFIRMATION',
+        viewer: { relation: 'VISITOR_OWNER', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+      }));
+      renderAt('edit');
+      expect(await screen.findByDisplayValue('Đoàn HN')).toBeInTheDocument();
+    });
+  });
+
   // ── The campus PICKER, on cards that already exist ────────────────────────────────────────────
   //
   // The "campus ceiling" suite that used to live here exercised the Add-campus button: how it counted

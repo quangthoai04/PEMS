@@ -34,8 +34,15 @@ import { getApiErrorMessage } from '../../../shared/utils/toast';
 
 type Mode = 'edit' | 'resubmit';
 
-/** These request statuses accept a pending-edit (fully-pending) vs a resubmit (fully-rejected). */
-const EDITABLE_STATUSES = new Set(['PENDING_APPROVAL', 'PENDING']);
+/**
+ * These request statuses accept a pending-edit (fully-pending) vs a resubmit (fully-rejected).
+ * Both pre-decision stages qualify for edit — PENDING_CONTACT_CONFIRMATION (campuses still waiting
+ * for their operational contact) and PENDING_APPROVAL (contacts confirmed, waiting on Staff Leader) —
+ * mirroring UpdatePendingVisitRequestV2CommandHandler's own gate (VisitRequestConstants.cs), which is
+ * the actual authority on this. `PENDING` is a legacy alias kept only because no audited caller/fixture
+ * proved it dead; VisitRequestStatuses (backend) no longer emits it.
+ */
+const EDITABLE_STATUSES = new Set(['PENDING_CONTACT_CONFIRMATION', 'PENDING_APPROVAL', 'PENDING']);
 const RESUBMITTABLE_STATUSES = new Set(['REJECTED']);
 
 /**
@@ -123,6 +130,11 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
       const data = await getVisitRequestFormV2(id);
       const editableForMode =
         mode === 'edit' ? EDITABLE_STATUSES.has(data.requestStatus) : RESUBMITTABLE_STATUSES.has(data.requestStatus);
+      // Backend write policy (UpdatePendingVisitRequestV2CommandHandler / ResubmitRejectedVisitRequestV2CommandHandler)
+      // authorizes REGISTRANT alone. VISITOR_OWNER is a legacy relation string
+      // (VisitInstanceAccess.cs: "replaces the old request-wide VISITOR_OWNER") that this endpoint's
+      // read model (VisitFormReadService.ComputeScopeAsync) never actually returns — kept here as a
+      // harmless no-op rather than pruned, since removing it is outside this fix's scope.
       const isManager = data.viewer.relation === 'REGISTRANT' || data.viewer.relation === 'VISITOR_OWNER';
       if (!isManager) {
         setLoadError(t('visitRequestV2:edit.forbidden'));
