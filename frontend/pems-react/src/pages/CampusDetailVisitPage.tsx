@@ -41,6 +41,12 @@ import bgDN from "../assets/FPTbanner_visit/DaNang.png";
 import bgQN from "../assets/FPTbanner_visit/QuyNhon.png";
 
 import { youtubeEmbedUrl } from "../shared/utils/youtube";
+import {
+  buildGalleryShareUrl,
+  copyTextToClipboard,
+  openFacebookShare,
+} from "../shared/utils/galleryShare";
+import { showMessageErrorToast, showSuccessToast } from "../shared/utils/toast";
 import { localizedDbText, isEnglishLanguage } from "../shared/i18n/localizedDbText";
 import { publicVisitFptuApi } from "../features/visit-fptu/publicVisitFptuApi";
 import type {
@@ -581,6 +587,7 @@ function GalleryItemDetailModal({
   const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const itemId = detail?.galleryItem.galleryItemId;
 
@@ -652,6 +659,7 @@ function GalleryItemDetailModal({
     setIdx(0);
     setFailed(false);
     setZoomOpen(false);
+    setShowShareMenu(false);
     stopAudio();
     setSelectedLanguage(globalGalleryLanguage);
     // globalGalleryLanguage is intentionally omitted: this effect only handles ITEM changes — the
@@ -669,6 +677,34 @@ function GalleryItemDetailModal({
   // Stop audio when the modal unmounts.
   useEffect(() => () => stopAudio(), [stopAudio]);
 
+  // Dismiss the share menu on a click outside it, or on Escape.
+  //
+  // Escape is taken in the CAPTURE phase and stopped there: the page keeps a window-level (bubbling)
+  // Escape handler that closes the whole item modal, and without this the first Escape would blow past
+  // the open menu and shut the item too. With the menu closed, that page handler behaves as before.
+  useEffect(() => {
+    if (!showShareMenu) return;
+
+    const closeOnOutside = (e: Event) => {
+      if (!shareMenuRef.current?.contains(e.target as Node)) setShowShareMenu(false);
+    };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setShowShareMenu(false);
+    };
+
+    document.addEventListener("mousedown", closeOnOutside);
+    document.addEventListener("touchstart", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape, true);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside);
+      document.removeEventListener("touchstart", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }, [showShareMenu]);
+
   const media = detail?.media ?? [];
   const cur = media[idx] ?? null;
   const step = (d: -1 | 1) => {
@@ -685,19 +721,32 @@ function GalleryItemDetailModal({
   const dotIndices = Array.from({ length: Math.min(DOT_WINDOW, total) }, (_, k) => dotStart + k);
   const pad2 = (n: number) => String(n).padStart(2, "0");
 
-  const shareLink = (channel: "copy" | "facebook" | "twitter") => {
-    const url = window.location.href;
-    if (channel === "copy") {
-      navigator.clipboard.writeText(url);
-      setShowShareMenu(false);
+  // The canonical deep link of THIS item — campus + location + item, rebuilt from the loaded detail
+  // rather than from window.location.href, so the shared URL always points at the item on screen
+  // (the modal's prev/next steps through items) and carries nothing else. Null until the detail
+  // arrives; the share actions are disabled until then.
+  const shareUrl = detail
+    ? buildGalleryShareUrl({
+        campusCode: detail.campus.campusCode,
+        locationId: detail.location.locationId,
+        galleryItemId: detail.galleryItem.galleryItemId,
+      })
+    : null;
+
+  const shareLink = async (channel: "copy" | "facebook") => {
+    if (!shareUrl) return;
+    setShowShareMenu(false);
+
+    if (channel === "facebook") {
+      // Facebook scrapes the canonical URL itself — Vercel routes its crawler to the backend Open
+      // Graph endpoint, so the card carries the item's own title/description/image.
+      openFacebookShare(shareUrl);
       return;
     }
-    const target =
-      channel === "facebook"
-        ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`
-        : `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}`;
-    window.open(target, "_blank");
-    setShowShareMenu(false);
+
+    const copied = await copyTextToClipboard(shareUrl);
+    if (copied) showSuccessToast(t('visitFptu:gallery.toasts.copyLinkSuccess'));
+    else showMessageErrorToast(t('visitFptu:gallery.toasts.copyLinkError'));
   };
 
   return (
@@ -725,33 +774,82 @@ function GalleryItemDetailModal({
               <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl group-hover:bg-blue-400/30 transition-colors duration-500" />
             </div>
 
-            <div className="flex items-center justify-between mb-5 relative z-10 gap-3">
+            {/* z-40 (NOT z-10) is load-bearing: the <h3> below is also positioned and comes later in the
+                DOM, so at an equal z-index it painted OVER this row — and the share dropdown, being inside
+                this row's stacking context, could never escape above it whatever z-index it asked for.
+                The result was a menu you could see but not click on its upper half. */}
+            <div className="flex items-center justify-between mb-5 relative z-40 gap-3">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
                 <span className="truncate">{displayAreaName}</span>
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
                 <span className="truncate">{displayLocationName}</span>
               </div>
-              <div className="flex items-center gap-2 relative shrink-0">
+              <div ref={shareMenuRef} className="flex items-center gap-2 relative shrink-0">
                 <button
                   onClick={() => setShowShareMenu((s) => !s)}
-                  className="w-8 h-8 flex items-center justify-center rounded-full bg-white/15 hover:bg-fpt-orange text-white/80 hover:text-white border border-white/25 transition-all hover:scale-110"
+                  aria-haspopup="menu"
+                  aria-expanded={showShareMenu}
+                  className={`w-9 h-9 flex items-center justify-center rounded-full border transition-all hover:scale-105 ${
+                    showShareMenu
+                      ? "bg-fpt-orange text-white border-fpt-orange shadow-[0_0_18px_rgba(243,112,33,0.55)]"
+                      : "bg-white/15 text-white border-white/30 hover:bg-fpt-orange hover:border-fpt-orange"
+                  }`}
                   title={t('visitFptu:gallery.actions.share')}
                 >
                   <Share2 className="w-4 h-4" />
                 </button>
+                {/* The panel is deliberately NOT role="menu" with role="menuitem" children: that would
+                    override the native button roles while promising arrow-key roving focus this popover
+                    does not implement. aria-haspopup/aria-expanded on the trigger say enough. */}
                 <AnimatePresence>
                   {showShareMenu && (
                     <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.92 }}
+                      aria-label={t('visitFptu:gallery.actions.share')}
+                      initial={{ opacity: 0, y: -6, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.92 }}
-                      className="absolute right-0 top-full mt-2 w-52 bg-black/90 backdrop-blur-xl border border-white/20 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.6)] p-2 z-[70] flex flex-col gap-1"
+                      exit={{ opacity: 0, y: -6, scale: 0.96 }}
+                      transition={{ duration: 0.16 }}
+                      className="absolute right-0 top-full mt-3 w-[17rem] rounded-2xl border border-white/15 bg-[#0f1218] shadow-[0_24px_60px_rgba(0,0,0,0.75)] p-2 z-[80]"
                     >
-                      <button onClick={() => shareLink("copy")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left">
-                        <LinkIcon className="w-4 h-4 shrink-0" /> {t('visitFptu:gallery.actions.copyLink')}
+                      {/* Caret tying the panel to the button it came from. */}
+                      <div className="absolute -top-1.5 right-3.5 w-3 h-3 rotate-45 bg-[#0f1218] border-l border-t border-white/15" />
+
+                      <p className="px-3 pt-2 pb-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-white/45">
+                        {t('visitFptu:gallery.actions.share')}
+                      </p>
+
+                      <button
+                        onClick={() => shareLink("copy")}
+                        disabled={!shareUrl}
+                        className="group/share w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <span className="w-9 h-9 shrink-0 rounded-full bg-white/10 text-white flex items-center justify-center transition-colors group-hover/share:bg-white/20">
+                          <LinkIcon className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-white">
+                            {t('visitFptu:gallery.actions.copyLink')}
+                          </span>
+                          <span className="block text-xs text-white/55 truncate">
+                            {t('visitFptu:gallery.share.copyHint')}
+                          </span>
+                        </span>
                       </button>
-                      <button onClick={() => shareLink("facebook")} className="flex items-center gap-3 px-3 py-2.5 text-sm text-white/90 hover:text-white hover:bg-blue-500/25 rounded-xl transition-colors text-left">
-                        <Facebook className="w-4 h-4 shrink-0" /> Facebook
+
+                      <button
+                        onClick={() => shareLink("facebook")}
+                        disabled={!shareUrl}
+                        className="group/share w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors hover:bg-[#1877F2]/20 focus-visible:bg-[#1877F2]/20 focus-visible:outline-none disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <span className="w-9 h-9 shrink-0 rounded-full bg-[#1877F2] text-white flex items-center justify-center">
+                          <Facebook className="w-4 h-4" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-white">Facebook</span>
+                          <span className="block text-xs text-white/55 truncate">
+                            {t('visitFptu:gallery.share.facebookHint')}
+                          </span>
+                        </span>
                       </button>
                     </motion.div>
                   )}
@@ -1116,7 +1214,6 @@ export function CampusDetailVisitPage() {
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [zoomScale, setZoomScale] = useState(1);
-  const [showShareMenu, setShowShareMenu] = useState(false);
   const [failedMediaIds, setFailedMediaIds] = useState<Set<number>>(new Set());
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -1815,21 +1912,6 @@ export function CampusDetailVisitPage() {
   useEffect(() => {
     stopNarration();
   }, [activeLocationId, detail?.galleryItem.galleryItemId, stopNarration]);
-
-  const shareCurrentLink = (channel: "copy" | "facebook" | "twitter") => {
-    const url = window.location.href;
-    if (channel === "copy") {
-      navigator.clipboard.writeText(url);
-      setShowShareMenu(false);
-      return;
-    }
-    const target =
-      channel === "facebook"
-        ? `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`
-        : `https://twitter.com/intent/tweet?url=${encodeURIComponent(url)}`;
-    window.open(target, "_blank");
-    setShowShareMenu(false);
-  };
 
   return (
     <div className="relative min-h-[calc(100vh-64px)] w-full flex flex-col bg-gray-900">

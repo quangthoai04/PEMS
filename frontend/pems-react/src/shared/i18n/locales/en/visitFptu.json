@@ -76,6 +76,14 @@
       "ct": "FPT University Can Tho — a hub of technology and education in the Mekong Delta region.",
       "qn": "FPT University Quy Nhon focuses on AI and mathematics, built in a beautiful coastal city."
     },
+    "share": {
+      "copyHint": "Paste the link anywhere",
+      "facebookHint": "Opens the share dialog"
+    },
+    "toasts": {
+      "copyLinkSuccess": "Link copied.",
+      "copyLinkError": "Could not copy the link. Please try again."
+    },
     "errors": {
       "narrationFailed": "Unable to play the recording.",
       "contentHidden": "This content is no longer displayed.",

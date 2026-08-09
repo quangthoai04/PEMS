@@ -76,6 +76,14 @@
       "ct": "Đại học FPT Cần Thơ — trung tâm công nghệ và giáo dục ở vùng đồng bằng sông Cửu Long.",
       "qn": "Đại học FPT Quy Nhơn chú trọng AI và toán học, xây dựng tại thành phố biển xinh đẹp."
     },
+    "share": {
+      "copyHint": "Dán liên kết ở bất kỳ đâu",
+      "facebookHint": "Mở hộp thoại chia sẻ"
+    },
+    "toasts": {
+      "copyLinkSuccess": "Đã sao chép liên kết.",
+      "copyLinkError": "Không thể sao chép liên kết. Vui lòng thử lại."
+    },
     "errors": {
       "narrationFailed": "Không thể phát bản ghi âm.",
       "contentHidden": "Nội dung này hiện không còn được hiển thị.",
