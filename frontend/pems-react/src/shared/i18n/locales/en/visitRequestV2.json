@@ -861,6 +861,15 @@
       "singleCampus": "Single campus",
       "multiCampus": "Multi-campus"
     },
+    "relationBadge": {
+      "registrant": "Registrant",
+      "host": "Reception host",
+      "hostAt": "Host: {{campus}}",
+      "reviewRequired": "Needs your approval: {{campus}}",
+      "reviewRequiredNoCampus": "Needs your approval",
+      "participant": "Attending",
+      "contact": "Operational contact"
+    },
     "statusBadge": {
       "pending": {
         "label": "Pending approval",
@@ -947,7 +956,12 @@
       "menuResubmit": "Edit & resubmit",
       "menuFeedback": "Rate this visit",
       "viewRejectReasonCampus": "View campus rejection reason",
-      "cancelCampusVisit": "Cancel this campus visit"
+      "cancelCampusVisit": "Cancel this campus visit",
+      "menuOpenHostProcess": "Open the process (you host it)",
+      "menuOpenCampusReview": "Review your campus",
+      "menuOpenProcessSummary": "View the campus summary",
+      "menuOpenReceptionDetail": "View reception progress",
+      "menuOpenContribution": "Open your contribution"
     },
     "pagination": {
       "showing": "Show",

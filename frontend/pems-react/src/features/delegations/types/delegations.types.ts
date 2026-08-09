@@ -142,6 +142,44 @@ export const VISIT_ALLOWED_ACTIONS = {
 export type AllowedAction = (typeof VISIT_ALLOWED_ACTIONS)[keyof typeof VISIT_ALLOWED_ACTIONS];
 
 /**
+ * What the signed-in user genuinely IS to a row. Several can be true at once — that is the whole point
+ * of the list carrying them: one person is routinely the registrant of a visit, the Host of the campus
+ * receiving it and the Staff Leader who approved that campus.
+ *
+ * Scope matters: REGISTRANT is about the whole request, every other relation is about ONE campus.
+ */
+export type VisitRowRelation =
+  | 'REGISTRANT'
+  | 'OPERATIONAL_CONTACT'
+  | 'HOST'
+  | 'CAMPUS_REVIEWER'
+  | 'PARTICIPANT';
+
+/** Which screen a row (or one of its relations) opens. Routing only — it grants nothing. */
+export type VisitEntryContext =
+  | 'REQUEST_DETAIL'
+  | 'HOST_PROCESS'
+  | 'CAMPUS_REVIEW'
+  | 'PROCESS_SUMMARY'
+  | 'RECEPTION_DETAIL'
+  | 'CONTRIBUTION';
+
+/** One relation the caller holds on a row, with the campus it applies to and where it opens. */
+export interface VisitRelationContext {
+  relation: VisitRowRelation;
+  /** REQUEST (the whole delegation) or INSTANCE (one campus). */
+  scope: 'REQUEST' | 'INSTANCE';
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  entryContext: VisitEntryContext;
+  /** True when this relation has something waiting on the caller right now. */
+  requiresAction: boolean;
+  /** Lower = more urgent. 1 campus review · 2 host process · 3 invitation · 4 registrant · 5 tracking. */
+  priority: number;
+}
+
+/**
  * One campus instance inside a multi-campus request, used by the expandable-row accordion
  * (Phương án A). Action visibility is backend-computed (booleans) — never gate on status text.
  */
@@ -1018,7 +1056,26 @@ export interface VisitRequestManagementItem {
 
   isCurrentUserParticipant: boolean;
   participantRole: string | null;
+  /**
+   * Single-valued legacy relation, DISPLAY ONLY. It cannot describe someone who is registrant AND host
+   * AND campus reviewer at once — use {@link VisitRequestManagementItem.relationContexts} for the real
+   * answer, and `allowedActions` for what they may do. Never gate an action on this.
+   */
   currentUserRelation: string;
+
+  // ── Multi-relation truth (backend-computed; a filter never changes it) ──
+  /** Distinct relation codes the caller genuinely holds on this row. */
+  relations?: VisitRowRelation[];
+  /** The same relations with their campus scope, entry screen and urgency. Most urgent first. */
+  relationContexts?: VisitRelationContext[];
+  /**
+   * Where this row should open by default — ROUTING, not permission. Absent when the caller holds none
+   * of the five relations (HO monitoring, a Department/Student assignment row): those keep their own
+   * established routing.
+   */
+  primaryEntryContext?: VisitEntryContext | null;
+  /** The campus instance {@link primaryEntryContext} targets. Null for a request-scoped entry. */
+  primaryEntryVisitInstanceId?: number | null;
 
   expectedStartAt: string | null;
   expectedEndAt: string | null;

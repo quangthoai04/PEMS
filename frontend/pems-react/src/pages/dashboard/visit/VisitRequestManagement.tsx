@@ -47,6 +47,7 @@ import {
   type VisitInvitation,
   type CampusProgressItem,
   type VisitActionCapability,
+  type VisitEntryContext,
 } from '../../../features/delegations/types/delegations.types';
 import { useAuthContext } from '../../../shared/auth/AuthContext';
 import { getVisitRequestFilterConfig } from '../../../features/delegations/config/visitRequestFilterConfig';
@@ -761,8 +762,74 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     return !!row.visitInstanceId && (!!row.currentHostUserId || !!row.host);
   };
 
+  /**
+   * Navigation state the Host process screen expects for a given campus status. Extracted so the
+   * backend-decided entry context and the legacy action-driven path cannot drift apart.
+   */
+  const hostProcessState = (row: Row) => {
+    switch (row.campusStatus) {
+      case 'DURING_VISIT': return { defaultTab: 'during', status: row.statusText, isReadOnly: false };
+      case 'AFTER_VISIT': return { defaultTab: 'after', status: row.statusText, isReadOnly: false };
+      case 'CLOSED': return { defaultTab: 'before', status: row.statusText, isReadOnly: true };
+      default: return { isPrep: true, status: row.statusText, isReadOnly: false };
+    }
+  };
+
+  /**
+   * ENTRY CONTEXT — the backend's answer to "which screen does this row open", kept strictly apart
+   * from what the caller may DO there.
+   *
+   * The frontend cannot work this out for itself on a row where the reader holds several relations:
+   * `allowedActions` is a SET, so picking "the first one that looks navigational" always meant
+   * guessing which relation the reader came here through. The backend already knows — it resolved
+   * the relation the current filter is about, and named the exact campus.
+   *
+   * Absent (HO monitoring, a Department/Student assignment) means "no opinion", and the established
+   * behaviour below runs unchanged.
+   */
+  const entryContextInstanceId = (row: Row): number | null => {
+    const entry = row.primaryEntryContext;
+    const instanceId = row.primaryEntryVisitInstanceId;
+    if (!entry || entry === 'REQUEST_DETAIL' || !instanceId) return null;
+    return instanceId;
+  };
+
+  const openEntryContext = (row: Row): boolean => {
+    const entry = row.primaryEntryContext;
+    if (!entry) return false;
+
+    // The request itself. Reached by "Đơn tôi đăng ký" and by any multi-campus summary row, which is
+    // not one campus and so cannot open one campus's screen.
+    if (entry === 'REQUEST_DETAIL') { openRequestForm(row); return true; }
+
+    const instanceId = entryContextInstanceId(row);
+    if (instanceId == null) return false;
+    switch (entry) {
+      case 'HOST_PROCESS':
+        navTo(`/dashboard/visit/process/${instanceId}`, { state: hostProcessState(row) });
+        return true;
+      case 'PROCESS_SUMMARY':
+        navTo(`/dashboard/visit/process-summary/${instanceId}`);
+        return true;
+      case 'RECEPTION_DETAIL':
+        navTo(`/dashboard/visit/reception-detail/${instanceId}`);
+        return true;
+      case 'CONTRIBUTION':
+        navTo(`/dashboard/visit/contribution/${instanceId}`);
+        return true;
+      case 'CAMPUS_REVIEW':
+        // The canonical review flow is the submitted-form detail (approve/reject live there and on
+        // the row's primary button). No new route is invented for it.
+        openRequestForm(row);
+        return true;
+      default:
+        return false;
+    }
+  };
+
   const canOpenProcess = (row: Row) => {
     const actions = row.allowedActions || [];
+    if (entryContextInstanceId(row) != null) return true;
     if (actions.includes('OPEN_HOST_PROCESS') ||
       actions.includes('OPEN_PROCESS_SUMMARY') ||
       actions.includes('VIEW_RECEPTION_DETAIL') ||
@@ -849,7 +916,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const isCancelled = row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED';
     const displayStatus = row.statusText;
 
-    if (actions.includes('OPEN_CONTRIBUTION')) {
+    // Contribution is no longer first here. It used to be, back when the action could only come from
+    // the attending tab; now a Host who was ALSO invited carries it too, and jumping them to the
+    // contribution screen would have hidden the campus they are actually running.
+    if (actions.includes('OPEN_CONTRIBUTION')
+      && !actions.includes('OPEN_HOST_PROCESS') && !actions.includes('OPEN_PROCESS_SUMMARY')) {
       navTo(`/dashboard/visit/contribution/${row.visitInstanceId}`);
       return;
     }
@@ -995,6 +1066,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const handleRowClick = (row: Row) => {
     const actions = row.allowedActions || [];
     const can = (a: AllowedAction) => actions.includes(a);
+    // The backend already resolved which relation this reader is looking through and which campus it
+    // names. When it did, that answer wins — the guesswork below exists only for rows it left open.
+    if (openEntryContext(row)) return;
     if (canOpenProcess(row)) { handleProcess(row); return; }
     if (row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) { openRequestForm(row); return; }
   };
@@ -1134,6 +1208,74 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
   };
 
+  /**
+   * The row's relation chips, straight from the backend's relation contexts.
+   *
+   * One relation per chip, most urgent first, at most two — a row that lists everything a
+   * multi-relation user is becomes unreadable, and the rest stay available in the ⋯ menu. A campus
+   * reviewer with nothing pending contributes no chip at all: "I lead this campus" is not news on a
+   * list that only ever shows them their own campus.
+   */
+  const buildRelationChips = (row: Row): { text: string; className: string; isHost: boolean }[] => {
+    const contexts = row.relationContexts || [];
+    if (contexts.length === 0) return [];
+
+    const seen = new Set<string>();
+    const chips: { text: string; className: string; isHost: boolean }[] = [];
+
+    for (const ctx of contexts) {
+      if (seen.has(ctx.relation)) continue;
+      const campus = ctx.campusName || '';
+      switch (ctx.relation) {
+        case 'CAMPUS_REVIEWER':
+          if (!ctx.requiresAction) continue;
+          chips.push({
+            text: campus
+              ? tt('visitRequestV2:list.relationBadge.reviewRequired', { campus })
+              : tt('visitRequestV2:list.relationBadge.reviewRequiredNoCampus'),
+            className: 'bg-amber-50 text-amber-700 border-amber-200',
+            isHost: false,
+          });
+          break;
+        case 'HOST':
+          chips.push({
+            text: campus
+              ? tt('visitRequestV2:list.relationBadge.hostAt', { campus })
+              : tt('visitRequestV2:list.relationBadge.host'),
+            className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+            isHost: true,
+          });
+          break;
+        case 'PARTICIPANT':
+          chips.push({
+            text: tt('visitRequestV2:list.relationBadge.participant'),
+            className: 'bg-purple-50 text-purple-700 border-purple-200',
+            isHost: false,
+          });
+          break;
+        case 'REGISTRANT':
+          chips.push({
+            text: tt('visitRequestV2:list.relationBadge.registrant'),
+            className: 'bg-slate-50 text-slate-600 border-slate-200',
+            isHost: false,
+          });
+          break;
+        case 'OPERATIONAL_CONTACT':
+          chips.push({
+            text: tt('visitRequestV2:list.relationBadge.contact'),
+            className: 'bg-sky-50 text-sky-700 border-sky-200',
+            isHost: false,
+          });
+          break;
+        default:
+          continue;
+      }
+      seen.add(ctx.relation);
+      if (chips.length === 2) break;
+    }
+    return chips;
+  };
+
   const renderBadges = (row: Row) => {
     const badges: React.ReactNode[] = [];
     const chip = (key: string, text: string, cls: string) => (
@@ -1162,11 +1304,21 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         single ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-indigo-50 text-indigo-700 border-indigo-200'));
     }
 
-    // ── Layer 2: what the reader IS to this row. One badge, from the backend's relationLabel —
-    //    kept separate from the status badge (layer 1) and from "việc cần làm" (layer 3), because a
-    //    single chip that tried to be all three is what made "Chờ duyệt" read as an
-    //    instruction to the visitor who could do nothing about it. ──
-    if (rowTab(row) === 'registered') {
+    // ── Layer 2: what the reader IS to this row. Kept separate from the status badge (layer 1) and
+    //    from "việc cần làm" (layer 3), because a single chip that tried to be all three is what made
+    //    "Chờ duyệt" read as an instruction to the visitor who could do nothing about it.
+    //
+    //    When the backend reports SEVERAL relations, they are all shown (capped at two, §14.3) — one
+    //    chip could only ever have named one of them, which is how a Staff Leader who had also
+    //    registered the visit appeared to be merely its registrant. ──
+    const relationChips = buildRelationChips(row);
+    if (relationChips.length > 0) {
+      relationChips.forEach((rc, index) =>
+        badges.push(chip(`rel-${index}`, rc.text, rc.className)));
+      if (row.isAlsoHost && !relationChips.some(rc => rc.isHost)) {
+        badges.push(chip('also-host', tt('visitRequestV2:list.badges.alsoHost'), 'bg-emerald-50 text-emerald-700 border-emerald-200'));
+      }
+    } else if (rowTab(row) === 'registered') {
       badges.push(chip('registered', resolveRelationLabel(row) || tt('visitRequestV2:list.badges.registeredRelation'), 'bg-slate-50 text-slate-600 border-slate-200'));
       if (row.isAlsoHost) {
         badges.push(chip('also-host', tt('visitRequestV2:list.badges.alsoHost'), 'bg-emerald-50 text-emerald-700 border-emerald-200'));
@@ -1415,6 +1567,57 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           open: true, row, mode: can('CANCEL_BY_HOST') ? 'host' : 'visitor',
           instanceId: null, text: '', submitting: false, error: null, confirmed: false,
         }),
+      });
+    }
+
+    // ── The OTHER relations this reader holds on this row. ──
+    // The row click opens one of them (the most urgent, or the one the current filter is about);
+    // every remaining relation gets its own entry here, so switching filter never becomes the only
+    // way to reach a screen you are entitled to. Skips the one the row click already goes to, and
+    // anything the backend did not actually grant.
+    const primaryEntry = row.primaryEntryContext;
+    const primaryInstance = row.primaryEntryVisitInstanceId ?? null;
+    const secondaryLabels: Partial<Record<VisitEntryContext, { label: string; icon: React.ReactNode }>> = {
+      HOST_PROCESS: { label: tt('visitRequestV2:list.actions.menuOpenHostProcess'), icon: <ClipboardList className="h-4 w-4" /> },
+      CAMPUS_REVIEW: { label: tt('visitRequestV2:list.actions.menuOpenCampusReview'), icon: <Check className="h-4 w-4" /> },
+      PROCESS_SUMMARY: { label: tt('visitRequestV2:list.actions.menuOpenProcessSummary'), icon: <ClipboardList className="h-4 w-4" /> },
+      RECEPTION_DETAIL: { label: tt('visitRequestV2:list.actions.menuOpenReceptionDetail'), icon: <ClipboardList className="h-4 w-4" /> },
+      CONTRIBUTION: { label: tt('visitRequestV2:list.actions.menuOpenContribution'), icon: <Users className="h-4 w-4" /> },
+    };
+    const secondarySeen = new Set<string>();
+    for (const ctx of row.relationContexts || []) {
+      const entry = ctx.entryContext;
+      const instanceId = ctx.visitInstanceId ?? null;
+      if (entry === 'REQUEST_DETAIL' || instanceId == null) continue;
+      if (entry === primaryEntry && instanceId === primaryInstance) continue;
+      const key = `${entry}:${instanceId}`;
+      if (secondarySeen.has(key)) continue;
+
+      // The relation says the caller stands there; allowedActions says the screen is open to them
+      // right now. Both have to agree before an entry appears.
+      const granted =
+        entry === 'HOST_PROCESS' ? can('OPEN_HOST_PROCESS')
+          : entry === 'PROCESS_SUMMARY' ? can('OPEN_PROCESS_SUMMARY')
+            : entry === 'RECEPTION_DETAIL' ? can('VIEW_RECEPTION_DETAIL')
+              : entry === 'CONTRIBUTION' ? can('OPEN_CONTRIBUTION')
+                : entry === 'CAMPUS_REVIEW' ? can('APPROVE_AND_ASSIGN_HOST')
+                  : false;
+      if (!granted) continue;
+
+      const meta = secondaryLabels[entry];
+      if (!meta) continue;
+      secondarySeen.add(key);
+      items.push({
+        key: `entry-${key}`,
+        label: ctx.campusName ? `${meta.label} — ${ctx.campusName}` : meta.label,
+        icon: meta.icon,
+        onSelect: () => {
+          if (entry === 'CAMPUS_REVIEW') { openRequestForm(row); return; }
+          if (entry === 'HOST_PROCESS') { navTo(`/dashboard/visit/process/${instanceId}`, { state: hostProcessState(row) }); return; }
+          if (entry === 'PROCESS_SUMMARY') { navTo(`/dashboard/visit/process-summary/${instanceId}`); return; }
+          if (entry === 'RECEPTION_DETAIL') { navTo(`/dashboard/visit/reception-detail/${instanceId}`); return; }
+          navTo(`/dashboard/visit/contribution/${instanceId}`);
+        },
       });
     }
 

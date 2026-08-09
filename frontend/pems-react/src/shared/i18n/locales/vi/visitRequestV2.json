@@ -861,6 +861,15 @@
       "singleCampus": "Đơn cơ sở",
       "multiCampus": "Liên cơ sở"
     },
+    "relationBadge": {
+      "registrant": "Người đăng ký",
+      "host": "Phụ trách tiếp đón",
+      "hostAt": "Phụ trách: {{campus}}",
+      "reviewRequired": "Cần bạn duyệt: {{campus}}",
+      "reviewRequiredNoCampus": "Cần bạn duyệt",
+      "participant": "Tham dự",
+      "contact": "Đầu mối"
+    },
     "statusBadge": {
       "pending": {
         "label": "Chờ duyệt",
@@ -947,7 +956,12 @@
       "menuResubmit": "Sửa & gửi lại đơn",
       "menuFeedback": "Đánh giá chuyến thăm",
       "viewRejectReasonCampus": "Xem lý do từ chối cơ sở",
-      "cancelCampusVisit": "Hủy lịch thăm cơ sở"
+      "cancelCampusVisit": "Hủy lịch thăm cơ sở",
+      "menuOpenHostProcess": "Mở trang xử lý (bạn phụ trách)",
+      "menuOpenCampusReview": "Duyệt cơ sở của bạn",
+      "menuOpenProcessSummary": "Xem báo cáo tổng hợp cơ sở",
+      "menuOpenReceptionDetail": "Xem tiến độ tiếp đón",
+      "menuOpenContribution": "Mở phần đóng góp của bạn"
     },
     "pagination": {
       "showing": "Hiển thị",

@@ -73,8 +73,48 @@ public sealed class VisitRequestManagementItemDto
     /// DEPT_SUPPORT | STUDENT_SUPPORT | VISITOR_OWNER | DEPARTMENT_TASK_OWNER.
     /// HO_APPROVER = HO on a pending multi-campus request (can decide); HO_MONITOR = HO
     /// read-only (single-campus, or an already-decided multi-campus request).
+    ///
+    /// <para>
+    /// DISPLAY / TELEMETRY ONLY, and deliberately SINGLE-VALUED — it cannot describe a user who is
+    /// registrant AND host AND campus reviewer at once, which is exactly why it must never be an
+    /// authorization input. The authoritative answer to "what is this person to this row" is
+    /// <see cref="RelationContexts"/>; the authoritative answer to "what may they do" is
+    /// <see cref="AllowedActions"/> / <see cref="Capabilities"/>.
+    /// </para>
     /// </summary>
     public string CurrentUserRelation { get; set; } = "NONE";
+
+    // ── Multi-relation truth (the source FILTER must never override) ──────────────────────────
+    /// <summary>
+    /// Every relation the caller genuinely holds on this row, computed from the data (registrant id,
+    /// this campus's operational contact / current host, the caller's own campus, participation) —
+    /// never from the tab the row was fetched under. Distinct codes from <see cref="VisitRowRelations"/>.
+    /// </summary>
+    public List<string> Relations { get; set; } = new();
+
+    /// <summary>
+    /// The same relations WITH their scope: which campus instance each one is about, where a click on
+    /// it should land, and whether it currently has work waiting. A request-scoped relation
+    /// (REGISTRANT) carries no instance; a campus-scoped one always does. Ordered most-urgent first.
+    /// </summary>
+    public List<VisitRelationContextDto> RelationContexts { get; set; } = new();
+
+    /// <summary>
+    /// Where clicking this row should go by default — a NAVIGATION decision, kept apart from
+    /// authorization. On a specific filter it is that filter's own relation ("Đơn tôi đăng ký" opens
+    /// the request detail even for a user who is also Host); on the merged "all" list it is the
+    /// highest-priority relation the caller holds. One of <see cref="VisitEntryContexts"/>.
+    ///
+    /// <para>
+    /// NULL when the caller holds none of the five relations — HO monitoring, or a Department/Student
+    /// row that exists because of a logistics/agenda assignment. Those keep their own established
+    /// routing; a default here would have sent them somewhere new for no reason.
+    /// </para>
+    /// </summary>
+    public string? PrimaryEntryContext { get; set; }
+
+    /// <summary>The campus instance <see cref="PrimaryEntryContext"/> targets; null for a request-scoped entry.</summary>
+    public ulong? PrimaryEntryVisitInstanceId { get; set; }
 
     /// <summary>
     /// True when the caller may only view this row (no mutating action available) — e.g.
@@ -202,6 +242,84 @@ public sealed class VisitRequestManagementItemDto
     /// report, so a quiet row carries no payload at all.
     /// </summary>
     public VisitListChangeSummaryDto? ChangeSummary { get; set; }
+}
+
+/// <summary>
+/// ONE relation the caller holds on a row, with the scope it holds it at.
+///
+/// <para>
+/// A single user is routinely several things to the same visit at once — the person who registered it,
+/// the Host of the campus receiving it, and the Staff Leader who approved that campus. Collapsing that
+/// into one value (the old <see cref="VisitRequestManagementItemDto.CurrentUserRelation"/>) forced the
+/// list to pick a winner and silently drop the rest, which is how a filter ended up deciding what
+/// somebody was allowed to do.
+/// </para>
+/// </summary>
+public sealed class VisitRelationContextDto
+{
+    /// <summary>One of <see cref="VisitRowRelations"/>.</summary>
+    public string Relation { get; set; } = default!;
+    /// <summary>REQUEST (the whole delegation) or INSTANCE (one campus) — see <see cref="VisitActionScopes"/>.</summary>
+    public string Scope { get; set; } = VisitActionScopes.Request;
+    /// <summary>The campus instance this relation is about. Null for REQUEST scope.</summary>
+    public ulong? VisitInstanceId { get; set; }
+    public ulong? CampusId { get; set; }
+    public string? CampusName { get; set; }
+    /// <summary>Where a click made "as this relation" should land. One of <see cref="VisitEntryContexts"/>.</summary>
+    public string EntryContext { get; set; } = VisitEntryContexts.RequestDetail;
+    /// <summary>True when this relation has something waiting on the caller right now (not merely context).</summary>
+    public bool RequiresAction { get; set; }
+    /// <summary>Lower = more urgent. Drives which context becomes the row's primary entry on "all".</summary>
+    public int Priority { get; set; }
+}
+
+/// <summary>
+/// The relations a caller can hold on a visit row. Scope is fixed per relation and is what stops a
+/// campus-scoped right leaking sideways: holding DN grants nothing at HN.
+/// </summary>
+public static class VisitRowRelations
+{
+    /// <summary>Registered the request. REQUEST scope — the only relation that is not per campus.</summary>
+    public const string Registrant = "REGISTRANT";
+    /// <summary>Confirmed guest-side contact of ONE campus.</summary>
+    public const string OperationalContact = "OPERATIONAL_CONTACT";
+    /// <summary>Current Host of ONE campus.</summary>
+    public const string Host = "HOST";
+    /// <summary>Staff Leader of the campus this instance belongs to.</summary>
+    public const string CampusReviewer = "CAMPUS_REVIEWER";
+    /// <summary>Invited/assigned participant of ONE campus.</summary>
+    public const string Participant = "PARTICIPANT";
+}
+
+/// <summary>
+/// Where a row opens. This is ROUTING, not permission: two callers can share an entry context and hold
+/// completely different rights there, and the same caller gets a different entry context per filter
+/// without any of their rights changing.
+/// </summary>
+public static class VisitEntryContexts
+{
+    /// <summary>The submitted request detail (per-campus v2 screen).</summary>
+    public const string RequestDetail = "REQUEST_DETAIL";
+    /// <summary>The Host's own preparation/reception process screen for one campus instance.</summary>
+    public const string HostProcess = "HOST_PROCESS";
+    /// <summary>The campus Staff Leader's approve/reject decision on one campus instance.</summary>
+    public const string CampusReview = "CAMPUS_REVIEW";
+    /// <summary>Read-only process summary of one campus instance (Staff Leader / HO monitoring).</summary>
+    public const string ProcessSummary = "PROCESS_SUMMARY";
+    /// <summary>The guest side's view of how their campus reception is going.</summary>
+    public const string ReceptionDetail = "RECEPTION_DETAIL";
+    /// <summary>A participant's contribution screen for one campus instance.</summary>
+    public const string Contribution = "CONTRIBUTION";
+}
+
+/// <summary>Relation priority — lower wins when one row carries several. Mirrors the product ordering.</summary>
+internal static class VisitRelationPriority
+{
+    public const int CampusReviewRequired = 1;
+    public const int HostProcessRequired = 2;
+    public const int InvitationAction = 3;
+    public const int RegistrantAction = 4;
+    public const int Tracking = 5;
 }
 
 /// <summary>
@@ -349,6 +467,14 @@ public sealed class CampusProgressItemDto
 
     public ulong? HostUserId { get; set; }
     public string? HostName { get; set; }
+
+    /// <summary>
+    /// Confirmed guest-side contact of THIS campus. Only request-level rows carry progress items, and
+    /// those go to callers who already hold the whole request (registrant / contact owner / HO), so
+    /// this reveals nothing the row does not already grant — it is what lets the list tell "contact of
+    /// HN" apart from "contact of DN" on a multi-campus request.
+    /// </summary>
+    public ulong? OperationalContactUserId { get; set; }
 
     /// <summary>Optimistic-concurrency token of this campus instance — echoed back by an instance-scoped action.</summary>
     public int RowVersion { get; set; }
