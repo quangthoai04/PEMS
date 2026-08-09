@@ -304,7 +304,17 @@
       "changeSummary": "Member changes: +{{added}} added · −{{removed}} removed · {{modified}} edited",
       "noChange": "No member changes vs. the active content yet."
     },
-    "submitted": "Change proposal sent for {{campus}}."
+    "submitted": "Change proposal sent for {{campus}}.",
+    "errRequired": "This field is required.",
+    "errPhoneFormat": "That is not a valid phone number. For example: 0912345678 or +84912345678.",
+    "errEndBeforeStart": "The end time must be after the start time.",
+    "errTooShort": "The session must last at least {{minutes}} minutes.",
+    "errVisitorName": "Every visitor needs a full name.",
+    "errSupportName": "Every support member needs a full name.",
+    "errFixFields": "Please fix the highlighted fields before submitting the proposal.",
+    "errContactEmailNotAmendable": "The contact email cannot be changed through a proposal. Use the campus's \"Edit the contact\" action.",
+    "errInvalidVisitTime": "The proposed time slot is not valid. Check the start and end times.",
+    "errValidation": "The proposal contains invalid data. Please review the fields you filled in."
   },
   "safeEdit": {
     "open": "Quick edit",
@@ -492,7 +502,17 @@
       "REQUEST_PENDING_EDIT_APPLIED": "{{actor}} edited the request while it was still pending.",
       "INSTANCE_PENDING_EDIT_APPLIED": "{{actor}} edited the content at {{campus}} while it was still pending — version {{formRevision}}.",
       "HOST_TRANSFERRED": "{{actor}} transferred the reception owner at {{campus}}.",
-      "UNKNOWN": "Another change was recorded."
+      "UNKNOWN": "Another change was recorded.",
+      "CONTACT_INITIAL_CONFIRMATION_CREATED": "{{actor}} sent a contact confirmation invitation to {{email}} for {{campus}}.",
+      "CONTACT_TRANSFER_REQUESTED": "{{actor}} sent a contact transfer invitation to {{email}} at {{campus}}.",
+      "CONTACT_INVITATION_RESENT": "{{actor}} resent the contact invitation to {{email}} for {{campus}}.",
+      "CONTACT_INVITATION_CANCELLED": "{{actor}} cancelled the contact invitation sent to {{email}} at {{campus}}.",
+      "CONTACT_INVITATION_SUPERSEDED": "The earlier contact invitation at {{campus}} was replaced by a new one.",
+      "CONTACT_CONFIRMED": "{{email}} confirmed and is now the contact for {{campus}}.",
+      "CONTACT_TRANSFER_ACCEPTED": "The contact role at {{campus}} was transferred to {{email}}.",
+      "CONTACT_CONFIRMATION_DECLINED": "{{email}} declined the contact role at {{campus}}.",
+      "CONTACT_TRANSFER_DECLINED": "The invited person declined the contact role at {{campus}}.",
+      "CONTACT_INVITATION_EXPIRED": "The contact invitation sent to {{email}} at {{campus}} has expired."
     }
   },
   "historyDetail": {
@@ -551,7 +571,19 @@
       "contactPersonFullName": "Contact person name (retired field)",
       "contactPersonOrganization": "Contact person organisation (retired field)",
       "contactPersonPhone": "Contact person phone (retired field)",
-      "contactPersonEmail": "Contact person email (retired field)"
+      "contactPersonEmail": "Contact person email (retired field)",
+      "contactEmailMasked": "Contact email (masked)",
+      "identityChangeStatus": "Invitation status",
+      "operationalContactJobTitle": "Contact job title"
+    },
+    "unknownBefore": "No historical data",
+    "identityStatus": {
+      "PENDING": "Pending",
+      "APPLIED": "Applied",
+      "DECLINED": "Declined",
+      "EXPIRED": "Expired",
+      "CANCELLED": "Cancelled",
+      "SUPERSEDED": "Superseded"
     }
   },
   "revision": {
@@ -588,7 +620,9 @@
     "saveIdentityChange": "Change the person & send a confirmation",
     "emailIdentityHint": "Keep the address: only the details are updated and no confirmation email is sent. Changing the address changes who runs this campus, and the new person has to accept.",
     "replaceReopensGate": "The address differs from the current one, so this changes who runs the campus: it will wait for the new person to confirm, and the whole request pauses at the confirmation gate until every campus has a contact.",
-    "identityChangeNotAllowed": "The contact address cannot be changed for this campus right now. Name, organization, job title and phone can still be corrected."
+    "identityChangeNotAllowed": "The contact address cannot be changed for this campus right now. Name, organization, job title and phone can still be corrected.",
+    "cancelConfirmation": "Cancel the confirmation invitation",
+    "noChangesHint": "Nothing has changed from the current details."
   },
   "outcome": {
     "title": "Current status",

@@ -7,6 +7,13 @@ import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   visitRequestId: number;
+  /**
+   * Bumped by the parent after any mutation that writes history — a contact edit, an invitation sent,
+   * resent or cancelled, an accept or a decline. This component owns its own fetch, so reloading the
+   * request detail alone left the timeline showing the state from before the action the user just
+   * took, on the very screen where they took it.
+   */
+  refreshKey?: number;
 }
 
 /** Decisions and outcomes are the turning points of a request — they get the accent. */
@@ -16,6 +23,9 @@ const EMPHASISED_EVENTS = new Set([
   'REQUEST_CANCELLED', 'REQUEST_RESUBMITTED',
   // Who runs the visit changing is a turning point for everyone reading this timeline.
   'HOST_TRANSFERRED',
+  // So is the campus acquiring — or losing — the person who coordinates it.
+  'CONTACT_CONFIRMED', 'CONTACT_TRANSFER_ACCEPTED',
+  'CONTACT_CONFIRMATION_DECLINED', 'CONTACT_TRANSFER_DECLINED', 'CONTACT_INVITATION_EXPIRED',
 ]);
 
 /** Event codes the client knows how to phrase; anything else degrades to a neutral sentence. */
@@ -26,7 +36,16 @@ const KNOWN_EVENTS = new Set([
   'INSTANCE_CONTENT_RESUBMITTED', 'INSTANCE_AMENDMENT_APPLIED',
   'INSTANCE_APPROVED', 'INSTANCE_REJECTED', 'INSTANCE_CANCELLED', 'INSTANCE_CLOSED', 'INSTANCE_DECIDED',
   'AMENDMENT_SUBMITTED', 'AMENDMENT_APPROVED', 'AMENDMENT_REJECTED', 'AMENDMENT_WITHDRAWN',
-  'AMENDMENT_DECIDED', 'CONTACT_IDENTITY_CHANGED',
+  'AMENDMENT_DECIDED',
+  // The contact workflow speaks in transitions, not in one word for all of them: an invitation sent,
+  // resent, cancelled, accepted, declined or expired each need a different thing done next, and
+  // "vai trò đầu mối có thay đổi" told the reader none of them. The generic code remains as the
+  // fallback for a transition this client has not been taught.
+  'CONTACT_IDENTITY_CHANGED',
+  'CONTACT_INITIAL_CONFIRMATION_CREATED', 'CONTACT_TRANSFER_REQUESTED', 'CONTACT_INVITATION_RESENT',
+  'CONTACT_INVITATION_CANCELLED', 'CONTACT_INVITATION_SUPERSEDED', 'CONTACT_CONFIRMED',
+  'CONTACT_TRANSFER_ACCEPTED', 'CONTACT_CONFIRMATION_DECLINED', 'CONTACT_TRANSFER_DECLINED',
+  'CONTACT_INVITATION_EXPIRED',
   // A full edit of a pending request is its own event — it used to be reported as a quick edit.
   'REQUEST_PENDING_EDIT_APPLIED', 'INSTANCE_PENDING_EDIT_APPLIED',
   'HOST_TRANSFERRED',
@@ -44,7 +63,7 @@ const KNOWN_EVENTS = new Set([
  * Times are formatted with the shared wall-clock helper: PEMS stores DATETIME as Vietnam local time,
  * so passing them through `new Date()` shifted every timestamp by the viewer's own offset.
  */
-export default function VisitHistoryTimeline({ visitRequestId }: Props) {
+export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
   const [history, setHistory] = useState<VisitRequestHistory | null>(null);
   const [error, setError] = useState(false);
@@ -62,7 +81,9 @@ export default function VisitHistoryTimeline({ visitRequestId }: Props) {
       .catch(() => { if (!cancelled) setError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [visitRequestId]);
+    // refreshKey is a deliberate dependency: it is the parent saying "something you show has changed".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitRequestId, refreshKey]);
 
   useEffect(() => load(), [load]);
 

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, Loader2, X } from 'lucide-react';
-import { getVisitHistoryDetail, type VisitHistoryDetail } from '../api/visitRequestV2Api';
+import {
+  getVisitHistoryDetail,
+  type VisitHistoryDetail,
+  type VisitHistoryFieldChange,
+} from '../api/visitRequestV2Api';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 
 interface Props {
@@ -53,6 +57,26 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
 
   const value = (v: string | null | undefined) =>
     v && v.trim() ? v : <span className="text-slate-400">{t('visitRequestV2:historyDetail.empty')}</span>;
+
+  /**
+   * Identity transitions store their before/after as workflow status codes. Left raw they reach the
+   * screen as "PENDING → APPLIED"; known codes are translated and anything else falls through as-is
+   * rather than being hidden.
+   */
+  const statusText = (fieldCode: string, raw: string | null): string | null => {
+    if (fieldCode !== 'identityChangeStatus' || !raw) return raw;
+    return t(`visitRequestV2:historyDetail.identityStatus.${raw}`, { defaultValue: raw });
+  };
+
+  /**
+   * The "before" cell. An absent history and an empty old value are NOT the same claim: the first says
+   * nobody recorded what was there, the second says what was there was nothing. Rendering both as
+   * "(trống)" is how the drawer came to assert that a filled-in field used to be blank.
+   */
+  const beforeCell = (f: VisitHistoryFieldChange) =>
+    f.beforeUnknown
+      ? <span className="italic text-slate-400">{t('visitRequestV2:historyDetail.unknownBefore')}</span>
+      : value(statusText(f.fieldCode, f.beforeValue));
 
   const label = (labelKey: string, fieldCode: string) =>
     // Falls back to the raw field code only if the client has not been taught this field — better a
@@ -159,11 +183,16 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
                         <td className="border-b border-slate-100 px-3 py-2 font-medium text-slate-800">
                           {label(f.labelKey, f.fieldCode)}
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 text-slate-600 line-through decoration-slate-300">
-                          {value(f.beforeValue)}
+                        <td
+                          data-testid={`history-detail-before-${f.fieldCode}`}
+                          className={`border-b border-slate-100 px-3 py-2 text-slate-600 ${
+                            f.beforeUnknown ? '' : 'line-through decoration-slate-300'
+                          }`}
+                        >
+                          {beforeCell(f)}
                         </td>
                         <td className="border-b border-slate-100 px-3 py-2 font-medium text-slate-900">
-                          {value(f.afterValue)}
+                          {value(statusText(f.fieldCode, f.afterValue))}
                         </td>
                       </tr>
                     ))}

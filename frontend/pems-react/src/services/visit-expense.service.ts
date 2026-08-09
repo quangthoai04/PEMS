@@ -66,8 +66,19 @@ export interface RemindExpenseReportsResult {
 }
 
 const visitExpenseService = {
-  getGeneralExpenseReport: async (visitInstanceId: number): Promise<VisitExpenseReport> => {
-    const res = await apiClient.get<VisitExpenseReport>(`/VisitExpenses/general/${visitInstanceId}`);
+  /**
+   * Reads the general report. A READ — it never creates one, so a campus that has not filed costs
+   * answers 204 and this resolves to null. Callers render an empty state; they must not treat the
+   * absence of a report as a failure.
+   */
+  getGeneralExpenseReport: async (visitInstanceId: number): Promise<VisitExpenseReport | null> => {
+    const res = await apiClient.get<VisitExpenseReport | ''>(`/VisitExpenses/general/${visitInstanceId}`);
+    return res.status === 204 || !res.data ? null : (res.data as VisitExpenseReport);
+  },
+
+  /** Opens the general report. Host only, AFTER_VISIT only, idempotent on the server. */
+  initializeGeneralExpenseReport: async (visitInstanceId: number): Promise<VisitExpenseReport> => {
+    const res = await apiClient.post<VisitExpenseReport>(`/VisitExpenses/general/${visitInstanceId}/initialize`);
     return res.data;
   },
 

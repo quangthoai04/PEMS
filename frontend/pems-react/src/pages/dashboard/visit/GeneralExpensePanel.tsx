@@ -25,6 +25,12 @@ interface Props {
   visitInstanceId: number;
   isReadOnly?: boolean;
   sectionNumber?: string | number;
+  /**
+   * The campus instance's lifecycle status. The panel needs it to tell "there is no report yet
+   * because the visit has not finished" from "there is no report and there never will be" — those
+   * are two different empty states, and neither is an error.
+   */
+  instanceStatus?: string;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -40,8 +46,9 @@ const HOST_ORIGIN_OPTIONS = ['ADDITIONAL', 'DAMAGE_LOSS', 'OTHER'] as const;
 
 const EXPENSE_ELIGIBLE_STATUSES = new Set(['ACCEPTED', 'IN_PROGRESS', 'DONE']);
 
-export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, sectionNumber }: Props) {
+export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, sectionNumber, instanceStatus }: Props) {
   const [report, setReport] = useState<VisitExpenseReport | null>(null);
+  const [initializing, setInitializing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const [summary, setSummary] = useState<VisitInstanceExpenseSummary | null>(null);
   const [logisticsItems, setLogisticsItems] = useState<VisitInstanceLogisticsItem[]>([]);
@@ -55,33 +62,43 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
   const [lastRemindSent, setLastRemindSent] = useState<{ count: number; recipients: string[]; sentAt: string } | null>(null);
   const [remindNote, setRemindNote] = useState('');
 
+  /** Loads the report into the editable state, or clears it when there is none yet. */
+  const applyReport = (general: VisitExpenseReport | null) => {
+    setReport(general);
+    setReportNote(general?.reportNote || '');
+    setItems((general?.items || []).map(it => ({
+      expenseItemId: it.expenseItemId,
+      itemOrigin: it.itemOrigin,
+      itemName: it.itemName,
+      description: it.description,
+      quantity: it.quantity,
+      unitName: it.unitName,
+      unitPrice: it.unitPrice,
+      itemNote: it.itemNote,
+      displayOrder: it.displayOrder,
+    })));
+  };
+
   const fetchAll = async () => {
     try {
       setLoading(true);
+      // Read only. Nothing here creates a report: merely opening this tab used to POST-in-disguise and
+      // fail with a 403 toast on any campus that was not exactly at AFTER_VISIT.
       const [general, sum, logistics] = await Promise.all([
         visitExpenseService.getGeneralExpenseReport(visitInstanceId),
         visitExpenseService.getExpenseSummary(visitInstanceId),
         delegationsApi.getInstanceLogistics(visitInstanceId).catch(() => ({ items: [] as VisitInstanceLogisticsItem[] })),
       ]);
-      setReport(general);
       setSummary(sum);
       setLogisticsItems((logistics.items || []).filter(
         (i) => i.coordinationMode === 'SYSTEM_REQUEST' && EXPENSE_ELIGIBLE_STATUSES.has(i.status),
       ));
-      setReportNote(general.reportNote || '');
-      setItems(general.items.map(it => ({
-        expenseItemId: it.expenseItemId,
-        itemOrigin: it.itemOrigin,
-        itemName: it.itemName,
-        description: it.description,
-        quantity: it.quantity,
-        unitName: it.unitName,
-        unitPrice: it.unitPrice,
-        itemNote: it.itemNote,
-        displayOrder: it.displayOrder,
-      })));
+      applyReport(general);
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || 'Lỗi khi tải thông tin chi phí.');
+      // One id per instance: a re-render or a second mount cannot stack identical toasts.
+      toast.error(e?.response?.data?.message || 'Lỗi khi tải thông tin chi phí.', {
+        id: `expense-load-${visitInstanceId}`,
+      });
     } finally {
       setLoading(false);
     }
@@ -91,6 +108,20 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
     fetchAll();
     // eslint-disable-next-line
   }, [visitInstanceId]);
+
+  const handleInitialize = async () => {
+    try {
+      setInitializing(true);
+      applyReport(await visitExpenseService.initializeGeneralExpenseReport(visitInstanceId));
+      toast.success('Đã khởi tạo bảng chi phí chung.');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message || 'Không thể khởi tạo bảng chi phí.', {
+        id: `expense-init-${visitInstanceId}`,
+      });
+    } finally {
+      setInitializing(false);
+    }
+  };
 
   // In bảng thống kê: mount vùng in xong mới gọi window.print.
   useEffect(() => {
@@ -112,9 +143,12 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
     );
   }
 
-  if (!report) return null;
-
-  const readonly = isReadOnly || report.status === 'FINALIZED' || report.status === 'CANCELLED';
+  // No report is a STATE, not a failure. The panel still renders — the department declarations below
+  // exist independently of the Host's own sheet, and the reader came here to see them.
+  const readonly = isReadOnly || report?.status === 'FINALIZED' || report?.status === 'CANCELLED';
+  // The one place a report may be opened, mirroring the server's rule so the button is not offered
+  // where the call would be refused. The server re-checks; this only avoids a doomed request.
+  const canInitialize = !report && !isReadOnly && instanceStatus === 'AFTER_VISIT';
 
   // Bảng kê phòng ban (đồng bộ từ đơn yêu cầu) — ghép trạng thái từng đơn.
   const deptReports = summary?.logisticsReports || [];
@@ -309,6 +343,36 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
           <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
             <DollarSign className="w-3.5 h-3.5 text-[#f37021]" /> Chi phí chung (người phụ trách kê khai)
           </h3>
+          {!report ? (
+            /* Chưa có bảng chi phí chung. Đây là trạng thái hợp lệ — không phải lỗi:
+               - đang ở giai đoạn trước/trong tiếp khách  → chưa tới lúc kê khai;
+               - đã đóng đoàn mà không kê khai            → chỉ xem, không tạo mới. */
+            <div
+              data-testid="general-expense-empty"
+              className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-4 text-center"
+            >
+              <p className="text-[11px] font-semibold text-slate-500">
+                {canInitialize
+                  ? 'Chưa có bảng chi phí chung cho chuyến này.'
+                  : instanceStatus === 'CLOSED'
+                    ? 'Chuyến thăm đã đóng và không có bảng chi phí chung nào được kê khai.'
+                    : 'Bảng chi phí chung sẽ khả dụng khi chuyến thăm chuyển sang giai đoạn "Sau tiếp khách".'}
+              </p>
+              {canInitialize && (
+                <button
+                  type="button"
+                  data-testid="general-expense-initialize"
+                  onClick={handleInitialize}
+                  disabled={initializing}
+                  className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#f37021] hover:opacity-90 text-white text-[11px] font-black rounded-lg transition-all shadow-sm cursor-pointer outline-none disabled:opacity-50"
+                >
+                  {initializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  Khởi tạo bảng chi phí
+                </button>
+              )}
+            </div>
+          ) : (
+          <>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-left border-collapse whitespace-nowrap text-xs">
               <thead className="bg-slate-50">
@@ -392,6 +456,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
               <Plus className="w-3.5 h-3.5" /> Thêm hạng mục
             </button>
           )}
+          </>
+          )}
         </div>
 
         {/* ── Tổng cộng + hành động ── */}
@@ -403,7 +469,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
           </span>
         </div>
 
-        {!readonly && (
+        {!readonly && report && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <input
               type="text"
@@ -435,7 +501,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
             </button>
           </div>
         )}
-        {readonly && (
+        {(readonly || !report) && (
           <div className="flex justify-end">
             <button type="button" onClick={() => setPrinting(true)}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold rounded-lg border border-slate-300 transition-colors cursor-pointer outline-none">

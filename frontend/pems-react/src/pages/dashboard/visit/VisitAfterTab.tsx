@@ -180,9 +180,15 @@ interface VisitAfterTabProps {
   isReadOnly?: boolean;
   isDept?: boolean;
   visitInstanceId?: number;
+  /**
+   * The campus instance's lifecycle status, passed straight through to the expense panel: whether a
+   * cost sheet may be opened at all is a lifecycle question, and guessing it from `isReadOnly` gets
+   * a CLOSED visit and a still-running one confused.
+   */
+  instanceStatus?: string;
 }
 
-export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false, visitInstanceId }: VisitAfterTabProps) {
+export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept = false, visitInstanceId, instanceStatus }: VisitAfterTabProps) {
   const navigate = useNavigate();
   const { t } = useTranslation('visitFaceScan');
   const { user } = useAuthContext();
@@ -324,7 +330,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
       {/* Chi phí chung (General Expense) */}
       {visitInstanceId && !isStudent && !isDept && (
-        <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} sectionNumber="2" />
+        <GeneralExpensePanel visitInstanceId={visitInstanceId} isReadOnly={isReadOnly} sectionNumber="2" instanceStatus={instanceStatus} />
       )}
 
       {/* Đánh giá chuyến thăm — chuyển từ tab Trong tiếp khách sang đây: đánh giá được thực hiện

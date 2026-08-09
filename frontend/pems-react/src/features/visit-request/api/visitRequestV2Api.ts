@@ -853,6 +853,11 @@ export interface VisitHistoryFieldChange {
   labelKey: string;
   beforeValue: string | null;
   afterValue: string | null;
+  /**
+   * True when there is no recorded previous value at all — not a previous value that was empty.
+   * "(trống)" for both would state that the field used to be blank, which nobody knows.
+   */
+  beforeUnknown?: boolean;
 }
 
 /** Someone joined the delegation, left it, or had their details corrected. */

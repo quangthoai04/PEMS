@@ -304,7 +304,17 @@
       "changeSummary": "Thay đổi nhân sự: +{{added}} thêm · −{{removed}} bớt · {{modified}} chỉnh sửa",
       "noChange": "Chưa thay đổi nhân sự so với nội dung đang hiệu lực."
     },
-    "submitted": "Đã gửi đề xuất thay đổi cho {{campus}}."
+    "submitted": "Đã gửi đề xuất thay đổi cho {{campus}}.",
+    "errRequired": "Vui lòng nhập thông tin này.",
+    "errPhoneFormat": "Số điện thoại không hợp lệ. Ví dụ: 0912345678 hoặc +84912345678.",
+    "errEndBeforeStart": "Giờ kết thúc phải sau giờ bắt đầu.",
+    "errTooShort": "Buổi làm việc phải kéo dài tối thiểu {{minutes}} phút.",
+    "errVisitorName": "Mỗi khách trong đoàn phải có họ tên.",
+    "errSupportName": "Mỗi nhân sự hỗ trợ phải có họ tên.",
+    "errFixFields": "Vui lòng sửa các trường được đánh dấu bên dưới trước khi gửi đề xuất.",
+    "errContactEmailNotAmendable": "Không thể đổi email đầu mối qua đề xuất thay đổi. Hãy dùng \"Chỉnh sửa đầu mối\" của cơ sở.",
+    "errInvalidVisitTime": "Khung giờ đề xuất không hợp lệ. Vui lòng kiểm tra lại giờ bắt đầu và kết thúc.",
+    "errValidation": "Dữ liệu đề xuất chưa hợp lệ. Vui lòng kiểm tra lại các trường đã nhập."
   },
   "safeEdit": {
     "open": "Sửa nhanh",
@@ -492,7 +502,17 @@
       "REQUEST_PENDING_EDIT_APPLIED": "{{actor}} đã sửa đơn khi còn đang chờ duyệt.",
       "INSTANCE_PENDING_EDIT_APPLIED": "{{actor}} đã sửa nội dung tại {{campus}} khi còn đang chờ duyệt — phiên bản {{formRevision}}.",
       "HOST_TRANSFERRED": "{{actor}} đã chuyển người phụ trách tiếp đón tại {{campus}}.",
-      "UNKNOWN": "Có một thay đổi khác được ghi nhận."
+      "UNKNOWN": "Có một thay đổi khác được ghi nhận.",
+      "CONTACT_INITIAL_CONFIRMATION_CREATED": "{{actor}} đã gửi lời mời xác nhận đầu mối tới {{email}} cho {{campus}}.",
+      "CONTACT_TRANSFER_REQUESTED": "{{actor}} đã gửi lời mời chuyển giao đầu mối tới {{email}} tại {{campus}}.",
+      "CONTACT_INVITATION_RESENT": "{{actor}} đã gửi lại lời mời đầu mối tới {{email}} cho {{campus}}.",
+      "CONTACT_INVITATION_CANCELLED": "{{actor}} đã hủy lời mời đầu mối gửi tới {{email}} tại {{campus}}.",
+      "CONTACT_INVITATION_SUPERSEDED": "Lời mời đầu mối trước đó tại {{campus}} đã bị thay thế bởi lời mời mới.",
+      "CONTACT_CONFIRMED": "{{email}} đã xác nhận và trở thành đầu mối của {{campus}}.",
+      "CONTACT_TRANSFER_ACCEPTED": "Đã chuyển giao vai trò đầu mối tại {{campus}} sang {{email}}.",
+      "CONTACT_CONFIRMATION_DECLINED": "{{email}} đã từ chối nhận vai trò đầu mối tại {{campus}}.",
+      "CONTACT_TRANSFER_DECLINED": "Người được mời đã từ chối nhận vai trò đầu mối tại {{campus}}.",
+      "CONTACT_INVITATION_EXPIRED": "Lời mời đầu mối gửi tới {{email}} tại {{campus}} đã hết hạn."
     }
   },
   "historyDetail": {
@@ -551,7 +571,19 @@
       "contactPersonFullName": "Họ tên đầu mối liên hệ (trường đã ngừng dùng)",
       "contactPersonOrganization": "Đơn vị đầu mối liên hệ (trường đã ngừng dùng)",
       "contactPersonPhone": "Điện thoại đầu mối liên hệ (trường đã ngừng dùng)",
-      "contactPersonEmail": "Email đầu mối liên hệ (trường đã ngừng dùng)"
+      "contactPersonEmail": "Email đầu mối liên hệ (trường đã ngừng dùng)",
+      "contactEmailMasked": "Email đầu mối (đã che)",
+      "identityChangeStatus": "Trạng thái lời mời",
+      "operationalContactJobTitle": "Chức vụ đầu mối"
+    },
+    "unknownBefore": "Không có dữ liệu lịch sử",
+    "identityStatus": {
+      "PENDING": "Đang chờ",
+      "APPLIED": "Đã áp dụng",
+      "DECLINED": "Đã từ chối",
+      "EXPIRED": "Đã hết hạn",
+      "CANCELLED": "Đã hủy",
+      "SUPERSEDED": "Đã bị thay thế"
     }
   },
   "revision": {
@@ -588,7 +620,9 @@
     "saveIdentityChange": "Đổi người & gửi lời mời xác nhận",
     "emailIdentityHint": "Giữ nguyên email: chỉ cập nhật thông tin, không gửi email xác nhận. Đổi email nghĩa là đổi người phụ trách và người mới phải xác nhận.",
     "replaceReopensGate": "Email mới khác email hiện tại nên đây là đổi người phụ trách: cơ sở này sẽ chờ người mới xác nhận, và toàn bộ đơn tạm dừng ở cổng xác nhận cho tới khi đủ đầu mối.",
-    "identityChangeNotAllowed": "Lúc này chưa thể đổi email đầu mối của cơ sở. Anh/chị vẫn sửa được họ tên, đơn vị, chức vụ và số điện thoại."
+    "identityChangeNotAllowed": "Lúc này chưa thể đổi email đầu mối của cơ sở. Anh/chị vẫn sửa được họ tên, đơn vị, chức vụ và số điện thoại.",
+    "cancelConfirmation": "Hủy lời mời xác nhận",
+    "noChangesHint": "Chưa có thay đổi nào so với thông tin hiện tại."
   },
   "outcome": {
     "title": "Tình trạng hiện tại",

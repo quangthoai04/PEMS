@@ -114,6 +114,17 @@ export const AmendmentErrorCode = {
   ApproverScopeForbidden: 'AMENDMENT_APPROVER_SCOPE_FORBIDDEN',
   WindowExpired: 'AMENDMENT_WINDOW_EXPIRED',
   ConcurrencyConflict: 'CONCURRENCY_CONFLICT',
+  /**
+   * What the amendment/safe-edit paths actually emit on a stale payload
+   * (`VisitFormV2ErrorCodes.VisitFormConcurrencyConflict`). The bare `CONCURRENCY_CONFLICT` above
+   * never matched it, so every stale-version refusal fell through to the generic "thử lại" — which
+   * is the one instruction guaranteed to fail again.
+   */
+  FormConcurrencyConflict: 'VISIT_FORM_CONCURRENCY_CONFLICT',
+  /** The proposal tried to change the contact's email; that moves only through the contact workflow. */
+  ContactEmailNotAmendable: 'CONTACT_EMAIL_NOT_AMENDABLE',
+  InvalidVisitTime: 'INVALID_VISIT_TIME',
+  ValidationError: 'VALIDATION_ERROR',
 } as const;
 
 export type AmendmentErrorCodeValue = (typeof AmendmentErrorCode)[keyof typeof AmendmentErrorCode];

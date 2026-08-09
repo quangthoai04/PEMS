@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import VisitRequestV2DetailView from '../components/v2/VisitRequestV2DetailView';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -105,10 +105,34 @@ describe('VisitRequestV2DetailView', () => {
 
     expect(await screen.findByText('Varies by campus')).toBeInTheDocument();
     expect(screen.getAllByLabelText(/Campus detail/)).toHaveLength(2);
-    // Each card shows ITS campus content — HCM never inherits HN's delegation name:
+    // Two campuses → accordion: the first is open, the second closed. What a closed campus still
+    // shows is the point of the design — name, status, amendment badge and planned time stay on the
+    // header, so the reader can pick the right campus without opening all of them.
     expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
-    expect(screen.getByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
+    expect(screen.queryByText('Đoàn HCM khác hẳn')).not.toBeInTheDocument();
+    expect(screen.getByText('FPTU Hồ Chí Minh')).toBeInTheDocument();
+    expect(screen.getByTestId('campus-status-11')).toBeInTheDocument();
+
+    // Opening HCM shows ITS content — it never inherits HN's delegation name — and closes HN.
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-11'));
+    expect(await screen.findByText('Đoàn HCM khác hẳn')).toBeInTheDocument();
     expect(screen.getByText('Host HCM')).toBeInTheDocument();
+    expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
+
+    // Clicking the open campus again closes everything — a deliberate state, not a bounce back to
+    // campus 1.
+    fireEvent.click(screen.getByTestId('campus-detail-toggle-11'));
+    expect(screen.queryByText('Đoàn HCM khác hẳn')).not.toBeInTheDocument();
+    expect(screen.queryByText('Đoàn ĐH ABC')).not.toBeInTheDocument();
+  });
+
+  it('a single-campus request is NOT collapsible — its one card is open with no chevron', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.getByText('Đoàn ĐH ABC')).toBeInTheDocument();
+    expect(screen.queryByTestId('campus-detail-toggle-10')).toBeNull();
   });
 
   it('scoped payload is rendered verbatim: a single-campus response for an instance-scoped viewer shows ONE card and no sibling hints', async () => {
@@ -353,6 +377,11 @@ describe('VisitRequestV2DetailView', () => {
       const cards = screen.getAllByLabelText(/Campus detail/);
       expect(cards.length, label).toBe(overrides.campusVisits?.length ?? 1);
       for (const card of cards) {
+        // On a multi-campus request the cards are an accordion, so a closed one has to be opened
+        // before its contact block exists. The claim under test is that EVERY campus carries its own
+        // contact — not that every campus renders it simultaneously.
+        const toggle = within(card).queryByRole('button', { expanded: false });
+        if (toggle) fireEvent.click(toggle);
         expect(within(card).getByText('Đầu Mối HN'), label).toBeInTheDocument();
       }
       unmount();

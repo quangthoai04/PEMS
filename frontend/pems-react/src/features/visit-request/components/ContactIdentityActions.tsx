@@ -180,8 +180,30 @@ export default function ContactIdentityActions({
   /** True when the typed address is a DIFFERENT identity from the stored one (case/space-insensitive). */
   const identityChanging = form != null && !isSameEmailIdentity(form.email, contactEmail);
 
+  /**
+   * Whether the form still says exactly what it opened on.
+   *
+   * The server already refuses a no-op save with PROFILE_NO_CHANGES, and it should — but a user who
+   * opened the panel, read it and pressed Lưu was getting that refusal as a red toast for doing
+   * nothing wrong. Compared on the same terms the server uses: trimmed, and the address as an
+   * identity rather than as a string, so a stray space is not "a change".
+   */
+  const unchanged =
+    form != null
+    && form.fullName.trim() === (contact.fullName ?? '').trim()
+    && form.organization.trim() === (contact.organization ?? '').trim()
+    && form.jobTitle.trim() === (contact.jobTitle ?? '').trim()
+    && form.phone.trim() === (contact.phone ?? '').trim()
+    && isSameEmailIdentity(form.email, contactEmail);
+
   const submitForm = () => {
     if (!form) return;
+    // Nothing moved → close, and send nothing. A request whose only possible answer is "you changed
+    // nothing" is a request not worth making.
+    if (unchanged) {
+      closeForm();
+      return;
+    }
     if (identityChanging && !can.changeIdentity) {
       setEmailError(t('visitRequestV2:contact.identityChangeNotAllowed'));
       return;
@@ -317,7 +339,10 @@ export default function ContactIdentityActions({
         </button>
         <button
           type="submit"
-          disabled={busy}
+          // Disabled while nothing has moved: the alternative is a button that looks live, sends a
+          // request and comes back with an error for a form the user did not touch.
+          disabled={busy || unchanged}
+          title={unchanged ? t('visitRequestV2:contact.noChangesHint') : undefined}
           data-testid="contact-form-submit"
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white hover:bg-[#e0631a] disabled:opacity-50"
         >
@@ -334,6 +359,20 @@ export default function ContactIdentityActions({
 
   const pendingTransfer = state?.pendingChangeKind === 'TRANSFER';
   const pendingLive = state?.pendingChangeStatus === 'PENDING';
+
+  /**
+   * WHICH invitation is in flight, so the cancel button says what it cancels.
+   *
+   * A campus whose contact has never confirmed is waiting on an INITIAL_CONFIRMATION; only a campus
+   * that already has a confirmed contact can be mid-TRANSFER. Calling both "hủy lời mời chuyển giao"
+   * told the first group they were handing over a role nobody holds yet. If the state could not be
+   * read, the contact's own confirmation status is the honest fallback — the same fact the server
+   * derives the kind from.
+   */
+  const pendingKind = state?.pendingChangeKind ?? (contactConfirmed ? 'TRANSFER' : 'INITIAL_CONFIRMATION');
+  const cancelLabel = pendingKind === 'TRANSFER'
+    ? t('visitRequestV2:contact.cancelTransfer')
+    : t('visitRequestV2:contact.cancelConfirmation');
 
   return (
     <div
@@ -432,7 +471,7 @@ export default function ContactIdentityActions({
               className="rounded-lg border border-red-300 px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
               onClick={() => void run(() => cancelOperationalContactChange(visitRequestId, visitInstanceId))}
             >
-              {t('visitRequestV2:contact.cancelTransfer')}
+              {cancelLabel}
             </button>
           )}
         </div>

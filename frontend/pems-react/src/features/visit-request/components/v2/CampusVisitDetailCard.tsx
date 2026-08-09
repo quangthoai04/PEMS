@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, Clock } from 'lucide-react';
+import { Building2, ChevronDown, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ResolvedCampusVisit } from '../../api/visitRequestV2Api';
 import ContactIdentityActions from '../ContactIdentityActions';
@@ -21,6 +21,15 @@ interface Props {
   visitRequestId?: number;
   /** Called after a contact mutation so the caller can refetch. */
   onContactChanged?: () => void;
+  /**
+   * Turns the header into a disclosure control. Used only where there is more than one campus: a
+   * single-campus request has nothing to collapse against, and hiding its one card behind a chevron
+   * adds a click to reach the only thing on the screen.
+   */
+  collapsible?: boolean;
+  /** Whether the body is shown. Ignored unless `collapsible`. */
+  expanded?: boolean;
+  onToggle?: () => void;
   /** Optional slot rendered under the decision block (e.g. the pending-amendment panel). */
   children?: React.ReactNode;
 }
@@ -35,9 +44,12 @@ interface Props {
  * collapsed toggle, because "who is coming" is the first thing anyone opens this card for.
  */
 export const CampusVisitDetailCard: React.FC<Props> = ({
-  campus, visitRequestId, onContactChanged, children,
+  campus, visitRequestId, onContactChanged, collapsible = false, expanded = true, onToggle, children,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
+  // A non-collapsible card is always open; there is no state in which its body is hidden.
+  const bodyShown = !collapsible || expanded;
+  const bodyId = `campus-detail-body-${campus.visitInstanceId}`;
 
   const visitTypeLabel = campus.visitType === 'OTHER' && campus.visitTypeOther
     ? campus.visitTypeOther
@@ -90,30 +102,62 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
       aria-label={t('visitRequestV2:detail.cardAria', { campus: campus.campusName })}
       className="overflow-hidden rounded-xl border border-[#004c91]/20 bg-white shadow-sm"
     >
-      {/* Campus header — the campus, where it stands, and when. */}
-      <div className="flex flex-wrap items-center gap-2 bg-[#004c91] px-4 py-2.5">
-        <Building2 className="h-4 w-4 shrink-0 text-white" aria-hidden />
-        <h3 className="text-sm font-bold uppercase tracking-tight text-white">{campus.campusName}</h3>
-        <VisitStatusBadge
-          kind="instance"
-          status={campus.instanceStatus}
-          data-testid={`campus-status-${campus.visitInstanceId}`}
-          className="ring-0"
-        />
-        {campus.activeAmendment && (
-          <span className="rounded-full bg-[#f37021] px-2.5 py-0.5 text-xs font-bold text-white" role="status">
-            {t('visitRequestV2:detail.amendmentBadge', { no: campus.activeAmendment.amendmentNo })}
+      {/* Campus header — the campus, where it stands, and when.
+          Everything here stays visible when the card is collapsed, deliberately: which campus, what
+          state it is in, whether a change is waiting and when it happens are exactly the facts
+          somebody scans a multi-campus request for, and a closed row that showed only a name would
+          force them to open all three to find the one they wanted. */}
+      {React.createElement(
+        collapsible ? 'button' : 'div',
+        {
+          ...(collapsible
+            ? {
+                type: 'button' as const,
+                onClick: onToggle,
+                'aria-expanded': expanded,
+                'aria-controls': bodyId,
+                'data-testid': `campus-detail-toggle-${campus.visitInstanceId}`,
+              }
+            : {}),
+          className:
+            'flex w-full flex-wrap items-center gap-2 bg-[#004c91] px-4 py-2.5 text-left'
+            + (collapsible ? ' cursor-pointer hover:bg-[#003a70] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white' : ''),
+        },
+        <>
+          <Building2 className="h-4 w-4 shrink-0 text-white" aria-hidden />
+          <h3 className="text-sm font-bold uppercase tracking-tight text-white">{campus.campusName}</h3>
+          <VisitStatusBadge
+            kind="instance"
+            status={campus.instanceStatus}
+            data-testid={`campus-status-${campus.visitInstanceId}`}
+            className="ring-0"
+          />
+          {campus.activeAmendment && (
+            <span className="rounded-full bg-[#f37021] px-2.5 py-0.5 text-xs font-bold text-white" role="status">
+              {t('visitRequestV2:detail.amendmentBadge', { no: campus.activeAmendment.amendmentNo })}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1 text-xs font-medium text-white/90">
+            <Clock className="h-3.5 w-3.5" aria-hidden />
+            <time dateTime={campus.plannedStartAt}>{formatVietnamDateTime(campus.plannedStartAt)}</time>
+            {' → '}
+            <time dateTime={campus.plannedEndAt}>{formatVietnamDateTime(campus.plannedEndAt)}</time>
           </span>
-        )}
-        <span className="ml-auto flex items-center gap-1 text-xs font-medium text-white/90">
-          <Clock className="h-3.5 w-3.5" aria-hidden />
-          <time dateTime={campus.plannedStartAt}>{formatVietnamDateTime(campus.plannedStartAt)}</time>
-          {' → '}
-          <time dateTime={campus.plannedEndAt}>{formatVietnamDateTime(campus.plannedEndAt)}</time>
-        </span>
-      </div>
+          {collapsible && (
+            <ChevronDown
+              aria-hidden
+              className={`h-4 w-4 shrink-0 text-white transition-transform ${expanded ? '' : '-rotate-90'}`}
+            />
+          )}
+        </>,
+      )}
 
-      <div className="space-y-5 p-4 sm:p-5">
+      {/* Collapsed campuses are not rendered at all rather than hidden with CSS: each body mounts a
+          contact panel that fetches its own state, and three campuses meant three requests for two
+          cards nobody was looking at. The deep-link handler in the parent expands the target campus
+          BEFORE it scrolls, so nothing ever scrolls to an element that is not there. */}
+      {bodyShown && (
+      <div id={bodyId} className="space-y-5 p-4 sm:p-5">
         <ReadOnlyInfoGrid rows={rows} />
 
         <PersonListTable
@@ -219,6 +263,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
 
         {children}
       </div>
+      )}
     </section>
   );
 };

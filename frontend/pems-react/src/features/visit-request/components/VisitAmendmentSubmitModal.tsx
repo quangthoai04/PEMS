@@ -9,6 +9,7 @@ import {
 } from '../api/visitRequestV2Api';
 import { AmendmentErrorCode, errorCodeOf } from '../utils/visitV2Actions';
 import { showSuccessToast } from '../../../shared/utils/toast';
+import { isValidPhone } from '../../../shared/utils/phoneNumber';
 
 interface Props {
   visitRequestId: number;
@@ -19,6 +20,15 @@ interface Props {
 
 /** ISO (+07:00) → "YYYY-MM-DDTHH:mm" wall-clock for a datetime-local input (no timezone shift). */
 const toLocalInput = (iso: string): string => (iso ? iso.slice(0, 16) : '');
+
+/** Mirrors VisitAmendmentService.MinDurationMinutes — the server stays the authority. */
+const MIN_DURATION_MINUTES = 30;
+
+/** Which fields a proposal can be wrong in. Keyed so each message renders under its own input. */
+type FieldErrors = Partial<Record<
+  'delegationName' | 'visitTypeOther' | 'purpose' | 'start' | 'end' | 'contactPhone' | 'visitors' | 'reason',
+  string
+>>;
 
 /** A member row with a STABLE client key (never the array index) so add/remove keeps React identity. */
 interface EditableMember {
@@ -88,6 +98,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   // Stable keys for freshly-added rows; the original snapshots anchor the add/remove/modify diff.
   const keySeq = useRef(0);
@@ -128,17 +139,71 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
         return t('visitRequestV2:amend.errNotEditable');
       case AmendmentErrorCode.BaseRevisionConflict:
       case AmendmentErrorCode.ConcurrencyConflict:
+      case AmendmentErrorCode.FormConcurrencyConflict:
         return t('visitRequestV2:amend.errConflict');
       case AmendmentErrorCode.ApproverScopeForbidden:
         return t('visitRequestV2:amend.errApproverScopeForbidden');
       case AmendmentErrorCode.NoChanges:
         return t('visitRequestV2:amend.errNoChanges');
+      case AmendmentErrorCode.ContactEmailNotAmendable:
+        return t('visitRequestV2:amend.errContactEmailNotAmendable');
+      case AmendmentErrorCode.InvalidVisitTime:
+        return t('visitRequestV2:amend.errInvalidVisitTime');
+      case AmendmentErrorCode.ValidationError:
+        return t('visitRequestV2:amend.errValidation');
       default:
         return t('visitRequestV2:amend.errGeneric');
     }
   };
 
+  /**
+   * Everything that can be judged wrong from here, judged here.
+   *
+   * The backend re-validates all of it — this is not a substitute for that. It exists because the
+   * round trip came back with one sentence ("Không thể gửi đề xuất. Vui lòng thử lại.") for a phone
+   * number with letters in it, an end time before its start, and a visitor row with no name, leaving
+   * the user to guess which of a dozen inputs the server disliked.
+   */
+  const validate = (): FieldErrors => {
+    const errors: FieldErrors = {};
+    if (!delegationName.trim()) errors.delegationName = t('visitRequestV2:amend.errRequired');
+    if (!purpose.trim()) errors.purpose = t('visitRequestV2:amend.errRequired');
+    if (visitType === 'OTHER' && !visitTypeOther.trim()) errors.visitTypeOther = t('visitRequestV2:amend.errRequired');
+    if (!reason.trim()) errors.reason = t('visitRequestV2:amend.errRequired');
+
+    // Optional, but if given it must be a number somebody can actually ring.
+    if (opContact.phone?.trim() && !isValidPhone(opContact.phone)) {
+      errors.contactPhone = t('visitRequestV2:amend.errPhoneFormat');
+    }
+
+    if (!start) errors.start = t('visitRequestV2:amend.errRequired');
+    if (!end) errors.end = t('visitRequestV2:amend.errRequired');
+    if (start && end) {
+      // Wall-clock strings, compared as wall clock: PEMS stores Vietnam local time, and putting these
+      // through the browser's timezone is how a valid slot becomes an invalid one abroad.
+      const startMs = new Date(start).getTime();
+      const endMs = new Date(end).getTime();
+      if (!Number.isNaN(startMs) && !Number.isNaN(endMs)) {
+        if (endMs <= startMs) errors.end = t('visitRequestV2:amend.errEndBeforeStart');
+        else if (endMs - startMs < MIN_DURATION_MINUTES * 60_000)
+          errors.end = t('visitRequestV2:amend.errTooShort', { minutes: MIN_DURATION_MINUTES });
+      }
+    }
+
+    if (visitors.length === 0) errors.visitors = t('visitRequestV2:amend.members.needOne');
+    else if (visitors.some(v => !v.fullName.trim())) errors.visitors = t('visitRequestV2:amend.errVisitorName');
+    else if (support.some(s => !s.fullName.trim())) errors.visitors = t('visitRequestV2:amend.errSupportName');
+
+    return errors;
+  };
+
   const submit = async () => {
+    const errors = validate();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setError(t('visitRequestV2:amend.errFixFields'));
+      return;
+    }
     setBusy(true);
     setError(null);
     const payload: AmendmentProposalPayload = {
@@ -182,6 +247,14 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
 
   const field = 'w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2 text-sm';
   const cell = 'rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 p-2 text-sm';
+
+  /** The message for one field, rendered directly under the input it belongs to. */
+  const fieldError = (key: keyof FieldErrors) =>
+    fieldErrors[key] ? (
+      <p role="alert" data-testid={`amendment-error-${key}`} className="mt-1 text-xs font-semibold text-red-600">
+        {fieldErrors[key]}
+      </p>
+    ) : null;
 
   const memberEditor = (
     kind: 'visitors' | 'support',
@@ -252,7 +325,8 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.delegationName')}</span>
-            <input data-testid="amendment-delegation-input" className={field} value={delegationName} onChange={e => setDelegationName(e.target.value)} />
+            <input data-testid="amendment-delegation-input" className={field} value={delegationName} onChange={e => setDelegationName(e.target.value)} aria-invalid={fieldErrors.delegationName ? true : undefined} />
+            {fieldError('delegationName')}
           </label>
           <label className="text-sm">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.visitType')}</span>
@@ -263,16 +337,19 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           {visitType === 'OTHER' && (
             <label className="text-sm">
               <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:card.visitTypeOther')}</span>
-              <input className={field} value={visitTypeOther} onChange={e => setVisitTypeOther(e.target.value)} />
+              <input className={field} value={visitTypeOther} onChange={e => setVisitTypeOther(e.target.value)} aria-invalid={fieldErrors.visitTypeOther ? true : undefined} />
+              {fieldError('visitTypeOther')}
             </label>
           )}
           <label className="text-sm">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.schedule')} ({t('visitRequestV2:card.startAt')})</span>
-            <input type="datetime-local" className={field} value={start} onChange={e => setStart(e.target.value)} />
+            <input type="datetime-local" className={field} value={start} onChange={e => setStart(e.target.value)} aria-invalid={fieldErrors.start ? true : undefined} />
+            {fieldError('start')}
           </label>
           <label className="text-sm">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:card.endAt')}</span>
-            <input type="datetime-local" className={field} value={end} onChange={e => setEnd(e.target.value)} />
+            <input type="datetime-local" className={field} value={end} onChange={e => setEnd(e.target.value)} aria-invalid={fieldErrors.end ? true : undefined} />
+            {fieldError('end')}
           </label>
           <label className="text-sm">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.workingLanguage')}</span>
@@ -283,7 +360,8 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           </label>
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.purpose')}</span>
-            <textarea className={field} rows={2} value={purpose} onChange={e => setPurpose(e.target.value)} />
+            <textarea className={field} rows={2} value={purpose} onChange={e => setPurpose(e.target.value)} aria-invalid={fieldErrors.purpose ? true : undefined} />
+            {fieldError('purpose')}
           </label>
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.workingContent')}</span>
@@ -311,12 +389,13 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.operationalContact')}</span>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <input className={field} placeholder={t('visitRequestV2:person.fullName', 'Họ tên')} value={opContact.fullName} onChange={e => setOpContact({ ...opContact, fullName: e.target.value })} />
-              <input className={field} placeholder={t('visitRequestV2:card.phone')} value={opContact.phone} onChange={e => setOpContact({ ...opContact, phone: e.target.value })} />
+              <input className={field} placeholder={t('visitRequestV2:card.phone')} value={opContact.phone} onChange={e => setOpContact({ ...opContact, phone: e.target.value })} aria-invalid={fieldErrors.contactPhone ? true : undefined} />
             </div>
           </label>
           <label className="text-sm sm:col-span-2">
             <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:amend.reason')} <span className="text-red-500">*</span></span>
-            <textarea data-testid="amendment-reason" className={field} rows={2} value={reason} onChange={e => setReason(e.target.value)} required />
+            <textarea data-testid="amendment-reason" className={field} rows={2} value={reason} onChange={e => setReason(e.target.value)} required aria-invalid={fieldErrors.reason ? true : undefined} />
+            {fieldError('reason')}
           </label>
         </div>
 

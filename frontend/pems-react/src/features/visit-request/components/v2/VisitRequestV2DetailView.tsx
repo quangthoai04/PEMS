@@ -52,6 +52,21 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const [safeEditOpen, setSafeEditOpen] = useState(false);
   const [amendCampus, setAmendCampus] = useState<ResolvedCampusVisit | null>(null);
   const [transferCampus, setTransferCampus] = useState<HostTransferTarget | null>(null);
+  // The timeline fetches for itself, so reloading this screen's data does not reload it. Anything that
+  // writes history bumps this instead of only calling load(): a user who cancels an invitation and
+  // watches the timeline below not mention it reasonably concludes the cancel did not happen.
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+  /**
+   * The reader's own choice of which campus card is open, on a request that has more than one.
+   *
+   * Three states, deliberately: `undefined` means they have not chosen and the default applies, a
+   * number is the campus they opened, and `null` is "I closed them all" — a choice, which is why it
+   * cannot share a value with "hasn't chosen". The default is resolved during render rather than
+   * written in by an effect, so the first paint already has campus 1 open instead of flashing every
+   * card shut; and because the choice is state rather than something recomputed from `data`, a
+   * background reload cannot pull the reader off the campus they were reading.
+   */
+  const [campusChoice, setCampusChoice] = useState<number | null | undefined>(undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +84,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  /** Reload after a mutation that writes to BOTH the request and its history. */
+  const reloadWithHistory = useCallback(async () => {
+    await load();
+    setHistoryRefreshKey(v => v + 1);
   }, [load]);
 
   // Mark the request's changes seen once the detail has actually rendered. Deliberately here and not
@@ -100,14 +121,34 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, navigate, visitRequestId]);
 
+  // Which campus is actually open right now: the reader's choice if they have made one, otherwise
+  // the first campus — and only on a request that HAS more than one, since a lone card is never
+  // collapsible. Computed, not stored, so it is correct on the very first paint.
+  const multipleCampuses = (data?.campusVisits.length ?? 0) > 1;
+  const openCampusId = campusChoice !== undefined
+    ? campusChoice
+    : (multipleCampuses ? data!.campusVisits[0].visitInstanceId : null);
+
   // Deep link from the edit form's "Thay đổi đầu mối": the campus contact panels are far down a long
   // screen and only exist once the request has loaded, so the scroll waits for the data rather than
   // firing at mount and landing on a skeleton.
+  //
+  // With the accordion, the target campus may be closed — and a closed card renders no body, so the
+  // anchor does not exist yet. The campus is opened first, and the scroll runs on the pass AFTER
+  // that state has rendered; scrolling in the same pass would find nothing and silently do nothing.
   useEffect(() => {
     if (!data || !location.hash) return;
-    const target = document.getElementById(location.hash.slice(1));
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [data, location.hash]);
+    const anchor = location.hash.slice(1);
+    const match = /^contact-(\d+)$/.exec(anchor);
+    const targetInstanceId = match ? Number(match[1]) : null;
+    if (targetInstanceId != null && multipleCampuses
+        && data.campusVisits.some(c => c.visitInstanceId === targetInstanceId)
+        && openCampusId !== targetInstanceId) {
+      setCampusChoice(targetInstanceId);
+      return; // the element appears on the next render; this effect re-runs and scrolls then
+    }
+    document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [data, location.hash, multipleCampuses, openCampusId]);
 
   if (loading) {
     return (
@@ -271,6 +312,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         ) : (
           <div className="space-y-4">
             {data.campusVisits.map(cv => {
+              // Only a request with more than one campus gets the accordion. One campus has nothing
+              // to collapse against, and putting its single card behind a chevron would add a click
+              // to reach the only thing on the page.
+              const collapsible = multipleCampuses;
+              const expanded = !collapsible || openCampusId === cv.visitInstanceId;
               const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
               const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
               const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
@@ -289,7 +335,14 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                   key={cv.visitInstanceId}
                   campus={cv}
                   visitRequestId={data.visitRequestId}
-                  onContactChanged={() => void load()}
+                  onContactChanged={() => void reloadWithHistory()}
+                  collapsible={collapsible}
+                  expanded={expanded}
+                  // Clicking the open campus closes it: "show me nothing but the headers" is a real
+                  // thing to want on a request with several campuses.
+                  onToggle={() => setCampusChoice(
+                    openCampusId === cv.visitInstanceId ? null : cv.visitInstanceId,
+                  )}
                 >
                   {cv.activeAmendment && (canDecide || canWithdraw) && (
                     <VisitAmendmentPanel
@@ -297,7 +350,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       visitInstanceId={cv.visitInstanceId}
                       canDecide={canDecide}
                       canWithdraw={canWithdraw}
-                      onChanged={() => void load()}
+                      onChanged={() => void reloadWithHistory()}
                     />
                   )}
                   <div className="flex flex-wrap items-start gap-2">
@@ -371,14 +424,14 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         readOnlyLabel={t('visitRequestV2:detail.readOnly')}
         data-testid="section-history"
       >
-        <VisitHistoryTimeline visitRequestId={data.visitRequestId} />
+        <VisitHistoryTimeline visitRequestId={data.visitRequestId} refreshKey={historyRefreshKey} />
       </VisitSectionCard>
 
       {safeEditOpen && (
         <VisitSafeEditModal
           form={data}
           onClose={() => setSafeEditOpen(false)}
-          onSaved={() => { setSafeEditOpen(false); void load(); }}
+          onSaved={() => { setSafeEditOpen(false); void reloadWithHistory(); }}
         />
       )}
       {amendCampus && (
@@ -386,14 +439,14 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           visitRequestId={data.visitRequestId}
           campus={amendCampus}
           onClose={() => setAmendCampus(null)}
-          onSubmitted={() => { setAmendCampus(null); void load(); }}
+          onSubmitted={() => { setAmendCampus(null); void reloadWithHistory(); }}
         />
       )}
       {transferCampus && (
         <VisitHostTransferModal
           campus={transferCampus}
           onClose={() => setTransferCampus(null)}
-          onTransferred={() => { setTransferCampus(null); void load(); }}
+          onTransferred={() => { setTransferCampus(null); void reloadWithHistory(); }}
         />
       )}
     </div>

@@ -1855,7 +1855,7 @@ export function VisitProcess() {
           renderEmptyState()
         ) : (
           <>
-            <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} />
+            <VisitAfterTab onTourCloseSuccess={() => navigate('/dashboard/visit')} isReadOnly={afterReadOnly} isDept={isDept && !isStudent} visitInstanceId={perm?.visitInstanceId} instanceStatus={perm?.instanceStatus} />
             {/* §10 điều kiện đóng đoàn: nếu chuyến không có bài tin tức được duyệt, Host phải tích xác
                 nhận "không cần tin tức" thì mới đóng được (backend re-validate). */}
             {perm?.canCloseVisit && (
