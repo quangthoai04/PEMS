@@ -157,11 +157,22 @@ export function GoogleSignInButton({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const language = i18n.language;
 
+  // LoginForm passes `onError`/`onSuccess` as INLINE callbacks, recreated every render — and email/
+  // password keystrokes re-render LoginForm on every character. If this effect depended on them
+  // directly, every keystroke would re-run it: `containerRef.current.innerHTML = ''` then
+  // `renderButton(...)` again, visibly clearing and rebuilding the Google iframe button mid-typing —
+  // this IS the "giật giật" (jitter) while entering credentials. Reading the latest callbacks from a
+  // ref (same pattern as AgendaSetupPanel's notifyRef) lets the effect depend only on what actually
+  // changes what gets rendered — clientId and language — so typing never touches the button again.
+  const latestRef = React.useRef({ onError, onSuccess, navigate, loginWithGoogle, t });
+  latestRef.current = { onError, onSuccess, navigate, loginWithGoogle, t };
+
   useEffect(() => {
     if (!clientId) return;
 
     const handleCredential = async (response: { credential?: string }) => {
       if (!response.credential) return;
+      const { onError, onSuccess, navigate, loginWithGoogle, t } = latestRef.current;
 
       try {
         const user = await loginWithGoogle(response.credential);
@@ -221,7 +232,11 @@ export function GoogleSignInButton({
     script.id = 'google-gsi-script';
     script.onload = init;
     document.body.appendChild(script);
-  }, [clientId, loginWithGoogle, navigate, onError, onSuccess, language]);
+    // onError/onSuccess/navigate/loginWithGoogle/t are intentionally excluded: handleCredential reads
+    // their latest versions from latestRef, so only clientId/language (which change what the button
+    // actually renders) should re-run initialize/renderButton.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, language]);
 
   // No client id configured: do NOT silently disable. Keep the button clickable and
   // surface a clear, actionable error so SSO mis-config is obvious in dev.
@@ -242,7 +257,9 @@ export function GoogleSignInButton({
 
   return (
     <div className="relative w-full" key={language}>
-      <div ref={containerRef} className="w-full flex justify-center [&>div]:w-full" />
+      {/* min-h reserves the "large" GSI button's own height (40px) so the modal does not visibly
+          grow/recentre the instant the async google script finishes loading and renderButton fires. */}
+      <div ref={containerRef} className="w-full min-h-[40px] flex justify-center [&>div]:w-full" />
     </div>
   );
 }
