@@ -10,19 +10,21 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { publicPartnersApi } from '../../features/public-partners/api/publicPartnersApi';
 import { PublicPartner } from '../../features/public-partners/types/publicPartners.types';
-import { API_ENDPOINTS } from '../../shared/api/endpoints';
-import { resolveFileUrl } from '../../shared/utils/resolveFileUrl';
+import { usePublicPartnerImage } from '../../features/public-partners/hooks/usePublicPartnerImage';
 import { useTranslation } from 'react-i18next';
 
 const ITEMS_PER_PAGE = 18;
 
 function PartnerLogo({ partner }: { partner: PublicPartner }) {
-  const [failed, setFailed] = useState(false);
-  const src = !failed && partner.logoFileId
-    ? resolveFileUrl(API_ENDPOINTS.publicPartners.mediaContent(partner.logoFileId))
-    : null;
+  // `resolveFileUrl` expects a path that already has `/api` in it (the URLs it's designed for),
+  // but `mediaContent()` deliberately omits `/api` so it can be handed to httpClient (whose
+  // baseURL already carries it) — feeding that path through resolveFileUrl instead dropped the
+  // `/api` segment and 404'd, silently falling back to text for almost every partner logo.
+  // usePublicPartnerImage fetches through httpClient like PartnersPage's cards do, which is why
+  // those rendered correctly while this section didn't.
+  const logoUrl = usePublicPartnerImage(partner.logoFileId);
 
-  if (!src) {
+  if (!logoUrl) {
     return (
       <span className="text-sm font-semibold text-fpt-navy text-center px-2 line-clamp-2">
         {partner.shortName ?? partner.name}
@@ -32,10 +34,9 @@ function PartnerLogo({ partner }: { partner: PublicPartner }) {
 
   return (
     <img
-      src={src}
+      src={logoUrl}
       alt={partner.name}
       loading="lazy"
-      onError={() => setFailed(true)}
       className="max-w-full max-h-full object-contain transition-all duration-300"
     />
   );
