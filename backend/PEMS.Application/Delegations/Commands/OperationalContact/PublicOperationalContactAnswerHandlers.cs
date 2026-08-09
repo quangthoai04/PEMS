@@ -112,15 +112,17 @@ public sealed class PublicDeclineOperationalContactConfirmationCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ISender _sender;
     private readonly IEmailActionTokenService _tokens;
+    private readonly IDateTimeService _clock;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
 
     public PublicDeclineOperationalContactConfirmationCommandHandler(
         IApplicationDbContext db, ISender sender, IEmailActionTokenService tokens,
-        PerCampusFormV2WriteOptions writeFlag)
+        IDateTimeService clock, PerCampusFormV2WriteOptions writeFlag)
     {
         _db = db;
         _sender = sender;
         _tokens = tokens;
+        _clock = clock;
         _writeFlag = writeFlag;
     }
 
@@ -148,7 +150,10 @@ public sealed class PublicDeclineOperationalContactConfirmationCommandHandler
                 new DeclineOperationalContactConfirmationCommand(request.Token, request.Reason, userId),
                 cancellationToken);
 
+        // The no-account settlement is the one accept/decline path that does not go through the
+        // canonical command, so the clock it stamps with has to be handed to it — the same
+        // IDateTimeService.VietnamNow the canonical command reads, not this process's wall clock.
         return await PublicContactAnswer.DeclineWithoutAccountAsync(
-            _db, _tokens, change, request.Token, request.Reason, cancellationToken);
+            _db, _tokens, change, request.Token, request.Reason, _clock.VietnamNow, cancellationToken);
     }
 }

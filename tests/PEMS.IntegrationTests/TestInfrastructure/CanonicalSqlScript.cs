@@ -651,8 +651,36 @@ public static class CanonicalSqlScript
     // email_templates 33, email_contact_policies 34, news 3, notifications 29, audit_logs 17.
     //
     // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
+    //
+    // (2026-08-09) Repinned for the operational-contact invitation copy, F05. FOUR SENTENCES in TWO
+    // seed rows — VISIT_CONTACT_CLAIM (70015) and VISIT_CONTACT_TRANSFER (70016) — and nothing else in
+    // the script.
+    //
+    // Both bodies still told the reader the confirmation page "yêu cầu đăng nhập bằng đúng tài khoản
+    // Google của địa chỉ email này" / "asks you to sign in with the Google account of this email
+    // address". That has not been true since the passwordless cutover: the invitation now carries two
+    // one-time, action-bound links, the page mutates nothing on GET, and the invited guest — who
+    // typically has no PEMS account at all — confirms without signing in anywhere. The sentence
+    // described a barrier that no longer exists in front of the one action the whole contact gate waits
+    // on, so the copy was actively turning people away from a page that would have accepted them. The
+    // security notes move to the plural in the same pass, because there are two links, not one.
+    //
+    // Content only: no DDL, no trigger, no row added or removed, no id changed, and variables_text is
+    // untouched on both rows — no acceptUrl/declineUrl/token variable was introduced. {{actionBlock}}
+    // stays in all four bodies: the accept/decline URLs are credentials the backend mints at send time
+    // and injects as a trusted block, and an editable template must never own them.
+    //
+    // The same four sentences are rewritten identically in email-template-defaults.json (the
+    // source of truth) and in 02_sync_templates.sql, so the one-directional chain
+    // JSON → seed → sync script holds and EmailTemplateDefaultsParityTests stays green. An
+    // ALREADY-IMPORTED database is brought up by
+    // docs/database/scripts/patches/2026-08-09_visit_contact_no_login_email_copy.sql — a data-only,
+    // idempotent, sentence-level UPDATE of exactly these two rows. This script is NOT the way to
+    // deploy the change to a live database; it is the way a FRESH import gets it right.
+    //
+    // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
     public const string ExpectedSha256 =
-        "afac4dbbf03c200755b4bc7a6a66cd0a3375fddabfb5621b5245a7a71f65c70d";
+        "d0769429af2033659535bea460c7b2ee39b416dbbae2fcf94a3cd1f415aa5a1c";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

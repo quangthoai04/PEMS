@@ -41,16 +41,19 @@ public sealed class ReinviteOperationalContactConfirmationCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly IOperationalContactInvitationService _invitations;
+    private readonly IVisitRequestAggregateStatusService _aggregate;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
 
     public ReinviteOperationalContactConfirmationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IOperationalContactInvitationService invitations, PerCampusFormV2WriteOptions writeFlag)
+        IOperationalContactInvitationService invitations, IVisitRequestAggregateStatusService aggregate,
+        PerCampusFormV2WriteOptions writeFlag)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _invitations = invitations;
+        _aggregate = aggregate;
         _writeFlag = writeFlag;
     }
 
@@ -171,6 +174,17 @@ public sealed class ReinviteOperationalContactConfirmationCommandHandler
             instance.RowVersion += 1;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
+
+            // ── The campus was just put back behind the contact gate, and the REQUEST's status is a
+            //    function of its campuses — so it has to be re-derived from the state above, by the one
+            //    service that mirrors the DB trigger. Skipping it left the tracked request holding
+            //    whatever it said before (PENDING_APPROVAL, say) while a campus underneath it was
+            //    waiting for a contact again: the response answered with the old status, and — worse —
+            //    the gate revision never moved, so the approval-ready mail for the NEXT opening would
+            //    be deduped away as already sent. Apply also owns the ContactGateRevision bump; nothing
+            //    here touches it by hand. ──
+            _aggregate.Apply(visit);
+
             visit.UpdatedAt = now;
             visit.UpdatedBy = actorId;
 

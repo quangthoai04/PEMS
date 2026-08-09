@@ -286,7 +286,8 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
             {
                 var res = await ApproveHandler(db, Leader(LeaderHn, CampusHn), notifications).Handle(
-                    new ApproveCampusInstanceCommand(requestId, target.VisitInstanceId, IcStaffHn, "Đồng ý tiếp đoàn"),
+                    new ApproveCampusInstanceCommand(requestId, target.VisitInstanceId, IcStaffHn, "Đồng ý tiếp đoàn",
+                        target.RowVersion),
                     CancellationToken.None);
                 Assert.Equal(VisitInstanceStatus.Assigned, res.CampusStatus);
                 Assert.Equal(IcStaffHn, res.HostUserId);
@@ -351,11 +352,13 @@ public sealed class CampusApprovalDecisionV2Tests
 
             using (var db = NewContext())
                 await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                    new ApproveCampusInstanceCommand(requestId, state[CampusHn].VisitInstanceId, IcStaffHn, null),
+                    new ApproveCampusInstanceCommand(requestId, state[CampusHn].VisitInstanceId, IcStaffHn, null,
+                        state[CampusHn].RowVersion),
                     CancellationToken.None);
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                    new RejectCampusInstanceCommand(requestId, state[CampusHcm].VisitInstanceId, "Trùng lịch"),
+                    new RejectCampusInstanceCommand(requestId, state[CampusHcm].VisitInstanceId, "Trùng lịch",
+                        state[CampusHcm].RowVersion),
                     CancellationToken.None);
 
             using (var db = NewContext())
@@ -408,12 +411,14 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     ApproveHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                        new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null),
+                        new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null,
+                            before[CampusHn].RowVersion),
                         CancellationToken.None));
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                        new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Không tiếp"),
+                        new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Không tiếp",
+                            before[CampusHn].RowVersion),
                         CancellationToken.None));
 
             // A plain IC Staff is not a decider at all, even on their own campus.
@@ -421,7 +426,8 @@ public sealed class CampusApprovalDecisionV2Tests
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     ApproveHandler(db, new FakeUser(IcStaffHn, RoleCodes.Staff, UserSubRoles.Staff, CampusHn),
                             new RecordingNotifications())
-                        .Handle(new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null),
+                        .Handle(new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null,
+                            before[CampusHn].RowVersion),
                             CancellationToken.None));
 
             Assert.Equal(before, await StateAsync(requestId));
@@ -447,7 +453,8 @@ public sealed class CampusApprovalDecisionV2Tests
                 using var db = NewContext();
                 await Assert.ThrowsAsync<BusinessRuleException>(() =>
                     ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                        new ApproveCampusInstanceCommand(requestId, instanceId, hostUserId, null),
+                        new ApproveCampusInstanceCommand(requestId, instanceId, hostUserId, null,
+                            before[CampusHn].RowVersion),
                         CancellationToken.None));
             }
 
@@ -477,7 +484,8 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
             {
                 var res = await ApproveHandler(db, Leader(LeaderHn, CampusHn), notifications).Handle(
-                    new ApproveCampusInstanceCommand(requestId, state[CampusHn].VisitInstanceId, LeaderHn, null),
+                    new ApproveCampusInstanceCommand(requestId, state[CampusHn].VisitInstanceId, LeaderHn, null,
+                    state[CampusHn].RowVersion),
                     CancellationToken.None);
                 Assert.Equal(LeaderHn, res.HostUserId);
             }
@@ -504,7 +512,8 @@ public sealed class CampusApprovalDecisionV2Tests
 
             using (var db = NewContext())
                 await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                    new ApproveCampusInstanceCommand(requestId, instanceId, IcStaffHn, "Lần đầu"),
+                    new ApproveCampusInstanceCommand(requestId, instanceId, IcStaffHn, "Lần đầu",
+                        state[CampusHn].RowVersion),
                     CancellationToken.None);
             var afterFirst = await StateAsync(requestId);
 
@@ -512,12 +521,14 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ConflictException>(() =>
                     ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                        new ApproveCampusInstanceCommand(requestId, instanceId, 102, "Lần hai"),
+                        new ApproveCampusInstanceCommand(requestId, instanceId, 102, "Lần hai",
+                            afterFirst[CampusHn].RowVersion),
                         CancellationToken.None));
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ConflictException>(() =>
                     RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                        new RejectCampusInstanceCommand(requestId, instanceId, "Đổi ý"), CancellationToken.None));
+                        new RejectCampusInstanceCommand(requestId, instanceId, "Đổi ý",
+                            afterFirst[CampusHn].RowVersion), CancellationToken.None));
 
             Assert.Equal(afterFirst, await StateAsync(requestId));
             using (var db = NewContext())
@@ -563,7 +574,8 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), dispatcher)
                     .Handle(new RejectCampusInstanceCommand(
-                        requestId, before[CampusHn].VisitInstanceId, "Cơ sở đang sửa chữa"), CancellationToken.None);
+                        requestId, before[CampusHn].VisitInstanceId, "Cơ sở đang sửa chữa",
+                        before[CampusHn].RowVersion), CancellationToken.None);
 
             var mail = Assert.Single(dispatcher.Sent);
             Assert.Equal(
@@ -599,7 +611,8 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderDn, CampusDn), new RecordingNotifications(), dispatcher)
                     .Handle(new RejectCampusInstanceCommand(
-                        requestId, before[CampusDn].VisitInstanceId, "Trùng lịch"), CancellationToken.None);
+                        requestId, before[CampusDn].VisitInstanceId, "Trùng lịch",
+                        before[CampusDn].RowVersion), CancellationToken.None);
 
             // The request itself is still PENDING_APPROVAL — HN has not been decided.
             Assert.Equal(VisitRequestStatuses.PendingApproval, await RequestStatusAsync(requestId));
@@ -642,7 +655,8 @@ public sealed class CampusApprovalDecisionV2Tests
 
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderDn, CampusDn), notifications).Handle(
-                    new RejectCampusInstanceCommand(requestId, before[CampusDn].VisitInstanceId, "Cơ sở đang sửa chữa"),
+                    new RejectCampusInstanceCommand(requestId, before[CampusDn].VisitInstanceId, "Cơ sở đang sửa chữa",
+                        before[CampusDn].RowVersion),
                     CancellationToken.None);
 
             var after = await StateAsync(requestId);
@@ -665,14 +679,16 @@ public sealed class CampusApprovalDecisionV2Tests
             // Approving a second campus now moves the aggregate to PARTIALLY_APPROVED, not APPROVED.
             using (var db = NewContext())
                 await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null),
+                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null,
+                            before[CampusHn].RowVersion),
                     CancellationToken.None);
             Assert.Equal(VisitRequestStatuses.PartiallyApproved, await RequestStatusAsync(requestId));
 
             // Last campus rejected → nothing pending, one approved → APPROVED (not REJECTED).
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Không sắp xếp được"),
+                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Không sắp xếp được",
+                        before[CampusHcm].RowVersion),
                     CancellationToken.None);
             Assert.Equal(VisitRequestStatuses.Approved, await RequestStatusAsync(requestId));
         }
@@ -696,19 +712,22 @@ public sealed class CampusApprovalDecisionV2Tests
             using (var db = NewContext())
                 await Assert.ThrowsAsync<BusinessRuleException>(() =>
                     RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                        new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "   "),
+                        new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "   ",
+                            before[CampusHn].RowVersion),
                         CancellationToken.None));
             Assert.Equal(before, await StateAsync(requestId));
 
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Lý do HN"),
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Lý do HN",
+                        before[CampusHn].RowVersion),
                     CancellationToken.None);
             Assert.Equal(VisitRequestStatuses.PendingApproval, await RequestStatusAsync(requestId));
 
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Lý do HCM"),
+                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Lý do HCM",
+                        before[CampusHcm].RowVersion),
                     CancellationToken.None);
 
             // Only once EVERY campus has refused does the request itself become REJECTED.
@@ -737,11 +756,13 @@ public sealed class CampusApprovalDecisionV2Tests
 
             using (var db = NewContext())
                 await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
-                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null),
+                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn, null,
+                            before[CampusHn].RowVersion),
                     CancellationToken.None);
             using (var db = NewContext())
                 await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
-                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Từ chối"),
+                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Từ chối",
+                        before[CampusHcm].RowVersion),
                     CancellationToken.None);
 
             var after = await StateAsync(requestId);

@@ -66,12 +66,19 @@ internal static class PublicContactAnswer
     /// present holder exactly where they were.
     /// </para>
     /// </summary>
+    /// <param name="now">
+    /// The single Vietnam-local instant this whole answer is stamped with, supplied by the caller from
+    /// <see cref="IDateTimeService.VietnamNow"/>. Reading the wall clock here instead would put this one
+    /// path on the server's own zone — UTC on Railway — so an invitation would look expired hours before
+    /// it is, and DeclinedAt/RetentionUntil/audit/event rows would disagree with every other timestamp
+    /// the same workflow writes.
+    /// </param>
     public static async Task<OperationalContactActionResponse> DeclineWithoutAccountAsync(
         IApplicationDbContext db, IEmailActionTokenService tokens,
-        VisitRequestIdentityChange untracked, string rawToken, string? reason, CancellationToken ct)
+        VisitRequestIdentityChange untracked, string rawToken, string? reason, DateTime now,
+        CancellationToken ct)
     {
         const int retentionDays = 90;
-        var now = DateTime.Now;
         var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
         var correlationId = Guid.NewGuid().ToString("N");
 

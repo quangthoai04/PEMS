@@ -139,13 +139,17 @@ public sealed class MinutesMutationScopeV2Tests
     {
         using var db = NewContext();
         var actor = new FakeUser(leaderId, RoleCodes.Staff, UserSubRoles.Leader, campusId);
+        // Approving states the revision it was decided on. The command requires it, so a fixture
+        // that left it out would be exercising a call shape no caller can make any more.
+        var rowVersion = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == instanceId).Select(c => c.RowVersion).SingleAsync();
         await new ApproveCampusInstanceCommandHandler(
                 db, actor, new FixedClock(), 
                 new CampusApprovalExecutor(
                     db, new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db), new SilentNotifications(),
                     new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
                     NullLogger<CampusApprovalExecutor>.Instance))
-            .Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null), CancellationToken.None);
+            .Handle(new ApproveCampusInstanceCommand(requestId, instanceId, hostId, null, rowVersion), CancellationToken.None);
     }
 
     private static async Task<Dictionary<ulong, ulong>> InstanceIdsAsync(ulong requestId)
