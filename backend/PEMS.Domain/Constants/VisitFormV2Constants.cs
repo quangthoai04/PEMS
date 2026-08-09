@@ -124,6 +124,13 @@ public static class VisitFormV2ErrorCodes
     public const string AmendmentBaseRevisionConflict = "AMENDMENT_BASE_REVISION_CONFLICT";
     public const string AmendmentApproverScopeForbidden = "AMENDMENT_APPROVER_SCOPE_FORBIDDEN";
     public const string AmendmentWindowExpired = "AMENDMENT_WINDOW_EXPIRED";
+
+    /// <summary>
+    /// An amendment tried to change the operational contact's EMAIL. Who holds a campus moves only
+    /// through the contact workflow, where the new person has to accept; an amendment that could write
+    /// the address directly was a second, silent way to hand the campus over.
+    /// </summary>
+    public const string ContactEmailNotAmendable = "CONTACT_EMAIL_NOT_AMENDABLE";
 }
 
 /// <summary>

@@ -293,7 +293,7 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 FormRevision = 1,
                 ApprovalRevision = 1,
                 SourceType = "CREATE",
-                SnapshotJson = JsonSerializer.Serialize(SnapshotOf(instance.FormDetail!, membersByCampusIndex[i]), Json),
+                SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, instance.FormDetail!, membersByCampusIndex[i]),
                 AppliedBy = creatorUserId,
                 AppliedAt = vietnamNow,
             });
@@ -427,13 +427,9 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         return request;
     }
 
-    private static object SnapshotOf(VisitInstanceFormDetail d, IEnumerable<VisitGuestMember> members) => new
-    {
-        d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
-        d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactPhone, d.OperationalContactEmail,
-        d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,
-        Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
-    };
+    // The local snapshot shape is gone: it silently omitted operationalContactJobTitle, so revision 1
+    // recorded no job title and the next edit's diff announced "(trống) → Trưởng phòng" for a field
+    // that had been filled in at submit. VisitFormRevisionSnapshotBuilder is now the only writer.
 
     private static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

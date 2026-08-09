@@ -27,6 +27,8 @@ public static class VisitHistoryEventSources
     public const string AmendmentDecided = "AMDD";
     /// <summary>An audit-only event such as a Host handover (audit_logs).</summary>
     public const string Audit = "AUD";
+    /// <summary>A contact-identity transition (visit_request_identity_change_events).</summary>
+    public const string IdentityChange = "IDCH";
 
     public static string Build(string source, ulong key) => $"{source}:{key}";
 
@@ -44,13 +46,49 @@ public static class VisitHistoryEventSources
     }
 }
 
+/// <summary>
+/// Turns a stored <c>visit_request_identity_change_events.event_type</c> into the timeline's own
+/// vocabulary.
+///
+/// The stored values are the workflow's internal names and there are more of them than the timeline
+/// needs to distinguish; this is the one place the two vocabularies meet, so the list handler and the
+/// detail handler cannot describe the same row differently. Anything unrecognised degrades to the
+/// generic code rather than leaking a raw enum onto the screen.
+/// </summary>
+public static class VisitContactIdentityEventCodes
+{
+    public static string For(string? eventType) => eventType switch
+    {
+        // Written by the submit path for the first invitation of a campus.
+        "CREATED" => VisitHistoryEventCodes.ContactInitialConfirmationCreated,
+        "OPERATIONAL_CONTACT_INVITATION_CREATED" => VisitHistoryEventCodes.ContactInitialConfirmationCreated,
+        "OPERATIONAL_CONTACT_TRANSFER_REQUESTED" => VisitHistoryEventCodes.ContactTransferRequested,
+        "OPERATIONAL_CONTACT_INVITATION_RESENT" => VisitHistoryEventCodes.ContactInvitationResent,
+        "OPERATIONAL_CONTACT_INVITATION_CANCELLED" => VisitHistoryEventCodes.ContactInvitationCancelled,
+        "OPERATIONAL_CONTACT_INVITATION_SUPERSEDED" => VisitHistoryEventCodes.ContactInvitationSuperseded,
+        "OPERATIONAL_CONTACT_CONFIRMED" => VisitHistoryEventCodes.ContactConfirmed,
+        "OPERATIONAL_CONTACT_TRANSFER_APPLIED" => VisitHistoryEventCodes.ContactTransferAccepted,
+        "OPERATIONAL_CONTACT_CONFIRMATION_DECLINED" => VisitHistoryEventCodes.ContactConfirmationDeclined,
+        "OPERATIONAL_CONTACT_TRANSFER_DECLINED" => VisitHistoryEventCodes.ContactTransferDeclined,
+        "OPERATIONAL_CONTACT_CONFIRMATION_EXPIRED" or "OPERATIONAL_CONTACT_TRANSFER_EXPIRED"
+            => VisitHistoryEventCodes.ContactInvitationExpired,
+        _ => VisitHistoryEventCodes.ContactIdentityChanged,
+    };
+}
+
 /// <summary>One field that moved, before and after.</summary>
 public sealed record VisitHistoryFieldChangeDto(
     string FieldCode,
     /// <summary>Translation key stem the client resolves; the backend never ships display text.</summary>
     string LabelKey,
     string? BeforeValue,
-    string? AfterValue);
+    string? AfterValue,
+    /// <summary>
+    /// True when there IS no recorded "before" for this field — the previous snapshot is missing or
+    /// empty, not a snapshot that says the value was blank. Rendering both as "(trống)" claims the old
+    /// value was empty when in fact nobody knows what it was, which is how a history invents facts.
+    /// </summary>
+    bool BeforeUnknown = false);
 
 /// <summary>
 /// A change to a LIST rather than a field — someone joined the delegation, left it, or had their

@@ -13,7 +13,9 @@ using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
-using PEMS.Application.Delegations.VisitExpenses.Commands.GetOrCreateGeneralExpenseReport;
+using PEMS.Application.Delegations.VisitExpenses;
+using PEMS.Application.Delegations.VisitExpenses.Commands.InitializeGeneralExpenseReport;
+using PEMS.Application.Delegations.VisitExpenses.Queries.GetGeneralExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Commands.SaveExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Queries.GetVisitInstanceExpenseSummary;
 using PEMS.Application.Notifications.Common;
@@ -163,7 +165,10 @@ public sealed class VisitExpenseScopeV2Tests
             VisitInstanceStatuses.AfterVisit, Now.AddDays(-3), Now.AddDays(-3).AddHours(2), instanceId);
     }
 
-    private static GetOrCreateGeneralExpenseReportCommandHandler CreateHandler(ApplicationDbContext db, ulong actor)
+    private static InitializeGeneralExpenseReportCommandHandler CreateHandler(ApplicationDbContext db, ulong actor)
+        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn));
+
+    private static GetGeneralExpenseReportQueryHandler ReadHandler(ApplicationDbContext db, ulong actor)
         => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn));
 
     private static SaveExpenseReportCommandHandler SaveHandler(ApplicationDbContext db, ulong actor)
@@ -233,7 +238,7 @@ public sealed class VisitExpenseScopeV2Tests
             using (var db = NewContext())
             {
                 var report = await CreateHandler(db, HostHn).Handle(
-                    new GetOrCreateGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHn] }, CancellationToken.None);
+                    new InitializeGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHn] }, CancellationToken.None);
                 reportId = report.ExpenseReportId;
                 rowVersion = report.RowVersion;
             }
@@ -306,7 +311,7 @@ public sealed class VisitExpenseScopeV2Tests
             using (var db = NewContext())
             {
                 var r = await CreateHandler(db, HostHcm).Handle(
-                    new GetOrCreateGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHcm] }, CancellationToken.None);
+                    new InitializeGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHcm] }, CancellationToken.None);
                 hcmReportId = r.ExpenseReportId; hcmRowVersion = r.RowVersion;
             }
             using (var db = NewContext())
@@ -359,7 +364,7 @@ public sealed class VisitExpenseScopeV2Tests
             using (var db = NewContext())
             {
                 var r = await CreateHandler(db, HostHn).Handle(
-                    new GetOrCreateGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHn] }, CancellationToken.None);
+                    new InitializeGeneralExpenseReportCommand { VisitInstanceId = instances[CampusHn] }, CancellationToken.None);
                 hnReportId = r.ExpenseReportId; hnRowVersion = r.RowVersion;
             }
             using (var db = NewContext())
@@ -376,8 +381,8 @@ public sealed class VisitExpenseScopeV2Tests
             var hcmLeader = new FakeUser(LeaderHcm, RoleCodes.Staff, UserSubRoles.Leader, CampusHcm);
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
-                    new GetOrCreateGeneralExpenseReportCommandHandler(db, hcmLeader)
-                        .Handle(new GetOrCreateGeneralExpenseReportCommand { VisitInstanceId = hnInstance }, CancellationToken.None));
+                    new GetGeneralExpenseReportQueryHandler(db, hcmLeader)
+                        .Handle(new GetGeneralExpenseReportQuery { VisitInstanceId = hnInstance }, CancellationToken.None));
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     SummaryHandler(db, hcmLeader).Handle(
@@ -411,6 +416,65 @@ public sealed class VisitExpenseScopeV2Tests
                 var summary = await SummaryHandler(db, new FakeUser(500, RoleCodes.Ho))
                     .Handle(new GetVisitInstanceExpenseSummaryQuery { VisitInstanceId = hnInstance }, CancellationToken.None);
                 Assert.Equal(42000m, summary.TotalAmount);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Opening the "Sau tiếp khách" tab is a READ. It used to run a get-or-CREATE, so a campus that had
+    /// not finished answered 403 to somebody who had only looked at it — and a closed campus with no
+    /// costs answered 403 for ever. Reading now returns nothing and writes nothing; creating is its own
+    /// call, refused with its own code until the campus is at AFTER_VISIT, and idempotent thereafter.
+    /// </summary>
+    [Fact]
+    public async Task Reading_the_general_report_never_creates_one_and_initialize_is_idempotent()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(83), "Đoàn chưa kê khai"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            // ASSIGNED: the read answers "there is none", and leaves the table as it found it.
+            using (var db = NewContext())
+                Assert.Null(await ReadHandler(db, HostHn).Handle(
+                    new GetGeneralExpenseReportQuery { VisitInstanceId = hn }, CancellationToken.None));
+            using (var db = NewContext())
+                Assert.False(await db.VisitExpenseReports.AsNoTracking()
+                    .AnyAsync(r => r.VisitInstanceId == hn && r.ReportScope == "GENERAL"));
+
+            // Initializing before AFTER_VISIT is refused — and says WHY in a code the UI can branch on.
+            using (var db = NewContext())
+            {
+                var refused = await Assert.ThrowsAsync<ForbiddenException>(() => CreateHandler(db, HostHn)
+                    .Handle(new InitializeGeneralExpenseReportCommand { VisitInstanceId = hn }, CancellationToken.None));
+                Assert.Equal(VisitExpenseErrorCodes.ReportNotInitializable, refused.ErrorCode);
+            }
+
+            // At AFTER_VISIT the Host may open it, and calling twice yields ONE report.
+            await MoveToAfterVisitAsync(hn);
+            ulong firstId;
+            using (var db = NewContext())
+                firstId = (await CreateHandler(db, HostHn).Handle(
+                    new InitializeGeneralExpenseReportCommand { VisitInstanceId = hn }, CancellationToken.None)).ExpenseReportId;
+            using (var db = NewContext())
+                Assert.Equal(firstId, (await CreateHandler(db, HostHn).Handle(
+                    new InitializeGeneralExpenseReportCommand { VisitInstanceId = hn }, CancellationToken.None)).ExpenseReportId);
+            using (var db = NewContext())
+                Assert.Single(await db.VisitExpenseReports.AsNoTracking()
+                    .Where(r => r.VisitInstanceId == hn && r.ReportScope == "GENERAL").ToListAsync());
+
+            // And the read now returns it — the same row, not a second one.
+            using (var db = NewContext())
+            {
+                var read = await ReadHandler(db, HostHn).Handle(
+                    new GetGeneralExpenseReportQuery { VisitInstanceId = hn }, CancellationToken.None);
+                Assert.NotNull(read);
+                Assert.Equal(firstId, read!.ExpenseReportId);
             }
         }
         finally { await CleanupAsync(requestId); }

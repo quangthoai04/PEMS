@@ -187,7 +187,28 @@ public static class VisitHistoryEventCodes
     public const string AmendmentRejected = "AMENDMENT_REJECTED";
     public const string AmendmentWithdrawn = "AMENDMENT_WITHDRAWN";
     public const string AmendmentDecided = "AMENDMENT_DECIDED";
+    /// <summary>
+    /// Fallback for an identity transition the vocabulary below has no word for. Everything the
+    /// workflow actually emits has its own code — rolling them all into this one told a reader that
+    /// "vai trò đầu mối có thay đổi" whether an invitation had just been sent, resent, cancelled,
+    /// accepted or had expired, which are five different things to do next about.
+    /// </summary>
     public const string ContactIdentityChanged = "CONTACT_IDENTITY_CHANGED";
+    /// <summary>An invitation went out to a campus that has no confirmed contact yet.</summary>
+    public const string ContactInitialConfirmationCreated = "CONTACT_INITIAL_CONFIRMATION_CREATED";
+    /// <summary>A confirmed contact asked somebody else to take the campus over.</summary>
+    public const string ContactTransferRequested = "CONTACT_TRANSFER_REQUESTED";
+    public const string ContactInvitationResent = "CONTACT_INVITATION_RESENT";
+    public const string ContactInvitationCancelled = "CONTACT_INVITATION_CANCELLED";
+    /// <summary>An older invitation was dropped because a newer one replaced it.</summary>
+    public const string ContactInvitationSuperseded = "CONTACT_INVITATION_SUPERSEDED";
+    /// <summary>The invited person accepted a FIRST confirmation — the campus now has its contact.</summary>
+    public const string ContactConfirmed = "CONTACT_CONFIRMED";
+    /// <summary>The invited person accepted a handover — the role moved.</summary>
+    public const string ContactTransferAccepted = "CONTACT_TRANSFER_ACCEPTED";
+    public const string ContactConfirmationDeclined = "CONTACT_CONFIRMATION_DECLINED";
+    public const string ContactTransferDeclined = "CONTACT_TRANSFER_DECLINED";
+    public const string ContactInvitationExpired = "CONTACT_INVITATION_EXPIRED";
     /// <summary>One campus's Host role was handed to a different user after approval.</summary>
     public const string HostTransferred = "HOST_TRANSFERRED";
 }

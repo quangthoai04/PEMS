@@ -67,14 +67,20 @@ public sealed class GetVisitHistoryDetailQueryHandler
         var isHo = _currentUser.RoleCode == RoleCodes.Ho;
         List<ulong> visibleInstanceIds;
         var includeRequestLevel = false;
+        // Identity events are readable by exactly the people the timeline shows them to — the requester
+        // side, HO, and a campus's own operational contact. A Staff Leader or a Host reaching one by id
+        // gets the same "not found" they would get for another campus's revision.
+        var includeIdentity = false;
         if (isRegistrant || isHo)
         {
             visibleInstanceIds = visit.CampusInstances.Select(c => c.VisitInstanceId).ToList();
             includeRequestLevel = true;
+            includeIdentity = true;
         }
         else if (operatedInstanceIds.Count > 0)
         {
             visibleInstanceIds = operatedInstanceIds;
+            includeIdentity = true;
         }
         else if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
                  && _currentUser.PrimaryCampusId is { } campusId)
@@ -106,6 +112,8 @@ public sealed class GetVisitHistoryDetailQueryHandler
                 await AmendmentDetailAsync(visit.VisitRequestId, key, source, visibleInstanceIds, CampusOf, CampusIdOf, ct),
             VisitHistoryEventSources.Audit =>
                 await AuditDetailAsync(visit.VisitRequestId, key, visibleInstanceIds, CampusOf, CampusIdOf, ct),
+            VisitHistoryEventSources.IdentityChange =>
+                await IdentityDetailAsync(visit.VisitRequestId, key, includeIdentity, visibleInstanceIds, CampusOf, CampusIdOf, ct),
             _ => throw new NotFoundException("Sự kiện lịch sử", 0),
         };
     }
@@ -314,12 +322,74 @@ public sealed class GetVisitHistoryDetailQueryHandler
             Array.Empty<VisitHistoryCollectionChangeDto>());
     }
 
+    // ── Contact-identity transitions ─────────────────────────────────────────
+
+    /// <summary>
+    /// One row of the append-only identity log: which campus, which address (MASKED), and which way the
+    /// invitation moved.
+    ///
+    /// What is deliberately NOT here: the raw or hashed token, <c>pending_snapshot_json</c>, the
+    /// unmasked address, and the row's own <c>reason</c> — which on these rows is usually plumbing
+    /// ("EXPIRY_JOB", "token_version=2;resend_count=1") rather than a sentence anybody wrote.
+    /// </summary>
+    private async Task<VisitHistoryDetailDto> IdentityDetailAsync(
+        ulong visitRequestId, ulong identityChangeEventId, bool includeIdentity,
+        List<ulong> visibleInstanceIds, Func<ulong?, string?> campusOf, Func<ulong?, long?> campusIdOf,
+        CancellationToken ct)
+    {
+        var row = await _db.VisitRequestIdentityChangeEvents.AsNoTracking()
+            .Where(e => e.IdentityChangeEventId == identityChangeEventId
+                        && e.VisitRequestId == visitRequestId)
+            .Select(e => new
+            {
+                e.VisitInstanceId, e.EventType, e.FromStatus, e.ToStatus,
+                e.ActorUserId, e.EmailMasked, e.CreatedAt,
+            })
+            .FirstOrDefaultAsync(ct);
+        // Out of scope is reported as absent, on the same terms as every other branch here.
+        if (row is null || !includeIdentity || !visibleInstanceIds.Contains(row.VisitInstanceId))
+            throw new NotFoundException("Sự kiện lịch sử", (long)identityChangeEventId);
+
+        var fields = new List<VisitHistoryFieldChangeDto>();
+        if (!string.IsNullOrWhiteSpace(row.EmailMasked))
+            fields.Add(new VisitHistoryFieldChangeDto(
+                "contactEmailMasked", "visitRequestV2:historyDetail.field.contactEmailMasked",
+                null, row.EmailMasked, BeforeUnknown: true));
+        if (row.FromStatus is not null || row.ToStatus is not null)
+            fields.Add(new VisitHistoryFieldChangeDto(
+                "identityChangeStatus", "visitRequestV2:historyDetail.field.identityChangeStatus",
+                row.FromStatus, row.ToStatus));
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.IdentityChange, identityChangeEventId),
+            VisitContactIdentityEventCodes.For(row.EventType),
+            row.CreatedAt,
+            await NameOfAsync(row.ActorUserId, ct),
+            campusIdOf(row.VisitInstanceId),
+            campusOf(row.VisitInstanceId),
+            null, null, null,
+            fields,
+            Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
     // ── Snapshot diffing ─────────────────────────────────────────────────────
 
     /// <summary>
     /// Compares two stored snapshots and reports only what MOVED. A snapshot holds every field of the
     /// form whether or not it changed, so returning it whole would bury one edited note under twenty
     /// identical lines.
+    ///
+    /// <para>
+    /// Both sides are NORMALIZED first (see <see cref="NormalizeSnapshot"/>). Snapshots written over
+    /// the life of this feature do not all have the same shape, and comparing a nested
+    /// <c>operationalContact.email</c> against a flat <c>operationalContactEmail</c> by property name
+    /// found nothing on the left and reported "(trống) → the address it has always had".
+    /// </para>
+    /// <para>
+    /// Three states are kept apart, because they are three different claims: the old value WAS this,
+    /// the old value was empty, and nobody recorded an old value. The last one is what an absent or
+    /// <c>{}</c> snapshot means, and it is reported as such rather than as an empty string.
+    /// </para>
     /// </summary>
     private static (List<VisitHistoryFieldChangeDto> Fields, List<VisitHistoryCollectionChangeDto> Collections)
         DiffSnapshots(string? beforeJson, string? afterJson)
@@ -327,45 +397,130 @@ public sealed class GetVisitHistoryDetailQueryHandler
         var fields = new List<VisitHistoryFieldChangeDto>();
         var collections = new List<VisitHistoryCollectionChangeDto>();
 
-        var before = Parse(beforeJson);
-        var after = Parse(afterJson);
+        var after = NormalizeSnapshot(afterJson);
         if (after is null) return (fields, collections);
 
-        foreach (var property in after.Value.EnumerateObject())
+        // No previous revision row at all: this is a creation. Listing every field as "→ value" would
+        // drown the drawer in the request's whole content, so it reports nothing.
+        var before = NormalizeSnapshot(beforeJson);
+        if (before is null) return (fields, collections);
+
+        foreach (var (code, afterValue) in after.Fields)
         {
-            if (property.NameEquals("Members"))
-            {
-                collections.AddRange(DiffMemberElements(
-                    before is { } b && b.TryGetProperty("Members", out var bm) ? bm : (JsonElement?)null,
-                    property.Value));
+            var known = before.Fields.TryGetValue(code, out var beforeValue);
+            if (known && string.Equals(beforeValue ?? string.Empty, afterValue ?? string.Empty, StringComparison.Ordinal))
                 continue;
-            }
-
-            var afterValue = Scalar(property.Value);
-            string? beforeValue = null;
-            if (before is { } bef && bef.TryGetProperty(property.Name, out var bv))
-                beforeValue = Scalar(bv);
-
-            // A creation has no previous snapshot; listing every field as "→ value" would drown the
-            // drawer, so only genuine transitions are reported.
-            if (beforeJson is null) continue;
-            if (string.Equals(beforeValue ?? string.Empty, afterValue ?? string.Empty, StringComparison.Ordinal))
+            // The previous snapshot simply does not carry this field — an older shape, or an empty
+            // blob. Saying "(trống) → X" would assert the field used to be blank; it says instead that
+            // there is no history for it.
+            if (!known && string.IsNullOrEmpty(afterValue))
                 continue;
 
             fields.Add(new VisitHistoryFieldChangeDto(
-                property.Name, LabelKeyFor(property.Name), beforeValue, afterValue));
+                code, LabelKeyFor(code), known ? beforeValue : null, afterValue, BeforeUnknown: !known));
         }
+
+        // Members are only diffed when BOTH sides recorded them. A snapshot that never had a member
+        // list is not a snapshot of an empty delegation, and reporting everyone as newly ADDED because
+        // the older shape stored them elsewhere would be a fabricated arrival.
+        if (after.HasMembers && before.HasMembers)
+            collections.AddRange(PairMembers(before.Members, after.Members));
 
         return (fields, collections);
     }
 
-    /// <summary>Member lists from two snapshots, paired by name so a correction reads as UPDATED.</summary>
-    private static IEnumerable<VisitHistoryCollectionChangeDto> DiffMemberElements(
-        JsonElement? before, JsonElement after)
+    /// <summary>
+    /// A snapshot reduced to one canonical shape: flat camelCase field codes plus a member list.
+    ///
+    /// Returns null for "there is no snapshot" — distinct from a snapshot that parsed to nothing,
+    /// which comes back as an empty instance and means "recorded, but recorded nothing".
+    /// </summary>
+    private sealed record NormalizedSnapshot(
+        Dictionary<string, string?> Fields, List<MemberRow> Members, bool HasMembers);
+
+    /// <summary>
+    /// Historical key spellings mapped onto today's field codes. Everything on the left has been
+    /// written into <c>snapshot_json</c> by some version of this feature; without the mapping each one
+    /// reads as a field that appeared out of nowhere.
+    /// </summary>
+    private static readonly Dictionary<string, string> FieldAliases = new(StringComparer.OrdinalIgnoreCase)
     {
-        var beforeRows = MemberRows(before);
-        var afterRows = MemberRows(after);
-        return PairMembers(beforeRows, afterRows);
+        ["noteToFptu"] = "notes",
+        ["contactPersonFullName"] = "operationalContactFullName",
+        ["contactPersonOrganization"] = "operationalContactOrganization",
+        ["contactPersonJobTitle"] = "operationalContactJobTitle",
+        ["contactPersonPhone"] = "operationalContactPhone",
+        ["contactPersonEmail"] = "operationalContactEmail",
+    };
+
+    /// <summary>Children of a nested <c>operationalContact</c> object, flattened onto the field codes.</summary>
+    private static readonly Dictionary<string, string> ContactChildren = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["fullName"] = "operationalContactFullName",
+        ["organization"] = "operationalContactOrganization",
+        ["jobTitle"] = "operationalContactJobTitle",
+        ["phone"] = "operationalContactPhone",
+        ["email"] = "operationalContactEmail",
+    };
+
+    private static NormalizedSnapshot? NormalizeSnapshot(string? json)
+    {
+        if (json is null) return null;
+        var parsed = Parse(json);
+        if (parsed is not { ValueKind: JsonValueKind.Object } root)
+            // Present but unreadable: recorded nothing we can compare against, which is not the same
+            // as never having been recorded.
+            return new NormalizedSnapshot(new Dictionary<string, string?>(StringComparer.Ordinal), new List<MemberRow>(), false);
+
+        var fields = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var members = new List<MemberRow>();
+        var hasMembers = false;
+
+        foreach (var property in root.EnumerateObject())
+        {
+            var name = property.Name;
+
+            // Members arrive as one mixed list (discriminated by MemberType) or as two separate ones,
+            // and the key has been spelled both "Members" and "members" — a case-sensitive lookup for
+            // one spelling is why member changes stopped appearing in revision diffs at all.
+            if (name.Equals("members", StringComparison.OrdinalIgnoreCase))
+            {
+                members.AddRange(MemberRows(property.Value));
+                hasMembers = true;
+                continue;
+            }
+            if (name.Equals("visitors", StringComparison.OrdinalIgnoreCase))
+            {
+                members.AddRange(ReadMemberArray(property.Value, VisitHistoryCollectionCodes.Visitors));
+                hasMembers = true;
+                continue;
+            }
+            if (name.Equals("supportMembers", StringComparison.OrdinalIgnoreCase)
+                || name.Equals("externalSupportMembers", StringComparison.OrdinalIgnoreCase))
+            {
+                members.AddRange(ReadMemberArray(property.Value, VisitHistoryCollectionCodes.SupportMembers));
+                hasMembers = true;
+                continue;
+            }
+
+            if (name.Equals("operationalContact", StringComparison.OrdinalIgnoreCase)
+                && property.Value.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var child in property.Value.EnumerateObject())
+                    if (ContactChildren.TryGetValue(child.Name, out var childCode))
+                        fields[childCode] = Scalar(child.Value);
+                continue;
+            }
+
+            // Objects and arrays that are not one of the shapes above have no scalar rendering, and a
+            // drawer row reading "[object]" helps nobody.
+            if (property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array) continue;
+
+            var code = FieldAliases.TryGetValue(name, out var alias) ? alias : Camel(name);
+            fields[code] = Scalar(property.Value);
+        }
+
+        return new NormalizedSnapshot(fields, members, hasMembers);
     }
 
     private static IEnumerable<VisitHistoryCollectionChangeDto> DiffMemberJson(

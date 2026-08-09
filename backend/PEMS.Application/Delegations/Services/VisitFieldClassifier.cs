@@ -79,7 +79,7 @@ public static class VisitFieldClassifier
         [OperationalContactOrganization] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactJobTitle] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactPhone] = AmendmentChangeClasses.ApprovalSensitive,
-        [OperationalContactEmail] = AmendmentChangeClasses.ApprovalSensitive,
+        // OperationalContactEmail is deliberately ABSENT — see IsIdentityManaged below.
         [Visitors] = AmendmentChangeClasses.ApprovalSensitive,
         [SupportMembers] = AmendmentChangeClasses.ApprovalSensitive,
 
@@ -87,8 +87,29 @@ public static class VisitFieldClassifier
         [PlannedEndAt] = AmendmentChangeClasses.Structural,
     };
 
+    /// <summary>
+    /// Fields that identify WHO the contact is, rather than describing them. They belong to the
+    /// contact-management workflow — invite, confirm, transfer, resend, cancel — and to no other path.
+    ///
+    /// <para>
+    /// The address was classified APPROVAL_SENSITIVE, which made it amendable: an amendment could set
+    /// <c>operational_contact_email</c> directly on approval, handing a campus to a different person
+    /// with no invitation, no acceptance and no identity event. That is a second door onto the same
+    /// identity, and the two doors did not agree — one asks the new person to accept, the other does
+    /// not ask anybody. Name, organisation, job title and phone remain amendable: correcting how a
+    /// person is described does not change which person it is.
+    /// </para>
+    /// </summary>
+    private static readonly HashSet<string> IdentityManaged = new(StringComparer.Ordinal)
+    {
+        OperationalContactEmail,
+    };
+
+    /// <summary>True when the field may only move through the contact-identity workflow.</summary>
+    public static bool IsIdentityManaged(string fieldPath) => IdentityManaged.Contains(fieldPath);
+
     /// <summary>True when the path exists in the classification table at all.</summary>
-    public static bool IsKnown(string fieldPath) => Table.ContainsKey(fieldPath);
+    public static bool IsKnown(string fieldPath) => Table.ContainsKey(fieldPath) || IdentityManaged.Contains(fieldPath);
 
     /// <summary>
     /// Classifies a concrete change. Unknown paths return null — callers MUST fail closed on null.

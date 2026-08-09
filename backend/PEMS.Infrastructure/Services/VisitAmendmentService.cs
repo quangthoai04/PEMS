@@ -234,6 +234,9 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 case VisitFieldClassifier.OperationalContactOrganization: detail.OperationalContactOrganization = FromJson<string>(change.NewValueJson); break;
                 case VisitFieldClassifier.OperationalContactJobTitle: detail.OperationalContactJobTitle = FromJson<string>(change.NewValueJson)!; break;
                 case VisitFieldClassifier.OperationalContactPhone: detail.OperationalContactPhone = FromJson<string>(change.NewValueJson)!; break;
+                // Kept for amendments FILED BEFORE the address became identity-managed: a proposal
+                // already sitting in PENDING_APPROVAL still has to be applicable or withdrawable.
+                // Nothing writes new rows with this path any more (see BuildChangeRows).
                 case VisitFieldClassifier.OperationalContactEmail: detail.OperationalContactEmail = FromJson<string>(change.NewValueJson); break;
                 case VisitFieldClassifier.PlannedStartAt: instance.PlannedStartAt = FromJson<DateTime>(change.NewValueJson); break;
                 case VisitFieldClassifier.PlannedEndAt: instance.PlannedEndAt = FromJson<DateTime>(change.NewValueJson); break;
@@ -285,7 +288,7 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             FormRevision = detail.FormRevision,
             ApprovalRevision = detail.ApprovalRevision,
             SourceType = FormRevisionSourceTypes.AmendmentApplied,
-            SnapshotJson = VisitRequestV2EditOps.SnapshotJson(detail, membersAfter),
+            SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, detail, membersAfter),
             AppliedBy = actorId,
             AppliedAt = now,
             Reason = $"amendment #{amendment.AmendmentNo}",
@@ -499,7 +502,18 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.OperationalContactPhone,
             PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
             p.OperationalContact?.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null);
-        Add(VisitFieldClassifier.OperationalContactEmail, detail.OperationalContactEmail, Clean(p.OperationalContact?.Email));
+        // The ADDRESS is not amendable — it decides WHO holds the campus, and that only moves through
+        // the contact workflow, where the new person has to accept and the old one keeps their rights
+        // until they do. A proposal carrying the unchanged address is fine and common (the modal sends
+        // the whole contact back); one carrying a different address is refused here rather than
+        // silently applied on approval.
+        var proposedEmail = Clean(p.OperationalContact?.Email);
+        if (proposedEmail is not null
+            && !string.Equals(proposedEmail, Clean(detail.OperationalContactEmail), StringComparison.OrdinalIgnoreCase))
+            throw new BusinessRuleException(
+                "Không thể đổi email đầu mối qua đề xuất thay đổi. Hãy dùng chức năng \"Chỉnh sửa đầu mối\" của cơ sở.",
+                VisitFormV2ErrorCodes.ContactEmailNotAmendable);
+
         Add(VisitFieldClassifier.PlannedStartAt, instance.PlannedStartAt, p.PlannedStartAt);
         Add(VisitFieldClassifier.PlannedEndAt, instance.PlannedEndAt, p.PlannedEndAt);
 

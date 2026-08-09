@@ -65,6 +65,8 @@ public static class VisitExpenseAccessScope
                 return;
         }
 
-        throw new ForbiddenException("Bạn không có quyền xem chi phí của chuyến tiếp khách này.");
+        throw new ForbiddenException(
+            "Bạn không có quyền xem chi phí của chuyến tiếp khách này.",
+            VisitExpenseErrorCodes.ReportReadForbidden);
     }
 }

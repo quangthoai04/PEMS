@@ -188,6 +188,8 @@ public sealed class VisitAmendmentV2Tests
             PlannedEndAt = instance.PlannedEndAt,
             Visitors = members.Where(m => m.MemberType == "GUEST")
                 .Select(m => new VisitorDto(m.FullName, m.Nationality ?? "", m.JobTitle ?? "", m.Organization ?? "")).ToList(),
+            // Defaults to the address on record, which is what the real modal sends back untouched.
+            ContactEmail = d.OperationalContactEmail ?? "",
         };
         mutate?.Invoke(b);
 
@@ -196,7 +198,7 @@ public sealed class VisitAmendmentV2Tests
             b.DelegationName, d.VisitType ?? "MEETING", d.VisitTypeOther, b.Purpose, b.WorkingContent,
             d.WorkingLanguage ?? "EN",
             new ContactPointDto(d.OperationalContactFullName ?? "", d.OperationalContactOrganization ?? "", "Trưởng phòng Hợp tác",
-                d.OperationalContactPhone ?? "", d.OperationalContactEmail ?? ""),
+                d.OperationalContactPhone ?? "", b.ContactEmail ?? ""),
             b.Visitors,
             new List<SupportTeamMemberDto>(),
             b.PlannedStartAt, b.PlannedEndAt);
@@ -210,6 +212,7 @@ public sealed class VisitAmendmentV2Tests
         public DateTime PlannedStartAt;
         public DateTime PlannedEndAt;
         public List<VisitorDto> Visitors = new();
+        public string? ContactEmail;
     }
 
     private static async Task CleanupAsync(ulong requestId)
@@ -878,6 +881,51 @@ public sealed class VisitAmendmentV2Tests
                 var dto = await Submit(db, Registrant).Handle(
                     new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
                 Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.PlannedStartAt);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// WHO the operational contact is cannot be changed by a proposal.
+    ///
+    /// The address was classified APPROVAL_SENSITIVE, so an amendment could carry a new one and write it
+    /// straight onto the campus when the Host approved — no invitation, no acceptance, no identity
+    /// event. That is a second door onto the same identity, and the two doors disagreed: the contact
+    /// workflow asks the new person to accept and leaves the old one in place until they do, while this
+    /// one asked nobody. Describing the SAME person differently (name, phone) is still amendable, which
+    /// is the distinction the refusal has to respect rather than banning the contact block outright.
+    /// </summary>
+    [Fact]
+    public async Task A_proposal_cannot_change_the_contact_email_but_can_still_correct_the_rest()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(10));
+
+            var handover = await BaselineProposalAsync(instanceA, b => b.ContactEmail = "nguoikhac@example.com");
+            using (var db = NewContext())
+            {
+                var refused = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
+                    Submit(db, Registrant).Handle(
+                        new SubmitVisitAmendmentCommand(requestId, instanceA, handover), CancellationToken.None));
+                Assert.Equal(VisitFormV2ErrorCodes.ContactEmailNotAmendable, refused.ErrorCode);
+            }
+            // Refused means nothing was written — not a proposal quietly filed minus the offending field.
+            using (var db = NewContext())
+                Assert.Empty(await db.VisitInstanceAmendments.AsNoTracking()
+                    .Where(a => a.VisitInstanceId == instanceA).ToListAsync());
+
+            // The same address plus a genuine content change goes through, and stores no email row.
+            var ordinary = await BaselineProposalAsync(instanceA, b => b.Purpose = "Đổi mục đích");
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, ordinary), CancellationToken.None);
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.Purpose);
+                Assert.DoesNotContain(dto.Changes, c => c.FieldPath == VisitFieldClassifier.OperationalContactEmail);
             }
         }
         finally { await CleanupAsync(requestId); }

@@ -1,10 +1,11 @@
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using PEMS.Application.Delegations.VisitExpenses.Commands.GetOrCreateGeneralExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Commands.GetOrCreateLogisticsExpenseReport;
+using PEMS.Application.Delegations.VisitExpenses.Commands.InitializeGeneralExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Commands.RemindExpenseReports;
 using PEMS.Application.Delegations.VisitExpenses.Commands.SaveExpenseReport;
+using PEMS.Application.Delegations.VisitExpenses.Queries.GetGeneralExpenseReport;
 using PEMS.Application.Delegations.VisitExpenses.Queries.GetVisitInstanceExpenseSummary;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,10 +24,22 @@ namespace PEMS.Api.Controllers
             _mediator = mediator;
         }
 
+        /// <summary>
+        /// Reads the instance's general expense report. A pure read: it creates nothing, so opening the
+        /// "Sau tiếp khách" tab on a campus that has no report yet answers 204 rather than failing.
+        /// </summary>
         [HttpGet("general/{visitInstanceId}")]
         public async Task<IActionResult> GetGeneralExpenseReport(ulong visitInstanceId, CancellationToken cancellationToken)
         {
-            var result = await _mediator.Send(new GetOrCreateGeneralExpenseReportCommand { VisitInstanceId = visitInstanceId }, cancellationToken);
+            var result = await _mediator.Send(new GetGeneralExpenseReportQuery { VisitInstanceId = visitInstanceId }, cancellationToken);
+            return result is null ? NoContent() : Ok(result);
+        }
+
+        /// <summary>Opens the general expense report — Host only, AFTER_VISIT only, idempotent.</summary>
+        [HttpPost("general/{visitInstanceId}/initialize")]
+        public async Task<IActionResult> InitializeGeneralExpenseReport(ulong visitInstanceId, CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(new InitializeGeneralExpenseReportCommand { VisitInstanceId = visitInstanceId }, cancellationToken);
             return Ok(result);
         }
 

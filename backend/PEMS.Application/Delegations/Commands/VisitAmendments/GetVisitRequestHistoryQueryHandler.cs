@@ -261,16 +261,35 @@ public sealed class GetVisitRequestHistoryQueryHandler
         }
 
         // ── Identity timeline (managers + HO only; masked emails only) ──
-        if (includeIdentity)
+        //
+        // Scoped to the campuses this viewer may see, like every other section. It used to return every
+        // identity event of the whole request the moment `includeIdentity` was true — which it is for an
+        // operational contact — so the contact of one campus could read who had been invited to, and had
+        // declined, a campus that was never theirs.
+        if (includeIdentity && visibleInstanceIds.Count > 0)
         {
             var identityEvents = await _db.VisitRequestIdentityChangeEvents.AsNoTracking()
-                .Where(e => e.VisitRequestId == visit.VisitRequestId)
-                .Select(e => new { e.EventType, e.FromStatus, e.ToStatus, e.ActorUserId, e.EmailMasked, e.CreatedAt })
+                .Where(e => e.VisitRequestId == visit.VisitRequestId
+                            && visibleInstanceIds.Contains(e.VisitInstanceId))
+                .Select(e => new
+                {
+                    e.IdentityChangeEventId, e.VisitInstanceId, e.EventType,
+                    e.FromStatus, e.ToStatus, e.ActorUserId, e.EmailMasked, e.CreatedAt,
+                })
                 .ToListAsync(cancellationToken);
             foreach (var e in identityEvents)
             {
+                // The campus is named and the event is openable: an entry that said only "the contact
+                // role changed", with no campus and no eye button, was unactionable on a request with
+                // three campuses and three separate contacts.
                 Add(new VisitHistoryEntryDto(
-                    e.CreatedAt, VisitHistoryEventCodes.ContactIdentityChanged, null, null, null, null,
+                    e.CreatedAt, VisitContactIdentityEventCodes.For(e.EventType),
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.IdentityChange, e.IdentityChangeEventId),
+                    e.VisitInstanceId, CampusOf(e.VisitInstanceId), null,
+                    // `reason` on these rows is plumbing more often than prose — "EXPIRY_JOB",
+                    // "token_version=2;resend_count=1", "fields=…". Surfacing it would put internals
+                    // under a heading that says "Lý do", so it stays out, as the correlation id does
+                    // on revision rows.
                     null, null, null, e.EventType, null, null, e.EmailMasked, e.FromStatus, e.ToStatus),
                     e.ActorUserId);
             }

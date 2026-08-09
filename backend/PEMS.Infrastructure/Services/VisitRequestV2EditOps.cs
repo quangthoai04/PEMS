@@ -154,24 +154,9 @@ internal static class VisitRequestV2EditOps
             CreatedBy = actorId,
         };
 
-    /// <summary>Immutable per-instance revision snapshot (form detail + members), stored on every applied edit.</summary>
-    public static string SnapshotJson(VisitInstanceFormDetail d, IEnumerable<VisitGuestMember> members)
-        => JsonSerializer.Serialize(new
-        {
-            d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
-            d.OperationalContactFullName, d.OperationalContactOrganization, d.OperationalContactJobTitle,
-            d.OperationalContactPhone, d.OperationalContactEmail,
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,
-            Members = members.Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder }),
-        }, Json);
-
-    public static string RequestSnapshotJson(VisitRequest r)
-        => JsonSerializer.Serialize(new
-        {
-            // Registrant only. The contact snapshot belongs to each campus and is captured by the
-            // per-instance snapshot above — there is no request-level contact to record here.
-            r.RegistrantFullName, r.RegistrantOrganization, r.RegistrantJobTitle, r.RegistrantPhone, r.RegistrantEmail,
-        }, Json);
+    // Revision snapshots are NOT written here any more. Each service used to serialize its own
+    // anonymous object and they had drifted; there is now exactly one writer,
+    // VisitFormRevisionSnapshotBuilder, and every path goes through it.
 
     public static string? Clean(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 }
