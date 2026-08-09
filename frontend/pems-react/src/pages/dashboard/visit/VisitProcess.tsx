@@ -713,9 +713,10 @@ export function VisitProcess() {
       );
     }
     // ── Chưa tới giờ, chứ không phải không được phép ──────────────────────────────────────────
-    // Riêng BEFORE → DURING có cửa sổ thời gian: sớm nhất là 6 giờ trước giờ bắt đầu dự kiến.
-    // Ẩn nút đi thì Host không hiểu vì sao "đã chuẩn bị xong mà không chuyển được"; nên hiện nút
-    // DISABLED kèm đúng mốc mở. Backend vẫn là nơi quyết định (409 VISIT_START_WINDOW_NOT_OPEN).
+    // Riêng BEFORE → DURING có cửa sổ thời gian: sớm nhất là 6 giờ trước giờ bắt đầu dự kiến. Đây
+    // chỉ là CHÚ Ý cho Host biết mốc mở, không còn khóa nút — Host vẫn bấm được bình thường; nếu
+    // bấm sớm, backend là nơi quyết định thật sự và sẽ từ chối bằng 409 VISIT_START_WINDOW_NOT_OPEN
+    // (advanceStage đã bắt lỗi này, toast rồi refetch permissions).
     if (!opts.canDo
         && opts.stage === 'before'
         && perm.startVisitDisabledReasonCode === 'VISIT_START_WINDOW_NOT_OPEN') {
@@ -735,10 +736,11 @@ export function VisitProcess() {
           </p>
           <button
             type="button"
-            disabled
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none whitespace-nowrap opacity-50 cursor-not-allowed"
+            disabled={stageSubmitting}
+            onClick={() => advanceStage(opts.stage)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
-            <ArrowRightCircle className="w-4 h-4" />
+            {stageSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightCircle className="w-4 h-4" />}
             {opts.label}
           </button>
         </div>
