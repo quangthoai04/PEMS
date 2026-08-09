@@ -195,9 +195,10 @@ public sealed class VisitRequestManagementItemDto
     public ulong? LastResubmittedBy { get; set; }
     public string? LastResubmittedByName { get; set; }
     /// <summary>
-    /// True when the request is still fully pending (PENDING_APPROVAL, every campus
-    /// WAITING_REQUEST_APPROVAL) and the earliest start is ≥ 24h away — the Visitor owner
-    /// may edit it. Drives EDIT_PENDING_REQUEST.
+    /// True when the request is still fully pre-decision (PENDING_CONTACT_CONFIRMATION or
+    /// PENDING_APPROVAL, every campus WAITING_CONTACT_CONFIRMATION or WAITING_REQUEST_APPROVAL) and
+    /// the earliest start is still at least <c>VisitMutationPolicy.RequiredLeadHours</c> away — the
+    /// registrant may edit it. Drives EDIT_PENDING_REQUEST.
     /// </summary>
     public bool CanEditPending { get; set; }
     /// <summary>

@@ -12,7 +12,9 @@ public static class VisitFormActions
     public const string View = "VIEW";
 
     // ── Request-level ────────────────────────────────────────────────────────
-    /// <summary>Registrant/ACTIVE contact may edit a fully-pending request (≥24h before earliest start).</summary>
+    /// <summary>Registrant may edit a request no campus has decided yet, up to the mutation cutoff
+    /// (<see cref="PEMS.Domain.Policies.VisitMutationPolicy.RequiredLeadHours"/> before the earliest
+    /// start). Both pre-decision campus stages qualify, not only WAITING_REQUEST_APPROVAL.</summary>
     public const string EditPendingRequest = "EDIT_PENDING_REQUEST";
     /// <summary>Registrant/ACTIVE contact may edit &amp; resubmit a fully-rejected request.</summary>
     public const string ResubmitRejectedRequest = "RESUBMIT_REJECTED_REQUEST";

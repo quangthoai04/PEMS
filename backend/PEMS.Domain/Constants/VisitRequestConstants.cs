@@ -131,8 +131,11 @@ public static class VisitRequestErrorCodes
     public const string VisitorAccountInactive = "VISITOR_ACCOUNT_INACTIVE";
 
     // ── Visitor edit / resubmit / cancel-24h (SQL v10 resubmit_agenda_cancel24) ──
-    // The request is not in an editable state (must be PENDING_APPROVAL with every campus
-    // still WAITING_REQUEST_APPROVAL and ≥ 24h before the earliest start).
+    // The request is not in an editable state. Editable means: no campus has been decided yet —
+    // request PENDING_CONTACT_CONFIRMATION or PENDING_APPROVAL, every campus
+    // WAITING_CONTACT_CONFIRMATION or WAITING_REQUEST_APPROVAL — and the mutation cutoff
+    // (VisitMutationPolicy.RequiredLeadHours before the earliest start) has not been reached.
+    // A refusal caused by the cutoff carries VISIT_MUTATION_CUTOFF_REACHED instead of this code.
     public const string VisitRequestNotEditable = "VISIT_REQUEST_NOT_EDITABLE";
     // The request is not resubmittable (must be REJECTED with every campus REJECTED).
     public const string VisitRequestNotResubmittable = "VISIT_REQUEST_NOT_RESUBMITTABLE";

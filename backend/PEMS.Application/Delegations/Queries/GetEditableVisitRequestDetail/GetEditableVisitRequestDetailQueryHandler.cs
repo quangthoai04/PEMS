@@ -7,8 +7,10 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 using PEMS.Application.Delegations.Common;
@@ -58,18 +60,51 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
         // planned_start_at is local wall-clock DATETIME → compare against VietnamNow.
         var vnNow = _clock.VietnamNow;
 
-        var isEditablePending = visit.Status == VisitRequestStatuses.PendingApproval
-            && instances.Count > 0
-            && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
-            && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(24);
+        // ── Which door is this request standing at, and is it open? ───────────────────────────────
+        // Only the FIRST question is answered here. This screen used to answer the second one too,
+        // with its own copy of the rule — PENDING_APPROVAL plus every campus WAITING_REQUEST_APPROVAL
+        // plus a bare AddHours(24) — and that copy drifted away from the list that offers the button
+        // and from the command that accepts the payload. A registrant whose campuses were still
+        // waiting for their operational contacts to confirm was shown "Sửa đơn" and then told the
+        // request was no longer editable, because those two disagreed about a request nobody had
+        // decided anything about. The verdict now comes from the canonical guard in both branches, so
+        // list, editor and command cannot answer the same state three ways.
+        //
+        // The cutoff is VisitMutationPolicy.RequiredLeadHours — 6 hours measured on the EXISTING
+        // schedule, answering "is this action still open". It is NOT the 72-hour registration floor,
+        // which is a rule about a NEWLY PROPOSED start and is enforced where that new date is actually
+        // known (VisitRequestV2EditService). Deciding whether to open the editor from the registration
+        // floor is what would freeze a request that merely needs a typo fixed.
         var isResubmittable = visit.Status == VisitRequestStatuses.Rejected
             && instances.Count > 0
-            && instances.All(i => i.Status == VisitInstanceStatus.Rejected);
+            && instances.All(i => i.Status == VisitInstanceStatuses.Rejected);
 
-        if (!isEditablePending && !isResubmittable)
-            throw new BusinessRuleException(
-                "Đơn không còn ở trạng thái có thể sửa hoặc gửi lại (đã có cơ sở ra quyết định, đơn đã hủy, hoặc lịch còn dưới 24 giờ).",
+        if (isResubmittable)
+        {
+            // Same canonical call the resubmit command makes. Its lead time is deliberately NOT
+            // measured against the old, already-passed schedule; it is enforced against the new one.
+            VisitMutationGuard.EnsureRequestLevelAllowed(
+                VisitMutationAction.ResubmitRejectedRequest, visit, vnNow,
+                c => c.Status == VisitInstanceStatuses.Rejected,
+                VisitRequestErrorCodes.VisitRequestNotResubmittable);
+        }
+        else
+        {
+            // Anything not fully rejected is asked as a whole-request pending edit — including the
+            // states that must be REFUSED. Asking the guard rather than pre-filtering them out is what
+            // gets the caller the real reason: a cutoff refusal keeps its own
+            // VISIT_MUTATION_CUTOFF_REACHED code with cutoffAt/plannedStartAt/requiredLeadHours
+            // attached, and a mixed request whose sibling is already approved is told to edit the
+            // still-pending campus on its own instead of being handed a flat "không thể sửa".
+            VisitMutationGuard.EnsureRequestLevelAllowed(
+                VisitMutationAction.EditPendingRequest, visit, vnNow,
+                c => c.Status is VisitInstanceStatuses.WaitingContactConfirmation
+                              or VisitInstanceStatuses.WaitingRequestApproval,
                 VisitRequestErrorCodes.VisitRequestNotEditable);
+        }
+
+        // Past the guard, the mode IS the branch that survived it.
+        var isEditablePending = !isResubmittable;
 
         var campusIds = instances.Select(i => i.CampusId).Distinct().ToList();
         var campuses = campusIds.Count == 0
