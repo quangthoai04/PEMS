@@ -46,7 +46,13 @@
       "Bash(node -e ' *)",
       "Bash(wc -l /tmp_tsc_out.txt)",
       "Bash(xargs grep -l \"partners\" -i)",
-      "Bash(tail -20 /tmp_tsc_out.txt)"
+      "Bash(tail -20 /tmp_tsc_out.txt)",
+      "Bash(powershell -NoProfile -Command \"\\(Test-NetConnection -ComputerName localhost -Port 3000 -WarningAction SilentlyContinue\\).TcpTestSucceeded\")",
+      "Bash(curl -s \"http://localhost:3000/src/index.css\")",
+      "Bash(curl -s \"http://localhost:3000/src/index.css\" -o \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx.css\")",
+      "Bash(grep -o '\\\\.aspect-\\\\\\\\\\\\[4\\\\/3\\\\\\\\\\\\][^}]*}' \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx.css\")",
+      "Bash(grep -o 'aspect-\\\\\\\\\\\\[4' \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx.css\")",
+      "Bash(curl -s \"http://localhost:3000/src/index.css\" -o \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx2.css\")"
     ],
     "additionalDirectories": [
       "\\tmp"

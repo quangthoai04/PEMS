@@ -140,7 +140,7 @@ function CountryFlagCard({
       onClick={onClick}
       title={`${translatedName} — ${country.count} ${t('partners:list.partnersUnit')}`}
       aria-pressed={active}
-      className={`aspect-[4/3] rounded-2xl border shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#004c91]/40 ${
+      className={`relative aspect-[4/3] rounded-2xl border shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#004c91]/40 ${
         active ? 'border-[#004c91] ring-2 ring-[#004c91]/40' : 'border-slate-200'
       }`}
     >
