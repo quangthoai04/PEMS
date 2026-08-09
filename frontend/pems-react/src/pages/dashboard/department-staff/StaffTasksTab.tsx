@@ -59,11 +59,20 @@ const STATUS_LABEL: Record<string, string> = {
   CHANGE_PROPOSED: 'Đang đề xuất', REJECTED: 'Đã từ chối',
 };
 
-function fmt(iso?: string) {
-  if (!iso) return '—';
-  const local = toVietnamDateTimeLocalInput(iso); // "YYYY-MM-DDTHH:mm" giờ VN
-  if (!local) return '—';
-  return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
+function fmtSchedule(startIso?: string, endIso?: string) {
+  const sl = startIso ? toVietnamDateTimeLocalInput(startIso) : null;
+  const el = endIso ? toVietnamDateTimeLocalInput(endIso) : null;
+  if (!sl) return <span className="block">—</span>;
+  const dateOf = (l: string) => `${l.slice(8, 10)}/${l.slice(5, 7)}/${l.slice(0, 4)}`;
+  const timeOf = (l: string) => l.slice(11, 16);
+  const sameDay = !!el && dateOf(sl) === dateOf(el);
+  if (el && sameDay) {
+    return <><span className="block text-slate-700">{dateOf(sl)}</span><span className="block text-slate-400 mt-0.5">{timeOf(sl)} → {timeOf(el)}</span></>;
+  }
+  if (el) {
+    return <><span className="block">{timeOf(sl)} {dateOf(sl)}</span><span className="block text-slate-400 mt-0.5">→ {timeOf(el)} {dateOf(el)}</span></>;
+  }
+  return <span className="block">{timeOf(sl)} {dateOf(sl)}</span>;
 }
 
 function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
@@ -221,8 +230,7 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
                     </p>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 font-semibold whitespace-nowrap">
-                    <span className="block">Từ: {fmt(item.startAt)}</span>
-                    <span className="block text-slate-400 mt-0.5">Đến: {fmt(item.endAt)}</span>
+                    {fmtSchedule(item.startAt, item.endAt)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`inline-flex whitespace-nowrap px-2.5 py-1 rounded-full border text-[11px] font-black ${STATUS_BADGE[item.uiStatus] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>

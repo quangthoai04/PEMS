@@ -1646,8 +1646,16 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                       const sd = item.startAt ? toVietnamCalendarDate(item.startAt) : null;
                       const ed = item.endAt ? toVietnamCalendarDate(item.endAt) : null;
                       if (!sd) return '—';
-                      const fmt = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                      return <><span className="block">{fmt(sd)}</span>{ed && <span className="block text-slate-400">→ {fmt(ed)}</span>}</>;
+                      const dateStr = (d: Date) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                      const timeStr = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                      const sameDay = !!ed && dateStr(sd) === dateStr(ed);
+                      if (ed && sameDay) {
+                        return <><span className="block text-slate-800">{dateStr(sd)}</span><span className="block text-slate-400">{timeStr(sd)} → {timeStr(ed)}</span></>;
+                      }
+                      if (ed) {
+                        return <><span className="block">{timeStr(sd)} {dateStr(sd)}</span><span className="block text-slate-400">→ {timeStr(ed)} {dateStr(ed)}</span></>;
+                      }
+                      return <span className="block">{timeStr(sd)} {dateStr(sd)}</span>;
                     })()}
                   </td>
                   <td className="px-5 py-5 text-sm text-[#004c91] text-center">
