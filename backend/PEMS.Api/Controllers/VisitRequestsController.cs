@@ -347,10 +347,18 @@ public sealed class VisitRequestsController : ControllerBase
     // Every mutation names BOTH the request and the campus, and the handler proves the campus
     // belongs to that request before touching anything: there is no request-wide contact action.
     //
-    // The generic /api/public/email-actions handler REJECTS these contexts on purpose. Taking on a
-    // campus is a grant of authority, so possession of the link is never enough — the landing page
-    // is anonymous and masked-only, and accept/decline require a signed-in session whose address
-    // matches the invitation.
+    // The generic /api/public/email-actions handler REJECTS these contexts on purpose: it is a
+    // GET-executes-the-action door, and taking on (or refusing) a campus must never be answered by a
+    // mail scanner following a link. These endpoints replace it with the safe shape — an anonymous,
+    // masked, read-only landing GET, and a POST the reader triggers from that page.
+    //
+    // The POSTs come in two flavours for the same two answers:
+    //   • /api/operational-contact-confirmations/{token}/{accept,decline} — signed in. The session's
+    //     address must match the invitation.
+    //   • /api/public/operational-contact-confirmations/{token}/{accept,decline} — NOT signed in.
+    //     The invited person is usually an external guest with no PEMS account, and demanding one
+    //     before they may answer is why invitations went unanswered and campuses sat behind the
+    //     confirmation gate. The single-use, action-bound, address-bound token is the authorization.
 
     /// <summary>Anonymous masked landing summary for a confirmation link (either kind).</summary>
     [HttpGet("/api/public/operational-contact-confirmations/{token}")]
@@ -390,6 +398,83 @@ public sealed class VisitRequestsController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// The invited person takes on ONE campus WITHOUT signing in, from the confirmation page the
+    /// email's "Xác nhận" button opened. POST only — a GET here would be executed by link prefetchers.
+    /// The handler links the existing account for the invited address, or provisions the Visitor
+    /// account a later Google sign-in with that address will resolve to.
+    /// </summary>
+    [HttpPost("/api/public/operational-contact-confirmations/{token}/accept")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PublicAcceptOperationalContactConfirmation(
+        string token, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.PublicAcceptOperationalContactConfirmationCommand(token),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// The invited person declines ONE campus without signing in. No account is provisioned: refusing
+    /// a role is not a reason to acquire an account.
+    /// </summary>
+    [HttpPost("/api/public/operational-contact-confirmations/{token}/decline")]
+    [AllowAnonymous]
+    public async Task<IActionResult> PublicDeclineOperationalContactConfirmation(
+        string token,
+        [FromBody] DeclineOperationalContactRequest? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.PublicDeclineOperationalContactConfirmationCommand(token, body?.Reason),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// "Lời mời đầu mối của tôi" — the outstanding invitations addressed to the signed-in account's
+    /// own address, so an invitee who is already in PEMS can answer without going back to their inbox.
+    /// A limited summary only: a pending invitee is not yet the contact of anything.
+    /// </summary>
+    [HttpGet("/api/v2/me/operational-contact-invitations")]
+    [Authorize]
+    public async Task<IActionResult> GetMyOperationalContactInvitations(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.GetMyOperationalContactInvitationsQuery(),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Signed-in invitee accepts one of their own invitations, by id rather than by link.</summary>
+    [HttpPost("/api/v2/me/operational-contact-invitations/{identityChangeId}/accept")]
+    [Authorize]
+    public async Task<IActionResult> AcceptMyOperationalContactInvitation(
+        ulong identityChangeId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.AcceptOperationalContactConfirmationCommand(
+                Token: null, ActingUserId: null, IdentityChangeId: identityChangeId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>Signed-in invitee declines one of their own invitations, by id rather than by link.</summary>
+    [HttpPost("/api/v2/me/operational-contact-invitations/{identityChangeId}/decline")]
+    [Authorize]
+    public async Task<IActionResult> DeclineMyOperationalContactInvitation(
+        ulong identityChangeId,
+        [FromBody] DeclineOperationalContactRequest? body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.DeclineOperationalContactConfirmationCommand(
+                Token: null, Reason: body?.Reason, ActingUserId: null, IdentityChangeId: identityChangeId),
+            cancellationToken);
+        return Ok(result);
+    }
+
     /// <summary>Current contact + in-flight invitation of ONE campus (masked).</summary>
     [HttpGet("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact")]
     [Authorize]
@@ -410,6 +495,23 @@ public sealed class VisitRequestsController : ControllerBase
     {
         var result = await _mediator.Send(
             new PEMS.Application.Delegations.Commands.OperationalContact.ResendOperationalContactConfirmationCommand(visitRequestId, visitInstanceId),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Opens a NEW invitation for the address this campus already names, when the previous one ended
+    /// unanswered (cancelled / declined / expired) so there is nothing left to resend. Refused when the
+    /// campus already has a confirmed contact or an invitation still in flight — the latter is a
+    /// resend, above.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact-confirmation/reinvite")]
+    [Authorize]
+    public async Task<IActionResult> ReinviteOperationalContactConfirmation(
+        ulong visitRequestId, ulong visitInstanceId, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.ReinviteOperationalContactConfirmationCommand(visitRequestId, visitInstanceId),
             cancellationToken);
         return Ok(result);
     }

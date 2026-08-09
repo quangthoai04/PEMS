@@ -169,6 +169,18 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
 
         // ── 5. Apply + revisions + audit, one commit ──
         var correlationId = Guid.NewGuid().ToString("N");
+
+        // Baselines BEFORE `Apply()` writes anything. Every touched campus is about to reach revision
+        // N+1, and the request block is about to be rewritten — so this is the last point at which the
+        // "before" values still exist to be recorded. A safe edit is exactly the case that used to
+        // produce an empty drawer: it changes a note or a phone number, and with no revision N to diff
+        // against, the history reported "no recorded changes" for a change the user had just made.
+        var requestBaselineJson = VisitRevisionBaselineGuard.CaptureRequestSnapshot(request);
+        foreach (var instance in touchedInstances)
+            if (instance.FormDetail is { } beforeDetail)
+                await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+                    _db, request, instance, beforeDetail, actorId, now, ct);
+
         foreach (var c in changes) c.Apply();
 
         foreach (var instance in touchedInstances)
@@ -199,6 +211,9 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
 
         if (changes.Any(c => c.InstanceId is null))
         {
+            await VisitRevisionBaselineGuard.EnsureRequestBaselineAsync(
+                _db, request, requestBaselineJson, actorId, now, ct);
+
             var nextRevision = (await _db.VisitRequestRevisionHistories
                 .Where(r => r.VisitRequestId == request.VisitRequestId)
                 .MaxAsync(r => (uint?)r.RequestRevision, ct) ?? 0) + 1;

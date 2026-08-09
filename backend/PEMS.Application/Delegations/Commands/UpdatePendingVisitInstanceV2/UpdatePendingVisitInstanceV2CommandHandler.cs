@@ -172,6 +172,14 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
         {
             if (instance.CoordinatorUserId is not { } leaderId || leaderId == actorId) return;
 
+            // Never while the request is behind the GLOBAL confirmation gate. This campus's own
+            // contact may already have confirmed — that is precisely the case this guards — but a
+            // sibling has not, so no Staff Leader may see the request yet and this notification
+            // would deep-link its leader into a detail page that refuses them. The one canonical
+            // "there is something to review" announcement is sent when the LAST contact confirms
+            // (OperationalContactNotifier.AnnounceApprovalReady, deduped on the gate revision).
+            if (VisitRequestStatuses.IsBehindContactGate(visit.Status)) return;
+
             var campusName = await _db.Campuses.AsNoTracking()
                 .Where(c => c.CampusId == instance.CampusId)
                 .Select(c => c.Name)

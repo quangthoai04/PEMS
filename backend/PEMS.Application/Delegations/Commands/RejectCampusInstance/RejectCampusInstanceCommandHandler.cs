@@ -92,6 +92,12 @@ public sealed class RejectCampusInstanceCommandHandler
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
+        // Inside the transaction, before the decision is written: the reviewer must be rejecting the
+        // revision they actually read. A guest who corrected the very thing that was about to be
+        // refused would otherwise have the correction refused without anybody reading it.
+        await VisitInstanceConcurrencyGuard.EnsureUnchangedAsync(
+            _db, instance, request.ExpectedInstanceRowVersion, cancellationToken);
+
         // Reject records the decision on the instance only — never a host, never participants,
         // never logistics/minutes/calendar.
         instance.Status = VisitInstanceStatus.Rejected;

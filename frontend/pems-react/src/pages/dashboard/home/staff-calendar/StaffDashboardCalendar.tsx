@@ -38,6 +38,10 @@ import { matchCalendarChangeNotifs } from '../../../../features/notifications/ut
 import { useAuth } from '../../../../shared/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { AssignHostModal } from '../../../../components/modals/AssignHostModal';
+import {
+  isInstanceVersionConflict,
+  INSTANCE_VERSION_CONFLICT_MESSAGE,
+} from '../../../../features/visit-request/utils/decisionConflict';
 import { StaffVisitDetailModal } from './StaffVisitDetailModal';
 import { formatVietnamTime, toVietnamCalendarDate } from '../../../../shared/utils/vietnamTime';
 
@@ -396,11 +400,20 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
     setReject((s) => ({ ...s, submitting: true, error: null }));
     try {
       await delegationsApi.rejectCampusInstance(
-        reject.detail.visitRequestId, reject.detail.visitInstanceId, reject.text.trim());
+        reject.detail.visitRequestId, reject.detail.visitInstanceId, reject.text.trim(),
+        reject.detail.rowVersion);
       toast.success('Đã từ chối tiếp nhận tại cơ sở này.');
       setReject({ open: false, detail: null, text: '', submitting: false, error: null });
       await refreshAfterAction();
     } catch (e: any) {
+      // Phiên bản cũ: đóng hộp thoại và tải lại thay vì để người duyệt bấm lại — nội dung họ vừa
+      // đọc không còn là nội dung sẽ bị từ chối.
+      if (isInstanceVersionConflict(e)) {
+        setReject({ open: false, detail: null, text: '', submitting: false, error: null });
+        toast.error(INSTANCE_VERSION_CONFLICT_MESSAGE);
+        await refreshAfterAction();
+        return;
+      }
       setReject((s) => ({
         ...s, submitting: false,
         error: e?.response?.data?.message || e?.response?.data?.title || 'Từ chối thất bại. Vui lòng thử lại.',
@@ -425,10 +438,16 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         toast.error('Không tìm thấy lựa chọn tự làm người phụ trách cho cơ sở này.');
         return;
       }
-      await delegationsApi.approveCampusInstance(detail.visitRequestId, detail.visitInstanceId, selfOption.userId);
+      await delegationsApi.approveCampusInstance(
+        detail.visitRequestId, detail.visitInstanceId, selfOption.userId, undefined, detail.rowVersion);
       toast.success('Bạn đã trở thành người phụ trách đoàn khách này.');
       await refreshAfterAction();
     } catch (e: any) {
+      if (isInstanceVersionConflict(e)) {
+        toast.error(INSTANCE_VERSION_CONFLICT_MESSAGE);
+        await refreshAfterAction();
+        return;
+      }
       toast.error(e?.response?.data?.message || e?.response?.data?.title || 'Không thể tự nhận làm người phụ trách. Vui lòng thử lại.');
     } finally {
       setSelfHostSubmittingId(null);
@@ -898,8 +917,12 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
           delegationName={assign.detail.delegationName}
           currentHostUserId={assign.detail.currentHostUserId}
           customTitle="Duyệt & gán host"
+          // Phiên bản campus đúng như modal chi tiết vừa hiển thị cho người duyệt.
+          expectedInstanceRowVersion={assign.detail.rowVersion}
           onClose={() => setAssign({ open: false, detail: null })}
           onConfirmed={() => { void handleHostAssigned(); }}
+          // Chỉ tải lại dữ liệu; người duyệt phải tự mở lại và đọc bản mới trước khi quyết định.
+          onReloadRequested={() => { void refreshAfterAction(); }}
         />
       )}
 

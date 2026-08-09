@@ -312,13 +312,46 @@ public sealed class OperationalContactConfirmationWorkflowTests
         return (row.VisitInstanceId, row.IdentityChangeId);
     }
 
+    /// <summary>
+    /// Sends the invitation and returns its ACCEPT link.
+    ///
+    /// <para>
+    /// An invitation now carries TWO links, one per answer, so that the confirmation page learns which
+    /// button was pressed from the token rather than from a query parameter a mail scanner could flip.
+    /// This helper keeps returning the accept link because that is what most callers here are testing;
+    /// a decline needs <see cref="MintDeclineTokenAsync"/>, and posting one where the other belongs is
+    /// refused on purpose.
+    /// </para>
+    /// </summary>
     private static async Task<string> MintTokenAsync(ulong changeId, FakeEmail? email = null)
     {
         using var db = NewContext();
-        var raw = await Invitations(db, email).SendInvitationAsync(changeId, CancellationToken.None);
-        Assert.NotNull(raw);
-        return raw!;
+        var invitations = Invitations(db, email);
+        // The two halves in the order every production caller uses them: mint, make the links durable,
+        // then send. There is no mint-and-send convenience any more, on purpose — see the service docs.
+        var tokens = await invitations.MintInvitationTokensAsync(changeId, CancellationToken.None);
+        Assert.NotNull(tokens);
+        await db.SaveChangesAsync(CancellationToken.None);
+        await invitations.DispatchInvitationEmailAsync(changeId, tokens!, CancellationToken.None);
+        return tokens!.AcceptToken;
     }
+
+    /// <summary>The DECLINE link of the invitation's newest token group.</summary>
+    private static async Task<string> MintDeclineTokenAsync(ulong changeId, FakeEmail? email = null)
+    {
+        using var db = NewContext();
+        var tokens = await Invitations(db, email)
+            .MintInvitationTokensAsync(changeId, CancellationToken.None);
+        Assert.NotNull(tokens);
+        await db.SaveChangesAsync(CancellationToken.None);
+        return tokens!.DeclineToken;
+    }
+
+    /// <summary>
+    /// How many links ONE send produces — an accept and a decline. Named so the assertions below read
+    /// as "one invitation" rather than as a bare 2.
+    /// </summary>
+    private const int LinksPerInvitation = 2;
 
     /// <summary>
     /// Backdates this invitation’s newest link past the resend cooldown. The guard reads the last
@@ -574,7 +607,8 @@ public sealed class OperationalContactConfirmationWorkflowTests
             requestId = await CreateAsync(Form(Campus("HN", contactEmail, 0)));
 
             var (instanceId, changeId) = await PendingInvitationAsync(requestId);
-            var token = await MintTokenAsync(changeId);
+            // The DECLINE link — an accept link cannot decline, which is the point of minting two.
+            var token = await MintDeclineTokenAsync(changeId);
 
             using (var db = NewContext())
             {
@@ -614,7 +648,8 @@ public sealed class OperationalContactConfirmationWorkflowTests
             var email = new FakeEmail();
             await MintTokenAsync(changeId, email);
             var tokensBefore = await LiveTokenCountAsync(changeId);
-            Assert.Equal(1, tokensBefore);
+            // One SEND, two live links: accept and decline.
+            Assert.Equal(LinksPerInvitation, tokensBefore);
 
             // The cooldown is measured from the newest token of this invitation, so age it: this test
             // is about what a resend DOES, not about the one-minute window.
@@ -628,11 +663,12 @@ public sealed class OperationalContactConfirmationWorkflowTests
                 Assert.Equal(1u, result.ResendCount);
             }
 
-            // A resend MINTS a new link and kills the old one, so exactly one stays usable. Asserted
-            // on the token rows rather than on the mail body: whether the body renders a URL depends on
-            // the email template seed, and the link’s validity does not.
-            Assert.Equal(1, await LiveTokenCountAsync(changeId));
-            Assert.Equal(2, await TotalTokenCountAsync(changeId));
+            // A resend MINTS a fresh PAIR of links and kills the previous pair, so exactly one
+            // invitation's worth stays usable. Asserted on the token rows rather than on the mail
+            // body: whether the body renders a URL depends on the email template seed, and the
+            // links' validity does not.
+            Assert.Equal(LinksPerInvitation, await LiveTokenCountAsync(changeId));
+            Assert.Equal(LinksPerInvitation * 2, await TotalTokenCountAsync(changeId));
         }
         finally { await CleanupAsync(requestId); }
     }

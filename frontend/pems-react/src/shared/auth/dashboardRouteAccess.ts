@@ -54,6 +54,7 @@ export type DashboardRouteKey =
   | 'VISIT_EDIT'
   | 'VISIT_PROCESS'
   | 'VISIT_INVITATION'
+  | 'VISIT_CONTACT_INVITATIONS'
   | 'VISIT_FEEDBACK'
   | 'AGENDA_TEMPLATE'
   | 'VISIT_PHOTOS'
@@ -283,6 +284,16 @@ const POLICIES: readonly DashboardRoutePolicy[] = [
   { key: 'VISIT_EDIT', path: '/dashboard/visit/v2/:visitRequestId/edit', allowedRoles: BUSINESS_ROLES },
   { key: 'VISIT_PROCESS', path: '/dashboard/visit/process/:id', allowedRoles: BUSINESS_ROLES },
   { key: 'VISIT_INVITATION', path: '/dashboard/visit/invitations/:participantId', allowedRoles: BUSINESS_ROLES },
+  {
+    // "Lời mời đầu mối của tôi". Mọi role nghiệp vụ: người được mời làm đầu mối vận hành có thể là
+    // khách bên ngoài (VISITOR) hoặc nhân sự nội bộ — quyền nhận vai trò không gắn với role.
+    // KHÔNG lên sidebar: lối vào là dải thông báo ở màn Quản lý tiếp khách, chỉ hiện khi thật sự có
+    // lời mời chờ trả lời. Route chỉ là cổng thô — lời mời NÀO thuộc về ai do backend quyết định
+    // theo email đã xác thực của tài khoản, không theo URL.
+    key: 'VISIT_CONTACT_INVITATIONS',
+    path: '/dashboard/visit/contact-invitations',
+    allowedRoles: BUSINESS_ROLES,
+  },
   { key: 'VISIT_FEEDBACK', path: '/dashboard/visit/feedback/:visitInstanceId', allowedRoles: BUSINESS_ROLES },
   {
     key: 'AGENDA_TEMPLATE',

@@ -62,6 +62,8 @@ public sealed class InitiateOperationalContactTransferCommandHandler
         var expiresAt = OperationalContactGuards.ExpiryFor(IdentityChangeKinds.Transfer, now);
 
         ulong invitationId;
+        // Minted inside the transaction below, dispatched after it commits.
+        PEMS.Application.Common.Interfaces.OperationalContactInvitationTokens? invitationTokens = null;
         OperationalContactManageResponse response;
 
         await using (var tx = await _db.BeginTransactionAsync(cancellationToken))
@@ -193,7 +195,23 @@ public sealed class InitiateOperationalContactTransferCommandHandler
             });
             _db.AuditLogs.Add(audit);
 
+            // ── The tokens are part of THIS transaction, not a follow-up step. ──────────────────
+            // A transfer is only answerable through its link, so committing the identity change and
+            // minting the token afterwards can produce a state nobody can escape: TRANSFER = PENDING
+            // in the database (which blocks any further contact change on this campus, since only one
+            // pending change is allowed), no usable link in existence, and a 500 back to the browser —
+            // so the UI says "Đã xảy ra lỗi. Vui lòng thử lại." for an operation that half succeeded,
+            // and the retry is then refused as a duplicate.
+            //
+            // Minted here, a token failure rolls the transfer back with it and the error the user sees
+            // is true. Requires a SaveChanges first so the identity change has its id.
             await _db.SaveChangesAsync(cancellationToken);
+            invitationTokens = OperationalContactGuards.RequireMintedLinks(
+                await _invitations.MintInvitationTokensAsync(
+                    transfer.IdentityChangeId, cancellationToken),
+                transfer.IdentityChangeId);
+            await _db.SaveChangesAsync(cancellationToken);
+
             await tx.CommitAsync(cancellationToken);
 
             invitationId = transfer.IdentityChangeId;
@@ -205,7 +223,11 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                 "Đã gửi lời mời chuyển giao đầu mối vận hành cho cơ sở này. Đầu mối hiện tại giữ nguyên quyền cho tới khi người mới xác nhận.");
         }
 
-        await _invitations.SendInvitationAsync(invitationId, cancellationToken);
+        // Only the DELIVERY is best-effort, and only after the commit. The transfer and its links are
+        // durable by now, so a mail-provider failure leaves a pending invitation that resend recovers
+        // — it never rolls back a handover the user was told had started.
+        if (invitationTokens is not null)
+            await _invitations.DispatchInvitationEmailAsync(invitationId, invitationTokens, cancellationToken);
 
         return response;
     }

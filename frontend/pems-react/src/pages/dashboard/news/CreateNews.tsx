@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
@@ -16,6 +17,12 @@ import { CollapsibleSection } from './components/CollapsibleSection';
 import { AutoGrowInput, AutoGrowTextarea } from './components/AutoGrowInput';
 import { VisitInstancePhotoPicker } from './components/VisitInstancePhotoPicker';
 import { SmartImage } from './components/SmartImage';
+import {
+  visitNewsReasonKey,
+  visitNewsReasonKeyOrNull,
+  VisitNewsReasonCode,
+  type RequestedVisitNewsEligibility,
+} from './visitNewsEligibility';
 
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -91,6 +98,7 @@ export function CreateNews() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const { t } = useTranslation(['news']);
   // Đi từ tab "Sau tiếp khách"/trang Đóng góp: chuyến được chọn sẵn + quay lại đúng trang cũ.
   const presetVisitInstanceId = searchParams.get('visitInstanceId');
   const returnTo = searchParams.get('returnTo');
@@ -108,7 +116,17 @@ export function CreateNews() {
   const [skippedVisit, setSkippedVisit]       = useState(false); // Staff: "không gắn đoàn nào"
   // Khi có preset: khóa chuyến, không cho đổi; lỗi preset hiển thị riêng.
   const [presetError, setPresetError]         = useState<string | null>(null);
+  /**
+   * Bài viết SẴN CÓ của chính người đang đăng nhập cho chuyến preset — dùng cho nút "Mở bài viết
+   * hiện có". Trước đây ô này bị gán `visitInstanceId`, nên nút (nếu có) sẽ dẫn tới một bài không
+   * tồn tại; giờ backend trả đúng `existingNewsId`.
+   */
   const [presetExistingNewsId, setPresetExistingNewsId] = useState<number | null>(null);
+  /**
+   * Backend nói KHÔNG cho viết tin cho chuyến preset — bất kể lý do nào. Khóa form theo đúng một
+   * phán quyết đó, thay vì suy ra từ việc chuyến có/không nằm trong danh sách.
+   */
+  const [presetBlocked, setPresetBlocked]     = useState(false);
 
   // Step 1: Basic info
   const [title,   setTitle]   = useState('');
@@ -177,33 +195,47 @@ export function CreateNews() {
     const fetchVisits = async () => {
       setLoadingVisits(true);
       try {
-        // Khi có chuyến chọn sẵn (?visitInstanceId): lấy cả chuyến đã có bài để báo đúng lý do.
-        const { data } = await httpClient.get<{ items: EligibleVisit[] }>(
+        // Khi có chuyến chọn sẵn (?visitInstanceId): xin luôn PHÁN QUYẾT của backend cho đúng chuyến
+        // đó (`requested`) — cùng một bộ luật mà màn Quy trình và lệnh tạo tin dùng. Danh sách trả
+        // lời "tôi viết được cho những chuyến nào"; `requested` trả lời "vì sao không phải chuyến
+        // này". Frontend KHÔNG suy luận điều kiện từ việc chuyến vắng mặt trong danh sách.
+        const { data } = await httpClient.get<{
+          items: EligibleVisit[];
+          requested?: RequestedVisitNewsEligibility | null;
+        }>(
           '/news/eligible-visit-instances',
-          { params: { includeAlreadyHasNews: !!presetVisitInstanceId } }
+          {
+            params: {
+              includeAlreadyHasNews: !!presetVisitInstanceId,
+              ...(presetVisitInstanceId ? { visitInstanceId: presetVisitInstanceId } : {}),
+            },
+          }
         );
         if (cancelled) return;
         const items = data.items ?? [];
+        setEligibleVisits(items);
 
         if (presetVisitInstanceId) {
+          // Thẻ tóm tắt chuyến hiển thị được thì hiển thị — kể cả khi chuyến bị từ chối vì đã có bài.
           const preset = items.find(v => String(v.visitInstanceId) === presetVisitInstanceId);
-          if (!preset) {
-            setPresetError('Chuyến tiếp khách này chưa đủ điều kiện để viết tin tức (chưa vào giai đoạn Sau tiếp khách, không yêu cầu tin tức, hoặc bạn không phải Host/người tham gia).');
-          } else if (preset.hasNews) {
-            setPresetExistingNewsId(preset.visitInstanceId);
-            setSelectedVisit(preset);
-            setPresetError('Bạn đã có bài viết cho chuyến này. Vui lòng chỉnh sửa bài hiện có trong Quản lý tin tức.');
-          } else {
-            setSelectedVisit(preset);
+          if (preset) setSelectedVisit(preset);
+
+          const verdict = data.requested ?? null;
+          if (verdict && !verdict.canCreate) {
+            setPresetBlocked(true);
+            setPresetError(t(visitNewsReasonKey(verdict.reasonCode)));
+            if (verdict.reasonCode === VisitNewsReasonCode.AlreadyExists && verdict.existingNewsId) {
+              setPresetExistingNewsId(verdict.existingNewsId);
+            }
           }
-          setEligibleVisits(items);
-        } else {
-          setEligibleVisits(items);
         }
       } catch {
         if (!cancelled) {
           setEligibleVisits([]);
-          if (presetVisitInstanceId) setPresetError('Không thể tải thông tin chuyến tiếp khách. Vui lòng thử lại.');
+          if (presetVisitInstanceId) {
+            setPresetBlocked(true);
+            setPresetError(t('news:visitEligibility.loadFailed'));
+          }
         }
       } finally {
         if (!cancelled) setLoadingVisits(false);
@@ -211,7 +243,7 @@ export function CreateNews() {
     };
     fetchVisits();
     return () => { cancelled = true; };
-  }, [presetVisitInstanceId]);
+  }, [presetVisitInstanceId, t]);
 
   // ── Visit selection ────────────────────────────────────────────────────────
 
@@ -401,24 +433,44 @@ export function CreateNews() {
         }));
       }
 
-      const { data } = await httpClient.post<{ success: boolean; message: string }>('/news', payload);
+      const { data } = await httpClient.post<{
+        success: boolean;
+        message: string;
+        errorCode?: string | null;
+        data?: { existingNewsId?: number | null; canEditExisting?: boolean | null } | null;
+      }>('/news', payload);
 
       if (data.success) {
         toast.success(data.message || 'Đã gửi bài viết, đang chờ Staff Leader duyệt.');
         setTimeout(() => navigate(returnTo || '/dashboard/news'), 1200);
       } else {
-        toast.error(data.message ?? 'Không thể tạo tin tức.');
+        // Cùng bảng mã lý do như lúc tải trang — người dùng không thể nhận hai câu trả lời khác
+        // nhau cho cùng một nguyên nhân, chỉ vì một cái đến từ GET và một cái đến từ POST. Mã KHÔNG
+        // thuộc nhóm điều kiện viết tin thì giữ nguyên thông báo của backend.
+        const reasonKey = visitNewsReasonKeyOrNull(data.errorCode);
+        toast.error(reasonKey ? t(reasonKey) : (data.message ?? 'Không thể tạo tin tức.'));
+        if (data.errorCode === VisitNewsReasonCode.AlreadyExists) {
+          setPresetBlocked(true);
+          setPresetError(t(visitNewsReasonKey(data.errorCode)));
+          if (data.data?.existingNewsId) setPresetExistingNewsId(data.data.existingNewsId);
+        }
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Có lỗi xảy ra. Vui lòng thử lại.');
+      const reasonKey = visitNewsReasonKeyOrNull(err?.response?.data?.errorCode);
+      toast.error(
+        reasonKey
+          ? t(reasonKey)
+          : (err?.response?.data?.message ?? 'Có lỗi xảy ra. Vui lòng thử lại.'),
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Khóa form khi (bắt buộc chọn chuyến mà chưa chọn) hoặc user đã có bài cho chuyến preset.
+  // Khóa form khi (bắt buộc chọn chuyến mà chưa chọn) hoặc backend đã từ chối chuyến preset —
+  // theo đúng phán quyết đó, không phân biệt lý do.
   const visitStepDone = !visitRequired ? (selectedVisit !== null || skippedVisit) : selectedVisit !== null;
-  const formDisabled = !visitStepDone || presetExistingNewsId !== null;
+  const formDisabled = !visitStepDone || presetBlocked;
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -462,8 +514,18 @@ export function CreateNews() {
             )}
 
             {presetError && !loadingVisits && (
-              <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm font-semibold text-amber-800">
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm font-semibold text-amber-800" role="alert">
                 {presetError}
+                {/* Đã có bài của chính mình → dẫn thẳng tới bài đó thay vì để người dùng đi tìm. */}
+                {presetExistingNewsId !== null && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/dashboard/news/${presetExistingNewsId}`)}
+                    className="mt-3 block px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
+                  >
+                    {t('news:visitEligibility.openExisting')}
+                  </button>
+                )}
               </div>
             )}
 

@@ -82,9 +82,14 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
             throw new BusinessRuleException(
                 "Đơn không có cơ sở nào nên không thể sửa.",
                 VisitRequestErrorCodes.VisitRequestNotEditable);
+        // Both pre-decision stages qualify: a request whose campuses are still waiting for their
+        // operational contacts is as un-decided as one waiting for approval, and the registrant may
+        // correct it in either. Same predicate the read model uses to offer the action, and the same
+        // one VisitMutationPolicy applies underneath.
         VisitMutationGuard.EnsureRequestLevelAllowed(
             VisitMutationAction.EditPendingRequest, visit, now,
-            c => c.Status == VisitInstanceStatuses.WaitingRequestApproval,
+            c => c.Status is VisitInstanceStatuses.WaitingContactConfirmation
+                          or VisitInstanceStatuses.WaitingRequestApproval,
             VisitRequestErrorCodes.VisitRequestNotEditable);
 
         // Campuses involved BEFORE the edit (kept + removed) — their leaders are notified too.
@@ -101,10 +106,21 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
         // ── Post-commit notifications (best-effort; a rolled-back edit never notifies) ──
         // Mixed v2: the projection is not business content — the generic notification names the request
         // by code with the explicit mixed label (leaders read their own campus's content in the detail).
-        var notifyName = visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : (visit.CampusInstances.FirstOrDefault()?.FormDetail?.DelegationName ?? visit.RequestCode);
-        await NotifyLeadersAfterCommitAsync(visit.VisitRequestId, visit.RequestCode, notifyName,
-            campusIdsBefore.Concat(visit.CampusInstances.Select(c => c.CampusId)).Distinct().ToList(),
-            actorId, cancellationToken);
+        //
+        // BUT NOT while the request is behind the global confirmation gate. A leader who cannot see
+        // the request must not be told to go and review it: the notification carries the request's
+        // code, its delegation name and a deep link into a detail page that will refuse them. The
+        // canonical moment to announce a request to its leaders is the FINAL contact acceptance —
+        // OperationalContactNotifier.AnnounceApprovalReady, keyed on the gate revision so a retry
+        // cannot mail twice. An edit made before that point changes what they will eventually read,
+        // not whether they should read it yet.
+        if (!VisitRequestStatuses.IsBehindContactGate(visit.Status))
+        {
+            var notifyName = visit.HasMixedCampusDetails ? "Khác nhau theo cơ sở" : (visit.CampusInstances.FirstOrDefault()?.FormDetail?.DelegationName ?? visit.RequestCode);
+            await NotifyLeadersAfterCommitAsync(visit.VisitRequestId, visit.RequestCode, notifyName,
+                campusIdsBefore.Concat(visit.CampusInstances.Select(c => c.CampusId)).Distinct().ToList(),
+                actorId, cancellationToken);
+        }
 
         var instances = visit.CampusInstances
             .OrderBy(c => c.CampusId)

@@ -24,7 +24,15 @@ public class SetupProgressEmailPermissionTests
         var db = ScheduleReportTestDbContext.Create();
         ScheduleReportTestData.SeedBase(db, instanceStatus);
         var user = new FakeScheduleReportCurrentUser();
-        return (db, new GetVisitProcessPermissionsQueryHandler(db, user), user);
+        // The handler now needs a clock for the BEFORE → DURING earliest-start gate. The seeded visit
+        // starts 2026-08-01 09:00, so this sits INSIDE the six-hour window — these tests are about the
+        // setup-progress email permission, and a clock outside the window would change an unrelated
+        // flag underneath them.
+        var clock = new PEMS.UnitTests.TestInfrastructure.FakeDateTimeService
+        {
+            UtcNow = new DateTime(2026, 8, 1, 1, 0, 0, DateTimeKind.Utc), // 08:00 Vietnam
+        };
+        return (db, new GetVisitProcessPermissionsQueryHandler(db, user, clock), user);
     }
 
     private static Task<VisitProcessPermissionDto> AskAsync(GetVisitProcessPermissionsQueryHandler handler) =>

@@ -179,7 +179,9 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> ApproveCampusInstance(ulong visitRequestId, ulong visitInstanceId, [FromBody] ApproveCampusInstanceBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new ApproveCampusInstanceCommand(visitRequestId, visitInstanceId, body.HostUserId, body.DecisionNote),
+                new ApproveCampusInstanceCommand(
+                    visitRequestId, visitInstanceId, body.HostUserId, body.DecisionNote,
+                    body.ExpectedInstanceRowVersion),
                 cancellationToken);
             return Ok(result);
         }
@@ -189,7 +191,8 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> RejectCampusInstance(ulong visitRequestId, ulong visitInstanceId, [FromBody] RejectVisitRequestBody body, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(
-                new RejectCampusInstanceCommand(visitRequestId, visitInstanceId, body.Reason),
+                new RejectCampusInstanceCommand(
+                    visitRequestId, visitInstanceId, body.Reason, body.ExpectedInstanceRowVersion),
                 cancellationToken);
             return Ok(result);
         }
@@ -764,13 +767,18 @@ namespace PEMS.Api.Controllers
     /// <summary>Request body for the UC-136 cancel endpoints.</summary>
     public sealed record CancelVisitRequestBody(string CancellationReason);
 
-    /// <summary>Request body for the UC-22 campus-instance reject endpoint (reason is mandatory).</summary>
-    public sealed record RejectVisitRequestBody(string Reason);
+    /// <summary>Request body for the UC-22 campus-instance reject endpoint (reason is mandatory).
+    /// <c>ExpectedInstanceRowVersion</c> is the campus version the reviewer's screen rendered — a
+    /// decision on a stale revision is refused with 409 <c>VISIT_INSTANCE_VERSION_CONFLICT</c>.</summary>
+    public sealed record RejectVisitRequestBody(string Reason, int? ExpectedInstanceRowVersion = null);
 
     /// <summary>Request body for the UC-22 approve-campus-instance endpoint: the official host is
     /// mandatory; the decision note is optional. Gán host không gửi email — Staff được gán xem
-    /// qua thông báo/"Lịch của tôi".</summary>
-    public sealed record ApproveCampusInstanceBody(ulong HostUserId, string? DecisionNote);
+    /// qua thông báo/"Lịch của tôi". <c>ExpectedInstanceRowVersion</c> is the campus version the
+    /// approver's screen rendered — approving a revision they never read is refused with 409
+    /// <c>VISIT_INSTANCE_VERSION_CONFLICT</c>.</summary>
+    public sealed record ApproveCampusInstanceBody(
+        ulong HostUserId, string? DecisionNote, int? ExpectedInstanceRowVersion = null);
 
     /// <summary>Request body for updating an internally-created request's registrant block.</summary>
     public sealed record UpdateRegistrantInfoBody(string FullName, string Organization, string? JobTitle, string Phone, string Email);

@@ -213,10 +213,20 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 FindProposedDate(amendment, VisitFieldClassifier.PlannedEndAt) ?? instance.PlannedEndAt,
                 now);
 
-        // ── 1. The CURRENT active state is already snapshotted: revision history holds exactly one row per
-        //       form_revision (unique key) written by whichever edit produced it (CREATE/SAFE_EDIT/RESUBMIT/
-        //       AMENDMENT). Approve therefore only appends the POST-apply row for the new revision. ──
+        // ── 1. The CURRENT active state is USUALLY already snapshotted: revision history holds exactly
+        //       one row per form_revision (unique key) written by whichever edit produced it
+        //       (CREATE/SAFE_EDIT/RESUBMIT/AMENDMENT), so approve normally only appends the POST-apply
+        //       row for the new revision.
+        //
+        //       "Usually" is the part that used to be assumed. A campus whose chain never got its first
+        //       link — legacy data, canonical seed, a restored database — reaches this line at revision
+        //       N with no row for N, and appending N+1 leaves the drawer with nothing to diff against:
+        //       the amendment says what it proposed, but the revision entry beside it reports no
+        //       recorded changes. Captured here, before the change rows below rewrite the detail, the
+        //       schedule and the members. ──
         var membersBefore = V2CanonicalRefresh.MembersOf(request, instance);
+        await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+            _db, request, instance, detail, actorId, now, ct);
 
         // ── 2. Apply the change rows target-only ──
         List<VisitGuestMember>? stagedMembers = null;

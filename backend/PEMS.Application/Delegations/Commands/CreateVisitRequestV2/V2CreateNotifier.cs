@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Commands.OperationalContact;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -94,46 +95,73 @@ internal static class V2CreateNotifier
         }
     }
 
+    /// <summary>One campus's INITIAL_CLAIM invitation and the links that answer it.</summary>
+    public readonly record struct MintedInvitation(
+        ulong IdentityChangeId, OperationalContactInvitationTokens Tokens);
+
     /// <summary>
-    /// Post-commit INITIAL_CLAIM invitation (plan §16.4): when the primary contact is NOT the registrant,
-    /// the create transaction stored a PENDING claim — this sends the invitation email with the single-use
-    /// campus that needs one. A campus whose contact matched the registrant was linked inside the create
-    /// transaction and has no invitation — nothing is sent for it, by design. Only the first successful
-    /// create reaches here (idempotent replays return earlier), so a retry never re-invites. Best-effort
-    /// PER CAMPUS: one address failing must not deny the others theirs, and any that fails stays PENDING
-    /// for the registrant to resend.
+    /// Mints the links for every INITIAL_CLAIM the create transaction just wrote (plan §16.4) — a campus
+    /// whose contact is NOT the registrant. A campus that self-matched was linked inside the create and
+    /// has no invitation, so nothing is minted for it, by design.
+    ///
+    /// <para>
+    /// Called INSIDE the create transaction, and deliberately NOT wrapped in a try/catch. An invitation
+    /// exists to be answered, and it can only be answered through a link, so the two are one fact: if
+    /// the links cannot be written, the create that depends on them must not commit either. Minting
+    /// afterwards produced the opposite — a committed request whose campuses sat at the contact gate
+    /// with PENDING claims and no links, which no accept could open and no re-invite could replace,
+    /// while the registrant was shown a request that had been created successfully.
+    /// </para>
+    /// <para>
+    /// The identity changes already have their ids (the create service flushes them to resolve its own
+    /// event FKs), and this only ADDS token rows — the caller's commit is what makes both durable.
+    /// </para>
     /// </summary>
-    public static async Task SendOperationalContactInvitationsAfterCommitAsync(
+    public static async Task<IReadOnlyList<MintedInvitation>> MintOperationalContactInvitationsAsync(
         IApplicationDbContext db,
         IOperationalContactInvitationService invitations,
-        ILogger logger,
         VisitRequest created,
         CancellationToken cancellationToken)
     {
-        List<ulong> pending;
-        try
-        {
-            pending = await db.VisitRequestIdentityChanges.AsNoTracking()
-                .Where(c => c.VisitRequestId == created.VisitRequestId
-                            && c.ChangeKind == IdentityChangeKinds.InitialConfirmation
-                            && c.Status == IdentityChangeStatuses.Pending)
-                .OrderBy(c => c.VisitInstanceId)
-                .Select(c => c.IdentityChangeId)
-                .ToListAsync(cancellationToken);
-        }
-        catch (System.Exception ex)
-        {
-            logger.LogError(ex,
-                "create-v2 could not read pending operational-contact invitations for visit request {VisitRequestId}",
-                created.VisitRequestId);
-            return;
-        }
+        var pending = await db.VisitRequestIdentityChanges.AsNoTracking()
+            .Where(c => c.VisitRequestId == created.VisitRequestId
+                        && c.ChangeKind == IdentityChangeKinds.InitialConfirmation
+                        && c.Status == IdentityChangeStatuses.Pending)
+            .OrderBy(c => c.VisitInstanceId)
+            .Select(c => c.IdentityChangeId)
+            .ToListAsync(cancellationToken);
 
+        if (pending.Count == 0)
+            return System.Array.Empty<MintedInvitation>();
+
+        var minted = new List<MintedInvitation>(pending.Count);
         foreach (var id in pending)
+            minted.Add(new MintedInvitation(
+                id,
+                OperationalContactGuards.RequireMintedLinks(
+                    await invitations.MintInvitationTokensAsync(id, cancellationToken), id)));
+        return minted;
+    }
+
+    /// <summary>
+    /// Sends the invitations whose links are already committed. Best-effort PER CAMPUS: one address
+    /// failing must not deny the others theirs, and any that fails leaves a PENDING invitation with a
+    /// LIVE link — the registrant resends it, and the link in the failed email would have worked too.
+    /// Only the first successful create reaches here (idempotent replays return earlier), so a retry
+    /// never re-invites.
+    /// </summary>
+    public static async Task DispatchOperationalContactInvitationsAfterCommitAsync(
+        IOperationalContactInvitationService invitations,
+        ILogger logger,
+        IReadOnlyList<MintedInvitation> minted,
+        VisitRequest created,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (id, tokens) in minted)
         {
             try
             {
-                await invitations.SendInvitationAsync(id, cancellationToken);
+                await invitations.DispatchInvitationEmailAsync(id, tokens, cancellationToken);
             }
             catch (System.Exception ex)
             {

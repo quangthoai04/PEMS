@@ -158,12 +158,30 @@ public static class EmailComposition
     /// Google account of THIS address before accepting or declining. Deliberately not a direct-execute
     /// link — opening a mail preview must not accept a role on somebody's behalf.
     /// </summary>
-    public static string ContactRoleInvitationBlock(string invitationUrl, DateTime expiresAt)
+    /// <summary>
+    /// The operational-contact invitation's two actions.
+    ///
+    /// <para>
+    /// Both links open a CONFIRMATION PAGE; neither performs the action. That is not a UX preference,
+    /// it is the reason the flow is safe: Outlook, Gmail and mail-security scanners prefetch URLs, so a
+    /// link that accepted on GET would be answered by a virus scanner rather than by the person. The
+    /// page validates the token read-only, shows the current visit summary, and only a click there
+    /// POSTs the answer.
+    /// </para>
+    /// <para>
+    /// Two separate tokens, one per intended action, so the page knows which button was pressed without
+    /// trusting a query parameter — and so a scanner that follows the decline link cannot be used to
+    /// accept. Signing in is not required for either.
+    /// </para>
+    /// </summary>
+    public static string ContactRoleInvitationBlock(string acceptUrl, string declineUrl, DateTime expiresAt)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(invitationUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Mở trang xác nhận</a>
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Xác nhận</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
         </div>
-        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(invitationUrl)}</p>
-        <p style=""color:#6b7280;font-size:12px"">Liên kết có hiệu lực đến <strong>{expiresAt:HH:mm dd/MM/yyyy}</strong>. Vui lòng đăng nhập bằng đúng tài khoản Google của email này trước khi xác nhận.</p>");
+        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(acceptUrl)}</p>
+        <p style=""color:#6b7280;font-size:12px"">Liên kết có hiệu lực đến <strong>{expiresAt:HH:mm dd/MM/yyyy}</strong> và chỉ dùng được một lần. Bạn <strong>không cần đăng nhập</strong> — hệ thống sẽ mở trang xác nhận để bạn xem thông tin mới nhất trước khi quyết định.</p>
+        <p style=""color:#6b7280;font-size:12px"">Thông tin chuyến thăm có thể được người đăng ký cập nhật. Vui lòng xem thông tin mới nhất tại trang xác nhận.</p>");
 
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
 
@@ -261,7 +279,8 @@ public static class EmailComposition
     /// </summary>
     public static string DisabledContactRoleInvitationBlock()
         => @"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Mở trang xác nhận</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Xác nhận</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</span>
         </div>";
 
     /// <summary>

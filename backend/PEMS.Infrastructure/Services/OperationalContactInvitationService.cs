@@ -10,9 +10,28 @@ using PEMS.Domain.Entities.Emails;
 namespace PEMS.Infrastructure.Services;
 
 /// <summary>
-/// See <see cref="IOperationalContactInvitationService"/>. Token minting commits through its own
-/// SaveChanges — callers invoke this AFTER their business transaction has committed — and the email
-/// itself is best-effort.
+/// See <see cref="IOperationalContactInvitationService"/>.
+///
+/// <para>
+/// Two halves, and the split is what makes a caller's write atomic with its link:
+/// <see cref="MintInvitationTokensAsync"/> only ADDS the token rows to the caller's own
+/// <see cref="IApplicationDbContext"/> — no SaveChanges, no transaction of its own — so a caller that
+/// mints inside its transaction commits the identity change and its links together, and a token
+/// failure rolls both back. <see cref="DispatchInvitationEmailAsync"/> is then called after that
+/// commit.
+/// </para>
+/// <para>
+/// There used to be a third method, a <c>SendInvitationAsync</c> wrapper that minted, ran its OWN
+/// SaveChanges and sent. It was removed rather than documented, because a convenience that mints after
+/// somebody else's commit cannot be used safely: every one of its callers (replace, reinvite, resend,
+/// create) was writing a PENDING invitation first and minting afterwards, so a token failure left an
+/// invitation nobody could answer and nobody could replace. The absence of the wrapper is the
+/// guardrail — a caller now has to hold a transaction open to get a token at all.
+/// </para>
+/// <para>
+/// The email itself is best-effort either way: once the links are durable, a mail-provider failure is
+/// recovered by a resend rather than by undoing a change the user was told had happened.
+/// </para>
 /// </summary>
 public sealed class OperationalContactInvitationService : IOperationalContactInvitationService
 {
@@ -39,7 +58,8 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
         _frontendBaseUrl = (configuration["App:FrontendBaseUrl"] ?? "http://localhost:5173").TrimEnd('/');
     }
 
-    public async Task<string?> SendInvitationAsync(ulong identityChangeId, CancellationToken cancellationToken)
+    public async Task<OperationalContactInvitationTokens?> MintInvitationTokensAsync(
+        ulong identityChangeId, CancellationToken cancellationToken)
     {
         var change = await _db.VisitRequestIdentityChanges
             .FirstOrDefaultAsync(c => c.IdentityChangeId == identityChangeId, cancellationToken);
@@ -47,6 +67,49 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
             || change.Status != IdentityChangeStatuses.Pending
             || string.IsNullOrWhiteSpace(change.NewEmailNormalized))
             return null;
+
+        var isTransfer = change.ChangeKind == IdentityChangeKinds.Transfer;
+        var now = _clock.VietnamNow;
+
+        // ── TWO tokens, one per intended action (see the interface docs). NOT flushed here: the
+        //    caller's transaction is what makes them durable together with the identity change. ──
+        var groupKey = $"OP_CONTACT_CONFIRM:{change.IdentityChangeId}:{change.TokenVersion}";
+        var context = isTransfer
+            ? EmailActionContexts.VisitContactTransfer
+            : EmailActionContexts.VisitContactClaim;
+
+        string Mint(string intendedAction)
+        {
+            var raw = _tokens.GenerateRawToken();
+            _db.EmailActionTokens.Add(new EmailActionToken
+            {
+                TokenHash = _tokens.Hash(raw),
+                ActionContext = context,
+                ActionGroupKey = groupKey,
+                TargetType = EmailActionTargetTypes.VisitRequestIdentityChange,
+                TargetId = change.IdentityChangeId,
+                IntendedAction = intendedAction,
+                // The invited person may not have an account yet — accepting provisions/links one.
+                RecipientUserId = null,
+                RecipientEmail = change.NewEmailNormalized!,
+                ExpiresAt = change.ExpiresAt,
+                ResultStatus = EmailActionResultStatuses.Pending,
+                CreatedAt = now,
+            });
+            return raw;
+        }
+
+        return new OperationalContactInvitationTokens(
+            Mint(EmailIntendedActions.Accept), Mint(EmailIntendedActions.Decline));
+    }
+
+    public async Task DispatchInvitationEmailAsync(
+        ulong identityChangeId, OperationalContactInvitationTokens tokens, CancellationToken cancellationToken)
+    {
+        var change = await _db.VisitRequestIdentityChanges.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.IdentityChangeId == identityChangeId, cancellationToken);
+        if (change is null || string.IsNullOrWhiteSpace(change.NewEmailNormalized))
+            return;
 
         var isTransfer = change.ChangeKind == IdentityChangeKinds.Transfer;
 
@@ -67,35 +130,12 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                 CurrentContactName = c.FormDetail!.OperationalContactFullName,
             }).FirstOrDefaultAsync(cancellationToken);
         if (campus is null)
-            return null;
+            return;
 
-        var now = _clock.VietnamNow;
-        var raw = _tokens.GenerateRawToken();
-
-        _db.EmailActionTokens.Add(new EmailActionToken
-        {
-            TokenHash = _tokens.Hash(raw),
-            ActionContext = isTransfer
-                ? EmailActionContexts.VisitContactTransfer
-                : EmailActionContexts.VisitContactClaim,
-            // One decision group per invitation VERSION: a resend bumps token_version, so superseding
-            // and de-duplicating both key off a value that changes when the link changes.
-            ActionGroupKey = $"OP_CONTACT_CONFIRM:{change.IdentityChangeId}:{change.TokenVersion}",
-            TargetType = EmailActionTargetTypes.VisitRequestIdentityChange,
-            TargetId = change.IdentityChangeId,
-            IntendedAction = EmailIntendedActions.Accept,
-            // The invited person may not have an account yet — SSO provisions one when they sign in.
-            RecipientUserId = null,
-            RecipientEmail = change.NewEmailNormalized!,
-            ExpiresAt = change.ExpiresAt,
-            ResultStatus = EmailActionResultStatuses.Pending,
-            CreatedAt = now,
-        });
-        await _db.SaveChangesAsync(cancellationToken);
-
-        // The frontend confirmation page: it reads the masked summary anonymously, then requires a
-        // matching sign-in before it will POST accept or decline. Never a direct-execute link.
-        var url = $"{_frontendBaseUrl}/operational-contact-confirmation/{raw}";
+        // The frontend confirmation page: it reads the masked summary anonymously, shows the CURRENT
+        // visit details, and POSTs the answer when the reader confirms on the page.
+        var url = $"{_frontendBaseUrl}/operational-contact-confirmation/{tokens.AcceptToken}";
+        var declineUrl = $"{_frontendBaseUrl}/operational-contact-confirmation/{tokens.DeclineToken}";
 
         try
         {
@@ -128,21 +168,22 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                     // The single-use link exists only inside the action block, which is also why the
                     // rendered body is not kept in the email history.
                     [EmailTrustedBlocks.ActionBlock] =
-                        EmailComposition.ContactRoleInvitationBlock(url, change.ExpiresAt),
+                        EmailComposition.ContactRoleInvitationBlock(url, declineUrl, change.ExpiresAt),
                 },
                 RelatedType: "VisitRequestIdentityChange",
                 RelatedId: change.IdentityChangeId), cancellationToken);
         }
         catch (Exception ex)
         {
-            // Best-effort: the token row is already committed, so a resend recovers. Failing here must
-            // not roll back a confirmation state that is already correct.
+            // Best-effort, and deliberately so — this is the ONE failure in the invitation flow that
+            // must not undo anything. The identity change and its tokens are already committed, so
+            // the invitation is real and answerable; only the delivery failed, and a resend recovers
+            // it. Throwing here would turn a mail-provider outage into a rolled-back transfer, or
+            // (worse, and what used to happen) into a 500 on top of a change that had already stuck.
             _logger.LogError(ex,
                 "operational-contact invitation email failed for identity change {IdentityChangeId} (kind {Kind}, token version {TokenVersion})",
                 change.IdentityChangeId, change.ChangeKind, change.TokenVersion);
         }
-
-        return raw;
     }
 
     /// <summary>

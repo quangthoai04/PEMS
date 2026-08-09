@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Queries.ViewGuestDelegationList;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Policies;
 using PEMS.Shared;
 
 // Both namespaces declare this name; the notifications written by the visit paths use the
@@ -139,13 +140,29 @@ public static class VisitNextTaskBuilder
                     true, r.PlannedStartAt, VisitListActions.StartPreparation);
 
             case VisitInstanceStatus.BeforeVisit:
-                return preparationIncomplete.Contains(instanceId.Value)
-                    ? Task(VisitNextTaskCodes.CompletePreparation,
+                if (preparationIncomplete.Contains(instanceId.Value))
+                    return Task(VisitNextTaskCodes.CompletePreparation,
                         "Hoàn thiện lịch trình và công tác chuẩn bị",
-                        true, r.PlannedStartAt, VisitListActions.OpenHostProcess)
-                    : Task(VisitNextTaskCodes.ConfirmPreparation,
-                        "Xác nhận hoàn thành chuẩn bị",
                         true, r.PlannedStartAt, VisitListActions.OpenHostProcess);
+
+                // Preparation is done. Whether the Host is being ASKED to do something now depends on
+                // the clock: the transition is refused until T-6h, so a "Xác nhận hoàn thành chuẩn bị"
+                // task shown three days early is an action-required star on a row where the only
+                // possible action returns 409. The waiting task says the same fact truthfully, and its
+                // due date is the moment the window opens.
+                // A campus with no planned start cannot have a window to wait for, so it falls through
+                // to the ordinary confirm task rather than being frozen by a rule it cannot satisfy.
+                var plannedStart = r.PlannedStartAt;
+                if (plannedStart.HasValue
+                    && !VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(now, plannedStart.Value))
+                    return Task(VisitNextTaskCodes.WaitStartVisitWindow,
+                        "Chờ đến thời điểm có thể bắt đầu tiếp khách",
+                        false, VisitStageTransitionPolicy.StartVisitAvailableAt(plannedStart.Value),
+                        VisitListActions.OpenHostProcess);
+
+                return Task(VisitNextTaskCodes.ConfirmPreparation,
+                    "Xác nhận hoàn thành chuẩn bị",
+                    true, r.PlannedStartAt, VisitListActions.OpenHostProcess);
 
             case VisitInstanceStatus.DuringVisit:
                 return Task(VisitNextTaskCodes.RunReception,

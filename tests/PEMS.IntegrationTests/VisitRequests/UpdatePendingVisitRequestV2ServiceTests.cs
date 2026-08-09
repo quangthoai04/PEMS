@@ -428,13 +428,17 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
             var keep = Keep(InstanceOf(r, "HN"), Campus("HN"));
 
+            // The registrant's ADDRESS is identity — what the account binding was resolved from and
+            // what every notification about this request is sent to — so changing it means a new
+            // request. Its DESCRIPTIVE fields are a different matter and ARE editable; see
+            // Registrant_snapshot_fields_are_editable below.
             var badRegistrant = Edit(r, keep) with
             {
                 Registrant = new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", "other@example.com"),
             };
             var ex1 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyPendingEditAsync(r, badRegistrant, Registrant, Now, default));
-            Assert.Equal("IMMUTABLE_REGISTRANT_INFO", ex1.ErrorCode);
+            Assert.Equal("IMMUTABLE_REGISTRANT_EMAIL", ex1.ErrorCode);
 
             // The contact ADDRESS of a campus is immutable in a form edit: it is what that campus’s
             // confirmation is bound to, so changing it has to go through replace/transfer.
@@ -442,6 +446,69 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyPendingEditAsync(r, Edit(r, swappedCampus), Registrant, Now, default));
             Assert.Equal("IMMUTABLE_CONTACT_IDENTITY", ex2.ErrorCode);
+        });
+    }
+
+    /// <summary>
+    /// The registrant's DESCRIPTIVE snapshot — name, nationality, organisation, job title, phone — is
+    /// editable, and used not to be.
+    ///
+    /// <para>
+    /// The edit form has always rendered these as inputs, so refusing them was a contract drift rather
+    /// than a rule: a registrant correcting a misspelt name got "Thông tin người đăng ký không được
+    /// phép thay đổi" for doing exactly what the screen invited. They are a snapshot of who filed THIS
+    /// request, stored on the request row — not the account, which is why the profile behind
+    /// RegistrantUserId is deliberately left alone.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Registrant_snapshot_fields_are_editable_and_do_not_touch_the_account()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var keep = Keep(InstanceOf(r, "HN"), Campus("HN"));
+
+            var accountBefore = await db.Users.AsNoTracking()
+                .Where(u => u.UserId == Registrant)
+                .Select(u => new { u.FullName, u.Phone })
+                .SingleAsync();
+
+            // Everything except the address moves — same address, so this is a correction, not a
+            // change of who the registrant is.
+            var corrected = Edit(r, keep) with
+            {
+                Registrant = new RegistrantInputV2(
+                    "Nguyễn Văn Sửa", "JP", "Đại học Kyoto", "Trưởng đoàn",
+                    "+84912345678", r.RegistrantEmail),
+            };
+            await edit.ApplyPendingEditAsync(r, corrected, Registrant, Now, default);
+
+            var saved = await db.VisitRequests.AsNoTracking()
+                .SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
+            Assert.Equal("Nguyễn Văn Sửa", saved.RegistrantFullName);
+            Assert.Equal("JP", saved.RegistrantNationality);
+            Assert.Equal("Đại học Kyoto", saved.RegistrantOrganization);
+            Assert.Equal("Trưởng đoàn", saved.RegistrantJobTitle);
+            Assert.Equal("+84912345678", saved.RegistrantPhone);
+
+            // The ACCOUNT is untouched: a request snapshot and a person's profile are different things,
+            // and a Visitor often files on behalf of somebody whose details are not their own.
+            var accountAfter = await db.Users.AsNoTracking()
+                .Where(u => u.UserId == Registrant)
+                .Select(u => new { u.FullName, u.Phone })
+                .SingleAsync();
+            Assert.Equal(accountBefore.FullName, accountAfter.FullName);
+            Assert.Equal(accountBefore.Phone, accountAfter.Phone);
+
+            // And the change is diffable: a request-revision baseline exists to compare against, so the
+            // history drawer shows "1 → 2" with the exact fields rather than "— → 2 / no changes".
+            var revisions = await db.VisitRequestRevisionHistories.AsNoTracking()
+                .Where(x => x.VisitRequestId == r.VisitRequestId)
+                .OrderBy(x => x.RequestRevision)
+                .Select(x => x.RequestRevision)
+                .ToListAsync();
+            Assert.True(revisions.Count >= 2, "an edited registrant snapshot needs a before AND an after revision");
         });
     }
 

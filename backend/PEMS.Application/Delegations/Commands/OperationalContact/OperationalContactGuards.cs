@@ -22,6 +22,27 @@ internal static class OperationalContactGuards
     /// <summary>An in-flight invitation may be resent at most this many times.</summary>
     public const int MaxResends = 5;
 
+    /// <summary>
+    /// The last step between "an invitation was written" and "the transaction commits": a caller that
+    /// has just written a PENDING invitation must not commit unless it also holds the links that answer
+    /// it. <c>MintInvitationTokensAsync</c> answers null for "there is nothing to invite" — a row that
+    /// is not PENDING, or has no address — which is a legitimate answer for a caller ASKING, and an
+    /// impossible one for a caller that wrote the row three lines earlier.
+    ///
+    /// <para>
+    /// So null here is a broken invariant, not a business outcome, and it throws: the exception escapes
+    /// before the commit, the transaction rolls back with the invitation inside it, and the caller is
+    /// told the operation failed. The alternative — skipping the dispatch and committing anyway —
+    /// leaves the campus holding a PENDING change nobody can answer and nobody can replace, which is
+    /// the exact state this whole split exists to prevent.
+    /// </para>
+    /// </summary>
+    public static OperationalContactInvitationTokens RequireMintedLinks(
+        OperationalContactInvitationTokens? tokens, ulong identityChangeId)
+        => tokens ?? throw new InvalidOperationException(
+            $"Operational-contact invitation {identityChangeId} was written but produced no usable link; " +
+            "the change must not commit without one.");
+
     /// <summary>Minimum gap between two sends of the same invitation.</summary>
     public static readonly TimeSpan ResendCooldown = TimeSpan.FromMinutes(1);
 
@@ -48,6 +69,30 @@ internal static class OperationalContactGuards
         if (!currentUser.IsAuthenticated || currentUser.UserId is null)
             throw new ForbiddenException();
         return currentUser.UserId.Value;
+    }
+
+    /// <summary>
+    /// The actor for an accept/decline, which may come from a SESSION or from a proven TOKEN.
+    ///
+    /// <para>
+    /// <paramref name="actingUserId"/> is supplied only by the public (no-login) handlers, and only
+    /// after they have validated the single-use token, matched its intended action, and resolved the
+    /// invited address to a real account. It is never bound from a request, so it cannot be used to
+    /// impersonate: the caller who can set it has already proved more than a session would.
+    /// </para>
+    /// <para>
+    /// The write-flag check stays in force either way — with v2 writes disabled there is no public
+    /// door any more than there is an authenticated one.
+    /// </para>
+    /// </summary>
+    public static ulong ResolveActor(
+        PerCampusFormV2WriteOptions writeFlag, ICurrentUserService currentUser, ulong? actingUserId)
+    {
+        if (!writeFlag.Enabled)
+            throw new NotFoundException("Không tìm thấy.");
+        if (actingUserId is { } id)
+            return id;
+        return RequireAuthenticated(writeFlag, currentUser);
     }
 
     /// <summary>
@@ -232,9 +277,16 @@ internal static class OperationalContactGuards
     /// enforced by <c>used_at</c>: a link that already answered cannot answer again, even if the
     /// invitation somehow returned to PENDING.
     /// </summary>
+    /// <param name="requiredIntendedAction">
+    /// When given, the token must have been minted FOR this action. An invitation now carries one
+    /// link per answer, so a decline link must never be able to accept — otherwise the second link
+    /// would be a way around the first, and anything that follows links automatically (a scanner, a
+    /// prefetching mail client) could pick the wrong answer. Null keeps the older behaviour for
+    /// callers that predate the split.
+    /// </param>
     public static async Task<Domain.Entities.Emails.EmailActionToken> LoadLiveTokenAsync(
         IApplicationDbContext db, IEmailActionTokenService tokens, string rawToken, ulong changeId,
-        DateTime vietnamNow, CancellationToken ct)
+        DateTime vietnamNow, CancellationToken ct, string? requiredIntendedAction = null)
     {
         var hash = tokens.Hash(rawToken.Trim());
         var token = await db.EmailActionTokens
@@ -252,8 +304,30 @@ internal static class OperationalContactGuards
             throw new ConflictException(
                 "Liên kết đã hết hạn. Vui lòng đề nghị gửi lại lời mời.",
                 OperationalContactErrorCodes.ConfirmationExpired);
+        if (requiredIntendedAction is not null
+            && !string.Equals(token.IntendedAction, requiredIntendedAction, StringComparison.Ordinal))
+            throw new ConflictException(
+                "Liên kết này không dùng cho thao tác vừa chọn.",
+                OperationalContactErrorCodes.ConfirmationNotFound);
 
         return token;
+    }
+
+    /// <summary>
+    /// What a token was minted to do, without consuming or validating it. The public landing page uses
+    /// this to render the right single action — the reader followed one of two links, and showing them
+    /// both buttons would invite them to press the one their link cannot perform.
+    /// </summary>
+    public static async Task<string?> IntendedActionOfAsync(
+        IApplicationDbContext db, IEmailActionTokenService tokens, string? rawToken, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken)) return null;
+        var hash = tokens.Hash(rawToken.Trim());
+        return await db.EmailActionTokens.AsNoTracking()
+            .Where(t => t.TokenHash == hash
+                        && t.TargetType == EmailActionTargetTypes.VisitRequestIdentityChange)
+            .Select(t => t.IntendedAction)
+            .FirstOrDefaultAsync(ct);
     }
 
     /// <summary>

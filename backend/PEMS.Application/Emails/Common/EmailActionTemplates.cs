@@ -54,8 +54,9 @@ public static class EmailActionTemplates
     // VisitContactClaimService builds ContactRoleInvitationBlock and ProposeRequestChangeCommand builds
     // LogisticsProposalActionBlock.
     private const string ContactRoleInvitationDesc =
-        "Nút \"Mở trang xác nhận\" (kèm liên kết một lần) sẽ được hệ thống tự gắn khi gửi email. " +
-        "Liên kết có hạn và yêu cầu người nhận đăng nhập bằng đúng tài khoản Google của email này.";
+        "Hai nút \"Xác nhận\" / \"Từ chối\" (mỗi nút một liên kết dùng một lần) sẽ được hệ thống tự gắn " +
+        "khi gửi email. Liên kết có hạn, KHÔNG yêu cầu đăng nhập, và mở trang xác nhận để người nhận " +
+        "xem thông tin mới nhất trước khi quyết định.";
     private const string LogisticsProposalDesc =
         "Nút Chấp nhận đề xuất / Từ chối đề xuất (kèm liên kết một lần, không cần đăng nhập) và " +
         "\"Xem chi tiết trong hệ thống\" sẽ được hệ thống tự gắn khi gửi email.";

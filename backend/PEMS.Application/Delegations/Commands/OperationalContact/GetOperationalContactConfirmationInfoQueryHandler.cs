@@ -121,6 +121,16 @@ public sealed class GetOperationalContactConfirmationInfoQueryHandler
             campus?.PlannedStartAt,
             campus?.PlannedEndAt,
             status == IdentityChangeStatuses.Pending ? change.ExpiresAt : null,
-            RequiresGoogleLoginEmailMatch: true);
+            // The token is the authorization: single-use, action-bound, and bound to an address the
+            // REGISTRANT chose. Requiring a Google account on top of that asked an external guest to
+            // sign up before they could say yes or no — which is how invitations went unanswered and
+            // campuses stayed behind the confirmation gate. Signing in is still possible; it is no
+            // longer the only way through.
+            RequiresGoogleLoginEmailMatch: false,
+            // The campus block above is read LIVE from the database on every load, so a visit the
+            // registrant has edited since the email was sent shows its CURRENT delegation, campus and
+            // schedule here. That is what makes it safe to leave an outstanding invitation alone when
+            // the request content changes: the email may be stale, the decision page never is.
+            IntendedAction: token.IntendedAction);
     }
 }

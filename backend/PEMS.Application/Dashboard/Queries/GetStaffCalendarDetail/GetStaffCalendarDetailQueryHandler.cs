@@ -188,6 +188,7 @@ public sealed class GetStaffCalendarDetailQueryHandler
             VisitScope = visit.VisitScope,
             RequestStatus = visit.Status,
             CampusStatus = instance.Status,
+            RowVersion = instance.RowVersion,
             DisplayStatus = displayStatus,
             ColorType = colorType,
             CampusId = instance.CampusId,
