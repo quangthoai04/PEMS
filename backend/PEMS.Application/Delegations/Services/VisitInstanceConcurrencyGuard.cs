@@ -39,19 +39,48 @@ namespace PEMS.Application.Delegations.Services;
 public static class VisitInstanceConcurrencyGuard
 {
     /// <summary>
+    /// The campus revision a decision claims to have been taken on, refused when the caller states none.
+    ///
+    /// <para>
+    /// It lives here rather than in the controller because it is the same rule as
+    /// <see cref="EnsureUnchangedAsync"/>, one step earlier: that method answers "is the revision you
+    /// read still current?", and this one answers "did you read one at all?". A caller who cannot say
+    /// which revision they judged has not made a reviewable decision, and defaulting them to the
+    /// current row is precisely the stale-review this guard exists to prevent — silently, and on the
+    /// content nobody looked at.
+    /// </para>
+    /// <para>
+    /// The parameter is nullable because that is what an omitted JSON field looks like at the transport
+    /// boundary; binding it as a plain int would read a missing field as 0, which is a REAL row version
+    /// and would quietly decide against an unreviewed campus. Past this point nothing is nullable, so
+    /// no code downstream has an "unstated" case left to get wrong.
+    /// </para>
+    /// </summary>
+    /// <returns>The stated revision, which may legitimately be 0 — a campus starts there.</returns>
+    /// <exception cref="ValidationException">
+    /// 400 <see cref="VisitRequestErrorCodes.InstanceVersionRequired"/> when none was stated.
+    /// </exception>
+    public static int RequireExpectedRowVersion(int? expectedRowVersion)
+        => expectedRowVersion
+           ?? throw new ValidationException(
+               "Thiếu phiên bản dữ liệu của cơ sở. Vui lòng tải lại màn hình duyệt rồi thao tác lại.",
+               VisitRequestErrorCodes.InstanceVersionRequired);
+
+    /// <summary>
     /// Locks this campus row and refuses unless it is still at <paramref name="expectedRowVersion"/>.
     ///
     /// <para>
-    /// A null <paramref name="expectedRowVersion"/> means the caller did not state one. It is accepted
-    /// (the field is additive — older clients and internal callers that are not deciding on rendered
-    /// content still work) but it buys no protection, which is why every decision UI sends it. The row
-    /// is still locked so concurrent decisions serialize either way.
+    /// <paramref name="expectedRowVersion"/> is mandatory. It used to be nullable, and a null was
+    /// accepted as "no expectation stated" — which meant the whole protection could be dropped by
+    /// leaving one field out of the request, and a caller that omitted it decided against whatever the
+    /// row had silently become. There is now nothing to omit: the decision commands take a plain
+    /// <c>int</c> and the HTTP boundary refuses a missing field before a command is ever built.
     /// </para>
     /// </summary>
     public static async Task EnsureUnchangedAsync(
         IApplicationDbContext db,
         VisitRequestCampus instance,
-        int? expectedRowVersion,
+        int expectedRowVersion,
         CancellationToken cancellationToken)
     {
         // Uncomposed FromSqlRaw: composing (Select/First) would wrap the statement in a derived table
@@ -69,8 +98,7 @@ public static class VisitInstanceConcurrencyGuard
         // The tracked entity is compared too: it was loaded before the lock was taken, so a version
         // that has moved since means the in-memory campus this decision is about is already stale —
         // even when the caller's expectation happens to match.
-        var stale = instance.RowVersion != current.Value
-            || (expectedRowVersion.HasValue && expectedRowVersion.Value != current.Value);
+        var stale = instance.RowVersion != current.Value || expectedRowVersion != current.Value;
 
         if (stale)
             throw new ConflictException(

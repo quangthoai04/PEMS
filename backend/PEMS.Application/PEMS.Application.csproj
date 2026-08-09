@@ -45,6 +45,17 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>PEMS.IntegrationTests</_Parameter1>
     </AssemblyAttribute>
+    <!--
+      Same reasoning, for the guards the operational-contact commands share (OperationalContactGuards).
+      They hold pure decisions — is this invitation still pending, has its window closed against a given
+      instant — that are worth pinning WITHOUT a database, because the bug they guard against (reading a
+      wall clock instead of IDateTimeService.VietnamNow) is invisible on a machine already in +07:00 and
+      only appears on a UTC server. Reaching them here keeps them an internal detail of the commands
+      rather than promoting a helper to public API for the sake of a test.
+    -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>PEMS.UnitTests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup>

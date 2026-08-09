@@ -211,6 +211,11 @@ public static class VisitRequestErrorCodes
     public const string RequestVersionConflict = "VISIT_REQUEST_VERSION_CONFLICT";
     // Optimistic concurrency: an edited campus instance's expected row_version is stale.
     public const string InstanceVersionConflict = "VISIT_INSTANCE_VERSION_CONFLICT";
+    // A campus DECISION (approve/reject) arrived without stating the revision it was taken on. Refused
+    // rather than defaulted: silently deciding on "whatever is current" is exactly the stale-review the
+    // version check exists to prevent, so a caller that omits the field must be told to send it — a
+    // request that cannot prove WHAT was reviewed cannot be allowed to record a decision about it.
+    public const string InstanceVersionRequired = "VISIT_INSTANCE_VERSION_REQUIRED";
     // A campus removal was blocked: the instance already carries downstream data (participants/
     // agendas/logistics) or is past the removable lifecycle.
     public const string InstanceNotRemovable = "VISIT_INSTANCE_NOT_REMOVABLE";

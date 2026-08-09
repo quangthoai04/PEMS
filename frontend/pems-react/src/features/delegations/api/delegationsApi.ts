@@ -78,11 +78,13 @@ export const delegationsApi = {
     visitRequestId: number | string,
     visitInstanceId: number | string,
     reason: string,
-    expectedInstanceRowVersion?: number | null,
+    // BẮT BUỘC. Xem ghi chú ở approveCampusInstance — từ chối cũng là quyết định trên NỘI DUNG
+    // người duyệt đã đọc, nên cùng một hợp đồng.
+    expectedInstanceRowVersion: number,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.rejectCampusInstance(visitRequestId, visitInstanceId),
-      { reason, expectedInstanceRowVersion: expectedInstanceRowVersion ?? undefined },
+      { reason, expectedInstanceRowVersion },
     );
     return data;
   },
@@ -133,18 +135,20 @@ export const delegationsApi = {
     visitRequestId: number | string,
     visitInstanceId: number | string,
     hostUserId: number,
-    decisionNote?: string,
-    expectedInstanceRowVersion?: number | null,
+    decisionNote: string | undefined,
+    // BẮT BUỘC — không còn optional. Phiên bản campus MÀ NGƯỜI DUYỆT ĐÃ ĐỌC. Backend từ chối 409
+    // VISIT_INSTANCE_VERSION_CONFLICT nếu khách đã sửa sau khi màn hình được render, và 400
+    // VISIT_INSTANCE_VERSION_REQUIRED nếu thiếu hẳn trường này. Trước đây tham số là optional và
+    // `?? undefined` xoá luôn trường khỏi payload, nên chỉ cần một caller quên là toàn bộ lớp bảo
+    // vệ biến mất im lặng — duyệt nội dung chưa từng đọc mà không ai biết.
+    expectedInstanceRowVersion: number,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.approveCampusInstance(visitRequestId, visitInstanceId),
       {
         hostUserId,
         decisionNote: decisionNote?.trim() || undefined,
-        // Phiên bản campus MÀ NGƯỜI DUYỆT ĐÃ ĐỌC. Backend từ chối 409
-        // VISIT_INSTANCE_VERSION_CONFLICT nếu khách đã sửa sau khi màn hình được render —
-        // duyệt nội dung chưa từng đọc là điều không được phép xảy ra âm thầm.
-        expectedInstanceRowVersion: expectedInstanceRowVersion ?? undefined,
+        expectedInstanceRowVersion,
       },
     );
     return data;

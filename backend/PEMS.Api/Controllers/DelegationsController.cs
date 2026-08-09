@@ -181,7 +181,7 @@ namespace PEMS.Api.Controllers
             var result = await _mediator.Send(
                 new ApproveCampusInstanceCommand(
                     visitRequestId, visitInstanceId, body.HostUserId, body.DecisionNote,
-                    body.ExpectedInstanceRowVersion),
+                    RequireDecisionRowVersion(body.ExpectedInstanceRowVersion)),
                 cancellationToken);
             return Ok(result);
         }
@@ -192,10 +192,20 @@ namespace PEMS.Api.Controllers
         {
             var result = await _mediator.Send(
                 new RejectCampusInstanceCommand(
-                    visitRequestId, visitInstanceId, body.Reason, body.ExpectedInstanceRowVersion),
+                    visitRequestId, visitInstanceId, body.Reason,
+                    RequireDecisionRowVersion(body.ExpectedInstanceRowVersion)),
                 cancellationToken);
             return Ok(result);
         }
+
+        /// <summary>
+        /// The campus revision a decision claims to have been taken on. The rule itself lives with the
+        /// concurrency guard it belongs to; this is only the transport boundary calling it, which is
+        /// the one place where "the client left the field out" can still be told apart from a value.
+        /// </summary>
+        private static int RequireDecisionRowVersion(int? expectedInstanceRowVersion)
+            => PEMS.Application.Delegations.Services.VisitInstanceConcurrencyGuard
+                .RequireExpectedRowVersion(expectedInstanceRowVersion);
 
         // ── VisitProcess "Trước tiếp khách": real setup detail + agenda save ──
         // Real data for the process page (agenda + common). Scope enforced in the handler
@@ -769,14 +779,17 @@ namespace PEMS.Api.Controllers
 
     /// <summary>Request body for the UC-22 campus-instance reject endpoint (reason is mandatory).
     /// <c>ExpectedInstanceRowVersion</c> is the campus version the reviewer's screen rendered — a
-    /// decision on a stale revision is refused with 409 <c>VISIT_INSTANCE_VERSION_CONFLICT</c>.</summary>
+    /// decision on a stale revision is refused with 409 <c>VISIT_INSTANCE_VERSION_CONFLICT</c>, and
+    /// leaving it out is refused with 400 <c>VISIT_INSTANCE_VERSION_REQUIRED</c>. Declared nullable
+    /// only so the omission is detectable rather than bound to 0 — it is not optional.</summary>
     public sealed record RejectVisitRequestBody(string Reason, int? ExpectedInstanceRowVersion = null);
 
     /// <summary>Request body for the UC-22 approve-campus-instance endpoint: the official host is
     /// mandatory; the decision note is optional. Gán host không gửi email — Staff được gán xem
     /// qua thông báo/"Lịch của tôi". <c>ExpectedInstanceRowVersion</c> is the campus version the
     /// approver's screen rendered — approving a revision they never read is refused with 409
-    /// <c>VISIT_INSTANCE_VERSION_CONFLICT</c>.</summary>
+    /// <c>VISIT_INSTANCE_VERSION_CONFLICT</c>, and omitting it with 400
+    /// <c>VISIT_INSTANCE_VERSION_REQUIRED</c>. Nullable for detection, not for optionality.</summary>
     public sealed record ApproveCampusInstanceBody(
         ulong HostUserId, string? DecisionNote, int? ExpectedInstanceRowVersion = null);
 

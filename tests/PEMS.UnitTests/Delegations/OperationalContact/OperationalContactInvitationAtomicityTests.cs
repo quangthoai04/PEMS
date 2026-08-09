@@ -366,7 +366,11 @@ public class OperationalContactInvitationAtomicityTests
 
     private static ReinviteOperationalContactConfirmationCommandHandler ReinviteHandler(
         OperationalContactTestDbContext db, IOperationalContactInvitationService invitations)
-        => new(db, Registrant(), Clock(), invitations, new PerCampusFormV2WriteOptions());
+        => new(db, Registrant(), Clock(), invitations,
+            // Re-inviting puts a campus back behind the contact gate, so it has to re-derive the
+            // request's aggregate status through the same service every other contact command uses.
+            new VisitRequestAggregateStatusService(db),
+            new PerCampusFormV2WriteOptions());
 
     private static ReplaceOperationalContactCommandHandler ReplaceHandler(
         OperationalContactTestDbContext db, IOperationalContactInvitationService invitations)

@@ -229,6 +229,91 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
         finally { await _h.CleanupAsync(); }
     }
 
+    // ── The invitation does not ask for a sign-in that is no longer required ─
+
+    /// <summary>
+    /// A REAL send of both invitations, asserted against the message that actually leaves: no
+    /// Google-login sentence in the rendered body, and both one-time links present.
+    ///
+    /// <para>
+    /// The sentence was removed because it had stopped being true — the passwordless flow accepts the
+    /// answer with no session at all — and a false instruction here is expensive in a way that is easy
+    /// to miss. This mail is the only path from an external guest to their campus's confirmation:
+    /// somebody who reads "you must sign in with the Google account of this address", has no such
+    /// account and does not want one, simply stops. The campus keeps no contact, the request stays at
+    /// PENDING_CONTACT_CONFIRMATION, and every Staff Leader on it stays blocked — with nothing anywhere
+    /// reporting a failure, because the mail was delivered perfectly.
+    /// </para>
+    /// <para>
+    /// Asserted on the sent body rather than on the template row, because the row is only half the
+    /// answer: the copy has to survive rendering with the trusted action block injected, and it is the
+    /// rendered text the recipient reads.
+    /// </para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Neither_invitation_tells_the_recipient_to_sign_in(bool transfer)
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+            var result = await _h.Dispatcher(db).SendAsync(transfer ? Transfer() : Claim());
+            Assert.Equal(EmailDeliveryStatus.Sent, result.Delivery.Status);
+
+            var body = _h.OnlyMessage().Body;
+
+            // The stale instruction, in both languages — the VI body is what renders, and the EN phrase
+            // is asserted too so a language switch cannot reintroduce it unnoticed.
+            Assert.DoesNotContain("đăng nhập bằng đúng tài khoản Google", body);
+            Assert.DoesNotContain("sign in with the Google account", body);
+            // …replaced by the true statement, not merely deleted.
+            Assert.Contains("không cần đăng nhập PEMS", body);
+
+            // Both answers are reachable: an invitation that renders only one of its two one-time links
+            // leaves the reader with no way to give the other answer.
+            Assert.Contains(transfer ? TransferUrl : ClaimUrl, body);
+            Assert.Contains(transfer ? TransferDeclineUrl : ClaimDeclineUrl, body);
+            // The action block really rendered, and nothing was left unresolved.
+            Assert.Contains("17:30 01/08/2026", body);
+            Assert.DoesNotContain("{{", body);
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// The same contract on the SEEDED ROWS, in both languages, including the English body no test
+    /// above ever renders — and the guarantee that the links are still owned by the trusted block
+    /// rather than by editable variables.
+    /// </summary>
+    [Theory]
+    [InlineData(SystemEmailTemplates.VisitContactClaim)]
+    [InlineData(SystemEmailTemplates.VisitContactTransfer)]
+    public async Task The_seeded_bodies_carry_the_no_login_copy_and_keep_the_action_block(string code)
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        var row = await db.EmailTemplates.AsNoTracking().SingleAsync(t => t.TemplateCode == code);
+
+        Assert.DoesNotContain("đăng nhập bằng đúng tài khoản Google", row.BodyVi ?? string.Empty);
+        Assert.DoesNotContain("sign in with the Google account", row.BodyEn ?? string.Empty);
+        Assert.Contains("không cần đăng nhập PEMS", row.BodyVi ?? string.Empty);
+        Assert.Contains("do not need to sign in to PEMS", row.BodyEn ?? string.Empty);
+
+        foreach (var body in new[] { row.BodyVi ?? string.Empty, row.BodyEn ?? string.Empty })
+        {
+            Assert.Contains("{{actionBlock}}", body);
+            // Raw accept/decline URLs are credentials minted per send; a template must never own them.
+            Assert.DoesNotContain("acceptUrl", body);
+            Assert.DoesNotContain("declineUrl", body);
+        }
+
+        // …and none of them leaked into the operator-editable variable list either.
+        Assert.DoesNotContain("acceptUrl", row.VariablesText ?? string.Empty);
+        Assert.DoesNotContain("declineUrl", row.VariablesText ?? string.Empty);
+    }
+
     [Fact]
     public async Task Both_templates_carry_their_secret_in_the_action_block_not_in_the_text()
     {

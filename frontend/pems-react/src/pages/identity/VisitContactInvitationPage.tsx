@@ -42,8 +42,28 @@ export default function VisitContactInvitationPage({ kind }: Props) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [outcome, setOutcome] = useState<{ ok: boolean; message: string } | null>(null);
-  const [declineMode, setDeclineMode] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
+
+  /**
+   * WHICH answer this link is allowed to give — the only mutation the page may offer.
+   *
+   * An invitation email carries two links, one per answer, and each token is minted for exactly one of
+   * them. Offering both buttons therefore invited the reader to press the one their own link cannot
+   * perform: they clicked "Đồng ý" on a decline link, the backend refused it as
+   * `CONFIRMATION_NOT_FOUND`, and the page told them the invitation was invalid — for an action they
+   * had every right to take, through the other link, in the same email.
+   *
+   * `null` means "no mutation may be offered", and it is deliberately the answer to BOTH "already
+   * settled" (`actionable === false`) and "the server did not say" (missing/unknown
+   * `intendedAction`). Guessing in the unknown case is the failure this exists to prevent: an absent
+   * field must not be read as permission to show everything.
+   */
+  const mutationAction: 'ACCEPT' | 'DECLINE' | null = useMemo(() => {
+    if (!info || !info.actionable) return null;
+    if (info.intendedAction === 'ACCEPT') return 'ACCEPT';
+    if (info.intendedAction === 'DECLINE') return 'DECLINE';
+    return null;
+  }, [info]);
 
   // The loaded record is the authority on which kind this is; the route only decides what to show
   // during the first render, before anything has loaded.
@@ -197,6 +217,15 @@ export default function VisitContactInvitationPage({ kind }: Props) {
               <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 p-4 text-sm text-amber-800 dark:text-amber-200" role="alert">
                 {statusBanner(info.status)}
               </div>
+            ) : mutationAction === null ? (
+              /* Nothing this link may do — either the invitation is settled or the server did not say
+                 which answer the link carries. Both end here rather than in a pair of buttons, because
+                 a button the token cannot honour is worse than no button: it spends the reader's one
+                 attempt and answers them with an error about a link that is perfectly valid. */
+              <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 p-4 text-sm text-amber-800 dark:text-amber-200" role="alert">
+                Liên kết này hiện không thực hiện được thao tác nào. Vui lòng mở lại liên kết trong email mới
+                nhất, hoặc đề nghị người đăng ký gửi lại lời mời.
+              </div>
             ) : (
               <div className="mt-6 space-y-3">
                 {/* Đăng nhập là LỰA CHỌN, không phải rào chắn. Liên kết trong email đã là bằng chứng
@@ -224,7 +253,10 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                     </button>
                   </div>
                 )}
-                {declineMode ? (
+                {/* One link, one answer. The reader already chose in the email by pressing a button
+                    there; this page confirms that choice with the latest visit details in front of
+                    them, it does not re-open the question. */}
+                {mutationAction === 'DECLINE' ? (
                   <div className="space-y-2">
                     <label htmlFor="decline-reason" className="text-sm text-gray-600 dark:text-gray-300">
                       Lý do từ chối (không bắt buộc)
@@ -237,43 +269,24 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                       value={declineReason}
                       onChange={e => setDeclineReason(e.target.value)}
                     />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={submitting}
-                        className="flex-1 rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                        onClick={() => void act('decline')}
-                      >
-                        Xác nhận từ chối
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm"
-                        onClick={() => setDeclineMode(false)}
-                      >
-                        Quay lại
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      className="w-full rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      onClick={() => void act('decline')}
+                    >
+                      {submitting ? 'Đang xử lý…' : 'Xác nhận từ chối'}
+                    </button>
                   </div>
                 ) : (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      className="flex-1 rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700 disabled:opacity-50"
-                      onClick={() => void act('accept')}
-                    >
-                      {submitting ? 'Đang xử lý…' : labels.acceptCta}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={submitting}
-                      className="rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-2 text-sm text-gray-700 dark:text-gray-200"
-                      onClick={() => setDeclineMode(true)}
-                    >
-                      Từ chối
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    className="w-full rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700 disabled:opacity-50"
+                    onClick={() => void act('accept')}
+                  >
+                    {submitting ? 'Đang xử lý…' : labels.acceptCta}
+                  </button>
                 )}
               </div>
             )}

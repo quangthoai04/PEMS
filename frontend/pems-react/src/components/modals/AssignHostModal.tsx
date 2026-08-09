@@ -26,11 +26,12 @@ type AssignHostModalProps = {
   currentHostUserId?: number | null;
   customTitle?: string;
   /**
-   * rowVersion của campus ĐÚNG NHƯ màn hình duyệt đang hiển thị. Gửi kèm để backend từ chối
-   * (409 VISIT_INSTANCE_VERSION_CONFLICT) nếu khách đã sửa đơn sau khi màn hình mở — người duyệt
-   * không bao giờ được phê duyệt nội dung họ chưa đọc.
+   * rowVersion của campus ĐÚNG NHƯ màn hình duyệt đang hiển thị. BẮT BUỘC: backend từ chối
+   * (409 VISIT_INSTANCE_VERSION_CONFLICT) nếu khách đã sửa đơn sau khi màn hình mở, và từ chối
+   * hẳn (400 VISIT_INSTANCE_VERSION_REQUIRED) nếu không gửi — người duyệt không bao giờ được phê
+   * duyệt nội dung họ chưa đọc, kể cả khi màn hình gọi quên truyền phiên bản.
    */
-  expectedInstanceRowVersion?: number | null;
+  expectedInstanceRowVersion: number;
   onClose: () => void;
   onConfirmed: () => void;
   /**
