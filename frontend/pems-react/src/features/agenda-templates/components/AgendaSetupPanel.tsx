@@ -4,6 +4,12 @@
  * (campus scope → GLOBAL fallback), lets the host pick another, previews the template that
  * WILL be applied (absolute time = planned_start_at + offsets) and applies it into visit_agendas.
  *
+ * The FIRST time an instance has no agenda yet, the default template is applied automatically —
+ * the registrant already chose a visit type on the public form, so the matching default is exactly
+ * what a brand-new instance should start with, and making the host click "Áp dụng" for the obvious
+ * case is a step for nothing. This only ever fires once: hasExistingAgenda flips true right after it
+ * succeeds, so re-opening the panel later (to change the template) always lands on the normal picker.
+ *
  * Template items are read from the setup response's selectableTemplates (each option embeds its
  * items). We deliberately do NOT call the management detail endpoint here — that is gated to
  * HO / Staff Leader, while the setup user is usually a plain-Staff Host. Backend remains the
@@ -53,6 +59,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [autoApplying, setAutoApplying] = useState(false);
 
   // Stabilise notify. The parent passes a FRESH pushToast fn on every render; if notify (and thus
   // loadSetup) depended on it, the load effect would re-run on every parent re-render — e.g. each
@@ -152,6 +159,24 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
     }
   };
 
+  // ── Auto-apply once, for a truly fresh instance ──
+  // Only when the backend says this actor may apply (canApply — a Staff Leader/HO just viewing must
+  // never trigger a write as a side effect of opening the page), there is no agenda yet, and a
+  // template actually got pre-selected (empty template list ⇒ selectedId stays null ⇒ falls through
+  // to the normal "no templates available" message instead of silently doing nothing).
+  const autoAppliedForInstanceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!setup || setup.hasExistingAgenda || !setup.canApply) return;
+    if (selectedId == null) return;
+    if (autoAppliedForInstanceRef.current === visitInstanceId) return;
+    autoAppliedForInstanceRef.current = visitInstanceId;
+    setAutoApplying(true);
+    void apply().finally(() => setAutoApplying(false));
+    // apply() is intentionally left out: it closes over selectedId/replaceExisting already covered
+    // by this effect's own deps, and it is not memoised, so listing it would re-fire every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setup, selectedId, visitInstanceId]);
+
   if (loading) {
     return (
       <div className="mb-4 p-4 rounded-xl border border-gray-200 bg-white flex items-center gap-2 text-gray-400 text-sm">
@@ -160,6 +185,14 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
     );
   }
   if (!setup) return null;
+  if (autoApplying) {
+    return (
+      <div className="mb-5 flex items-center gap-2 rounded-xl border border-[#004c91]/20 bg-blue-50/40 p-4 text-sm font-semibold text-[#004c91]">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Đang áp dụng mẫu Agenda mặc định theo loại hình đã đăng ký…
+      </div>
+    );
+  }
 
   const planned = setup.plannedStartAt;
   const base = new Date(planned);
