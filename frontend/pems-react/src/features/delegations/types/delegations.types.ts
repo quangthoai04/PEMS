@@ -321,6 +321,15 @@ export interface VisitProcessPermission {
 
   // Operational stage transitions (Host only, live instance).
   canStartVisit: boolean;     // BEFORE_VISIT → DURING_VISIT
+  /**
+   * Thời điểm sớm nhất được chuyển BEFORE_VISIT → DURING_VISIT (`plannedStartAt - 6h`). Backend trả
+   * suốt giai đoạn BEFORE_VISIT — kể cả khi `canStartVisit` còn false — vì đó chính là lúc màn hình
+   * cần: nút disabled nói rõ MỐC MỞ hữu ích hơn hẳn nút biến mất. Suy từ lịch hiện tại nên lịch đổi
+   * thì mốc đổi theo.
+   */
+  startVisitAvailableAt?: string | null;
+  /** `VISIT_START_WINDOW_NOT_OPEN` khi lý do duy nhất là chưa tới giờ; null nếu vì lý do khác. */
+  startVisitDisabledReasonCode?: string | null;
   canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
   canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
 
@@ -1057,6 +1066,14 @@ export interface VisitRequestManagementItem {
   isCurrentUserParticipant: boolean;
   participantRole: string | null;
   /**
+   * Người dùng hiện tại có participant row nào trên instance này không — id thật, dùng để mở
+   * đúng màn hình lời mời / công việc phòng ban. Trên tab gộp "Tất cả các loại đơn", một dòng
+   * gốc ATTENDING trước đây mất id này nên bị đẩy về request detail (403).
+   */
+  participantId?: number | null;
+  /** INVITED | ACCEPTED | DECLINED | ASSIGNED — DECLINED vẫn hiện trong lịch sử nhưng đã hết quan hệ. */
+  participantStatus?: string | null;
+  /**
    * Single-valued legacy relation, DISPLAY ONLY. It cannot describe someone who is registrant AND host
    * AND campus reviewer at once — use {@link VisitRequestManagementItem.relationContexts} for the real
    * answer, and `allowedActions` for what they may do. Never gate an action on this.
@@ -1122,6 +1139,12 @@ export interface VisitRequestManagementItem {
   // Multi-campus expandable row (Phương án A). Backend-computed action booleans + per-campus
   // progress for the accordion. campusProgressItems is empty for single-campus / instance-level rows.
   canExpandCampuses?: boolean;
+  /**
+   * Backend nói rõ dòng này có mở được request detail (`/dashboard/visit/v2/{id}`) hay không —
+   * tính từ ĐÚNG các quan hệ mà `VisitFormReadService` cho phép. `false` không có nghĩa dòng sai:
+   * nó đến từ quan hệ khác (lời mời đã từ chối, phân công lịch trình) và phải điều hướng sang
+   * màn hình của quan hệ đó, KHÔNG fallback về request detail.
+   */
   canViewRequestDetail?: boolean;
   canViewRejectReason?: boolean;
   canViewCancelReason?: boolean;

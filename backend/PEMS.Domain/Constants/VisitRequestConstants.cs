@@ -112,6 +112,15 @@ public static class VisitRequestErrorCodes
     // the actor who started it — a genuine conflict rather than an idempotent replay.
     public const string VisitPreparationAlreadyStarted = "VISIT_PREPARATION_ALREADY_STARTED";
 
+    /// <summary>
+    /// BEFORE_VISIT → DURING_VISIT was attempted more than
+    /// <see cref="PEMS.Domain.Policies.VisitStageTransitionPolicy.StartVisitEarlyWindowHours"/> hours
+    /// before the campus's planned start. Distinct from the "preparation incomplete" conflict: nothing
+    /// is missing, the Host simply has to wait — so the client can show the exact moment it opens
+    /// instead of asking them to hunt for a blocker that does not exist.
+    /// </summary>
+    public const string VisitStartWindowNotOpen = "VISIT_START_WINDOW_NOT_OPEN";
+
 
     // contactEmail belongs to an existing non-VISITOR (internal) account — it must
     // never be repurposed as a Visitor nor have its role changed.

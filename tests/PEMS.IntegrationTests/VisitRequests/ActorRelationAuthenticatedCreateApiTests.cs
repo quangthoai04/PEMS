@@ -562,8 +562,28 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// The "registered" filter for a Staff who registered a request that is still waiting on its
+    /// operational contact.
+    ///
+    /// <para>
+    /// This used to assert the row came back strictly read-only, with VIEW_DETAIL as its only action.
+    /// Two deliberate changes retired that expectation, and they arrived from opposite directions:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item>a filter is a POPULATION, not a permission level — "registered" no longer returns
+    ///     early with an empty action list before looking at who is asking;</item>
+    ///   <item>a request is editable by its registrant through BOTH pre-decision stages, including
+    ///     PENDING_CONTACT_CONFIRMATION, which is exactly the stage this fixture creates.</item>
+    /// </list>
+    /// <para>
+    /// So the row is now correctly editable, and the test asserts the merged contract instead: the
+    /// registrant relation is reported, the edit their own request still allows is offered, and the
+    /// things that relation does NOT grant are still absent.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task RegisteredTab_ReturnsReadOnlyRow_ForStaffRegistrant()
+    public async Task RegisteredTab_OffersTheRegistrantsOwnEdit_ForStaffRegistrant()
     {
         var name = DelegationPrefix + "Staff registered tab " + Guid.NewGuid().ToString("N")[..8];
         var payload = CreatePayload(name, UniqueContactEmail(),
@@ -584,10 +604,27 @@ public sealed class ActorRelationAuthenticatedCreateApiTests : IAsyncLifetime
         Assert.True(items.GetArrayLength() >= 1, $"registered tab returned no rows: {json}");
 
         var row = items[0];
+        // The legacy single-valued label is unchanged — it stays for display/compat.
         Assert.Equal("REGISTRANT_VIEWER", row.GetProperty("currentUserRelation").GetString());
-        Assert.True(row.GetProperty("isReadOnly").GetBoolean());
+
+        // …and the multi-relation source of truth agrees with it: registrant, nothing else here.
+        var relations = row.GetProperty("relations").EnumerateArray().Select(r => r.GetString()).ToList();
+        Assert.Equal(new[] { "REGISTRANT" }, relations);
+
         var actions = row.GetProperty("allowedActions").EnumerateArray().Select(a => a.GetString()).ToList();
-        var action = Assert.Single(actions);
-        Assert.Equal("VIEW_DETAIL", action);
+        Assert.Contains("VIEW_DETAIL", actions);
+        // The registrant's own request is still pre-decision, so their edit is offered — the filter
+        // does not remove it, and neither does the contact-confirmation stage.
+        Assert.Contains("EDIT_PENDING_REQUEST", actions);
+        Assert.False(row.GetProperty("isReadOnly").GetBoolean());
+
+        // Being the registrant grants nothing on the campus side: no decision, no host process.
+        Assert.DoesNotContain("APPROVE_AND_ASSIGN_HOST", actions);
+        Assert.DoesNotContain("CAMPUS_REJECT", actions);
+        Assert.DoesNotContain("OPEN_HOST_PROCESS", actions);
+
+        // Entry context is the request itself, and the request detail really is open to them.
+        Assert.Equal("REQUEST_DETAIL", row.GetProperty("primaryEntryContext").GetString());
+        Assert.True(row.GetProperty("canViewRequestDetail").GetBoolean());
     }
 }

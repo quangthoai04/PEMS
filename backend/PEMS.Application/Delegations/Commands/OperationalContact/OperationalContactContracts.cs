@@ -39,14 +39,106 @@ public sealed record OperationalContactConfirmationInfoResponse(
     DateTime? PlannedStartAt,
     DateTime? PlannedEndAt,
     DateTime? ExpiresAt,
-    bool RequiresGoogleLoginEmailMatch);
+    /// <summary>
+    /// Whether the reader must sign in before they may answer. FALSE for an ordinary invitation link:
+    /// the token itself is single-use, action-bound and address-bound, and demanding a Google account
+    /// from an external guest before they may say yes or no is why invitations went unanswered.
+    /// Signing in remains possible and is the path an invitee who is already in PEMS will take.
+    /// </summary>
+    bool RequiresGoogleLoginEmailMatch,
+    /// <summary>
+    /// Which answer THIS link carries — ACCEPT or DECLINE. The email offers one link per answer, so
+    /// the page renders the single action the reader chose rather than both buttons, one of which
+    /// their link cannot perform.
+    /// </summary>
+    string? IntendedAction = null);
 
 // ── Invited-side accept / decline (authenticated; email must match) ───────────
 
-public sealed record AcceptOperationalContactConfirmationCommand(string Token)
+/// <param name="ActingUserId">
+/// INTERNAL ONLY — never bound from a route, a query string or a body. It is set by the PUBLIC
+/// (no-login) handlers, which have already proved the answerer's identity from the single-use token
+/// and resolved it to a real account, so this command can run the one canonical accept without a
+/// signed-in session. Null on every authenticated call, where the session decides the actor.
+/// </param>
+/// <param name="Token">
+/// The single-use link. NULL when a signed-in invitee answers from inside the product ("Lời mời đầu
+/// mối của tôi") instead of from their email: they have no link, and demanding one would tell a
+/// person who is already authenticated as the invited address to go and find an email. Then
+/// <paramref name="IdentityChangeId"/> names the invitation and the session proves the identity —
+/// the same two facts a token carries, established more strongly.
+/// </param>
+/// <param name="IdentityChangeId">Required when <paramref name="Token"/> is null; ignored otherwise.</param>
+public sealed record AcceptOperationalContactConfirmationCommand(
+    string? Token, ulong? ActingUserId = null, ulong? IdentityChangeId = null)
     : IRequest<OperationalContactActionResponse>;
 
-public sealed record DeclineOperationalContactConfirmationCommand(string Token, string? Reason)
+/// <param name="Token">See <see cref="AcceptOperationalContactConfirmationCommand.Token"/>.</param>
+/// <param name="ActingUserId">See <see cref="AcceptOperationalContactConfirmationCommand.ActingUserId"/>.</param>
+public sealed record DeclineOperationalContactConfirmationCommand(
+    string? Token, string? Reason, ulong? ActingUserId = null, ulong? IdentityChangeId = null)
+    : IRequest<OperationalContactActionResponse>;
+
+// ── The signed-in invitee's own surface ──────────────────────────────────────
+
+/// <summary>
+/// "Lời mời đầu mối của tôi" — the invitations addressed to the signed-in account's own address.
+///
+/// <para>
+/// A pending invitee is NOT yet the operational contact of anything, so this deliberately does not
+/// widen the request read scope: <c>VisitFormReadService</c> still refuses them the full request, and
+/// matching on an email address is not evidence of a relation the system has granted. What they get
+/// is a limited summary of what they are being asked to take on — enough to decide, and nothing that
+/// belongs to a campus they have not accepted.
+/// </para>
+/// </summary>
+public sealed record GetMyOperationalContactInvitationsQuery
+    : IRequest<IReadOnlyList<MyOperationalContactInvitationDto>>;
+
+/// <summary>One outstanding invitation, as the invited person may see it before deciding.</summary>
+public sealed record MyOperationalContactInvitationDto(
+    ulong IdentityChangeId,
+    ulong VisitRequestId,
+    ulong VisitInstanceId,
+    string Kind,                   // INITIAL_CONFIRMATION | TRANSFER
+    string? RequestCode,
+    string? CampusName,
+    string? DelegationName,
+    DateTime? PlannedStartAt,
+    DateTime? PlannedEndAt,
+    string? RegistrantFullName,
+    string? RegistrantOrganization,
+    DateTime ExpiresAt);
+
+// ── Public accept / decline from the invitation email (NO login) ─────────────
+//
+// Same two answers, reachable by somebody who has never signed in. The invited person is usually an
+// external guest with no PEMS account and no reason to create one before deciding whether they will
+// take the role at all — requiring a Google sign-in first turned a one-click answer into an account
+// setup, and the invitations simply went unanswered.
+//
+// Both are POST and both are reached from a confirmation PAGE, never from the email link directly.
+// A GET that mutates is answered by whatever prefetches URLs — Outlook, Gmail, Defender, corporate
+// scanners — so the email's links only ever OPEN the page, and the page posts when a human clicks.
+//
+// The token is the whole authorization, which is why it is single-use, short-lived, bound to one
+// intended action and to one address that was chosen by the registrant rather than by the caller.
+
+/// <summary>
+/// Accepts the invitation without a signed-in session. The address still ends up owning the campus
+/// through a real <c>users</c> row — the relation is an account id, never an email string — so the
+/// handler links the existing account for that address, or provisions the Visitor account the public
+/// visit-request flow would have created. A later Google sign-in with the same address resolves to
+/// that same user.
+/// </summary>
+public sealed record PublicAcceptOperationalContactConfirmationCommand(string Token)
+    : IRequest<OperationalContactActionResponse>;
+
+/// <summary>
+/// Declines the invitation without a signed-in session. No account is provisioned: somebody who is
+/// not taking the role has no reason to acquire an account in order to say so.
+/// </summary>
+public sealed record PublicDeclineOperationalContactConfirmationCommand(string Token, string? Reason)
     : IRequest<OperationalContactActionResponse>;
 
 /// <summary>
@@ -71,6 +163,39 @@ public sealed record GetOperationalContactStateQuery(ulong VisitRequestId, ulong
     : IRequest<OperationalContactStateResponse>;
 
 public sealed record ResendOperationalContactConfirmationCommand(ulong VisitRequestId, ulong VisitInstanceId)
+    : IRequest<OperationalContactManageResponse>;
+
+/// <summary>
+/// Sends a FRESH confirmation invitation to the address this campus already names, when there is no
+/// live invitation left to resend.
+///
+/// <para>
+/// RESEND and REINVITE answer different situations and must not be the same command:
+/// </para>
+/// <list type="bullet">
+/// <item><b>Resend</b> — the invitation is still PENDING; the person just needs the mail again. It
+/// reissues the token on the EXISTING <c>VisitRequestIdentityChange</c> and counts against the resend
+/// cap.</item>
+/// <item><b>Reinvite</b> — the invitation is CANCELLED, DECLINED or EXPIRED, so there is nothing to
+/// resend. It opens a NEW identity change with a new token and a fresh expiry.</item>
+/// </list>
+///
+/// <para>
+/// Without this the registrant was stuck. Cancelling an INITIAL_CONFIRMATION leaves the campus's
+/// snapshot email exactly as it was, so re-saving the contact form with that same address is
+/// classified by <c>SaveOperationalContactCommandHandler</c> as an unchanged address — a profile
+/// update, which by design mints no token and sends no mail. The only escape was to save a fake
+/// address and then change it back, which supersedes invitations and writes two false entries into
+/// the campus's identity history to achieve what this command does in one honest step.
+/// </para>
+/// <para>
+/// It never changes WHO the contact is — that is replace (undecided) or transfer (decided). It only
+/// re-opens the confirmation for the address already on the campus, so it is refused when the campus
+/// already has a confirmed contact or already has an invitation in flight.
+/// </para>
+/// </summary>
+public sealed record ReinviteOperationalContactConfirmationCommand(
+    ulong VisitRequestId, ulong VisitInstanceId)
     : IRequest<OperationalContactManageResponse>;
 
 /// <summary>

@@ -78,10 +78,11 @@ export const delegationsApi = {
     visitRequestId: number | string,
     visitInstanceId: number | string,
     reason: string,
+    expectedInstanceRowVersion?: number | null,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.rejectCampusInstance(visitRequestId, visitInstanceId),
-      { reason },
+      { reason, expectedInstanceRowVersion: expectedInstanceRowVersion ?? undefined },
     );
     return data;
   },
@@ -133,10 +134,18 @@ export const delegationsApi = {
     visitInstanceId: number | string,
     hostUserId: number,
     decisionNote?: string,
+    expectedInstanceRowVersion?: number | null,
   ): Promise<any> {
     const { data } = await httpClient.post<any>(
       API_ENDPOINTS.delegations.approveCampusInstance(visitRequestId, visitInstanceId),
-      { hostUserId, decisionNote: decisionNote?.trim() || undefined },
+      {
+        hostUserId,
+        decisionNote: decisionNote?.trim() || undefined,
+        // Phiên bản campus MÀ NGƯỜI DUYỆT ĐÃ ĐỌC. Backend từ chối 409
+        // VISIT_INSTANCE_VERSION_CONFLICT nếu khách đã sửa sau khi màn hình được render —
+        // duyệt nội dung chưa từng đọc là điều không được phép xảy ra âm thầm.
+        expectedInstanceRowVersion: expectedInstanceRowVersion ?? undefined,
+      },
     );
     return data;
   },

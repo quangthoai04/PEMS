@@ -76,6 +76,8 @@ public sealed class ReplaceOperationalContactCommandHandler
         var newEmailMasked = VisitRequestFingerprintBuilder.MaskEmail(newEmail);
 
         ulong? invitationToSend = null;
+        // Minted inside the transaction below, dispatched after it commits.
+        OperationalContactInvitationTokens? invitationTokens = null;
         ContactGateTransition gate;
         OperationalContactManageResponse response;
 
@@ -205,7 +207,19 @@ public sealed class ReplaceOperationalContactCommandHandler
                     CreatedAt = now,
                 });
 
+                // ── The link is part of THIS transaction, not a follow-up step. ─────────────────
+                // The campus's contact snapshot has just been rewritten and its
+                // operational_contact_user_id cleared, so the ONLY way anyone regains the campus is
+                // through this invitation's link. Minting it after the commit could leave the campus
+                // re-pointed at an address that was never written to, holding a PENDING change that
+                // blocks the next replace — and the browser would be told the whole thing failed.
+                // Minted here, a token failure rolls the replace back and the refusal is the truth.
                 invitationToSend = invitation.IdentityChangeId;
+                invitationTokens = OperationalContactGuards.RequireMintedLinks(
+                    await _invitations.MintInvitationTokensAsync(
+                        invitation.IdentityChangeId, cancellationToken),
+                    invitation.IdentityChangeId);
+
                 message = previousContactId is null
                     ? "Đã cập nhật đầu mối vận hành và gửi lời mời xác nhận tới email mới."
                     : "Đã đổi đầu mối vận hành của cơ sở. Cơ sở này chờ người mới xác nhận, và toàn bộ đơn tạm dừng ở cổng xác nhận cho tới khi đủ đầu mối.";
@@ -261,10 +275,12 @@ public sealed class ReplaceOperationalContactCommandHandler
                 message);
         }
 
-        // ── After commit. Sending an email inside the transaction would let a rollback leave somebody
-        //    holding an invitation to a campus that never changed. ──
-        if (invitationToSend is not null)
-            await _invitations.SendInvitationAsync(invitationToSend.Value, cancellationToken);
+        // ── Only the DELIVERY is best-effort, and only after the commit. Sending inside the
+        //    transaction would let a rollback leave somebody holding an invitation to a campus that
+        //    never changed; failing here leaves a durable, answerable invitation that resend recovers. ──
+        if (invitationToSend is not null && invitationTokens is not null)
+            await _invitations.DispatchInvitationEmailAsync(
+                invitationToSend.Value, invitationTokens, cancellationToken);
 
         // Replacing the last outstanding contact with the registrant's own address can complete the
         // request, which opens the gate here rather than on an accept.

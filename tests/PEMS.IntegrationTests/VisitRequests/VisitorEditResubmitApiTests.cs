@@ -216,19 +216,28 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
 
+    /// <summary>
+    /// The resubmit half of the same rule (see the pending-edit twin): a changed registrant EMAIL is
+    /// still refused with IMMUTABLE_REGISTRANT_INFO and moves nothing — not the content, not the
+    /// resubmission counter, not the status. Changing the descriptive name is no longer tampering and
+    /// is covered by its own assertion above.
+    /// </summary>
     [Fact]
-    public async Task Resubmit_TamperedRegistrant_ReturnsUnprocessableEntity_AndDatabaseUnchanged()
+    public async Task Resubmit_TamperedRegistrantEmail_ReturnsUnprocessableEntity_AndDatabaseUnchanged()
     {
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.Rejected, VisitInstanceStatuses.Rejected);
         var client = VisitorClient();
-        
-        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["registrant"]!["fullName"] = "Hacked Registrant";
+
+        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId));
+        command["registrant"]!["email"] = "someone.else@example.com";
 
         var response = await client.PostAsJsonAsync($"/api/v2/visit-requests/{visitId}/resubmit", command);
 
         Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
         var content = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-        Assert.Equal("IMMUTABLE_REGISTRANT_INFO", content.GetProperty("errorCode").GetString());
+        // Narrower than the retired IMMUTABLE_REGISTRANT_INFO: only the address is frozen now, and the
+        // code says so, which is what lets the UI point at the right field.
+        Assert.Equal("IMMUTABLE_REGISTRANT_EMAIL", content.GetProperty("errorCode").GetString());
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -401,28 +410,62 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
         Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
     }
 
+    /// <summary>
+    /// The registrant block splits into DESCRIPTION and IDENTITY, and only one half is frozen.
+    ///
+    /// <para>
+    /// This test used to assert that changing the registrant's NAME was refused. That refusal was
+    /// retired deliberately: the five descriptive fields (name, organization, job title, nationality,
+    /// phone) are a snapshot of who filed the request, the edit form has always rendered them as
+    /// inputs, and refusing them told a registrant fixing a misspelt name that they were tampering.
+    /// The email stays immutable because it IS the identity — it is what the account binding and the
+    /// OTP were resolved against, and what every notification is addressed to.
+    /// </para>
+    /// <para>
+    /// So the test now pins BOTH halves of that rule, which is what makes it worth keeping: the
+    /// description is accepted and persisted, the identity is still refused with its own error code.
+    /// </para>
+    /// </summary>
     [Fact]
-    public async Task UpdatePending_TamperedRegistrant_ReturnsUnprocessableEntity_AndDbUnchanged()
+    public async Task UpdatePending_AcceptsRegistrantDescription_ButStillRefusesTheIdentityEmail()
     {
         var visitId = await SeedVisitRequestAsync(VisitRequestStatuses.PendingApproval, VisitInstanceStatuses.WaitingRequestApproval);
         var client = VisitorClient();
-        
-        var command = ClonePayload(await CreateValidEditPayloadAsync(visitId)); command["registrant"]!["fullName"] = "Hacked Registrant";
 
-        var response = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", command);
+        // ── Description: allowed, and it lands. ──
+        var rename = ClonePayload(await CreateValidEditPayloadAsync(visitId));
+        rename["registrant"]!["fullName"] = "Integration Registrant (đã sửa)";
 
-        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        var renameResponse = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", rename);
+        Assert.Equal(System.Net.HttpStatusCode.OK, renameResponse.StatusCode);
 
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var visit = await db.VisitRequests
-            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
-            .FirstAsync(v => v.VisitRequestId == visitId);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var visit = await db.VisitRequests.FirstAsync(v => v.VisitRequestId == visitId);
+            Assert.Equal("Integration Registrant (đã sửa)", visit.RegistrantFullName);
+            Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
+        }
 
-        // Assert no changes made
-        Assert.Equal("Integration Registrant", visit.RegistrantFullName);
-        Assert.Equal("Integration Delegation", visit.CampusInstances.Single().FormDetail!.DelegationName);
-        Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
+        // ── Identity: refused, and nothing moves. ──
+        var hijack = ClonePayload(await CreateValidEditPayloadAsync(visitId));
+        hijack["registrant"]!["email"] = "someone.else@example.com";
+
+        var hijackResponse = await client.PutAsJsonAsync($"/api/v2/visit-requests/{visitId}/pending-edit", hijack);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, hijackResponse.StatusCode);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var visit = await db.VisitRequests
+                .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+                .FirstAsync(v => v.VisitRequestId == visitId);
+            // Still exactly what the ACCEPTED edit left behind — the refused one moved nothing on top
+            // of it. ("Edited Delegation Name" is what CreateValidEditPayloadAsync writes.)
+            Assert.Equal("Integration Registrant (đã sửa)", visit.RegistrantFullName);
+            Assert.Equal("Edited Delegation Name", visit.CampusInstances.Single().FormDetail!.DelegationName);
+            Assert.Equal(VisitRequestStatuses.PendingApproval, visit.Status);
+        }
     }
     [Fact]
     public async Task Resubmit_TamperedContactIdentity_ReturnsUnprocessableEntity()

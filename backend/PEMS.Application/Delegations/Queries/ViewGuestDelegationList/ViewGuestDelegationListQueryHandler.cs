@@ -368,6 +368,23 @@ public sealed class ViewGuestDelegationListQueryHandler
         primary.IsCurrentUserParticipant |= other.IsCurrentUserParticipant;
         primary.ParticipantRole ??= other.ParticipantRole;
 
+        // The participant's OWN row id and status. Only the attending source carries them, and it is
+        // routinely the source that LOSES the merge (a campus decision or a host task outranks an
+        // invitation). Dropping them here is precisely the bug that left a merged attending row with
+        // nothing to address but the generic request detail — which the invitation relation does not
+        // necessarily authorize. They travel with the surviving row so the secondary entry can still
+        // open the invitation / department-task screen that belongs to it.
+        if (primary.ParticipantId is null && other.ParticipantId is not null)
+        {
+            primary.ParticipantId = other.ParticipantId;
+            primary.ParticipantStatus = other.ParticipantStatus;
+        }
+
+        // Effective read scope is a UNION over relations: if ANY relation the caller holds on this
+        // request opens the request detail, it is open. Each candidate computed this from the same
+        // canonical rules (VisitFormReadService.ComputeScopeAsync), just from its own row's angle.
+        primary.CanViewRequestDetail |= other.CanViewRequestDetail;
+
         primary.ResubmissionCount = Math.Max(primary.ResubmissionCount, other.ResubmissionCount);
         primary.LastResubmittedAt ??= other.LastResubmittedAt;
         primary.LastResubmittedBy ??= other.LastResubmittedBy;
@@ -590,7 +607,8 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // A multi-campus SUMMARY row is not one campus, so it cannot open one campus's screen — the
         // reader chooses the campus from the accordion first.
-        if (!item.VisitInstanceId.HasValue) return (VisitEntryContexts.RequestDetail, null);
+        if (!item.VisitInstanceId.HasValue)
+            return item.CanViewRequestDetail ? (VisitEntryContexts.RequestDetail, null) : (null, null);
 
         var pick = tab switch
         {
@@ -599,6 +617,18 @@ public sealed class ViewGuestDelegationListQueryHandler
             TabAttending => contexts.FirstOrDefault(c => c.Relation == VisitRowRelations.Participant),
             _ => null,
         } ?? contexts[0];
+
+        // A relation can point at the request without the request being open to it: a declined
+        // invitation still holds the participant relation, and an agenda/logistics assignment is a
+        // relation to ONE campus's work. CanViewRequestDetail mirrors what VisitFormReadService
+        // actually admits, so naming REQUEST_DETAIL against it would hand the UI a 403 to walk into.
+        // Fall back to the most urgent context that opens something this caller can really reach.
+        if (pick.EntryContext == VisitEntryContexts.RequestDetail && !item.CanViewRequestDetail)
+        {
+            pick = contexts.FirstOrDefault(c => c.EntryContext != VisitEntryContexts.RequestDetail)
+                ?? pick;
+            if (pick.EntryContext == VisitEntryContexts.RequestDetail) return (null, null);
+        }
 
         return (pick.EntryContext, pick.VisitInstanceId);
     }
@@ -833,8 +863,17 @@ public sealed class ViewGuestDelegationListQueryHandler
                     ?? throw new UnauthorizedAccessException("Staff Leader missing PrimaryCampusId");
 
                 // Campus-independent approval: the Staff Leader sees EVERY instance of their
-                // campus (single or multi) immediately after submit — no HO gate anymore.
-                q = q.Where(x => x.c.CampusId == primaryCampusId);
+                // campus (single or multi) — no HO gate anymore — but only once the GLOBAL
+                // confirmation gate has opened. While ANY campus of the request is still missing
+                // its operational contact, the request is invisible to EVERY campus's Staff
+                // Leader, including one whose own campus already reached
+                // WAITING_REQUEST_APPROVAL. The gate belongs to the request, not the campus.
+                //
+                // A Staff Leader who REGISTERED the request still sees it — through the
+                // "registered" tab (and its own source inside the merged "all" tab), which is the
+                // registrant relation and is unaffected by this reviewer-side filter.
+                q = q.Where(x => x.c.CampusId == primaryCampusId
+                    && x.vr.Status != VisitRequestStatuses.PendingContactConfirmation);
             }
             else if (roleCode == RoleCodes.Staff)
             {
@@ -1039,17 +1078,35 @@ public sealed class ViewGuestDelegationListQueryHandler
             .GroupBy(id => id)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // The caller's OWN participant rows on the page's instances. ONE query feeds two different
+        // questions, which are deliberately not the same question:
+        //   • which row to SHOW and address (id + status + role) — the live one;
+        //   • whether the PARTICIPANT relation is held at all — a stricter predicate over ALL rows.
         var myParticipations = await _context.VisitParticipants
             .Where(pp => instanceIds.Contains(pp.VisitInstanceId) && pp.UserId == userId)
-            .Select(pp => new { pp.VisitInstanceId, pp.ParticipantRole, pp.IsHost, pp.Status, pp.InvitedBy })
+            .Select(pp => new { pp.VisitInstanceId, pp.ParticipantId, pp.ParticipantRole, pp.IsHost, pp.Status, pp.InvitedBy })
             .ToListAsync(ct);
-        var myParticipationRole = myParticipations
+
+        // The row to address. The id is what lets an attending-origin row reach the invitation /
+        // department-task screen from the merged "all" tab; the status is what tells a DECLINED row
+        // apart from a live one, which is the difference between a relation that grants the request
+        // detail and one that has ended.
+        var myParticipation = myParticipations
             .GroupBy(p => p.VisitInstanceId)
-            .ToDictionary(g => g.Key, g => g.First().ParticipantRole);
-        // The PARTICIPANT *relation* is stricter than "has a row in visit_participants": the same
-        // predicate the attending tab populates from, so "matched the invitation filter" and "holds the
-        // participant relation" can never disagree. A revoked slot, the host's own row, and a
-        // department ASSIGNED task (its own relation) are all excluded.
+            // Prefer a live row over a superseded one: a re-invitation after a decline leaves both.
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(p => p.Status == ParticipantStatuses.Accepted
+                                            || p.Status == ParticipantStatuses.Assigned
+                                            || p.Status == ParticipantStatuses.Invited)
+                      .ThenByDescending(p => p.ParticipantId)
+                      .First());
+
+        // The PARTICIPANT *relation* is stricter than "has a row in visit_participants": it is the
+        // same predicate the attending tab populates from, so "matched the invitation filter" and
+        // "holds the participant relation" can never disagree. A revoked slot, the host's own row and
+        // a department ASSIGNED task (its own relation) are all excluded. Evaluated over EVERY row,
+        // not just the one picked above — a stale REMOVED row must not mask a live invitation.
         var myParticipantRelation = myParticipations
             .Where(p => !p.IsHost
                 && p.Status != ParticipantStatuses.Removed
@@ -1060,6 +1117,24 @@ public sealed class ViewGuestDelegationListQueryHandler
                 && (p.InvitedBy == null || p.InvitedBy != userId))
             .Select(p => p.VisitInstanceId)
             .ToHashSet();
+
+        // ── Everything the request-detail scope needs, batched. These mirror
+        //    VisitFormReadService.ComputeScopeAsync exactly; see the verdict built per row below. ──
+        var contactHeldRequestIds = requestIds.Count == 0
+            ? new HashSet<ulong>()
+            : (await _context.VisitRequestCampuses
+                .Where(vrc => requestIds.Contains(vrc.VisitRequestId) && vrc.OperationalContactUserId == userId)
+                .Select(vrc => vrc.VisitRequestId)
+                .Distinct()
+                .ToListAsync(ct)).ToHashSet();
+
+        var logisticsInstanceIds = instanceIds.Count == 0
+            ? new HashSet<ulong>()
+            : (await _context.VisitLogisticsItems
+                .Where(l => instanceIds.Contains(l.VisitInstanceId) && l.AssignedToUserId == userId)
+                .Select(l => l.VisitInstanceId)
+                .Distinct()
+                .ToListAsync(ct)).ToHashSet();
 
         var campusNames = campusIds.Count == 0
             ? new Dictionary<ulong, string>()
@@ -1072,6 +1147,13 @@ public sealed class ViewGuestDelegationListQueryHandler
             : await _context.Users.Where(u => userIds.Contains(u.UserId)).ToDictionaryAsync(u => u.UserId, u => u.FullName, ct);
 
         var nowForCancel = _clock.VietnamNow;
+        // Role facts for the request-detail verdict below, read once rather than per row.
+        var isHoViewer = _currentUser.RoleCode == RoleCodes.Ho;
+        var leaderCampusIdForDetail =
+            _currentUser.RoleCode == RoleCodes.Staff
+            && string.Equals(_currentUser.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase)
+                ? _currentUser.PrimaryCampusId
+                : null;
         var items = page.Select(r =>
         {
             string? partnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var pn) ? pn : r.RegistrantOrganization;
@@ -1086,7 +1168,27 @@ public sealed class ViewGuestDelegationListQueryHandler
             string? campusName = campusNames.TryGetValue(r.CampusId, out var cn) ? cn : null;
             string? hostName = r.CurrentHostUserId.HasValue && userNames.TryGetValue(r.CurrentHostUserId.Value, out var hn) ? hn : null;
             string? contactName = r.OperationalContactUserId.HasValue && userNames.TryGetValue(r.OperationalContactUserId.Value, out var vn) ? vn : null;
-            myParticipationRole.TryGetValue(r.VisitInstanceId, out var participantRole);
+            myParticipation.TryGetValue(r.VisitInstanceId, out var participation);
+            var participantRole = participation?.ParticipantRole;
+
+            // ── Does the generic request detail actually admit this caller for THIS instance? ──
+            // Same relations as VisitFormReadService.ComputeScopeAsync, asked row by row. A row is
+            // listed because SOME relation earned it; that relation is not always one the request
+            // detail honours — an agenda assignment and a declined invitation both put a row here
+            // and neither opens the request. Saying so on the row is what stops the UI guessing.
+            var participantGrantsDetail = participation is not null
+                && (participation.Status == ParticipantStatuses.Invited
+                    || participation.Status == ParticipantStatuses.Accepted
+                    || participation.Status == ParticipantStatuses.Assigned);
+            bool canViewRequestDetail =
+                r.RegistrantUserId == userId
+                || isHoViewer
+                || contactHeldRequestIds.Contains(r.VisitRequestId)
+                || (leaderCampusIdForDetail is { } lcid && r.CampusId == lcid
+                    && !VisitRequestStatuses.IsBehindContactGate(r.RequestStatus))
+                || r.CurrentHostUserId == userId
+                || participantGrantsDetail
+                || logisticsInstanceIds.Contains(r.VisitInstanceId);
 
             // Instance-level cancel preferred; fall back to request-level when the whole request was cancelled.
             bool requestCancelled = r.RequestStatus == VisitRequestStatuses.Cancelled;
@@ -1143,6 +1245,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                 OperationalContactName = contactName,
                 IsCurrentUserParticipant = myParticipantRelation.Contains(r.VisitInstanceId),
                 ParticipantRole = participantRole,
+                ParticipantId = participation?.ParticipantId,
+                ParticipantStatus = participation?.Status,
+                CanViewRequestDetail = canViewRequestDetail,
                 ExpectedStartAt = r.PlannedStartAt,
                 ExpectedEndAt = r.PlannedEndAt,
                 PlannedStartAt = r.PlannedStartAt,
@@ -1215,9 +1320,12 @@ public sealed class ViewGuestDelegationListQueryHandler
             if (!siblings.TryGetValue(item.VisitRequestId, out var instances) || instances.Count == 0) continue;
 
             // Same rules as QueryRequestLevelAsync, measured over the WHOLE request — because that is
-            // what the edit / resubmit / cancel commands themselves measure.
-            item.CanEditPending = item.RequestStatus == VisitRequestStatuses.PendingApproval
-                && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
+            // what the edit / resubmit / cancel commands themselves measure. BOTH pre-decision stages
+            // count: a request still waiting on its operational contacts is editable by its registrant.
+            item.CanEditPending = (item.RequestStatus == VisitRequestStatuses.PendingApproval
+                    || item.RequestStatus == VisitRequestStatuses.PendingContactConfirmation)
+                && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval
+                                   || i.Status == VisitInstanceStatus.WaitingContactConfirmation)
                 && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(VisitMutationPolicy.RequiredLeadHours);
 
             item.CanResubmit = item.RequestStatus == VisitRequestStatuses.Rejected
@@ -1442,9 +1550,14 @@ public sealed class ViewGuestDelegationListQueryHandler
             // The lead time comes from VisitMutationPolicy — the same answer the detail screen and the
             // command handler give. It used to be a local `AddHours(24)`, so the list and the detail
             // could disagree about whether the same request was still editable.
-            bool canEditPending = vr.Status == VisitRequestStatuses.PendingApproval
+            // Both pre-decision stages, matching VisitMutationPolicy: a request still waiting on its
+            // operational contacts is editable by its registrant, and the list must say so or the row
+            // hides an action the detail screen and the command both allow.
+            bool canEditPending = (vr.Status == VisitRequestStatuses.PendingApproval
+                    || vr.Status == VisitRequestStatuses.PendingContactConfirmation)
                 && count > 0
-                && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval)
+                && instances.All(i => i.Status == VisitInstanceStatus.WaitingRequestApproval
+                                   || i.Status == VisitInstanceStatus.WaitingContactConfirmation)
                 && instances.Min(i => i.PlannedStartAt) >= vnNow.AddHours(VisitMutationPolicy.RequiredLeadHours);
             bool canResubmit = vr.Status == VisitRequestStatuses.Rejected
                 && count > 0
@@ -1757,6 +1870,11 @@ public sealed class ViewGuestDelegationListQueryHandler
         bool isStaffLeader = roleCode == RoleCodes.Staff && string.Equals(subRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
         bool beforeStart = !item.PlannedStartAt.HasValue || item.PlannedStartAt.Value > now;
         bool requestActive = item.RequestStatus != VisitRequestStatuses.Cancelled;
+        // The global confirmation gate, re-asked on the row itself. The leader queue already
+        // filters behind-gate rows out, but a row can also arrive here through the merged "all"
+        // tab (registrant source), and offering a decision button there would contradict
+        // CampusApprovalExecutor, which refuses the call outright.
+        bool contactGateOpen = !VisitRequestStatuses.IsBehindContactGate(item.RequestStatus);
 
         // Relations of THIS row's own campus instance. An action is instance-scoped, so holding the
         // relation on a sibling campus must not answer for this one.
@@ -1779,10 +1897,14 @@ public sealed class ViewGuestDelegationListQueryHandler
 
         // Staff Leader — decides their own campus instance regardless of scope: approve
         // (must pick host in the same action) or reject, only while it awaits their decision.
-        // Self-overlap is deliberate: a Staff Leader who also registered this visit keeps the decision.
-        // Forbidding self-approval would be a business rule of its own, with its own tests — not
-        // something a list filter gets to impose by accident.
-        if (isReviewerHere && requestActive
+        // WHO may decide comes from the real relation (campus reviewer of THIS campus) — not from the
+        // tab. Self-overlap is deliberate: a Staff Leader who also registered this visit keeps the
+        // decision; forbidding self-approval would be a business rule of its own, with its own tests.
+        // WHETHER it may be decided yet is the global contact gate: while any campus of the request is
+        // still missing its operational contact, CampusApprovalExecutor refuses the call outright, so
+        // the list must not offer the button — including on a row that arrived through the registrant
+        // source of the merged "all" tab, which the reviewer-side query never filtered.
+        if (isReviewerHere && requestActive && contactGateOpen
             && item.CampusStatus == VisitInstanceStatus.WaitingRequestApproval)
         {
             actions.Add("APPROVE_AND_ASSIGN_HOST"); // duyệt & gán host (opens host picker)

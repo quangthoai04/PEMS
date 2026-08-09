@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
@@ -57,16 +57,20 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   // watches the timeline below not mention it reasonably concludes the cancel did not happen.
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   /**
-   * The reader's own choice of which campus card is open, on a request that has more than one.
+   * WHICH campus cards the reader has open, on a request that has more than one.
    *
-   * Three states, deliberately: `undefined` means they have not chosen and the default applies, a
-   * number is the campus they opened, and `null` is "I closed them all" — a choice, which is why it
-   * cannot share a value with "hasn't chosen". The default is resolved during render rather than
-   * written in by an effect, so the first paint already has campus 1 open instead of flashing every
-   * card shut; and because the choice is state rather than something recomputed from `data`, a
-   * background reload cannot pull the reader off the campus they were reading.
+   * A SET, not a single id: every campus opens and closes independently, so reading Hà Nội and
+   * TP.HCM side by side is possible. It used to be one "the open campus" value, which meant opening
+   * a second campus silently shut the first — on a multi-campus request the reader had to keep
+   * re-opening the card they had just been reading in order to compare it with another.
+   *
+   * `undefined` still means "the reader has not chosen yet", so the default (first campus open) can
+   * be resolved during RENDER rather than written in by an effect — the first paint already shows
+   * campus 1 open instead of flashing every card shut. An empty set is a real choice ("I closed them
+   * all") and is therefore distinct from `undefined`. Because this is state rather than something
+   * recomputed from `data`, a background reload cannot pull the reader off what they were reading.
    */
-  const [campusChoice, setCampusChoice] = useState<number | null | undefined>(undefined);
+  const [campusChoice, setCampusChoice] = useState<Set<number> | undefined>(undefined);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,13 +125,33 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, navigate, visitRequestId]);
 
-  // Which campus is actually open right now: the reader's choice if they have made one, otherwise
-  // the first campus — and only on a request that HAS more than one, since a lone card is never
-  // collapsible. Computed, not stored, so it is correct on the very first paint.
+  // Which campuses are open right now: the reader's own set if they have touched anything,
+  // otherwise the default of the FIRST campus alone — and only on a request that HAS more than one,
+  // since a lone card is never collapsible. Computed, not stored, so it is right on the first paint.
   const multipleCampuses = (data?.campusVisits.length ?? 0) > 1;
-  const openCampusId = campusChoice !== undefined
-    ? campusChoice
-    : (multipleCampuses ? data!.campusVisits[0].visitInstanceId : null);
+  const openCampusIds = useMemo<Set<number>>(() => {
+    if (campusChoice !== undefined) {
+      // A campus that has vanished from the authorized payload is pruned rather than kept in the
+      // set, so a reload that removes one cannot leave a stale id behind for a future campus id to
+      // collide with.
+      if (!data) return campusChoice;
+      const visible = new Set(data.campusVisits.map(c => c.visitInstanceId));
+      const pruned = new Set([...campusChoice].filter(id => visible.has(id)));
+      return pruned.size === campusChoice.size ? campusChoice : pruned;
+    }
+    return multipleCampuses ? new Set([data!.campusVisits[0].visitInstanceId]) : new Set<number>();
+  }, [campusChoice, data, multipleCampuses]);
+
+  /** Flip ONE campus, leaving every other card exactly as the reader left it. */
+  const toggleCampus = useCallback((visitInstanceId: number) => {
+    setCampusChoice(prev => {
+      const base = prev ?? openCampusIds;
+      const next = new Set(base);
+      if (next.has(visitInstanceId)) next.delete(visitInstanceId);
+      else next.add(visitInstanceId);
+      return next;
+    });
+  }, [openCampusIds]);
 
   // Deep link from the edit form's "Thay đổi đầu mối": the campus contact panels are far down a long
   // screen and only exist once the request has loaded, so the scroll waits for the data rather than
@@ -136,6 +160,9 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   // With the accordion, the target campus may be closed — and a closed card renders no body, so the
   // anchor does not exist yet. The campus is opened first, and the scroll runs on the pass AFTER
   // that state has rendered; scrolling in the same pass would find nothing and silently do nothing.
+  //
+  // The deep link ADDS its campus to the open set; it never replaces it. Arriving at one campus is
+  // no reason to close the one the reader already had open beside it.
   useEffect(() => {
     if (!data || !location.hash) return;
     const anchor = location.hash.slice(1);
@@ -143,12 +170,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     const targetInstanceId = match ? Number(match[1]) : null;
     if (targetInstanceId != null && multipleCampuses
         && data.campusVisits.some(c => c.visitInstanceId === targetInstanceId)
-        && openCampusId !== targetInstanceId) {
-      setCampusChoice(targetInstanceId);
+        && !openCampusIds.has(targetInstanceId)) {
+      setCampusChoice(prev => new Set(prev ?? openCampusIds).add(targetInstanceId));
       return; // the element appears on the next render; this effect re-runs and scrolls then
     }
     document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [data, location.hash, multipleCampuses, openCampusId]);
+  }, [data, location.hash, multipleCampuses, openCampusIds]);
 
   if (loading) {
     return (
@@ -316,7 +343,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               // to collapse against, and putting its single card behind a chevron would add a click
               // to reach the only thing on the page.
               const collapsible = multipleCampuses;
-              const expanded = !collapsible || openCampusId === cv.visitInstanceId;
+              const expanded = !collapsible || openCampusIds.has(cv.visitInstanceId);
               const canDecide = hasAction(cv.allowedActions, VisitV2Action.ApproveAmendment);
               const canWithdraw = hasAction(cv.allowedActions, VisitV2Action.WithdrawAmendment);
               const canSubmitAmendment = hasAction(cv.allowedActions, VisitV2Action.SubmitAmendment);
@@ -338,11 +365,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                   onContactChanged={() => void reloadWithHistory()}
                   collapsible={collapsible}
                   expanded={expanded}
-                  // Clicking the open campus closes it: "show me nothing but the headers" is a real
-                  // thing to want on a request with several campuses.
-                  onToggle={() => setCampusChoice(
-                    openCampusId === cv.visitInstanceId ? null : cv.visitInstanceId,
-                  )}
+                  // Flips THIS campus only. Opening a second campus leaves the first open — comparing
+                  // two campuses of one request is the ordinary thing to do here — and closing one
+                  // leaves the rest exactly as they were. "Show me nothing but the headers" is still
+                  // reachable by closing them all.
+                  onToggle={() => toggleCampus(cv.visitInstanceId)}
                 >
                   {cv.activeAmendment && (canDecide || canWithdraw) && (
                     <VisitAmendmentPanel

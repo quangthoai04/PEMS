@@ -102,8 +102,18 @@ body {
 }
 
 /* Override flag-icons' default `contain` sizing (and em-based width) so a flag can fill an
-   arbitrary-sized container edge-to-edge, e.g. a fixed-aspect-ratio card. */
+   arbitrary-sized container edge-to-edge, e.g. a fixed-aspect-ratio card. Pinned via
+   `position: absolute; inset: 0` rather than `width/height: 100%` — flag-icons' own `.fi` rule
+   ships unlayered (plain CSS import, not inside Tailwind's `@layer utilities`), so per the CSS
+   Cascade Layers spec its non-`!important` `display: inline-block` beats a layered Tailwind
+   `.block` utility regardless of source order. That kept this element inline-block, and a
+   percentage height computed against an `aspect-ratio` ancestor inside an inline formatting
+   context left a gap. Absolute positioning sizes directly off the nearest positioned ancestor's
+   box, independent of display type or the parent's aspect-ratio resolution. The containing
+   `CountryFlagCard` button must have `position: relative` for this to anchor correctly. */
 .fi-cover {
+  position: absolute !important;
+  inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
   background-size: cover !important;

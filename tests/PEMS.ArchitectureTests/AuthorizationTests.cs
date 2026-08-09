@@ -195,14 +195,32 @@ public class AuthorizationTests
             // Anonymous because the invited person may not have an account yet — that is the whole
             // point of the invitation — and because an unknown token has to answer exactly like an
             // expired one, or the endpoint would tell a stranger whether an address was invited.
-            // It never mutates. Accepting or declining still requires a signed-in session whose
-            // email matches the invited address; see the controller notes.
+            // It never mutates.
             //
             // It replaces the two request-level entries (GetContactClaimInfo /
             // GetContactTransferInfo): one link now resolves an invitation that already knows
             // whether it is an INITIAL_CONFIRMATION or a TRANSFER, so the kind decides the effect
             // rather than the URL the recipient happened to receive.
             "VisitRequestsController.GetOperationalContactConfirmationInfo",
+
+            // Answering the invitation WITHOUT signing in. These two do mutate, so they are the
+            // narrowest entries on this list and the reasoning is worth stating in full:
+            //
+            //   • The invited person is frequently an external guest with no PEMS account, and the
+            //     account is a RESULT of accepting, not a precondition for it. Requiring a session
+            //     first is the deadlock this pair removes — the session-bound twins
+            //     (/api/operational-contact-confirmations/{token}/…, [Authorize]) remain for people
+            //     who are already signed in.
+            //   • The single-use emailed token IS the authentication: the handler refuses a token
+            //     that is unknown, already used (UsedAt) or expired, and answers all three
+            //     identically so the endpoint cannot be used to discover whether an address was
+            //     invited.
+            //   • POST only. A GET would be fetched by mail-client link prefetchers and would
+            //     answer the invitation on the recipient's behalf.
+            //
+            // This supersedes the older note above, which said accepting always required a session.
+            "VisitRequestsController.PublicAcceptOperationalContactConfirmation",
+            "VisitRequestsController.PublicDeclineOperationalContactConfirmation",
         };
 
         var offenders = Controllers()

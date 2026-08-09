@@ -5,7 +5,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, AlertTriangle, Info, Languages, RotateCw } from 'lucide-react';
+import { ArrowLeft, Loader2, AlertTriangle, Info, Languages, RotateCw, Upload, Image as ImageIcon } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type {
@@ -18,6 +18,8 @@ import { CitySelect } from '../../../features/partners/components/CitySelect';
 import { useDebounce } from '../../../shared/hooks/useDebounce';
 import { usePartnerBilingualTranslate } from './usePartnerBilingualTranslate';
 import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
+import { SmartImage } from '../news/components/SmartImage';
+import { validateFile } from '../../../shared/utils/fileValidation';
 import {
   getApiErrorMessage,
   showLoadingToast,
@@ -38,6 +40,30 @@ export function CreatePartner() {
   const [description, setDescription] = useState('');
   const [partnerType, setPartnerType] = useState<PartnerType>('UNIVERSITY');
   const [visibility, setVisibility] = useState<'PRIVATE' | 'INTERNAL'>('INTERNAL');
+
+  // Upload of the actual file only happens after createPartner() returns a partnerId (the
+  // logo/cover Drive folder is keyed by the partner's own record — see uploadLogo/uploadCover).
+  // Until then we just hold the picked File + a local blob preview.
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
+
+  function handleImageSelect(kind: 'logo' | 'cover', file: File | undefined) {
+    if (!file) return;
+    const check = validateFile(file, kind === 'logo' ? 'PARTNER_LOGO' : 'PARTNER_COVER');
+    if (!check.ok) {
+      toast.error(check.message || 'Tệp không hợp lệ.');
+      return;
+    }
+    if (kind === 'logo') {
+      setLogoFile(file);
+      setLogoPreview(URL.createObjectURL(file));
+    } else {
+      setCoverFile(file);
+      setCoverPreview(URL.createObjectURL(file));
+    }
+  }
 
   const [withContact, setWithContact] = useState(false);
   const [contactName, setContactName] = useState('');
@@ -158,6 +184,45 @@ export function CreatePartner() {
             }
           : {}),
       });
+
+      // Logo/cover can only be uploaded once the partner (and its Drive folder) exists, so this
+      // runs as a second step right after create. A failure here must not look like the whole
+      // create failed — the partner record was already saved — so it gets its own toast and the
+      // flow still navigates to the new partner's detail page.
+      if (logoFile || coverFile) {
+        try {
+          const [logoUpload, coverUpload] = await Promise.all([
+            logoFile ? partnersApi.uploadLogo(result.partnerId, logoFile) : Promise.resolve(null),
+            coverFile ? partnersApi.uploadCover(result.partnerId, coverFile) : Promise.resolve(null),
+          ]);
+          await partnersApi.updatePartner(result.partnerId, {
+            partnerCode: partnerCode.trim() || null,
+            name: name.trim(),
+            shortName: shortName.trim() || null,
+            country: country.trim() || null,
+            city: city.trim() || null,
+            websiteUrl: websiteUrl.trim() || null,
+            address: address.trim() || null,
+            description: description.trim() || null,
+            partnerType,
+            cooperationStatus: 'POTENTIAL',
+            visibility,
+            logoFileId: logoUpload?.fileId ?? null,
+            coverFileId: coverUpload?.fileId ?? null,
+            ...(bilingual
+              ? {
+                  englishName: englishName.trim() || null,
+                  englishShortName: englishShortName.trim() || null,
+                  englishDescription: englishDescription.trim() || null,
+                  englishAddress: englishAddress.trim() || null,
+                }
+              : {}),
+          });
+        } catch {
+          toast.error('Đã tạo đối tác nhưng tải logo/ảnh bìa thất bại. Vào Chỉnh sửa để tải lại.');
+        }
+      }
+
       updateToastSuccess(toastId, 'Đã tạo hồ sơ đối tác thành công.');
       navigate(`/dashboard/partners/${result.partnerId}`);
     } catch (err: any) {
@@ -174,7 +239,7 @@ export function CreatePartner() {
   const labelCls = 'block text-xs font-bold text-gray-500 uppercase mb-1';
 
   return (
-    <div className="w-full pb-12 max-w-4xl">
+    <div className="w-full pb-12 max-w-4xl mx-auto">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] cursor-pointer">Dashboard</button>
@@ -237,6 +302,50 @@ export function CreatePartner() {
 
       <form onSubmit={submit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label className={labelCls}>Logo</label>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {logoPreview
+                    ? <SmartImage src={logoPreview} alt="Logo đối tác" className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-6 h-6 text-gray-300" />}
+                </div>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-600 hover:bg-gray-50 ${submitting ? 'opacity-50' : 'cursor-pointer'}`}>
+                  <Upload className="w-3.5 h-3.5" />
+                  {logoPreview ? 'Đổi ảnh' : 'Chọn ảnh'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={submitting}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleImageSelect('logo', f); }}
+                  />
+                </label>
+              </div>
+            </div>
+            <div>
+              <label className={labelCls}>Ảnh bìa</label>
+              <div className="flex items-center gap-4">
+                <div className="w-32 h-20 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {coverPreview
+                    ? <SmartImage src={coverPreview} alt="Ảnh bìa đối tác" className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-6 h-6 text-gray-300" />}
+                </div>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-xs font-bold text-gray-600 hover:bg-gray-50 ${submitting ? 'opacity-50' : 'cursor-pointer'}`}>
+                  <Upload className="w-3.5 h-3.5" />
+                  {coverPreview ? 'Đổi ảnh' : 'Chọn ảnh'}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={submitting}
+                    onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; handleImageSelect('cover', f); }}
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
           <div className="md:col-span-2">
             <label className={labelCls}>
               Tên đối tác *{bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}

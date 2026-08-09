@@ -61,6 +61,8 @@ import { VisitChangeBadges } from '../../../features/delegations/components/Visi
 import { VisitRowActionMenu, type VisitRowMenuItem } from '../../../features/delegations/components/VisitRowActionMenu';
 
 import VisitHostTransferModal, { type HostTransferTarget } from '../../../features/visit-request/components/VisitHostTransferModal';
+import { isInstanceVersionConflict, INSTANCE_VERSION_CONFLICT_MESSAGE } from '../../../features/visit-request/utils/decisionConflict';
+import { getMyOperationalContactInvitations } from '../../../features/visit-request/api/visitRequestV2Api';
 import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted' | 'all';
@@ -299,6 +301,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // already-accepted ones.
   const [pendingInvitations, setPendingInvitations] = useState<VisitInvitation[]>([]);
 
+  /**
+   * V09 — "Lời mời đầu mối của tôi": how many operational-contact invitations are addressed to the
+   * signed-in account's own address and still answerable.
+   *
+   * Only a COUNT is read here, and the banner it drives is the discoverability entry point: somebody
+   * who is already inside PEMS should not have to go back to their inbox to answer an invitation.
+   * Failure is silent on purpose — an unanswered invitation is a nice-to-have on this screen, and a
+   * red toast about a background count would be noise on top of whatever actually went wrong.
+   */
+  const [contactInvitationCount, setContactInvitationCount] = useState(0);
+
   // Shared create form (authenticated mode): Visitor / IC Staff / Staff Leader.
   const [showV2Modal, setShowV2Modal] = useState(false);
 
@@ -444,12 +457,66 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     }
   }, [debouncedKeyword]);
 
+  // V09 — how many operational-contact invitations are waiting for THIS account. Read once per
+  // mount; the answer only changes when a registrant sends one, and a poll would spend a request a
+  // minute to learn nothing. Silent on failure: this drives an optional banner, not the screen.
+  useEffect(() => {
+    let cancelled = false;
+    getMyOperationalContactInvitations()
+      .then(list => { if (!cancelled) setContactInvitationCount(list.length); })
+      .catch(() => { /* không có quyền / cờ tắt / lỗi mạng → không hiện dải, không báo lỗi */ });
+    return () => { cancelled = true; };
+  }, []);
+
   // Modals
   const [requestForm, setRequestForm] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
   // Pure V2: every request opens the per-campus v2 detail route. The flat modal cannot represent
   // per-campus content and has no runtime left, so it is never the target here.
   const openRequestForm = (row: Row) => {
     navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
+  };
+
+  /**
+   * Điều hướng theo QUAN HỆ THẬT của dòng, không mặc định về request detail.
+   *
+   * Một dòng xuất hiện trong danh sách vì MỘT quan hệ nào đó (đăng ký, đầu mối, host, được mời,
+   * được phân công lịch trình/hậu cần). Không phải quan hệ nào cũng mở được
+   * `/dashboard/visit/v2/{id}` — backend nay trả `canViewRequestDetail` đúng theo phạm vi mà
+   * `VisitFormReadService` cấp. Trước đây frontend luôn fallback về route đó nên STAFF thấy dòng
+   * rồi bấm vào là 403. Ở đây: ATTENDING → màn lời mời/công việc phòng ban (cần participantId
+   * thật), còn lại → request detail chỉ khi backend cho phép.
+   *
+   * Trả về `true` khi đã điều hướng.
+   */
+  const navigateByRelation = (row: Row): boolean => {
+    // Lời mời tham dự: mở đúng màn hình của quan hệ participant. Dòng gốc ATTENDING trên tab gộp
+    // "all" nay cũng mang participantId nên đi được cùng một đường.
+    if (rowTab(row) === 'attending') {
+      const partId = row.participantId ?? (row as any).participantId;
+      if (partId != null) {
+        navTo(isDept && subRole === 'STAFF'
+          ? `/dashboard/visit/department-tasks/${partId}`
+          : `/dashboard/visit/invitations/${partId}`);
+        return true;
+      }
+      // Không có participantId: không đoán sang request detail — quan hệ mời không đảm bảo
+      // quyền đọc toàn đơn (lời mời đã DECLINED là ví dụ rõ nhất).
+      return false;
+    }
+
+    if (row.canViewRequestDetail !== false) {
+      openRequestForm(row);
+      return true;
+    }
+
+    // Quan hệ chỉ ở mức công việc trong một campus (phân công hậu cần/lịch trình): màn quy trình
+    // của campus đó là nơi công việc thực sự sống, không phải toàn đơn.
+    if (row.visitInstanceId != null) {
+      navTo(`/dashboard/visit/process-summary/${row.visitInstanceId}`);
+      return true;
+    }
+
+    return false;
   };
   // "Xem đơn đăng ký tham quan trước khi duyệt" — read-only review of a PENDING_APPROVAL row.
   const [review, setReview] = useState<{ open: boolean; row: Row | null }>({ open: false, row: null });
@@ -794,13 +861,40 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     return instanceId;
   };
 
+  /**
+   * The participant's OWN screen for this row. The invitation / department-task pages are addressed
+   * by participantId, never by request id — being invited does not by itself open the request, and a
+   * DECLINED invitation certainly does not. Falls back to the contribution screen only when the
+   * backend actually granted it.
+   */
+  const openParticipantScreen = (row: Row, instanceId: number | null): boolean => {
+    const partId = row.participantId ?? (row as any).participantId ?? null;
+    if (partId != null) {
+      navTo(isDept && subRole === 'STAFF'
+        ? `/dashboard/visit/department-tasks/${partId}`
+        : `/dashboard/visit/invitations/${partId}`);
+      return true;
+    }
+    if (instanceId != null && (row.allowedActions || []).includes('OPEN_CONTRIBUTION')) {
+      navTo(`/dashboard/visit/contribution/${instanceId}`);
+      return true;
+    }
+    return false;
+  };
+
   const openEntryContext = (row: Row): boolean => {
     const entry = row.primaryEntryContext;
     if (!entry) return false;
 
-    // The request itself. Reached by "Đơn tôi đăng ký" and by any multi-campus summary row, which is
-    // not one campus and so cannot open one campus's screen.
-    if (entry === 'REQUEST_DETAIL') { openRequestForm(row); return true; }
+    // The request itself — reached by "Đơn tôi đăng ký" and by any multi-campus summary row, which
+    // is not one campus and so cannot open one campus's screen. Still subject to the backend's own
+    // read scope: a relation that put the row on screen does not always open the whole request, so
+    // an unauthorized entry defers to navigateByRelation rather than walking into a 403.
+    if (entry === 'REQUEST_DETAIL') {
+      if (row.canViewRequestDetail === false) return false;
+      openRequestForm(row);
+      return true;
+    }
 
     const instanceId = entryContextInstanceId(row);
     if (instanceId == null) return false;
@@ -815,8 +909,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         navTo(`/dashboard/visit/reception-detail/${instanceId}`);
         return true;
       case 'CONTRIBUTION':
-        navTo(`/dashboard/visit/contribution/${instanceId}`);
-        return true;
+        // Participant relation. The screen that belongs to it is addressed by participantId.
+        return openParticipantScreen(row, instanceId);
       case 'CAMPUS_REVIEW':
         // The canonical review flow is the submitted-form detail (approve/reject live there and on
         // the row's primary button). No new route is invented for it.
@@ -984,21 +1078,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
     const idForRoute = row.id;
 
-    // Dedicated "Lời mời tham dự" tab: rows come from the invitations API and carry a real
-    // participantId. On the merged "all" tab an attending-origin row is the generic
-    // VisitRequestManagementItemDto shape instead (no participantId) — it falls through to
-    // the request detail route below, same as any other read-only row.
-    if (activeTab === 'attending') {
-      const partId = (row as any).participantId;
-      if (isDept && subRole === 'STAFF') {
-        navTo(`/dashboard/visit/department-tasks/${partId}`);
-      } else {
-        navTo(`/dashboard/visit/invitations/${partId}`);
-      }
-      return;
-    }
+    // Dòng gốc ATTENDING — cả tab "Lời mời tham dự" chuyên dụng lẫn dòng trộn trong tab "all"
+    // (nay backend đều trả participantId). Điều hướng theo quan hệ participant, KHÔNG rơi về
+    // request detail: quan hệ được mời không đảm bảo quyền đọc toàn đơn, và một lời mời đã
+    // DECLINED thì chắc chắn không.
     if (rowTab(row) === 'attending') {
-      navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
+      navigateByRelation(row);
       return;
     }
 
@@ -1070,7 +1155,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // names. When it did, that answer wins — the guesswork below exists only for rows it left open.
     if (openEntryContext(row)) return;
     if (canOpenProcess(row)) { handleProcess(row); return; }
-    if (row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) { openRequestForm(row); return; }
+    // Dòng attending chỉ mở form khi backend cấp VIEW_REQUEST_FORM; ngoài ra điều hướng theo
+    // quan hệ thật của dòng thay vì mặc định vào request detail (nguồn của lỗi 403).
+    if (rowTab(row) === 'attending' && !can('VIEW_REQUEST_FORM')) { navigateByRelation(row); return; }
+    if (row.visitRequestId) { navigateByRelation(row); return; }
   };
 
   // ── Pre-approval review modal → reuse the existing approve/reject flows ──
@@ -1100,7 +1188,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         await delegationsApi.visitInvitations.declineInvitation((reject.row as any).participantId, text);
       } else {
         if (!reject.row.visitInstanceId) throw new Error('Thiếu thông tin cơ sở cần từ chối.');
-        await delegationsApi.rejectCampusInstance(reject.row.visitRequestId, reject.row.visitInstanceId, text);
+        // Phiên bản campus đúng như dòng đang hiển thị: từ chối một nội dung đã bị sửa (có thể sửa
+        // đúng chỗ sắp bị từ chối) cũng sai như duyệt nhầm phiên bản.
+        await delegationsApi.rejectCampusInstance(
+          reject.row.visitRequestId, reject.row.visitInstanceId, text, reject.row.rowVersion);
       }
       const wasDecline = reject.action === ('DECLINE_INVITATION' as any);
       setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
@@ -1110,6 +1201,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         await loadPendingInvitations();
       }
     } catch (e: any) {
+      // Xung đột phiên bản: đóng hộp thoại từ chối và tải lại. KHÔNG thử lại tự động — nội dung
+      // đã khác với bản người duyệt vừa đọc, nên họ phải xem lại rồi quyết định lần nữa.
+      if (isInstanceVersionConflict(e)) {
+        setReject({ open: false, row: null, action: null, text: '', submitting: false, error: null });
+        showErrorToast(e, INSTANCE_VERSION_CONFLICT_MESSAGE);
+        await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
+        return;
+      }
       const msg = getApiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.');
       setReject((s) => ({ ...s, submitting: false, error: `Không thể từ chối. ${msg}` }));
     }
@@ -1594,12 +1693,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       if (secondarySeen.has(key)) continue;
 
       // The relation says the caller stands there; allowedActions says the screen is open to them
-      // right now. Both have to agree before an entry appears.
+      // right now. Both have to agree before an entry appears. A participant entry additionally
+      // needs something real to address — a participantId, or the contribution grant.
       const granted =
         entry === 'HOST_PROCESS' ? can('OPEN_HOST_PROCESS')
           : entry === 'PROCESS_SUMMARY' ? can('OPEN_PROCESS_SUMMARY')
             : entry === 'RECEPTION_DETAIL' ? can('VIEW_RECEPTION_DETAIL')
-              : entry === 'CONTRIBUTION' ? can('OPEN_CONTRIBUTION')
+              : entry === 'CONTRIBUTION' ? (row.participantId != null || can('OPEN_CONTRIBUTION'))
                 : entry === 'CAMPUS_REVIEW' ? can('APPROVE_AND_ASSIGN_HOST')
                   : false;
       if (!granted) continue;
@@ -1616,14 +1716,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           if (entry === 'HOST_PROCESS') { navTo(`/dashboard/visit/process/${instanceId}`, { state: hostProcessState(row) }); return; }
           if (entry === 'PROCESS_SUMMARY') { navTo(`/dashboard/visit/process-summary/${instanceId}`); return; }
           if (entry === 'RECEPTION_DETAIL') { navTo(`/dashboard/visit/reception-detail/${instanceId}`); return; }
-          navTo(`/dashboard/visit/contribution/${instanceId}`);
+          openParticipantScreen(row, instanceId);
         },
       });
     }
 
     // Explicit access to the submitted form — the row click already opens whichever of
     // form/process is more relevant, this is the "I specifically want the other one" escape hatch.
-    if (row.visitRequestId && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) {
+    // Chỉ đưa mục này vào menu khi backend xác nhận dòng mở được request detail
+    // (`canViewRequestDetail`), nếu không đây lại là một lối vào 403 nữa.
+    if (row.visitRequestId && row.canViewRequestDetail !== false
+      && (activeTab !== 'attending' || can('VIEW_REQUEST_FORM'))) {
       items.push({
         key: 'view-form',
         label: tt('visitRequestV2:list.actions.menuViewForm'),
@@ -2128,6 +2231,29 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       )}
 
       {/* UC-27: pending invitations entry point (removed per user request to declutter) */}
+
+      {/* V09 — lời mời làm ĐẦU MỐI VẬN HÀNH gửi tới chính email của tài khoản đang đăng nhập. Chỉ
+          hiện khi thật sự có lời mời chờ trả lời, nên không thêm mục menu cố định nào. Dải này chỉ
+          dẫn sang trang lời mời; nó KHÔNG mở đơn — người được mời chưa nắm quan hệ nào cho tới khi
+          xác nhận. */}
+      {contactInvitationCount > 0 && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"
+          role="status"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+            <Mail className="h-4 w-4 flex-shrink-0" />
+            {tt('visitRequestV2:myInvitations.bannerTitle', { count: contactInvitationCount })}
+          </div>
+          <button
+            type="button"
+            onClick={() => navTo('/dashboard/visit/contact-invitations')}
+            className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#003a70]"
+          >
+            {tt('visitRequestV2:myInvitations.bannerCta')}
+          </button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm overflow-visible">
@@ -2728,12 +2854,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           visitInstanceId={assign.row.visitInstanceId}
           delegationName={assign.row.name}
           currentHostUserId={assign.row.currentHostUserId}
+          // Phiên bản campus của ĐÚNG dòng người duyệt đang nhìn — backend 409 nếu khách đã sửa.
+          expectedInstanceRowVersion={assign.row.rowVersion}
           onClose={() => setAssign({ open: false, row: null, mode: 'approve' })}
           onConfirmed={() => {
             setAssign({ open: false, row: null, mode: 'approve' });
             showSuccessToast('Đã duyệt cơ sở và phân công người phụ trách tiếp đón.');
             loadDelegations(activeTab, currentPage, pageSize, appliedFilters);
           }}
+          // Chỉ TẢI LẠI danh sách. Không tự mở lại modal, không tự duyệt — người duyệt phải xem
+          // bản mới rồi chủ động bấm quyết định lần nữa.
+          onReloadRequested={() => loadDelegations(activeTab, currentPage, pageSize, appliedFilters)}
         />
       )}
 

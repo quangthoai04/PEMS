@@ -97,6 +97,9 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         var committed = false;
 
         VisitRequest created;
+        // Minted inside the transaction below, dispatched after it commits.
+        IReadOnlyList<V2CreateNotifier.MintedInvitation> invitations =
+            System.Array.Empty<V2CreateNotifier.MintedInvitation>();
         try
         {
             // ── 1. Verify the OTP challenge (locks the challenge row FOR UPDATE). ──
@@ -224,6 +227,15 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             pending.ConsumedAt = now;
             await _db.SaveChangesAsync(cancellationToken);
 
+            // ── 6b. The links for the campuses whose contact is not the registrant, minted in THIS
+            //        transaction. An INITIAL_CLAIM is answerable only through its link, so a create that
+            //        committed the claims and minted afterwards could strand every one of those campuses
+            //        at the contact gate with nothing to click. ──
+            invitations = await V2CreateNotifier.MintOperationalContactInvitationsAsync(
+                _db, _contactInvitations, created, cancellationToken);
+            if (invitations.Count > 0)
+                await _db.SaveChangesAsync(cancellationToken);
+
             await tx.CommitAsync(cancellationToken);
             committed = true;
         }
@@ -247,8 +259,8 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
         // ── 7. Post-commit notifications (best-effort, first-create only; replays never reach here). ──
         await V2CreateNotifier.NotifyStaffLeadersAfterCommitAsync(
             _db, _notificationService, _logger, created, cancellationToken);
-        await V2CreateNotifier.SendOperationalContactInvitationsAfterCommitAsync(
-            _db, _contactInvitations, _logger, created, cancellationToken);
+        await V2CreateNotifier.DispatchOperationalContactInvitationsAfterCommitAsync(
+            _contactInvitations, _logger, invitations, created, cancellationToken);
 
         return await ToResponseAsync(created.VisitRequestId, cancellationToken, idempotent: false,
             "Đơn đăng ký thăm quan đã được gửi thành công và đang chờ phê duyệt.");

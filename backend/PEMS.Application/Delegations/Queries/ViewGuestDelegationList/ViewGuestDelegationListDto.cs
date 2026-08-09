@@ -64,6 +64,28 @@ public sealed class VisitRequestManagementItemDto
     /// <summary>The signed-in user's participation role on the attending tab (IC_SUPPORT/DEPT_SUPPORT/...).</summary>
     public string? ParticipantRole { get; set; }
 
+    /// <summary>
+    /// The signed-in user's OWN participant row on this campus instance, when there is one.
+    ///
+    /// <para>
+    /// This is the source metadata a merged list used to drop. The dedicated "Lời mời tham dự" tab
+    /// is served by a different query whose rows carry a real participant id, so the invitation /
+    /// department-task screens could be addressed from there; on the merged "all" tab the same
+    /// real-world row arrives in this generic shape instead, and without an id the UI had nothing
+    /// to route to but the generic request detail — which the participant relation does not
+    /// necessarily authorize. Carrying the id here lets an ATTENDING-origin row open the screen
+    /// that actually belongs to it, whichever tab it was read from.
+    /// </para>
+    /// </summary>
+    public ulong? ParticipantId { get; set; }
+
+    /// <summary>
+    /// Status of <see cref="ParticipantId"/> (INVITED / ACCEPTED / DECLINED / ASSIGNED). A DECLINED
+    /// row still appears in the invitation history, and it is exactly the case that must not be
+    /// routed into the request detail: declining ends the relation that would have granted it.
+    /// </summary>
+    public string? ParticipantStatus { get; set; }
+
     /// <summary>Which tab this row belongs to: RESPONSIBLE | INVITED | MY_REQUESTS | TASKS.</summary>
     public string TabType { get; set; } = "RESPONSIBLE";
 
@@ -189,7 +211,17 @@ public sealed class VisitRequestManagementItemDto
     // action booleans so the frontend never gates on status text. ──
     /// <summary>True when this row can show the per-campus progress accordion (request has &gt; 1 campus).</summary>
     public bool CanExpandCampuses { get; set; }
-    /// <summary>True when the caller may open the overall request detail.</summary>
+    /// <summary>
+    /// True when the caller may open the overall request detail (<c>/api/v2/visit-requests/{id}</c>).
+    ///
+    /// <para>
+    /// Computed from the SAME relations <c>VisitFormReadService.ComputeScopeAsync</c> authorizes, so
+    /// a row can no longer be listed with a link into a screen that answers 403. Where it is false
+    /// the row is still real — it was earned through some other relation (a declined invitation, an
+    /// agenda assignment) — and the UI must route to the screen that relation owns instead of
+    /// falling back to the request detail.
+    /// </para>
+    /// </summary>
     public bool CanViewRequestDetail { get; set; }
     /// <summary>True when the row is REJECTED and a decision note exists (show "Xem lý do từ chối").</summary>
     public bool CanViewRejectReason { get; set; }
@@ -359,6 +391,14 @@ public static class VisitNextTaskCodes
     public const string StartPreparation = "START_PREPARATION";
     public const string CompletePreparation = "COMPLETE_PREPARATION";
     public const string ConfirmPreparation = "CONFIRM_PREPARATION";
+    /// <summary>
+    /// Preparation is finished and there is nothing left to do but WAIT: the campus cannot enter
+    /// DURING_VISIT until <c>plannedStartAt - 6h</c>. Distinct from
+    /// <see cref="ConfirmPreparation"/> on purpose — that one asks the Host to act now, and showing
+    /// it days early puts an action-required star on a row nobody can act on. This one carries
+    /// <c>RequiresAction = false</c> and the moment the window opens as its due date.
+    /// </summary>
+    public const string WaitStartVisitWindow = "WAIT_START_VISIT_WINDOW";
     public const string ReviewAmendment = "REVIEW_AMENDMENT";
     public const string AcceptHostHandover = "ACCEPT_HOST_HANDOVER";
     public const string RunReception = "RUN_RECEPTION";

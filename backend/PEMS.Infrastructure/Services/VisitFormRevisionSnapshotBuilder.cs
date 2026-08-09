@@ -64,6 +64,11 @@ internal static class VisitFormRevisionSnapshotBuilder
         => JsonSerializer.Serialize(new
         {
             r.RegistrantFullName, r.RegistrantOrganization, r.RegistrantJobTitle,
+            // Nationality is part of the registrant snapshot an edit may now change, so it has to be
+            // recorded or its edits would leave no trace. Rows written before it was added simply do
+            // not carry the key, and the differ reports that as "not recorded" rather than as a change
+            // from blank — see DiffSnapshots' BeforeUnknown handling.
+            r.RegistrantNationality,
             r.RegistrantPhone, r.RegistrantEmail,
         }, Json);
 }

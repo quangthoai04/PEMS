@@ -57,11 +57,17 @@ public sealed class DeclineOperationalContactConfirmationCommandHandler
     public async Task<OperationalContactActionResponse> Handle(
         DeclineOperationalContactConfirmationCommand request, CancellationToken cancellationToken)
     {
-        var actorId = OperationalContactGuards.RequireAuthenticated(_writeFlag, _currentUser);
-        var changeId = await OperationalContactGuards.ResolveChangeIdAsync(
-                           _db, _tokens, request.Token, cancellationToken)
-                       ?? throw new ConflictException(
-                           "Liên kết không hợp lệ.", OperationalContactErrorCodes.ConfirmationNotFound);
+        // Session actor normally; a token-proven actor when the public (no-login) handler delegates here.
+        var actorId = OperationalContactGuards.ResolveActor(_writeFlag, _currentUser, request.ActingUserId);
+        // From a link, or from the invitation id when a signed-in invitee declines inside the product.
+        var changeId = request.Token is null
+            ? request.IdentityChangeId
+              ?? throw new ConflictException(
+                  "Thiếu thông tin lời mời.", OperationalContactErrorCodes.ConfirmationNotFound)
+            : await OperationalContactGuards.ResolveChangeIdAsync(
+                  _db, _tokens, request.Token, cancellationToken)
+              ?? throw new ConflictException(
+                  "Liên kết không hợp lệ.", OperationalContactErrorCodes.ConfirmationNotFound);
 
         var now = _clock.VietnamNow;
         var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
@@ -85,8 +91,13 @@ public sealed class DeclineOperationalContactConfirmationCommandHandler
 
         OperationalContactGuards.EnsurePending(change, now);
 
-        var token = await OperationalContactGuards.LoadLiveTokenAsync(
-            _db, _tokens, request.Token, changeId, now, cancellationToken);
+        // The link must be a DECLINE link — see the mirror check in the accept handler. Null when a
+        // signed-in invitee declines without one.
+        var token = request.Token is null
+            ? null
+            : await OperationalContactGuards.LoadLiveTokenAsync(
+                _db, _tokens, request.Token, changeId, now, cancellationToken,
+                requiredIntendedAction: EmailIntendedActions.Decline);
 
         var actor = await _db.Users.FirstOrDefaultAsync(u => u.UserId == actorId, cancellationToken)
             ?? throw new ForbiddenException();
@@ -107,10 +118,13 @@ public sealed class DeclineOperationalContactConfirmationCommandHandler
         change.RetentionUntil = now.AddDays(RetentionDays);
         change.UpdatedAt = now;
 
-        token.UsedAt = now;
-        token.UsedAction = EmailIntendedActions.Decline;
-        token.ResultStatus = EmailActionResultStatuses.Success;
-        token.RecipientUserId = actorId;
+        if (token is not null)
+        {
+            token.UsedAt = now;
+            token.UsedAction = EmailIntendedActions.Decline;
+            token.ResultStatus = EmailActionResultStatuses.Success;
+            token.RecipientUserId = actorId;
+        }
 
         await EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
             _db, EmailActionTargetTypes.VisitRequestIdentityChange, change.IdentityChangeId,

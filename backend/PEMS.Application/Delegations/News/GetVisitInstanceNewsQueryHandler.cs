@@ -26,18 +26,33 @@ public sealed class GetVisitInstanceNewsQueryHandler
 
         var userId = _currentUser.UserId.Value;
 
+        // FormDetail is required by the canonical evaluator: media consent lives on it, and reading a
+        // null detail as "consent denied" would hide the create button on every campus.
         var instance = await _db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
+            .Include(c => c.FormDetail)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
 
+        // ACCEPTED only, matching the eligible query and the create command. This used to also admit
+        // ASSIGNED, which is a DEPARTMENT-TASK relation rather than a confirmed participation — so the
+        // three paths disagreed about who counts as a participant at all. The create command is the
+        // final authority and takes ACCEPTED, so a list that offered the button on ASSIGNED was
+        // promising something the POST would refuse.
         var acceptedRole = await _db.VisitParticipants
             .Where(p => p.VisitInstanceId == instance.VisitInstanceId && p.UserId == userId
-                && (p.Status == ParticipantStatuses.Accepted || p.Status == ParticipantStatuses.Assigned) && !p.IsHost)
+                && p.Status == ParticipantStatuses.Accepted && !p.IsHost)
             .Select(p => p.ParticipantRole)
             .FirstOrDefaultAsync(cancellationToken);
 
-        var actor = VisitNewsAccess.Evaluate(instance, instance.VisitRequest, _currentUser, acceptedRole);
+        // One post per author per visit is a create rule, so the list's canCreate must know about it
+        // too — otherwise the button reappears for somebody who has already written theirs.
+        var alreadyHasOwnNews = await _db.News
+            .AnyAsync(n => n.VisitInstanceId == instance.VisitInstanceId && n.AuthorUserId == userId,
+                cancellationToken);
+
+        var actor = VisitNewsAccess.Evaluate(
+            instance, instance.VisitRequest, _currentUser, acceptedRole, alreadyHasOwnNews);
         if (!actor.InScope)
             throw new ForbiddenException("Bạn không có quyền xem tin tức của chuyến thăm này.");
 

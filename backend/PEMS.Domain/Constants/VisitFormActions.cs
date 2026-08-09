@@ -69,6 +69,14 @@ public static class VisitFormActions
     public const string UpdateOperationalContactProfile = "UPDATE_OPERATIONAL_CONTACT_PROFILE";
     /// <summary>Registrant may re-send THIS campus's outstanding invitation (cap 5, with cooldown).</summary>
     public const string ResendOperationalContactConfirmation = "RESEND_OPERATIONAL_CONTACT_CONFIRMATION";
+    /// <summary>
+    /// Registrant may open a BRAND NEW invitation for the address this campus already names, when the
+    /// previous one ended unanswered (cancelled / declined / expired) and there is nothing left to
+    /// resend. Distinct from <see cref="ResendOperationalContactConfirmation"/>, which reissues a token
+    /// on an invitation that is still PENDING — the two never appear together, because a campus either
+    /// has a live invitation or it does not.
+    /// </summary>
+    public const string ReinviteOperationalContactConfirmation = "REINVITE_OPERATIONAL_CONTACT_CONFIRMATION";
     /// <summary>Registrant may correct THIS campus's contact outright while the campus is undecided.</summary>
     public const string ReplaceOperationalContact = "REPLACE_OPERATIONAL_CONTACT";
     /// <summary>Registrant / this campus's confirmed contact may hand the campus to someone else after its decision.</summary>
