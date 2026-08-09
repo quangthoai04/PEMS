@@ -64,6 +64,11 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public DbSet<VisitGuestMember> GuestMembers => Set<VisitGuestMember>();
     public DbSet<VisitInstanceGuestMember> InstanceGuestMembers => Set<VisitInstanceGuestMember>();
     public DbSet<UploadedFile> Files => Set<UploadedFile>();
+    // Visit-news slice (GetVisitInstanceNewsQueryHandler, ViewNewsListQueryHandler): both .Include()
+    // Translations.Sections, so both entity types must be part of the model, not just News itself.
+    public DbSet<News> News => Set<News>();
+    public DbSet<NewsTranslation> NewsTranslations => Set<NewsTranslation>();
+    public DbSet<NewsContentSection> NewsContentSections => Set<NewsContentSection>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<SentEmail> SentEmails => Set<SentEmail>();
@@ -113,9 +118,10 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<MinuteActionItem>();
         modelBuilder.Ignore<MinuteParticipant>();
         modelBuilder.Ignore<Feedback>();
-        modelBuilder.Ignore<News>();
-        modelBuilder.Ignore<NewsTranslation>();
-        modelBuilder.Ignore<NewsContentSection>();
+        // News/NewsTranslation/NewsContentSection ARE mapped (below, as public DbSets) — the visit-news
+        // handlers (VisitNewsAccess-gated: GetVisitInstanceNewsQueryHandler, ViewNewsListQueryHandler)
+        // belong to this slice and .Include() their Translations/Sections. NewsSectionFile stays
+        // ignored: nothing in this slice reads it.
         modelBuilder.Ignore<NewsSectionFile>();
         modelBuilder.Ignore<Faq>();
         modelBuilder.Ignore<GalleryArea>();
@@ -245,9 +251,8 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     DbSet<MinuteActionItem> IApplicationDbContext.MinuteActionItems => Set<MinuteActionItem>();
     DbSet<MinuteParticipant> IApplicationDbContext.MinuteParticipants => Set<MinuteParticipant>();
     DbSet<Feedback> IApplicationDbContext.Feedbacks => Set<Feedback>();
-    DbSet<News> IApplicationDbContext.News => Set<News>();
-    DbSet<NewsTranslation> IApplicationDbContext.NewsTranslations => Set<NewsTranslation>();
-    DbSet<NewsContentSection> IApplicationDbContext.NewsContentSections => Set<NewsContentSection>();
+    // News/NewsTranslation/NewsContentSection are public DbSets above; only NewsSectionFile (unused
+    // by this slice) stays an undiscovered explicit-interface member.
     DbSet<NewsSectionFile> IApplicationDbContext.NewsSectionFiles => Set<NewsSectionFile>();
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
     DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();

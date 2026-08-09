@@ -324,7 +324,16 @@ public sealed class ViewNewsListQueryHandler
         ulong currentUserId,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(viewerMode == NewsConstants.ViewerMode.Author);
+        // Reviewer (Staff Leader) may ALSO create — same as Author (plain Staff) — because a Staff
+        // Leader who is the current Host of one of their own campus's visits writes as that Host
+        // (VisitNewsAccess.Evaluate: "the relation, not the job title, is what grants it"). This entry
+        // point is unconditional for both, exactly like Author already is regardless of whether they
+        // currently host anything eligible: the real per-visit gate (writing window / media consent /
+        // one post per author) is enforced where it belongs, by GetEligibleVisitInstancesForNewsQuery
+        // once they pick a visit on the Create-News page, not by hiding the button here.
+        return Task.FromResult(
+            viewerMode == NewsConstants.ViewerMode.Author
+            || viewerMode == NewsConstants.ViewerMode.Reviewer);
     }
 
     private static NewsAvailableActionsDto BuildActions(

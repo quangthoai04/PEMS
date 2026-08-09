@@ -86,8 +86,15 @@ public sealed class GetVisitInstanceNewsQueryHandler
             : await _db.Users.Where(u => authorIds.Contains(u.UserId))
                 .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
-        // HO / Visitor: read-only — no internal workflow fields, no action flags.
-        bool isReadonlyViewer = actor.IsHo || actor.IsGuestSide;
+        // HO / Visitor: read-only — no internal workflow fields, no action flags. Host/campus Staff
+        // Leader ALWAYS wins this even when they are ALSO the guest side (registrant or operational
+        // contact) — an internal Staff/Staff Leader who registered their own visit and then hosts it
+        // is not the read-only external "Visitor owner" this flag means to describe. Mirrors the
+        // visibility priority just above (actor.IsHost || actor.IsStaffLeaderOfCampus first):
+        // IsGuestSide is a relation check only (VisitRequestOwnership.IsGuestSide), not role-aware, so
+        // without this it silently stripped canEdit/canApprove/canReject/CanCreate — including the
+        // create-news button — from a Host/Staff Leader the moment they were also the registrant.
+        bool isReadonlyViewer = !actor.IsHost && !actor.IsStaffLeaderOfCampus && (actor.IsHo || actor.IsGuestSide);
 
         var items = posts.Select(n =>
         {
