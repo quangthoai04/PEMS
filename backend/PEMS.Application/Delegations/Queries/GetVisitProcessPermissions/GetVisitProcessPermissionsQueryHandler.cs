@@ -160,9 +160,11 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanStartPreparation = canStartPreparation,
 
             // Operational stage transitions — Host only, live instance (see CompleteVisitStageCommand).
-            // BEFORE_VISIT only: "finish preparation" presupposes preparation started. And not before
-            // T-6h — the same policy the command enforces, so the button is disabled rather than
-            // clickable-then-409.
+            // BEFORE_VISIT only: "finish preparation" presupposes preparation started. The T-6h window
+            // below is informational only — CompleteVisitStageCommandHandler no longer refuses an early
+            // confirm, so CanStartVisit going false before the window just drives the UI's "chú ý"
+            // banner (with StartVisitAvailableAt), not an actual block; the confirm button stays
+            // clickable regardless and the command accepts it.
             CanStartVisit = isHost && isLive
                 && instance.Status == VisitInstanceStatus.BeforeVisit
                 && VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(
