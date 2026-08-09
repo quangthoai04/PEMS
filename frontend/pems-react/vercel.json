@@ -1,6 +1,27 @@
 {
   "rewrites": [
     {
+      "source": "/visit-fptu/:campusCode",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot).*"
+        },
+        {
+          "type": "query",
+          "key": "locationId",
+          "value": "(?<locationId>[0-9]+)"
+        },
+        {
+          "type": "query",
+          "key": "itemId",
+          "value": "(?<itemId>[0-9]+)"
+        }
+      ],
+      "destination": "https://pems-production-2245.up.railway.app/api/public/visit-fptu/share-preview/:campusCode?locationId=:locationId&itemId=:itemId"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://pems-production-2245.up.railway.app/api/:path*"
     },

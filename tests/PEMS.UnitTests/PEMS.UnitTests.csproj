@@ -25,6 +25,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\backend\PEMS.Domain\PEMS.Domain.csproj" />
     <ProjectReference Include="..\..\backend\PEMS.Application\PEMS.Application.csproj" />
+    <!-- The public share-preview endpoint + its Open Graph builder live in the API layer and are
+         unit-testable in isolation (mocked mediator, no host, no database). -->
+    <ProjectReference Include="..\..\backend\PEMS.Api\PEMS.Api.csproj" />
   </ItemGroup>
 
 </Project>
