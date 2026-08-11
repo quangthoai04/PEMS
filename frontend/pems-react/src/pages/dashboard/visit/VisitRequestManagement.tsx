@@ -238,8 +238,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const canUseAllTab = isStaffLeader || isVisitor || isRegularStaff;
   // Các role được tạo đoàn khách (Visitor / IC Staff / Staff Leader) — backend revalidate.
   const canCreateVisitRequest = isVisitor || isRegularStaff || isStaffLeader;
-  const showTabs = [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab, canUseAllTab].filter(Boolean).length > 1
-    || canUseAttendingTab || (canUseResponsibleTab && canUseRegisteredTab);
+  // Student chỉ có đúng 1 tab (attending) nên ẩn hẳn nút lọc — các role khác giữ nguyên hành vi cũ
+  // (kể cả khi cũng chỉ có 1 tab, như Dept/Dept Leader) để không đổi UX ngoài phạm vi yêu cầu.
+  const showTabs = !isStudent && (
+    [canUseAttendingTab, canUseResponsibleTab, canUseRegisteredTab, canUseHostedTab, canUseAllTab].filter(Boolean).length > 1
+    || canUseAttendingTab || (canUseResponsibleTab && canUseRegisteredTab)
+  );
 
   const responsibleTabLabel = isHO ? 'Theo dõi đơn tiếp khách'
     : isVisitor ? tt('visitRequestV2:list.tabs.responsibleVisitor')
