@@ -112,7 +112,7 @@ describe('VisitRequestFormV2 — copy / apply-to-all actually reach the screen',
 
     // Campus + schedule are identity, never overwritten by a content copy.
     expect(campusSelects()[1]).toHaveValue('');
-  }, 15000);
+  });
 
   it('"Áp dụng cho cơ sở khác" (confirmed) reaches every other card on screen, not just form state', async () => {
     render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
@@ -136,5 +136,5 @@ describe('VisitRequestFormV2 — copy / apply-to-all actually reach the screen',
       expect(selects[1]).toHaveValue('MEETING');
       expect(selects[2]).toHaveValue('MEETING');
     });
-  }, 15000);
+  });
 });

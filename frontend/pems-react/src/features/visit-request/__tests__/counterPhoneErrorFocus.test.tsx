@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import i18n from '../../../shared/i18n/config';
 import {
   CHARACTER_COUNT_THRESHOLD,
@@ -319,7 +319,9 @@ describe('a failed submit on the real form', () => {
     render(<VisitRequestFormV2 mode="public" draftNamespace="focus-test" onSuccess={() => {}} />);
     await act(async () => { fireEvent.click(screen.getByTestId('v2-submit')); });
     // The focus is deferred one tick so a campus card that has just been expanded is really open.
-    await act(async () => { await new Promise(r => setTimeout(r, 120)); });
+    // Waited for by its result — the caret leaving <body> for a control — rather than by sleeping
+    // long enough to cover that tick, because how long the tick takes is up to the machine.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
   };
 
   it('says how many fields are left rather than repeating a generic sentence', async () => {

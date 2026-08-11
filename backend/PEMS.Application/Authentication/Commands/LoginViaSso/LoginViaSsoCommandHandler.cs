@@ -54,12 +54,12 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         // Provider gate.
         if (!_options.AllowGoogleSso)
-            await FailAsync(null, "unknown", portal, null, "google_sso_disabled", SecurityEventFailureReasonCodes.SsoProviderError,
+            await FailAsync(null, "unknown", portal, "google_sso_disabled", SecurityEventFailureReasonCodes.SsoProviderError,
                 request, AuthErrorCodes.SsoDisabled, "Google sign-in is currently disabled.", 403, cancellationToken);
 
         var info = await _googleValidator.ValidateAsync(request.IdToken, cancellationToken);
         if (info is null)
-            await FailAsync(null, "unknown", portal, null, "invalid_google_token", SecurityEventFailureReasonCodes.InvalidSsoClaims,
+            await FailAsync(null, "unknown", portal, "invalid_google_token", SecurityEventFailureReasonCodes.InvalidSsoClaims,
                 request, AuthErrorCodes.ExternalAuthFailed, GenericSsoError, 401, cancellationToken);
 
         var email = info!.Email.Trim().ToLowerInvariant();
@@ -77,7 +77,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         if (user is null)
         {
             if (!_options.AutoCreateVisitorOnExternalLogin)
-                await FailAsync(null, email, portal, null, "visitor_provision_disabled", SecurityEventFailureReasonCodes.VisitorAutoProvisionDisabled,
+                await FailAsync(null, email, portal, "visitor_provision_disabled", SecurityEventFailureReasonCodes.VisitorAutoProvisionDisabled,
                     request, AuthErrorCodes.VisitorProvisionDisabled, GenericSsoError, 403, cancellationToken);
 
             user = await CreateVisitorFromExternalLoginAsync(info, email, now, cancellationToken);
@@ -112,7 +112,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
             RoleId = role.RoleId,
             Status = UserStatuses.Active,
             CreatedVia = CreatedViaValues.SsoAutoProvision,
-            EmailVerifiedAt = info.EmailVerified ? now : null,
             CreatedAt = now,
             Role = role,
             // VISITOR: no campus / department / sub-role / password (enforced by DB triggers).
@@ -123,8 +122,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
             // AuthProviderId is DB-generated; UserId is set via the navigation on save.
             ProviderType = ProviderTypes.GoogleSso,
             ProviderSubject = info.Subject,
-            ProviderEmail = email,
-            IsEnabled = true,
             LinkedAt = now,
         };
         user.AuthProviders.Add(provider);
@@ -150,8 +147,6 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.GoogleSso,
                 ProviderSubject = info.Subject,
-                ProviderEmail = email,
-                IsEnabled = true,
                 LinkedAt = now,
             };
             user.AuthProviders.Add(provider);
@@ -160,14 +155,10 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
             return provider;
         }
 
-        if (!provider.IsEnabled)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "google_provider_disabled", SecurityEventFailureReasonCodes.SsoProviderError,
-                request, AuthErrorCodes.ExternalAuthFailed, GenericSsoError, 403, cancellationToken);
-
         if (string.IsNullOrEmpty(provider.ProviderSubject))
             provider.ProviderSubject = info.Subject;
         else if (!string.Equals(provider.ProviderSubject, info.Subject, StringComparison.Ordinal))
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "google_subject_mismatch", SecurityEventFailureReasonCodes.InvalidSsoClaims,
+            await FailAsync(user, email, portal, "google_subject_mismatch", SecurityEventFailureReasonCodes.InvalidSsoClaims,
                 request, AuthErrorCodes.ExternalAuthFailed, GenericSsoError, 403, cancellationToken);
 
         return provider;
@@ -177,35 +168,35 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         User user, string email, string portal, LoginviaSSOCommand request, CancellationToken cancellationToken)
     {
         if (user.LockedUntil is not null && user.LockedUntil > _clock.VietnamNow)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountLocked,
                 "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
 
         // P0 #1: a pending account has not proven email ownership — a specific message, never "inactive"/campus.
         if (user.Status == UserStatuses.PendingEmailConfirmation)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "status_pending_email_confirmation", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, "status_pending_email_confirmation", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountPendingEmailConfirmation,
                 "Tài khoản chưa xác nhận email. Vui lòng kiểm tra email để xác nhận trước khi đăng nhập.", 403, cancellationToken);
 
         if (user.Status != UserStatuses.Active)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         if (user.Role is null || user.Role.Status != EntityStatuses.Active)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // UC-106: DEPARTMENT accounts lose access while their department is INACTIVE
         // (applies to DEPARTMENT+LEADER/STAFF; other roles are never blocked by this rule).
         if (DepartmentAccessRule.IsBlocked(user.Role!.RoleCode, user.Department?.Status))
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
 
         // UC-86 force-logout: campus-scoped internal accounts (STAFF/DEPARTMENT/STUDENT) may not
         // sign in while their PRIMARY campus is INACTIVE — no session, no tokens
         // (BR-AUTH-CAMPUS-06). The rule is role-scoped, so Visitor SSO is never affected.
         if (CampusAccessRule.IsBlocked(user.Role!.RoleCode, user.PrimaryCampus?.Status))
-            await FailAsync(user, email, portal, user.PrimaryCampusId, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage, 403, cancellationToken);
     }
 
@@ -213,46 +204,40 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         User user, string portal, UserAuthProvider provider, string email, DateTime now,
         LoginviaSSOCommand request, CancellationToken cancellationToken)
     {
-        provider.LastUsedAt = now;
-        provider.ProviderEmail = email;
         user.LastLoginAt = now;
-        user.FirstLoginAt ??= now;
 
         var response = await AuthResultBuilder.IssueAsync(
             user, portal, provider.AuthProviderId, request.IpAddress, request.UserAgent,
             _sessionService, _jwtTokenService, cancellationToken);
 
-        await _audit.WriteLoginLogAsync(user.UserId, email, portal, user.PrimaryCampusId,
+        await _audit.WriteLoginLogAsync(user.UserId, email, portal,
             ProviderTypes.GoogleSso, LoginLogStatuses.Success, null,
-            request.IpAddress, request.UserAgent, null, cancellationToken);
+            request.IpAddress, request.UserAgent, cancellationToken);
         await _audit.WriteSecurityEventAsync(user.UserId, email, SecurityEventTypes.SsoLogin,
-            "SUCCESS", null, request.IpAddress, request.UserAgent,
-            portal, user.PrimaryCampusId, ProviderTypes.GoogleSso, null, null, cancellationToken);
+            "SUCCESS", null, request.IpAddress, request.UserAgent, portal, null, cancellationToken);
 
         return response;
     }
 
     /// <summary>Writes a failed login log + security event, then throws a coded auth error. Never returns.</summary>
     private async Task FailAsync(
-        User? user, string email, string portal, ulong? campusId, string internalReason, string failureReasonCode,
+        User? user, string email, string portal, string internalReason, string failureReasonCode,
         LoginviaSSOCommand request, string errorCode, string message, int statusCode,
         CancellationToken cancellationToken)
     {
-        await _audit.WriteLoginLogAsync(user?.UserId, email, portal, campusId,
+        await _audit.WriteLoginLogAsync(user?.UserId, email, portal,
             ProviderTypes.GoogleSso, LoginLogStatuses.Failed, internalReason,
-            request.IpAddress, request.UserAgent, null, cancellationToken);
-        var eventType = failureReasonCode switch
-        {
-            SecurityEventFailureReasonCodes.PortalMismatch => SecurityEventTypes.PortalValidation,
-            SecurityEventFailureReasonCodes.CampusMismatch => SecurityEventTypes.CampusValidation,
-            _ => statusCode == 403 ? SecurityEventTypes.SecurityPolicyCheck : SecurityEventTypes.SsoLogin
-        };
+            request.IpAddress, request.UserAgent, cancellationToken);
 
+        // 403 = refused by policy after the identity was understood; 401 = the sign-in itself failed.
+        // The severity scale is derived from this pair (see SecuritySeverityResolver) — a BLOCKED
+        // INVALID_SSO_CLAIMS is the subject-mismatch takeover signal and lands on CRITICAL.
+        var eventType = statusCode == 403 ? SecurityEventTypes.SecurityPolicyCheck : SecurityEventTypes.SsoLogin;
         var resultText = statusCode == 403 ? "BLOCKED" : "FAILED";
 
         await _audit.WriteSecurityEventAsync(user?.UserId, email, eventType,
             resultText, failureReasonCode, request.IpAddress, request.UserAgent,
-            portal, campusId, ProviderTypes.GoogleSso, null, internalReason, cancellationToken);
+            portal, internalReason, cancellationToken);
 
         throw new AuthBusinessException(errorCode, message, statusCode);
     }

@@ -16,9 +16,6 @@ public class OtpToken
     [Column("email")]
     public string Email { get; set; } = null!;
 
-    [Column("token_type")]
-    public string TokenType { get; set; } = "OTP_CODE";
-
     [Column("purpose")]
     public string Purpose { get; set; } = null!;
 
@@ -47,9 +44,6 @@ public class OtpToken
     [Column("attempt_count")]
     public int AttemptCount { get; set; }
 
-    [Column("last_attempt_at")]
-    public DateTime? LastAttemptAt { get; set; }
-
     // Server-enforced progressive cooldown: verify before this instant is rejected (429)
     // without consuming an attempt.
     [Column("next_attempt_allowed_at")]
@@ -60,9 +54,6 @@ public class OtpToken
     [Column("human_verification_required_at")]
     public DateTime? HumanVerificationRequiredAt { get; set; }
 
-    [Column("human_verified_at")]
-    public DateTime? HumanVerifiedAt { get; set; }
-
     [Column("invalidated_at")]
     public DateTime? InvalidatedAt { get; set; }
 
@@ -71,9 +62,6 @@ public class OtpToken
 
     [Column("max_attempts")]
     public int MaxAttempts { get; set; } = 10;
-
-    [Column("resend_count")]
-    public int ResendCount { get; set; }
 
     [Column("ip_address")]
     public string? IpAddress { get; set; }

@@ -162,8 +162,6 @@ public sealed class DepartmentLeaderTestHarness
             UserId = userId,
             ProviderType = providerType,
             ProviderSubject = providerType == ProviderTypes.LocalPassword ? null : subject,
-            ProviderEmail = providerEmail,
-            IsEnabled = true,
             LinkedAt = new System.DateTime(2026, 1, 1),
         };
         Db.UserAuthProviders.Add(provider);

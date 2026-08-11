@@ -19,9 +19,7 @@ public class LoginLog
     [Column("login_portal")]
     public string LoginPortal { get; set; } = null!;
 
-    [Column("selected_campus_id")]
-    public ulong? SelectedCampusId { get; set; }
-
+    /// <summary>LOCAL_PASSWORD or GOOGLE_SSO; NULL when no method was reached.</summary>
     [Column("provider_type")]
     public string? ProviderType { get; set; }
 
@@ -36,9 +34,6 @@ public class LoginLog
 
     [Column("user_agent")]
     public string? UserAgent { get; set; }
-
-    [Column("session_id")]
-    public ulong? SessionId { get; set; }
 
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }

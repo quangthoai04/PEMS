@@ -7,7 +7,7 @@ import { EmailChangePreview } from './EmailChangePreview';
  *
  * Sibling of the pending-account dialog and deliberately built from the same parts, so the two read
  * as one family — what differs is the single consequence that matters here: the account is signed
- * out everywhere and has to re-link SSO/FEID. That is disruptive rather than merely informative, so
+ * out everywhere and has to re-link Google SSO. That is disruptive rather than merely informative, so
  * it is called out in amber instead of being buried in the body text.
  *
  * Not dismissible by backdrop click or Escape: a stray click must not silently drop a decision that
@@ -73,7 +73,7 @@ export function LoginEmailChangeConfirmModal({
           <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
             <p className="text-sm leading-relaxed text-amber-900">
-              Tài khoản sẽ bị đăng xuất khỏi các phiên hiện tại và phải liên kết lại SSO/FEID khi
+              Tài khoản sẽ bị đăng xuất khỏi các phiên hiện tại và phải liên kết lại Google SSO khi
               đăng nhập lần tiếp theo.
             </p>
           </div>

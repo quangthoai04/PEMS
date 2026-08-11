@@ -41,7 +41,7 @@ public sealed class ViewAccountDetailsDto
     public DateTime? LastLoginAt { get; init; }
 
     /// <summary>
-    /// Which sign-in methods are linked (LOCAL_PASSWORD / GOOGLE_SSO / FEID). The provider TYPE only —
+    /// Which sign-in methods are linked (LOCAL_PASSWORD / GOOGLE_SSO). The provider TYPE only —
     /// never the subject id, the stored tokens or the provider email's credential material. Read-only
     /// context for the ADMIN security review (ADMIN_ACCOUNT_MANAGEMENT spec §8.3).
     /// </summary>

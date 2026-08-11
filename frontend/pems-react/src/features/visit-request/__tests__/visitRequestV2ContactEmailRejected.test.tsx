@@ -216,11 +216,15 @@ describe('a refused delegation-contact address lands on that campus\'s own email
     await renderWithValidForm();
 
     await submit();
-    await act(async () => { await new Promise(r => setTimeout(r, 120)); });
 
+    // The form defers the focus by a tick so the card above it has finished expanding, so this has
+    // to wait for the caret rather than assert straight after the submit. Waiting for the caret
+    // ITSELF — not for a fixed slice of time long enough to cover the delay on a quiet machine —
+    // because the delay is a scheduling artefact: a loaded box stretches it, and a sleep that is
+    // "obviously long enough" is the thing that later fails for no reason anybody can reproduce.
     const input = screen.getByTestId('campus-opcontact-email-1');
+    await waitFor(() => expect(document.activeElement).toBe(input));
     expect(input.closest('.hidden')).toBeNull();      // the card was expanded
-    expect(document.activeElement).toBe(input);       // …and the caret is in the box
   });
 
   it('marks every campus that named the same address, and only those', async () => {

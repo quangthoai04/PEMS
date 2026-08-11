@@ -13,23 +13,19 @@ public class UserAuthProvider
     [Column("user_id")]
     public ulong UserId { get; set; }
 
+    /// <summary>LOCAL_PASSWORD or GOOGLE_SSO (see <c>ProviderTypes</c>).</summary>
     [Column("provider_type")]
     public string ProviderType { get; set; } = null!;
 
+    /// <summary>
+    /// Provider-issued subject id. Required for GOOGLE_SSO (enforced by
+    /// <c>trg_auth_providers_validate_bi/bu</c>); always NULL for LOCAL_PASSWORD.
+    /// </summary>
     [Column("provider_subject")]
     public string? ProviderSubject { get; set; }
 
-    [Column("provider_email")]
-    public string? ProviderEmail { get; set; }
-
-    [Column("is_enabled")]
-    public bool IsEnabled { get; set; } = true;
-
     [Column("linked_at")]
     public DateTime LinkedAt { get; set; }
-
-    [Column("last_used_at")]
-    public DateTime? LastUsedAt { get; set; }
 
     public virtual User User { get; set; } = null!;
 }

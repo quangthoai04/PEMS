@@ -218,7 +218,8 @@ public class ManageCampusStatusCommandHandlerTests
         Assert.Equal(SecurityEventTypes.SecurityPolicyCheck, evt.EventType);
         Assert.Equal("SUCCESS", evt.Result);
         Assert.Equal(900UL, evt.UserId);          // actor HO
-        Assert.Equal(CampusId, evt.SelectedCampusId);
+        // The campus is carried in detail_text — security_events has no campus column.
+        Assert.Contains($"campusId={CampusId}", evt.DetailText);
         Assert.Contains($"event={SecurityEventDetailMarkers.CampusDisabledSessionsRevoked}", evt.DetailText);
         Assert.Contains("affectedUserCount=1", evt.DetailText);
         Assert.Contains("revokedSessionCount=1", evt.DetailText);

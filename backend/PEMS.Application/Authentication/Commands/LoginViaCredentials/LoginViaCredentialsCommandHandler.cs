@@ -62,9 +62,9 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         // 0. Password login is disabled entirely in ProductionSsoOnly mode (or by config).
         if (!_options.PasswordLoginEnabled)
-            await FailAsync(null, email, portal, null, LoginLogStatuses.Blocked, "password_login_disabled", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(null, email, portal, LoginLogStatuses.Blocked, "password_login_disabled", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.PasswordLoginDisabled,
-                "Password sign-in is disabled. Please use SSO/FEID.", 403, cancellationToken);
+                "Password sign-in is disabled. Please sign in with Google.", 403, cancellationToken);
 
         var user = await _db.Users
             .Include(u => u.Role)
@@ -75,7 +75,7 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
         // Unknown email — generic to avoid account enumeration.
         if (user is null)
-            await FailAsync(null, email, portal, null, LoginLogStatuses.Failed, "user_not_found", SecurityEventFailureReasonCodes.AccountNotFound,
+            await FailAsync(null, email, portal, LoginLogStatuses.Failed, "user_not_found", SecurityEventFailureReasonCodes.AccountNotFound,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
 
         // Account found — derive the real portal from its role instead of trusting a client choice.
@@ -95,72 +95,67 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
                 user.LockedUntil = now.AddMinutes(_lockoutMinutes);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "lockout_triggered", SecurityEventFailureReasonCodes.AccountDisabled,
+                await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "lockout_triggered", SecurityEventFailureReasonCodes.AccountDisabled,
                     request, AuthErrorCodes.AccountLocked,
                     "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
             }
 
             await _db.SaveChangesAsync(cancellationToken);
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Failed, "bad_password", null,
+            await FailAsync(user, email, portal, LoginLogStatuses.Failed, "bad_password", null,
                 request, AuthErrorCodes.InvalidCredentials, GenericCredentialError, 401, cancellationToken);
         }
 
         // Temporary lockout window.
         if (user!.LockedUntil is not null && user.LockedUntil > now)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "account_locked", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountLocked,
                 "Your account is temporarily locked. Please try again later.", 403, cancellationToken);
 
         // P0 #1: a pending account has not proven email ownership — a specific message, never "inactive"/campus.
         if (user.Status == UserStatuses.PendingEmailConfirmation)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "status_pending_email_confirmation", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "status_pending_email_confirmation", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountPendingEmailConfirmation,
                 "Tài khoản chưa xác nhận email. Vui lòng kiểm tra email để xác nhận trước khi đăng nhập.", 403, cancellationToken);
 
         // Account status must be ACTIVE.
         if (user.Status != UserStatuses.Active)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, $"status_{user.Status}", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // Role must be active and not soft-deleted.
         if (user.Role is null || user.Role.Status != EntityStatuses.Active)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "role_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.AccountInactive, "Your account is not active.", 403, cancellationToken);
 
         // UC-106: DEPARTMENT accounts lose access while their department is INACTIVE
         // (users.status stays untouched — this is an org-level lock, not a personal one).
         if (DepartmentAccessRule.IsBlocked(user.Role!.RoleCode, user.Department?.Status))
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "department_inactive", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.DepartmentInactive, DepartmentAccessRule.BlockedMessage, 403, cancellationToken);
 
         // UC-86 force-logout: campus-scoped accounts (STAFF/DEPARTMENT/STUDENT) may not sign in
         // while their PRIMARY campus is INACTIVE — no session, no tokens (BR-AUTH-CAMPUS-06).
         if (CampusAccessRule.IsBlocked(user.Role!.RoleCode, user.PrimaryCampus?.Status))
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
+            await FailAsync(user, email, portal, LoginLogStatuses.Blocked, "campus_inactive_access_denied", SecurityEventFailureReasonCodes.AccountDisabled,
                 request, AuthErrorCodes.CampusInactiveAccessDenied, CampusAccessRule.BlockedMessage, 403, cancellationToken);
 
-        // Local password provider, if present, must be enabled.
+        // The local-password provider row, when present, only records WHICH method signed the session
+        // in (user_sessions.auth_provider_id). Whether a password login is possible at all is decided
+        // by password_hash + AuthOptions above — a missing row is not a refusal, exactly as before.
         var localProvider = user.AuthProviders.FirstOrDefault(p => p.ProviderType == ProviderTypes.LocalPassword);
-        if (localProvider is not null && !localProvider.IsEnabled)
-            await FailAsync(user, email, portal, user.PrimaryCampusId, LoginLogStatuses.Blocked, "local_provider_disabled", SecurityEventFailureReasonCodes.AccountDisabled,
-                request, AuthErrorCodes.PasswordLoginDisabled,
-                "Password sign-in is disabled for this account.", 403, cancellationToken);
 
         // ── Success ───────────────────────────────────────────────────────────
         user.FailedLoginCount = 0;
         user.LockedUntil = null;
         user.LastLoginAt = now;
-        user.FirstLoginAt ??= now;
-        if (localProvider is not null)
-            localProvider.LastUsedAt = now;
 
         var response = await AuthResultBuilder.IssueAsync(
             user, portal, localProvider?.AuthProviderId, request.IpAddress, request.UserAgent,
             _sessionService, _jwtTokenService, cancellationToken);
 
-        await _audit.WriteLoginLogAsync(user.UserId, email, portal, user.PrimaryCampusId,
+        await _audit.WriteLoginLogAsync(user.UserId, email, portal,
             ProviderTypes.LocalPassword, LoginLogStatuses.Success, null,
-            request.IpAddress, request.UserAgent, null, cancellationToken);
+            request.IpAddress, request.UserAgent, cancellationToken);
 
 
         return response;
@@ -168,25 +163,24 @@ public sealed class LoginviaCredentialsCommandHandler : IRequestHandler<Loginvia
 
     /// <summary>Writes a failed/blocked login log + security event, then throws a coded auth error. Never returns.</summary>
     private async Task FailAsync(
-        User? user, string email, string portal, ulong? campusId, string logStatus, string internalReason, string? failureReasonCode,
+        User? user, string email, string portal, string logStatus, string internalReason, string? failureReasonCode,
         LoginviaCredentialsCommand request, string errorCode, string message, int statusCode,
         CancellationToken cancellationToken)
     {
-        await _audit.WriteLoginLogAsync(user?.UserId, email, portal, campusId,
-            ProviderTypes.LocalPassword, logStatus, internalReason, request.IpAddress, request.UserAgent, null, cancellationToken);
+        await _audit.WriteLoginLogAsync(user?.UserId, email, portal,
+            ProviderTypes.LocalPassword, logStatus, internalReason, request.IpAddress, request.UserAgent, cancellationToken);
 
         if (failureReasonCode != null)
         {
-            var eventType = failureReasonCode switch
-            {
-                SecurityEventFailureReasonCodes.PortalMismatch => SecurityEventTypes.PortalValidation,
-                SecurityEventFailureReasonCodes.CampusMismatch => SecurityEventTypes.CampusValidation,
-                _ => SecurityEventTypes.SecurityPolicyCheck
-            };
-            
-            await _audit.WriteSecurityEventAsync(user?.UserId, email, eventType,
-                "BLOCKED", failureReasonCode, request.IpAddress, request.UserAgent,
-                portal, campusId, null, null, internalReason, cancellationToken);
+            // The security event mirrors the login log's own verdict instead of hard-coding BLOCKED:
+            // an unknown email is a FAILED probe, a policy refusal (lockout, disabled account,
+            // inactive department/campus) is BLOCKED. Severity is derived from that pair — see
+            // SecuritySeverityResolver — so getting it right is what keeps the scale meaningful.
+            var resultText = logStatus == LoginLogStatuses.Blocked ? "BLOCKED" : "FAILED";
+
+            await _audit.WriteSecurityEventAsync(user?.UserId, email, SecurityEventTypes.SecurityPolicyCheck,
+                resultText, failureReasonCode, request.IpAddress, request.UserAgent,
+                portal, internalReason, cancellationToken);
         }
 
         throw new AuthBusinessException(errorCode, message, statusCode);

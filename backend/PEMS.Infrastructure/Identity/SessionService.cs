@@ -8,7 +8,9 @@ namespace PEMS.Infrastructure.Identity;
 
 /// <summary>
 /// Persists <c>user_sessions</c> and manages refresh tokens (stored as SHA-256
-/// hashes only). DB triggers enforce portal/campus consistency.
+/// hashes only). A session and its refresh token share ONE lifetime — <c>expires_at</c> —
+/// and ONE revocation instant — <c>revoked_at</c>; there are no separate refresh_* mirrors
+/// to drift apart. A DB trigger enforces portal/role consistency.
 /// </summary>
 public sealed class SessionService : ISessionService
 {
@@ -40,11 +42,8 @@ public sealed class SessionService : ISessionService
             // SessionId is DB-generated (BIGINT AUTO_INCREMENT).
             UserId = user.UserId,
             LoginPortal = loginPortal,
-            // INTERNAL → own primary campus; VISITOR → NULL (enforced by trigger).
-            SelectedCampusId = loginPortal == LoginPortals.Internal ? user.PrimaryCampusId : null,
             AuthProviderId = authProviderId,
             RefreshTokenHash = SecureTokenGenerator.Hash(rawRefresh),
-            RefreshExpiresAt = refreshExpires,
             IpAddress = Truncate(ipAddress, 45),
             UserAgent = Truncate(userAgent, 500),
             CreatedAt = now,
@@ -54,7 +53,7 @@ public sealed class SessionService : ISessionService
         _db.UserSessions.Add(session);
         await _db.SaveChangesAsync(cancellationToken);
 
-        return new SessionTokens(session.SessionId, rawRefresh, refreshExpires, session.ExpiresAt);
+        return new SessionTokens(session.SessionId, rawRefresh, session.ExpiresAt);
     }
 
     public async Task<UserSession?> GetActiveByRefreshTokenAsync(
@@ -71,11 +70,10 @@ public sealed class SessionService : ISessionService
             .Include(s => s.User).ThenInclude(u => u.PrimaryCampus)
             // UC-106: refresh must re-check the CURRENT department status from the DB.
             .Include(s => s.User).ThenInclude(u => u.Department)
+            // Session and refresh share one lifetime: revoked_at + expires_at are the whole test.
             .FirstOrDefaultAsync(s =>
                     s.RefreshTokenHash == hash
                     && s.RevokedAt == null
-                    && s.RefreshRevokedAt == null
-                    && s.RefreshExpiresAt != null && s.RefreshExpiresAt > now
                     && s.ExpiresAt > now,
                 cancellationToken);
     }
@@ -99,11 +97,10 @@ public sealed class SessionService : ISessionService
         var refreshExpires = now.AddDays(_refreshDays);
 
         session.RefreshTokenHash = SecureTokenGenerator.Hash(rawRefresh);
-        session.RefreshExpiresAt = refreshExpires;
         session.ExpiresAt = refreshExpires;
 
         await _db.SaveChangesAsync(cancellationToken);
-        return new SessionTokens(session.SessionId, rawRefresh, refreshExpires, session.ExpiresAt);
+        return new SessionTokens(session.SessionId, rawRefresh, session.ExpiresAt);
     }
 
     public async Task RevokeSessionAsync(
@@ -115,7 +112,6 @@ public sealed class SessionService : ISessionService
 
         var now = _clock.VietnamNow;
         session.RevokedAt = now;
-        session.RefreshRevokedAt = now;
         session.RevokedReason = Truncate(reason, 255);
         session.RevokedBy = revokedBy;
 
@@ -133,7 +129,6 @@ public sealed class SessionService : ISessionService
         foreach (var session in sessions)
         {
             session.RevokedAt = now;
-            session.RefreshRevokedAt = now;
             session.RevokedReason = Truncate(reason, 255);
             session.RevokedBy = revokedBy;
         }

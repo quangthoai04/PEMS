@@ -5,7 +5,7 @@ namespace PEMS.Application.Accounts.Commands.CreateAccount;
 /// <summary>
 /// UC-96 Create Account. Creates an internal or visitor account. Staff Leaders are
 /// scoped to their own campus; HO/Admin may target any campus. A temporary password
-/// is honoured only in dev (DevMixed) mode â€” production accounts sign in via SSO/FEID.
+/// is honoured only in dev (DevMixed) mode â€” production accounts sign in via Google SSO.
 /// </summary>
 public sealed class CreateAccountCommand : IRequest<CreateAccountResponse>
 {

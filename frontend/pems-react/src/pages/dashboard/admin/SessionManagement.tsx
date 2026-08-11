@@ -33,7 +33,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 // Nhãn tiếng Việt cho các giá trị kỹ thuật hiển thị trong bảng — tránh lộ thuật ngữ hệ thống
-// (INTERNAL/VISITOR, LOCAL_PASSWORD/GOOGLE_SSO/FEID, role code) ra người dùng cuối.
+// (INTERNAL/VISITOR, LOCAL_PASSWORD/GOOGLE_SSO, role code) ra người dùng cuối.
 const PORTAL_LABEL: Record<string, string> = {
   INTERNAL: 'Nội bộ',
   VISITOR: 'Khách',
@@ -42,7 +42,6 @@ const PORTAL_LABEL: Record<string, string> = {
 const PROVIDER_LABEL: Record<string, string> = {
   LOCAL_PASSWORD: 'Mật khẩu',
   GOOGLE_SSO: 'Google SSO',
-  FEID: 'FE ID',
 };
 
 const ROLE_LABEL: Record<string, string> = {

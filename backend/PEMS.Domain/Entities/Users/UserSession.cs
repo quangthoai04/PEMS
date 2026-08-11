@@ -16,20 +16,11 @@ public class UserSession
     [Column("login_portal")]
     public string LoginPortal { get; set; } = null!;
 
-    [Column("selected_campus_id")]
-    public ulong? SelectedCampusId { get; set; }
-
     [Column("auth_provider_id")]
     public ulong? AuthProviderId { get; set; }
 
     [Column("refresh_token_hash")]
     public string? RefreshTokenHash { get; set; }
-
-    [Column("refresh_expires_at")]
-    public DateTime? RefreshExpiresAt { get; set; }
-
-    [Column("refresh_revoked_at")]
-    public DateTime? RefreshRevokedAt { get; set; }
 
     [Column("ip_address")]
     public string? IpAddress { get; set; }
@@ -40,9 +31,17 @@ public class UserSession
     [Column("created_at")]
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>
+    /// The single expiry of the session AND of its refresh token — they are the same lifetime,
+    /// so there is no separate refresh_expires_at to drift out of sync with.
+    /// </summary>
     [Column("expires_at")]
     public DateTime ExpiresAt { get; set; }
 
+    /// <summary>
+    /// The single revocation instant of the session AND of its refresh token. Once set, both
+    /// the access-token session check and the refresh lookup reject this row.
+    /// </summary>
     [Column("revoked_at")]
     public DateTime? RevokedAt { get; set; }
 

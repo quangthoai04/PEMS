@@ -65,10 +65,10 @@ export interface AdminSecurityOverview {
     eventType: string;
     result: string;
     severity: string;
+    failureReasonCode?: string | null;
     email?: string | null;
     ipAddress?: string | null;
     loginPortal?: string | null;
-    providerType?: string | null;
     createdAt: string;
   }[];
 }
@@ -144,7 +144,6 @@ export interface AdminLoginLogItem {
   failureReason?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
-  sessionId?: number | null;
   createdAt: string;
 }
 
@@ -167,12 +166,11 @@ export interface AdminSecurityEventItem {
   eventType: string;
   result: string;
   failureReasonCode?: string | null;
+  /** LOW | MEDIUM | HIGH | CRITICAL — derived server-side by SecuritySeverityResolver. */
   severity: string;
   ipAddress?: string | null;
   userAgent?: string | null;
   loginPortal?: string | null;
-  providerType?: string | null;
-  sessionId?: number | null;
   detailText?: string | null;
   createdAt: string;
 }
@@ -182,10 +180,10 @@ export interface AdminSecurityEventsQuery {
   pageSize?: number;
   keyword?: string;
   severity?: string;
+  /** SUCCESS | FAILED | BLOCKED. */
   result?: string;
   eventType?: string;
   portal?: string;
-  provider?: string;
   ipAddress?: string;
   fromDate?: string;
   toDate?: string;

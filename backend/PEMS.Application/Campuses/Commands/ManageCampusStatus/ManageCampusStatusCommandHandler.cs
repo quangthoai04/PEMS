@@ -174,7 +174,6 @@ public sealed class ManageCampusStatusCommandHandler
                     emailSnapshot: _currentUser.Email,
                     eventType: SecurityEventTypes.SecurityPolicyCheck,
                     result: "SUCCESS",
-                    selectedCampusId: campus.CampusId,
                     detailText: $"event={SecurityEventDetailMarkers.CampusDisabledSessionsRevoked}; campusId={campus.CampusId}; affectedUserCount={affectedUserIds.Count}; revokedSessionCount={revokedSessionCount}",
                     cancellationToken: cancellationToken);
             }

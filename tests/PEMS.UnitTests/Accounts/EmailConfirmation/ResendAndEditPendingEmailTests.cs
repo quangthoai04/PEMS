@@ -81,8 +81,6 @@ public class ResendAndEditPendingEmailTests
             UserId = TargetUserId,
             ProviderType = providerType,
             ProviderSubject = subject,
-            ProviderEmail = OwnerEmail,
-            IsEnabled = true,
             LinkedAt = h.Clock.VietnamNow,
         };
         h.Db.UserAuthProviders.Add(provider);
@@ -457,9 +455,13 @@ public class ResendAndEditPendingEmailTests
             It.IsAny<ulong>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    /// <summary>Local-password logins stay linked; only the address they point at moves.</summary>
+    /// <summary>
+    /// Local-password logins survive an address change untouched: the provider row carries no
+    /// address of its own, so the account's new <c>users.email</c> is already what it authenticates
+    /// against.
+    /// </summary>
     [Fact]
-    public async Task Edit_repoints_the_local_password_provider_at_the_new_address()
+    public async Task Edit_keeps_the_local_password_provider_linked()
     {
         var h = new Harness();
         SeedUser(h);
@@ -471,22 +473,20 @@ public class ResendAndEditPendingEmailTests
 
         var provider = await h.Db.UserAuthProviders.SingleAsync();
         Assert.Equal(ProviderTypes.LocalPassword, provider.ProviderType);
-        Assert.Equal("new@fpt.edu.vn", provider.ProviderEmail);
+        Assert.Equal("new@fpt.edu.vn", (await h.Db.Users.SingleAsync(u => u.UserId == TargetUserId)).Email);
     }
 
     /// <summary>
-    /// The SSO/FEID rows are DELETED, not blanked: provider_subject identifies the OLD external
+    /// The Google SSO row is DELETED, not blanked: provider_subject identifies the OLD external
     /// identity, proven against an address this account no longer has. The login flow re-links on the
     /// next sign-in, so the account keeps working — bound to the identity that matches its new email.
     /// </summary>
-    [Theory]
-    [InlineData(ProviderTypes.GoogleSso)]
-    [InlineData(ProviderTypes.FeId)]
-    public async Task Edit_unlinks_the_external_identity_provider(string providerType)
+    [Fact]
+    public async Task Edit_unlinks_the_external_identity_provider()
     {
         var h = new Harness();
         SeedUser(h);
-        SeedProvider(h, providerType, subject: "external-subject-1");
+        SeedProvider(h, ProviderTypes.GoogleSso, subject: "external-subject-1");
         SeedProvider(h, ProviderTypes.LocalPassword);
 
         await h.Edit().Handle(
@@ -497,20 +497,24 @@ public class ResendAndEditPendingEmailTests
         Assert.Equal(ProviderTypes.LocalPassword, Assert.Single(providers).ProviderType);
     }
 
-    /// <summary>A pending account has verified nothing; after the address moves that is doubly true.</summary>
+    /// <summary>
+    /// A pending account has proven nothing, and moving the address does not change that: it stays
+    /// PENDING_EMAIL_CONFIRMATION and only the new confirmation link can activate it. (There is no
+    /// separate users.email_verified_at flag — <c>status</c> is the whole signal.)
+    /// </summary>
     [Fact]
-    public async Task Edit_clears_email_verification()
+    public async Task Edit_leaves_the_account_pending()
     {
         var h = new Harness();
-        var user = SeedUser(h);
-        user.EmailVerifiedAt = h.Clock.VietnamNow;
-        h.Db.SaveChanges();
+        SeedUser(h);
 
         await h.Edit().Handle(
             new EditPendingAccountEmailCommand { UserId = TargetUserId, NewEmail = "new@fpt.edu.vn" },
             CancellationToken.None);
 
-        Assert.Null((await h.Db.Users.SingleAsync()).EmailVerifiedAt);
+        var user = await h.Db.Users.SingleAsync();
+        Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);
+        Assert.Equal("new@fpt.edu.vn", user.Email);
     }
 
     /// <summary>Re-saving the same address is refused rather than pointlessly re-issuing a token.</summary>

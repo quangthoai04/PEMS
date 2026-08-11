@@ -103,10 +103,7 @@ public sealed class PendingAccountEmailChangeService : IPendingAccountEmailChang
         user.FullName = resolvedFullName;
         user.Email = normalizedEmail;
 
-        await AccountAuthProviderSync.RepointAsync(_db, user.UserId, normalizedEmail, cancellationToken);
-
-        // A pending account has verified nothing; after the address moves that is doubly true.
-        user.EmailVerifiedAt = null;
+        await AccountAuthProviderSync.RepointAsync(_db, user.UserId, cancellationToken);
 
         // Fresh token bound to the NEW email. Supersedes every live token for this user, so the link
         // already mailed to the old address stops confirming. isResend:false — a corrected address

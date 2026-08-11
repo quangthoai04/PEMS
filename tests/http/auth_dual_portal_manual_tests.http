@@ -235,32 +235,9 @@ Content-Type: application/json
 
 
 ###############################################################################
-# SECTION C — FEID  (controlled adapter; must NOT fake success)
+# SECTION C — (removed) FEID had no product flow and was deleted end-to-end:
+# no /auth/feid route, no FEID provider type, no FEID_* error codes.
 ###############################################################################
-
-### C1. FEID with AllowFeid=true but no provider configured -> FEID_NOT_CONFIGURED
-# Default appsettings: AllowFeid=false (see C2). To test this case set
-# AuthOptions:AllowFeid=true and leave the "Feid" section empty, then restart.
-# Expect: 403, errorCode FEID_NOT_CONFIGURED. NO token returned, no user created.
-POST {{base}}/feid
-Content-Type: application/json
-
-{
-  "idTokenOrCode": "any-placeholder-code",
-  "loginPortal": "VISITOR",
-  "selectedCampusId": null
-}
-
-### C2. FEID disabled (default config AllowFeid=false) -> FEID_DISABLED
-# Expect: 403, errorCode FEID_DISABLED.
-POST {{base}}/feid
-Content-Type: application/json
-
-{
-  "idTokenOrCode": "any-placeholder-code",
-  "loginPortal": "VISITOR",
-  "selectedCampusId": null
-}
 
 
 ###############################################################################

@@ -679,8 +679,38 @@ public static class CanonicalSqlScript
     // deploy the change to a live database; it is the way a FRESH import gets it right.
     //
     // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
+    //
+    // (2026-08-11) AUTH / SECURITY SCHEMA CLEANUP. DDL change across six tables, matching
+    // docs/database/scripts/auth_schema_cleanup/PEMS_AUTH_SCHEMA_CLEANUP_UP.sql exactly, so a fresh
+    // import and a migrated database land on the same shape:
+    //   • users — dropped fe_id (+ uq_users_fe_id), email_verified_at, first_login_at.
+    //   • user_auth_providers — dropped provider_email / is_enabled / last_used_at and their two
+    //     indexes; provider_type ENUM lost 'FEID'.
+    //   • user_sessions — dropped selected_campus_id (+ fk_sessions_selected_campus,
+    //     idx_sessions_portal_campus) and the refresh_expires_at / refresh_revoked_at mirrors
+    //     (+ idx_sessions_refresh_active).
+    //   • otp_tokens — dropped token_type, last_attempt_at, human_verified_at, resend_count and four
+    //     unused indexes; ADDED idx_otp_user(user_id) so fk_otp_tokens_user keeps an index after
+    //     idx_otp_user_purpose_active went (MySQL refuses the drop otherwise, ERROR 1553).
+    //   • login_logs — dropped selected_campus_id (+ fk_login_logs_campus,
+    //     idx_login_logs_portal_campus) and session_id; provider_type ENUM lost 'FEID'.
+    //   • security_events — dropped selected_campus_id / provider_type / session_id and their two
+    //     FKs + two indexes; event_type narrowed to the three values with a real producer;
+    //     failure_reason_code ENUM → VARCHAR(80) (widening: every historical code survives).
+    //     severity is KEPT and is now assigned by SecuritySeverityResolver rather than always
+    //     defaulting to LOW — the seed rows were recomputed with that same rule, so the demo data
+    //     exercises all four levels instead of contradicting the runtime.
+    // Three triggers rewritten (trg_auth_providers_validate_bi/bu, trg_sessions_validate_bi); the
+    // trigger COUNT is unchanged. Seed rows realigned in the same pass: the six FEID provider rows
+    // are gone, one FEID login row keeps its history with provider_type NULL, one session that
+    // pointed at a removed provider now holds NULL (the state ON DELETE SET NULL would leave), and
+    // the legacy event types were remapped onto producible values.
+    // Measured on a fresh disposable import after the change: 81 base tables, 33 triggers,
+    // 248 foreign keys, 33 email templates. The FK count drops by exactly the four this cleanup
+    // removes (fk_sessions_selected_campus, fk_login_logs_campus, fk_security_events_selected_campus,
+    // fk_security_events_session).
     public const string ExpectedSha256 =
-        "d0769429af2033659535bea460c7b2ee39b416dbbae2fcf94a3cd1f415aa5a1c";
+        "de3873ad885a0804c6e0228a6e627e7d248243ebf8b0fc67d54e7e74b0fa87c6";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

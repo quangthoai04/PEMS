@@ -39,13 +39,6 @@ public static class AuthErrorCodes
     /// </summary>
     public const string CampusInactiveAccessDenied = "CAMPUS_INACTIVE_ACCESS_DENIED";
     public const string SsoDisabled = "SSO_DISABLED";
-    public const string FeidDisabled = "FEID_DISABLED";
-
-    /// <summary>FEID login was attempted but no real FEID provider/credential is configured yet.</summary>
-    public const string FeidNotConfigured = "FEID_NOT_CONFIGURED";
-
-    /// <summary>FEID identity is valid but not eligible (e.g. student cohort below the minimum).</summary>
-    public const string FeidNotEligible = "FEID_NOT_ELIGIBLE";
 
     public const string ExternalAuthFailed = "EXTERNAL_AUTH_FAILED";
     public const string VisitorProvisionDisabled = "VISITOR_PROVISION_DISABLED";

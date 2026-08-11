@@ -73,14 +73,8 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
             {
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.LocalPassword,
-                ProviderEmail = email,
-                IsEnabled = true,
                 LinkedAt = now
             });
-        }
-        else
-        {
-            localProvider.IsEnabled = true;
         }
 
         await _db.SaveChangesAsync(cancellationToken);

@@ -1,7 +1,9 @@
 /**
  * Trang SecurityMonitoring (ADMIN) — đọc security_events qua /api/admin/security-events.
- * Filter theo thời gian, kết quả, provider, portal, severity, IP và user. Không còn tab
- * Login Logs riêng — lịch sử đăng nhập/thu hồi phiên đã có ở trang Phiên đăng nhập.
+ * Filter theo thời gian, mức độ, kết quả, portal, IP và user. KHÔNG có filter "phương thức
+ * đăng nhập": provider được audit ở login_logs (trang Phiên đăng nhập), không nhân bản sang
+ * security_events. Không còn tab Login Logs riêng — lịch sử đăng nhập/thu hồi phiên đã có ở
+ * trang Phiên đăng nhập.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -35,9 +37,11 @@ const SEVERITY_LABEL: Record<string, string> = {
   CRITICAL: 'Nghiêm trọng',
 };
 
+// Giá trị đúng của ENUM security_events.result là FAILED (không phải FAILURE) — dùng sai
+// khiến bộ lọc "Thất bại" không bao giờ khớp dòng nào.
 const RESULT_LABEL: Record<string, string> = {
   SUCCESS: 'Thành công',
-  FAILURE: 'Thất bại',
+  FAILED: 'Thất bại',
   BLOCKED: 'Đã chặn',
 };
 
@@ -46,21 +50,10 @@ const PORTAL_LABEL: Record<string, string> = {
   VISITOR: 'Khách',
 };
 
-const PROVIDER_LABEL: Record<string, string> = {
-  LOCAL_PASSWORD: 'Mật khẩu',
-  GOOGLE_SSO: 'Google SSO',
-  FEID: 'FE ID',
-};
-
+// Chỉ 3 loại sự kiện có producer thật; các giá trị legacy đã bị bỏ khỏi ENUM.
 const EVENT_TYPE_LABEL: Record<string, string> = {
   SSO_LOGIN: 'Đăng nhập SSO',
-  PORTAL_VALIDATION: 'Kiểm tra cổng đăng nhập',
-  CAMPUS_VALIDATION: 'Kiểm tra cơ sở',
-  VISITOR_AUTO_PROVISION: 'Tự tạo tài khoản khách',
-  SESSION_CREATED: 'Tạo phiên đăng nhập',
   SESSION_REVOKED: 'Thu hồi phiên đăng nhập',
-  SESSION_EXPIRED: 'Phiên hết hạn',
-  TOKEN_REFRESH: 'Làm mới token',
   SECURITY_POLICY_CHECK: 'Kiểm tra chính sách bảo mật',
 };
 
@@ -68,15 +61,15 @@ interface Filters {
   keyword: string;
   severity: string;
   result: string;
+  eventType: string;
   portal: string;
-  provider: string;
   fromDate: string;
   toDate: string;
 }
 
 const EMPTY_FILTERS: Filters = {
-  keyword: '', severity: '', result: '', portal: '',
-  provider: '', fromDate: '', toDate: '',
+  keyword: '', severity: '', result: '', eventType: '', portal: '',
+  fromDate: '', toDate: '',
 };
 
 export function SecurityMonitoring() {
@@ -117,12 +110,12 @@ export function SecurityMonitoring() {
     pageSize,
     keyword: debouncedKeyword.trim() || undefined,
     portal: filters.portal || undefined,
-    provider: filters.provider || undefined,
+    eventType: filters.eventType || undefined,
     fromDate: filters.fromDate || undefined,
     toDate: filters.toDate || undefined,
     severity: filters.severity || undefined,
     result: filters.result || undefined,
-  }), [page, pageSize, debouncedKeyword, filters.portal, filters.provider, filters.fromDate, filters.toDate, filters.severity, filters.result]);
+  }), [page, pageSize, debouncedKeyword, filters.portal, filters.eventType, filters.fromDate, filters.toDate, filters.severity, filters.result]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -134,7 +127,7 @@ export function SecurityMonitoring() {
   }, [query]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [debouncedKeyword, filters.severity, filters.result, filters.portal, filters.provider, filters.fromDate, filters.toDate, pageSize]);
+  useEffect(() => { setPage(1); }, [debouncedKeyword, filters.severity, filters.result, filters.eventType, filters.portal, filters.fromDate, filters.toDate, pageSize]);
 
   const totalPages = events?.totalPages ?? 0;
 
@@ -208,7 +201,7 @@ export function SecurityMonitoring() {
             <div className="relative">
               <select value={filters.result} onChange={(e) => setFilter('result')(e.target.value)} className={selectCls}>
                 <option className="text-gray-900" value="">Tất cả kết quả</option>
-                {['SUCCESS', 'FAILURE', 'BLOCKED'].map((r) => (
+                {['SUCCESS', 'FAILED', 'BLOCKED'].map((r) => (
                   <option className="text-gray-900" key={r} value={r}>{RESULT_LABEL[r]}</option>
                 ))}
               </select>
@@ -223,11 +216,11 @@ export function SecurityMonitoring() {
               <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
             </div>
             <div className="relative">
-              <select value={filters.provider} onChange={(e) => setFilter('provider')(e.target.value)} className={selectCls}>
-                <option className="text-gray-900" value="">Tất cả phương thức</option>
-                <option className="text-gray-900" value="LOCAL_PASSWORD">Mật khẩu</option>
-                <option className="text-gray-900" value="GOOGLE_SSO">Google SSO</option>
-                <option className="text-gray-900" value="FEID">FE ID</option>
+              <select value={filters.eventType} onChange={(e) => setFilter('eventType')(e.target.value)} className={selectCls}>
+                <option className="text-gray-900" value="">Tất cả loại sự kiện</option>
+                {Object.entries(EVENT_TYPE_LABEL).map(([value, label]) => (
+                  <option className="text-gray-900" key={value} value={value}>{label}</option>
+                ))}
               </select>
               <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-white pointer-events-none opacity-70" />
             </div>
@@ -254,7 +247,7 @@ export function SecurityMonitoring() {
                   <th className="p-3 w-[9%] text-[11px] font-black uppercase tracking-widest text-center">Mức độ</th>
                   <th className="p-3 w-[16%] text-[11px] font-black uppercase tracking-widest">Sự kiện</th>
                   <th className="p-3 w-[15%] text-[11px] font-black uppercase tracking-widest">Người dùng</th>
-                  <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Cổng / Phương thức</th>
+                  <th className="p-3 w-[14%] text-[11px] font-black uppercase tracking-widest">Cổng đăng nhập</th>
                   <th className="p-3 pr-4 w-[20%] text-[11px] font-black uppercase tracking-widest">IP / Chi tiết</th>
                 </tr>
               </thead>
@@ -279,9 +272,6 @@ export function SecurityMonitoring() {
                     <td className="p-3 text-xs text-gray-500 break-words">{ev.email || '—'}</td>
                     <td className="p-3 text-[13px] text-gray-600 break-words">
                       <p className="font-bold text-gray-700">{ev.loginPortal ? (PORTAL_LABEL[ev.loginPortal] ?? ev.loginPortal) : '—'}</p>
-                      {ev.providerType && (
-                        <p className="text-xs text-gray-400">{PROVIDER_LABEL[ev.providerType] ?? ev.providerType}</p>
-                      )}
                     </td>
                     <td className="p-3 pr-4 text-xs text-gray-500 break-words">
                       <p className="font-bold text-gray-600 break-all">{ev.ipAddress || '—'}</p>

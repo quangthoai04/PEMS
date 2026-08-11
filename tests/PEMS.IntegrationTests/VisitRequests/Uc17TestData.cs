@@ -61,7 +61,6 @@ public static class Uc17TestData
         var token = new OtpToken
         {
             Email = email,
-            TokenType = OtpTokenTypes.OtpCode,
             Purpose = Purpose,
             TokenHash = CodeHash(email, code, sessionToken),
             ChallengeTokenHash = ChallengeHash(sessionToken),

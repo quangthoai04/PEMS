@@ -95,12 +95,10 @@ public sealed class OtpService : IOtpService
                 // OtpTokenId is DB-generated (BIGINT AUTO_INCREMENT).
                 UserId      = userId,
                 Email       = normalizedEmail,
-                TokenType   = OtpTokenTypes.OtpCode,
                 Purpose     = purpose,
                 TokenHash   = HashCode(normalizedEmail, purpose, rawCode),
                 ExpiresAt   = now.AddMinutes(expiryMinutes),
                 MaxAttempts = _maxAttempts,
-                ResendCount = recentCount,
                 IpAddress   = Truncate(ipAddress, 45),
                 UserAgent   = Truncate(userAgent, 500),
                 CreatedAt   = now
@@ -164,7 +162,7 @@ public sealed class OtpService : IOtpService
         string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
     {
         var (_, issue) = await CreateChallengeCoreAsync(
-            email, purpose, submissionId, issueReason, ipAddress, userAgent, humanVerifiedAt: null, cancellationToken);
+            email, purpose, submissionId, issueReason, ipAddress, userAgent, cancellationToken);
         return issue;
     }
 
@@ -213,7 +211,6 @@ public sealed class OtpService : IOtpService
         if (verdict.RegisterWrongAttempt)
         {
             token.AttemptCount += 1;
-            token.LastAttemptAt = now;
             token.NextAttemptAllowedAt = verdict.NextCooldownSeconds > 0
                 ? now.AddSeconds(verdict.NextCooldownSeconds)
                 : null;
@@ -335,14 +332,13 @@ public sealed class OtpService : IOtpService
             oldToken.InvalidationReason ??= isHumanRecovery
                 ? OtpInvalidationReasons.HumanRecovery
                 : OtpInvalidationReasons.SupersededByResend;
-            if (isHumanRecovery)
-                oldToken.HumanVerifiedAt = now;
 
+            // A recovery issue is identified by the NEW token's issue_reason = HUMAN_RECOVERY
+            // (which is also what the recovery quota counts) — no separate timestamp column.
             var (_, issue) = await CreateChallengeCoreAsync(
                 oldToken.Email, purpose, submissionId,
                 isHumanRecovery ? OtpIssueReasons.HumanRecovery : OtpIssueReasons.Resend,
                 ipAddress, userAgent,
-                humanVerifiedAt: isHumanRecovery ? now : null,
                 cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
@@ -357,7 +353,7 @@ public sealed class OtpService : IOtpService
 
     private async Task<(OtpToken Token, OtpChallengeIssue Issue)> CreateChallengeCoreAsync(
         string email, string purpose, string submissionId, string issueReason,
-        string? ipAddress, string? userAgent, DateTime? humanVerifiedAt,
+        string? ipAddress, string? userAgent,
         CancellationToken cancellationToken)
     {
         var now             = _clock.VietnamNow;
@@ -370,9 +366,6 @@ public sealed class OtpService : IOtpService
             .Select(t => new { t.IssueReason, t.CreatedAt })
             .ToListAsync(cancellationToken);
 
-        var recoveryCount = issuesInWindow.Count(t => t.IssueReason == OtpIssueReasons.HumanRecovery);
-        var standardCount = issuesInWindow.Count - recoveryCount;
-        
         var tuples = issuesInWindow.Select(i => (i.IssueReason == OtpIssueReasons.HumanRecovery, i.CreatedAt)).ToList();
 
         var decision = OtpChallengePolicy.EvaluateIssue(
@@ -407,7 +400,6 @@ public sealed class OtpService : IOtpService
             {
                 UserId              = null,
                 Email               = normalizedEmail,
-                TokenType           = OtpTokenTypes.OtpCode,
                 Purpose             = purpose,
                 // Salted with the challenge hash so re-issued codes can never collide with
                 // uq_otp_tokens_hash across challenges of the same email+purpose.
@@ -417,8 +409,6 @@ public sealed class OtpService : IOtpService
                 IssueReason         = issueReason,
                 ExpiresAt           = expiresAt,
                 MaxAttempts         = _maxAttempts,
-                ResendCount         = standardCount,
-                HumanVerifiedAt     = humanVerifiedAt,
                 IpAddress           = Truncate(ipAddress, 45),
                 UserAgent           = Truncate(userAgent, 500),
                 CreatedAt           = now

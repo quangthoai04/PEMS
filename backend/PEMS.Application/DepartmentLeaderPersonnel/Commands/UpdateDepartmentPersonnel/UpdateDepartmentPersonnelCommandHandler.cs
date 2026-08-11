@@ -30,10 +30,10 @@ namespace PEMS.Application.DepartmentLeaderPersonnel.Commands.UpdateDepartmentPe
 ///  • <b>PENDING</b> — the account has never proven ownership of any address. The old confirmation
 ///    token is superseded and a fresh one is issued BOUND TO THE NEW ADDRESS, so the previous link
 ///    dies and cannot confirm an address the account no longer has (spec §12.6).
-///  • <b>ACTIVE / INACTIVE / LOCKED</b> — the account has (or had) a working identity. SSO/FEID rows
+///  • <b>ACTIVE / INACTIVE / LOCKED</b> — the account has (or had) a working identity. Google SSO rows
 ///    are DELETED so the next login re-links against the new address, local-password rows keep their
-///    hash and are simply re-pointed, <c>email_verified_at</c> is cleared, and every active session is
-///    revoked so the old address cannot keep a live token (spec §12.7/§12.8/§12.9).
+///    hash untouched (they carry no address of their own), and every active session is revoked so
+///    the old address cannot keep a live token (spec §12.7/§12.8/§12.9).
 ///
 /// LOCKED additionally keeps <c>failed_login_count</c> and <c>locked_until</c> untouched: fixing a
 /// typo in the address must not quietly clear a security lock (spec §12.9).
@@ -188,8 +188,7 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
                 else
                 {
                     // A provisioned account (ACTIVE / INACTIVE / LOCKED) — reset the identity bindings.
-                    relinkRequired = ResetExternalIdentity(user, newEmail);
-                    user.EmailVerifiedAt = null;
+                    relinkRequired = ResetExternalIdentity(user);
 
                     // Defensive: a non-PENDING account should not own a live confirmation token, but if
                     // one leaked in it must not remain usable against the old address.
@@ -287,10 +286,11 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
     }
 
     /// <summary>
-    /// Uniqueness across BOTH identity surfaces (spec §12.5): no other <c>users</c> row may own the
-    /// address, and no other account's auth-provider row may be bound to it either — an SSO identity
-    /// pointing at the same address would let two accounts collide on the next login. The database
-    /// unique indexes remain the final guard for a race that slips past these reads.
+    /// Uniqueness on the one identity surface that owns an address (spec §12.5): no other
+    /// <c>users</c> row may own it. Auth-provider rows no longer carry an address of their own —
+    /// a provider always authenticates against its account's <c>users.email</c> — so
+    /// <c>uq_users_email</c> is both the rule and the final guard for a race that slips past
+    /// this read.
     /// </summary>
     private async Task EnsureEmailIsFreeAsync(string newEmail, ulong targetUserId, CancellationToken cancellationToken)
     {
@@ -300,39 +300,26 @@ public sealed class UpdateDepartmentPersonnelCommandHandler
             throw new ConflictException(
                 AccountIdentityRules.EmailAlreadyUsedMessage,
                 DepartmentLeaderErrorCodes.AccountEmailAlreadyExists);
-
-        var takenByProvider = await _db.UserAuthProviders.AsNoTracking()
-            .AnyAsync(p => p.ProviderEmail == newEmail && p.UserId != targetUserId, cancellationToken);
-        if (takenByProvider)
-            throw new ConflictException(
-                "Email này đang được liên kết với phương thức đăng nhập của một tài khoản khác.",
-                DepartmentLeaderErrorCodes.AuthIdentityConflict);
     }
 
     /// <summary>
-    /// Re-points the account's login methods at the new address. Returns true when an external
-    /// (SSO/FEID) link was removed and therefore has to be re-established on the next login.
+    /// Re-points the account's login methods at the new address. Returns true when the external
+    /// (Google SSO) link was removed and therefore has to be re-established on the next login.
     ///
-    /// SSO/FEID rows are DELETED rather than edited: <c>provider_subject</c> identifies the OLD
+    /// Google SSO rows are DELETED rather than edited: <c>provider_subject</c> identifies the OLD
     /// external identity and cannot be rewritten to mean the new one, the database rejects a
     /// subject-less SSO row outright, and deleting frees the subject from its unique index so the
-    /// account can re-link cleanly. Local-password rows keep their hash — changing an email is not a
-    /// password reset (spec §12.10).
+    /// account can re-link cleanly. Local-password rows are left untouched — they carry no address
+    /// of their own and keep their hash, because changing an email is not a password reset
+    /// (spec §12.10).
     /// </summary>
-    private bool ResetExternalIdentity(User user, string newEmail)
+    private bool ResetExternalIdentity(User user)
     {
         var external = user.AuthProviders
-            .Where(p => p.ProviderType == ProviderTypes.GoogleSso || p.ProviderType == ProviderTypes.FeId)
+            .Where(p => p.ProviderType == ProviderTypes.GoogleSso)
             .ToList();
 
         if (external.Count > 0) _db.UserAuthProviders.RemoveRange(external);
-
-        foreach (var provider in user.AuthProviders)
-        {
-            if (provider.ProviderType == ProviderTypes.GoogleSso || provider.ProviderType == ProviderTypes.FeId)
-                continue;
-            provider.ProviderEmail = newEmail;
-        }
 
         return external.Count > 0;
     }

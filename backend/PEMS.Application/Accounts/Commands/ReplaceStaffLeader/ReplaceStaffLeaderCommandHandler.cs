@@ -264,7 +264,6 @@ public sealed class ReplaceStaffLeaderCommandHandler
                     emailSnapshot: oldLeaderEmail,
                     eventType: SecurityEventTypes.SecurityPolicyCheck,
                     result: "SUCCESS",
-                    selectedCampusId: request.CampusId,
                     detailText: $"event={SecurityEventDetailMarkers.StaffLeaderReplacedWhileLocked}; campusId={request.CampusId}; reason={reason}",
                     cancellationToken: cancellationToken);
         }

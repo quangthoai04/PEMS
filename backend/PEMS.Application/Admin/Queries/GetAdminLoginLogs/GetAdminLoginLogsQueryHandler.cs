@@ -88,7 +88,6 @@ public sealed class GetAdminLoginLogsQueryHandler
                 FailureReason = l.FailureReason,
                 IpAddress = l.IpAddress,
                 UserAgent = l.UserAgent,
-                SessionId = l.SessionId,
                 CreatedAt = l.CreatedAt,
             })
             .ToListAsync(cancellationToken);

@@ -353,7 +353,7 @@ export interface AccountDetails {
   updatedAt?: string | null;
   lastLoginAt?: string | null;
 
-  /** Linked sign-in methods (LOCAL_PASSWORD / GOOGLE_SSO / FEID) — provider TYPE only, no secrets. */
+  /** Linked sign-in methods (LOCAL_PASSWORD / GOOGLE_SSO) — provider TYPE only, no secrets. */
   providers?: string[];
 
   /** HO_BASIC_INFO — true when an HO caller may edit this account's full name / email. */

@@ -243,7 +243,7 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
         {
             if (!_options.PasswordLoginEnabled)
                 throw new BusinessRuleException(
-                    "Temporary passwords are disabled in this environment. The user signs in via SSO/FEID.");
+                    "Temporary passwords are disabled in this environment. The user signs in via Google SSO.");
             if (!PasswordPolicy.IsStrong(request.Password))
                 throw new ValidationException(PasswordPolicy.RequirementsMessage);
 
@@ -252,8 +252,6 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
             {
                 // AuthProviderId is DB-generated; UserId is set via the navigation on save.
                 ProviderType = ProviderTypes.LocalPassword,
-                ProviderEmail = email,
-                IsEnabled = true,
                 LinkedAt = now,
             });
             passwordSet = true;

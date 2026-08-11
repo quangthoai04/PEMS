@@ -47,7 +47,7 @@ public sealed class ForgotPasswordCommandHandler : IRequestHandler<ForgotPasswor
             // Only issue a code to accounts that actually have a local password method.
             var hasLocalPassword = user is not null
                 && (!string.IsNullOrEmpty(user.PasswordHash)
-                    || user.AuthProviders.Any(p => p.ProviderType == ProviderTypes.LocalPassword && p.IsEnabled));
+                    || user.AuthProviders.Any(p => p.ProviderType == ProviderTypes.LocalPassword));
 
             if (user is not null && hasLocalPassword && user.Status == UserStatuses.Active)
             {

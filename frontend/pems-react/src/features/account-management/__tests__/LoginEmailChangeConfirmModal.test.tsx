@@ -31,10 +31,10 @@ describe('LoginEmailChangeConfirmModal', () => {
   });
 
   // The disruptive part, and the reason this confirmation exists at all.
-  it('warns that sessions are revoked and SSO/FEID must be re-linked', () => {
+  it('warns that sessions are revoked and Google SSO must be re-linked', () => {
     renderModal();
     expect(screen.getByText(/đăng xuất khỏi các phiên hiện tại/)).toBeTruthy();
-    expect(screen.getByText(/liên kết lại SSO\/FEID/)).toBeTruthy();
+    expect(screen.getByText(/liên kết lại Google SSO/)).toBeTruthy();
   });
 
   it('falls back to a placeholder when no previous address is known', () => {

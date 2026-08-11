@@ -22,9 +22,18 @@ public class SecurityEvent
     [Column("result")]
     public string Result { get; set; } = null!;
 
+    /// <summary>
+    /// Machine-readable reason (see <c>SecurityEventFailureReasonCodes</c>); NULL on success.
+    /// Stored as VARCHAR rather than an ENUM so the set can grow with real flows and historical
+    /// rows keep whatever code they were written with.
+    /// </summary>
     [Column("failure_reason_code")]
     public string? FailureReasonCode { get; set; }
 
+    /// <summary>
+    /// LOW / MEDIUM / HIGH / CRITICAL. Never set by a producer — derived centrally by
+    /// <c>SecuritySeverityResolver</c> inside <c>ISecurityAuditService.WriteSecurityEventAsync</c>.
+    /// </summary>
     [Column("severity")]
     public string Severity { get; set; } = "LOW";
 
@@ -37,15 +46,10 @@ public class SecurityEvent
     [Column("login_portal")]
     public string? LoginPortal { get; set; }
 
-    [Column("selected_campus_id")]
-    public ulong? SelectedCampusId { get; set; }
-
-    [Column("provider_type")]
-    public string? ProviderType { get; set; }
-
-    [Column("session_id")]
-    public ulong? SessionId { get; set; }
-
+    /// <summary>
+    /// Short debug note. Campus-scoped events carry their campus id here (<c>campusId=…</c>) —
+    /// there is no dedicated campus column on this table.
+    /// </summary>
     [Column("detail_text")]
     public string? DetailText { get; set; }
 

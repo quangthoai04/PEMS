@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Admin.Common;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Admin.Queries.GetAdminSecurityOverview;
 
@@ -34,7 +35,7 @@ public sealed class GetAdminSecurityOverviewQueryHandler
             .ToListAsync(cancellationToken);
 
         var recent = await _db.SecurityEvents.AsNoTracking()
-            .Where(e => e.Severity == "HIGH" || e.Severity == "CRITICAL")
+            .Where(e => e.Severity == SecuritySeverities.High || e.Severity == SecuritySeverities.Critical)
             .OrderByDescending(e => e.CreatedAt)
             .Take(10)
             .Select(e => new AdminSecurityEventItemDto
@@ -43,10 +44,12 @@ public sealed class GetAdminSecurityOverviewQueryHandler
                 EventType = e.EventType,
                 Result = e.Result,
                 Severity = e.Severity,
+                // Replaces the provider column: WHY an event was refused says far more about a
+                // HIGH/CRITICAL row than which sign-in button was pressed (that lives in login_logs).
+                FailureReasonCode = e.FailureReasonCode,
                 Email = e.EmailSnapshot ?? (e.User != null ? e.User.Email : null),
                 IpAddress = e.IpAddress,
                 LoginPortal = e.LoginPortal,
-                ProviderType = e.ProviderType,
                 CreatedAt = e.CreatedAt,
             })
             .ToListAsync(cancellationToken);
@@ -55,10 +58,10 @@ public sealed class GetAdminSecurityOverviewQueryHandler
 
         return new AdminSecurityOverviewDto
         {
-            Low = Count("LOW"),
-            Medium = Count("MEDIUM"),
-            High = Count("HIGH"),
-            Critical = Count("CRITICAL"),
+            Low = Count(SecuritySeverities.Low),
+            Medium = Count(SecuritySeverities.Medium),
+            High = Count(SecuritySeverities.High),
+            Critical = Count(SecuritySeverities.Critical),
             RecentHighSeverity = recent,
         };
     }

@@ -273,7 +273,6 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             CreatedVia = "MANUAL_CREATED",
             CreatedAt = VietnamTime.Now(),
             Status = "ACTIVE",
-            FirstLoginAt = VietnamTime.Now(),
             LastLoginAt = VietnamTime.Now(),
             FailedLoginCount = 0
         };
@@ -316,7 +315,6 @@ public sealed class VisitorEditResubmitApiTests : IAsyncLifetime
             CreatedVia = "MANUAL_CREATED",
             CreatedAt = VietnamTime.Now(),
             Status = "ACTIVE",
-            FirstLoginAt = VietnamTime.Now(),
             LastLoginAt = VietnamTime.Now(),
             FailedLoginCount = 0
         };

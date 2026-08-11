@@ -244,34 +244,30 @@ public class UpdateDepartmentPersonnelCommandTests
     [InlineData(UserStatuses.Active)]
     [InlineData(UserStatuses.Inactive)]
     [InlineData(UserStatuses.Locked)]
-    public async Task Provisioned_account_drops_sso_rows_and_repoints_local_password(string status)
+    public async Task Provisioned_account_drops_sso_rows_and_keeps_local_password(string status)
     {
         var h = WithTarget(status);
         h.AddAuthProvider(1, TargetId, ProviderTypes.GoogleSso, OldEmail);
-        h.AddAuthProvider(2, TargetId, ProviderTypes.FeId, OldEmail);
         h.AddAuthProvider(3, TargetId, ProviderTypes.LocalPassword, OldEmail);
         var target = h.GetUser(TargetId);
         target.PasswordHash = "bcrypt-hash";
-        target.EmailVerifiedAt = h.Clock.VietnamNow;
         h.Db.SaveChanges();
         h.Detach();
 
         var result = await Run(h, Command());
 
         var providers = h.Db.UserAuthProviders.Where(p => p.UserId == TargetId).ToList();
-        // External links are DELETED (the subject identifies the old identity and cannot be rewritten).
+        // The external link is DELETED (the subject identifies the old identity and cannot be rewritten).
         Assert.DoesNotContain(providers, p => p.ProviderType == ProviderTypes.GoogleSso);
-        Assert.DoesNotContain(providers, p => p.ProviderType == ProviderTypes.FeId);
 
-        // Local password survives with its hash intact and simply points at the new address —
-        // changing an email is not a password reset.
-        var local = Assert.Single(providers.Where(p => p.ProviderType == ProviderTypes.LocalPassword));
-        Assert.Equal(NewEmail, local.ProviderEmail);
+        // Local password survives untouched, hash intact — changing an email is not a password
+        // reset, and the row carries no address of its own to re-point.
+        Assert.Single(providers, p => p.ProviderType == ProviderTypes.LocalPassword);
         Assert.Equal("bcrypt-hash", h.GetUser(TargetId).PasswordHash);
+        Assert.Equal(NewEmail, h.GetUser(TargetId).Email);
 
         Assert.True(result.AuthenticationRelinkRequired);
         Assert.False(result.ConfirmationReissued);
-        Assert.Null(h.GetUser(TargetId).EmailVerifiedAt);
     }
 
     [Fact]
@@ -330,16 +326,25 @@ public class UpdateDepartmentPersonnelCommandTests
         Assert.Equal(OldEmail, h.GetUser(TargetId).Email);   // nothing was written
     }
 
+    /// <summary>
+    /// There is only ONE identity surface left to collide on. An auth-provider row no longer stores
+    /// an address of its own (provider_email is gone) — it authenticates against its account's
+    /// <c>users.email</c> — so another account's Google binding cannot "own" this address, and
+    /// <c>uq_users_email</c> is the whole rule. The edit therefore succeeds.
+    /// </summary>
     [Fact]
-    public async Task Email_bound_to_another_accounts_auth_provider_is_a_409()
+    public async Task Email_is_free_when_only_another_accounts_provider_row_existed()
     {
         var h = WithTarget(UserStatuses.Active);
         h.AddStaff(902, email: "other@fpt.edu.vn");
-        h.AddAuthProvider(9, 902, ProviderTypes.GoogleSso, NewEmail);
+        h.AddAuthProvider(9, 902, ProviderTypes.GoogleSso, "other@fpt.edu.vn");
 
-        var ex = await Assert.ThrowsAsync<ConflictException>(() => Run(h, Command()));
-        Assert.Equal(DepartmentLeaderErrorCodes.AuthIdentityConflict, ex.ErrorCode);
-        Assert.Equal(OldEmail, h.GetUser(TargetId).Email);
+        var result = await Run(h, Command());
+
+        Assert.True(result.EmailChanged);
+        Assert.Equal(NewEmail, h.GetUser(TargetId).Email);
+        // The other account keeps its own binding untouched.
+        Assert.Single(h.Db.UserAuthProviders, p => p.UserId == 902);
     }
 
     [Fact]
@@ -447,7 +452,7 @@ public class UpdateDepartmentPersonnelCommandTests
         Assert.Equal(beforeName, target.FullName);
 
         Assert.Empty(h.Sessions.RevokeAllCalls);
-        Assert.Single(h.Db.UserAuthProviders, p => p.UserId == TargetId && p.ProviderEmail == OldEmail);
+        Assert.Single(h.Db.UserAuthProviders, p => p.UserId == TargetId);
         Assert.Equal(
             AccountEmailConfirmationStatuses.Pending,
             h.Db.AccountEmailConfirmations.Single(c => c.ConfirmationId == confirmation.ConfirmationId).Status);

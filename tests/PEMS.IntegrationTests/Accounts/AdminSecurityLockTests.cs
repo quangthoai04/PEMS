@@ -343,7 +343,6 @@ public sealed class AdminSecurityLockTests : IClassFixture<PemsWebApplicationFac
             {
                 UserId = _targetUserId,
                 LoginPortal = "INTERNAL",
-                SelectedCampusId = _campusId,
                 CreatedAt = DateTime.Now,
                 ExpiresAt = DateTime.Now.AddDays(1),
             });

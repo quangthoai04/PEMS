@@ -2,12 +2,14 @@ using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Application.Common.Interfaces;
 
-/// <summary>Tokens produced when creating or rotating a session.</summary>
+/// <summary>
+/// Tokens produced when creating or rotating a session. <paramref name="ExpiresAt"/> is the one
+/// lifetime shared by the session row and its refresh token — they are never separate values.
+/// </summary>
 public sealed record SessionTokens(
     ulong SessionId,
     string RefreshToken,
-    DateTime RefreshExpiresAt,
-    DateTime SessionExpiresAt);
+    DateTime ExpiresAt);
 
 /// <summary>
 /// Manages <c>user_sessions</c> rows and the associated refresh tokens. Refresh

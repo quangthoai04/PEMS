@@ -62,6 +62,8 @@
     "errorBadge": "{{count}} error(s)",
     "removeCampus": "Remove this campus",
     "removeRow": "Remove row",
+    "expand": "Expand",
+    "collapse": "Collapse",
     "copyFromLabel": "Copy content from:",
     "copyFromPlaceholder": "Choose source campus…",
     "applyToAll": "Apply to other campuses",

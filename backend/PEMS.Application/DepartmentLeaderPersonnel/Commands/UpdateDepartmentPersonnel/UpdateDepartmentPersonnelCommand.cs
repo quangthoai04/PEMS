@@ -49,7 +49,7 @@ public sealed class UpdateDepartmentPersonnelResponse
     /// <summary>True when a PENDING account received a fresh confirmation link bound to the new address.</summary>
     public bool ConfirmationReissued { get; init; }
 
-    /// <summary>True when SSO/FEID rows were removed and must be re-linked on the next login.</summary>
+    /// <summary>True when Google SSO rows were removed and must be re-linked on the next login.</summary>
     public bool AuthenticationRelinkRequired { get; init; }
 
     public int RevokedSessions { get; init; }

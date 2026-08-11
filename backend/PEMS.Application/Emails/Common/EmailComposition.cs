@@ -151,7 +151,7 @@ public static class EmailComposition
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(loginUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Đăng nhập Internal Portal</a>
         </div>
-        <p style=""color:#6b7280;font-size:12px"">Đăng nhập bằng chính địa chỉ email này qua SSO / Google / FEID.</p>");
+        <p style=""color:#6b7280;font-size:12px"">Đăng nhập bằng chính địa chỉ email này qua Google SSO.</p>");
 
     /// <summary>
     /// The claim/transfer invitation button: one link to a page that asks the reader to sign in with the

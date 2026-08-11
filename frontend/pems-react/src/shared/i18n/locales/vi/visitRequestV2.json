@@ -62,6 +62,8 @@
     "errorBadge": "{{count}} lỗi",
     "removeCampus": "Xóa cơ sở này",
     "removeRow": "Xóa dòng",
+    "expand": "Mở rộng",
+    "collapse": "Thu gọn",
     "copyFromLabel": "Sao chép nội dung từ:",
     "copyFromPlaceholder": "Chọn cơ sở nguồn…",
     "applyToAll": "Áp dụng cho cơ sở khác",

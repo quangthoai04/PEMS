@@ -94,8 +94,6 @@ public class ForgotPasswordEmailTests
                 UserId = UserId,
                 ProviderType = ProviderTypes.GoogleSso,
                 ProviderSubject = "google-subject-1",
-                ProviderEmail = email,
-                IsEnabled = true,
                 LinkedAt = new DateTime(2026, 1, 1),
             });
 

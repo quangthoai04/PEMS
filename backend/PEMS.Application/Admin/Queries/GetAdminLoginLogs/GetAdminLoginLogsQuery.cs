@@ -31,6 +31,5 @@ public sealed class AdminLoginLogItemDto
     public string? FailureReason { get; set; }
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
-    public ulong? SessionId { get; set; }
     public DateTime CreatedAt { get; set; }
 }

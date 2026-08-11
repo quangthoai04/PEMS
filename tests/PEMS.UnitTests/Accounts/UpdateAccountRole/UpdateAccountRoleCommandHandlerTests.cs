@@ -1410,7 +1410,6 @@ public class UpdateAccountRoleCommandHandlerTests
         var u = Uc106TestData.CreateUser(id, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
         u.Email = email;
         u.Status = UserStatuses.PendingEmailConfirmation;
-        u.EmailVerifiedAt = new DateTime(2026, 1, 2);
         return u;
     }
 
@@ -1519,7 +1518,6 @@ public class UpdateAccountRoleCommandHandlerTests
         Assert.Equal("HE160124", user.StudentCode);
         // Still pending — nothing here activates an account.
         Assert.Equal(UserStatuses.PendingEmailConfirmation, user.Status);
-        Assert.Null(user.EmailVerifiedAt);
 
         var tokens = await h.Db.AccountEmailConfirmations.Where(c => c.UserId == TargetId).ToListAsync();
         var live = tokens.Where(c => c.Status == AccountEmailConfirmationStatuses.Pending).ToList();
@@ -1885,23 +1883,22 @@ public class UpdateAccountRoleCommandHandlerTests
     }
 
     [Fact]
-    public async Task ActiveAccount_EmailChange_ClearsVerificationAndRevokesSessions()
+    public async Task ActiveAccount_EmailChange_UnlinksExternalIdentityAndRevokesSessions()
     {
         var h = CreateHarness();
         var user = Uc106TestData.CreateUser(TargetId, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId);
         user.Email = "before@fpt.edu.vn";
-        user.EmailVerifiedAt = new DateTime(2026, 1, 5);
         h.Db.Users.Add(user);
         h.Db.UserAuthProviders.AddRange(
             new UserAuthProvider
             {
                 UserId = TargetId, ProviderType = ProviderTypes.LocalPassword,
-                ProviderEmail = "before@fpt.edu.vn", IsEnabled = true, LinkedAt = new DateTime(2026, 1, 1),
+                LinkedAt = new DateTime(2026, 1, 1),
             },
             new UserAuthProvider
             {
                 UserId = TargetId, ProviderType = ProviderTypes.GoogleSso, ProviderSubject = "google-sub-1",
-                ProviderEmail = "before@fpt.edu.vn", IsEnabled = true, LinkedAt = new DateTime(2026, 1, 1),
+                LinkedAt = new DateTime(2026, 1, 1),
             });
         h.Db.SaveChanges();
 
@@ -1913,14 +1910,14 @@ public class UpdateAccountRoleCommandHandlerTests
         });
 
         var saved = await h.Db.Users.SingleAsync(u => u.UserId == TargetId);
-        Assert.Null(saved.EmailVerifiedAt);                       // must prove the new address
+        Assert.Equal("after@fpt.edu.vn", saved.Email);
         Assert.NotEmpty(h.Sessions.RevokeAllCalls);               // the old identity stops signing in
 
         var providers = await h.Db.UserAuthProviders.Where(p => p.UserId == TargetId).ToListAsync();
-        // The external binding was proven against the OLD address, so it goes; the local one follows.
+        // The external binding was proven against the OLD address, so it goes; the local one stays —
+        // it carries no address of its own and now authenticates against the new users.email.
         Assert.DoesNotContain(providers, p => p.ProviderType == ProviderTypes.GoogleSso);
-        Assert.Equal("after@fpt.edu.vn",
-            providers.Single(p => p.ProviderType == ProviderTypes.LocalPassword).ProviderEmail);
+        Assert.Single(providers, p => p.ProviderType == ProviderTypes.LocalPassword);
     }
 
     [Fact]

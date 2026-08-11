@@ -60,12 +60,6 @@ public sealed class GetAdminSecurityEventsQueryHandler
             query = query.Where(e => e.LoginPortal == portal);
         }
 
-        if (!string.IsNullOrWhiteSpace(request.Provider))
-        {
-            var provider = request.Provider.Trim().ToUpperInvariant();
-            query = query.Where(e => e.ProviderType == provider);
-        }
-
         if (!string.IsNullOrWhiteSpace(request.IpAddress))
         {
             var ip = request.IpAddress.Trim();
@@ -98,8 +92,6 @@ public sealed class GetAdminSecurityEventsQueryHandler
                 IpAddress = e.IpAddress,
                 UserAgent = e.UserAgent,
                 LoginPortal = e.LoginPortal,
-                ProviderType = e.ProviderType,
-                SessionId = e.SessionId,
                 DetailText = e.DetailText,
                 CreatedAt = e.CreatedAt,
             })

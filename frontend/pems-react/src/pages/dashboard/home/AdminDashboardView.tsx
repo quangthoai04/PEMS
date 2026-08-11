@@ -328,6 +328,7 @@ export function AdminDashboardView() {
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-700 truncate">
                         {ev.eventType} · {ev.result}
+                        {ev.failureReasonCode ? ` · ${ev.failureReasonCode}` : ''}
                       </p>
                       <p className="text-xs text-slate-400 mt-0.5 truncate">
                         {ev.email || '—'} · IP {ev.ipAddress || '—'} · {formatVietnamDateTime(ev.createdAt)}

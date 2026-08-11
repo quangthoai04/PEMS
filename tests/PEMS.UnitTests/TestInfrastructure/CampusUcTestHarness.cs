@@ -415,21 +415,20 @@ public sealed class CampusRecordingSessionService : ISessionService
 /// </summary>
 public sealed class RecordingSecurityAuditService : ISecurityAuditService
 {
-    public List<(ulong? UserId, string EventType, string Result, ulong? SelectedCampusId, string? DetailText)> Events { get; } = new();
+    public List<(ulong? UserId, string EventType, string Result, string? DetailText)> Events { get; } = new();
 
     public Task WriteSecurityEventAsync(
         ulong? userId, string? emailSnapshot, string eventType, string result,
         string? failureReasonCode = null, string? ipAddress = null, string? userAgent = null,
-        string? loginPortal = null, ulong? selectedCampusId = null, string? providerType = null,
-        ulong? sessionId = null, string? detailText = null, CancellationToken cancellationToken = default)
+        string? loginPortal = null, string? detailText = null, CancellationToken cancellationToken = default)
     {
-        Events.Add((userId, eventType, result, selectedCampusId, detailText));
+        Events.Add((userId, eventType, result, detailText));
         return Task.CompletedTask;
     }
 
     public Task WriteLoginLogAsync(
-        ulong? userId, string email, string loginPortal, ulong? selectedCampusId,
+        ulong? userId, string email, string loginPortal,
         string? providerType, string status, string? failureReason, string? ipAddress,
-        string? userAgent, ulong? sessionId, CancellationToken cancellationToken = default)
+        string? userAgent, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("UC-86 disable must not write login logs.");
 }

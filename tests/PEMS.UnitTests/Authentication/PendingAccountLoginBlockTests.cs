@@ -31,7 +31,7 @@ public class PendingAccountLoginBlockTests
         public Task RevokeSessionAsync(ulong sessionId, string reason, ulong? revokedBy = null, CancellationToken ct = default)
         { RevokeCalls.Add((sessionId, reason)); return Task.CompletedTask; }
         public Task<SessionTokens> RotateRefreshTokenAsync(UserSession s, CancellationToken ct = default)
-        { Rotated = true; return Task.FromResult(new SessionTokens(s.SessionId, "r", new DateTime(2027, 1, 1), new DateTime(2027, 1, 1))); }
+        { Rotated = true; return Task.FromResult(new SessionTokens(s.SessionId, "r", new DateTime(2027, 1, 1))); }
         public Task<SessionTokens> CreateSessionAsync(User u, string p, ulong? a, string? ip, string? ua, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<bool> IsSessionActiveAsync(ulong id, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> RevokeAllActiveSessionsAsync(ulong userId, string reason, ulong? revokedBy = null, CancellationToken ct = default) => throw new NotSupportedException();

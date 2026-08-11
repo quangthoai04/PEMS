@@ -9,14 +9,13 @@ public sealed class AuthOptions
 {
     public const string SectionName = "AuthOptions";
 
-    /// <summary><c>DevMixed</c> (password + SSO) or <c>ProductionSsoOnly</c> (SSO/FEID only).</summary>
+    /// <summary><c>DevMixed</c> (password + Google SSO) or <c>ProductionSsoOnly</c> (Google SSO only).</summary>
     public string LoginMode { get; set; } = AuthLoginModes.DevMixed;
 
     public bool AllowPasswordLogin { get; set; } = true;
     public bool AllowGoogleSso { get; set; } = true;
-    public bool AllowFeid { get; set; } = false;
 
-    /// <summary>Auto-create a VISITOR account on first external (SSO/FEID) login via the Visitor portal.</summary>
+    /// <summary>Auto-create a VISITOR account on first Google SSO login via the Visitor portal.</summary>
     public bool AutoCreateVisitorOnExternalLogin { get; set; } = true;
 
     /// <summary>
@@ -24,9 +23,6 @@ public sealed class AuthOptions
     /// it is kept only for config visibility / parity with the spec.
     /// </summary>
     public bool AutoCreateInternalOnExternalLogin { get; set; } = false;
-
-    /// <summary>Minimum student cohort eligible for FEID login (e.g. <c>"K19"</c>).</summary>
-    public string? StudentFeidMinCohort { get; set; }
 
     /// <summary>True when the system runs in SSO-only (production) mode.</summary>
     public bool IsProductionSsoOnly =>

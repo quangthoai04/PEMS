@@ -1417,7 +1417,7 @@ export function AccountManagement() {
     }
 
     if (emailChanged) {
-      // Confirm before an email change (session revoke + SSO/FEID re-link).
+      // Confirm before an email change (session revoke + Google SSO re-link).
       setBasicInfoEmailConfirm({ oldEmail, newEmail: email });
       return;
     }
@@ -3441,7 +3441,7 @@ export function AccountManagement() {
         />
       )}
 
-      {/* HO_BASIC_INFO §10 — xác nhận đổi email đăng nhập (thu hồi phiên + liên kết lại SSO/FEID). */}
+      {/* HO_BASIC_INFO §10 — xác nhận đổi email đăng nhập (thu hồi phiên + liên kết lại Google SSO). */}
       {basicInfoEmailConfirm && (
         <LoginEmailChangeConfirmModal
           oldEmail={basicInfoEmailConfirm.oldEmail}

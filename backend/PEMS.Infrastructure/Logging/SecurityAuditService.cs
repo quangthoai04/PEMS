@@ -1,4 +1,5 @@
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Security;
 using PEMS.Domain.Entities.Users;
 
 namespace PEMS.Infrastructure.Logging;
@@ -22,13 +23,11 @@ public sealed class SecurityAuditService : ISecurityAuditService
         ulong? userId,
         string email,
         string loginPortal,
-        ulong? selectedCampusId,
         string? providerType,
         string status,
         string? failureReason,
         string? ipAddress,
         string? userAgent,
-        ulong? sessionId,
         CancellationToken cancellationToken = default)
     {
         var entry = new LoginLog
@@ -36,13 +35,11 @@ public sealed class SecurityAuditService : ISecurityAuditService
             UserId = userId,
             Email = Truncate(email, 150) ?? string.Empty,
             LoginPortal = loginPortal,
-            SelectedCampusId = selectedCampusId,
             ProviderType = providerType,
             Status = status,
             FailureReason = Truncate(failureReason, 255),
             IpAddress = Truncate(ipAddress, 45),
             UserAgent = Truncate(userAgent, 500),
-            SessionId = sessionId,
             CreatedAt = _clock.VietnamNow
         };
 
@@ -59,9 +56,6 @@ public sealed class SecurityAuditService : ISecurityAuditService
         string? ipAddress = null,
         string? userAgent = null,
         string? loginPortal = null,
-        ulong? selectedCampusId = null,
-        string? providerType = null,
-        ulong? sessionId = null,
         string? detailText = null,
         CancellationToken cancellationToken = default)
     {
@@ -71,13 +65,12 @@ public sealed class SecurityAuditService : ISecurityAuditService
             EmailSnapshot = Truncate(emailSnapshot, 150),
             EventType = Truncate(eventType, 80) ?? eventType,
             Result = result,
-            FailureReasonCode = failureReasonCode,
+            FailureReasonCode = Truncate(failureReasonCode, 80),
+            // Derived, never passed in — one scale for every producer (see SecuritySeverityResolver).
+            Severity = SecuritySeverityResolver.Resolve(eventType, result, failureReasonCode),
             IpAddress = Truncate(ipAddress, 45),
             UserAgent = Truncate(userAgent, 500),
             LoginPortal = loginPortal,
-            SelectedCampusId = selectedCampusId,
-            ProviderType = providerType,
-            SessionId = sessionId,
             DetailText = detailText,
             CreatedAt = _clock.VietnamNow
         };

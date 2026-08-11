@@ -25,9 +25,9 @@ public sealed class AdminSecurityEventItemDto
     public string EventType { get; set; } = string.Empty;
     public string Result { get; set; } = string.Empty;
     public string Severity { get; set; } = string.Empty;
+    public string? FailureReasonCode { get; set; }
     public string? Email { get; set; }
     public string? IpAddress { get; set; }
     public string? LoginPortal { get; set; }
-    public string? ProviderType { get; set; }
     public DateTime CreatedAt { get; set; }
 }

@@ -68,14 +68,8 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
             {
                 UserId = user.UserId,
                 ProviderType = ProviderTypes.LocalPassword,
-                ProviderEmail = user.Email,
-                IsEnabled = true,
                 LinkedAt = now
             });
-        }
-        else
-        {
-            localProvider.IsEnabled = true;
         }
 
         var currentSessionId = _currentUser.SessionId;
@@ -85,7 +79,6 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
         foreach (var session in otherSessions)
         {
             session.RevokedAt = now;
-            session.RefreshRevokedAt = now;
             session.RevokedReason = SessionRevokeReasons.PasswordChanged;
             session.RevokedBy = userId;
         }

@@ -82,7 +82,6 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         var u = Uc106TestData.CreateUser(id, HoRoleId, null, null, Campus);
         u.Email = email;
         u.Status = status;
-        u.EmailVerifiedAt = new DateTime(2026, 1, 1);
         return u;
     }
 
@@ -99,8 +98,6 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         UserId = userId,
         ProviderType = ProviderTypes.GoogleSso,
         ProviderSubject = "google-subject-123",
-        ProviderEmail = email,
-        IsEnabled = true,
         LinkedAt = new DateTime(2026, 1, 1),
     };
 
@@ -108,8 +105,6 @@ public class UpdateBasicAccountInfoCommandHandlerTests
     {
         UserId = userId,
         ProviderType = ProviderTypes.LocalPassword,
-        ProviderEmail = email,
-        IsEnabled = true,
         LinkedAt = new DateTime(2026, 1, 1),
     };
 
@@ -134,7 +129,6 @@ public class UpdateBasicAccountInfoCommandHandlerTests
         var user = await h.Db.Users.SingleAsync(u => u.UserId == 810);
         Assert.Equal("Head Office Mới", user.FullName);          // trimmed, casing preserved
         Assert.Equal("new.ho@fpt.edu.vn", user.Email);          // normalized lowercase
-        Assert.Null(user.EmailVerifiedAt);                       // re-verify on next login
 
         // The Google row is DELETED, not blanked: a subject-less SSO row is rejected by the MySQL
         // trigger trg_auth_providers_validate_bu, and login re-creates the link on next sign-in.
@@ -159,11 +153,11 @@ public class UpdateBasicAccountInfoCommandHandlerTests
             Email = "new.local@fpt.edu.vn",
         });
 
-        // LOCAL_PASSWORD carries no external subject, so it survives the email change and simply
-        // follows the account to the new address.
+        // LOCAL_PASSWORD carries no external subject and no address of its own, so it survives the
+        // email change untouched and authenticates against the account's new users.email.
         var provider = await h.Db.UserAuthProviders.SingleAsync(p => p.UserId == 811);
         Assert.Equal(ProviderTypes.LocalPassword, provider.ProviderType);
-        Assert.Equal("new.local@fpt.edu.vn", provider.ProviderEmail);
+        Assert.Equal("new.local@fpt.edu.vn", (await h.Db.Users.SingleAsync(u => u.UserId == 811)).Email);
     }
 
     [Fact]

@@ -197,7 +197,6 @@ public static class DatabaseResetHelper
         {
             UserId = userId,
             LoginPortal = isInternalPortal ? LoginPortals.Internal : LoginPortals.Visitor,
-            SelectedCampusId = isInternalPortal ? user.PrimaryCampusId : null,
             CreatedAt = now,
             ExpiresAt = now.AddHours(2)
         };

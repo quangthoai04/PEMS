@@ -84,7 +84,6 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var token = await Db(verifyScope).OtpTokens.AsNoTracking()
             .SingleAsync(t => t.ChallengeTokenHash == Uc17TestData.ChallengeHash(sessionToken));
         Assert.Equal(1, token.AttemptCount);           // persisted DESPITE the 400
-        Assert.NotNull(token.LastAttemptAt);
         Assert.Null(token.UsedAt);
     }
 
@@ -249,13 +248,16 @@ public sealed class Uc17OtpChallengeApiTests : IClassFixture<PemsWebApplicationF
         var oldToken = await db.OtpTokens.AsNoTracking()
             .SingleAsync(t => t.ChallengeTokenHash == Uc17TestData.ChallengeHash(oldSession));
         Assert.NotNull(oldToken.InvalidatedAt);
-        Assert.NotNull(oldToken.HumanVerifiedAt);
+        // The reason records what FIRST killed the challenge and is never overwritten, so a
+        // recovery that follows a burn still reads MAX_ATTEMPTS.
+        Assert.Equal("MAX_ATTEMPTS", oldToken.InvalidationReason);
 
+        // issue_reason on the NEW challenge is the recovery marker (and what the hourly recovery
+        // quota counts) — there is no separate human_verified_at timestamp.
         var newToken = await db.OtpTokens.AsNoTracking()
             .SingleAsync(t => t.ChallengeTokenHash == Uc17TestData.ChallengeHash(newSession!));
         Assert.Equal("HUMAN_RECOVERY", newToken.IssueReason);
         Assert.Equal(0, newToken.AttemptCount);
-        Assert.NotNull(newToken.HumanVerifiedAt);
 
         // The OLD challenge can never be used again — even with its correct code. The single
         // hourly recovery slot was just consumed by the successful recover above, so the burned

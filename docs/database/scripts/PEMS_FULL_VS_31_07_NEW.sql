@@ -294,7 +294,21 @@
 -- - Kept 2 login portals:
 --   + VISITOR portal: no campus, only VISITOR
 --   + INTERNAL portal: auto uses user primary campus, only non-VISITOR
--- - Kept LOCAL_PASSWORD + GOOGLE_SSO + FEID from the current phase.
+-- - Kept LOCAL_PASSWORD + GOOGLE_SSO. FEID was removed end-to-end (no product flow ever
+--   existed): no provider type, no /auth/feid route, no FEID_* error codes.
+-- - Auth/security schema cleanup (see docs/database/scripts/auth_schema_cleanup/):
+--   + users: dropped fe_id, email_verified_at (users.status is the signal), first_login_at
+--     (last_login_at IS NULL means "never signed in").
+--   + user_auth_providers: dropped provider_email / is_enabled / last_used_at — a provider
+--     authenticates against its account's users.email and nothing disabled it per-row.
+--   + user_sessions: dropped selected_campus_id (= users.primary_campus_id) and the
+--     refresh_expires_at / refresh_revoked_at mirrors of expires_at / revoked_at.
+--   + otp_tokens: dropped token_type, last_attempt_at, human_verified_at, resend_count.
+--   + login_logs / security_events: dropped selected_campus_id + session_id; security_events
+--     also dropped provider_type (audited in login_logs) and narrowed event_type to the 3
+--     values with a real producer; failure_reason_code became VARCHAR(80).
+--   + security_events.severity is KEPT and is now assigned by SecuritySeverityResolver
+--     instead of always falling through to the LOW default.
 -- - Removed tasks/task_actions; logistics/resource workflow is handled by visit_logistics_items.
 -- - Removed user_campuses; every non-VISITOR user has exactly one primary_campus_id.
 -- - Updated visit request, host assignment, simplified minutes/action items, simplified feedback, logistics proposal workflow, and news review fields.
@@ -574,14 +588,11 @@ CREATE TABLE users (
   gender ENUM('MALE','FEMALE','OTHER') NULL COMMENT 'NULL=chưa cung cấp; OTHER=khác Nam/Nữ',
   avatar_url VARCHAR(500) NULL,
   student_code VARCHAR(30) NULL,
-  fe_id VARCHAR(100) NULL,
-  status ENUM('ACTIVE','INACTIVE','LOCKED','PENDING_EMAIL_CONFIRMATION') NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE=hoạt động, INACTIVE=tạm ngưng, LOCKED=bị khóa, PENDING_EMAIL_CONFIRMATION=chờ xác nhận email',
-  email_verified_at DATETIME NULL COMMENT 'Thời điểm email được xác thực qua SSO lần đầu hoặc xác nhận bởi hệ thống',
+  status ENUM('ACTIVE','INACTIVE','LOCKED','PENDING_EMAIL_CONFIRMATION') NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE=hoạt động, INACTIVE=tạm ngưng, LOCKED=bị khóa, PENDING_EMAIL_CONFIRMATION=chờ xác nhận email. Đây cũng là nguồn duy nhất trả lời "email đã được xác nhận chưa" (không còn cột email_verified_at).',
   failed_login_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Số lần đăng nhập sai local password liên tiếp; reset khi login thành công',
   locked_until DATETIME NULL COMMENT 'Thời điểm hết khóa tạm thời nếu bị lock',
   created_via ENUM('MANUAL_CREATED','VISITOR_FORM','SSO_AUTO_PROVISION') NOT NULL DEFAULT 'MANUAL_CREATED' COMMENT 'MANUAL_CREATED=HO/Staff Leader tạo, VISITOR_FORM=tạo từ form visitor, SSO_AUTO_PROVISION=tạo tự động khi đăng nhập SSO ở cổng Visitor',
-  first_login_at DATETIME NULL,
-  last_login_at DATETIME NULL,
+  last_login_at DATETIME NULL COMMENT 'Lần đăng nhập thành công gần nhất. NULL = chưa từng đăng nhập (thay cho cột first_login_at đã bỏ)',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -589,7 +600,6 @@ CREATE TABLE users (
   PRIMARY KEY (user_id),
   UNIQUE KEY uq_users_email (email),
   UNIQUE KEY uq_users_student_code (student_code),
-  UNIQUE KEY uq_users_fe_id (fe_id),
   KEY idx_users_role_sub_role (role_id, sub_role),
   KEY idx_users_primary_campus (primary_campus_id),
   KEY idx_users_department (department_id),
@@ -615,52 +625,39 @@ COMMENT='Tài khoản chính. Production dùng SSO; LOCAL_PASSWORD chỉ dùng D
 CREATE TABLE user_auth_providers (
   auth_provider_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
-  provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO','FEID') NOT NULL,
-  provider_subject VARCHAR(255) NULL COMMENT 'Required for GOOGLE_SSO/FEID',
-  provider_email VARCHAR(150) NULL,
-  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO') NOT NULL,
+  provider_subject VARCHAR(255) NULL COMMENT 'Required for GOOGLE_SSO; NULL for LOCAL_PASSWORD',
   linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  last_used_at DATETIME NULL,
   PRIMARY KEY (auth_provider_id),
   UNIQUE KEY uq_user_auth_provider_type (user_id, provider_type),
   UNIQUE KEY uq_auth_provider_subject (provider_type, provider_subject),
-  KEY idx_auth_provider_email (provider_email),
-  KEY idx_auth_provider_type_email_enabled (provider_type, provider_email, is_enabled),
   CONSTRAINT fk_auth_providers_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Provider đăng nhập của user. Production dùng GOOGLE_SSO/FEID; LOCAL_PASSWORD chỉ dùng DEV/test.';
+COMMENT='Provider đăng nhập của user. Production dùng GOOGLE_SSO; LOCAL_PASSWORD chỉ dùng DEV/test. Provider luôn xác thực theo users.email nên KHÔNG lưu email riêng.';
 
 CREATE TABLE user_sessions (
   session_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
   login_portal ENUM('VISITOR','INTERNAL') NOT NULL,
-  selected_campus_id BIGINT UNSIGNED NULL COMMENT 'Auto set to users.primary_campus_id for INTERNAL, NULL for VISITOR',
   auth_provider_id BIGINT UNSIGNED NULL,
   refresh_token_hash VARCHAR(255) NULL COMMENT 'Refresh token hash merged into session',
-  refresh_expires_at DATETIME NULL,
-  refresh_revoked_at DATETIME NULL,
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at DATETIME NOT NULL,
-  revoked_at DATETIME NULL,
+  expires_at DATETIME NOT NULL COMMENT 'Hạn dùng chung của session VÀ refresh token (không còn refresh_expires_at riêng)',
+  revoked_at DATETIME NULL COMMENT 'Thời điểm thu hồi chung của session VÀ refresh token (không còn refresh_revoked_at riêng)',
   revoked_by BIGINT UNSIGNED NULL,
   revoked_reason VARCHAR(255) NULL,
   PRIMARY KEY (session_id),
   UNIQUE KEY uq_sessions_refresh_hash (refresh_token_hash),
   KEY idx_sessions_user_active (user_id, revoked_at, expires_at),
-  KEY idx_sessions_portal_campus (login_portal, selected_campus_id),
-  KEY idx_sessions_refresh_active (refresh_token_hash, refresh_revoked_at, refresh_expires_at),
   KEY idx_sessions_ip_time (ip_address, created_at),
   KEY idx_sessions_expires_at (expires_at),
   KEY idx_sessions_revoked_at (revoked_at),
   CONSTRAINT fk_sessions_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE CASCADE,
-  CONSTRAINT fk_sessions_selected_campus
-    FOREIGN KEY (selected_campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_sessions_auth_provider
     FOREIGN KEY (auth_provider_id) REFERENCES user_auth_providers(auth_provider_id)
     ON UPDATE CASCADE ON DELETE SET NULL,
@@ -673,7 +670,6 @@ CREATE TABLE otp_tokens (
   otp_token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NULL,
   email VARCHAR(150) NOT NULL,
-  token_type ENUM('OTP_CODE','MAGIC_LINK') NOT NULL DEFAULT 'OTP_CODE',
   purpose ENUM('VISIT_REQUEST_VERIFY','CHANGE_SENSITIVE_ACTION') NOT NULL,
   token_hash VARCHAR(255) NOT NULL,
   challenge_token_hash CHAR(64) NULL COMMENT 'SHA-256 của opaque challenge token; không lưu raw token',
@@ -682,58 +678,47 @@ CREATE TABLE otp_tokens (
   expires_at DATETIME NOT NULL,
   used_at DATETIME NULL,
   attempt_count INT UNSIGNED NOT NULL DEFAULT 0,
-  last_attempt_at DATETIME NULL,
   next_attempt_allowed_at DATETIME NULL COMMENT 'Server-enforced progressive cooldown; verify trước thời điểm này bị 429',
   human_verification_required_at DATETIME NULL COMMENT 'Set khi sai lần thứ max_attempts — challenge chỉ phục hồi qua human verification',
-  human_verified_at DATETIME NULL,
   invalidated_at DATETIME NULL,
   invalidation_reason VARCHAR(40) NULL COMMENT 'MAX_ATTEMPTS, HUMAN_RECOVERY, SUPERSEDED_BY_RESEND, ...',
   max_attempts INT UNSIGNED NOT NULL DEFAULT 10,
-  resend_count INT UNSIGNED NOT NULL DEFAULT 0,
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (otp_token_id),
   UNIQUE KEY uq_otp_tokens_hash (token_hash),
   UNIQUE KEY uq_otp_challenge_token_hash (challenge_token_hash),
-  KEY idx_otp_submission (submission_id),
   KEY idx_otp_email_purpose_time (email, purpose, created_at),
   KEY idx_otp_email_purpose_active (email, purpose, used_at, expires_at),
-  KEY idx_otp_email_purpose_active_v2 (email, purpose, invalidated_at, expires_at),
-  KEY idx_otp_issue_limit (email, purpose, issue_reason, created_at),
-  KEY idx_otp_user_purpose_active (user_id, purpose, used_at, expires_at),
   KEY idx_otp_ip_time (ip_address, created_at),
+  -- Index 1 cột để đỡ fk_otp_tokens_user (thay cho idx_otp_user_purpose_active 4 cột đã bỏ).
+  KEY idx_otp_user (user_id),
   CONSTRAINT fk_otp_tokens_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='OTP, magic link, set password token, reset password token';
+COMMENT='OTP code cho quên mật khẩu + xác thực Visit Request V2. Tra cứu challenge theo challenge_token_hash (UNIQUE).';
 
 CREATE TABLE login_logs (
   login_log_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NULL,
   email VARCHAR(150) NOT NULL,
   login_portal ENUM('VISITOR','INTERNAL') NOT NULL,
-  selected_campus_id BIGINT UNSIGNED NULL,
-  provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO','FEID') NULL,
+  provider_type ENUM('LOCAL_PASSWORD','GOOGLE_SSO') NULL COMMENT 'Phương thức đăng nhập; NULL khi chưa tới được phương thức nào',
   status ENUM('SUCCESS','FAILED','BLOCKED') NOT NULL,
   failure_reason VARCHAR(255) NULL,
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
-  session_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (login_log_id),
   KEY idx_login_logs_user_time (user_id, created_at),
   KEY idx_login_logs_email_status_time (email, status, created_at),
   KEY idx_login_logs_ip_status_time (ip_address, status, created_at),
-  KEY idx_login_logs_portal_campus (login_portal, selected_campus_id),
   KEY idx_login_logs_provider_time (provider_type, created_at),
   CONSTRAINT fk_login_logs_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_login_logs_campus
-    FOREIGN KEY (selected_campus_id) REFERENCES campuses(campus_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='Lịch sử đăng nhập';
+COMMENT='Lịch sử đăng nhập. Campus KHÔNG lưu ở đây — mỗi tài khoản chỉ có users.primary_campus_id.';
 
 CREATE TABLE security_events (
   security_event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -741,59 +726,30 @@ CREATE TABLE security_events (
   email_snapshot VARCHAR(150) NULL COMMENT 'Email nhận từ SSO hoặc email đang được kiểm tra tại thời điểm xảy ra sự kiện',
   event_type ENUM(
     'SSO_LOGIN',
-    'PORTAL_VALIDATION',
-    'CAMPUS_VALIDATION',
-    'VISITOR_AUTO_PROVISION',
-    'SESSION_CREATED',
     'SESSION_REVOKED',
-    'SESSION_EXPIRED',
-    'TOKEN_REFRESH',
     'SECURITY_POLICY_CHECK'
-  ) NOT NULL COMMENT 'Loại sự kiện bảo mật theo mô hình SSO-only',
+  ) NOT NULL COMMENT 'Chỉ giữ các loại sự kiện có producer thật trong hệ thống',
   result ENUM('SUCCESS','FAILED','BLOCKED') NOT NULL DEFAULT 'SUCCESS' COMMENT 'Kết quả xử lý sự kiện',
-  failure_reason_code ENUM(
-    'ACCOUNT_NOT_FOUND',
-    'ACCOUNT_DISABLED',
-    'PORTAL_MISMATCH',
-    'CAMPUS_MISMATCH',
-    'ROLE_MISMATCH',
-    'SSO_PROVIDER_ERROR',
-    'INVALID_SSO_CLAIMS',
-    'VISITOR_AUTO_PROVISION_DISABLED',
-    'SESSION_EXPIRED',
-    'TOKEN_REVOKED',
-    'SUSPICIOUS_IP',
-    'UNKNOWN'
-  ) NULL COMMENT 'Mã lý do thất bại/chặn; NULL khi SUCCESS',
-  severity ENUM('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'LOW',
+  failure_reason_code VARCHAR(80) NULL COMMENT 'Mã lý do thất bại/chặn (machine-readable, mở rộng được); NULL khi SUCCESS',
+  severity ENUM('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'LOW'
+    COMMENT 'Do backend gán qua SecuritySeverityResolver (event_type + result + failure_reason_code), không phải mặc định LOW',
   login_portal ENUM('VISITOR','INTERNAL') NULL COMMENT 'Portal được dùng khi phát sinh sự kiện',
-  selected_campus_id BIGINT UNSIGNED NULL COMMENT 'Campus người dùng chọn ở Internal Portal; NULL với Visitor Portal',
-  provider_type ENUM('GOOGLE_SSO','FEID') NULL COMMENT 'Nguồn định danh SSO; không dùng LOCAL_PASSWORD trong security_events',
   ip_address VARCHAR(45) NULL,
   user_agent VARCHAR(500) NULL,
-  session_id BIGINT UNSIGNED NULL,
-  detail_text TEXT NULL COMMENT 'Ghi chú debug ngắn, không lưu JSON metadata',
+  detail_text TEXT NULL COMMENT 'Ghi chú debug ngắn (sự kiện theo campus mang campusId=... ở đây), không lưu JSON metadata',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (security_event_id),
   KEY idx_security_user_time (user_id, created_at),
   KEY idx_security_email_time (email_snapshot, created_at),
   KEY idx_security_type_result_time (event_type, result, created_at),
-  KEY idx_security_portal_campus_time (login_portal, selected_campus_id, created_at),
   KEY idx_security_failure_reason_time (failure_reason_code, created_at),
   KEY idx_security_ip_time (ip_address, created_at),
   KEY idx_security_severity_time (severity, created_at),
-  KEY idx_security_session_time (session_id, created_at),
   CONSTRAINT fk_security_events_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_security_events_selected_campus
-    FOREIGN KEY (selected_campus_id) REFERENCES campuses(campus_id)
-    ON UPDATE CASCADE ON DELETE SET NULL,
-  CONSTRAINT fk_security_events_session
-    FOREIGN KEY (session_id) REFERENCES user_sessions(session_id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-COMMENT='SSO-only security events: portal/campus validation, Visitor auto-provisioning, and session lifecycle. No local password tracking and no metadata JSON.';
+COMMENT='Security events: đăng nhập SSO, thu hồi phiên, quyết định chính sách bảo mật. Provider được audit ở login_logs; campus nằm trong detail_text.';
 
 -- =====================================================================
 -- 4. PARTNER + FILE
@@ -4397,13 +4353,15 @@ BEGIN
   END IF;
 END$$
 
+-- GOOGLE_SSO phải mang provider_subject định danh tài khoản ngoài.
+-- LOCAL_PASSWORD được phép provider_subject = NULL.
 CREATE TRIGGER trg_auth_providers_validate_bi
 BEFORE INSERT ON user_auth_providers
 FOR EACH ROW
 BEGIN
-  IF NEW.provider_type IN ('GOOGLE_SSO','FEID')
-     AND (NEW.provider_subject IS NULL OR NEW.provider_subject = '') THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'SSO/FEID provider_subject is required';
+  IF NEW.provider_type = 'GOOGLE_SSO'
+     AND (NEW.provider_subject IS NULL OR TRIM(NEW.provider_subject) = '') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'GOOGLE_SSO provider_subject is required';
   END IF;
 END$$
 
@@ -4411,9 +4369,9 @@ CREATE TRIGGER trg_auth_providers_validate_bu
 BEFORE UPDATE ON user_auth_providers
 FOR EACH ROW
 BEGIN
-  IF NEW.provider_type IN ('GOOGLE_SSO','FEID')
-     AND (NEW.provider_subject IS NULL OR NEW.provider_subject = '') THEN
-    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'SSO/FEID provider_subject is required';
+  IF NEW.provider_type = 'GOOGLE_SSO'
+     AND (NEW.provider_subject IS NULL OR TRIM(NEW.provider_subject) = '') THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'GOOGLE_SSO provider_subject is required';
   END IF;
 END$$
 
@@ -4430,12 +4388,11 @@ BEGIN
   JOIN roles r ON r.role_id = u.role_id
   WHERE u.user_id = NEW.user_id;
 
+  -- Chỉ kiểm tra portal/role. Nhánh selected_campus_id đã bỏ cùng với cột: user nội bộ
+  -- chỉ có đúng 1 campus (users.primary_campus_id), trigger cũ chỉ chép lại giá trị đó.
   IF NEW.login_portal = 'VISITOR' THEN
     IF v_role_code <> 'VISITOR' THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Only VISITOR can login via Visitor Portal';
-    END IF;
-    IF NEW.selected_campus_id IS NOT NULL THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Visitor Portal must not have selected_campus_id';
     END IF;
   ELSEIF NEW.login_portal = 'INTERNAL' THEN
     IF v_role_code = 'VISITOR' THEN
@@ -4443,11 +4400,6 @@ BEGIN
     END IF;
     IF v_primary_campus_id IS NULL THEN
       SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Internal user must have primary_campus_id';
-    END IF;
-    IF NEW.selected_campus_id IS NULL THEN
-      SET NEW.selected_campus_id = v_primary_campus_id;
-    ELSEIF NEW.selected_campus_id <> v_primary_campus_id THEN
-      SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Internal user can only login to their own primary campus';
     END IF;
   END IF;
 END$$
@@ -4871,33 +4823,33 @@ INSERT INTO departments (department_id, campus_id, name, department_type, head_u
 -- 2. Seed accounts: requested emails + supporting campus users
 -- ---------------------------------------------------------------------
 
-INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, fe_id, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 'System Administrator', 'admin@fpt.edu.vn', '0901000001', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 1, NULL, 1, NULL, 'MALE', NULL, NULL, 'FE-MANUAL-001', 'ACTIVE', '2026-02-01 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 08:15:00', '2026-06-22 17:35:00', '2026-02-01 08:00:00', NULL, '2026-06-22 17:35:00', 1),
-  (2, 'Head Office Coordinator', 'ho@fpt.edu.vn', '0901000002', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 2, NULL, 1, NULL, 'FEMALE', NULL, NULL, 'FE-MANUAL-002', 'ACTIVE', '2026-02-01 08:05:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 09:00:00', '2026-06-23 09:20:00', '2026-02-01 08:05:00', 1, '2026-06-23 09:20:00', 1),
-  (3, 'IC Staff Leader Hà Nội', 'staff.leader.hn@fpt.edu.vn', '0901000003', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 1, 1, 'MALE', NULL, NULL, 'FE-MANUAL-003', 'ACTIVE', '2026-02-01 08:10:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 10:00:00', '2026-06-23 10:10:00', '2026-02-01 08:10:00', 2, '2026-06-23 10:10:00', 2),
-  (4, 'IC Staff Hà Nội', 'staff.hn@fpt.edu.vn', '0901000004', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'FEMALE', NULL, NULL, 'FE-MANUAL-004', 'ACTIVE', '2026-02-01 08:15:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 10:30:00', '2026-06-23 11:05:00', '2026-02-01 08:15:00', 3, '2026-06-23 11:05:00', 3),
-  (5, 'Department Lead Đào tạo HN', 'dept.leader.hn@fpt.edu.vn', '0901000005', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 2, 'MALE', NULL, NULL, 'FE-MANUAL-005', 'ACTIVE', '2026-02-01 08:20:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 11:00:00', '2026-06-22 16:50:00', '2026-02-01 08:20:00', 2, '2026-06-22 16:50:00', 2),
-  (6, 'Department Staff Đào tạo HN', 'dept.hn@fpt.edu.vn', '0901000006', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 2, 'FEMALE', NULL, NULL, 'FE-MANUAL-006', 'ACTIVE', '2026-02-01 08:25:00', 0, NULL, 'MANUAL_CREATED', '2026-02-03 11:20:00', '2026-06-20 14:10:00', '2026-02-01 08:25:00', 5, '2026-06-20 14:10:00', 5),
-  (7, 'Student Buddy Hà Nội', 'student@fpt.edu.vn', '0901000007', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'OTHER', NULL, 'SE190001', 'FE-MANUAL-007', 'ACTIVE', '2026-02-01 08:30:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 08:30:00', '2026-06-21 18:40:00', '2026-02-01 08:30:00', 3, '2026-06-21 18:40:00', 3),
-  (8, 'Kim Min Jae', 'kim.minjae@seoultech.example', '+821012340001', 'Hàn Quốc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-02-01 08:35:00', 0, NULL, 'VISITOR_FORM', '2026-02-05 09:00:00', '2026-06-23 07:30:00', '2026-02-01 08:35:00', NULL, '2026-06-23 07:30:00', NULL),
-  (9, 'IC Staff Leader TP.HCM', 'staff.leader.hcm@fpt.edu.vn', '0901000009', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 2, 6, 'FEMALE', NULL, NULL, 'FE-MANUAL-009', 'ACTIVE', '2026-02-01 08:40:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 09:45:00', '2026-06-22 09:00:00', '2026-02-01 08:40:00', 2, '2026-06-22 09:00:00', 2),
-  (10, 'IC Staff TP.HCM', 'staff.hcm@fpt.edu.vn', '0901000010', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'MALE', NULL, NULL, 'FE-MANUAL-010', 'ACTIVE', '2026-02-01 08:45:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 10:10:00', '2026-06-22 09:20:00', '2026-02-01 08:45:00', 9, '2026-06-22 09:20:00', 9),
-  (11, 'IC Staff Leader Đà Nẵng', 'staff.leader.dn@fpt.edu.vn', '0901000011', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 3, 10, 'MALE', NULL, NULL, 'FE-MANUAL-011', 'ACTIVE', '2026-02-01 08:50:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 10:30:00', '2026-06-22 09:45:00', '2026-02-01 08:50:00', 2, '2026-06-22 09:45:00', 2),
-  (12, 'IC Staff Đà Nẵng', 'staff.dn@fpt.edu.vn', '0901000012', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'FEMALE', NULL, NULL, 'FE-MANUAL-012', 'ACTIVE', '2026-02-01 08:55:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 11:00:00', '2026-06-22 10:00:00', '2026-02-01 08:55:00', 11, '2026-06-22 10:00:00', 11),
-  (13, 'IC Staff Leader Cần Thơ', 'staff.leader.ct@fpt.edu.vn', '0901000013', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 4, 13, 'FEMALE', NULL, NULL, 'FE-MANUAL-013', 'ACTIVE', '2026-02-01 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 11:20:00', '2026-06-22 10:30:00', '2026-02-01 09:00:00', 2, '2026-06-22 10:30:00', 2),
-  (14, 'IC Staff Cần Thơ', 'staff.ct@fpt.edu.vn', '0901000014', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'MALE', NULL, NULL, 'FE-MANUAL-014', 'ACTIVE', '2026-02-01 09:05:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 11:40:00', '2026-06-22 10:45:00', '2026-02-01 09:05:00', 13, '2026-06-22 10:45:00', 13),
-  (15, 'IC Staff Leader Quy Nhơn', 'staff.leader.qn@fpt.edu.vn', '0901000015', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 5, 16, 'MALE', NULL, NULL, 'FE-MANUAL-015', 'ACTIVE', '2026-02-01 09:10:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 12:00:00', '2026-06-22 11:00:00', '2026-02-01 09:10:00', 2, '2026-06-22 11:00:00', 2),
-  (16, 'IC Staff Quy Nhơn', 'staff.qn@fpt.edu.vn', '0901000016', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'FEMALE', NULL, NULL, 'FE-MANUAL-016', 'ACTIVE', '2026-02-01 09:15:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 12:20:00', '2026-06-22 11:15:00', '2026-02-01 09:15:00', 15, '2026-06-22 11:15:00', 15),
-  (17, 'Department Lead Cơ sở vật chất HN', 'facilities.leader.hn@fpt.edu.vn', '0901000017', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 3, 'MALE', NULL, NULL, 'FE-MANUAL-017', 'ACTIVE', '2026-02-01 09:20:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 13:00:00', '2026-06-19 16:00:00', '2026-02-01 09:20:00', 2, '2026-06-19 16:00:00', 2),
-  (18, 'Department Staff Cơ sở vật chất HN', 'facilities.staff.hn@fpt.edu.vn', '0901000018', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 3, 'FEMALE', NULL, NULL, 'FE-MANUAL-018', 'ACTIVE', '2026-02-01 09:25:00', 0, NULL, 'MANUAL_CREATED', '2026-02-05 13:20:00', '2026-06-19 16:30:00', '2026-02-01 09:25:00', 17, '2026-06-19 16:30:00', 17),
-  (19, 'Student Media TP.HCM', 'student.hcm@fpt.edu.vn', '0901000019', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 2, NULL, 'FEMALE', NULL, 'SE190002', 'FE-MANUAL-019', 'ACTIVE', '2026-02-01 09:30:00', 0, NULL, 'MANUAL_CREATED', '2026-02-07 08:00:00', '2026-06-20 10:00:00', '2026-02-01 09:30:00', 9, '2026-06-20 10:00:00', 9),
-  (20, 'Lee Joon Ho', 'lee.joonho@seoultech.example', '+821055512345', 'Hàn Quốc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-01 09:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-03 09:00:00', '2026-06-18 09:00:00', '2026-03-01 09:00:00', NULL, '2026-06-18 09:00:00', NULL),
-  (21, 'Tanaka Aoi', 'aoi.tanaka@kyoto-global.example', '+819012345678', 'Nhật Bản', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-02 09:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-04 09:00:00', '2026-06-17 09:00:00', '2026-03-02 09:00:00', NULL, '2026-06-17 09:00:00', NULL),
-  (22, 'Emily Smith', 'emily.smith@greentech.example', '+6591234567', 'Singapore', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-03 09:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-05 09:00:00', '2026-06-16 09:00:00', '2026-03-03 09:00:00', NULL, '2026-06-16 09:00:00', NULL),
-  (23, 'Maya Rodriguez', 'maya.rodriguez@iberia-mobility.example', '+34911222333', 'Tây Ban Nha', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-04 09:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-06 09:00:00', '2026-06-15 09:00:00', '2026-03-04 09:00:00', NULL, '2026-06-15 09:00:00', NULL),
-  (24, 'Carlos Mendes', 'carlos.mendes@porto-ai.example', '+351211234567', 'Bồ Đào Nha', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-05 09:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-07 09:00:00', '2026-06-14 09:00:00', '2026-03-05 09:00:00', NULL, '2026-06-14 09:00:00', NULL),
-  (25, 'Inactive IC Staff Hà Nội', 'inactive.staff.hn@fpt.edu.vn', '0901000025', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'MALE', NULL, NULL, 'FE-MANUAL-025', 'INACTIVE', '2026-02-01 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-07 10:00:00', '2026-04-01 10:00:00', '2026-02-01 10:00:00', 3, '2026-04-01 10:00:00', 3),
-  (26, 'Locked Department Staff Hà Nội', 'locked.dept.hn@fpt.edu.vn', '0901000026', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 2, 'FEMALE', NULL, NULL, 'FE-MANUAL-026', 'LOCKED', '2026-02-01 10:05:00', 8, '2026-06-24 09:00:00', 'MANUAL_CREATED', '2026-02-07 10:20:00', '2026-06-22 08:00:00', '2026-02-01 10:05:00', 5, '2026-06-22 08:00:00', 5);
+INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, status, failed_login_count, locked_until, created_via, last_login_at, created_at, created_by, updated_at, updated_by) VALUES
+  (1, 'System Administrator', 'admin@fpt.edu.vn', '0901000001', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 1, NULL, 1, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 17:35:00', '2026-02-01 08:00:00', NULL, '2026-06-22 17:35:00', 1),
+  (2, 'Head Office Coordinator', 'ho@fpt.edu.vn', '0901000002', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 2, NULL, 1, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-23 09:20:00', '2026-02-01 08:05:00', 1, '2026-06-23 09:20:00', 1),
+  (3, 'IC Staff Leader Hà Nội', 'staff.leader.hn@fpt.edu.vn', '0901000003', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 1, 1, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-23 10:10:00', '2026-02-01 08:10:00', 2, '2026-06-23 10:10:00', 2),
+  (4, 'IC Staff Hà Nội', 'staff.hn@fpt.edu.vn', '0901000004', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-23 11:05:00', '2026-02-01 08:15:00', 3, '2026-06-23 11:05:00', 3),
+  (5, 'Department Lead Đào tạo HN', 'dept.leader.hn@fpt.edu.vn', '0901000005', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 2, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 16:50:00', '2026-02-01 08:20:00', 2, '2026-06-22 16:50:00', 2),
+  (6, 'Department Staff Đào tạo HN', 'dept.hn@fpt.edu.vn', '0901000006', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 2, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-20 14:10:00', '2026-02-01 08:25:00', 5, '2026-06-20 14:10:00', 5),
+  (7, 'Student Buddy Hà Nội', 'student@fpt.edu.vn', '0901000007', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'OTHER', NULL, 'SE190001', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 18:40:00', '2026-02-01 08:30:00', 3, '2026-06-21 18:40:00', 3),
+  (8, 'Kim Min Jae', 'kim.minjae@seoultech.example', '+821012340001', 'Hàn Quốc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-23 07:30:00', '2026-02-01 08:35:00', NULL, '2026-06-23 07:30:00', NULL),
+  (9, 'IC Staff Leader TP.HCM', 'staff.leader.hcm@fpt.edu.vn', '0901000009', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 2, 6, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 09:00:00', '2026-02-01 08:40:00', 2, '2026-06-22 09:00:00', 2),
+  (10, 'IC Staff TP.HCM', 'staff.hcm@fpt.edu.vn', '0901000010', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 09:20:00', '2026-02-01 08:45:00', 9, '2026-06-22 09:20:00', 9),
+  (11, 'IC Staff Leader Đà Nẵng', 'staff.leader.dn@fpt.edu.vn', '0901000011', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 3, 10, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 09:45:00', '2026-02-01 08:50:00', 2, '2026-06-22 09:45:00', 2),
+  (12, 'IC Staff Đà Nẵng', 'staff.dn@fpt.edu.vn', '0901000012', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 10:00:00', '2026-02-01 08:55:00', 11, '2026-06-22 10:00:00', 11),
+  (13, 'IC Staff Leader Cần Thơ', 'staff.leader.ct@fpt.edu.vn', '0901000013', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 4, 13, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 10:30:00', '2026-02-01 09:00:00', 2, '2026-06-22 10:30:00', 2),
+  (14, 'IC Staff Cần Thơ', 'staff.ct@fpt.edu.vn', '0901000014', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 10:45:00', '2026-02-01 09:05:00', 13, '2026-06-22 10:45:00', 13),
+  (15, 'IC Staff Leader Quy Nhơn', 'staff.leader.qn@fpt.edu.vn', '0901000015', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'LEADER', 5, 16, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 11:00:00', '2026-02-01 09:10:00', 2, '2026-06-22 11:00:00', 2),
+  (16, 'IC Staff Quy Nhơn', 'staff.qn@fpt.edu.vn', '0901000016', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-22 11:15:00', '2026-02-01 09:15:00', 15, '2026-06-22 11:15:00', 15),
+  (17, 'Department Lead Cơ sở vật chất HN', 'facilities.leader.hn@fpt.edu.vn', '0901000017', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 3, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-19 16:00:00', '2026-02-01 09:20:00', 2, '2026-06-19 16:00:00', 2),
+  (18, 'Department Staff Cơ sở vật chất HN', 'facilities.staff.hn@fpt.edu.vn', '0901000018', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 3, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-19 16:30:00', '2026-02-01 09:25:00', 17, '2026-06-19 16:30:00', 17),
+  (19, 'Student Media TP.HCM', 'student.hcm@fpt.edu.vn', '0901000019', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 2, NULL, 'FEMALE', NULL, 'SE190002', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-20 10:00:00', '2026-02-01 09:30:00', 9, '2026-06-20 10:00:00', 9),
+  (20, 'Lee Joon Ho', 'lee.joonho@seoultech.example', '+821055512345', 'Hàn Quốc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-18 09:00:00', '2026-03-01 09:00:00', NULL, '2026-06-18 09:00:00', NULL),
+  (21, 'Tanaka Aoi', 'aoi.tanaka@kyoto-global.example', '+819012345678', 'Nhật Bản', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-17 09:00:00', '2026-03-02 09:00:00', NULL, '2026-06-17 09:00:00', NULL),
+  (22, 'Emily Smith', 'emily.smith@greentech.example', '+6591234567', 'Singapore', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-16 09:00:00', '2026-03-03 09:00:00', NULL, '2026-06-16 09:00:00', NULL),
+  (23, 'Maya Rodriguez', 'maya.rodriguez@iberia-mobility.example', '+34911222333', 'Tây Ban Nha', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'SSO_AUTO_PROVISION', '2026-06-15 09:00:00', '2026-03-04 09:00:00', NULL, '2026-06-15 09:00:00', NULL),
+  (24, 'Carlos Mendes', 'carlos.mendes@porto-ai.example', '+351211234567', 'Bồ Đào Nha', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-14 09:00:00', '2026-03-05 09:00:00', NULL, '2026-06-14 09:00:00', NULL),
+  (25, 'Inactive IC Staff Hà Nội', 'inactive.staff.hn@fpt.edu.vn', '0901000025', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'MALE', NULL, NULL, 'INACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-04-01 10:00:00', '2026-02-01 10:00:00', 3, '2026-04-01 10:00:00', 3),
+  (26, 'Locked Department Staff Hà Nội', 'locked.dept.hn@fpt.edu.vn', '0901000026', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 2, 'FEMALE', NULL, NULL, 'LOCKED', 8, '2026-06-24 09:00:00', 'MANUAL_CREATED', '2026-06-22 08:00:00', '2026-02-01 10:05:00', 5, '2026-06-22 08:00:00', 5);
 
 
 UPDATE campuses SET ic_head_user_id = 3, updated_at = '2026-02-02 08:00:00', updated_by = 2 WHERE campus_id = 1;
@@ -4919,71 +4871,71 @@ UPDATE departments SET head_user_id = 15, updated_at = '2026-02-02 09:30:00', up
 -- 3. Authentication providers, sessions, OTP and security traces
 -- ---------------------------------------------------------------------
 
-INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at, last_used_at) VALUES
-  (1, 1, 'GOOGLE_SSO', 'google-oauth-admin-fpt', 'admin@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 17:35:00'),
-  (2, 2, 'GOOGLE_SSO', 'google-oauth-ho-fpt', 'ho@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-23 09:20:00'),
-  (3, 3, 'GOOGLE_SSO', 'google-oauth-staff-leader-hn', 'staff.leader.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-23 10:10:00'),
-  (4, 4, 'GOOGLE_SSO', 'google-oauth-staff-hn', 'staff.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-23 11:05:00'),
-  (5, 5, 'GOOGLE_SSO', 'google-oauth-dept-leader-hn', 'dept.leader.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 16:50:00'),
-  (6, 6, 'GOOGLE_SSO', 'google-oauth-dept-hn', 'dept.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-20 14:10:00'),
-  (7, 7, 'GOOGLE_SSO', 'google-oauth-student-hn', 'student@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-21 18:40:00'),
-  (8, 8, 'GOOGLE_SSO', 'google-oauth2|04931165029654018452', 'kim.minjae@seoultech.example', TRUE, '2026-02-01 12:00:00', '2026-06-23 07:30:00'),
-  (9, 9, 'GOOGLE_SSO', 'google-oauth-staff-leader-hcm', 'staff.leader.hcm@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 09:00:00'),
-  (10, 10, 'GOOGLE_SSO', 'google-oauth-staff-hcm', 'staff.hcm@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 09:20:00'),
-  (11, 11, 'GOOGLE_SSO', 'google-oauth-staff-leader-dn', 'staff.leader.dn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 09:45:00'),
-  (12, 12, 'GOOGLE_SSO', 'google-oauth-staff-dn', 'staff.dn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 10:00:00'),
-  (13, 13, 'GOOGLE_SSO', 'google-oauth-staff-leader-ct', 'staff.leader.ct@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 10:30:00'),
-  (14, 14, 'GOOGLE_SSO', 'google-oauth-staff-ct', 'staff.ct@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 10:45:00'),
-  (15, 15, 'GOOGLE_SSO', 'google-oauth-staff-leader-qn', 'staff.leader.qn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 11:00:00'),
-  (16, 16, 'GOOGLE_SSO', 'google-oauth-staff-qn', 'staff.qn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-22 11:15:00'),
-  (17, 17, 'GOOGLE_SSO', 'google-oauth-facilities-leader-hn', 'facilities.leader.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-19 16:00:00'),
-  (18, 18, 'GOOGLE_SSO', 'google-oauth-facilities-staff-hn', 'facilities.staff.hn@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-19 16:30:00'),
-  (19, 19, 'GOOGLE_SSO', 'google-oauth-student-hcm', 'student.hcm@fpt.edu.vn', TRUE, '2026-02-01 12:00:00', '2026-06-20 10:00:00'),
-  (20, 20, 'GOOGLE_SSO', 'google-oauth-lee-joonho', 'lee.joonho@seoultech.example', TRUE, '2026-02-01 12:00:00', '2026-06-18 09:00:00'),
-  (21, 21, 'GOOGLE_SSO', 'google-oauth-tanaka-aoi', 'aoi.tanaka@kyoto-global.example', TRUE, '2026-02-01 12:00:00', '2026-06-17 09:00:00'),
-  (22, 22, 'GOOGLE_SSO', 'google-oauth-emily-smith', 'emily.smith@greentech.example', TRUE, '2026-02-01 12:00:00', '2026-06-16 09:00:00'),
-  (23, 23, 'GOOGLE_SSO', 'google-oauth-maya-rodriguez', 'maya.rodriguez@iberia-mobility.example', TRUE, '2026-02-01 12:00:00', '2026-06-15 09:00:00'),
-  (24, 24, 'GOOGLE_SSO', 'google-oauth-carlos-mendes', 'carlos.mendes@porto-ai.example', TRUE, '2026-02-01 12:00:00', '2026-06-14 09:00:00'),
-  (25, 1, 'LOCAL_PASSWORD', NULL, 'admin@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (26, 2, 'LOCAL_PASSWORD', NULL, 'ho@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (27, 3, 'LOCAL_PASSWORD', NULL, 'staff.leader.hn@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (28, 4, 'LOCAL_PASSWORD', NULL, 'staff.hn@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (29, 5, 'LOCAL_PASSWORD', NULL, 'dept.leader.hn@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (30, 6, 'LOCAL_PASSWORD', NULL, 'dept.hn@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (31, 7, 'LOCAL_PASSWORD', NULL, 'student@fpt.edu.vn', TRUE, '2026-02-01 13:00:00', NULL),
-  (32, 8, 'LOCAL_PASSWORD', NULL, 'kim.minjae@seoultech.example', TRUE, '2026-02-01 13:00:00', NULL);
+INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, linked_at) VALUES
+  (1, 1, 'GOOGLE_SSO', 'google-oauth-admin-fpt', '2026-02-01 12:00:00'),
+  (2, 2, 'GOOGLE_SSO', 'google-oauth-ho-fpt', '2026-02-01 12:00:00'),
+  (3, 3, 'GOOGLE_SSO', 'google-oauth-staff-leader-hn', '2026-02-01 12:00:00'),
+  (4, 4, 'GOOGLE_SSO', 'google-oauth-staff-hn', '2026-02-01 12:00:00'),
+  (5, 5, 'GOOGLE_SSO', 'google-oauth-dept-leader-hn', '2026-02-01 12:00:00'),
+  (6, 6, 'GOOGLE_SSO', 'google-oauth-dept-hn', '2026-02-01 12:00:00'),
+  (7, 7, 'GOOGLE_SSO', 'google-oauth-student-hn', '2026-02-01 12:00:00'),
+  (8, 8, 'GOOGLE_SSO', 'google-oauth2|04931165029654018452', '2026-02-01 12:00:00'),
+  (9, 9, 'GOOGLE_SSO', 'google-oauth-staff-leader-hcm', '2026-02-01 12:00:00'),
+  (10, 10, 'GOOGLE_SSO', 'google-oauth-staff-hcm', '2026-02-01 12:00:00'),
+  (11, 11, 'GOOGLE_SSO', 'google-oauth-staff-leader-dn', '2026-02-01 12:00:00'),
+  (12, 12, 'GOOGLE_SSO', 'google-oauth-staff-dn', '2026-02-01 12:00:00'),
+  (13, 13, 'GOOGLE_SSO', 'google-oauth-staff-leader-ct', '2026-02-01 12:00:00'),
+  (14, 14, 'GOOGLE_SSO', 'google-oauth-staff-ct', '2026-02-01 12:00:00'),
+  (15, 15, 'GOOGLE_SSO', 'google-oauth-staff-leader-qn', '2026-02-01 12:00:00'),
+  (16, 16, 'GOOGLE_SSO', 'google-oauth-staff-qn', '2026-02-01 12:00:00'),
+  (17, 17, 'GOOGLE_SSO', 'google-oauth-facilities-leader-hn', '2026-02-01 12:00:00'),
+  (18, 18, 'GOOGLE_SSO', 'google-oauth-facilities-staff-hn', '2026-02-01 12:00:00'),
+  (19, 19, 'GOOGLE_SSO', 'google-oauth-student-hcm', '2026-02-01 12:00:00'),
+  (20, 20, 'GOOGLE_SSO', 'google-oauth-lee-joonho', '2026-02-01 12:00:00'),
+  (21, 21, 'GOOGLE_SSO', 'google-oauth-tanaka-aoi', '2026-02-01 12:00:00'),
+  (22, 22, 'GOOGLE_SSO', 'google-oauth-emily-smith', '2026-02-01 12:00:00'),
+  (23, 23, 'GOOGLE_SSO', 'google-oauth-maya-rodriguez', '2026-02-01 12:00:00'),
+  (24, 24, 'GOOGLE_SSO', 'google-oauth-carlos-mendes', '2026-02-01 12:00:00'),
+  (25, 1, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (26, 2, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (27, 3, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (28, 4, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (29, 5, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (30, 6, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (31, 7, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00'),
+  (32, 8, 'LOCAL_PASSWORD', NULL, '2026-02-01 13:00:00');
 
-INSERT INTO user_sessions (session_id, user_id, login_portal, selected_campus_id, auth_provider_id, refresh_token_hash, refresh_expires_at, refresh_revoked_at, ip_address, user_agent, created_at, expires_at, revoked_at, revoked_by, revoked_reason) VALUES
-  (1, 1, 'INTERNAL', 1, 1, 'refresh-admin-20260622', '2026-07-06 17:35:00', NULL, '10.10.1.11', 'Chrome Windows Admin', '2026-06-22 17:35:00', '2026-06-23 17:35:00', NULL, NULL, NULL),
-  (2, 2, 'INTERNAL', 1, 2, 'refresh-ho-20260623', '2026-07-07 09:20:00', NULL, '10.10.1.12', 'Chrome Windows HO', '2026-06-23 09:20:00', '2026-06-24 09:20:00', NULL, NULL, NULL),
-  (3, 3, 'INTERNAL', 1, 3, 'refresh-staff-leader-hn-20260623', '2026-07-07 10:10:00', NULL, '10.10.1.13', 'Edge Windows StaffLeader', '2026-06-23 10:10:00', '2026-06-24 10:10:00', NULL, NULL, NULL),
-  (4, 4, 'INTERNAL', 1, 4, 'refresh-staff-hn-20260623', '2026-07-07 11:05:00', NULL, '10.10.1.14', 'Chrome Windows Staff', '2026-06-23 11:05:00', '2026-06-24 11:05:00', NULL, NULL, NULL),
-  (5, 5, 'INTERNAL', 1, 5, 'refresh-dept-leader-hn-20260622', '2026-07-06 16:50:00', NULL, '10.10.1.15', 'Chrome Windows DeptLead', '2026-06-22 16:50:00', '2026-06-23 16:50:00', NULL, NULL, NULL),
-  (6, 6, 'INTERNAL', 1, 6, 'refresh-dept-hn-20260620', '2026-07-04 14:10:00', '2026-06-20 18:00:00', '10.10.1.16', 'Chrome Windows DeptStaff', '2026-06-20 14:10:00', '2026-06-21 14:10:00', '2026-06-20 18:00:00', 5, 'Manual logout after logistics handover'),
-  (7, 7, 'INTERNAL', 1, 7, 'refresh-student-20260621', '2026-07-05 18:40:00', NULL, '10.10.1.17', 'Safari iOS Student', '2026-06-21 18:40:00', '2026-06-22 18:40:00', NULL, NULL, NULL),
-  (8, 8, 'VISITOR', NULL, 8, 'refresh-visitor-20260623', '2026-07-07 07:30:00', NULL, '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:30:00', '2026-06-24 07:30:00', NULL, NULL, NULL),
-  (9, 25, 'INTERNAL', 1, NULL, 'refresh-inactive-old', '2026-04-15 08:00:00', '2026-04-01 10:05:00', '10.10.1.25', 'Chrome Windows OldStaff', '2026-03-15 08:00:00', '2026-03-16 08:00:00', '2026-04-01 10:05:00', 3, 'Revoked when account became inactive');
+INSERT INTO user_sessions (session_id, user_id, login_portal, auth_provider_id, refresh_token_hash, ip_address, user_agent, created_at, expires_at, revoked_at, revoked_by, revoked_reason) VALUES
+  (1, 1, 'INTERNAL', 1, 'refresh-admin-20260622', '10.10.1.11', 'Chrome Windows Admin', '2026-06-22 17:35:00', '2026-06-23 17:35:00', NULL, NULL, NULL),
+  (2, 2, 'INTERNAL', 2, 'refresh-ho-20260623', '10.10.1.12', 'Chrome Windows HO', '2026-06-23 09:20:00', '2026-06-24 09:20:00', NULL, NULL, NULL),
+  (3, 3, 'INTERNAL', 3, 'refresh-staff-leader-hn-20260623', '10.10.1.13', 'Edge Windows StaffLeader', '2026-06-23 10:10:00', '2026-06-24 10:10:00', NULL, NULL, NULL),
+  (4, 4, 'INTERNAL', 4, 'refresh-staff-hn-20260623', '10.10.1.14', 'Chrome Windows Staff', '2026-06-23 11:05:00', '2026-06-24 11:05:00', NULL, NULL, NULL),
+  (5, 5, 'INTERNAL', 5, 'refresh-dept-leader-hn-20260622', '10.10.1.15', 'Chrome Windows DeptLead', '2026-06-22 16:50:00', '2026-06-23 16:50:00', NULL, NULL, NULL),
+  (6, 6, 'INTERNAL', 6, 'refresh-dept-hn-20260620', '10.10.1.16', 'Chrome Windows DeptStaff', '2026-06-20 14:10:00', '2026-06-21 14:10:00', '2026-06-20 18:00:00', 5, 'Manual logout after logistics handover'),
+  (7, 7, 'INTERNAL', 7, 'refresh-student-20260621', '10.10.1.17', 'Safari iOS Student', '2026-06-21 18:40:00', '2026-06-22 18:40:00', NULL, NULL, NULL),
+  (8, 8, 'VISITOR', 8, 'refresh-visitor-20260623', '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:30:00', '2026-06-24 07:30:00', NULL, NULL, NULL),
+  (9, 25, 'INTERNAL', NULL, 'refresh-inactive-old', '10.10.1.25', 'Chrome Windows OldStaff', '2026-03-15 08:00:00', '2026-03-16 08:00:00', '2026-04-01 10:05:00', 3, 'Revoked when account became inactive');
 
-INSERT INTO otp_tokens (otp_token_id, user_id, email, token_type, purpose, token_hash, expires_at, used_at, attempt_count, max_attempts, resend_count, ip_address, user_agent, created_at) VALUES
-  (1, 8, 'kim.minjae@seoultech.example', 'OTP_CODE', 'VISIT_REQUEST_VERIFY', 'otp-hash-visitor-submit-used', '2026-06-23 08:10:00', '2026-06-23 08:03:12', 1, 5, 0, '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:55:00'),
-  (2, NULL, 'new.partner.representative@example.org', 'OTP_CODE', 'VISIT_REQUEST_VERIFY', 'otp-hash-new-visitor-pending', '2026-06-23 20:00:00', NULL, 0, 5, 1, '203.113.10.99', 'Chrome Android Guest', '2026-06-23 19:50:00'),
-  (3, 3, 'staff.leader.hn@fpt.edu.vn', 'MAGIC_LINK', 'CHANGE_SENSITIVE_ACTION', 'magic-link-hash-staff-leader-role-check', '2026-06-24 09:30:00', NULL, 0, 3, 0, '10.10.1.13', 'Edge Windows StaffLeader', '2026-06-23 10:20:00');
+INSERT INTO otp_tokens (otp_token_id, user_id, email, purpose, token_hash, expires_at, used_at, attempt_count, max_attempts, ip_address, user_agent, created_at) VALUES
+  (1, 8, 'kim.minjae@seoultech.example', 'VISIT_REQUEST_VERIFY', 'otp-hash-visitor-submit-used', '2026-06-23 08:10:00', '2026-06-23 08:03:12', 1, 5, '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:55:00'),
+  (2, NULL, 'new.partner.representative@example.org', 'VISIT_REQUEST_VERIFY', 'otp-hash-new-visitor-pending', '2026-06-23 20:00:00', NULL, 0, 5, '203.113.10.99', 'Chrome Android Guest', '2026-06-23 19:50:00'),
+  (3, 3, 'staff.leader.hn@fpt.edu.vn', 'CHANGE_SENSITIVE_ACTION', 'magic-link-hash-staff-leader-role-check', '2026-06-24 09:30:00', NULL, 0, 3, '10.10.1.13', 'Edge Windows StaffLeader', '2026-06-23 10:20:00');
 
-INSERT INTO login_logs (login_log_id, user_id, email, login_portal, selected_campus_id, provider_type, status, failure_reason, ip_address, user_agent, session_id, created_at) VALUES
-  (1, 1, 'admin@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.11', 'Chrome Windows Admin', 1, '2026-06-22 17:35:00'),
-  (2, 2, 'ho@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.12', 'Chrome Windows HO', 2, '2026-06-23 09:20:00'),
-  (3, 3, 'staff.leader.hn@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.13', 'Edge Windows StaffLeader', 3, '2026-06-23 10:10:00'),
-  (4, 4, 'staff.hn@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.14', 'Chrome Windows Staff', 4, '2026-06-23 11:05:00'),
-  (5, 8, 'kim.minjae@seoultech.example', 'VISITOR', NULL, 'GOOGLE_SSO', 'SUCCESS', NULL, '203.113.10.8', 'Safari macOS Visitor', 8, '2026-06-23 07:30:00'),
-  (6, 8, 'kim.minjae@seoultech.example', 'INTERNAL', 1, 'GOOGLE_SSO', 'BLOCKED', 'VISITOR cannot login via Internal Portal', '203.113.10.8', 'Safari macOS Visitor', NULL, '2026-06-23 07:28:00'),
-  (7, NULL, 'unknown.internal@partner.example', 'INTERNAL', 1, 'GOOGLE_SSO', 'FAILED', 'Internal account not found; Visitor auto-provision is not allowed in Internal Portal', '203.113.10.55', 'Chrome Android Guest', NULL, '2026-06-22 13:00:00'),
-  (8, 26, 'locked.dept.hn@fpt.edu.vn', 'INTERNAL', 1, 'LOCAL_PASSWORD', 'BLOCKED', 'Account locked after repeated local password failures', '10.10.1.26', 'Chrome Windows DeptStaff', NULL, '2026-06-22 08:05:00');
+INSERT INTO login_logs (login_log_id, user_id, email, login_portal, provider_type, status, failure_reason, ip_address, user_agent, created_at) VALUES
+  (1, 1, 'admin@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.11', 'Chrome Windows Admin', '2026-06-22 17:35:00'),
+  (2, 2, 'ho@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.12', 'Chrome Windows HO', '2026-06-23 09:20:00'),
+  (3, 3, 'staff.leader.hn@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.13', 'Edge Windows StaffLeader', '2026-06-23 10:10:00'),
+  (4, 4, 'staff.hn@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'SUCCESS', NULL, '10.10.1.14', 'Chrome Windows Staff', '2026-06-23 11:05:00'),
+  (5, 8, 'kim.minjae@seoultech.example', 'VISITOR', 'GOOGLE_SSO', 'SUCCESS', NULL, '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:30:00'),
+  (6, 8, 'kim.minjae@seoultech.example', 'INTERNAL', 'GOOGLE_SSO', 'BLOCKED', 'VISITOR cannot login via Internal Portal', '203.113.10.8', 'Safari macOS Visitor', '2026-06-23 07:28:00'),
+  (7, NULL, 'unknown.internal@partner.example', 'INTERNAL', 'GOOGLE_SSO', 'FAILED', 'Internal account not found; Visitor auto-provision is not allowed in Internal Portal', '203.113.10.55', 'Chrome Android Guest', '2026-06-22 13:00:00'),
+  (8, 26, 'locked.dept.hn@fpt.edu.vn', 'INTERNAL', 'LOCAL_PASSWORD', 'BLOCKED', 'Account locked after repeated local password failures', '10.10.1.26', 'Chrome Windows DeptStaff', '2026-06-22 08:05:00');
 
-INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, selected_campus_id, provider_type, ip_address, user_agent, session_id, detail_text, created_at) VALUES
-  (1, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.10.1.12', 'Chrome Windows HO', 2, 'HO authenticated successfully through Internal Portal.', '2026-06-23 09:20:00'),
-  (2, 8, 'kim.minjae@seoultech.example', 'PORTAL_VALIDATION', 'BLOCKED', 'PORTAL_MISMATCH', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '203.113.10.8', 'Safari macOS Visitor', NULL, 'Visitor account attempted to use Internal Portal and was blocked.', '2026-06-23 07:28:00'),
-  (3, NULL, 'new.visitor.auto@example.org', 'VISITOR_AUTO_PROVISION', 'SUCCESS', NULL, 'LOW', 'VISITOR', NULL, 'GOOGLE_SSO', '203.113.10.44', 'Chrome Android Guest', NULL, 'Visitor account would be auto-provisioned on Visitor Portal only.', '2026-06-22 20:00:00'),
-  (4, 3, 'staff.leader.hn@fpt.edu.vn', 'CAMPUS_VALIDATION', 'FAILED', 'CAMPUS_MISMATCH', 'HIGH', 'INTERNAL', 2, 'GOOGLE_SSO', '10.10.1.13', 'Edge Windows StaffLeader', NULL, 'Staff Leader HN attempted to select HCM campus; backend must reject.', '2026-06-21 08:30:00');
+INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, ip_address, user_agent, detail_text, created_at) VALUES
+  (1, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', '10.10.1.12', 'Chrome Windows HO', 'HO authenticated successfully through Internal Portal.', '2026-06-23 09:20:00'),
+  (2, 8, 'kim.minjae@seoultech.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '203.113.10.8', 'Safari macOS Visitor', 'Visitor account attempted to use Internal Portal and was blocked.', '2026-06-23 07:28:00'),
+  (3, NULL, 'new.visitor.auto@example.org', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'VISITOR', '203.113.10.44', 'Chrome Android Guest', 'Visitor account would be auto-provisioned on Visitor Portal only.', '2026-06-22 20:00:00'),
+  (4, 3, 'staff.leader.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.10.1.13', 'Edge Windows StaffLeader', 'Staff Leader HN attempted to select HCM campus; backend must reject.', '2026-06-21 08:30:00');
 
 -- ---------------------------------------------------------------------
 -- 4. Files, partners and contacts
@@ -5742,61 +5694,61 @@ INSERT INTO departments (department_id, campus_id, name, department_type, head_u
   (114, 2, 'Tổ Tư liệu Sự kiện HCM', 'GENERAL', NULL, 'INACTIVE', '2026-02-10 09:05:00', 2, '2026-04-20 10:00:00', 2),
   (115, 3, 'IC Đà Nẵng Lưu trữ cũ', 'IC', NULL, 'INACTIVE', '2026-02-10 09:10:00', 2, '2026-04-22 10:00:00', 2);
 
-INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, fe_id, status, email_verified_at, failed_login_count, locked_until, created_via, first_login_at, last_login_at, created_at, created_by, updated_at, updated_by) VALUES
-  (101, 'IC Host Training HN', 'ic.host.training.hn@fpt.edu.vn', '0902000101', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'FEMALE', NULL, NULL, 'FE-EXTRA-101', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (102, 'IC Host Protocol HN', 'ic.host.protocol.hn@fpt.edu.vn', '0902000102', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'MALE', NULL, NULL, 'FE-EXTRA-102', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (103, 'IC Host Logistics HCM', 'ic.host.logistics.hcm@fpt.edu.vn', '0902000103', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'MALE', NULL, NULL, 'FE-EXTRA-103', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (104, 'IC Host Media HCM', 'ic.host.media.hcm@fpt.edu.vn', '0902000104', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'FEMALE', NULL, NULL, 'FE-EXTRA-104', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (105, 'IC Host Lab Đà Nẵng', 'ic.host.lab.dn@fpt.edu.vn', '0902000105', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'FEMALE', NULL, NULL, 'FE-EXTRA-105', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (106, 'IC Host Protocol Đà Nẵng', 'ic.host.protocol.dn@fpt.edu.vn', '0902000106', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'MALE', NULL, NULL, 'FE-EXTRA-106', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (107, 'IC Host Mekong Cần Thơ', 'ic.host.mekong.ct@fpt.edu.vn', '0902000107', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'FEMALE', NULL, NULL, 'FE-EXTRA-107', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (108, 'IC Host Event Cần Thơ', 'ic.host.event.ct@fpt.edu.vn', '0902000108', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'MALE', NULL, NULL, 'FE-EXTRA-108', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (109, 'IC Host Coastal Quy Nhơn', 'ic.host.coastal.qn@fpt.edu.vn', '0902000109', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'MALE', NULL, NULL, 'FE-EXTRA-109', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (110, 'IC Host Hospitality Quy Nhơn', 'ic.host.hospitality.qn@fpt.edu.vn', '0902000110', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'FEMALE', NULL, NULL, 'FE-EXTRA-110', 'ACTIVE', '2026-02-11 08:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 08:00:00', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
-  (121, 'IT Lead HN', 'it.leader.hn@fpt.edu.vn', '0902000121', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 101, 'MALE', NULL, NULL, 'FE-EXTRA-121', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (122, 'IT Staff HN', 'it.staff.hn@fpt.edu.vn', '0902000122', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 101, 'FEMALE', NULL, NULL, 'FE-EXTRA-122', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (123, 'Student Affairs Lead HN', 'student.affairs.leader.hn@fpt.edu.vn', '0902000123', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 102, 'FEMALE', NULL, NULL, 'FE-EXTRA-123', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (124, 'Student Affairs Staff HN', 'student.affairs.staff.hn@fpt.edu.vn', '0902000124', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 102, 'MALE', NULL, NULL, 'FE-EXTRA-124', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (125, 'Library Lead HN', 'library.leader.hn@fpt.edu.vn', '0902000125', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 103, 'FEMALE', NULL, NULL, 'FE-EXTRA-125', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (126, 'Library Staff HN', 'nguyencanhslt@gmail.com', '0902000126', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 103, 'MALE', NULL, NULL, 'FE-EXTRA-126', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (127, 'Student Service Lead HCM', 'student.service.leader.hcm@fpt.edu.vn', '0902000127', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 105, 'MALE', NULL, NULL, 'FE-EXTRA-127', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (128, 'Student Service Staff HCM', 'student.service.staff.hcm@fpt.edu.vn', '0902000128', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 105, 'FEMALE', NULL, NULL, 'FE-EXTRA-128', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (129, 'Facility Lead HCM', 'facility.leader.hcm@fpt.edu.vn', '0902000129', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 106, 'FEMALE', NULL, NULL, 'FE-EXTRA-129', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (130, 'Facility Staff HCM', 'facility.staff.hcm@fpt.edu.vn', '0902000130', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 106, 'MALE', NULL, NULL, 'FE-EXTRA-130', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (131, 'Media Lead HCM', 'media.leader.hcm@fpt.edu.vn', '0902000131', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 107, 'MALE', NULL, NULL, 'FE-EXTRA-131', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (132, 'Media Staff HCM', 'media.staff.hcm@fpt.edu.vn', '0902000132', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 107, 'FEMALE', NULL, NULL, 'FE-EXTRA-132', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (133, 'Student Service Lead DN', 'student.service.leader.dn@fpt.edu.vn', '0902000133', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 3, 108, 'FEMALE', NULL, NULL, 'FE-EXTRA-133', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (134, 'Student Service Staff DN', 'student.service.staff.dn@fpt.edu.vn', '0902000134', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 3, 108, 'MALE', NULL, NULL, 'FE-EXTRA-134', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (135, 'Lab Operation Lead DN', 'lab.operation.leader.dn@fpt.edu.vn', '0902000135', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 3, 109, 'MALE', NULL, NULL, 'FE-EXTRA-135', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (136, 'Lab Operation Staff DN', 'lab.operation.staff.dn@fpt.edu.vn', '0902000136', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 3, 109, 'FEMALE', NULL, NULL, 'FE-EXTRA-136', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (137, 'Event Logistics Lead CT', 'event.logistics.leader.ct@fpt.edu.vn', '0902000137', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 4, 110, 'FEMALE', NULL, NULL, 'FE-EXTRA-137', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (138, 'Event Logistics Staff CT', 'event.logistics.staff.ct@fpt.edu.vn', '0902000138', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 4, 110, 'MALE', NULL, NULL, 'FE-EXTRA-138', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (139, 'Library Lead CT', 'library.leader.ct@fpt.edu.vn', '0902000139', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 4, 111, 'MALE', NULL, NULL, 'FE-EXTRA-139', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (140, 'Library Staff CT', 'library.staff.ct@fpt.edu.vn', '0902000140', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 4, 111, 'FEMALE', NULL, NULL, 'FE-EXTRA-140', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (141, 'Student Experience Lead QN', 'student.experience.leader.qn@fpt.edu.vn', '0902000141', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 5, 112, 'FEMALE', NULL, NULL, 'FE-EXTRA-141', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (142, 'Student Experience Staff QN', 'student.experience.staff.qn@fpt.edu.vn', '0902000142', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 5, 112, 'MALE', NULL, NULL, 'FE-EXTRA-142', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (143, 'Campus Logistics Lead QN', 'campus.logistics.leader.qn@fpt.edu.vn', '0902000143', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 5, 113, 'MALE', NULL, NULL, 'FE-EXTRA-143', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (144, 'Campus Logistics Staff QN', 'campus.logistics.staff.qn@fpt.edu.vn', '0902000144', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 5, 113, 'FEMALE', NULL, NULL, 'FE-EXTRA-144', 'ACTIVE', '2026-02-11 09:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 09:00:00', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
-  (151, 'Student Interpreter HN', 'student.interpreter.hn@fpt.edu.vn', '0902000151', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'FEMALE', NULL, 'SE190151', 'FE-EXTRA-151', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (152, 'Student Photographer HN', 'student.photographer.hn@fpt.edu.vn', '0902000152', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'MALE', NULL, 'SE190152', 'FE-EXTRA-152', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (153, 'Student Buddy HCM', 'student.buddy.hcm@fpt.edu.vn', '0902000153', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 2, NULL, 'OTHER', NULL, 'SE190153', 'FE-EXTRA-153', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (154, 'Student Robotics DN', 'student.robotics.dn@fpt.edu.vn', '0902000154', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 3, NULL, 'FEMALE', NULL, 'SE190154', 'FE-EXTRA-154', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (155, 'Student Mekong CT', 'student.mekong.ct@fpt.edu.vn', '0902000155', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 4, NULL, 'MALE', NULL, 'SE190155', 'FE-EXTRA-155', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (156, 'Student Hospitality QN', 'student.hospitality.qn@fpt.edu.vn', '0902000156', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 5, NULL, 'FEMALE', NULL, 'SE190156', 'FE-EXTRA-156', 'ACTIVE', '2026-02-11 10:00:00', 0, NULL, 'MANUAL_CREATED', '2026-02-13 10:00:00', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
-  (201, 'Aarav Mehta', 'aarav.mehta@iit-partners.example', '+919810000201', 'Ấn Độ', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (202, 'Sofia Bianchi', 'sofia.bianchi@polimi.example', '+390210000202', 'Ý', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (203, 'Nguyen Kelly', 'kelly.nguyen@uts.example', '+61410000203', 'Úc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (204, 'Noah Jensen', 'noah.jensen@nordic-green.example', '+4522000204', 'Đan Mạch', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (205, 'Amelie Dubois', 'amelie.dubois@paris-digital.example', '+33144000205', 'Pháp', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (206, 'Omar Al Mansouri', 'omar.almansouri@gulf-innovation.example', '+97150000206', 'UAE', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (207, 'Linh Tran Seattle', 'linh.tran@seattle-edtech.example', '+12060000207', 'Hoa Kỳ', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'OTHER', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (208, 'Grace Okafor', 'grace.okafor@lagos-tech.example', '+23480000208', 'Nigeria', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (209, 'Mateo Alvarez', 'mateo.alvarez@andes-exchange.example', '+56990000209', 'Chile', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (210, 'Priya Raman', 'priya.raman@singapore-ai.example', '+6590000210', 'Singapore', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (211, 'Hiroshi Nakamura', 'hiroshi.nakamura@osaka-design.example', '+81900000211', 'Nhật Bản', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'VISITOR_FORM', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (212, 'Fatima Zahra', 'fatima.zahra@casablanca-tech.example', '+21260000212', 'Morocco', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'ACTIVE', '2026-03-10 08:00:00', 0, NULL, 'SSO_AUTO_PROVISION', '2026-03-10 09:00:00', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
-  (213, 'Ethan Walker', 'ethan.walker@northstar-mobility.example', '+12060000213', 'Canada', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, NULL, 'LOCKED', '2026-03-11 08:00:00', 7, '2026-06-25 08:00:00', 'VISITOR_FORM', '2026-03-11 09:00:00', '2026-06-20 09:00:00', '2026-03-11 08:00:00', NULL, '2026-06-20 09:00:00', NULL),
-  (214, 'Aroha Thompson', 'aroha.thompson@pacific-education.example', '+12060000214', 'New Zealand', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, NULL, 'INACTIVE', '2026-03-11 08:10:00', 0, NULL, 'VISITOR_FORM', '2026-03-11 09:10:00', '2026-04-01 09:10:00', '2026-03-11 08:10:00', NULL, '2026-05-01 09:10:00', NULL);
+INSERT INTO users (user_id, full_name, email, phone, nationality, password_hash, role_id, sub_role, primary_campus_id, department_id, gender, avatar_url, student_code, status, failed_login_count, locked_until, created_via, last_login_at, created_at, created_by, updated_at, updated_by) VALUES
+  (101, 'IC Host Training HN', 'ic.host.training.hn@fpt.edu.vn', '0902000101', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (102, 'IC Host Protocol HN', 'ic.host.protocol.hn@fpt.edu.vn', '0902000102', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 1, 1, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (103, 'IC Host Logistics HCM', 'ic.host.logistics.hcm@fpt.edu.vn', '0902000103', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (104, 'IC Host Media HCM', 'ic.host.media.hcm@fpt.edu.vn', '0902000104', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 2, 6, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (105, 'IC Host Lab Đà Nẵng', 'ic.host.lab.dn@fpt.edu.vn', '0902000105', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (106, 'IC Host Protocol Đà Nẵng', 'ic.host.protocol.dn@fpt.edu.vn', '0902000106', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 3, 10, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (107, 'IC Host Mekong Cần Thơ', 'ic.host.mekong.ct@fpt.edu.vn', '0902000107', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (108, 'IC Host Event Cần Thơ', 'ic.host.event.ct@fpt.edu.vn', '0902000108', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 4, 13, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (109, 'IC Host Coastal Quy Nhơn', 'ic.host.coastal.qn@fpt.edu.vn', '0902000109', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (110, 'IC Host Hospitality Quy Nhơn', 'ic.host.hospitality.qn@fpt.edu.vn', '0902000110', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 3, 'STAFF', 5, 16, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 08:00:00', '2026-02-11 08:00:00', 2, '2026-06-21 08:00:00', 2),
+  (121, 'IT Lead HN', 'it.leader.hn@fpt.edu.vn', '0902000121', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 101, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (122, 'IT Staff HN', 'it.staff.hn@fpt.edu.vn', '0902000122', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 101, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (123, 'Student Affairs Lead HN', 'student.affairs.leader.hn@fpt.edu.vn', '0902000123', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 102, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (124, 'Student Affairs Staff HN', 'student.affairs.staff.hn@fpt.edu.vn', '0902000124', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 102, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (125, 'Library Lead HN', 'library.leader.hn@fpt.edu.vn', '0902000125', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 1, 103, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (126, 'Library Staff HN', 'nguyencanhslt@gmail.com', '0902000126', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 1, 103, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (127, 'Student Service Lead HCM', 'student.service.leader.hcm@fpt.edu.vn', '0902000127', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 105, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (128, 'Student Service Staff HCM', 'student.service.staff.hcm@fpt.edu.vn', '0902000128', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 105, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (129, 'Facility Lead HCM', 'facility.leader.hcm@fpt.edu.vn', '0902000129', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 106, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (130, 'Facility Staff HCM', 'facility.staff.hcm@fpt.edu.vn', '0902000130', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 106, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (131, 'Media Lead HCM', 'media.leader.hcm@fpt.edu.vn', '0902000131', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 2, 107, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (132, 'Media Staff HCM', 'media.staff.hcm@fpt.edu.vn', '0902000132', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 2, 107, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (133, 'Student Service Lead DN', 'student.service.leader.dn@fpt.edu.vn', '0902000133', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 3, 108, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (134, 'Student Service Staff DN', 'student.service.staff.dn@fpt.edu.vn', '0902000134', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 3, 108, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (135, 'Lab Operation Lead DN', 'lab.operation.leader.dn@fpt.edu.vn', '0902000135', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 3, 109, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (136, 'Lab Operation Staff DN', 'lab.operation.staff.dn@fpt.edu.vn', '0902000136', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 3, 109, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (137, 'Event Logistics Lead CT', 'event.logistics.leader.ct@fpt.edu.vn', '0902000137', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 4, 110, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (138, 'Event Logistics Staff CT', 'event.logistics.staff.ct@fpt.edu.vn', '0902000138', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 4, 110, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (139, 'Library Lead CT', 'library.leader.ct@fpt.edu.vn', '0902000139', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 4, 111, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (140, 'Library Staff CT', 'library.staff.ct@fpt.edu.vn', '0902000140', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 4, 111, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (141, 'Student Experience Lead QN', 'student.experience.leader.qn@fpt.edu.vn', '0902000141', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 5, 112, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (142, 'Student Experience Staff QN', 'student.experience.staff.qn@fpt.edu.vn', '0902000142', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 5, 112, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (143, 'Campus Logistics Lead QN', 'campus.logistics.leader.qn@fpt.edu.vn', '0902000143', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'LEADER', 5, 113, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (144, 'Campus Logistics Staff QN', 'campus.logistics.staff.qn@fpt.edu.vn', '0902000144', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 4, 'STAFF', 5, 113, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 09:00:00', '2026-02-11 09:00:00', 2, '2026-06-21 09:00:00', 2),
+  (151, 'Student Interpreter HN', 'student.interpreter.hn@fpt.edu.vn', '0902000151', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'FEMALE', NULL, 'SE190151', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (152, 'Student Photographer HN', 'student.photographer.hn@fpt.edu.vn', '0902000152', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 1, NULL, 'MALE', NULL, 'SE190152', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (153, 'Student Buddy HCM', 'student.buddy.hcm@fpt.edu.vn', '0902000153', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 2, NULL, 'OTHER', NULL, 'SE190153', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (154, 'Student Robotics DN', 'student.robotics.dn@fpt.edu.vn', '0902000154', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 3, NULL, 'FEMALE', NULL, 'SE190154', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (155, 'Student Mekong CT', 'student.mekong.ct@fpt.edu.vn', '0902000155', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 4, NULL, 'MALE', NULL, 'SE190155', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (156, 'Student Hospitality QN', 'student.hospitality.qn@fpt.edu.vn', '0902000156', NULL, '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 5, NULL, 5, NULL, 'FEMALE', NULL, 'SE190156', 'ACTIVE', 0, NULL, 'MANUAL_CREATED', '2026-06-21 10:00:00', '2026-02-11 10:00:00', 2, '2026-06-21 10:00:00', 2),
+  (201, 'Aarav Mehta', 'aarav.mehta@iit-partners.example', '+919810000201', 'Ấn Độ', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (202, 'Sofia Bianchi', 'sofia.bianchi@polimi.example', '+390210000202', 'Ý', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'SSO_AUTO_PROVISION', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (203, 'Nguyen Kelly', 'kelly.nguyen@uts.example', '+61410000203', 'Úc', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (204, 'Noah Jensen', 'noah.jensen@nordic-green.example', '+4522000204', 'Đan Mạch', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (205, 'Amelie Dubois', 'amelie.dubois@paris-digital.example', '+33144000205', 'Pháp', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'SSO_AUTO_PROVISION', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (206, 'Omar Al Mansouri', 'omar.almansouri@gulf-innovation.example', '+97150000206', 'UAE', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (207, 'Linh Tran Seattle', 'linh.tran@seattle-edtech.example', '+12060000207', 'Hoa Kỳ', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'OTHER', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (208, 'Grace Okafor', 'grace.okafor@lagos-tech.example', '+23480000208', 'Nigeria', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (209, 'Mateo Alvarez', 'mateo.alvarez@andes-exchange.example', '+56990000209', 'Chile', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'SSO_AUTO_PROVISION', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (210, 'Priya Raman', 'priya.raman@singapore-ai.example', '+6590000210', 'Singapore', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (211, 'Hiroshi Nakamura', 'hiroshi.nakamura@osaka-design.example', '+81900000211', 'Nhật Bản', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'ACTIVE', 0, NULL, 'VISITOR_FORM', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (212, 'Fatima Zahra', 'fatima.zahra@casablanca-tech.example', '+21260000212', 'Morocco', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'ACTIVE', 0, NULL, 'SSO_AUTO_PROVISION', '2026-06-21 12:00:00', '2026-03-10 08:00:00', NULL, '2026-06-21 12:00:00', NULL),
+  (213, 'Ethan Walker', 'ethan.walker@northstar-mobility.example', '+12060000213', 'Canada', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'MALE', NULL, NULL, 'LOCKED', 7, '2026-06-25 08:00:00', 'VISITOR_FORM', '2026-06-20 09:00:00', '2026-03-11 08:00:00', NULL, '2026-06-20 09:00:00', NULL),
+  (214, 'Aroha Thompson', 'aroha.thompson@pacific-education.example', '+12060000214', 'New Zealand', '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi', 6, NULL, NULL, NULL, 'FEMALE', NULL, NULL, 'INACTIVE', 0, NULL, 'VISITOR_FORM', '2026-04-01 09:10:00', '2026-03-11 08:10:00', NULL, '2026-05-01 09:10:00', NULL);
 
 UPDATE departments SET head_user_id = 121, updated_at = '2026-02-12 08:41:00', updated_by = 2 WHERE department_id = 101;
 UPDATE departments SET head_user_id = 123, updated_at = '2026-02-12 08:42:00', updated_by = 2 WHERE department_id = 102;
@@ -5811,102 +5763,98 @@ UPDATE departments SET head_user_id = 139, updated_at = '2026-02-12 08:51:00', u
 UPDATE departments SET head_user_id = 141, updated_at = '2026-02-12 08:52:00', updated_by = 2 WHERE department_id = 112;
 UPDATE departments SET head_user_id = 143, updated_at = '2026-02-12 08:53:00', updated_by = 2 WHERE department_id = 113;
 
-INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, provider_email, is_enabled, linked_at, last_used_at) VALUES
-  (201, 101, 'GOOGLE_SSO', 'google-oauth2|16651594895446034314', 'ic.host.training.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (202, 102, 'GOOGLE_SSO', 'google-oauth2|16736427928141370496', 'ic.host.protocol.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (203, 103, 'GOOGLE_SSO', 'google-oauth2|17354703483193306257', 'ic.host.logistics.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (204, 104, 'GOOGLE_SSO', 'google-oauth2|13202011383072527447', 'ic.host.media.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (205, 105, 'GOOGLE_SSO', 'google-oauth2|09216248822391578510', 'ic.host.lab.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (206, 106, 'GOOGLE_SSO', 'google-oauth2|00595513614455620171', 'ic.host.protocol.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (207, 107, 'GOOGLE_SSO', 'google-oauth2|15294946276427678151', 'ic.host.mekong.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (208, 108, 'GOOGLE_SSO', 'google-oauth2|04130490606888916244', 'ic.host.event.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (209, 109, 'GOOGLE_SSO', 'google-oauth2|14778437129374290240', 'ic.host.coastal.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (210, 110, 'GOOGLE_SSO', 'google-oauth2|08982140081366092477', 'ic.host.hospitality.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (211, 121, 'GOOGLE_SSO', 'google-oauth2|06563457487074309517', 'it.leader.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (212, 122, 'GOOGLE_SSO', 'google-oauth2|01283641164876415478', 'it.staff.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (213, 123, 'GOOGLE_SSO', 'google-oauth2|15036244122473597589', 'student.affairs.leader.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (214, 124, 'GOOGLE_SSO', 'google-oauth2|12759449558572139694', 'student.affairs.staff.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (215, 125, 'GOOGLE_SSO', 'google-oauth2|09445546705199476600', 'library.leader.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (216, 126, 'GOOGLE_SSO', 'google-oauth2|00522826610855366324', 'library.staff.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (217, 127, 'GOOGLE_SSO', 'google-oauth2|12236243996138601705', 'student.service.leader.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (218, 128, 'GOOGLE_SSO', 'google-oauth2|01423708182806327267', 'student.service.staff.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (219, 129, 'GOOGLE_SSO', 'google-oauth2|08130140287264611952', 'facility.leader.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (220, 130, 'GOOGLE_SSO', 'google-oauth2|16003441085841330854', 'facility.staff.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (221, 131, 'GOOGLE_SSO', 'google-oauth2|17927593522059606645', 'media.leader.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (222, 132, 'GOOGLE_SSO', 'google-oauth2|02175168388830701270', 'media.staff.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (223, 133, 'GOOGLE_SSO', 'google-oauth2|17652986102136088242', 'student.service.leader.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (224, 134, 'GOOGLE_SSO', 'google-oauth2|17500135621111242414', 'student.service.staff.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (225, 135, 'GOOGLE_SSO', 'google-oauth2|08795741397513153869', 'lab.operation.leader.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (226, 136, 'GOOGLE_SSO', 'google-oauth2|04938472355385942177', 'lab.operation.staff.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (227, 137, 'GOOGLE_SSO', 'google-oauth2|07530220444518264357', 'event.logistics.leader.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (228, 138, 'GOOGLE_SSO', 'google-oauth2|14381918989833202330', 'event.logistics.staff.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (229, 139, 'GOOGLE_SSO', 'google-oauth2|15504193428139605985', 'library.leader.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (230, 140, 'GOOGLE_SSO', 'google-oauth2|10813492105029682046', 'library.staff.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (231, 141, 'GOOGLE_SSO', 'google-oauth2|05085211898820754115', 'student.experience.leader.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (232, 142, 'GOOGLE_SSO', 'google-oauth2|03438848651904371029', 'student.experience.staff.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (233, 143, 'GOOGLE_SSO', 'google-oauth2|11717982479435965476', 'campus.logistics.leader.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (234, 144, 'GOOGLE_SSO', 'google-oauth2|11199729080162358128', 'campus.logistics.staff.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (235, 151, 'FEID', 'fpt-education-id|f739a291-254f-5134-80c3-c789c9dc7a5f', 'student.interpreter.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (236, 152, 'FEID', 'fpt-education-id|fc1e9df0-e4e2-5e0f-b7ed-518b120edb0d', 'student.photographer.hn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (237, 153, 'FEID', 'fpt-education-id|7f9ef0fd-b9e0-5685-9729-5bb88cae58f8', 'student.buddy.hcm@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (238, 154, 'FEID', 'fpt-education-id|45c0706d-4411-58db-a7f4-6205c3d1e758', 'student.robotics.dn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (239, 155, 'FEID', 'fpt-education-id|0359ea54-6698-527d-b435-da027fd79c02', 'student.mekong.ct@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (240, 156, 'FEID', 'fpt-education-id|413854a0-ca75-503d-bc99-8045c7f9aaf1', 'student.hospitality.qn@fpt.edu.vn', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (241, 201, 'GOOGLE_SSO', 'google-oauth2|03490706491969099916', 'aarav.mehta@iit-partners.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (242, 202, 'GOOGLE_SSO', 'google-oauth2|06641744463474403294', 'sofia.bianchi@polimi.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (243, 203, 'GOOGLE_SSO', 'google-oauth2|03321848177609367876', 'kelly.nguyen@uts.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (244, 204, 'GOOGLE_SSO', 'google-oauth2|05411300963528358549', 'noah.jensen@nordic-green.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (245, 205, 'GOOGLE_SSO', 'google-oauth2|11010922280095919867', 'amelie.dubois@paris-digital.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (246, 206, 'GOOGLE_SSO', 'google-oauth2|11732223790335548843', 'omar.almansouri@gulf-innovation.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (247, 207, 'GOOGLE_SSO', 'google-oauth2|02225243694437274985', 'linh.tran@seattle-edtech.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (248, 208, 'GOOGLE_SSO', 'google-oauth2|01732118154134755063', 'grace.okafor@lagos-tech.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (249, 209, 'GOOGLE_SSO', 'google-oauth2|00524748243799149760', 'mateo.alvarez@andes-exchange.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (250, 210, 'GOOGLE_SSO', 'google-oauth2|13929161840972575478', 'priya.raman@singapore-ai.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (251, 211, 'GOOGLE_SSO', 'google-oauth2|03428865081099849173', 'hiroshi.nakamura@osaka-design.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (252, 212, 'GOOGLE_SSO', 'google-oauth2|15424085322418394528', 'fatima.zahra@casablanca-tech.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (253, 213, 'GOOGLE_SSO', 'google-oauth2|06429222359469106989', 'ethan.walker@northstar-mobility.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (254, 214, 'GOOGLE_SSO', 'google-oauth2|09773472285701174377', 'aroha.thompson@pacific-education.example', TRUE, '2026-03-12 08:00:00', '2026-06-21 12:00:00'),
-  (256, 101, 'LOCAL_PASSWORD', NULL, 'ic.host.training.hn@fpt.edu.vn', TRUE, '2026-03-12 09:00:00', NULL),
-  (257, 121, 'LOCAL_PASSWORD', NULL, 'it.leader.hn@fpt.edu.vn', TRUE, '2026-03-12 09:00:00', NULL),
-  (258, 201, 'LOCAL_PASSWORD', NULL, 'aarav.mehta@iit-partners.example', TRUE, '2026-03-12 09:00:00', NULL),
-  (259, 213, 'LOCAL_PASSWORD', NULL, 'ethan.walker@northstar-mobility.example', FALSE, '2026-03-12 09:00:00', NULL);
+INSERT INTO user_auth_providers (auth_provider_id, user_id, provider_type, provider_subject, linked_at) VALUES
+  (201, 101, 'GOOGLE_SSO', 'google-oauth2|16651594895446034314', '2026-03-12 08:00:00'),
+  (202, 102, 'GOOGLE_SSO', 'google-oauth2|16736427928141370496', '2026-03-12 08:00:00'),
+  (203, 103, 'GOOGLE_SSO', 'google-oauth2|17354703483193306257', '2026-03-12 08:00:00'),
+  (204, 104, 'GOOGLE_SSO', 'google-oauth2|13202011383072527447', '2026-03-12 08:00:00'),
+  (205, 105, 'GOOGLE_SSO', 'google-oauth2|09216248822391578510', '2026-03-12 08:00:00'),
+  (206, 106, 'GOOGLE_SSO', 'google-oauth2|00595513614455620171', '2026-03-12 08:00:00'),
+  (207, 107, 'GOOGLE_SSO', 'google-oauth2|15294946276427678151', '2026-03-12 08:00:00'),
+  (208, 108, 'GOOGLE_SSO', 'google-oauth2|04130490606888916244', '2026-03-12 08:00:00'),
+  (209, 109, 'GOOGLE_SSO', 'google-oauth2|14778437129374290240', '2026-03-12 08:00:00'),
+  (210, 110, 'GOOGLE_SSO', 'google-oauth2|08982140081366092477', '2026-03-12 08:00:00'),
+  (211, 121, 'GOOGLE_SSO', 'google-oauth2|06563457487074309517', '2026-03-12 08:00:00'),
+  (212, 122, 'GOOGLE_SSO', 'google-oauth2|01283641164876415478', '2026-03-12 08:00:00'),
+  (213, 123, 'GOOGLE_SSO', 'google-oauth2|15036244122473597589', '2026-03-12 08:00:00'),
+  (214, 124, 'GOOGLE_SSO', 'google-oauth2|12759449558572139694', '2026-03-12 08:00:00'),
+  (215, 125, 'GOOGLE_SSO', 'google-oauth2|09445546705199476600', '2026-03-12 08:00:00'),
+  (216, 126, 'GOOGLE_SSO', 'google-oauth2|00522826610855366324', '2026-03-12 08:00:00'),
+  (217, 127, 'GOOGLE_SSO', 'google-oauth2|12236243996138601705', '2026-03-12 08:00:00'),
+  (218, 128, 'GOOGLE_SSO', 'google-oauth2|01423708182806327267', '2026-03-12 08:00:00'),
+  (219, 129, 'GOOGLE_SSO', 'google-oauth2|08130140287264611952', '2026-03-12 08:00:00'),
+  (220, 130, 'GOOGLE_SSO', 'google-oauth2|16003441085841330854', '2026-03-12 08:00:00'),
+  (221, 131, 'GOOGLE_SSO', 'google-oauth2|17927593522059606645', '2026-03-12 08:00:00'),
+  (222, 132, 'GOOGLE_SSO', 'google-oauth2|02175168388830701270', '2026-03-12 08:00:00'),
+  (223, 133, 'GOOGLE_SSO', 'google-oauth2|17652986102136088242', '2026-03-12 08:00:00'),
+  (224, 134, 'GOOGLE_SSO', 'google-oauth2|17500135621111242414', '2026-03-12 08:00:00'),
+  (225, 135, 'GOOGLE_SSO', 'google-oauth2|08795741397513153869', '2026-03-12 08:00:00'),
+  (226, 136, 'GOOGLE_SSO', 'google-oauth2|04938472355385942177', '2026-03-12 08:00:00'),
+  (227, 137, 'GOOGLE_SSO', 'google-oauth2|07530220444518264357', '2026-03-12 08:00:00'),
+  (228, 138, 'GOOGLE_SSO', 'google-oauth2|14381918989833202330', '2026-03-12 08:00:00'),
+  (229, 139, 'GOOGLE_SSO', 'google-oauth2|15504193428139605985', '2026-03-12 08:00:00'),
+  (230, 140, 'GOOGLE_SSO', 'google-oauth2|10813492105029682046', '2026-03-12 08:00:00'),
+  (231, 141, 'GOOGLE_SSO', 'google-oauth2|05085211898820754115', '2026-03-12 08:00:00'),
+  (232, 142, 'GOOGLE_SSO', 'google-oauth2|03438848651904371029', '2026-03-12 08:00:00'),
+  (233, 143, 'GOOGLE_SSO', 'google-oauth2|11717982479435965476', '2026-03-12 08:00:00'),
+  (234, 144, 'GOOGLE_SSO', 'google-oauth2|11199729080162358128', '2026-03-12 08:00:00'),
+  (241, 201, 'GOOGLE_SSO', 'google-oauth2|03490706491969099916', '2026-03-12 08:00:00'),
+  (242, 202, 'GOOGLE_SSO', 'google-oauth2|06641744463474403294', '2026-03-12 08:00:00'),
+  (243, 203, 'GOOGLE_SSO', 'google-oauth2|03321848177609367876', '2026-03-12 08:00:00'),
+  (244, 204, 'GOOGLE_SSO', 'google-oauth2|05411300963528358549', '2026-03-12 08:00:00'),
+  (245, 205, 'GOOGLE_SSO', 'google-oauth2|11010922280095919867', '2026-03-12 08:00:00'),
+  (246, 206, 'GOOGLE_SSO', 'google-oauth2|11732223790335548843', '2026-03-12 08:00:00'),
+  (247, 207, 'GOOGLE_SSO', 'google-oauth2|02225243694437274985', '2026-03-12 08:00:00'),
+  (248, 208, 'GOOGLE_SSO', 'google-oauth2|01732118154134755063', '2026-03-12 08:00:00'),
+  (249, 209, 'GOOGLE_SSO', 'google-oauth2|00524748243799149760', '2026-03-12 08:00:00'),
+  (250, 210, 'GOOGLE_SSO', 'google-oauth2|13929161840972575478', '2026-03-12 08:00:00'),
+  (251, 211, 'GOOGLE_SSO', 'google-oauth2|03428865081099849173', '2026-03-12 08:00:00'),
+  (252, 212, 'GOOGLE_SSO', 'google-oauth2|15424085322418394528', '2026-03-12 08:00:00'),
+  (253, 213, 'GOOGLE_SSO', 'google-oauth2|06429222359469106989', '2026-03-12 08:00:00'),
+  (254, 214, 'GOOGLE_SSO', 'google-oauth2|09773472285701174377', '2026-03-12 08:00:00'),
+  (256, 101, 'LOCAL_PASSWORD', NULL, '2026-03-12 09:00:00'),
+  (257, 121, 'LOCAL_PASSWORD', NULL, '2026-03-12 09:00:00'),
+  (258, 201, 'LOCAL_PASSWORD', NULL, '2026-03-12 09:00:00'),
+  (259, 213, 'LOCAL_PASSWORD', NULL, '2026-03-12 09:00:00');
 
-INSERT INTO user_sessions (session_id, user_id, login_portal, selected_campus_id, auth_provider_id, refresh_token_hash, refresh_expires_at, refresh_revoked_at, ip_address, user_agent, created_at, expires_at, revoked_at, revoked_by, revoked_reason) VALUES
-  (201, 101, 'INTERNAL', 1, 201, 'refresh-extra-hn-host-active', '2026-07-10 08:00:00', NULL, '10.20.1.101', 'Chrome Windows IC Host', '2026-06-21 08:00:00', '2026-06-22 08:00:00', NULL, NULL, NULL),
-  (202, 121, 'INTERNAL', 1, 211, 'refresh-it-lead-revoked', '2026-07-10 09:00:00', '2026-06-21 11:00:00', '10.20.1.121', 'Edge Windows IT Lead', '2026-06-21 09:00:00', '2026-06-22 09:00:00', '2026-06-21 11:00:00', 121, 'User changed browser device'),
-  (203, 151, 'INTERNAL', 1, 235, 'refresh-student-expired', '2026-06-20 08:00:00', NULL, '10.20.1.151', 'Chrome Android Student', '2026-06-19 08:00:00', '2026-06-20 08:00:00', '2026-06-20 08:00:00', NULL, 'Session expired by cleanup job'),
-  (204, 201, 'VISITOR', NULL, 241, 'refresh-aarav-visitor', '2026-07-10 10:00:00', NULL, '203.113.20.201', 'Safari iOS Visitor', '2026-06-21 10:00:00', '2026-06-22 10:00:00', NULL, NULL, NULL);
+INSERT INTO user_sessions (session_id, user_id, login_portal, auth_provider_id, refresh_token_hash, ip_address, user_agent, created_at, expires_at, revoked_at, revoked_by, revoked_reason) VALUES
+  (201, 101, 'INTERNAL', 201, 'refresh-extra-hn-host-active', '10.20.1.101', 'Chrome Windows IC Host', '2026-06-21 08:00:00', '2026-06-22 08:00:00', NULL, NULL, NULL),
+  (202, 121, 'INTERNAL', 211, 'refresh-it-lead-revoked', '10.20.1.121', 'Edge Windows IT Lead', '2026-06-21 09:00:00', '2026-06-22 09:00:00', '2026-06-21 11:00:00', 121, 'User changed browser device'),
+  -- auth_provider_id NULL: this session was signed in through a provider row that no longer
+  -- exists (the same state fk_sessions_auth_provider ON DELETE SET NULL leaves behind).
+  (203, 151, 'INTERNAL', NULL, 'refresh-student-expired', '10.20.1.151', 'Chrome Android Student', '2026-06-19 08:00:00', '2026-06-20 08:00:00', '2026-06-20 08:00:00', NULL, 'Session expired by cleanup job'),
+  (204, 201, 'VISITOR', 241, 'refresh-aarav-visitor', '203.113.20.201', 'Safari iOS Visitor', '2026-06-21 10:00:00', '2026-06-22 10:00:00', NULL, NULL, NULL);
 
-INSERT INTO login_logs (login_log_id, user_id, email, login_portal, selected_campus_id, provider_type, status, failure_reason, ip_address, user_agent, session_id, created_at) VALUES
-  (201, 101, 'ic.host.training.hn@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'SUCCESS', NULL, '10.20.2.201', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', 201, '2026-06-21 12:00:00'),
-  (202, 102, 'blocked.case.1@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'FAILED', 'Google returned invalid campus claim', '10.20.2.202', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', NULL, '2026-06-21 12:00:00'),
-  (203, 103, 'blocked.case.2@fpt.edu.vn', 'INTERNAL', 1, 'GOOGLE_SSO', 'BLOCKED', 'Inactive account attempted login', '10.20.2.203', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', NULL, '2026-06-21 12:00:00'),
-  (204, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', NULL, 'LOCAL_PASSWORD', 'SUCCESS', NULL, '203.113.21.204', 'PEMS Visitor Portal / Chrome Mobile', NULL, '2026-06-21 12:10:00'),
-  (205, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', NULL, 'GOOGLE_SSO', 'SUCCESS', NULL, '203.113.21.205', 'PEMS Visitor Portal / Chrome Mobile', 204, '2026-06-21 12:10:00'),
-  (206, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', NULL, 'FEID', 'SUCCESS', NULL, '203.113.21.206', 'PEMS Visitor Portal / Chrome Mobile', NULL, '2026-06-21 12:10:00');
+INSERT INTO login_logs (login_log_id, user_id, email, login_portal, provider_type, status, failure_reason, ip_address, user_agent, created_at) VALUES
+  (201, 101, 'ic.host.training.hn@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'SUCCESS', NULL, '10.20.2.201', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', '2026-06-21 12:00:00'),
+  (202, 102, 'blocked.case.1@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'FAILED', 'Google returned invalid campus claim', '10.20.2.202', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', '2026-06-21 12:00:00'),
+  (203, 103, 'blocked.case.2@fpt.edu.vn', 'INTERNAL', 'GOOGLE_SSO', 'BLOCKED', 'Inactive account attempted login', '10.20.2.203', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0', '2026-06-21 12:00:00'),
+  (204, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', 'LOCAL_PASSWORD', 'SUCCESS', NULL, '203.113.21.204', 'PEMS Visitor Portal / Chrome Mobile', '2026-06-21 12:10:00'),
+  (205, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', 'GOOGLE_SSO', 'SUCCESS', NULL, '203.113.21.205', 'PEMS Visitor Portal / Chrome Mobile', '2026-06-21 12:10:00'),
+  (206, 201, 'aarav.mehta@iit-partners.example', 'VISITOR', NULL, 'SUCCESS', NULL, '203.113.21.206', 'PEMS Visitor Portal / Chrome Mobile', '2026-06-21 12:10:00');
 
-INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, selected_campus_id, provider_type, ip_address, user_agent, session_id, detail_text, created_at) VALUES
-  (201, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', 1, 'FEID', '10.30.0.201', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Đăng nhập qua Google SSO đã được ghi nhận và đối chiếu với tài khoản nội bộ. Kết quả thành công.', '2026-06-21 08:00:00'),
-  (202, 3, 'staff.leader.hn@fpt.edu.vn', 'PORTAL_VALIDATION', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '10.30.0.202', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Hệ thống kiểm tra quyền truy cập portal theo vai trò và campus của tài khoản. Kết quả không thành công: ACCOUNT_DISABLED.', '2026-06-21 09:00:00'),
-  (203, 4, 'staff.hn@fpt.edu.vn', 'CAMPUS_VALIDATION', 'BLOCKED', 'PORTAL_MISMATCH', 'HIGH', 'INTERNAL', 1, 'GOOGLE_SSO', '10.30.0.203', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 10:00:00'),
-  (204, 8, 'kim.minjae@seoultech.example', 'VISITOR_AUTO_PROVISION', 'SUCCESS', NULL, 'CRITICAL', 'VISITOR', NULL, 'FEID', '10.30.0.204', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 11:00:00'),
-  (205, 101, 'ic.host.training.hn@fpt.edu.vn', 'SESSION_CREATED', 'FAILED', 'ROLE_MISMATCH', 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.30.0.205', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả không thành công: ROLE_MISMATCH.', '2026-06-21 12:00:00'),
-  (206, 121, 'it.leader.hn@fpt.edu.vn', 'SESSION_REVOKED', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '10.30.0.206', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 13:00:00'),
-  (207, 151, 'student.interpreter.hn@fpt.edu.vn', 'SESSION_EXPIRED', 'SUCCESS', NULL, 'HIGH', 'INTERNAL', 1, 'FEID', '10.30.0.207', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 14:00:00'),
-  (208, 201, 'aarav.mehta@iit-partners.example', 'TOKEN_REFRESH', 'FAILED', 'VISITOR_AUTO_PROVISION_DISABLED', 'CRITICAL', 'VISITOR', NULL, 'GOOGLE_SSO', '10.30.0.208', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả không thành công: VISITOR_AUTO_PROVISION_DISABLED.', '2026-06-21 15:00:00'),
-  (209, 213, 'ethan.walker@northstar-mobility.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SESSION_EXPIRED', 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.30.0.209', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 16:00:00'),
-  (300, NULL, 'visitor.security14@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_NOT_FOUND', 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
-  (301, NULL, 'visitor.security15@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.2', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00'),
-  (302, NULL, 'visitor.security16@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'PORTAL_MISMATCH', 'HIGH', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.3', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 10:15:00'),
-  (303, NULL, 'visitor.security17@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'CAMPUS_MISMATCH', 'CRITICAL', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.4', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 11:15:00'),
-  (304, NULL, 'visitor.security18@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ROLE_MISMATCH', 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.5', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 12:15:00'),
-  (305, NULL, 'visitor.security19@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.6', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 13:15:00'),
-  (306, NULL, 'visitor.security20@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'INVALID_SSO_CLAIMS', 'HIGH', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.7', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 14:15:00'),
-  (307, NULL, 'visitor.security21@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'VISITOR_AUTO_PROVISION_DISABLED', 'CRITICAL', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.8', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 15:15:00'),
-  (308, NULL, 'visitor.security22@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SESSION_EXPIRED', 'LOW', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.9', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 16:15:00'),
-  (309, NULL, 'visitor.security23@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'TOKEN_REVOKED', 'MEDIUM', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.10', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 17:15:00'),
-  (310, NULL, 'visitor.security24@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SUSPICIOUS_IP', 'HIGH', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.11', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
-  (311, NULL, 'visitor.security25@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'UNKNOWN', 'CRITICAL', 'INTERNAL', 1, 'GOOGLE_SSO', '10.31.0.12', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', NULL, 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00');
+INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, ip_address, user_agent, detail_text, created_at) VALUES
+  (201, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', '10.30.0.201', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Đăng nhập qua Google SSO đã được ghi nhận và đối chiếu với tài khoản nội bộ. Kết quả thành công.', '2026-06-21 08:00:00'),
+  (202, 3, 'staff.leader.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.30.0.202', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Hệ thống kiểm tra quyền truy cập portal theo vai trò và campus của tài khoản. Kết quả không thành công: ACCOUNT_DISABLED.', '2026-06-21 09:00:00'),
+  (203, 4, 'staff.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.30.0.203', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 10:00:00'),
+  (204, 8, 'kim.minjae@seoultech.example', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'VISITOR', '10.30.0.204', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 11:00:00'),
+  (205, 101, 'ic.host.training.hn@fpt.edu.vn', 'SSO_LOGIN', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.30.0.205', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả không thành công: ACCOUNT_DISABLED.', '2026-06-21 12:00:00'),
+  (206, 121, 'it.leader.hn@fpt.edu.vn', 'SESSION_REVOKED', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.30.0.206', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 13:00:00'),
+  (207, 151, 'student.interpreter.hn@fpt.edu.vn', 'SESSION_REVOKED', 'SUCCESS', NULL, 'LOW', 'INTERNAL', '10.30.0.207', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 14:00:00'),
+  (208, 201, 'aarav.mehta@iit-partners.example', 'SSO_LOGIN', 'FAILED', 'VISITOR_AUTO_PROVISION_DISABLED', 'MEDIUM', 'VISITOR', '10.30.0.208', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả không thành công: VISITOR_AUTO_PROVISION_DISABLED.', '2026-06-21 15:00:00'),
+  (209, 213, 'ethan.walker@northstar-mobility.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.30.0.209', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 16:00:00'),
+  (300, NULL, 'visitor.security14@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_NOT_FOUND', 'HIGH', 'INTERNAL', '10.31.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
+  (301, NULL, 'visitor.security15@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.2', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00'),
+  (302, NULL, 'visitor.security16@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.3', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 10:15:00'),
+  (303, NULL, 'visitor.security17@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.4', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 11:15:00'),
+  (304, NULL, 'visitor.security18@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.5', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 12:15:00'),
+  (305, NULL, 'visitor.security19@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.31.0.6', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 13:15:00'),
+  (306, NULL, 'visitor.security20@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'INVALID_SSO_CLAIMS', 'CRITICAL', 'INTERNAL', '10.31.0.7', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 14:15:00'),
+  (307, NULL, 'visitor.security21@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'VISITOR_AUTO_PROVISION_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.8', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 15:15:00'),
+  (308, NULL, 'visitor.security22@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.9', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 16:15:00'),
+  (309, NULL, 'visitor.security23@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.10', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 17:15:00'),
+  (310, NULL, 'visitor.security24@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'INVALID_SSO_CLAIMS', 'CRITICAL', 'INTERNAL', '10.31.0.11', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
+  (311, NULL, 'visitor.security25@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.31.0.12', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00');
 
 -- ---------------------------------------------------------------------
 -- B. Extra files, partners, contacts and documents
@@ -14223,15 +14171,15 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ---------------------------------------------------------------------------
 INSERT INTO users (
   full_name, email, phone, nationality, password_hash, role_id, sub_role,
-  primary_campus_id, department_id, gender, status, email_verified_at,
-  failed_login_count, created_via, first_login_at, last_login_at,
+  primary_campus_id, department_id, gender, status,
+  failed_login_count, created_via, last_login_at,
   created_at, created_by, updated_at, updated_by
 )
 SELECT
   'Nguyễn Văn T. Cảnh', 'nvtcanhwork@gmail.com', '0988123456', 'Việt Nam',
   '$2a$12$cRpFAxEt9VdUg0orDrPRL.oesxu8ID8WSI2YTsNclVZjRtwi57PFi',
-  r.role_id, NULL, NULL, NULL, 'MALE', 'ACTIVE', CURRENT_TIMESTAMP - INTERVAL 60 DAY,
-  0, 'VISITOR_FORM', CURRENT_TIMESTAMP - INTERVAL 55 DAY,
+  r.role_id, NULL, NULL, NULL, 'MALE', 'ACTIVE',
+  0, 'VISITOR_FORM',
   CURRENT_TIMESTAMP - INTERVAL 1 DAY, CURRENT_TIMESTAMP - INTERVAL 60 DAY,
   NULL, CURRENT_TIMESTAMP - INTERVAL 1 DAY, NULL
 FROM roles r
@@ -16106,7 +16054,7 @@ WHERE vrc.operational_contact_user_id IS NOT NULL
 -- Provision only the replacement identities that do not already have a usable VISITOR account.
 INSERT INTO users (
   full_name, email, phone, nationality, role_id, sub_role,
-  primary_campus_id, department_id, status, email_verified_at,
+  primary_campus_id, department_id, status,
   failed_login_count, created_via, created_at
 )
 SELECT
@@ -16119,7 +16067,6 @@ SELECT
   NULL,
   NULL,
   'ACTIVE',
-  MIN(t.confirmed_at),
   0,
   'VISITOR_FORM',
   MIN(t.confirmed_at)

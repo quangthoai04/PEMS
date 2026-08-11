@@ -367,13 +367,10 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
             user.FullName = resolvedFullName;
             user.Email = resolvedEmail;
 
-            // An account that HAS proven an address keeps its bindings pointed at the current one and
-            // must re-verify: same policy as the HO basic-info edit, applied from the one shared place.
+            // An account that HAS proven an address must re-establish its external binding against the
+            // new one: same policy as the HO basic-info edit, applied from the one shared place.
             if (emailChanged)
-            {
-                await AccountAuthProviderSync.RepointAsync(_db, user.UserId, resolvedEmail, cancellationToken);
-                user.EmailVerifiedAt = null;
-            }
+                await AccountAuthProviderSync.RepointAsync(_db, user.UserId, cancellationToken);
         }
 
         user.RoleId = shape.RoleId;
@@ -383,7 +380,7 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         user.StudentCode = resolvedStudentCode;
         user.UpdatedAt = now;
         user.UpdatedBy = actorId;
-        // Existing GOOGLE_SSO / FEID / LOCAL_PASSWORD providers are intentionally kept.
+        // Existing GOOGLE_SSO / LOCAL_PASSWORD providers are intentionally kept.
 
         _db.AuditLogs.Add(new AuditLog
         {

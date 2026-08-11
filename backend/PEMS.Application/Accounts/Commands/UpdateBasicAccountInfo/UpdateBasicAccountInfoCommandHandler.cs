@@ -15,10 +15,10 @@ namespace PEMS.Application.Accounts.Commands.UpdateBasicAccountInfo;
 /// <summary>
 /// HO basic-info edit handler (spec §9/§10). Updates ONLY full name + login email of another HO or
 /// a Staff Leader. Role/sub-role/campus/department/status are loaded from the database and never
-/// changed. When the email changes: local-password providers are re-pointed at the new address, the
-/// SSO/FEID provider rows are removed so the account re-links on next login, email verification is
-/// cleared, and every active session is revoked so the old email can no longer sign in. This is the final authorization gate —
-/// a direct API call from a non-HO caller (or on an out-of-scope / self / LOCKED target) is rejected.
+/// changed. When the email changes: the Google SSO provider row is removed so the account re-links
+/// on next login, and every active session is revoked so the old email can no longer sign in. This
+/// is the final authorization gate — a direct API call from a non-HO caller (or on an out-of-scope /
+/// self / LOCKED target) is rejected.
 /// </summary>
 public sealed class UpdateBasicAccountInfoCommandHandler
     : IRequestHandler<UpdateBasicAccountInfoCommand, UpdateBasicAccountInfoResponse>
@@ -113,28 +113,20 @@ public sealed class UpdateBasicAccountInfoCommandHandler
         {
             user.Email = newEmail;
 
-            // Unlink SSO/FEID by DELETING the row, not by blanking provider_subject in place: the
+            // Unlink Google SSO by DELETING the row, not by blanking provider_subject in place: the
             // subject identifies the OLD external identity, and the database rejects a subject-less
-            // SSO/FEID row outright (trigger trg_auth_providers_validate_bu — "SSO/FEID
+            // GOOGLE_SSO row outright (trigger trg_auth_providers_validate_bu — "GOOGLE_SSO
             // provider_subject is required"). Removing the row is also what "re-link on next login"
             // actually means: LoginviaSSOCommandHandler.EnsureGoogleProviderLinkedAsync creates a
             // fresh row when the user has none, and the delete frees the old subject from
             // uq_auth_provider_subject. Sessions referencing the row survive via
             // fk_sessions_auth_provider ON DELETE SET NULL, and are revoked below regardless.
+            // Local-password rows stay linked untouched — they carry no address of their own, so the
+            // account's new users.email is already the address they authenticate against.
             var externalProviders = user.AuthProviders
-                .Where(p => p.ProviderType == ProviderTypes.GoogleSso || p.ProviderType == ProviderTypes.FeId)
+                .Where(p => p.ProviderType == ProviderTypes.GoogleSso)
                 .ToList();
             _db.UserAuthProviders.RemoveRange(externalProviders);
-
-            // Local-password logins stay linked — only the address they point at changes.
-            foreach (var provider in user.AuthProviders)
-            {
-                if (provider.ProviderType == ProviderTypes.GoogleSso || provider.ProviderType == ProviderTypes.FeId)
-                    continue;
-                provider.ProviderEmail = newEmail;
-            }
-
-            user.EmailVerifiedAt = null;
         }
 
         user.UpdatedAt = now;

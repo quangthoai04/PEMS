@@ -77,7 +77,6 @@ public static class ProviderTypes
 {
     public const string LocalPassword = "LOCAL_PASSWORD";
     public const string GoogleSso = "GOOGLE_SSO";
-    public const string FeId = "FEID";
 }
 
 public static class LoginPortals
@@ -127,12 +126,6 @@ public static class OtpPurposes
     public const string ChangeSensitiveAction = "CHANGE_SENSITIVE_ACTION";
 }
 
-public static class OtpTokenTypes
-{
-    public const string OtpCode = "OTP_CODE";
-    public const string MagicLink = "MAGIC_LINK";
-}
-
 // otp_tokens.issue_reason — why a challenge/code was issued. Recovery issues have a
 // separate (stricter) hourly quota than standard INITIAL/RESEND issues.
 public static class OtpIssueReasons
@@ -170,16 +163,24 @@ public static class OtpErrorCodes
     public const string AbsoluteRateLimited = "OTP_ABSOLUTE_RATE_LIMITED";
 }
 
+/// <summary>
+/// <c>security_events.event_type</c>. Only values with a real production producer exist here — the
+/// legacy PORTAL_VALIDATION / CAMPUS_VALIDATION / VISITOR_AUTO_PROVISION / SESSION_CREATED /
+/// SESSION_EXPIRED / TOKEN_REFRESH values were never written by any flow and were dropped from the
+/// ENUM along with these constants.
+/// </summary>
 public static class SecurityEventTypes
 {
+    /// <summary>A Google SSO sign-in attempt that succeeded, or failed at 401.</summary>
     public const string SsoLogin = "SSO_LOGIN";
-    public const string PortalValidation = "PORTAL_VALIDATION";
-    public const string CampusValidation = "CAMPUS_VALIDATION";
-    public const string VisitorAutoProvision = "VISITOR_AUTO_PROVISION";
-    public const string SessionCreated = "SESSION_CREATED";
+
+    /// <summary>A session was revoked (logout).</summary>
     public const string SessionRevoked = "SESSION_REVOKED";
-    public const string SessionExpired = "SESSION_EXPIRED";
-    public const string TokenRefresh = "TOKEN_REFRESH";
+
+    /// <summary>
+    /// A policy decision: an attempt refused at 403 (any portal), or a successful administrative
+    /// security action (campus disabled, LOCKED Staff Leader replaced).
+    /// </summary>
     public const string SecurityPolicyCheck = "SECURITY_POLICY_CHECK";
 
     /// <summary>A LOCKED Staff Leader was replaced (REPLACE_STAFF_LEADER spec §18).</summary>
@@ -198,22 +199,34 @@ public static class SecurityEventDetailMarkers
     public const string CampusDisabledSessionsRevoked = "CAMPUS_DISABLED_SESSIONS_REVOKED";
 }
 
+/// <summary>
+/// <c>security_events.failure_reason_code</c>. Stored as VARCHAR(80), so the set can grow with real
+/// flows without a schema change and historical rows keep whatever code they were written with.
+/// Only codes an actual production path emits are declared; the legacy PORTAL_MISMATCH /
+/// CAMPUS_MISMATCH / ROLE_MISMATCH / SESSION_EXPIRED / TOKEN_REVOKED / SUSPICIOUS_IP / UNKNOWN
+/// constants had no producer and were removed.
+/// </summary>
 public static class SecurityEventFailureReasonCodes
 {
     public const string AccountNotFound = "ACCOUNT_NOT_FOUND";
     public const string AccountDisabled = "ACCOUNT_DISABLED";
-    public const string PortalMismatch = "PORTAL_MISMATCH";
-    public const string CampusMismatch = "CAMPUS_MISMATCH";
-    public const string RoleMismatch = "ROLE_MISMATCH";
     public const string SsoProviderError = "SSO_PROVIDER_ERROR";
+
+    /// <summary>
+    /// The presented external identity was not the one the account is bound to (Google <c>sub</c>
+    /// mismatch), or the token itself failed validation. At a BLOCKED outcome this is the
+    /// takeover signal that <c>SecuritySeverityResolver</c> rates CRITICAL.
+    /// </summary>
     public const string InvalidSsoClaims = "INVALID_SSO_CLAIMS";
+
     public const string VisitorAutoProvisionDisabled = "VISITOR_AUTO_PROVISION_DISABLED";
-    public const string SessionExpired = "SESSION_EXPIRED";
-    public const string TokenRevoked = "TOKEN_REVOKED";
-    public const string SuspiciousIp = "SUSPICIOUS_IP";
-    public const string Unknown = "UNKNOWN";
 }
 
+/// <summary>
+/// <c>security_events.severity</c>. Never chosen by a producer — see
+/// <c>PEMS.Application.Common.Security.SecuritySeverityResolver</c>, the single place that maps
+/// (event type, result, failure reason) onto this scale.
+/// </summary>
 public static class SecuritySeverities
 {
     public const string Low = "LOW";
@@ -257,7 +270,7 @@ public static class CreatedViaValues
     public const string VisitorForm = "VISITOR_FORM";
 
     /// <summary>
-    /// Visitor account created automatically on first external (SSO/FEID) login at the
+    /// Visitor account created automatically on first external (Google SSO) login at the
     /// Visitor portal. Requires the <c>users.created_via</c> ENUM to include this value
     /// (see database/scripts/patch_auth_dual_portal_sso_first.sql).
     /// </summary>

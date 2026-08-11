@@ -6,7 +6,6 @@
  *   VITE_AUTH_MODE=DevMixed | ProductionSsoOnly
  *   VITE_ENABLE_PASSWORD_LOGIN=true|false
  *   VITE_ENABLE_GOOGLE_SSO=true|false
- *   VITE_ENABLE_FEID=true|false
  */
 export type AuthMode = 'DevMixed' | 'ProductionSsoOnly';
 
@@ -29,7 +28,6 @@ export const AUTH_CONFIG = {
   /** Password (email/password) login — never available in ProductionSsoOnly. */
   enablePasswordLogin: !isProductionSsoOnly && flag(env.VITE_ENABLE_PASSWORD_LOGIN, true),
   enableGoogleSso: flag(env.VITE_ENABLE_GOOGLE_SSO, true),
-  enableFeid: flag(env.VITE_ENABLE_FEID, false),
   /** Google OAuth client id; empty means SSO is enabled but not yet configured. */
   googleClientId: (env.VITE_GOOGLE_CLIENT_ID ?? '').trim(),
 } as const;

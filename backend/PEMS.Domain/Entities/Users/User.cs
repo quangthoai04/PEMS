@@ -45,14 +45,8 @@ public class User
     [Column("student_code")]
     public string? StudentCode { get; set; }
 
-    [Column("fe_id")]
-    public string? FeId { get; set; }
-
     [Column("status")]
     public string Status { get; set; } = "ACTIVE";
-
-    [Column("email_verified_at")]
-    public DateTime? EmailVerifiedAt { get; set; }
 
     [Column("nationality")]
     public string? Nationality { get; set; }
@@ -66,9 +60,10 @@ public class User
     [Column("created_via")]
     public string CreatedVia { get; set; } = "MANUAL_CREATED";
 
-    [Column("first_login_at")]
-    public DateTime? FirstLoginAt { get; set; }
-
+    /// <summary>
+    /// Last successful sign-in. NULL means the account has never signed in — that is the only
+    /// "first login" signal the schema carries (a dedicated first_login_at was redundant with it).
+    /// </summary>
     [Column("last_login_at")]
     public DateTime? LastLoginAt { get; set; }
 

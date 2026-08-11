@@ -37,7 +37,7 @@ public class RefreshTokenCampusGateTests
         {
             Rotated = true;
             return Task.FromResult(new SessionTokens(session.SessionId, "new-refresh-token",
-                new DateTime(2027, 1, 1), new DateTime(2027, 1, 1)));
+                new DateTime(2027, 1, 1)));
         }
 
         public Task<SessionTokens> CreateSessionAsync(User user, string loginPortal, ulong? authProviderId,

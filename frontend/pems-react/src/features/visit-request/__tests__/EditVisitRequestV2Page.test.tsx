@@ -396,7 +396,7 @@ describe('EditVisitRequestV2Page', () => {
         expect(visitTypeSelects()[1]).toHaveValue('MEETING');
         expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HN')).toBeInTheDocument();
       });
-    }, 15000);
+    });
 
     it('"Apply to other campuses" (confirmed) reaches the other card on screen, not just form state', async () => {
       const hn = campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN');
@@ -414,6 +414,6 @@ describe('EditVisitRequestV2Page', () => {
         expect(visitTypeSelects()[1]).toHaveValue('MEETING');
         expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HN')).toBeInTheDocument();
       });
-    }, 15000);
+    });
   });
 });
