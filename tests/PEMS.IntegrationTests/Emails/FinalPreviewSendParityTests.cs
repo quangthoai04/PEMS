@@ -122,15 +122,34 @@ public sealed class FinalPreviewSendParityTests : IDisposable
     private static PreviewEmailTemplateQuery ViewQuery() =>
         new(Template, Variables(), EmailLanguages.Vi) { ScopeKey = Scope() };
 
-    /// <summary>Sends the approved content through the dispatcher, exactly as a call site does.</summary>
-    private async Task<SystemEmailDispatchResult> SendApprovedAsync(
-        ApplicationDbContext db, string subject, string bodyText, string finalToken)
+    /// <summary>
+    /// The approval check on its own — what a call site does BEFORE anything is written or sent.
+    ///
+    /// <para>
+    /// <paramref name="scopeKey"/> stands in for the scope the calling handler recomputed from the ids it
+    /// resolved itself (for an invitation: the visit instance and the participant). Passing one that
+    /// differs from the approved one is how a replay is simulated; it is not something a client can set.
+    /// </para>
+    /// </summary>
+    private async Task<SystemEmailContent> ResolveApprovedAsync(
+        ApplicationDbContext db, string subject, string bodyText, string finalToken,
+        string scopeKey, IReadOnlyList<EmailComposeAttachmentInput>? attachments = null)
     {
         var resolver = new ApprovedEmailContentResolver(
             db, Sender, Sanitizer, Normalizer(db), EmailEvidenceHarness.PreviewTokens());
 
-        var approved = new ApprovedEmailContent(finalToken, subject, BodyText: bodyText);
-        var content = await resolver.ResolveAsync(approved, Template, Scope(), CancellationToken.None);
+        var approved = new ApprovedEmailContent(
+            finalToken, subject, BodyText: bodyText, Attachments: attachments);
+        return await resolver.ResolveAsync(approved, Template, scopeKey, CancellationToken.None);
+    }
+
+    /// <summary>Sends the approved content through the dispatcher, exactly as a call site does.</summary>
+    private async Task<SystemEmailDispatchResult> SendApprovedAsync(
+        ApplicationDbContext db, string subject, string bodyText, string finalToken,
+        string? scopeKey = null)
+    {
+        var content = await ResolveApprovedAsync(
+            db, subject, bodyText, finalToken, scopeKey ?? Scope());
 
         return await _h.Dispatcher(db).SendAsync(new SystemEmailRequest(
             Template,
@@ -297,6 +316,115 @@ public sealed class FinalPreviewSendParityTests : IDisposable
 
             await Assert.ThrowsAnyAsync<Exception>(() => SendApprovedAsync(
                 db, "Chủ đề KHÁC hẳn", Body, final.FinalPreviewToken));
+
+            Assert.Empty(_h.Messages());
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// An approval prepared for ONE recipient cannot send to another.
+    ///
+    /// <para>
+    /// This is the property the whole scope mechanism exists for, and the one every invitation preview
+    /// depends on: the send does not trust the scope in the request body, it recomputes the scope from
+    /// the ids IT resolved and compares. So a token minted while looking at participant A's message is
+    /// refused when the send resolves participant B — the wording a person approved for one invitee can
+    /// never be replayed, word for word, at a different one.
+    /// </para>
+    /// <para>
+    /// It is asserted here rather than assumed, because the frontend fix that made DEPT_SUPPORT previews
+    /// produce a MATCHING scope only has value if a non-matching one is still rejected. Loosening this
+    /// check would have "fixed" the same bug report and quietly removed the guarantee.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task An_approval_for_one_participant_cannot_send_to_another()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+            const string Body = "Nhờ anh hỗ trợ đoàn Kyoto.";
+
+            var final = await Finalise(db).Handle(
+                new BuildFinalEmailPreviewCommand
+                {
+                    PreviewToken = view.PreviewToken!,
+                    Subject = "Thư mời đã duyệt",
+                    EditableBodyText = Body,
+                    Language = EmailLanguages.Vi,
+                },
+                CancellationToken.None);
+
+            // Same actor, same template, same words — only the participant the send resolved differs.
+            var otherRecipientScope = EmailPreviewFingerprint.Scope(
+                ("visitInstance", 991_501UL), ("participant", 991_999UL));
+            Assert.NotEqual(Scope(), otherRecipientScope);
+
+            var ex = await Assert.ThrowsAnyAsync<Exception>(() => SendApprovedAsync(
+                db, "Thư mời đã duyệt", Body, final.FinalPreviewToken, scopeKey: otherRecipientScope));
+
+            Assert.True(ex is BusinessRuleException or ValidationException or ForbiddenException,
+                $"A replayed approval must be refused by the scope check, but the failure was {ex.GetType().Name}: {ex.Message}");
+
+            Assert.Empty(_h.Messages());
+        }
+        finally { await _h.CleanupAsync(); }
+    }
+
+    /// <summary>
+    /// The files are part of what was approved. A send that swapped the attachment set after the Final
+    /// Preview would deliver something the sender never saw — the body they read, carrying a document
+    /// they did not choose — so the attachment hash is bound into the token alongside the content hash.
+    /// </summary>
+    [Fact]
+    public async Task Attachments_changed_after_approval_are_refused()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            using var db = EmailEvidenceHarness.NewContext();
+
+            var view = await Prepare(db).Handle(ViewQuery(), CancellationToken.None);
+            const string Body = "Gửi anh tài liệu kèm theo.";
+            var approvedFiles = new List<EmailComposeAttachmentInput>
+            {
+                new() { FileId = 90_001, AttachmentType = "ATTACHMENT", DisplayOrder = 0 },
+            };
+
+            var final = await Finalise(db).Handle(
+                new BuildFinalEmailPreviewCommand
+                {
+                    PreviewToken = view.PreviewToken!,
+                    Subject = "Thư mời kèm tài liệu",
+                    EditableBodyText = Body,
+                    Attachments = approvedFiles,
+                    Language = EmailLanguages.Vi,
+                },
+                CancellationToken.None);
+
+            // Re-sending the SAME set is accepted — the check is about change, not about attachments
+            // being present at all, and a test that only proved refusal could pass by refusing both.
+            var content = await ResolveApprovedAsync(
+                db, "Thư mời kèm tài liệu", Body, final.FinalPreviewToken, Scope(), approvedFiles);
+            Assert.NotNull(content);
+
+            // A different file behind the same approval is refused.
+            var swapped = new List<EmailComposeAttachmentInput>
+            {
+                new() { FileId = 90_002, AttachmentType = "ATTACHMENT", DisplayOrder = 0 },
+            };
+            var ex = await Assert.ThrowsAnyAsync<Exception>(() => ResolveApprovedAsync(
+                db, "Thư mời kèm tài liệu", Body, final.FinalPreviewToken, Scope(), swapped));
+            Assert.True(ex is BusinessRuleException or ValidationException or ForbiddenException,
+                $"A swapped attachment must be refused, but the failure was {ex.GetType().Name}: {ex.Message}");
+
+            // …and so is dropping the file entirely.
+            await Assert.ThrowsAnyAsync<Exception>(() => ResolveApprovedAsync(
+                db, "Thư mời kèm tài liệu", Body, final.FinalPreviewToken, Scope(), attachments: null));
 
             Assert.Empty(_h.Messages());
         }

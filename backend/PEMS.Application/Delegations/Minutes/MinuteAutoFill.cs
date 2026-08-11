@@ -4,6 +4,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Minutes;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Minutes;
 
@@ -16,8 +17,18 @@ namespace PEMS.Application.Delegations.Minutes;
 ///  3. Guests — every guest LINKED TO THIS CAMPUS INSTANCE via <c>visit_instance_guest_members</c>
 ///     (per-campus v2; a sibling instance's guests of the same request are never included — each
 ///     campus keeps its own independent, copy-on-write member rows).
-/// De-dup is purely by (user_id) / (guest_member_id) against what already exists, so it is idempotent
-/// and append-only: it never resurrects or overwrites rows the Host has edited/checked.
+/// De-dup is by (user_id) / (guest_member_id) against what already exists, so it is idempotent and
+/// append-only: it never resurrects or overwrites rows the Host has edited/checked.
+///
+/// <para>
+/// Guests carry a SECOND de-dup key on top of the id. The same person can legitimately hold two
+/// <c>visit_guest_members</c> rows — one as GUEST, one as EXTERNAL_SUPPORT — because member_type
+/// belongs to the delegation form, not to the person. Two ids meant one person listed twice in the
+/// biên bản, which is wrong on the face of it: a meeting record shows each attendee once. Identity
+/// here is the normalised (full name, organization, job title, nationality) tuple and nothing else —
+/// no fuzzy matching, no guessing when a field is blank — and when it collides the GUEST row wins.
+/// INTERNAL rows are never compared against guests: same name, different source, different person.
+/// </para>
 /// </summary>
 internal static class MinuteAutoFill
 {
@@ -86,12 +97,40 @@ internal static class MinuteAutoFill
             .Join(db.VisitGuestMembers, l => l.GuestMemberId, g => g.GuestMemberId,
                 (l, g) => new { l.DisplayOrder, Member = g })
             .OrderBy(x => x.DisplayOrder).ThenBy(x => x.Member.GuestMemberId)
-            .Select(x => x.Member)
             .ToListAsync(ct);
 
-        foreach (var g in guests)
+        // The identities the biên bản already covers. An existing row was written from a guest record,
+        // so the person it stands for is that record's identity — resolved from the source rather than
+        // from the snapshot, which the Host may have since edited.
+        var seenGuestIdentityKeys = seenGuestIds.Count == 0
+            ? new HashSet<string>()
+            : (await db.VisitGuestMembers
+                    .Where(g => seenGuestIds.Contains(g.GuestMemberId))
+                    .ToListAsync(ct))
+                .Select(GuestIdentityKey)
+                .ToHashSet();
+
+        // One row per identity BEFORE anything is added: GUEST outranks EXTERNAL_SUPPORT, then the
+        // delegation's own ordering, then the id — so the choice is the same on every sync.
+        var canonicalGuests = guests
+            .GroupBy(x => GuestIdentityKey(x.Member))
+            .Select(g => g
+                .OrderBy(x => x.Member.MemberType == GuestMemberType.ExternalSupport ? 1 : 0)
+                .ThenBy(x => x.DisplayOrder)
+                .ThenBy(x => x.Member.GuestMemberId)
+                .First())
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Member.GuestMemberId)
+            .ToList();
+
+        foreach (var row in canonicalGuests)
         {
+            var g = row.Member;
             if (seenGuestIds.Contains(g.GuestMemberId)) continue;
+            var identityKey = GuestIdentityKey(g);
+            // Already in the biên bản under the OTHER member_type: adding the second row would list
+            // the same person twice, which is exactly what the ids alone cannot see.
+            if (seenGuestIdentityKeys.Contains(identityKey)) continue;
             result.Add(new MinuteParticipant
             {
                 MinutesId = minutesId,
@@ -106,10 +145,35 @@ internal static class MinuteAutoFill
                 CreatedAt = now,
             });
             seenGuestIds.Add(g.GuestMemberId);
+            seenGuestIdentityKeys.Add(identityKey);
         }
 
         return result;
     }
+
+    /// <summary>
+    /// One field of a guest identity, compared the way a person reading the list would: leading and
+    /// trailing space, repeated space between words, and letter case are typing, not identity. Nothing
+    /// beyond that — diacritics are NOT stripped, because "Vân" and "Van" are two different names.
+    /// </summary>
+    private static string NormalizeIdentityPart(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        return string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+            .ToUpperInvariant();
+    }
+
+    /// <summary>
+    /// Two guest rows are the same person only when ALL FOUR business fields match. member_type,
+    /// display_order and guest_member_id are deliberately absent: they are what differs between the
+    /// duplicate rows this is meant to collapse.
+    /// </summary>
+    private static string GuestIdentityKey(VisitGuestMember guest) => string.Join(
+        "|",
+        NormalizeIdentityPart(guest.FullName),
+        NormalizeIdentityPart(guest.Organization),
+        NormalizeIdentityPart(guest.JobTitle),
+        NormalizeIdentityPart(guest.Nationality));
 
     private static MinuteParticipant NewInternal(ulong minutesId, User u, string role, DateTime now, uint order)
         => new()

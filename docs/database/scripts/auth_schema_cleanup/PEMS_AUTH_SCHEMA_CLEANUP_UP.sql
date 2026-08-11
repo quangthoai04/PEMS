@@ -80,6 +80,12 @@
 -- idx_login_logs_user_time, idx_login_logs_email_status_time, idx_login_logs_ip_status_time,
 -- idx_security_user_time, idx_security_email_time, idx_security_failure_reason_time,
 -- idx_security_ip_time, idx_security_severity_time.
+--
+-- FOLLOW-UP: that list was later audited against the queries that actually run, and six of
+-- these were dropped by PEMS_AUTH_INDEX_AUDIT_UP.sql (idx_sessions_ip_time, idx_otp_ip_time,
+-- idx_login_logs_email_status_time, idx_login_logs_ip_status_time, idx_security_email_time,
+-- idx_security_failure_reason_time, idx_security_ip_time). Run that script after this one;
+-- the two do not overlap, and either order works.
 -- =====================================================================================
 
 SET @OLD_SQL_MODE = @@SESSION.sql_mode;

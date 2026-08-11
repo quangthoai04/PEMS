@@ -138,6 +138,23 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   // "Người phụ trách" picker for action items — Host + ACCEPTED IC_SUPPORT/DEPT_SUPPORT/STUDENT
   // participants of this instance (never guests). Reuses the endpoint built for the Agenda editor.
   const [responsibleCandidates, setResponsibleCandidates] = useState<AgendaResponsibleCandidate[]>([]);
+  /**
+   * Rows that came from a source list (a user or a delegation guest), were already persisted, and the
+   * user deleted during THIS unsaved editing session.
+   *
+   * They are kept because "Đồng bộ người mới" asks the backend which source people are missing from
+   * the biên bản, and the backend answers from the database — where the row the user just deleted is
+   * still present, so it is never offered back. Holding it here is what lets the sync return it, with
+   * its original minuteParticipantId, instead of a new row that Save would treat as a second person.
+   * Nothing is written when a row is deleted: Save remains the only thing that changes the database.
+   */
+  const removedSourceParticipantsRef = useRef<Map<string, DraftParticipant>>(new Map());
+  /** Source identity of a draft row; null for a manual row, which no sync can restore. */
+  const sourceParticipantKey = (p: Pick<DraftParticipant, 'userId' | 'guestMemberId'>): string | null => {
+    if (p.userId != null) return `u:${p.userId}`;
+    if (p.guestMemberId != null) return `g:${p.guestMemberId}`;
+    return null;
+  };
   const tokenRef = useRef<string | null>(null);
   const minutesIdRef = useRef<number | null>(null);
   const rowVersionRef = useRef<number>(0);
@@ -188,7 +205,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     const tick = () => {
       const ms = expiresRef.current ? new Date(expiresRef.current).getTime() - Date.now() : 0;
       setRemainingMs(ms);
-      if (ms <= 0) { setEditing(false); load(); }
+      // The session is over and its unsaved deletions went with it — carrying them into the next one
+      // would let a later sync restore a row against a database that has moved on.
+      if (ms <= 0) { removedSourceParticipantsRef.current.clear(); setEditing(false); load(); }
     };
     tick();
     const t = setInterval(tick, 1000);
@@ -196,6 +215,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   }, [editing, load]);
 
   const enterEditing = (d: VisitMinute) => {
+    // A fresh session starts with nothing deleted — state from a previous one describes rows as they
+    // were then, not as the database has them now.
+    removedSourceParticipantsRef.current = new Map();
     tokenRef.current = d.editLockToken ?? null;
     minutesIdRef.current = d.minutesId ?? null;
     rowVersionRef.current = d.rowVersion;
@@ -335,6 +357,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       });
       setEditing(false);
       tokenRef.current = null;
+      // The deletions are in the database now; there is nothing left to restore.
+      removedSourceParticipantsRef.current.clear();
       setData(d);
       setLoadError(null);
       pushToast('success', 'Đã lưu biên bản cuộc họp.');
@@ -360,6 +384,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     const id = minutesIdRef.current, token = tokenRef.current;
     setEditing(false);
     tokenRef.current = null;
+    // Cancelling discards the whole draft, deletions included.
+    removedSourceParticipantsRef.current.clear();
     if (id && token) {
       try { await delegationsApi.minutes.releaseLock(id, token); } catch { /* lock will expire anyway */ }
     }
@@ -376,8 +402,16 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
 
   const updateParticipant = (key: string, patch: Partial<DraftParticipant>) =>
     setDraftParticipants((prev) => prev.map((p) => (p._key === key ? { ...p, ...patch } : p)));
-  const removeParticipant = (key: string) =>
+  const removeParticipant = (key: string) => {
+    const row = draftParticipants.find((p) => p._key === key);
+    // Only a PERSISTED row from a source list is worth remembering: a row the user added this session
+    // has nothing in the database to restore, and a manual row has no source to sync from.
+    if (row && row.minuteParticipantId > 0) {
+      const sourceKey = sourceParticipantKey(row);
+      if (sourceKey) removedSourceParticipantsRef.current.set(sourceKey, row);
+    }
     setDraftParticipants((prev) => prev.filter((p) => p._key !== key));
+  };
   const updateActionItem = (key: string, patch: Partial<DraftActionItem>) =>
     setDraftActionItems((prev) => prev.map((a) => (a._key === key ? { ...a, ...patch } : a)));
   const removeActionItem = (key: string) =>
@@ -405,27 +439,68 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     if (!id) return;
     setBusy(true);
     try {
+      // 1) Rows deleted in this session but still in the database. The backend cannot offer these back
+      //    — from where it looks they were never missing — so they are restored from what was held
+      //    when they were deleted, keeping their minuteParticipantId. That id is what makes Save treat
+      //    the row as the SAME person it already has, rather than deleting one and inserting another.
+      const restored = Array.from(removedSourceParticipantsRef.current.values())
+        .filter((p) => p.minuteParticipantId > 0);
+
+      // 2) The people the biên bản is still missing, as the database sees it.
       const candidates = await delegationsApi.minutes.newParticipantCandidates(id);
-      const haveUser = new Set(draftParticipants.filter((p) => p.userId != null).map((p) => p.userId));
-      const haveGuest = new Set(draftParticipants.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
+
+      const haveUser = new Set(
+        [...draftParticipants, ...restored].filter((p) => p.userId != null).map((p) => p.userId));
+      const haveGuest = new Set(
+        [...draftParticipants, ...restored].filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
       const fresh = candidates.filter((c) =>
         (c.userId != null && !haveUser.has(c.userId)) || (c.guestMemberId != null && !haveGuest.has(c.guestMemberId)));
+
       // No-op sync is NOT an error and must not block saving — just an info toast.
-      if (fresh.length === 0) { pushToast('info', 'Không có người mới cần đồng bộ.'); return; }
-      setDraftParticipants((prev) => [...prev, ...fresh.map((c) => ({
-        _key: nextKey('sync'),
-        minuteParticipantId: 0,
-        userId: c.userId,
-        guestMemberId: c.guestMemberId,
-        fullNameSnapshot: c.fullNameSnapshot ?? '',
-        roleSnapshot: c.roleSnapshot ?? '',
-        organizationSnapshot: c.organizationSnapshot ?? '',
-        emailSnapshot: c.emailSnapshot ?? '',
-        attendanceStatus: c.attendanceStatus || 'ABSENT',
-        attendanceNote: c.attendanceNote ?? '',
-        participantKind: c.participantKind,
-        guestNationality: null,
-      }))]);
+      if (restored.length === 0 && fresh.length === 0) {
+        pushToast('info', 'Không có người mới cần đồng bộ.');
+        return;
+      }
+
+      const additions: DraftParticipant[] = [
+        ...restored,
+        ...fresh.map((c) => ({
+          _key: nextKey('sync'),
+          minuteParticipantId: 0,
+          userId: c.userId,
+          guestMemberId: c.guestMemberId,
+          fullNameSnapshot: c.fullNameSnapshot ?? '',
+          roleSnapshot: c.roleSnapshot ?? '',
+          organizationSnapshot: c.organizationSnapshot ?? '',
+          emailSnapshot: c.emailSnapshot ?? '',
+          attendanceStatus: c.attendanceStatus || 'ABSENT',
+          attendanceNote: c.attendanceNote ?? '',
+          participantKind: c.participantKind,
+          guestNationality: null,
+        })),
+      ];
+
+      // Merged against the CURRENT draft rather than the copy read before the request, so attendance
+      // ticked while it was in flight survives, and a person already in the list is never doubled.
+      setDraftParticipants((prev) => {
+        const liveKeys = new Set(prev.map((p) => p._key));
+        const liveUser = new Set(prev.filter((p) => p.userId != null).map((p) => p.userId));
+        const liveGuest = new Set(prev.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
+        const toAdd = additions.filter((p) => {
+          if (liveKeys.has(p._key)) return false;
+          if (p.userId != null && liveUser.has(p.userId)) return false;
+          if (p.guestMemberId != null && liveGuest.has(p.guestMemberId)) return false;
+          return true;
+        });
+        return toAdd.length === 0 ? prev : [...prev, ...toAdd];
+      });
+
+      // Restored rows are back in the draft, so they are no longer pending deletions.
+      for (const p of restored) {
+        const sourceKey = sourceParticipantKey(p);
+        if (sourceKey) removedSourceParticipantsRef.current.delete(sourceKey);
+      }
+
       pushToast('success', 'Đã đồng bộ người tham gia mới.');
     } catch (e: any) {
       // On failure keep the user's in-progress edits intact — only surface a toast.

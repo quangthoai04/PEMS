@@ -73,9 +73,13 @@ public sealed class GetSupportDepartmentsQueryHandler
             select new { u.UserId, u.FullName, u.Email, DepartmentId = u.DepartmentId!.Value })
             .ToListAsync(cancellationToken);
 
+        // Name, then id. The id is what makes the order TOTAL: two active leaders sharing a full name
+        // is rare but permitted, and sorting by name alone leaves their relative order unspecified — so
+        // this list and the invite handler could name different people for the same department. They
+        // must agree, because the email approval is scoped to whoever this list showed the host.
         var leadersByDept = leaders
             .GroupBy(l => l.DepartmentId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.FullName).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.FullName).ThenBy(x => x.UserId).ToList());
 
         // Leaders already occupying an active slot in this instance → cannot be re-invited as a
         // participant. This ONLY affects CanInviteParticipant — logistics stays available because

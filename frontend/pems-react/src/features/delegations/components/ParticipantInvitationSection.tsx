@@ -195,6 +195,13 @@ export function ParticipantInvitationSection({
     payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1];
     displayName: string;
     recipient: EmailPreviewRecipient;
+    /**
+     * The userId the SEND will scope the approval to. IC_SUPPORT/STUDENT name their invitee directly
+     * in the payload, so `payload.userId` is that id. DEPT_SUPPORT names a DEPARTMENT and the backend
+     * resolves its active leader — the preview must be bound to that same leader, or the approval it
+     * signs belongs to a scope the send never recomputes and the send is refused.
+     */
+    scopeParticipantUserId?: number | null;
   };
   type PreviewState = {
     open: boolean; loading: boolean; sending: boolean; restoring: boolean; error: string | null;
@@ -262,9 +269,16 @@ export function ParticipantInvitationSection({
    * The scope the send will recompute. Only a preview BOUND to a candidate is a real message: the
    * panel-header "xem mẫu" links have no recipient, so they get no scope and no token, and the modal
    * shows them read-only with no edit button.
+   *
+   * The participant id is the one the backend will resolve, not the one the payload happens to carry:
+   * a DEPT_SUPPORT payload carries a departmentId and would otherwise produce no scope at all, so its
+   * edited-and-approved content would arrive at the send bound to nothing and be rejected.
    */
-  const scopeFor = (target: PreviewTarget | null) =>
-    target?.payload.userId ? participantScopeKey(visitInstanceId, target.payload.userId) : null;
+  const scopeFor = (target: PreviewTarget | null) => {
+    if (!target) return null;
+    const participantUserId = target.scopeParticipantUserId ?? target.payload.userId;
+    return participantUserId ? participantScopeKey(visitInstanceId, participantUserId) : null;
+  };
 
   const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
     setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
@@ -515,11 +529,15 @@ export function ParticipantInvitationSection({
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {d.canInviteParticipant && (
+                    {/* No leader id, no bound preview: the send scopes the approval to the leader the
+                        backend resolves, so opening an editable preview without one could only ever
+                        produce an approval no send accepts. (canInviteParticipant already implies an
+                        active leader; this keeps the invalid scope unreachable either way.) */}
+                    {d.canInviteParticipant && d.leaderUserId != null && (
                       <button
                         type="button"
                         title="Xem trước & sửa email"
-                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}`, recipient: { name: d.leaderName, email: d.leaderEmail, roleLabel: 'Trưởng phòng', departmentName: d.departmentName, campusName: d.campusName } })}
+                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, scopeParticipantUserId: d.leaderUserId, displayName: `trưởng phòng ${d.departmentName}`, recipient: { name: d.leaderName, email: d.leaderEmail, roleLabel: 'Trưởng phòng', departmentName: d.departmentName, campusName: d.campusName } })}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50"
                       >
                         <Eye className="w-3.5 h-3.5" />

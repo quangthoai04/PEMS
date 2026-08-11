@@ -601,10 +601,13 @@ CREATE TABLE users (
   UNIQUE KEY uq_users_email (email),
   UNIQUE KEY uq_users_student_code (student_code),
   KEY idx_users_role_sub_role (role_id, sub_role),
-  KEY idx_users_primary_campus (primary_campus_id),
-  KEY idx_users_department (department_id),
   KEY idx_users_status (status),
-  KEY idx_users_email_status (email, status),
+  -- idx_users_primary_campus / idx_users_department dropped: the two composite keys below open
+  -- with the same column, so they answer everything the single-column keys did (including
+  -- backing fk_users_primary_campus / fk_users_department) and the narrow copies only cost writes.
+  -- idx_users_email_status dropped for the same reason against uq_users_email: email is UNIQUE, so
+  -- an email lookup already lands on one row and status cannot narrow it further. Nothing was
+  -- reading it as a covering index either — sign-in loads the whole user row.
   KEY idx_users_campus_role_status (primary_campus_id, role_id, status),
   KEY idx_users_department_status (department_id, status),
   KEY idx_users_created_via (created_via),
@@ -652,7 +655,11 @@ CREATE TABLE user_sessions (
   PRIMARY KEY (session_id),
   UNIQUE KEY uq_sessions_refresh_hash (refresh_token_hash),
   KEY idx_sessions_user_active (user_id, revoked_at, expires_at),
-  KEY idx_sessions_ip_time (ip_address, created_at),
+  -- idx_sessions_ip_time dropped: no query filters sessions by IP at all — the Admin Sessions
+  -- screen has no IP field, and nothing else reads user_sessions.ip_address as a predicate.
+  -- idx_sessions_expires_at is KEPT even though the planner prefers idx_sessions_revoked_at today:
+  -- "active" is `revoked_at IS NULL AND expires_at > now`, and as history accumulates the expiry
+  -- half becomes the selective one while `revoked_at IS NULL` keeps matching almost everything.
   KEY idx_sessions_expires_at (expires_at),
   KEY idx_sessions_revoked_at (revoked_at),
   CONSTRAINT fk_sessions_user
@@ -691,7 +698,8 @@ CREATE TABLE otp_tokens (
   UNIQUE KEY uq_otp_challenge_token_hash (challenge_token_hash),
   KEY idx_otp_email_purpose_time (email, purpose, created_at),
   KEY idx_otp_email_purpose_active (email, purpose, used_at, expires_at),
-  KEY idx_otp_ip_time (ip_address, created_at),
+  -- idx_otp_ip_time dropped: OTP throttling counts by (email, purpose, created_at) — the two keys
+  -- above — and nothing anywhere queries otp_tokens by ip_address.
   -- Index 1 cột để đỡ fk_otp_tokens_user (thay cho idx_otp_user_purpose_active 4 cột đã bỏ).
   KEY idx_otp_user (user_id),
   CONSTRAINT fk_otp_tokens_user
@@ -712,9 +720,18 @@ CREATE TABLE login_logs (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (login_log_id),
   KEY idx_login_logs_user_time (user_id, created_at),
-  KEY idx_login_logs_email_status_time (email, status, created_at),
-  KEY idx_login_logs_ip_status_time (ip_address, status, created_at),
   KEY idx_login_logs_provider_time (provider_type, created_at),
+  -- Added for the three aggregates that drive the admin dashboard: logins in the last 24h split by
+  -- status, and the login-activity chart grouped by day over up to 90 days. Column order is
+  -- (created_at, status), NOT the reverse: one of those three asks for `status <> 'SUCCESS'`, and a
+  -- leading `status` cannot seek an inequality. Measured on 500k rows — (created_at, status) gives
+  -- a range scan over 165k index entries; (status, created_at) degrades to a full index scan of
+  -- 497k and is no faster than having no index at all.
+  KEY idx_login_logs_created_status (created_at, status),
+  -- idx_login_logs_email_status_time / idx_login_logs_ip_status_time dropped: the admin screen
+  -- matches email and IP with a substring search (LIKE '%…%'), which can never seek on a leading
+  -- column, and nothing compares either column for equality. They were only ever being read as
+  -- whole-index scans standing in for the key added above, which does that job properly.
   CONSTRAINT fk_login_logs_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -740,11 +757,12 @@ CREATE TABLE security_events (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (security_event_id),
   KEY idx_security_user_time (user_id, created_at),
-  KEY idx_security_email_time (email_snapshot, created_at),
   KEY idx_security_type_result_time (event_type, result, created_at),
-  KEY idx_security_failure_reason_time (failure_reason_code, created_at),
-  KEY idx_security_ip_time (ip_address, created_at),
   KEY idx_security_severity_time (severity, created_at),
+  -- idx_security_email_time / idx_security_ip_time dropped: Security Monitoring searches both by
+  -- substring (LIKE '%…%'), so neither key can be seeked, and no other query compares those
+  -- columns. idx_security_failure_reason_time dropped because failure_reason_code is a display
+  -- column only — there is no filter for it in the query, the request DTO or the screen.
   CONSTRAINT fk_security_events_user
     FOREIGN KEY (user_id) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL
@@ -4933,9 +4951,7 @@ INSERT INTO login_logs (login_log_id, user_id, email, login_portal, provider_typ
 
 INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, ip_address, user_agent, detail_text, created_at) VALUES
   (1, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', '10.10.1.12', 'Chrome Windows HO', 'HO authenticated successfully through Internal Portal.', '2026-06-23 09:20:00'),
-  (2, 8, 'kim.minjae@seoultech.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '203.113.10.8', 'Safari macOS Visitor', 'Visitor account attempted to use Internal Portal and was blocked.', '2026-06-23 07:28:00'),
-  (3, NULL, 'new.visitor.auto@example.org', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'VISITOR', '203.113.10.44', 'Chrome Android Guest', 'Visitor account would be auto-provisioned on Visitor Portal only.', '2026-06-22 20:00:00'),
-  (4, 3, 'staff.leader.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.10.1.13', 'Edge Windows StaffLeader', 'Staff Leader HN attempted to select HCM campus; backend must reject.', '2026-06-21 08:30:00');
+  (3, NULL, 'new.visitor.auto@example.org', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'VISITOR', '203.113.10.44', 'Chrome Android Guest', 'Visitor account would be auto-provisioned on Visitor Portal only.', '2026-06-22 20:00:00');
 
 -- ---------------------------------------------------------------------
 -- 4. Files, partners and contacts
@@ -5836,7 +5852,6 @@ INSERT INTO login_logs (login_log_id, user_id, email, login_portal, provider_typ
 INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_type, result, failure_reason_code, severity, login_portal, ip_address, user_agent, detail_text, created_at) VALUES
   (201, 2, 'ho@fpt.edu.vn', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'INTERNAL', '10.30.0.201', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Đăng nhập qua Google SSO đã được ghi nhận và đối chiếu với tài khoản nội bộ. Kết quả thành công.', '2026-06-21 08:00:00'),
   (202, 3, 'staff.leader.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.30.0.202', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Hệ thống kiểm tra quyền truy cập portal theo vai trò và campus của tài khoản. Kết quả không thành công: ACCOUNT_DISABLED.', '2026-06-21 09:00:00'),
-  (203, 4, 'staff.hn@fpt.edu.vn', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.30.0.203', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 10:00:00'),
   (204, 8, 'kim.minjae@seoultech.example', 'SSO_LOGIN', 'SUCCESS', NULL, 'LOW', 'VISITOR', '10.30.0.204', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 11:00:00'),
   (205, 101, 'ic.host.training.hn@fpt.edu.vn', 'SSO_LOGIN', 'FAILED', 'ACCOUNT_DISABLED', 'MEDIUM', 'INTERNAL', '10.30.0.205', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả không thành công: ACCOUNT_DISABLED.', '2026-06-21 12:00:00'),
   (206, 121, 'it.leader.hn@fpt.edu.vn', 'SESSION_REVOKED', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.30.0.206', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 13:00:00'),
@@ -5845,16 +5860,12 @@ INSERT INTO security_events (security_event_id, user_id, email_snapshot, event_t
   (209, 213, 'ethan.walker@northstar-mobility.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.30.0.209', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-21 16:00:00'),
   (300, NULL, 'visitor.security14@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_NOT_FOUND', 'HIGH', 'INTERNAL', '10.31.0.1', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
   (301, NULL, 'visitor.security15@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.2', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00'),
-  (302, NULL, 'visitor.security16@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.3', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 10:15:00'),
-  (303, NULL, 'visitor.security17@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.4', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 11:15:00'),
   (304, NULL, 'visitor.security18@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.5', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 12:15:00'),
   (305, NULL, 'visitor.security19@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.31.0.6', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 13:15:00'),
   (306, NULL, 'visitor.security20@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'INVALID_SSO_CLAIMS', 'CRITICAL', 'INTERNAL', '10.31.0.7', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 14:15:00'),
   (307, NULL, 'visitor.security21@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'VISITOR_AUTO_PROVISION_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.8', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 15:15:00'),
   (308, NULL, 'visitor.security22@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.9', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 16:15:00'),
-  (309, NULL, 'visitor.security23@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.10', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 17:15:00'),
-  (310, NULL, 'visitor.security24@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'INVALID_SSO_CLAIMS', 'CRITICAL', 'INTERNAL', '10.31.0.11', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 Safari/17.5', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 08:15:00'),
-  (311, NULL, 'visitor.security25@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'SSO_PROVIDER_ERROR', 'HIGH', 'INTERNAL', '10.31.0.12', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 09:15:00');
+  (309, NULL, 'visitor.security23@partner.example', 'SECURITY_POLICY_CHECK', 'BLOCKED', 'ACCOUNT_DISABLED', 'HIGH', 'INTERNAL', '10.31.0.10', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/150.0', 'Sự kiện bảo mật được ghi nhận để phục vụ giám sát và điều tra khi cần. Kết quả thành công.', '2026-06-22 17:15:00');
 
 -- ---------------------------------------------------------------------
 -- B. Extra files, partners, contacts and documents

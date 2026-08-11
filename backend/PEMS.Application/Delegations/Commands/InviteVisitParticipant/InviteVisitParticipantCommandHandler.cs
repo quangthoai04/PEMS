@@ -453,7 +453,12 @@ public sealed class InviteVisitParticipantCommandHandler
                 throw new ConflictException("Phòng ban được chọn không hợp lệ.");
 
             // Backend resolves the active Department Leader (the real invitee) — frontend never
-            // supplies the leader id.
+            // supplies the leader id. Ordered by name THEN id — the same total order
+            // GetSupportDepartments applies, id included so that two leaders sharing a name still
+            // resolve the same way on both sides:
+            // a department with two active leaders and no valid configured head would otherwise be
+            // resolved here in database order, so the host could be shown one leader and invite the
+            // other — and the email approval they signed for the displayed one would not match.
             var leaders = await (
                 from u in _db.Users
                 join r in _db.Roles on u.RoleId equals r.RoleId
@@ -462,6 +467,7 @@ public sealed class InviteVisitParticipantCommandHandler
                       && u.Status == UserStatuses.Active
                       && u.PrimaryCampusId == campusId
                       && u.DepartmentId == dept.DepartmentId
+                orderby u.FullName, u.UserId
                 select new { u.UserId }).ToListAsync(ct);
 
             var leaderId = (dept.HeadUserId.HasValue && leaders.Any(l => l.UserId == dept.HeadUserId.Value)

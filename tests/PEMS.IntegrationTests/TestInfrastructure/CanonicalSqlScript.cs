@@ -709,8 +709,28 @@ public static class CanonicalSqlScript
     // 248 foreign keys, 33 email templates. The FK count drops by exactly the four this cleanup
     // removes (fk_sessions_selected_campus, fk_login_logs_campus, fk_security_events_selected_campus,
     // fk_security_events_session).
+    //
+    // Bumped again by the index audit that followed. Every index on the seven auth/security tables
+    // was checked against the queries that actually run; ten went and one arrived, leaving the table
+    // and trigger counts untouched (81 / 33) and the FK count at 248 — no foreign key lost its
+    // backing index, the drops on `users` were narrow copies of composites that open with the same
+    // column. Removed: four keys whose column is only ever matched by substring (LIKE '%…%'), which
+    // cannot seek at any table size — idx_login_logs_email_status_time, idx_login_logs_ip_status_time,
+    // idx_security_email_time, idx_security_ip_time; three with no query at all —
+    // idx_security_failure_reason_time, idx_sessions_ip_time, idx_otp_ip_time; and three redundant
+    // prefixes — idx_users_primary_campus, idx_users_department, idx_users_email_status. Added
+    // idx_login_logs_created_status(created_at, status) for the dashboard's three login aggregates,
+    // in that order because one of them filters `status <> 'SUCCESS'` and a leading status cannot
+    // seek an inequality (measured at 500k rows: range over 165k entries vs a full scan of 497k).
+    // Seed content changed too: seven synthetic security_events rows were deleted (ids 2, 4, 203,
+    // 302, 303, 310, 311). They were demo fixtures invented to populate the Security Monitoring
+    // screen — synthetic @…example addresses, hand-set June 2026 timestamps — and they illustrated
+    // refusals (campus mismatch, suspicious IP) that no code path can produce any more. An earlier
+    // pass had rewritten them onto producible codes; deleting them is the honest end state, because
+    // rewriting kept a row that never described a real event. security_events seed drops from 55 to
+    // 48 rows and the demo data still exercises all four severity levels.
     public const string ExpectedSha256 =
-        "de3873ad885a0804c6e0228a6e627e7d248243ebf8b0fc67d54e7e74b0fa87c6";
+        "ca76aa08de23b614fa36d853415f960c6861aa212750d88202f8afeb17c41b11";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";
