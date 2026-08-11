@@ -1599,9 +1599,21 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <option value="ME">Tôi</option>
             </select>
             <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-xl shadow-sm text-xs border border-slate-200">
-              <input type="date" value={assignmentFromDate} onChange={e => setAssignmentFromDate(e.target.value)} className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
+              <input type="date" value={assignmentFromDate} max={assignmentToDate || undefined}
+                onChange={e => {
+                  const value = e.target.value;
+                  setAssignmentFromDate(value);
+                  if (assignmentToDate && value > assignmentToDate) setAssignmentToDate(value);
+                }}
+                className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
               <span className="text-slate-400 font-bold">-</span>
-              <input type="date" value={assignmentToDate} onChange={e => setAssignmentToDate(e.target.value)} className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
+              <input type="date" value={assignmentToDate} min={assignmentFromDate || undefined}
+                onChange={e => {
+                  const value = e.target.value;
+                  setAssignmentToDate(value);
+                  if (assignmentFromDate && value < assignmentFromDate) setAssignmentFromDate(value);
+                }}
+                className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
             </div>
             <button
               type="button"

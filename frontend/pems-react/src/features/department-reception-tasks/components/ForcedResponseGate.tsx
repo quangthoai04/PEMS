@@ -1,5 +1,5 @@
 /**
- * Forced-response gate for overdue logistics requests (visit_logistics_items.due_at, auto-computed
+ * Reminder gate for overdue logistics requests (visit_logistics_items.due_at, auto-computed
  * as usage_start - 24h — never user-facing as an input). Mounted once at DashboardLayout so it stays
  * on screen across in-app navigation (DashboardLayout never unmounts on a nested route change):
  *   - Dept Leader: a request sent to their department is still REQUESTED (nobody took/assigned it)
@@ -7,18 +7,16 @@
  *   - Dept Staff: a request assigned to them is still ASSIGNED (not yet accepted/declined) past its
  *     deadline.
  * One item is shown at a time (oldest deadline first); resolving one auto-advances to the next via
- * refetching the queue. No close button, no backdrop-click-to-close — clicking the backdrop shows a
- * toast instead. A `beforeunload` guard discourages reload/close while items remain unresolved
- * (the browser controls that dialog's text, not us).
+ * refetching the queue. Not blocking: the user can dismiss via the X button or by clicking the
+ * backdrop and handle it later — dismissed items are tracked per item id so they stay hidden even
+ * across the 60s poll, but a genuinely new overdue item still surfaces its own reminder.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Loader2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../../shared/hooks/useAuth';
 import { normalizeApiError } from '../../../shared/api/normalizeApiError';
 import { departmentReceptionTasksApi } from '../api/departmentReceptionTasksApi';
-
-const BLOCKED_MESSAGE = 'Bạn phải bắt buộc phản hồi đơn yêu cầu này.';
 
 type OverdueItem = { logisticsItemId: number; title: string; dueAt: string };
 type Candidate = { userId: number; name: string; email: string };
@@ -30,6 +28,7 @@ export function ForcedResponseGate() {
   const isDeptRole = isDeptLeader || isDeptStaff;
 
   const [queue, setQueue] = useState<OverdueItem[]>([]);
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const [detail, setDetail] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -60,7 +59,8 @@ export function ForcedResponseGate() {
     return () => clearInterval(id);
   }, [isDeptRole, fetchQueue]);
 
-  const currentId = queue[0]?.logisticsItemId ?? null;
+  const visibleQueue = queue.filter((item) => !dismissedIds.has(item.logisticsItemId));
+  const currentId = visibleQueue[0]?.logisticsItemId ?? null;
 
   useEffect(() => {
     setRejecting(false);
@@ -77,12 +77,10 @@ export function ForcedResponseGate() {
     return () => { cancelled = true; };
   }, [currentId]);
 
-  useEffect(() => {
-    if (!isDeptRole || queue.length === 0) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
-  }, [isDeptRole, queue.length]);
+  const handleDismiss = () => {
+    if (currentId == null) return;
+    setDismissedIds((prev) => new Set(prev).add(currentId));
+  };
 
   const afterAction = (message: string) => {
     toast.success(message);
@@ -128,22 +126,30 @@ export function ForcedResponseGate() {
   const handleAssign = (candidateUserId: number) => currentId != null
     && runAction(() => departmentReceptionTasksApi.assignAssignee(currentId, candidateUserId), 'Đã phân công người phụ trách.');
 
-  if (!isDeptRole || !loaded || queue.length === 0) return null;
+  if (!isDeptRole || !loaded || visibleQueue.length === 0) return null;
 
   const showActions = !detailLoading && detail && !rejecting && !assigning;
 
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-      onClick={() => toast.error(BLOCKED_MESSAGE)}
+      onClick={handleDismiss}
     >
       <div onClick={(e) => e.stopPropagation()} className="w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div className="bg-[#004c91] px-5 py-4 flex items-center gap-3">
           <AlertCircle className="w-6 h-6 text-white shrink-0" />
-          <div>
+          <div className="flex-1">
             <div className="text-white font-black text-base">Yêu cầu quá hạn phản hồi</div>
-            <div className="text-blue-100 text-xs">Bạn cần xử lý đơn này trước khi tiếp tục sử dụng hệ thống.</div>
+            <div className="text-blue-100 text-xs">Bạn nên xử lý đơn này sớm. Có thể đóng và xử lý sau.</div>
           </div>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            aria-label="Đóng"
+            className="text-blue-100 hover:text-white shrink-0 p-1 -m-1"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
@@ -265,9 +271,9 @@ export function ForcedResponseGate() {
               </button>
             )}
           </div>
-          {queue.length > 1 && (
+          {visibleQueue.length > 1 && (
             <div className="mt-2 text-[11px] text-slate-400 text-center">
-              Còn {queue.length - 1} đơn quá hạn khác đang chờ xử lý sau đơn này.
+              Còn {visibleQueue.length - 1} đơn quá hạn khác đang chờ xử lý sau đơn này.
             </div>
           )}
         </div>

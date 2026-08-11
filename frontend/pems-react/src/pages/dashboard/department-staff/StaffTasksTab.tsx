@@ -188,10 +188,22 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
             className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <input type="date" value={filter.fromDate} onChange={e => onFilterChange({ fromDate: e.target.value, page: 1 })}
+          <input type="date" value={filter.fromDate} max={filter.toDate || undefined}
+            onChange={e => {
+              const value = e.target.value;
+              onFilterChange(filter.toDate && value > filter.toDate
+                ? { fromDate: value, toDate: value, page: 1 }
+                : { fromDate: value, page: 1 });
+            }}
             className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
           <span className="text-white font-black">-</span>
-          <input type="date" value={filter.toDate} onChange={e => onFilterChange({ toDate: e.target.value, page: 1 })}
+          <input type="date" value={filter.toDate} min={filter.fromDate || undefined}
+            onChange={e => {
+              const value = e.target.value;
+              onFilterChange(filter.fromDate && value < filter.fromDate
+                ? { fromDate: value, toDate: value, page: 1 }
+                : { toDate: value, page: 1 });
+            }}
             className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
           <button onClick={() => onFilterChange({ sortDirection: filter.sortDirection === 'ASC' ? 'DESC' : 'ASC' })}
             className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-black text-[#004c91] hover:bg-blue-50">
