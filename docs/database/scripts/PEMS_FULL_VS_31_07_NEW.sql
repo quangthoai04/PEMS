@@ -775,7 +775,11 @@ COMMENT='Security events: đăng nhập SSO, thu hồi phiên, quyết định c
 
 CREATE TABLE files (
   file_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  storage_provider ENUM('LOCAL','S3','AZURE','GCS','GOOGLE_DRIVE','OTHER') NOT NULL DEFAULT 'LOCAL',
+  -- S3/AZURE/GCS removed: no producer, no consumer, no validator, no row. The two upload paths
+  -- write GOOGLE_DRIVE (FileUploadService) or LOCAL (LocalFileStorageService.SaveAsync), and the
+  -- YouTube embed path writes OTHER. LOCAL is NOT legacy — it is the live disk-storage branch that
+  -- OpenReadAsync reads from and that /api/files/{id}/download serves.
+  storage_provider ENUM('LOCAL','GOOGLE_DRIVE','OTHER') NOT NULL DEFAULT 'LOCAL',
   bucket_name VARCHAR(150) NULL,
   object_key VARCHAR(700) NOT NULL COMMENT 'Max 700 chars to keep UNIQUE index safe under utf8mb4',
   original_filename VARCHAR(255) NOT NULL,
@@ -791,11 +795,19 @@ CREATE TABLE files (
   file_purpose VARCHAR(100) NULL COMMENT 'Technical/business file purpose used by referencing entity',
   PRIMARY KEY (file_id),
   UNIQUE KEY uq_files_object_key (object_key),
+  -- idx_files_uploaded_by is the only key leading with uploaded_by, so it backs
+  -- fk_files_uploaded_by. Keep.
   KEY idx_files_uploaded_by (uploaded_by, uploaded_at),
-  KEY idx_files_mime_time (mime_type, uploaded_at),
-  KEY idx_files_checksum (checksum_sha256),
-  KEY idx_files_external_file_id (external_file_id),
-  KEY idx_files_purpose_time (file_purpose, uploaded_at),
+  -- Four keys dropped, all for the same reason: no query leads with their first column, and the
+  -- columns themselves stay. checksum_sha256 is computed on upload and echoed in the detail DTO —
+  -- nothing filters on it. external_file_id is the Drive locator, but every read of it starts from
+  -- a known file_id, so nothing resolves provider-id → files row. mime_type and file_purpose appear
+  -- only in projections (gallery/news builders, FileAccessAuthorizationService after a PK lookup,
+  -- SearchDocuments DTO assignment) — never in a WHERE, ORDER BY or GROUP BY. uploaded_at IS
+  -- filtered and ordered by SearchDocuments, but it is the SECOND column of idx_files_mime_time and
+  -- idx_files_purpose_time, and MySQL cannot seek or order on a trailing column without an equality
+  -- on the leading one. Dropped: idx_files_checksum, idx_files_external_file_id,
+  -- idx_files_mime_time, idx_files_purpose_time.
   CONSTRAINT fk_files_uploaded_by
     FOREIGN KEY (uploaded_by) REFERENCES users(user_id)
     ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -818,11 +830,17 @@ CREATE TABLE partners (
   cover_file_id BIGINT UNSIGNED NULL COMMENT 'Partner cover/banner file, references files.file_id',
   address VARCHAR(500) NULL,
   public_slug VARCHAR(180) NULL COMMENT 'Public URL slug for partner profile',
-  profile_status ENUM('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED') NOT NULL DEFAULT 'APPROVED',
+  -- Defaults are fail-closed and match the coded invariant: CreatePartnerCommandHandler (the only
+  -- production INSERT path) already writes PENDING_APPROVAL and refuses PUBLIC before approval with
+  -- PARTNER_PUBLIC_REQUIRES_APPROVED. Only hand-written SQL reaches these defaults, and it should not
+  -- be able to mint an APPROVED, PUBLIC partner that never passed approval.
+  -- The ENUM is NOT shrunk: DRAFT is retained — it has live rows plus a filter, label and badge in
+  -- the partner management screen.
+  profile_status ENUM('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING_APPROVAL',
   review_note TEXT NULL,
   reviewed_by BIGINT UNSIGNED NULL,
   reviewed_at DATETIME NULL,
-  visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'PUBLIC',
+  visibility ENUM('PRIVATE','INTERNAL','PUBLIC') NOT NULL DEFAULT 'INTERNAL',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by BIGINT UNSIGNED NULL,
   updated_at DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -841,7 +859,9 @@ CREATE TABLE partners (
   KEY idx_partners_logo_file (logo_file_id),
   KEY idx_partners_cover_file (cover_file_id),
   KEY idx_partners_reviewed_by (reviewed_by, reviewed_at),
-  FULLTEXT KEY ft_partners_search (name, short_name, description),
+  -- ft_partners_search dropped: nothing in the product uses MySQL FULLTEXT. Every text search is
+  -- `col.ToLower().Contains(kw)` → `LIKE '%kw%'`, which a FULLTEXT index cannot serve. There is no
+  -- MATCH … AGAINST anywhere in the sources or in this script.
   CONSTRAINT fk_partners_owner_campus FOREIGN KEY (owner_campus_id) REFERENCES campuses(campus_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_partners_logo_file FOREIGN KEY (logo_file_id) REFERENCES files(file_id) ON UPDATE CASCADE ON DELETE SET NULL,
   CONSTRAINT fk_partners_cover_file FOREIGN KEY (cover_file_id) REFERENCES files(file_id) ON UPDATE CASCADE ON DELETE SET NULL,
@@ -874,8 +894,12 @@ CREATE TABLE partner_translations (
 
   PRIMARY KEY (partner_translation_id),
   UNIQUE KEY uq_partner_translations_lang (partner_id, language_code),
-  KEY idx_partner_translations_lang_status (language_code, translation_status),
-  FULLTEXT KEY ft_partner_translations_search (name, short_name, description, address),
+  -- idx_partner_translations_lang_status dropped: no query leads with language_code. Every read
+  -- starts from partner_id (GetPublicPartners/Detail, GetPartners, GetPartnerDetail, UpdatePartner)
+  -- and is served by uq_partner_translations_lang. A key opening on language_code could only narrow
+  -- to ~50% of the table ('vi' or 'en'), so the planner would not choose it even if such a query
+  -- existed. ft_partner_translations_search dropped for the same reason as ft_partners_search: no
+  -- MATCH … AGAINST exists; all search is LIKE '%kw%'.
 
   CONSTRAINT fk_partner_translations_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
@@ -950,8 +974,11 @@ CREATE TABLE partner_aliases (
 
   PRIMARY KEY (partner_alias_id),
   UNIQUE KEY uq_partner_alias_key (partner_id, alias_name_key),
+  -- idx_partner_alias_lookup is exactly PartnerMatcher's predicate (Status = 'ACTIVE' AND
+  -- alias_name_key = key) — both columns, in that order. Keep.
   KEY idx_partner_alias_lookup (alias_name_key, status),
-  KEY idx_partner_alias_partner (partner_id),
+  -- idx_partner_alias_partner (partner_id) dropped: ⊂ uq_partner_alias_key (partner_id,
+  -- alias_name_key), which opens with the same column and so keeps fk_partner_alias_partner backed.
 
   CONSTRAINT fk_partner_alias_partner
     FOREIGN KEY (partner_id) REFERENCES partners(partner_id)
@@ -986,7 +1013,8 @@ CREATE TABLE documents (
   KEY idx_documents_campus_status (campus_id, status),
   KEY idx_documents_category_status (document_category, status),
   KEY idx_documents_created_by_time (created_by, created_at),
-  FULLTEXT KEY ft_documents_search (title, description),
+  -- ft_documents_search dropped: SearchDocuments matches title/description/original_filename with
+  -- `ToLower().Contains(q)` → `LIKE '%q%'`. No MATCH … AGAINST exists anywhere.
   CONSTRAINT fk_documents_file
     FOREIGN KEY (file_id) REFERENCES files(file_id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
@@ -1086,10 +1114,9 @@ CREATE TABLE visit_requests (
   KEY idx_visit_requests_cancelled (cancelled_by, cancelled_at),
   KEY idx_visit_requests_resubmission (resubmission_count, last_resubmitted_at),
   KEY idx_visit_requests_last_resubmitted_by (last_resubmitted_by, last_resubmitted_at),
-  -- Parent FULLTEXT covers request code / registrant identity only. Delegation/purpose/
-  -- content/operational-contact search is exclusively per campus through
-  -- visit_instance_form_details.ft_vifd_search.
-  FULLTEXT KEY ft_visit_requests_frontend_search (request_code, registrant_full_name, registrant_organization, registrant_email),
+  -- ft_visit_requests_frontend_search dropped: ViewGuestDelegationList matches request_code and the
+  -- registrant fields with `ToLower().Contains(kw)` → `LIKE '%kw%'`, which no FULLTEXT index serves.
+  -- The product contains no MATCH … AGAINST at all (see the files block above).
 
   CHECK (TRIM(registrant_job_title) <> ''),
   CHECK (TRIM(registrant_phone) <> ''),
@@ -1491,8 +1518,7 @@ CREATE TABLE visit_instance_form_details (
   KEY idx_vifd_language (working_language),
   KEY idx_vifd_media_consent (media_consent_status),
   KEY idx_vifd_op_contact_email (operational_contact_email),
-  FULLTEXT KEY ft_vifd_search (delegation_name, purpose, working_content,
-    operational_contact_full_name, operational_contact_organization, operational_contact_email),
+  -- ft_vifd_search dropped: the same handler searches delegation_name with LIKE '%kw%'.
   CONSTRAINT ck_vifd_visit_type_other CHECK (visit_type <> 'OTHER'
     OR (visit_type_other IS NOT NULL AND TRIM(visit_type_other) <> '')),
   CONSTRAINT ck_vifd_delegation_name CHECK (TRIM(delegation_name) <> ''),
@@ -2306,7 +2332,7 @@ CREATE TABLE minutes (
   KEY idx_minutes_created_by_time (created_by, created_at),
   KEY idx_minutes_edit_lock (edit_locked_by, edit_lock_expires_at),
 
-  FULLTEXT KEY ft_minutes_search (title, content),
+  -- ft_minutes_search dropped: SearchAndFilterMinutes matches title/content with LIKE '%kw%'.
 
   CONSTRAINT fk_minutes_visit_instance
     FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses(visit_instance_id)
@@ -2693,7 +2719,7 @@ CREATE TABLE news_translations (
   UNIQUE KEY uq_news_translation_lang (news_id, language_code),
   UNIQUE KEY uq_news_translation_slug_lang (slug, language_code),
   KEY idx_news_translations_lang (language_code),
-  FULLTEXT KEY ft_news_translations_search (title, summary),
+  -- ft_news_translations_search dropped: SearchInformation's news branch uses LIKE '%kw%'.
   CONSTRAINT fk_news_translations_news
     FOREIGN KEY (news_id) REFERENCES news(news_id)
     ON UPDATE CASCADE ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -2711,7 +2737,7 @@ CREATE TABLE news_content_sections (
   PRIMARY KEY (section_id),
   UNIQUE KEY uq_news_section_order (news_translation_id, section_order),
   KEY idx_news_sections_translation (news_translation_id),
-  FULLTEXT KEY ft_news_sections_search (section_title, section_body_text),
+  -- ft_news_sections_search dropped: no MATCH … AGAINST consumer.
   CHECK (section_order BETWEEN 1 AND 10),
   CONSTRAINT fk_news_sections_translation
     FOREIGN KEY (news_translation_id) REFERENCES news_translations(news_translation_id)
@@ -2761,8 +2787,8 @@ CREATE TABLE faqs (
   updated_by BIGINT UNSIGNED NULL,
   PRIMARY KEY (faq_id),
   KEY idx_faqs_status_order (status, display_order),
-  KEY idx_faqs_type_status (faq_type, status),
-  FULLTEXT KEY ft_faqs_search (question, answer)
+  -- ft_faqs_search dropped: ViewListFAQ and SearchInformation match question/answer with LIKE.
+  KEY idx_faqs_type_status (faq_type, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='FAQ tiếng Việt theo nhóm chức năng hệ thống PEMS';
 
@@ -2788,7 +2814,7 @@ CREATE TABLE faq_translations (
   PRIMARY KEY (faq_translation_id),
   UNIQUE KEY uq_faq_translations_lang (faq_id, language_code),
   KEY idx_faq_translations_lang_status (language_code, translation_status),
-  FULLTEXT KEY ft_faq_translations_search (question, answer),
+  -- ft_faq_translations_search dropped: same LIKE-based FAQ search, no FULLTEXT consumer.
 
   CONSTRAINT fk_faq_translations_faq
     FOREIGN KEY (faq_id) REFERENCES faqs(faq_id)
@@ -2932,8 +2958,7 @@ CREATE TABLE gallery_items (
   KEY idx_gallery_items_item_type (item_type, status, deleted_at),
   KEY idx_gallery_items_media_kind (media_kind),
   KEY idx_gallery_items_created_at (created_at),
-  FULLTEXT KEY ft_gallery_items_search (title),
-  FULLTEXT KEY ft_gallery_items_search_en (title_en),
+  -- ft_gallery_items_search / _en dropped: SearchInformation's gallery branch uses LIKE '%kw%'.
 
   CONSTRAINT fk_gallery_items_location
     FOREIGN KEY (location_id) REFERENCES gallery_locations(location_id)
@@ -3038,7 +3063,7 @@ CREATE TABLE gallery_item_contents (
     PRIMARY KEY (gallery_item_id),
     KEY idx_gallery_item_contents_audio_vi (audio_vi_file_id),
     KEY idx_gallery_item_contents_audio_en (audio_en_file_id),
-    FULLTEXT KEY ft_gallery_item_contents_descriptions (description_vi, description_en),
+    -- ft_gallery_item_contents_descriptions dropped: no MATCH … AGAINST consumer.
 
     CONSTRAINT chk_gallery_item_description_vi_not_blank CHECK (CHAR_LENGTH(TRIM(description_vi)) > 0),
     CONSTRAINT chk_gallery_item_description_en_not_blank CHECK (CHAR_LENGTH(TRIM(description_en)) > 0),
@@ -3203,7 +3228,9 @@ CREATE TABLE sent_email_recipients (
   PRIMARY KEY (sent_email_recipient_id),
   KEY idx_sent_email_recipients_sent_email (sent_email_id),
   KEY idx_sent_email_recipients_email_status (recipient_email, delivery_status),
-  FULLTEXT KEY ft_sent_email_recipients_search (recipient_email, recipient_name),
+  -- ft_sent_email_recipients_search dropped: GetVisitInstanceSentEmails loads recipients by
+  -- sent_email_id and filters them IN MEMORY with string.Equals — there is no SQL text search here
+  -- at all. idx_sent_email_recipients_email_status stays for the delivery-status lookups.
   CONSTRAINT fk_sent_email_recipients_email
     FOREIGN KEY (sent_email_id) REFERENCES sent_emails(sent_email_id)
     ON UPDATE CASCADE ON DELETE CASCADE

@@ -1,6 +1,12 @@
 export type DocumentStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
 export type DocumentOwnerType = 'GENERAL' | 'VISIT' | 'PARTNER' | 'MINUTES' | 'NEWS' | 'LOGISTICS' | 'REPORT';
-export type StorageProvider = 'LOCAL' | 'S3' | 'AZURE' | 'GCS' | 'GOOGLE_DRIVE' | 'OTHER';
+/**
+ * Mirrors `files.storage_provider`. LOCAL is disk storage served through
+ * `/api/files/{id}/download`, GOOGLE_DRIVE is the Drive-backed upload path, OTHER covers
+ * metadata-only rows such as embedded YouTube media. S3/AZURE/GCS were removed from the DB
+ * ENUM — they never had a producer, a consumer or a single row.
+ */
+export type StorageProvider = 'LOCAL' | 'GOOGLE_DRIVE' | 'OTHER';
 
 export interface DocumentListItem {
   documentId: number;

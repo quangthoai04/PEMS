@@ -39,12 +39,20 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Partner> Partners => Set<Partner>();
     public DbSet<Campus> Campuses => Set<Campus>();
+
+    // Declared publicly so EF's model discovery picks them up: UpdatePartnerCommandHandler writes a
+    // primary alias and an audit row alongside the translations, so all three must be in the model
+    // for the handler to run against this slice. AuditLog carries FK ids only (no navigations), so
+    // including it pulls nothing else in.
+    public DbSet<PartnerTranslation> PartnerTranslationsSet => Set<PartnerTranslation>();
+    public DbSet<PartnerAlias> PartnerAliasesSet => Set<PartnerAlias>();
+    public DbSet<AuditLog> AuditLogsSet => Set<AuditLog>();
+
     DbSet<PartnerTranslation> IApplicationDbContext.PartnerTranslations => Set<PartnerTranslation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Ignore<PartnerContact>();
-        modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
         // Per-campus form v2 entities (composite keys configured only in the real context) — keep
         // them out of this InMemory slice; the partner handlers never touch them.

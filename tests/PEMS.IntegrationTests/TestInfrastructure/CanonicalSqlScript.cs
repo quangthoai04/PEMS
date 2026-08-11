@@ -729,8 +729,51 @@ public static class CanonicalSqlScript
     // pass had rewritten them onto producible codes; deleting them is the honest end state, because
     // rewriting kept a row that never described a real event. security_events seed drops from 55 to
     // 48 rows and the demo data still exercises all four severity levels.
+    //
+    // Bumped again by the file/partner/document index re-audit. Seven more keys went, nothing was
+    // added, and no column, ENUM, default, constraint, trigger or seed row moved — table count stays
+    // 81, triggers 33, foreign keys 248. Three were FULLTEXT indexes with no consumer at all
+    // (ft_partners_search, ft_partner_translations_search, ft_documents_search): the product contains
+    // no MATCH … AGAINST, because every text search is `col.ToLower().Contains(kw)`, which EF emits
+    // as `LIKE '%kw%'` — a leading wildcard that a FULLTEXT index does not serve and a BTREE one
+    // cannot seek. Two had no predicate anywhere (idx_files_checksum, idx_files_external_file_id);
+    // both columns stay, since checksum_sha256 is integrity metadata and external_file_id is the
+    // Google Drive locator — they are simply always reached from a known file_id. One led with a
+    // column no query starts from (idx_partner_translations_lang_status): every partner-translation
+    // read opens on partner_id and is served by uq_partner_translations_lang, and a key leading with
+    // language_code could only narrow to ~50% of the rows ('vi' or 'en'). One was a redundant prefix
+    // (idx_partner_alias_partner ⊂ uq_partner_alias_key), so fk_partner_alias_partner keeps its
+    // backing index. idx_partner_alias_lookup(alias_name_key, status) is deliberately KEPT — it is
+    // exactly PartnerMatcher's alias predicate, both columns in that order.
+    //
+    // Bumped again by the safe ENUM/default half of the same re-audit. Three metadata-only changes,
+    // no column added or removed, no row rewritten — table count stays 81, triggers 33, foreign keys
+    // 248. files.storage_provider drops S3/AZURE/GCS, leaving ENUM('LOCAL','GOOGLE_DRIVE','OTHER'):
+    // those three values had no producer, no consumer, no validator and no row anywhere the schema
+    // ships. LOCAL is deliberately KEPT — it is the live disk-storage branch, not a legacy value.
+    // partners.profile_status default moves APPROVED → PENDING_APPROVAL and partners.visibility
+    // default PUBLIC → INTERNAL, so hand-written SQL can no longer mint an APPROVED, PUBLIC partner
+    // that never passed approval; every application INSERT already names both columns, so nothing
+    // that runs today changes behaviour. Neither ENUM is shrunk: profile_status keeps DRAFT (live
+    // rows plus a filter, label and badge in the partner screen) and visibility keeps all three.
+    // StorageProviderAndPartnerDefaultsContractTests pins all of it, including LOCAL's validity, so
+    // a later pass has to delete an assertion rather than drift.
+    //
+    // Bumped a final time by the closing index pass. Thirteen more keys go and nothing arrives —
+    // table count stays 81, triggers 33, foreign keys 248, and no column, ENUM, default or row is
+    // touched. Two were the last `files` keys whose leading column no query uses: mime_type and
+    // file_purpose appear only in projections, and uploaded_at — which IS filtered and ordered by
+    // SearchDocuments — is the SECOND column of both, which MySQL cannot seek or order on alone.
+    // The other eleven were the entire FULLTEXT family (faqs, faq_translations, gallery_items ×2,
+    // gallery_item_contents, minutes, news_translations, news_content_sections,
+    // sent_email_recipients, visit_instance_form_details, visit_requests). The product contains no
+    // MATCH … AGAINST at all: every search is `col.ToLower().Contains(kw)` → `LIKE '%kw%'`, which a
+    // FULLTEXT index does not serve, and the sent-email recipient filter runs in memory over rows
+    // already fetched by sent_email_id. The database holds 0 views, 0 routines, 0 events and no
+    // trigger body using full-text syntax, so nothing else could have been reaching them. After this
+    // the schema has zero FULLTEXT indexes.
     public const string ExpectedSha256 =
-        "ca76aa08de23b614fa36d853415f960c6861aa212750d88202f8afeb17c41b11";
+        "887852ad3e967c6133ac203ec8f2b8e038098be7a84cb698209b21257db735ee";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

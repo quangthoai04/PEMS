@@ -94,6 +94,13 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
         var addressVal = string.IsNullOrWhiteSpace(request.Address) ? null : request.Address.Trim();
         var descriptionVal = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
 
+        // The country/city as they stood BEFORE this save. The EN translation row holds a localized
+        // country of its own ("South Korea" where the base row says "Hàn Quốc"), and that English name
+        // is only about this partner for as long as the base value it was localized against is
+        // unchanged. Captured here, before the assignments below overwrite them.
+        var previousCountry = partner.Country;
+        var previousCity = partner.City;
+
         partner.PartnerCode = code!;
         partner.Name = name;
         partner.ShortName = shortName;
@@ -208,6 +215,20 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
 
         var enTranslation = translations.FirstOrDefault(t => t.LanguageCode == "en");
 
+        // Reconcile the English country/city ONCE, for every branch below, because the rule is the
+        // same whichever way this save arrived: keep the stored English name while the base value is
+        // unchanged, and drop it the moment the partner actually moves. Clearing rather than
+        // translating is deliberate — the request carries no English country, and the public reader
+        // already falls back to the base value (`chosen?.Country ?? p.Country`), so a null shows the
+        // partner's real new country instead of the English name of the country it just left.
+        if (enTranslation is not null)
+        {
+            if (!string.Equals(previousCountry, countryVal, StringComparison.Ordinal))
+                enTranslation.Country = null;
+            if (!string.Equals(previousCity, cityVal, StringComparison.Ordinal))
+                enTranslation.City = null;
+        }
+
         // Null means "translation unavailable this save" (auto-translate attempt failed) — the EN
         // row is then simply left as it was (or absent); public reads already fall back requested
         // language → vi, and the admin can translate later via the EN panel.
@@ -249,8 +270,14 @@ public sealed class UpdatePartnerCommandHandler : IRequestHandler<UpdatePartnerC
             {
                 enTranslation.Name = englishNameOut;
                 enTranslation.ShortName = englishShortNameOut;
-                enTranslation.Country = countryVal;
-                enTranslation.City = cityVal;
+                // Country/City are deliberately NOT written here. They are localized values in their
+                // own right — the EN row legitimately holds "South Korea"/"India"/"Germany" where the
+                // base row holds "Hàn Quốc"/"Ấn Độ"/"Đức" (15 of 42 rows differ today). Assigning
+                // countryVal here overwrote that English name with the Vietnamese one every time an
+                // admin opened the EN panel and saved, silently destroying the localization — and the
+                // request carries no EnglishCountry/EnglishCity to put back, so there is nothing this
+                // branch could legitimately write. Leaving the stored values alone is the only correct
+                // action available: an edit to the description must not change the country.
                 enTranslation.Description = englishDescriptionOut;
                 enTranslation.Address = englishAddressOut;
                 enTranslation.TranslationSource = "MANUAL";
