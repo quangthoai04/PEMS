@@ -1156,15 +1156,32 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
               // of on the words they had selected. Only a person's own selection is remembered here;
               // the places that move the caret deliberately (`insertVariable`, `caretAfterBlock`) set
               // this ref themselves.
-              if (range && source !== 'api') {
-                lastRange.current = { index: range.index, length: range.length };
-                // A caret inside this editor IS the signal that the body is what the operator is
-                // writing in — one signal for both facts, so the two cannot disagree. The `onFocus`
-                // below is a second route to the same statement, not the primary one: a click that
-                // lands in the document reports a range whether or not focus was elsewhere before.
-                onEditorActivated?.();
-              }
-              setActive(editor()?.getFormat() ?? {});
+              //
+              // <b>Returning EARLY on those two, rather than falling through to a toolbar refresh, is
+              // the whole of this handler's focus behaviour.</b> `quill.getFormat()` called with no
+              // arguments defaults its index to `getSelection(true)` — and that `true` is a FOCUS flag:
+              // it runs `quill.focus()`, which calls `root.focus()` and restores the last body range
+              // whenever the editor does not already hold focus. Quill reports a null range from a
+              // document-level `selectionchange` listener deferred by a timer (core/selection.js), so
+              // the event lands about a millisecond AFTER the click that moved focus away — and the
+              // refresh then tore focus back out of whatever the operator had just clicked. That is one
+              // defect with two faces: a caret placed in the subject line jumped back into the body a
+              // frame later, and every cell of the table dialog refused to take a keystroke for the
+              // same reason. Neither was a dialog bug or an input bug; both were this line.
+              if (!range || source === 'api') return;
+
+              lastRange.current = { index: range.index, length: range.length };
+              // A caret inside this editor IS the signal that the body is what the operator is
+              // writing in — one signal for both facts, so the two cannot disagree. The `onFocus`
+              // below is a second route to the same statement, not the primary one: a click that
+              // lands in the document reports a range whether or not focus was elsewhere before.
+              onEditorActivated?.();
+
+              // The range is passed EXPLICITLY, never left to default. It is the same range Quill has
+              // just reported, so the formats read are identical — but naming it keeps `getSelection`
+              // out of the call, and with it the focus grab and the `scrollSelectionIntoView()` that
+              // rides along on every caret move.
+              setActive(editor()?.getFormat(range.index, range.length) ?? {});
             }}
             onFocus={() => onEditorActivated?.()}
             placeholder={placeholder ?? 'Soạn nội dung email...'}

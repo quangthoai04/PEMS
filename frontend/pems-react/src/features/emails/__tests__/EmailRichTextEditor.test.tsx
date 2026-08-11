@@ -1739,3 +1739,224 @@ describe('EmailRichTextEditor change attribution', () => {
     expect(emitted()).toHaveLength(0);
   });
 });
+
+// ── the focus a person has just given to something else ─────────────────────
+
+/**
+ * Losing the selection must cost nothing — least of all the focus somebody just placed elsewhere.
+ *
+ * <b>The defect these pin.</b> The selection handler refreshed the toolbar with `quill.getFormat()`,
+ * called with no arguments. That signature is a trap: its index defaults to `getSelection(true)`, and the
+ * `true` is a FOCUS flag — Quill runs `root.focus()` and restores its last range whenever it does not
+ * already hold focus (core/quill.js `getFormat`/`getSelection`/`focus`). Quill reports the null range
+ * from a document-level `selectionchange` listener behind a timer, so it arrives about a millisecond
+ * AFTER the click that moved focus away, and the refresh tore focus back out of whatever had just been
+ * clicked.
+ *
+ * One line, two faces, which is why both are pinned here rather than in the screens that showed them: a
+ * caret placed in the template screen's subject input jumped back into the body a frame later, and every
+ * cell of the table dialog refused a keystroke. Neither was an input bug or a dialog bug.
+ *
+ * The null report is driven through Quill's own selection object, which is the same call `quill.blur()`
+ * makes — but with the `'user'` source a real focus change carries, so these exercise the path production
+ * takes rather than an easier one.
+ */
+describe('a lost selection never steals focus back', () => {
+  /** Reports the loss of selection exactly as Quill does when focus moves out of the editor. */
+  function reportSelectionLost(container: HTMLElement) {
+    quillOf(container).selection.setRange(null, 'user');
+  }
+
+  /**
+   * The template screen's shape in miniature: the editor, and a plain text input beside it.
+   *
+   * A second field is the whole point — the defect is invisible without somewhere else for focus to be.
+   */
+  function setupBesideAnInput(value = '<p>Chào bạn.</p>') {
+    function Host() {
+      const [html, setHtml] = useState(value);
+      const [subject, setSubject] = useState('Hello world');
+      return (
+        <div>
+          <input
+            aria-label="Tiêu đề"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+          />
+          <EmailRichTextEditor mode="TEMPLATE" value={html} onChange={setHtml} />
+        </div>
+      );
+    }
+
+    const utils = render(<Host />);
+    return {
+      container: utils.container,
+      subject: () => screen.getByLabelText('Tiêu đề') as HTMLInputElement,
+    };
+  }
+
+  it('leaves focus on the field the operator moved to', async () => {
+    const { container, subject } = setupBesideAnInput();
+
+    // The body was being written in a moment ago, so Quill has a range to restore — which is what made
+    // the theft possible. Without this the editor has nothing to go back to and the bug hides.
+    const q = quillOf(container);
+    act(() => { q.setSelection(3, 0, 'user'); });
+
+    act(() => { subject().focus(); });
+    await act(async () => { reportSelectionLost(container); });
+
+    expect(document.activeElement).toBe(subject());
+    expect(document.activeElement).not.toBe(container.querySelector('.ql-editor'));
+  });
+
+  it('keeps the caret where it was clicked, mid-text, and types there', async () => {
+    const { container, subject } = setupBesideAnInput();
+
+    const q = quillOf(container);
+    act(() => { q.setSelection(3, 0, 'user'); });
+
+    // "Hello |world" — the click lands between the two words, not at either end.
+    const input = subject();
+    act(() => {
+      input.focus();
+      input.setSelectionRange(6, 6);
+    });
+
+    await act(async () => { reportSelectionLost(container); });
+
+    expect(document.activeElement).toBe(input);
+    expect(input.selectionStart).toBe(6);
+
+    // And the field still takes text at that caret rather than at an end it was pushed to.
+    fireEvent.change(input, { target: { value: 'Hello PEMS world' } });
+    expect(subject().value).toBe('Hello PEMS world');
+  });
+
+  /**
+   * The toolbar must still follow a REAL selection — the guard is meant to drop the null report, not to
+   * stop the editor reading formats at all. Without this a "fix" that returns from the handler
+   * unconditionally would pass every test above and quietly freeze the toolbar.
+   */
+  it('still refreshes the toolbar for a selection a person made', async () => {
+    const { container } = setup({ value: '<p><strong>Kính gửi</strong> Quý vị,</p>' });
+
+    await act(async () => { quillOf(container).setSelection(0, 4, 'user'); });
+
+    await waitFor(() => expect(
+      screen.getByRole('button', { name: 'Đậm' }).getAttribute('aria-pressed'),
+    ).toBe('true'));
+  });
+});
+
+/**
+ * The table dialog, driven the way an operator drives it: click a cell, type in it, move to the next.
+ *
+ * Every one of these failed before the selection handler stopped grabbing focus — clicking a cell blurs
+ * Quill, and the blur report pulled focus straight back out of the textarea, so the dialog looked frozen.
+ * They live beside a REAL editor rather than rendering `EmailTableDialog` on its own, because a dialog
+ * rendered alone has no Quill to take the focus and would pass while the screen stayed broken.
+ */
+describe('table dialog cells accept editing', () => {
+  const STORED = '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"'
+    + ' style="border-collapse:collapse;width:100%;margin:16px 0"><tbody>'
+    + '<tr><td style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top">Đoàn khách</td>'
+    + '<td style="border:1px solid #dbe4ee;padding:8px 10px;vertical-align:top">20</td></tr>'
+    + '</tbody></table>';
+
+  const cell = (row: number, col: number) =>
+    screen.getByLabelText(`Ô hàng ${row} cột ${col}`) as HTMLTextAreaElement;
+
+  /** Opens the dialog by clicking the table, the way an author does. */
+  async function openDialog(utils: ReturnType<typeof setup>) {
+    const node = utils.container.querySelector('.pems-email-table') as HTMLElement;
+    fireEvent.click(node);
+    fireEvent.click(screen.getByRole('button', { name: 'Chỉnh sửa bảng' }));
+    await screen.findByTestId('table-dialog-apply');
+  }
+
+  /**
+   * Clicks into a cell, with the state that makes the click dangerous.
+   *
+   * <b>The precondition is the test.</b> Quill only reports a lost selection when it HAD one — `update()`
+   * compares against the previous range and stays quiet when both are null (core/selection.js). An author
+   * reaching this dialog has been writing in the body, so Quill is holding a caret; a test that skips that
+   * setup gets no event at all, exercises nothing, and passes against the very defect it was written for.
+   * That is not hypothetical — the first draft of these did exactly that. So the caret is established
+   * first, and the report is then asserted to have actually happened.
+   */
+  async function focusCell(utils: ReturnType<typeof setup>, row: number, col: number) {
+    const q = quillOf(utils.container);
+    act(() => { q.setSelection(0, 0, 'user'); });
+    expect(q.getSelection()).not.toBeNull();
+
+    const target = cell(row, col);
+    act(() => { target.focus(); });
+
+    let reported = 0;
+    const count = (range: unknown) => { if (range === null) reported += 1; };
+    q.on('selection-change', count);
+    await act(async () => { q.selection.setRange(null, 'user'); });
+    q.off('selection-change', count);
+
+    expect(reported).toBeGreaterThan(0);
+    return target;
+  }
+
+  it('keeps focus in the cell that was clicked', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    await openDialog(utils);
+
+    const target = await focusCell(utils, 1, 1);
+
+    expect(document.activeElement).toBe(target);
+  });
+
+  it('takes a keystroke in the focused cell', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    await openDialog(utils);
+
+    const target = await focusCell(utils, 1, 1);
+    fireEvent.change(target, { target: { value: 'ABC' } });
+
+    expect(cell(1, 1).value).toBe('ABC');
+    expect(document.activeElement).toBe(cell(1, 1));
+  });
+
+  it('edits one cell without disturbing the other', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    await openDialog(utils);
+
+    fireEvent.change(await focusCell(utils, 1, 1), { target: { value: 'A' } });
+    fireEvent.change(await focusCell(utils, 1, 2), { target: { value: 'B' } });
+
+    expect(cell(1, 1).value).toBe('A');
+    expect(cell(1, 2).value).toBe('B');
+  });
+
+  /** Text goes in where the caret is, not appended to whichever end the focus was thrown to. */
+  it('inserts at a caret placed in the middle of a cell', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    await openDialog(utils);
+
+    const target = await focusCell(utils, 1, 1);
+    expect(target.value).toBe('Đoàn khách');
+
+    act(() => { target.setSelectionRange(5, 5); });          // "Đoàn |khách"
+    fireEvent.change(target, { target: { value: 'Đoàn FPT khách' } });
+
+    expect(cell(1, 1).value).toBe('Đoàn FPT khách');
+  });
+
+  /** And the edit survives to the document — the dialog is not a scratchpad. */
+  it('applies an edit made after the blur report', async () => {
+    const utils = setup({ mode: 'TEMPLATE', value: STORED });
+    await openDialog(utils);
+
+    fireEvent.change(await focusCell(utils, 1, 2), { target: { value: '25' } });
+    fireEvent.click(screen.getByTestId('table-dialog-apply'));
+
+    await waitFor(() => expect(utils.emitted().at(-1) ?? '').toContain('>25<'));
+    expect(utils.emitted().at(-1) ?? '').toContain('Đoàn khách');
+  });
+});
