@@ -57,6 +57,16 @@ public sealed class GetNewMinuteParticipantsQueryHandler
             .Where(p => p.MinutesId == minute.MinutesId)
             .ToListAsync(cancellationToken);
 
+        // Rows the caller deleted in the open editing session are treated as already gone, so a person
+        // who is still on the official list (visit_participants / visit_instance_guest_members) comes
+        // back as a candidate. Nothing is written here — the delete only becomes real on save, and only
+        // rows of THIS minutes can be ignored, so the id list cannot reach another record.
+        if (request.IgnoredExistingParticipantIds is { Count: > 0 })
+        {
+            var ignored = request.IgnoredExistingParticipantIds.ToHashSet();
+            existing = existing.Where(p => !ignored.Contains(p.MinuteParticipantId)).ToList();
+        }
+
         var candidates = await MinuteAutoFill.ComputeNewRowsAsync(
             _db, instance, existing, minute.MinutesId, _clock.VietnamNow, cancellationToken);
 

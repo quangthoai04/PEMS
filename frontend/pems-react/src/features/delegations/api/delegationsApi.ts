@@ -615,10 +615,25 @@ export const delegationsApi = {
         API_ENDPOINTS.meetingMinutes.releaseLock(minutesId), { editLockToken });
       return data;
     },
-    /** "Đồng bộ người mới": attendance rows that should exist but are missing (not yet persisted). */
-    async newParticipantCandidates(minutesId: number | string): Promise<MinuteParticipant[]> {
+    /**
+     * "Đồng bộ người mới": attendance rows that should exist but are missing (not yet persisted).
+     *
+     * `ignoredExistingParticipantIds` are rows the open editor has removed from its draft but has not
+     * saved: they still exist server-side, so without naming them the backend would still consider
+     * those people "already in the biên bản" and never offer them back. Serialised as repeated keys
+     * (`?ignoredExistingParticipantIds=1&ignoredExistingParticipantIds=2`) because axios' default
+     * `key[]=` form is not what ASP.NET Core binds an array parameter from.
+     */
+    async newParticipantCandidates(
+      minutesId: number | string,
+      ignoredExistingParticipantIds?: number[],
+    ): Promise<MinuteParticipant[]> {
+      const ids = (ignoredExistingParticipantIds ?? []).filter((id) => Number.isFinite(id) && id > 0);
+      const params = new URLSearchParams();
+      for (const id of ids) params.append('ignoredExistingParticipantIds', String(id));
       const { data } = await httpClient.get<MinuteParticipant[]>(
-        API_ENDPOINTS.meetingMinutes.newParticipantCandidates(minutesId));
+        API_ENDPOINTS.meetingMinutes.newParticipantCandidates(minutesId),
+        ids.length > 0 ? { params } : undefined);
       return data;
     },
     /** Search system users to add a participant manually (scoped to editors of the instance). */

@@ -16010,7 +16010,9 @@ CREATE TEMPORARY TABLE tmp_seed_operational_contact_repairs (
   PRIMARY KEY (visit_instance_id),
   KEY idx_tmp_seed_op_contact_request (visit_request_id),
   KEY idx_tmp_seed_op_contact_email (replacement_email)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO tmp_seed_operational_contact_repairs (
   visit_instance_id, visit_request_id, registrant_user_id, old_contact_user_id, replacement_user_id,

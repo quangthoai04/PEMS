@@ -16,12 +16,45 @@ namespace PEMS.Application.Delegations.Minutes;
 ///  3. Guests — every guest LINKED TO THIS CAMPUS INSTANCE via <c>visit_instance_guest_members</c>
 ///     (per-campus v2; a sibling instance's guests of the same request are never included — each
 ///     campus keeps its own independent, copy-on-write member rows).
-/// De-dup is purely by (user_id) / (guest_member_id) against what already exists, so it is idempotent
-/// and append-only: it never resurrects or overwrites rows the Host has edited/checked.
+/// De-dup is by (user_id) / (guest_member_id) against what already exists, so it is idempotent and
+/// append-only: it never resurrects or overwrites rows the Host has edited/checked. Those two ids
+/// cannot see ACROSS the two sources, though — one person invited as internal support and also listed
+/// among the delegation's members holds a user_id in one list and a guest_member_id in the other, and
+/// used to land in the biên bản twice. A normalised name + role + organisation fingerprint closes that
+/// gap: a guest whose fingerprint already belongs to an internal row is skipped, because a user_id is
+/// the stronger identity. Name alone is never enough to merge two people.
 /// </summary>
 internal static class MinuteAutoFill
 {
     private const string AttendanceDefault = "ABSENT";
+
+    /// <summary>
+    /// The identity fingerprint two rows must share to count as the same person: full name, role and
+    /// organisation, each trimmed, lower-cased and with runs of whitespace collapsed. Returns an empty
+    /// string when there is no name to match on — an unnamed row is never merged with anything.
+    /// Accents are deliberately left alone: stripping them would make "Nguyễn Văn An" and "Nguyen Van
+    /// Ân" the same person.
+    /// </summary>
+    internal static string BuildIdentityKey(string? fullName, string? role, string? organization)
+    {
+        var name = Normalize(fullName);
+        if (name.Length == 0) return string.Empty;
+        return $"{name}|{Normalize(role)}|{Normalize(organization)}";
+    }
+
+    private static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var sb = new System.Text.StringBuilder(value.Length);
+        var pendingSpace = false;
+        foreach (var ch in value.Trim())
+        {
+            if (char.IsWhiteSpace(ch)) { pendingSpace = sb.Length > 0; continue; }
+            if (pendingSpace) { sb.Append(' '); pendingSpace = false; }
+            sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
+    }
 
     /// <summary>
     /// Computes the participant rows that SHOULD exist for this minutes but are not present in
@@ -38,6 +71,15 @@ internal static class MinuteAutoFill
     {
         var seenUserIds = existing.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
         var seenGuestIds = existing.Where(p => p.GuestMemberId != null).Select(p => p.GuestMemberId!.Value).ToHashSet();
+        // Fingerprints of the INTERNAL rows only (existing + the ones added below). Guests are matched
+        // against these so a person present in both lists is filled in once, as the internal row; guest
+        // rows never de-duplicate each other, so two genuinely different members of a delegation who
+        // happen to share a name/role/organisation both stay.
+        var internalIdentityKeys = existing
+            .Where(p => p.UserId != null)
+            .Select(p => BuildIdentityKey(p.FullNameSnapshot, p.RoleSnapshot, p.OrganizationSnapshot))
+            .Where(k => k.Length > 0)
+            .ToHashSet();
         uint order = existing.Count == 0 ? 0u : existing.Max(p => p.DisplayOrder);
 
         var result = new List<MinuteParticipant>();
@@ -50,8 +92,10 @@ internal static class MinuteAutoFill
                 .FirstOrDefaultAsync(u => u.UserId == hostId, ct);
             if (host != null)
             {
-                result.Add(NewInternal(minutesId, host, "Host", now, ++order));
+                var row = NewInternal(minutesId, host, "Host", now, ++order);
+                result.Add(row);
                 seenUserIds.Add(hostId);
+                Remember(internalIdentityKeys, row);
             }
         }
 
@@ -74,8 +118,10 @@ internal static class MinuteAutoFill
         {
             if (seenUserIds.Contains(p.UserId)) continue;
             if (!userMap.TryGetValue(p.UserId, out var u)) continue;
-            result.Add(NewInternal(minutesId, u, RoleLabel(p.ParticipantRole), now, ++order));
+            var row = NewInternal(minutesId, u, RoleLabel(p.ParticipantRole), now, ++order);
+            result.Add(row);
             seenUserIds.Add(p.UserId);
+            Remember(internalIdentityKeys, row);
         }
 
         // 3. Guests linked to THIS campus instance (per-campus v2 — a sibling instance of the same
@@ -92,6 +138,10 @@ internal static class MinuteAutoFill
         foreach (var g in guests)
         {
             if (seenGuestIds.Contains(g.GuestMemberId)) continue;
+            // Already filled in as an internal participant (same name + role + organisation) — one
+            // person, one row. The internal row is the one that stays: it carries a user_id.
+            var identityKey = BuildIdentityKey(g.FullName, g.JobTitle, g.Organization);
+            if (identityKey.Length > 0 && internalIdentityKeys.Contains(identityKey)) continue;
             result.Add(new MinuteParticipant
             {
                 MinutesId = minutesId,
@@ -109,6 +159,12 @@ internal static class MinuteAutoFill
         }
 
         return result;
+    }
+
+    private static void Remember(HashSet<string> keys, MinuteParticipant row)
+    {
+        var key = BuildIdentityKey(row.FullNameSnapshot, row.RoleSnapshot, row.OrganizationSnapshot);
+        if (key.Length > 0) keys.Add(key);
     }
 
     private static MinuteParticipant NewInternal(ulong minutesId, User u, string role, DateTime now, uint order)

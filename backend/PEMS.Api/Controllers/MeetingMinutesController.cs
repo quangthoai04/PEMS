@@ -75,9 +75,16 @@ namespace PEMS.Api.Controllers
             => Ok(await _mediator.Send(new ReleaseMinutesLockCommand(minutesId, body.EditLockToken), cancellationToken));
 
         // "Đồng bộ người mới": attendance rows that should exist but are missing (append-only candidates).
+        // `ignoredExistingParticipantIds` = rows the open editor has removed but not saved yet, so the
+        // person deleted a moment ago can be synced back without leaving the editing session.
         [HttpGet("{minutesId}/new-participant-candidates")]
-        public async Task<IActionResult> NewParticipantCandidates(ulong minutesId, CancellationToken cancellationToken)
-            => Ok(await _mediator.Send(new GetNewMinuteParticipantsQuery(minutesId), cancellationToken));
+        public async Task<IActionResult> NewParticipantCandidates(
+            ulong minutesId,
+            [FromQuery] ulong[]? ignoredExistingParticipantIds,
+            CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(
+                new GetNewMinuteParticipantsQuery(minutesId, ignoredExistingParticipantIds),
+                cancellationToken));
 
         // Search system users to add a participant manually (scoped to editors of the instance).
         [HttpGet("visit-instances/{visitInstanceId}/user-search")]

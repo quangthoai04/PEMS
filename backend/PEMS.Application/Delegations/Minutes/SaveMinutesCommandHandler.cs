@@ -237,9 +237,25 @@ public sealed class SaveMinutesCommandHandler
             .ToListAsync(ct);
         var byId = existing.ToDictionary(p => p.MinuteParticipantId);
         var processed = new HashSet<ulong>();
-        var liveUserIds = existing.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
-        var liveGuestIds = existing.Where(p => p.GuestMemberId != null).Select(p => p.GuestMemberId!.Value).ToHashSet();
+
+        // Duplicate protection counts only the rows that SURVIVE this save. A row the client dropped is
+        // deleted at the end of this method, so treating it as "already in the list" would silently
+        // swallow a re-added person: remove someone, sync them back, save — and they would vanish from
+        // both the draft and the snapshot. The kept set is computed up front so it does not depend on
+        // the order the inputs happen to arrive in.
+        var keptIds = inputs
+            .Where(i => i.MinuteParticipantId.HasValue)
+            .Select(i => i.MinuteParticipantId!.Value)
+            .ToHashSet();
+        var kept = existing.Where(p => keptIds.Contains(p.MinuteParticipantId)).ToList();
+        var liveUserIds = kept.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
+        var liveGuestIds = kept.Where(p => p.GuestMemberId != null).Select(p => p.GuestMemberId!.Value).ToHashSet();
         uint maxOrder = existing.Count == 0 ? 0u : existing.Max(p => p.DisplayOrder);
+
+        // New rows created by this save, kept per source so the cross-source guard below can drop a
+        // guest that duplicates an internal person (see the guard for why it runs after the loop).
+        var addedInternal = new List<MinuteParticipant>();
+        var addedGuests = new List<MinuteParticipant>();
 
         foreach (var input in inputs)
         {
@@ -344,6 +360,30 @@ public sealed class SaveMinutesCommandHandler
             }
 
             _db.MinuteParticipants.Add(newRow);
+            if (newRow.UserId != null) addedInternal.Add(newRow);
+            else if (newRow.GuestMemberId != null) addedGuests.Add(newRow);
+        }
+
+        // ── Cross-source duplicate guard ─────────────────────────────────────
+        // The same person can sit in both source lists — as an internal participant and, separately, as
+        // a member of the delegation — and the two rows carry different ids, so neither id check above
+        // sees them as the same person. The sync now filters this out before it ever reaches the
+        // editor, but a direct API call still could, so the create is refused here as well: identical
+        // name + role + organisation means one person, and the internal row wins because a user_id is a
+        // stronger identity than a guest_member_id. Only rows this save would CREATE are dropped —
+        // already-persisted rows are the Host's snapshot and are never removed behind their back.
+        var internalIdentityKeys = kept
+            .Where(p => p.UserId != null)
+            .Concat(addedInternal)
+            .Select(p => MinuteAutoFill.BuildIdentityKey(p.FullNameSnapshot, p.RoleSnapshot, p.OrganizationSnapshot))
+            .Where(k => k.Length > 0)
+            .ToHashSet();
+        foreach (var guestRow in addedGuests)
+        {
+            var key = MinuteAutoFill.BuildIdentityKey(
+                guestRow.FullNameSnapshot, guestRow.RoleSnapshot, guestRow.OrganizationSnapshot);
+            if (key.Length > 0 && internalIdentityKeys.Contains(key))
+                _db.MinuteParticipants.Remove(guestRow); // Added → Detached; nothing is inserted.
         }
 
         // Rows omitted by the client are removed from the snapshot (never from the source tables).

@@ -5,14 +5,17 @@
  *  - INTERNAL           → badge "Nội bộ".
  *  - link CONFIRMED     → badge trạng thái hồ sơ (Đã liên kết / Chờ duyệt / Từ chối) + tên + Xem hồ sơ.
  *  - link SUGGESTED     → badge "Gợi ý" + tên + Liên kết / Bỏ qua.
- *  - chưa link          → badge "Chưa liên kết" + Tạo / liên kết · Quét danh thiếp.
+ *  - chưa link          → badge "Chưa liên kết" + Tạo / liên kết.
+ *
+ * Quét danh thiếp KHÔNG nằm ở đây: màn "Đang tiếp khách" (VisitDuringTab) đã có nguyên mục Scan Card
+ * Visit làm đủ luồng chụp/OCR/sửa thông tin/khớp đối tác, nên nút trong từng dòng bảng chỉ là lối vào
+ * thứ hai cho cùng một việc.
  */
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Link2, ScanLine, UserPlus, X } from 'lucide-react';
+import { Link2, UserPlus, X } from 'lucide-react';
 import { partnersApi } from '../api/partnersApi';
 import type { VisitGuestPartnerLink } from '../types/partners.types';
-import { BusinessCardScanModal } from '../../business-card-ocr/components/BusinessCardScanModal';
 import { CreatePartnerFromParticipantModal } from './CreatePartnerFromParticipantModal';
 import {
   showLoadingToast,
@@ -70,7 +73,6 @@ export function ParticipantPartnerCell({
 }: Props) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
-  const [scanOpen, setScanOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
 
   if (participantKind === 'INTERNAL') {
@@ -160,7 +162,7 @@ export function ParticipantPartnerCell({
     );
   }
 
-  // Chưa liên kết — badge nhẹ + Tạo / liên kết · Quét danh thiếp.
+  // Chưa liên kết — badge nhẹ + Tạo / liên kết.
   return (
     <div className="flex flex-col items-start gap-1 max-w-[190px]">
       <span className={`${BADGE_BASE} bg-slate-100 text-slate-600 border-slate-200`}>
@@ -171,10 +173,6 @@ export function ParticipantPartnerCell({
           <button onClick={() => setCreateOpen(true)} disabled={busy}
             className="text-[11px] font-bold text-[#004c91] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
             <UserPlus className="w-3 h-3" /> Tạo / liên kết
-          </button>
-          <button onClick={() => setScanOpen(true)} disabled={busy}
-            className="text-[11px] font-bold text-[#f37021] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
-            <ScanLine className="w-3 h-3" /> Quét danh thiếp
           </button>
         </span>
       )}
@@ -194,18 +192,6 @@ export function ParticipantPartnerCell({
           sourceLabel,
         }}
         onDone={() => { setCreateOpen(false); onChanged?.(); }}
-      />
-
-      <BusinessCardScanModal
-        open={scanOpen}
-        onClose={() => setScanOpen(false)}
-        context={{
-          visitInstanceId,
-          guestMemberId: guestMemberId || null,
-          minuteParticipantId: (minuteParticipantId ?? 0) > 0 ? minuteParticipantId : null,
-          prefillOrganization,
-        }}
-        onConfirmed={() => { setScanOpen(false); onChanged?.(); }}
       />
     </div>
   );

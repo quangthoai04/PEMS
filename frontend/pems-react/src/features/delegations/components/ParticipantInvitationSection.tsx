@@ -195,6 +195,14 @@ export function ParticipantInvitationSection({
     payload: Parameters<typeof delegationsApi.inviteVisitParticipant>[1];
     displayName: string;
     recipient: EmailPreviewRecipient;
+    /**
+     * The user the SEND will actually resolve — which is not always in the payload. A department
+     * invitation carries a `departmentId`, and the backend turns that into the department's active
+     * leader before it builds the scope. Reading `payload.userId` there produced an empty scope, so
+     * the token minted at preview time no longer matched the one the send recomputed and the message
+     * was refused as "thuộc về một email khác". The recipient is named explicitly instead.
+     */
+    scopeUserId: number | null;
   };
   type PreviewState = {
     open: boolean; loading: boolean; sending: boolean; restoring: boolean; error: string | null;
@@ -264,7 +272,7 @@ export function ParticipantInvitationSection({
    * shows them read-only with no edit button.
    */
   const scopeFor = (target: PreviewTarget | null) =>
-    target?.payload.userId ? participantScopeKey(visitInstanceId, target.payload.userId) : null;
+    target?.scopeUserId ? participantScopeKey(visitInstanceId, target.scopeUserId) : null;
 
   const loadPreview = async (templateCode: string, target: PreviewTarget | null) => {
     setPreview((p) => ({ ...p, open: true, loading: true, error: null, templateCode, target }));
@@ -447,7 +455,7 @@ export function ParticipantInvitationSection({
                   roleLabel={icSupportRoleLabel(c)}
                   busy={busyId === `ic-${c.userId}`}
                   onInvite={() => invite(`ic-${c.userId}`, { participantType: 'IC_SUPPORT', userId: c.userId }, c.fullName, close)}
-                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: icSupportRoleLabel(c), departmentName: c.departmentName, campusName: c.campusName } })}
+                  onPreview={() => openEmailPreviewFor('VISIT_PARTICIPANT_INVITATION', { key: `ic-${c.userId}`, payload: { participantType: 'IC_SUPPORT', userId: c.userId }, displayName: c.fullName, scopeUserId: c.userId, recipient: { name: c.fullName, email: c.email, roleLabel: icSupportRoleLabel(c), departmentName: c.departmentName, campusName: c.campusName } })}
                 />
               )}
             />
@@ -479,7 +487,7 @@ export function ParticipantInvitationSection({
                   subtitle={c.studentCode ? `MSSV: ${c.studentCode}` : undefined}
                   busy={busyId === `st-${c.userId}`}
                   onInvite={() => invite(`st-${c.userId}`, { participantType: 'STUDENT', userId: c.userId }, c.fullName, close)}
-                  onPreview={() => openEmailPreviewFor('VISIT_STUDENT_INVITATION', { key: `st-${c.userId}`, payload: { participantType: 'STUDENT', userId: c.userId }, displayName: c.fullName, recipient: { name: c.fullName, email: c.email, roleLabel: 'Sinh viên hỗ trợ', campusName: c.campusName } })}
+                  onPreview={() => openEmailPreviewFor('VISIT_STUDENT_INVITATION', { key: `st-${c.userId}`, payload: { participantType: 'STUDENT', userId: c.userId }, displayName: c.fullName, scopeUserId: c.userId, recipient: { name: c.fullName, email: c.email, roleLabel: 'Sinh viên hỗ trợ', campusName: c.campusName } })}
                 />
               )}
             />
@@ -503,23 +511,32 @@ export function ParticipantInvitationSection({
               emptyText="Không tìm thấy phòng ban phù hợp."
               search={(kw) => delegationsApi.getSupportDepartments(visitInstanceId, kw)}
               onCloseRef={closeDeptDropdown}
-              renderRow={(d, _i, close) => (
+              renderRow={(d, _i, close) => {
+                // The invitee is the department's leader, so a row with no resolvable leader (or a
+                // leader with no address) has nobody to bind a preview to and nobody to send to.
+                // Offering the buttons anyway would only produce a scope-less token and a failed send.
+                const leaderReachable = d.leaderUserId != null && !!d.leaderEmail?.trim();
+                const canInviteDept = d.canInviteParticipant && leaderReachable;
+                const blockedReason = !d.canInviteParticipant
+                  ? (d.participantDisabledReason || 'Không thể mời phòng ban này.')
+                  : 'Trưởng phòng này chưa có email, không thể gửi lời mời.';
+                return (
                 <div key={d.departmentId} className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
                     <div className="truncate text-xs text-gray-500">
                       {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                     </div>
-                    {!d.canInviteParticipant && d.participantDisabledReason && (
-                      <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.participantDisabledReason}</div>
+                    {!canInviteDept && (
+                      <div className="mt-0.5 text-[11px] font-medium text-amber-600">{blockedReason}</div>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {d.canInviteParticipant && (
+                    {canInviteDept && (
                       <button
                         type="button"
                         title="Xem trước & sửa email"
-                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}`, recipient: { name: d.leaderName, email: d.leaderEmail, roleLabel: 'Trưởng phòng', departmentName: d.departmentName, campusName: d.campusName } })}
+                        onClick={() => openEmailPreviewFor('VISIT_DEPARTMENT_LEADER_INVITATION', { key: `dept-${d.departmentId}`, payload: { participantType: 'DEPT_SUPPORT', departmentId: d.departmentId }, displayName: `trưởng phòng ${d.departmentName}`, scopeUserId: d.leaderUserId ?? null, recipient: { name: d.leaderName, email: d.leaderEmail, roleLabel: 'Trưởng phòng', departmentName: d.departmentName, campusName: d.campusName } })}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 bg-white text-[#004c91] outline-none transition-colors hover:bg-gray-50"
                       >
                         <Eye className="w-3.5 h-3.5" />
@@ -527,10 +544,10 @@ export function ParticipantInvitationSection({
                     )}
                     <button
                       type="button"
-                      disabled={!d.canInviteParticipant || busyId === `dept-${d.departmentId}`}
+                      disabled={!canInviteDept || busyId === `dept-${d.departmentId}`}
                       onClick={() => {
-                        if (!d.canInviteParticipant) {
-                          pushToast('warning', d.participantDisabledReason || 'Không thể mời phòng ban này.');
+                        if (!canInviteDept) {
+                          pushToast('warning', blockedReason);
                           return;
                         }
                         invite(
@@ -547,7 +564,8 @@ export function ParticipantInvitationSection({
                     </button>
                   </div>
                 </div>
-              )}
+                );
+              }}
             />
           )}
           {canManage && <PreviewLink onClick={() => openEmailPreview('VISIT_DEPARTMENT_LEADER_INVITATION')} />}

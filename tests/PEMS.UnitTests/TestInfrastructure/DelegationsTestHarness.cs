@@ -114,9 +114,10 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<LoginLog>();
         modelBuilder.Ignore<SecurityEvent>();
         modelBuilder.Ignore<Document>();
-        modelBuilder.Ignore<Minute>();
-        modelBuilder.Ignore<MinuteActionItem>();
-        modelBuilder.Ignore<MinuteParticipant>();
+        // Minutes are NOT pruned: MinuteAutoFill builds the biên bản attendance list out of this
+        // slice's own participants and guest members, so by this slice's rule ("map what these
+        // handlers use") it belongs here — an unmapped DbSet would turn "no duplicate" into "the
+        // table is not in the model".
         modelBuilder.Ignore<Feedback>();
         // News/NewsTranslation/NewsContentSection ARE mapped (below, as public DbSets) — the visit-news
         // handlers (VisitNewsAccess-gated: GetVisitInstanceNewsQueryHandler, ViewNewsListQueryHandler)
@@ -203,6 +204,22 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
                 .HasForeignKey(l => new { l.VisitRequestId, l.GuestMemberId })
                 .HasPrincipalKey(g => new { g.VisitRequestId, g.GuestMemberId });
         });
+        // ── Minutes (same relationship shape as the production ApplicationDbContext) ──
+        modelBuilder.Entity<Minute>()
+            .HasOne<VisitRequestCampus>().WithMany().HasForeignKey(m => m.VisitInstanceId);
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(p => p.Minute).WithMany(m => m.Participants).HasForeignKey(p => p.MinutesId);
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId);
+        // The second User navigation is the attendance checker; without this EF would invent a shadow
+        // FK column rather than using checked_by.
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(p => p.CheckedByUser).WithMany().HasForeignKey(p => p.CheckedBy);
+        modelBuilder.Entity<MinuteParticipant>()
+            .HasOne(p => p.GuestMember).WithMany().HasForeignKey(p => p.GuestMemberId);
+        modelBuilder.Entity<MinuteActionItem>()
+            .HasOne(a => a.Minute).WithMany(m => m.ActionItems).HasForeignKey(a => a.MinutesId);
+
         modelBuilder.Entity<PhotoFaceTag>()
             .HasOne(ft => ft.File).WithMany().HasForeignKey(ft => ft.FileId);
         modelBuilder.Entity<PhotoFaceTag>()

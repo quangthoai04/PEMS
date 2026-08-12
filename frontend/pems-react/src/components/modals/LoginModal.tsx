@@ -31,11 +31,14 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
           />
 
           {/* Modal Container */}
+          {/* Tween ngắn, không translateY: spring + scale + trượt dọc để lại một nhịp settle nhỏ ngay
+              sau khi modal hiện ra — nhìn như bị giật một cái. Fade + scale nhẹ vào đúng vị trí thì
+              không có nhịp thừa nào để thấy. */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
             className="relative bg-white/95 backdrop-blur-xl w-full max-w-[380px] rounded-[24px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.1)] border border-white/80 overflow-hidden"
           >
             {/* Top decorative gradient bar */}

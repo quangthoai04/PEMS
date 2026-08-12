@@ -21,6 +21,7 @@ import { delegationsApi } from '../../../features/delegations/api/delegationsApi
 import type {
   VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload, AgendaResponsibleCandidate,
 } from '../../../features/delegations/types/delegations.types';
+import { selectNewSyncCandidates } from '../../../features/delegations/utils/participantIdentity';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
 import type { VisitGuestPartnerLink } from '../../../features/partners/types/partners.types';
 import { ParticipantPartnerCell } from '../../../features/partners/components/ParticipantPartnerCell';
@@ -133,6 +134,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
   const [draftParticipants, setDraftParticipants] = useState<DraftParticipant[]>([]);
+  // Rows deleted in THIS editing session that are still persisted server-side. The delete only reaches
+  // the database on save, so until then the backend would still count them as "already in the biên
+  // bản" and refuse to offer the person back — which is why "Đồng bộ" used to do nothing after a
+  // delete. Sent with the sync request; dropped whenever the session ends (edit / cancel / save).
+  const [removedParticipantIds, setRemovedParticipantIds] = useState<number[]>([]);
   const [draftActionItems, setDraftActionItems] = useState<DraftActionItem[]>([]);
   const [previewEmailItem, setPreviewEmailItem] = useState<DraftActionItem | null>(null);
   // "Người phụ trách" picker for action items — Host + ACCEPTED IC_SUPPORT/DEPT_SUPPORT/STUDENT
@@ -228,6 +234,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     })));
     setData(d);
     setEditing(true);
+    setRemovedParticipantIds([]);
     setLoadError(null);
     setTitleError(null);
     setActionErrors({});
@@ -335,6 +342,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       });
       setEditing(false);
       tokenRef.current = null;
+      setRemovedParticipantIds([]);
       setData(d);
       setLoadError(null);
       pushToast('success', 'Đã lưu biên bản cuộc họp.');
@@ -360,6 +368,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     const id = minutesIdRef.current, token = tokenRef.current;
     setEditing(false);
     tokenRef.current = null;
+    setRemovedParticipantIds([]);
     if (id && token) {
       try { await delegationsApi.minutes.releaseLock(id, token); } catch { /* lock will expire anyway */ }
     }
@@ -377,7 +386,17 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const updateParticipant = (key: string, patch: Partial<DraftParticipant>) =>
     setDraftParticipants((prev) => prev.map((p) => (p._key === key ? { ...p, ...patch } : p)));
   const removeParticipant = (key: string) =>
-    setDraftParticipants((prev) => prev.filter((p) => p._key !== key));
+    setDraftParticipants((prev) => {
+      // A row that exists server-side is remembered so "Đồng bộ người mới" can offer this person
+      // again while the session is still open; a row that was only ever in the draft has nothing to
+      // remember (and sync would never regenerate a manual row anyway).
+      const row = prev.find((p) => p._key === key);
+      if (row && row.minuteParticipantId > 0) {
+        setRemovedParticipantIds((ids) =>
+          ids.includes(row.minuteParticipantId) ? ids : [...ids, row.minuteParticipantId]);
+      }
+      return prev.filter((p) => p._key !== key);
+    });
   const updateActionItem = (key: string, patch: Partial<DraftActionItem>) =>
     setDraftActionItems((prev) => prev.map((a) => (a._key === key ? { ...a, ...patch } : a)));
   const removeActionItem = (key: string) =>
@@ -405,11 +424,10 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     if (!id) return;
     setBusy(true);
     try {
-      const candidates = await delegationsApi.minutes.newParticipantCandidates(id);
-      const haveUser = new Set(draftParticipants.filter((p) => p.userId != null).map((p) => p.userId));
-      const haveGuest = new Set(draftParticipants.filter((p) => p.guestMemberId != null).map((p) => p.guestMemberId));
-      const fresh = candidates.filter((c) =>
-        (c.userId != null && !haveUser.has(c.userId)) || (c.guestMemberId != null && !haveGuest.has(c.guestMemberId)));
+      const candidates = await delegationsApi.minutes.newParticipantCandidates(id, removedParticipantIds);
+      // Drops candidates already in the draft by id, and a guest who is already there as an internal
+      // person (same name + role + organisation) — see participantIdentity.ts.
+      const fresh = selectNewSyncCandidates(draftParticipants, candidates);
       // No-op sync is NOT an error and must not block saving — just an info toast.
       if (fresh.length === 0) { pushToast('info', 'Không có người mới cần đồng bộ.'); return; }
       setDraftParticipants((prev) => [...prev, ...fresh.map((c) => ({
