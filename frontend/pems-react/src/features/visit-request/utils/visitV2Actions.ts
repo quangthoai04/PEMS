@@ -7,6 +7,14 @@ import type { VisitActionCapability } from '../api/visitRequestV2Api';
 
 export const VisitV2Action = {
   View: 'VIEW',
+  /**
+   * May read the UC-32 change history. NARROWER than `View`, and the reason it is a code of its own:
+   * a participant invited to support a campus opens the detail and may not read who changed the
+   * request. The detail screen mounts the history section on THIS alone — it used to mount it for
+   * everyone who could open the page, so a supporting participant got the endpoint's 403 rendered as
+   * "không tải được lịch sử" with a Retry button that could never succeed.
+   */
+  ViewChangeHistory: 'VIEW_CHANGE_HISTORY',
   // request level (viewer.allowedActions)
   EditPendingRequest: 'EDIT_PENDING_REQUEST',
   ResubmitRejectedRequest: 'RESUBMIT_REJECTED_REQUEST',

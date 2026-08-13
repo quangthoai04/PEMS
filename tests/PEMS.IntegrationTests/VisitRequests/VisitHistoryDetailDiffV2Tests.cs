@@ -32,6 +32,8 @@ public sealed class VisitHistoryDetailDiffV2Tests
             "server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
 
     private const ulong VisitorOwner = 8, SlCampus1 = 3, IcStaffC1 = 4;
+    /// <summary>ACTIVE Student — invited to SUPPORT the campus, which grants no history access.</summary>
+    private const ulong SupportingStudent = 152;
     private const ulong Campus1 = 1;
 
     private static bool? _dbUp;
@@ -346,6 +348,47 @@ public sealed class VisitHistoryDetailDiffV2Tests
         // Never the unmasked address, and never the internal reason string.
         Assert.DoesNotContain(detail.FieldChanges, f => f.AfterValue == "new@example.com");
         Assert.Null(detail.Reason);
+
+        await tx.RollbackAsync();
+    }
+
+    // ── The drawer is not a way around the timeline's scope ──────────────────
+
+    [Fact]
+    public async Task A_supporting_participant_cannot_open_a_history_entry_by_its_id()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        var eventId = await TwoRevisionsAsync(db, req, inst, "{\"purpose\":\"P\"}", "{\"purpose\":\"P2\"}");
+
+        var now = DateTime.Now;
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = inst.VisitInstanceId,
+            UserId = SupportingStudent,
+            ParticipantRole = ParticipantRoles.Student,
+            IsHost = false,
+            Status = ParticipantStatuses.Accepted,
+            InvitedBy = SlCampus1, InvitedAt = now,
+            AssignedBy = SlCampus1, AssignedAt = now,
+            RespondedAt = now, CreatedAt = now, CreatedBy = SlCampus1,
+        });
+        await db.SaveChangesAsync();
+
+        // They can see this campus's detail, and they hold a REAL event id belonging to it — the only
+        // two things a caller needs to try the drawer endpoint directly. The refusal has to come from
+        // the scope, not from the id being unguessable, or the timeline's scoping is decorative.
+        var participant = new FakeUser
+        {
+            UserId = SupportingStudent, RoleCode = RoleCodes.Student, PrimaryCampusId = Campus1,
+        };
+
+        await Assert.ThrowsAsync<PEMS.Application.Common.Exceptions.ForbiddenException>(
+            () => Handler(db, participant).Handle(
+                new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None));
 
         await tx.RollbackAsync();
     }

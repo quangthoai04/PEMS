@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Eye, Loader2, RefreshCw } from 'lucide-react';
+import axios from 'axios';
+import { AlertCircle, Eye, Loader2, Lock, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { getVisitRequestHistory, type VisitHistoryEntry, type VisitRequestHistory } from '../api/visitRequestV2Api';
 import VisitHistoryDetailDrawer from './VisitHistoryDetailDrawer';
@@ -66,7 +67,17 @@ const KNOWN_EVENTS = new Set([
 export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
   const [history, setHistory] = useState<VisitRequestHistory | null>(null);
-  const [error, setError] = useState(false);
+  /**
+   * Two different failures, kept apart because they need opposite treatment. `forbidden` is the
+   * backend's ANSWER — retrying it produces the same 403 forever — while `generic` is a network or
+   * server fault that a retry may well fix. Collapsing both into one boolean is what put a Retry
+   * button under an authorization refusal.
+   *
+   * The parent only mounts this component when the read model granted VIEW_CHANGE_HISTORY, so
+   * `forbidden` here means the capability went stale between the two calls (a handover completed, a
+   * contact was transferred). Rare, and still not something to offer a retry for.
+   */
+  const [error, setError] = useState<'forbidden' | 'generic' | null>(null);
   const [loading, setLoading] = useState(true);
   // The drawer carries the timeline's own sentence, so opening a detail keeps the same words on
   // screen rather than re-describing the event in a second vocabulary.
@@ -75,10 +86,16 @@ export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }:
   const load = useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    setError(false);
+    setError(null);
     getVisitRequestHistory(visitRequestId)
       .then(h => { if (!cancelled) setHistory(h); })
-      .catch(() => { if (!cancelled) setError(true); })
+      .catch(err => {
+        if (cancelled) return;
+        // Read from the STATUS, never from the message text: the refusal carries a Vietnamese
+        // sentence that translation or rewording would silently break this branch.
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        setError(status === 403 ? 'forbidden' : 'generic');
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // refreshKey is a deliberate dependency: it is the parent saying "something you show has changed".
@@ -103,6 +120,21 @@ export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }:
     return (
       <p className="flex items-center gap-2 text-sm text-slate-500" role="status">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {t('visitRequestV2:history.loading')}
+      </p>
+    );
+  }
+
+  // An authorization refusal states itself and stops. No Retry: the answer will not change by asking
+  // again, and a button that reliably fails is worse than none.
+  if (error === 'forbidden') {
+    return (
+      <p
+        role="status"
+        data-testid="history-forbidden"
+        className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"
+      >
+        <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        {t('visitRequestV2:history.forbidden')}
       </p>
     );
   }

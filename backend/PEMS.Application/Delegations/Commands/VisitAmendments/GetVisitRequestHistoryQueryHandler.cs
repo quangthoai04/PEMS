@@ -45,7 +45,6 @@ public sealed class GetVisitRequestHistoryQueryHandler
             throw new NotFoundException("Không tìm thấy.");
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
             throw new ForbiddenException();
-        var actorId = _currentUser.UserId.Value;
 
         var visit = await _db.VisitRequests.AsNoTracking()
             .Include(v => v.CampusInstances)
@@ -53,42 +52,18 @@ public sealed class GetVisitRequestHistoryQueryHandler
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
         // ── Scope resolution BEFORE any projection ──
-        // The registrant owns the request, so they see every campus's history plus the request-level
-        // events. An operational contact sees the history of the campuses THEY hold and no
-        // request-level events: those describe the request as a whole, which is not theirs.
-        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
-        var operatedInstanceIds = VisitRequestOwnership.OperatedCampuses(visit, actorId)
-            .Select(c => c.VisitInstanceId).ToList();
-        var isHo = _currentUser.RoleCode == RoleCodes.Ho;
-        List<ulong> visibleInstanceIds;
-        var includeIdentity = false;
-        var includeRequestLevel = false;
-        if (isRegistrant || isHo)
-        {
-            visibleInstanceIds = visit.CampusInstances.Select(c => c.VisitInstanceId).ToList();
-            includeIdentity = true;
-            includeRequestLevel = true;
-        }
-        else if (operatedInstanceIds.Count > 0)
-        {
-            visibleInstanceIds = operatedInstanceIds;
-            includeIdentity = true;
-        }
-        else if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
-                 && _currentUser.PrimaryCampusId is { } campusId)
-        {
-            visibleInstanceIds = visit.CampusInstances
-                .Where(c => c.CampusId == campusId)
-                .Select(c => c.VisitInstanceId).ToList();
-        }
-        else
-        {
-            visibleInstanceIds = visit.CampusInstances
-                .Where(c => c.CurrentHostUserId == actorId)
-                .Select(c => c.VisitInstanceId).ToList();
-        }
-        if (visibleInstanceIds.Count == 0 && !includeRequestLevel)
+        // Resolved by VisitHistoryVisibility, which the V2 detail read model also asks before it offers
+        // the section at all — so "the page showed Change History" and "the endpoint served it" cannot
+        // drift apart the way they did when this decision lived here alone.
+        var scope = VisitHistoryVisibility.Resolve(visit, _currentUser);
+        if (!scope.CanViewHistory)
             throw new ForbiddenException("Bạn không có quyền xem lịch sử của đơn này.");
+
+        // Materialized as a List so the `Contains` below keeps binding to the overload EF has always
+        // translated into an IN clause.
+        var visibleInstanceIds = scope.VisibleInstanceIds.ToList();
+        var includeIdentity = scope.IncludeIdentity;
+        var includeRequestLevel = scope.IncludeRequestLevel;
 
         // ── Campus names for the visible instances ──
         // Without these, a three-campus request emits three identical "content created" rows and the

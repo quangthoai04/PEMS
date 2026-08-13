@@ -1074,7 +1074,12 @@ public sealed class PerCampusFormV2ReadTests
 
         var dto = await Resolver(db, Ho()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
         Assert.True(dto.Viewer.IsReadOnly);
-        Assert.Equal(new[] { VisitFormActions.View }, dto.Viewer.AllowedActions);
+        // READ codes only, and exactly these two — HO monitors the whole request, change history
+        // included, and may act on none of it. Still an exact comparison, so a mutation action
+        // leaking into HO's list fails here as loudly as it did before VIEW_CHANGE_HISTORY existed.
+        Assert.Equal(
+            new[] { VisitFormActions.View, VisitFormActions.ViewChangeHistory },
+            dto.Viewer.AllowedActions);
         Assert.Empty(dto.CampusVisits.Single().AllowedActions);
         await tx.RollbackAsync();
     }

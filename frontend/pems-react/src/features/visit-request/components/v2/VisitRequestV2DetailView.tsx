@@ -227,6 +227,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   // rather than as an action that silently vanished.
   const safeEditCap = capabilityFor(viewer.capabilities, VisitV2Action.SubmitSafeEdit);
   const editPendingCap = capabilityFor(viewer.capabilities, VisitV2Action.EditPendingRequest);
+  // Reading the request and reading its change history are separate permissions on the backend, so
+  // they are separate questions here. Being able to open this page is NOT evidence of the second: a
+  // participant invited to support a campus has the first and not the second, and mounting the
+  // timeline for them fired a request the API refuses and painted the refusal as a loading failure.
+  const canViewHistory = hasAction(viewer.allowedActions, VisitV2Action.ViewChangeHistory);
 
   // There is no request-level confirmation roll-up. It counted campuses ("1/1", "còn N cơ sở chờ")
   // directly above the very cards that name each contact and show that contact's own state, so it
@@ -446,15 +451,20 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         )}
       </VisitSectionCard>
 
-      {/* ── ③ Scoped, masked history ── */}
-      <VisitSectionCard
-        step={3}
-        title={t('visitRequestV2:detail.historyTitle')}
-        readOnlyLabel={t('visitRequestV2:detail.readOnly')}
-        data-testid="section-history"
-      >
-        <VisitHistoryTimeline visitRequestId={data.visitRequestId} refreshKey={historyRefreshKey} />
-      </VisitSectionCard>
+      {/* ── ③ Scoped, masked history — only for a viewer the backend granted it to. The whole
+             section is absent otherwise, heading included: a "Lịch sử thay đổi" card holding an
+             error is a worse answer than no card, because it says the history exists for you and
+             merely failed to arrive. ── */}
+      {canViewHistory && (
+        <VisitSectionCard
+          step={3}
+          title={t('visitRequestV2:detail.historyTitle')}
+          readOnlyLabel={t('visitRequestV2:detail.readOnly')}
+          data-testid="section-history"
+        >
+          <VisitHistoryTimeline visitRequestId={data.visitRequestId} refreshKey={historyRefreshKey} />
+        </VisitSectionCard>
+      )}
 
       {safeEditOpen && (
         <VisitSafeEditModal

@@ -11,6 +11,20 @@ public static class VisitFormActions
     /// <summary>Read access (always present for an authorized viewer).</summary>
     public const string View = "VIEW";
 
+    /// <summary>
+    /// The viewer may read the request's UC-32 change history. NARROWER than <see cref="View"/> and
+    /// emitted separately for exactly that reason: being able to open a request says nothing about
+    /// being able to read who changed it.
+    ///
+    /// <para>
+    /// A supporting participant — IC support, department support, a student invited to a campus — sees
+    /// the detail and never this. The frontend must mount the history section only when this code is
+    /// present; before it existed the section was mounted unconditionally and the endpoint's 403 was
+    /// rendered as a technical failure with a Retry button that could not possibly help.
+    /// </para>
+    /// </summary>
+    public const string ViewChangeHistory = "VIEW_CHANGE_HISTORY";
+
     // ── Request-level ────────────────────────────────────────────────────────
     /// <summary>Registrant may edit a request no campus has decided yet, up to the mutation cutoff
     /// (<see cref="PEMS.Domain.Policies.VisitMutationPolicy.RequiredLeadHours"/> before the earliest

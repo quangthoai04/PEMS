@@ -472,6 +472,7 @@
   "history": {
     "loading": "Loading history…",
     "loadFailed": "The change history could not be loaded.",
+    "forbidden": "You do not have permission to view this change history.",
     "empty": "No changes have been recorded yet.",
     "someone": "A user",
     "thisRequest": "this request",

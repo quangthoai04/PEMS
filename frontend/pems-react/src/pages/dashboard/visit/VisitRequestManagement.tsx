@@ -415,6 +415,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // "xem 1 đơn từ thông báo" — chỉ Reset và lần load ban đầu mới cần giữ/xoá tường minh.
   const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string, keepNotificationFilter = false) => {
     const params = new URLSearchParams(searchParams);
+    // Defense in depth for the one-shot feedback command. The consume effect above is the real fix;
+    // this makes sure a filter/page/tab change can never CARRY the parameter forward if it is still
+    // present when this runs — cloning the current query string is exactly how it used to survive
+    // every navigation on the page.
+    params.delete('feedbackVisitInstanceId');
     if (tab) params.set('tab', tab);
     if (page > 1) params.set('page', page.toString()); else params.delete('page');
     if (size !== 10) params.set('pageSize', size.toString()); else params.delete('pageSize');
@@ -561,15 +566,26 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // đổi row sang "Đã đánh giá" tại chỗ.
   const [feedbackModalInstanceId, setFeedbackModalInstanceId] = useState<number | null>(null);
 
+  // `feedbackVisitInstanceId` is a one-shot COMMAND from a notification deep link, not page state:
+  // consume it, then take it out of the URL with replace. Left in place it replayed — the effect
+  // re-runs on every searchParams change, so filtering, paging or switching tab after closing the
+  // modal reopened it, and so did submitting the feedback the link asked for.
+  //
+  // React state owns the modal from here on. The effect runs once more after the replace and exits
+  // at the first line, because the parameter is gone.
   useEffect(() => {
     const fbParam = searchParams.get('feedbackVisitInstanceId');
-    if (fbParam) {
-      const instId = Number(fbParam);
-      if (!isNaN(instId) && instId > 0) {
-        setFeedbackModalInstanceId(instId);
-      }
-    }
-  }, [searchParams]);
+    if (fbParam === null) return;
+
+    const instId = Number(fbParam);
+    if (Number.isFinite(instId) && instId > 0) setFeedbackModalInstanceId(instId);
+
+    // An invalid value opens nothing but is still stripped: left behind it would ride along in every
+    // later URL update, and a stale junk parameter is how this bug looked in the first place.
+    const next = new URLSearchParams(searchParams);
+    next.delete('feedbackVisitInstanceId');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   const handleFeedbackSubmitted = (instanceId: number) => {
     setFeedbackByInstance((prev) =>

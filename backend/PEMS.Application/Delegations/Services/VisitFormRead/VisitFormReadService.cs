@@ -523,6 +523,12 @@ public sealed class VisitFormReadService : IVisitFormReadService
             // campus that owns them. A request-level list of them is what let the UI offer an action
             // without saying which campus it would hit.
             var actions = new List<string> { VisitFormActions.View };
+            // Reading the request and reading its change history are two different permissions, and the
+            // second is narrower. Asked of the SAME resolver the history endpoints use, so the section
+            // is offered exactly when the API would serve it — a supporting participant who can open
+            // this page gets VIEW without VIEW_CHANGE_HISTORY, which is the correct pair of answers.
+            if (VisitHistoryVisibility.Resolve(request, _currentUser).CanViewHistory)
+                actions.Add(VisitFormActions.ViewChangeHistory);
             actions.AddRange(requestCapabilities.Where(x => x.Enabled).Select(x => x.Code));
             return actions;
         }

@@ -176,4 +176,41 @@ describe('VisitHistoryTimeline', () => {
 
     expect(await screen.findByText('No changes have been recorded yet.')).toBeInTheDocument();
   });
+
+  // ── A refusal is not a failure ────────────────────────────────────────────
+  //
+  // The parent only mounts this component when the backend granted VIEW_CHANGE_HISTORY, so a 403 here
+  // means the capability went stale between the two calls. It is still not a loading error: retrying
+  // an authorization decision produces the same decision, forever.
+
+  const axiosError = (status: number) => Object.assign(new Error(String(status)), {
+    isAxiosError: true,
+    response: { status, data: { message: 'x' } },
+  });
+
+  it('renders a 403 as a permission state with no retry', async () => {
+    vi.mocked(getVisitRequestHistory).mockRejectedValueOnce(axiosError(403));
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+
+    expect(await screen.findByTestId('history-forbidden')).toHaveTextContent(
+      'You do not have permission to view this change history.',
+    );
+    // Not the generic failure, and above all not a button that cannot work.
+    expect(screen.queryByTestId('history-retry')).toBeNull();
+    expect(screen.queryByText('The change history could not be loaded.')).toBeNull();
+  });
+
+  it('still treats a 500 as a technical failure that a retry may fix', async () => {
+    vi.mocked(getVisitRequestHistory).mockRejectedValueOnce(axiosError(500));
+    render(<VisitHistoryTimeline visitRequestId={1} />);
+
+    const retry = await screen.findByTestId('history-retry');
+    expect(screen.getByText('The change history could not be loaded.')).toBeInTheDocument();
+    expect(screen.queryByTestId('history-forbidden')).toBeNull();
+
+    // …and the retry still works, so hardening the 403 branch did not cost the working one.
+    withEntries(entry());
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.getByTestId('visit-history-timeline')).toBeInTheDocument());
+  });
 });

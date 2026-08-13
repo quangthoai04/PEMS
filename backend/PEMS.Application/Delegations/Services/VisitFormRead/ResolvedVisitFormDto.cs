@@ -118,9 +118,11 @@ public sealed class ResolvedViewerContextDto
     /// <summary>True for HO — monitoring only, no business action.</summary>
     public bool IsReadOnly { get; init; }
     /// <summary>
-    /// The ENABLED subset of <see cref="Capabilities"/>, plus the contact-identity actions. Kept as a
-    /// flat list because most call sites only ask "may I?"; it is DERIVED from the capabilities rather
-    /// than computed separately, so the two can never disagree.
+    /// The ENABLED subset of <see cref="Capabilities"/>, plus the contact-identity actions and the READ
+    /// capabilities that have no verdict to carry — <c>VIEW</c>, and <c>VIEW_CHANGE_HISTORY</c> when
+    /// this viewer may read the UC-32 timeline. Kept as a flat list because most call sites only ask
+    /// "may I?"; the mutation entries are DERIVED from the capabilities rather than computed
+    /// separately, so the two can never disagree.
     /// </summary>
     public List<string> AllowedActions { get; init; } = new();
     /// <summary>

@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.VisitAmendments;
+using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Infrastructure.Persistence;
@@ -28,7 +30,11 @@ public sealed class VisitRequestHistoryV2Tests
 {
     private static string ConnString => PEMS.IntegrationTests.TestInfrastructure.DisposableDatabaseManager.GetDisposableConnectionString("server=localhost;port=3306;database=pems_pr3_test;user=root;password=123456;AllowUserVariables=True;GuidFormat=None");
 
-    private const ulong VisitorOwner = 8, SlCampus1 = 3, SlCampus2 = 9, IcStaffC1 = 4;
+    private const ulong VisitorOwner = 8, SlCampus1 = 3, SlCampus2 = 9, IcStaffC1 = 4, HoUser = 2;
+    /// <summary>ACTIVE Student — invited to SUPPORT a campus, and nothing more than that.</summary>
+    private const ulong SupportingStudent = 152;
+    /// <summary>ACTIVE IC Staff who hosts nothing in this fixture — a pure supporting participant.</summary>
+    private const ulong IcStaffSupporter = 101;
     private const ulong Campus1 = 1, Campus2 = 2;
 
     private static bool? _dbUp;
@@ -62,11 +68,24 @@ public sealed class VisitRequestHistoryV2Tests
     }
 
     private static FakeUser Owner() => new() { UserId = VisitorOwner, RoleCode = RoleCodes.Visitor };
+    private static FakeUser Ho() => new() { UserId = HoUser, RoleCode = RoleCodes.Ho };
     private static FakeUser StaffLeader(ulong userId, ulong campusId) => new()
         { UserId = userId, RoleCode = RoleCodes.Staff, SubRole = UserSubRoles.Leader, PrimaryCampusId = campusId };
+    private static FakeUser Host(ulong userId, ulong campusId) => new()
+        { UserId = userId, RoleCode = RoleCodes.Staff, SubRole = UserSubRoles.Staff, PrimaryCampusId = campusId };
+    private static FakeUser Student(ulong userId, ulong campusId) => new()
+        { UserId = userId, RoleCode = RoleCodes.Student, PrimaryCampusId = campusId };
 
     private static GetVisitRequestHistoryQueryHandler Handler(ApplicationDbContext db, ICurrentUserService user)
         => new(db, user, new PerCampusFormV2Options { Enabled = true });
+
+    /// <summary>
+    /// The V2 detail read model — the OTHER half of every capability test here. The capability and the
+    /// endpoint have to be asked in the same test, because the bug being locked down is precisely that
+    /// they disagreed.
+    /// </summary>
+    private static VisitFormReadService Resolver(ApplicationDbContext db, ICurrentUserService user)
+        => new(db, user, NullLogger<VisitFormReadService>.Instance);
 
     /// <summary>Two campuses, campus 1 decided (approved + hosted) with a note, campus 2 still waiting.</summary>
     private static async Task<(VisitRequest Request, List<VisitRequestCampus> Instances)> SeedAsync(ApplicationDbContext db)
@@ -444,6 +463,135 @@ public sealed class VisitRequestHistoryV2Tests
 
         await Assert.ThrowsAsync<ForbiddenException>(() => Handler(db, stranger).Handle(
             new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None));
+        await tx.RollbackAsync();
+    }
+
+    // ── Detail visibility and history visibility are two permissions ──────────
+    //
+    // They have always had different answers on the backend; what did not exist was any way for the
+    // detail screen to KNOW that, so it mounted the history section for everyone who could open the
+    // page and painted the resulting 403 as a technical failure with a Retry button. These tests pin
+    // the mismatch as the intended rule and pin the capability that reports it, in the same test —
+    // asserting either one alone is how the two drifted apart in the first place.
+
+    /// <summary>Invites a user to SUPPORT one campus. Support, and nothing else.</summary>
+    private static async Task SeedSupportingParticipantAsync(
+        ApplicationDbContext db, VisitRequestCampus instance, ulong userId, string role)
+    {
+        var now = DateTime.Now;
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = instance.VisitInstanceId,
+            UserId = userId,
+            ParticipantRole = role,
+            IsHost = false,
+            Status = ParticipantStatuses.Accepted,
+            InvitedBy = SlCampus1, InvitedAt = now,
+            AssignedBy = SlCampus1, AssignedAt = now,
+            RespondedAt = now, CreatedAt = now, CreatedBy = SlCampus1,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_supporting_participant_reads_the_detail_and_is_refused_the_history()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedAsync(db);
+        await SeedSupportingParticipantAsync(db, instances[0], SupportingStudent, ParticipantRoles.Student);
+        var participant = Student(SupportingStudent, Campus1);
+
+        // The detail they were invited to is theirs to read — that half must keep working.
+        var resolved = await Resolver(db, participant).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.NotEmpty(resolved.CampusVisits);
+        Assert.Contains(VisitFormActions.View, resolved.Viewer.AllowedActions);
+
+        // The history is not. The capability says so, so the client never mounts the section...
+        Assert.DoesNotContain(VisitFormActions.ViewChangeHistory, resolved.Viewer.AllowedActions);
+
+        // ...and the endpoint says the same thing, which is the point: a capability that disagreed
+        // with the API would just move the bug from one side of the wire to the other.
+        await Assert.ThrowsAsync<ForbiddenException>(() => Handler(db, participant).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None));
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task An_ic_support_participant_gains_no_history_either()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedAsync(db);
+        // IC_SUPPORT on campus 2 — a STAFF account, so this also proves the refusal is about the
+        // RELATION and not about the role name on the badge. Deliberately NOT IcStaffC1, who hosts
+        // campus 1 in this fixture and therefore has history there on merit.
+        await SeedSupportingParticipantAsync(db, instances[1], IcStaffSupporter, ParticipantRoles.IcSupport);
+        // Not the host of campus 2 and not its leader: supporting it is their whole connection to it.
+        var supporter = Host(IcStaffSupporter, Campus2);
+
+        var resolved = await Resolver(db, supporter).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.NotEmpty(resolved.CampusVisits);
+        Assert.DoesNotContain(VisitFormActions.ViewChangeHistory, resolved.Viewer.AllowedActions);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task The_current_host_is_granted_the_capability_and_their_scoped_history()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedAsync(db);
+        var host = Host(IcStaffC1, Campus1);   // hosts campus 1 only
+
+        var resolved = await Resolver(db, host).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.Contains(VisitFormActions.ViewChangeHistory, resolved.Viewer.AllowedActions);
+
+        var result = await Handler(db, host).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+        Assert.NotEmpty(result.Entries);
+        // Scoping is unchanged: the campus they do NOT host stays out, and so do the request-level
+        // events. Granting the capability must not have widened what it grants access TO.
+        Assert.DoesNotContain(result.Entries, e => e.VisitInstanceId == instances[1].VisitInstanceId);
+        Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.RequestRevision);
+
+        await tx.RollbackAsync();
+    }
+
+    [Theory]
+    [InlineData("REGISTRANT")]
+    [InlineData("HO")]
+    [InlineData("STAFF_LEADER")]
+    public async Task The_existing_history_actors_keep_the_capability(string who)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedAsync(db);
+        FakeUser actor = who switch
+        {
+            "REGISTRANT" => Owner(),
+            "HO" => Ho(),
+            _ => StaffLeader(SlCampus1, Campus1),
+        };
+
+        var resolved = await Resolver(db, actor).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.Contains(VisitFormActions.ViewChangeHistory, resolved.Viewer.AllowedActions);
+
+        // And the endpoint still serves them, so the capability is not a claim nobody checked.
+        var result = await Handler(db, actor).Handle(
+            new GetVisitRequestHistoryQuery(req.VisitRequestId), CancellationToken.None);
+        Assert.NotEmpty(result.Entries);
+
         await tx.RollbackAsync();
     }
 }

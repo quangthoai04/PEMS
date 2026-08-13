@@ -50,7 +50,6 @@ public sealed class GetVisitHistoryDetailQueryHandler
     {
         if (!_readFlag.Enabled) throw new NotFoundException("Không tìm thấy.");
         if (!_currentUser.IsAuthenticated || _currentUser.UserId is null) throw new ForbiddenException();
-        var actorId = _currentUser.UserId.Value;
 
         if (!VisitHistoryEventSources.TryParse(request.EventId, out var source, out var key))
             throw new NotFoundException("Sự kiện lịch sử", 0);
@@ -60,41 +59,21 @@ public sealed class GetVisitHistoryDetailQueryHandler
             .FirstOrDefaultAsync(v => v.VisitRequestId == request.VisitRequestId, ct)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", request.VisitRequestId);
 
-        // ── Scope FIRST (mirrors GetVisitRequestHistoryQueryHandler exactly) ──
-        var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
-        var operatedInstanceIds = VisitRequestOwnership.OperatedCampuses(visit, actorId)
-            .Select(c => c.VisitInstanceId).ToList();
-        var isHo = _currentUser.RoleCode == RoleCodes.Ho;
-        List<ulong> visibleInstanceIds;
-        var includeRequestLevel = false;
+        // ── Scope FIRST, from the SAME resolver the timeline and the detail read model use ──
         // Identity events are readable by exactly the people the timeline shows them to — the requester
         // side, HO, and a campus's own operational contact. A Staff Leader or a Host reaching one by id
         // gets the same "not found" they would get for another campus's revision.
-        var includeIdentity = false;
-        if (isRegistrant || isHo)
-        {
-            visibleInstanceIds = visit.CampusInstances.Select(c => c.VisitInstanceId).ToList();
-            includeRequestLevel = true;
-            includeIdentity = true;
-        }
-        else if (operatedInstanceIds.Count > 0)
-        {
-            visibleInstanceIds = operatedInstanceIds;
-            includeIdentity = true;
-        }
-        else if (_currentUser.RoleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader
-                 && _currentUser.PrimaryCampusId is { } campusId)
-        {
-            visibleInstanceIds = visit.CampusInstances
-                .Where(c => c.CampusId == campusId).Select(c => c.VisitInstanceId).ToList();
-        }
-        else
-        {
-            visibleInstanceIds = visit.CampusInstances
-                .Where(c => c.CurrentHostUserId == actorId).Select(c => c.VisitInstanceId).ToList();
-        }
-        if (visibleInstanceIds.Count == 0 && !includeRequestLevel)
+        //
+        // Sharing the resolver is what stops this endpoint becoming a back door: an actor with no
+        // history capability is refused here on identical terms, so guessing an event id cannot reach
+        // what the timeline would not have listed.
+        var scope = VisitHistoryVisibility.Resolve(visit, _currentUser);
+        if (!scope.CanViewHistory)
             throw new ForbiddenException("Bạn không có quyền xem lịch sử của đơn này.");
+
+        var visibleInstanceIds = scope.VisibleInstanceIds.ToList();
+        var includeRequestLevel = scope.IncludeRequestLevel;
+        var includeIdentity = scope.IncludeIdentity;
 
         var campusNameByInstance = await BuildCampusNamesAsync(visit, visibleInstanceIds, ct);
         string? CampusOf(ulong? id) =>

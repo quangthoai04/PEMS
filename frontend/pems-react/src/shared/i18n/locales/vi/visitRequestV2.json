@@ -472,6 +472,7 @@
   "history": {
     "loading": "Đang tải lịch sử…",
     "loadFailed": "Không thể tải lịch sử thay đổi.",
+    "forbidden": "Bạn không có quyền xem lịch sử thay đổi của đơn này.",
     "empty": "Chưa có thay đổi nào được ghi nhận.",
     "someone": "Một người dùng",
     "thisRequest": "đơn này",

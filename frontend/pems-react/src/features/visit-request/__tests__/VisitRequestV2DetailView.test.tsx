@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import VisitRequestV2DetailView from '../components/v2/VisitRequestV2DetailView';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -63,7 +63,12 @@ const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitF
 
   requestOutcome: { code: 'ALL_WAITING', total: 1, accepted: 0, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
   campusVisits: [campusFixture()],
-  viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+  // A REGISTRANT reads the change history, so the backend sends VIEW_CHANGE_HISTORY beside VIEW —
+  // the two read capabilities are separate because a supporting participant gets only the first.
+  viewer: {
+    relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false,
+    allowedActions: ['VIEW', 'VIEW_CHANGE_HISTORY'],
+  },
   ...overrides,
 });
 
@@ -414,6 +419,57 @@ describe('VisitRequestV2DetailView', () => {
     expect(screen.getByTestId('request-status')).toHaveTextContent('Awaiting delegation contact confirmation');
     expect(screen.getByTestId('campus-status-10')).toHaveTextContent('Awaiting delegation contact confirmation');
     expect(screen.queryByText('Unknown')).toBeNull();
+  });
+
+  // ── Change history is gated on its own capability, not on being able to open the page ──────
+  //
+  // A Staff/participant invited to support a campus can read this screen and may NOT read the change
+  // history. The section used to mount for them regardless, so the endpoint's 403 arrived as
+  // "The change history could not be loaded." with a Retry button — an error message for a decision,
+  // and a retry for something that will never succeed.
+
+  it('without VIEW_CHANGE_HISTORY the section is absent and the history API is never called', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'IC_SUPPORT', canViewAllCampuses: false, isReadOnly: false,
+        allowedActions: ['VIEW'],
+      },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    // The detail they were invited to still renders in full…
+    expect(screen.getByTestId('section-campuses')).toBeInTheDocument();
+    // …and the history section is not there at all — heading included.
+    expect(screen.queryByTestId('section-history')).toBeNull();
+    // No request means no 403, so nothing to mis-render and no noise against the endpoint.
+    expect(getVisitRequestHistory).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('history-retry')).toBeNull();
+  });
+
+  it('with VIEW_CHANGE_HISTORY the section mounts and loads as before', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: {
+        relation: 'HOST', canViewAllCampuses: false, isReadOnly: false,
+        allowedActions: ['VIEW', 'VIEW_CHANGE_HISTORY'],
+      },
+    }));
+    vi.mocked(getVisitRequestHistory).mockResolvedValue({
+      visitRequestId: 1,
+      requestCode: 'VR-2026-001',
+      entries: [{
+        at: '2026-07-16T10:00:00', eventCode: 'INSTANCE_APPROVED', eventId: null, visitInstanceId: 10,
+        campusName: 'FPT University Hà Nội', actorName: 'Kim Min Jae', formRevision: null,
+        approvalRevision: null, amendmentNo: null, statusCode: 'ASSIGNED', sourceType: null,
+        reason: null, maskedEmail: null, fromStatus: null, toStatus: null,
+      }],
+    });
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.getByTestId('section-history')).toBeInTheDocument();
+    await waitFor(() => expect(getVisitRequestHistory).toHaveBeenCalledWith(1));
+    expect(await screen.findByTestId('visit-history-timeline')).toBeInTheDocument();
   });
 
   it('numbers the sections 1-2-3 with no gap where the roll-up used to be', async () => {
