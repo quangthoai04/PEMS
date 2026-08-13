@@ -55,12 +55,6 @@ public sealed class UploadNewsCoverImageCommandHandler
         if (!isAllowed)
             throw new ForbiddenException("Chỉ Staff và Student mới có thể tải ảnh bìa tin tức.");
 
-        // Leader chỉ được viết tin tức khi tự host 1 đoàn (see CreateNewsCommandHandler) — nên
-        // ảnh bìa của Leader cũng phải gắn với đoàn đó; access thật kiểm ở
-        // VisitInstanceMediaAccessScope bên dưới.
-        if (isStaffLeader && !request.VisitInstanceId.HasValue)
-            throw new ForbiddenException("Chỉ Staff và Student mới có thể tải ảnh bìa tin tức không gắn đoàn.");
-
         if (request.Content is null || request.Content.Length == 0)
             throw new BusinessRuleException("Vui lòng chọn ảnh bìa.", "FILE_REQUIRED");
 

@@ -10,6 +10,7 @@ import httpClient from '../../../shared/api/httpClient';
 import { uploadFileToEndpoint } from '../../../shared/api/fileUploadApi';
 import { validateFile } from '../../../shared/utils/fileValidation';
 import { useAuth } from '../../../shared/hooks/useAuth';
+import { resolveEffectiveRole } from '../../../shared/auth/resolveEffectiveRole';
 import { SectionImagesEditor, type SectionImageItem } from './components/SectionImagesEditor';
 import { BilingualColumns, LanguageColumnLabel } from './components/BilingualColumns';
 import { useBilingualTranslate } from './components/useBilingualTranslate';
@@ -97,16 +98,17 @@ function newSection(sectionOrder: number): ContentSection {
 export function CreateNews() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, effectiveRole } = useAuth();
+  const currentEffectiveRole = effectiveRole ?? resolveEffectiveRole(user);
   const { t } = useTranslation(['news']);
   // Đi từ tab "Sau tiếp khách"/trang Đóng góp: chuyến được chọn sẵn + quay lại đúng trang cũ.
   const presetVisitInstanceId = searchParams.get('visitInstanceId');
   const returnTo = searchParams.get('returnTo');
 
-  // Staff thường được tạo tin không gắn đoàn; Student vẫn bắt buộc chọn đoàn.
-  const isStaff = user?.roleCode === 'STAFF' && (user?.subRole ?? '') === 'STAFF';
-  const isStudent = user?.roleCode === 'STUDENT';
-  const visitRequired = !isStaff; // Student (hoặc role khác) → bắt buộc; Staff → tùy chọn
+  // Staff thường ('STAFF') và Staff Leader ('STAFF_LEADER') được tạo tin không gắn đoàn.
+  // Student ('STUDENT') hoặc role khác → bắt buộc chọn đoàn.
+  const isStaffOrLeader = currentEffectiveRole === 'STAFF' || currentEffectiveRole === 'STAFF_LEADER';
+  const visitRequired = !isStaffOrLeader;
 
   // Step 0: Eligible visit instances
   const [eligibleVisits, setEligibleVisits]   = useState<EligibleVisit[]>([]);

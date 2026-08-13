@@ -23,7 +23,7 @@ export function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${disabled ? 'opacity-50' : ''}`}>
+    <section className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-opacity ${disabled ? 'opacity-50 pointer-events-none' : ''}`}>
       <div className="bg-[#004c91] px-6 py-3.5 flex items-center justify-between gap-3">
         <button
           type="button"

@@ -60,9 +60,8 @@ public sealed class CreateNewsCommandHandler
         if (!isRegularStaff && !isStaffLeader && !isStudent)
             throw new ForbiddenException("Chỉ Staff và Student mới được tạo tin tức.");
 
-        // Step 1b: Student và Staff Leader (chỉ viết được khi tự host đoàn) bắt buộc chọn đoàn;
-        // Staff thường được tạo tin không gắn đoàn nào.
-        if ((isStudent || isStaffLeader) && !request.VisitInstanceId.HasValue)
+        // Step 1b: Student bắt buộc chọn đoàn; Staff thường và Staff Leader được tạo tin không gắn đoàn.
+        if (isStudent && !request.VisitInstanceId.HasValue)
             throw new ValidationException("Vui lòng chọn đoàn tiếp khách trước khi tạo tin tức.");
 
         ulong? campusId = null;
