@@ -9,6 +9,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -88,6 +89,13 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                 throw new BusinessRuleException(
                     "Email mới trùng với email đầu mối vận hành hiện tại của cơ sở này.",
                     OperationalContactErrorCodes.ChangeConflict);
+
+            // The address must be an EXTERNAL one, exactly as at create and replace. A handover is the
+            // one door where the person choosing the successor may be the outgoing contact rather than
+            // the registrant, so the rule has to be enforced here too — otherwise a contact could hand
+            // their campus to an FPTU account on the way out.
+            await OperationalContactEligibility.EnsureEmailMayHoldContactRoleAsync(
+                _db, newEmail, cancellationToken);
 
             // If the address already has an account it must be usable. An address with NO account is
             // fine — SSO provisions one when they accept. Nothing here reveals which case it was.

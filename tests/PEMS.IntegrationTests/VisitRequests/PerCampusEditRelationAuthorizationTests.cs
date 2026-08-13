@@ -34,6 +34,10 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// <item>STAFF who IS the registrant — edits, but cannot approve (they are not the campus's leader).</item>
 /// <item>STAFF with no relation at all — refused, despite being staff.</item>
 /// <item>STAFF LEADER who is ALSO the registrant — both sets of rights, including "Lưu và duyệt".</item>
+/// <item>STAFF LEADER of the campus who did NOT file the request — refused the edit and refused
+/// "Lưu và duyệt", while keeping approve, host assignment and reject in full. Leading the campus makes
+/// them its DECIDER; a decider who also rewrites what they are deciding leaves nobody holding the
+/// requester's version of it.</item>
 /// </list>
 /// <para>
 /// The suite drives the COMMAND rather than the service, because authorization lives in the handler; the
@@ -48,8 +52,11 @@ public sealed class PerCampusEditRelationAuthorizationTests
 
     // Canonical seed. Campus 1 = HN, 2 = HCM.
     private const ulong LeaderHn = 3;      // STAFF / LEADER, campus 1
+    private const ulong LeaderHcm = 9;     // STAFF / LEADER, campus 2
     private const ulong IcStaffHn = 101;   // STAFF / STAFF, IC, campus 1 — a valid Host for HN
     private const ulong IcStaffHcm = 103;  // STAFF / STAFF, IC, campus 2 — a stranger to HN
+    /// <summary>VISITOR seed — the guest who runs the campus. The contact role is external, always.</summary>
+    private const ulong ExternalContact = 22;
     private const ulong CampusHn = 1;
 
     private static bool? _dbUp;
@@ -133,39 +140,126 @@ public sealed class PerCampusEditRelationAuthorizationTests
             new PerCampusFormV2WriteOptions { Enabled = true });
     }
 
+    /// <summary>
+    /// The ordinary approval command — the one a Staff Leader keeps on EVERY request, whoever filed it.
+    /// Built here beside the edit handler on purpose: the regression these tests guard is that the edit
+    /// restriction did not quietly travel into the decision.
+    /// </summary>
+    private static PEMS.Application.Delegations.Commands.ApproveCampusInstance.ApproveCampusInstanceCommandHandler
+        ApproveHandler(ApplicationDbContext db, FakeUser actor)
+        => new(db, actor, new FixedClock(),
+            new CampusApprovalExecutor(
+                db, new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db),
+                new NoopNotifications(),
+                new PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService(
+                    db, actor,
+                    NullLogger<PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>.Instance,
+                    new FixedClock()),
+                NullLogger<CampusApprovalExecutor>.Instance));
+
+    private static PEMS.Application.Delegations.Commands.RejectCampusInstance.RejectCampusInstanceCommandHandler
+        RejectHandler(ApplicationDbContext db, FakeUser actor)
+        => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), new NoopNotifications(),
+            new PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService(
+                db, actor,
+                NullLogger<PEMS.Application.Delegations.Services.VisitFormRead.VisitFormReadService>.Instance,
+                new FixedClock()),
+            new PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail(db),
+            new PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender(
+                db, new CampusApprovalDecisionV2Tests.RecordingDispatcher(), new AlwaysGrantsLock(),
+                new FixedClock(),
+                NullLogger<PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender>.Instance));
+
+    /// <summary>These tests send one message at a time, so the recovery lock always grants.</summary>
+    private sealed class AlwaysGrantsLock : PEMS.Application.Delegations.VisitNotifications.IEmailRecoveryLock
+    {
+        public Task<IAsyncDisposable?> TryAcquireAsync(string key, CancellationToken ct)
+            => Task.FromResult<IAsyncDisposable?>(new Handle());
+
+        private sealed class Handle : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
     // ── Fixture ─────────────────────────────────────────────────────────────────────────────────
 
-    private static CampusVisitFormDto Campus(string code, string registrantEmail, DateTime start, string delegation = "Đoàn Base")
+    private static CampusVisitFormDto Campus(string code, string contactEmail, DateTime start, string delegation = "Đoàn Base")
         => new(
             code, start, start.AddMinutes(120), delegation, "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            // The contact is the registrant's own address, so the campus self-matches at submit and the
-            // request is past the confirmation gate immediately. That gate is not this suite's subject,
-            // and a campus behind it cannot be edited or decided at all.
-            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", registrantEmail),
+            // An EXTERNAL address, always. The operational contact is the guest-side person who runs the
+            // campus, and no internal account may hold that role — which is why these fixtures cannot
+            // point it at their STAFF/LEADER registrant the way they used to.
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", contactEmail),
             "EN", null, "DECLINED", null, null);
 
     /// <summary>
     /// A committed single-campus (HN) request whose REGISTRANT is <paramref name="registrantUserId"/>,
     /// left at WAITING_REQUEST_APPROVAL. Filed 20 days out so the 72-hour floor is not in play unless a
     /// test deliberately moves the date.
+    ///
+    /// <para>
+    /// Its contact is <see cref="ExternalContact"/> — a guest — who then accepts, because every case
+    /// here needs a campus PAST the confirmation gate: behind it a campus can neither be decided nor
+    /// (for the leader) even seen. The acceptance is written directly rather than driven through the
+    /// token flow: this suite is about who may edit a pending campus, and the invitation handshake has
+    /// its own tests.
+    /// </para>
     /// </summary>
     private static async Task<(ulong RequestId, ulong InstanceId)> CreatePendingAsync(ulong registrantUserId)
     {
         var email = V2SeedActor.Email(registrantUserId);
-        using var db = NewContext();
-        await using var tx = await db.Database.BeginTransactionAsync();
-        var created = await new VisitRequestV2CreateService(db).CreateV2Async(
-            new VisitRequestFormDataV2(
-                Guid.NewGuid().ToString("N"),
-                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", email),
-                null, new List<CampusVisitFormDto> { Campus("HN", email, Now.AddDays(20)) }),
-            registrantUserId, "VISITOR_SUBMITTED", Now, CancellationToken.None);
-        await tx.CommitAsync();
+        var contactEmail = V2SeedActor.Email(ExternalContact);
+        ulong requestId, instanceId;
+        using (var db = NewContext())
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var created = await new VisitRequestV2CreateService(db).CreateV2Async(
+                new VisitRequestFormDataV2(
+                    Guid.NewGuid().ToString("N"),
+                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", email),
+                    null, new List<CampusVisitFormDto> { Campus("HN", contactEmail, Now.AddDays(20)) }),
+                registrantUserId, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            await tx.CommitAsync();
 
-        var instanceId = created.CampusInstances.Single().VisitInstanceId;
-        return (created.VisitRequestId, instanceId);
+            requestId = created.VisitRequestId;
+            instanceId = created.CampusInstances.Single().VisitInstanceId;
+        }
+
+        await ConfirmContactAsync(requestId, instanceId);
+        return (requestId, instanceId);
+    }
+
+    /// <summary>The invited guest accepts: the campus gets its contact and the request clears the gate.</summary>
+    private static async Task ConfirmContactAsync(ulong requestId, ulong instanceId)
+    {
+        using var db = NewContext();
+        var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instanceId);
+        instance.OperationalContactUserId = ExternalContact;
+        instance.OperationalContactConfirmedAt = Now;
+        instance.OperationalContactConfirmationSource = OperationalContactSources.EmailConfirmation;
+        instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
+
+        var visit = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == requestId);
+        visit.Status = VisitRequestStatuses.PendingApproval;
+        visit.ContactGateRevision = 1;
+
+        // The invitation is settled too. A campus that has a contact while an invitation for it is still
+        // PENDING is a state the workflow never produces, and the read model would offer resend/cancel
+        // actions on it.
+        var invitations = await db.VisitRequestIdentityChanges
+            .Where(c => c.VisitRequestId == requestId && c.Status == IdentityChangeStatuses.Pending)
+            .ToListAsync();
+        foreach (var invitation in invitations)
+        {
+            invitation.Status = IdentityChangeStatuses.Applied;
+            invitation.NewUserId = ExternalContact;
+            invitation.AppliedAt = Now;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task<CampusVisitEditV2Dto> PayloadAsync(
@@ -195,6 +289,20 @@ public sealed class PerCampusEditRelationAuthorizationTests
         using var db = NewContext();
         return (await db.VisitInstanceFormDetails.AsNoTracking()
             .SingleAsync(d => d.VisitInstanceId == instanceId)).DelegationName ?? "";
+    }
+
+    /// <summary>The concurrency token the approve/reject commands demand — read fresh, as a screen would.</summary>
+    private static async Task<int> RowVersionOfAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        return (await db.VisitRequestCampuses.AsNoTracking()
+            .SingleAsync(c => c.VisitInstanceId == instanceId)).RowVersion;
+    }
+
+    private static async Task<PEMS.Domain.Entities.Delegations.VisitRequestCampus> InstanceOfAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        return await db.VisitRequestCampuses.AsNoTracking().SingleAsync(c => c.VisitInstanceId == instanceId);
     }
 
     private static async Task CleanupAsync(ulong id)
@@ -452,6 +560,200 @@ public sealed class PerCampusEditRelationAuthorizationTests
                 Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
             }
             finally { await CleanupAsync(otherRequestId); }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── CASE E — the campus's Staff Leader on SOMEBODY ELSE'S request ───────────────────────────
+
+    /// <summary>
+    /// The campus is theirs to answer; the request is not theirs to rewrite. They approve or reject it —
+    /// see the two tests below, which use this same actor and campus — but they do not edit the form,
+    /// and they cannot reach "Lưu và duyệt", which is an edit wearing a decision.
+    /// </summary>
+    [Fact]
+    public async Task A_campus_leader_who_is_not_the_registrant_may_not_edit_the_pending_campus()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            // Filed by an IC STAFF account; the campus's leader is a different person entirely.
+            (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
+            var before = await DelegationOfAsync(instanceId);
+            var payload = await PayloadAsync(instanceId, "Đoàn leader sửa hộ");
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(
+                            requestId, instanceId, payload, false, null),
+                        CancellationToken.None));
+
+            Assert.Equal(before, await DelegationOfAsync(instanceId));
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, instance.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The same actor, asking for the edit AND the approval in one call. Refused before either half
+    /// runs, so the campus keeps its content, its WAITING status and its empty Host — a partial save
+    /// here would be the exact failure the single transaction exists to prevent, arriving through the
+    /// authorization door instead.
+    /// </summary>
+    [Fact]
+    public async Task A_campus_leader_who_is_not_the_registrant_may_not_save_and_approve()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
+            var before = await DelegationOfAsync(instanceId);
+            var payload = await PayloadAsync(instanceId, "Đoàn leader sửa rồi duyệt");
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(
+                            requestId, instanceId, payload, false,
+                            new ApproveAfterSaveDto(IcStaffHn, "duyệt luôn")),
+                        CancellationToken.None));
+
+            Assert.Equal(before, await DelegationOfAsync(instanceId));
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, instance.Status);
+            Assert.Null(instance.CurrentHostUserId);
+            Assert.Null(instance.DecidedBy);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The regression the whole change hangs on: taking the EDIT away must not take the DECISION away.
+    /// Same leader, same campus, same request that refused them above — approving and naming the Host
+    /// still works, because approval authority never asked who filed the request.
+    /// </summary>
+    [Fact]
+    public async Task A_campus_leader_who_is_not_the_registrant_still_approves_and_assigns_the_host()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
+
+            using (var db = NewContext())
+            {
+                var res = await ApproveHandler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                    new PEMS.Application.Delegations.Commands.ApproveCampusInstance.ApproveCampusInstanceCommand(
+                        requestId, instanceId, IcStaffHn, "Đồng ý tiếp đoàn",
+                        await RowVersionOfAsync(instanceId)),
+                    CancellationToken.None);
+                Assert.Equal(VisitInstanceStatuses.Assigned, res.CampusStatus);
+                Assert.Equal(IcStaffHn, res.HostUserId);
+            }
+
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.Assigned, instance.Status);
+            Assert.Equal(IcStaffHn, instance.CurrentHostUserId);
+            Assert.Equal(LeaderHn, instance.DecidedBy);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>The other half of the same decision: refusing the campus is equally untouched.</summary>
+    [Fact]
+    public async Task A_campus_leader_who_is_not_the_registrant_still_rejects()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
+
+            using (var db = NewContext())
+            {
+                var res = await RejectHandler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                    new PEMS.Application.Delegations.Commands.RejectCampusInstance.RejectCampusInstanceCommand(
+                        requestId, instanceId, "Trùng lịch tiếp đoàn khác",
+                        await RowVersionOfAsync(instanceId)),
+                    CancellationToken.None);
+                Assert.Equal(VisitInstanceStatuses.Rejected, res.CampusStatus);
+            }
+
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.Rejected, instance.Status);
+            Assert.Equal(LeaderHn, instance.DecidedBy);
+            Assert.Equal("Trùng lịch tiếp đoàn khác", instance.DecisionNote);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The leader rule follows the PERSON, so a Staff Leader is held to it even at a campus they do not
+    /// lead — where the "own campus" half is false and the edit is therefore refused, registrant or not.
+    /// Being the registrant does not restore it: the rule asks for both halves and this actor has one.
+    /// </summary>
+    [Fact]
+    public async Task A_staff_leader_of_another_campus_is_refused_even_on_a_request_they_filed()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            // Leader of campus 2 files a visit to campus 1 (HN).
+            (requestId, instanceId) = await CreatePendingAsync(LeaderHcm);
+            var payload = await PayloadAsync(instanceId, "Đoàn leader cơ sở khác tự sửa");
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(
+                            requestId, instanceId, payload, false, null),
+                        CancellationToken.None));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Holding a SECOND, requester-side relation does not route a Staff Leader around the leader rule:
+    /// this campus's leader is also its operational contact here, and is still refused because they did
+    /// not file the request. Otherwise the restriction would be avoidable by accepting an invitation.
+    ///
+    /// <para>
+    /// The contact row is written directly because the workflow will no longer produce it: an internal
+    /// account cannot be appointed or accept the contact role at all any more. That makes this a
+    /// defence-in-depth case rather than a reachable one — rows like it exist in databases created
+    /// before the rule, and the edit door must refuse them on their own merits rather than relying on
+    /// the appointment door having been closed.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_campus_leader_who_is_only_the_operational_contact_is_still_refused()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
+
+            // Put the campus's own Staff Leader in the contact seat directly. The invitation workflow
+            // is not the subject here — the question is only which rulebook applies to the person.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_campuses SET operational_contact_user_id = {0} WHERE visit_instance_id = {1}",
+                    LeaderHn, instanceId);
+
+            var payload = await PayloadAsync(instanceId, "Đoàn leader kiêm đầu mối");
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(
+                            requestId, instanceId, payload, false, null),
+                        CancellationToken.None));
         }
         finally { await CleanupAsync(requestId); }
     }

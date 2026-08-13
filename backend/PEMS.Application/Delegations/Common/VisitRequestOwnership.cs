@@ -1,9 +1,75 @@
 using System.Linq;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Policies;
 using PEMS.Application.Delegations.Common;
 
 namespace PEMS.Application.Delegations.Common;
+
+/// <summary>
+/// Everything the pending-campus edit needs to know about WHO is asking, resolved once and answered
+/// from one place — the read model that offers the button and the handler that accepts the call both
+/// ask this, so a capability can never promise what the command refuses.
+///
+/// <para>
+/// Two rulebooks, chosen by the actor's effective role rather than by their relation:
+/// </para>
+/// <list type="bullet">
+/// <item><b>A Staff Leader</b> may edit a campus still awaiting a decision ONLY when it is their own
+/// campus AND they filed the request themselves. Leading the campus is what makes them its DECIDER, and
+/// a decider who also rewrites the thing they are deciding leaves nobody holding the request's version
+/// of it. Their answer to a request they did not file is approve or reject, not edit.</item>
+/// <item><b>Everyone else</b> — the registrant, the campus's confirmed operational contact — keeps the
+/// ordinary requester-side rights, unchanged.</item>
+/// </list>
+///
+/// <para>
+/// The role test comes first deliberately. A Staff Leader who is the campus's operational contact, or
+/// who leads a DIFFERENT campus of a request they filed, does not fall back to the requester rulebook:
+/// the leader rule is a restriction on the person, not a privilege they can route around by holding a
+/// second relation.
+/// </para>
+/// </summary>
+/// <param name="ActorIsStaffLeader">Effective role only — says nothing about which campus.</param>
+/// <param name="IsCampusLeader">Staff Leader of the campus this action targets.</param>
+/// <param name="IsRegistrant">Filed the request this campus belongs to.</param>
+/// <param name="IsOperationalContact">Confirmed contact of THIS campus — never of a sibling.</param>
+public readonly record struct PendingCampusEditRelation(
+    bool ActorIsStaffLeader,
+    bool IsCampusLeader,
+    bool IsRegistrant,
+    bool IsOperationalContact)
+{
+    /// <summary>
+    /// The one condition that carries the leader-only privileges INSIDE this edit: filing a schedule
+    /// within the 72-hour registration floor, and "Lưu và duyệt". Both exist so the person who will
+    /// answer the request can fix it rather than refuse it — which is only their business when the
+    /// request is also theirs to fix.
+    /// </summary>
+    public bool ActsAsCampusLeader => IsCampusLeader && IsRegistrant;
+
+    /// <summary>May this actor open the pending-campus edit at all (relation only — lifecycle, cutoff
+    /// and concurrency are still decided afterwards by <see cref="VisitMutationPolicy"/>).</summary>
+    public bool CanEdit => ActorIsStaffLeader
+        ? ActsAsCampusLeader
+        : IsRegistrant || IsOperationalContact;
+
+    /// <summary>
+    /// May this actor approve in the same call. Never widens <see cref="CanEdit"/>: a leader who is not
+    /// the registrant cannot reach the edit, so they cannot reach the approval that travels with it —
+    /// their ordinary approve/reject on the campus is a different command and is untouched by this.
+    /// </summary>
+    public bool CanSaveAndApprove => ActsAsCampusLeader;
+
+    /// <summary>
+    /// The relation to hand <see cref="VisitMutationPolicy"/>, or null when nobody grants the edit.
+    /// <c>CAMPUS_LEADER</c> is issued from HERE and nowhere else, which is what keeps the policy's
+    /// leader branch from becoming a second, registrant-free door into the same action.
+    /// </summary>
+    public string? ViewerRelation => !CanEdit
+        ? null
+        : ActsAsCampusLeader ? VisitViewerRelations.CampusLeader : VisitViewerRelations.Requester;
+}
 
 /// <summary>
 /// The single place that answers "what is this user to this request / this campus".
@@ -47,16 +113,46 @@ public static class VisitRequestOwnership
         => userId is not null && instance.CurrentHostUserId == userId;
 
     /// <summary>
+    /// The actor's EFFECTIVE ROLE is Staff Leader — whatever campus they lead, and whatever relation
+    /// they hold to the request in front of them. On its own it authorizes nothing; it answers "which
+    /// rulebook applies to this person", which is what <see cref="ResolvePendingCampusEdit"/> needs and
+    /// what <see cref="IsCampusLeader"/> (role AND campus) cannot express.
+    /// </summary>
+    public static bool IsStaffLeader(
+        PEMS.Application.Common.Interfaces.ICurrentUserService currentUser)
+        => currentUser.UserId.HasValue
+           && currentUser.RoleCode == RoleCodes.Staff
+           && currentUser.SubRole == UserSubRoles.Leader;
+
+    /// <summary>
     /// Staff Leader OF THIS CAMPUS — the approval authority before a decision, and the person who hands
     /// the Host role over after one. Campus scoping is part of the relation, not a separate check: a
     /// leader of a different campus is a stranger to this one, whatever their role name says.
     /// </summary>
     public static bool IsCampusLeader(
         PEMS.Application.Common.Interfaces.ICurrentUserService currentUser, ulong campusId)
-        => currentUser.UserId.HasValue
-           && currentUser.RoleCode == RoleCodes.Staff
-           && currentUser.SubRole == UserSubRoles.Leader
-           && currentUser.PrimaryCampusId == campusId;
+        => IsStaffLeader(currentUser) && currentUser.PrimaryCampusId == campusId;
+
+    /// <summary>
+    /// Who this caller is to ONE still-pending campus, for the pending-edit door specifically. The read
+    /// model and the command handler both build their verdict from this, so "the button was offered"
+    /// and "the call was accepted" cannot drift apart.
+    ///
+    /// <para>
+    /// It answers relation ONLY. Whether the campus is still editable at all (lifecycle, the mutation
+    /// cutoff, the concurrency token, the campus-set rule) is decided afterwards, by
+    /// <see cref="VisitMutationPolicy"/> and the edit service, exactly as before.
+    /// </para>
+    /// </summary>
+    public static PendingCampusEditRelation ResolvePendingCampusEdit(
+        VisitRequest visit,
+        VisitRequestCampus instance,
+        PEMS.Application.Common.Interfaces.ICurrentUserService currentUser)
+        => new(
+            ActorIsStaffLeader: IsStaffLeader(currentUser),
+            IsCampusLeader: IsCampusLeader(currentUser, instance.CampusId),
+            IsRegistrant: IsRegistrant(visit, currentUser.UserId),
+            IsOperationalContact: IsOperationalContact(instance, currentUser.UserId));
 
     /// <summary>
     /// True when the user is the confirmed operational contact of at least one campus of the

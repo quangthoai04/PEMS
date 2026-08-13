@@ -129,8 +129,11 @@ public sealed class UserProvisionService : IUserProvisionService
         string roleCode, string status, string notEligibleMessage, string notEligibleCode)
     {
         // Internal account (ADMIN/HO/STAFF/DEPARTMENT/STUDENT) — must not be repurposed. WHICH role
-        // owns the address is never revealed.
-        if (!string.Equals(roleCode, RoleCodes.Visitor, StringComparison.OrdinalIgnoreCase))
+        // owns the address is never revealed. The role test itself comes from
+        // OperationalContactEligibility so "which roles are external" is decided in ONE place: the
+        // contact workflow asks the same question at four other doors, and two copies of this
+        // predicate would eventually disagree about a role added later.
+        if (!PEMS.Application.Delegations.Common.OperationalContactEligibility.IsExternalRole(roleCode))
             throw new ConflictException(notEligibleMessage, notEligibleCode);
 
         // Existing VISITOR must be ACTIVE to be linked. A separate code, because this one IS worth

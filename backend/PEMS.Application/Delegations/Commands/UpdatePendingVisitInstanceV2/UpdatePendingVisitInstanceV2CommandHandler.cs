@@ -25,16 +25,17 @@ namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitInstanceV2;
 /// transaction.
 ///
 /// <para>
-/// Authorization is by RELATION to THIS campus, never by role name. Three relations can reach it and
-/// they are not interchangeable:
+/// Authorization is by RELATION to THIS campus, resolved in one place —
+/// <see cref="VisitRequestOwnership.ResolvePendingCampusEdit"/> — which the read model asks too:
 /// </para>
 /// <list type="bullet">
 /// <item><b>Registrant</b> — owns the request, so owns every campus of it.</item>
 /// <item><b>Operational contact of this campus</b> — runs it. Holding a SIBLING campus grants nothing
 /// here, which is the whole reason the check takes the instance rather than the request.</item>
-/// <item><b>Staff Leader of this campus</b> — its approval authority. They are the only actor who may
-/// file a schedule inside the 72-hour registration floor, and the only one for whom "Lưu và duyệt"
-/// exists.</item>
+/// <item><b>Staff Leader of this campus who ALSO filed the request</b> — the only actor who may file a
+/// schedule inside the 72-hour registration floor, and the only one for whom "Lưu và duyệt" exists. A
+/// Staff Leader who did NOT file it is this campus's DECIDER, not its author: they approve or reject
+/// through their own commands, and neither of those is touched by the rule here.</item>
 /// </list>
 /// </summary>
 public sealed class UpdatePendingVisitInstanceV2CommandHandler
@@ -97,25 +98,35 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
             .FirstOrDefault(c => c.VisitInstanceId == request.VisitInstanceId)
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
 
-        var isCampusLeader = VisitRequestOwnership.IsCampusLeader(_currentUser, instance.CampusId);
-        var isRequesterSide = VisitRequestOwnership.IsGuestSide(visit, instance, actorId);
-        if (!isRequesterSide && !isCampusLeader)
-            throw new ForbiddenException(
-                "Chỉ người đăng ký, đầu mối vận hành của cơ sở này hoặc Staff Leader phụ trách cơ sở mới được sửa.");
+        // WHO is asking, decided once. The read model builds its EDIT_PENDING_CAMPUS capability from the
+        // very same call, so a button that appeared is a call this admits — and a Staff Leader who is
+        // not the registrant is refused here whether or not a client offers them the screen.
+        var relation = VisitRequestOwnership.ResolvePendingCampusEdit(visit, instance, _currentUser);
+        if (!relation.CanEdit)
+            throw new ForbiddenException(relation.ActorIsStaffLeader
+                // Their own campus, somebody else's request. Say what they CAN do, because they can
+                // still decide it — sending them away with a bare "no permission" would read as if the
+                // campus had stopped being theirs to answer.
+                ? "Staff Leader chỉ được sửa cơ sở đang chờ duyệt khi chính mình là người đăng ký đơn. "
+                  + "Với đơn của người khác, bạn vẫn duyệt hoặc từ chối cơ sở này như bình thường."
+                : "Chỉ người đăng ký hoặc đầu mối vận hành của cơ sở này mới được sửa.");
 
         // The same policy call the read model made when it decided whether to OFFER the button, so a
         // capability can never promise what this refuses. Scoped to this campus only — a sibling that is
-        // under way says nothing about a campus still waiting for its answer.
+        // under way says nothing about a campus still waiting for its answer. The relation is the
+        // resolver's, never re-derived here: CAMPUS_LEADER reaches the policy only for a leader who is
+        // also the registrant, which is what keeps the policy's leader branch from being a second door.
         VisitMutationGuard.EnsureAllowed(
             VisitMutationAction.EditPendingCampus, visit.Status, instance, now,
-            isRequesterSide ? VisitViewerRelations.Requester : VisitViewerRelations.CampusLeader,
+            relation.ViewerRelation!,
             VisitRequestErrorCodes.PendingCampusNotEditable);
 
-        // "Lưu và duyệt" is the campus Staff Leader's alone: approving is their act, and the guest side
-        // asking for it would be approving their own request.
-        if (request.ApproveAfterSave is not null && !isCampusLeader)
+        // "Lưu và duyệt" needs BOTH halves: the campus's Staff Leader (approving is their act) AND the
+        // registrant (editing this request is theirs). A leader deciding somebody else's request keeps
+        // the ordinary approve/reject commands, which ask for neither.
+        if (request.ApproveAfterSave is not null && !relation.CanSaveAndApprove)
             throw new ForbiddenException(
-                "Chỉ Staff Leader phụ trách cơ sở này mới được lưu và duyệt.");
+                "Chỉ Staff Leader phụ trách cơ sở này và đồng thời là người đăng ký đơn mới được lưu và duyệt.");
 
         var previousRequestStatus = visit.Status;
         CampusApprovalOutcome? approval = null;
@@ -125,7 +136,10 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
         {
             var result = await _editService.ApplyInstancePendingEditAsync(
                 visit, instance, request.Content, actorId, now,
-                actorIsCampusLeader: isCampusLeader,
+                // The 72-hour override is a leader-registrant privilege, not a role's: a leader who did
+                // not file the request never reaches this line, and one editing somebody else's campus
+                // is not acting as its leader here at all.
+                actorIsCampusLeader: relation.ActsAsCampusLeader,
                 overrideLeadTimeConfirmed: request.OverrideLeadTimeConfirmed,
                 cancellationToken);
             requestRowVersion = result.RequestRowVersion;

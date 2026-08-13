@@ -186,11 +186,12 @@ describe('EditPendingCampusV2Page', () => {
   });
 
   /**
-   * The Staff Leader's path. The client does NOT decide the override — it sends the ordinary request,
-   * the backend answers "confirm this", and only then does the dialog appear. Confirming re-sends the
-   * SAME payload with the flag rather than skipping the call.
+   * The leader-registrant's path — `canOverrideScheduleLeadTime` is the backend's verdict on exactly
+   * that actor, never "is this user a Staff Leader". The client does NOT decide the override: it sends
+   * the ordinary request, the backend answers "confirm this", and only then does the dialog appear.
+   * Confirming re-sends the SAME payload with the flag rather than skipping the call.
    */
-  it('asks the Staff Leader to confirm a sub-72h schedule, then re-sends with the flag', async () => {
+  it('asks the leader-registrant to confirm a sub-72h schedule, then re-sends with the flag', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
       campusVisits: [
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
@@ -224,11 +225,36 @@ describe('EditPendingCampusV2Page', () => {
     expect(vi.mocked(updatePendingVisitInstance).mock.calls[1][2].overrideLeadTimeConfirmed).toBe(true);
   });
 
-  it('shows no save-and-approve button to somebody who is not this campus’s Staff Leader', async () => {
+  it('shows no save-and-approve button to a requester-side editor', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
     renderPage();
     await screen.findByDisplayValue('Đoàn HCM');
     expect(screen.queryByTestId('pending-campus-save-approve')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The campus's Staff Leader, reviewing a request somebody else filed. The backend grants neither the
+   * edit nor the leader flag, so the screen offers nothing at all — no form, no save, and above all no
+   * "Lưu và duyệt", which is an edit wearing a decision. Their approve and reject live on the list
+   * screen and are untouched (see VisitRequestManagementActions).
+   */
+  it('offers nothing to a campus Staff Leader who is not the registrant', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        // No EDIT_PENDING_CAMPUS, and canOverrideScheduleLeadTime absent — exactly what the read model
+        // now returns for this actor.
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', []),
+      ],
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+    }));
+
+    renderPage();
+
+    expect(await screen.findByTestId('pending-campus-not-editable')).toBeInTheDocument();
+    expect(screen.queryByTestId('pending-campus-save')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pending-campus-save-approve')).not.toBeInTheDocument();
+    expect(updatePendingVisitInstance).not.toHaveBeenCalled();
   });
 
   /**

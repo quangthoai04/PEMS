@@ -258,6 +258,34 @@ describe('a row keeps status and relation apart', () => {
     await waitFor(() => desktop().getByText('Chờ xử lý tại cơ sở'));
     expect(desktop().getByRole('button', { name: 'Duyệt & phân công người phụ trách' })).toBeInTheDocument();
   });
+
+  /**
+   * The regression guard for the pending-campus edit rule: a Staff Leader may no longer EDIT a pending
+   * campus of a request somebody else filed, and taking that away must not take the DECISION away.
+   *
+   * This row is exactly that actor — the campus's leader (user 77), a request filed by somebody else
+   * (10) — so the backend sends approve and reject but no EDIT_PENDING_CAMPUS. Both decision routes
+   * must still be on screen: the review button, and "Từ chối cơ sở này" in the ⋯ menu.
+   */
+  it('keeps approve and reject for a campus leader who did not file the request', async () => {
+    renderList([instanceRow({
+      campusStatus: 'WAITING_REQUEST_APPROVAL', currentUserIsHost: false, hostName: null,
+      currentHostUserId: null, statusLabel: 'Chờ xử lý tại cơ sở',
+      currentUserRelation: 'CAMPUS_REVIEWER', relationLabel: 'Bạn có quyền duyệt tại cơ sở',
+      capabilities: [],
+      // Filed by user 10; the caller (77) leads the campus and is not the registrant.
+      createdByUserId: 10, visitorUserId: 10,
+      allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST', 'CAMPUS_REJECT'],
+    })]);
+    await waitFor(() => desktop().getByText('Chờ xử lý tại cơ sở'));
+
+    expect(desktop().getByRole('button', { name: 'Duyệt & phân công người phụ trách' })).toBeInTheDocument();
+
+    const panel = await openRowMenu('row-menu-desktop-5001');
+    expect(within(panel).getByText('Từ chối cơ sở này')).toBeInTheDocument();
+    // …and no edit door, because the backend granted none.
+    expect(within(panel).queryByTestId('row-menu-item-edit-pending')).not.toBeInTheDocument();
+  });
 });
 
 // ── §15.8 / §15.9 / §15.14 the ⋯ menu is capability-driven ───────────────────────────────────────

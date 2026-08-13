@@ -81,6 +81,7 @@
     "PROFILE_NATIONALITY_TOO_LONG": "Quốc tịch quá dài.",
     "CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT": "Không thể sử dụng email này cho đầu mối của đoàn. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.",
     "INTERNAL_REGISTRANT_CANNOT_BE_CONTACT": "Không thể sử dụng email này cho đầu mối của đoàn. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.",
+    "OPERATIONAL_CONTACT_MUST_BE_EXTERNAL": "Tài khoản nội bộ FPTU không thể nhận vai trò đầu mối của đoàn. Vai trò này dành cho khách hoặc đối tác bên ngoài; vui lòng đề nghị người đăng ký mời một email bên ngoài.",
     "REGISTRANT_EMAIL_BELONGS_TO_INTERNAL_ACCOUNT": "Không thể sử dụng email này cho người đăng ký. Vui lòng nhập email khác của khách hoặc đối tác bên ngoài.",
     "VISITOR_ACCOUNT_INACTIVE": "Tài khoản gắn với email này hiện không hoạt động. Vui lòng nhập email khác hoặc liên hệ FPTU để được hỗ trợ.",
     "OTP_INVALID": "Mã OTP không đúng. Vui lòng kiểm tra lại.",

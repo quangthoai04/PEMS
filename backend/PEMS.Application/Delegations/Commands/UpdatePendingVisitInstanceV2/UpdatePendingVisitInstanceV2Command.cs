@@ -15,10 +15,12 @@ namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitInstanceV2;
 /// </para>
 /// </summary>
 /// <param name="ApproveAfterSave">
-/// The "Lưu và duyệt" case: the actor is the campus's Staff Leader AND is fixing something before
-/// approving. Both happen in ONE transaction — an edit that commits beside an approval that fails would
-/// leave the campus holding a schedule nobody agreed to. Null means save only, which is the default even
-/// for a Staff Leader: editing is not deciding.
+/// The "Lưu và duyệt" case: the actor is the campus's Staff Leader AND the request's registrant, and is
+/// fixing something before approving. Both happen in ONE transaction — an edit that commits beside an
+/// approval that fails would leave the campus holding a schedule nobody agreed to. Null means save only,
+/// which is the default even for that actor: editing is not deciding. A leader who did not file the
+/// request approves through <c>ApproveCampusInstanceCommand</c> instead, which asks nothing about the
+/// registrant and is untouched by this.
 /// </param>
 public sealed record UpdatePendingVisitInstanceV2Command(
     ulong VisitRequestId,

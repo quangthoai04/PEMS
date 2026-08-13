@@ -350,7 +350,9 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               const canTransferHost = hasAction(cv.allowedActions, VisitV2Action.TransferHost);
               // The per-campus door for a campus still waiting for its decision. It is the action that
               // makes a MIXED request workable: the request-level "Sửa đơn" above is refused as soon as
-              // one campus has been decided, and this campus has not been.
+              // one campus has been decided, and this campus has not been. Purely the backend's verdict:
+              // a Staff Leader reviewing somebody else's request does not receive it (they approve or
+              // reject instead), and nothing here re-derives that from the viewer's role.
               const canEditPendingCampus = hasAction(cv.allowedActions, VisitV2Action.EditPendingCampus);
               // Per-campus verdicts: these belong to THIS card, not to the request. A sibling that is
               // under way says nothing about this campus, and a global button could not express that.

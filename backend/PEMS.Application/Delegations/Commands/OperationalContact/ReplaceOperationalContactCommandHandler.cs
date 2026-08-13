@@ -10,6 +10,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.EmailActions;
 using PEMS.Application.Notifications.Common;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -88,6 +89,14 @@ public sealed class ReplaceOperationalContactCommandHandler
 
             OperationalContactGuards.EnsureMayManageContact(visit, instance, actorId, allowCurrentContact: false);
             OperationalContactGuards.EnsureReplaceWindowOpen(visit, instance);
+
+            // The address has to be an external one. Checked BEFORE anything is written, so a refused
+            // replacement leaves the campus exactly as it was — with its current contact, its current
+            // invitation and its current status. It covers the self-match branch below too: a registrant
+            // naming their own address gets linked with nobody confirming anything, which is precisely
+            // the shortcut an internal account must not have.
+            await OperationalContactEligibility.EnsureEmailMayHoldContactRoleAsync(
+                _db, newEmail, cancellationToken);
 
             var detail = instance.FormDetail
                 ?? throw new NotFoundException("Chi tiết đơn của cơ sở này", instance.VisitInstanceId);

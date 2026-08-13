@@ -140,7 +140,10 @@ public sealed class CreateVisitRequestV2CommandHandler
                     VisitRequestErrorCodes.InternalRegistrantCannotBeContact);
         }
 
-        if (isInternal)
+        // Contact eligibility runs for EVERY creator, not only an internal one. The operational contact
+        // is external by definition, and who happens to be filling the form says nothing about the
+        // address they typed — a VISITOR naming an FPTU staff member as their campus contact used to
+        // sail past this block entirely and only be stopped, if at all, deeper in.
         {
             // Collected into field-shaped errors (CampusVisits[i].OperationalContact.Email) rather than
             // thrown as a plain message: a bare ConflictException/BusinessRuleException here used to

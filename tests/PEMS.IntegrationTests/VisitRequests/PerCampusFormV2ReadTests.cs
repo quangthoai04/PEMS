@@ -354,6 +354,75 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    // ── The pending-campus edit capability, and who is offered it ───────────────────────────────
+
+    /// <summary>
+    /// A capability that promises what the handler refuses is worse than no capability at all, so this
+    /// is the read-model half of the rule the command enforces: the campus's Staff Leader does NOT get
+    /// the pending edit on a request somebody else filed, and does not get the flag that draws the
+    /// 72-hour override and the "Lưu và duyệt" button either.
+    ///
+    /// <para>
+    /// What they keep is asserted in the same breath, because that is the regression that matters: they
+    /// still see the campus, and the handover capability still comes back — approval and rejection live
+    /// on separate commands with their own list actions, and this rule never reached them.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task EditPendingCampus_is_withheld_from_a_campus_leader_who_did_not_file_the_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Seeded registrant is VisitorOwner — the leader is a different person entirely.
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        var leaderView = await Resolver(db, StaffLeader(SlCampus1, Campus1))
+            .ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = Assert.Single(leaderView.CampusVisits);
+        Assert.DoesNotContain(VisitFormActions.EditPendingCampus, campus.AllowedActions);
+        // Not merely disabled — absent. A relation refusal is not a near miss the reader can wait out,
+        // and rendering it greyed out would suggest the door might open later.
+        Assert.DoesNotContain(campus.Capabilities, c => c.Code == VisitFormActions.EditPendingCampus);
+        Assert.False(campus.CanOverrideScheduleLeadTime);
+
+        // The registrant is untouched by any of this.
+        var ownerView = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        Assert.Contains(VisitFormActions.EditPendingCampus,
+            Assert.Single(ownerView.CampusVisits).AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The same leader, on a request they filed themselves. Both halves of the rule hold, so the edit is
+    /// offered — and with it the flag that carries the 72-hour override and "Lưu và duyệt", which are
+    /// the two things that only ever existed inside this screen.
+    /// </summary>
+    [Fact]
+    public async Task EditPendingCampus_is_offered_to_a_campus_leader_who_filed_the_request()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        req.RegistrantUserId = SlCampus1;
+        await db.SaveChangesAsync();
+
+        var leaderView = await Resolver(db, StaffLeader(SlCampus1, Campus1))
+            .ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = Assert.Single(leaderView.CampusVisits);
+        Assert.Contains(VisitFormActions.EditPendingCampus, campus.AllowedActions);
+        // Exactly once. The requester side and the leader used to add it separately, which put the same
+        // code in the list twice for the one person who is both.
+        Assert.Single(campus.Capabilities, c => c.Code == VisitFormActions.EditPendingCampus);
+        Assert.True(campus.CanOverrideScheduleLeadTime);
+        await tx.RollbackAsync();
+    }
+
     /// <summary>
     /// The request-wide verdict goes ONLY to a caller who can see the whole request.
     ///

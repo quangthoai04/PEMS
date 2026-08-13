@@ -311,19 +311,28 @@ public sealed class VisitFormReadService : IVisitFormReadService
             // or the person who confirmed THIS campus. Confirming a sibling grants nothing here.
             var isContactHere = VisitRequestOwnership.IsOperationalContact(c, userId);
             var requesterSideHere = isRegistrant || isContactHere;
+            // WHO may edit this campus while it waits for its decision — the SAME resolver the command
+            // handler authorizes with, so this capability cannot offer a call that then 403s. A Staff
+            // Leader is held to the leader rulebook here (own campus AND own request) even when they
+            // also hold a requester-side relation.
+            var pendingEdit = VisitRequestOwnership.ResolvePendingCampusEdit(request, c, _currentUser);
             var instanceCapabilities = new List<VisitActionCapabilityDto>();
 
             var pendingAmendmentReason = hasPendingAmendment
                 ? "Cơ sở này đang có một đề xuất thay đổi chờ duyệt."
                 : null;
 
-            if (requesterSideHere)
-            {
-                // Editing a campus that is still WAITING is the per-campus door, and it is open on a
-                // MIXED request where the whole-request edit is not: it asks only about THIS campus.
+            // Editing a campus that is still WAITING is the per-campus door, and it is open on a MIXED
+            // request where the whole-request edit is not: it asks only about THIS campus. Emitted ONCE,
+            // from the resolved relation — the requester side and the leader-registrant used to add it
+            // separately, which put the same code in the list twice for anyone who was both.
+            if (pendingEdit.CanEdit)
                 instanceCapabilities.Add(Decide(
                     VisitMutationAction.EditPendingCampus, VisitFormActions.EditPendingCampus,
-                    c, VisitViewerRelations.Requester, name, instanceScope: true));
+                    c, pendingEdit.ViewerRelation!, name, instanceScope: true));
+
+            if (requesterSideHere)
+            {
                 instanceCapabilities.Add(Decide(
                     VisitMutationAction.SubmitSafeEdit, VisitFormActions.SubmitSafeEdit,
                     c, VisitViewerRelations.Requester, name, instanceScope: true));
@@ -346,12 +355,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
             }
             if (isLeaderHere)
             {
-                // Before the decision, the campus's leader edits it like the requester side does — that
-                // is how a schedule gets fixed instead of the whole request being refused — and they
-                // alone may file one inside the 72-hour floor (after confirming).
-                instanceCapabilities.Add(Decide(
-                    VisitMutationAction.EditPendingCampus, VisitFormActions.EditPendingCampus,
-                    c, VisitViewerRelations.CampusLeader, name, instanceScope: true));
+                // Editing this campus is NOT here: a leader edits a pending campus only when they also
+                // filed the request, and that case is granted above by the resolver. Approving and
+                // rejecting the campus are separate commands with their own actions, and neither asks
+                // anything about the registrant — leading the campus is still the whole qualification
+                // for deciding it.
 
                 // Transferring the Host presupposes there IS one — before approval the Host arrives with
                 // the approval decision, which is a different action on a different screen.
@@ -437,7 +445,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 // so a submitted change is decided in the same call. The label changes; the amendment,
                 // its validation and its history do not.
                 AmendmentSelfApproves = requesterSideHere && isHostHere,
-                CanOverrideScheduleLeadTime = isLeaderHere,
+                // The leader-only privileges INSIDE the pending edit — the 72-hour override and "Lưu và
+                // duyệt" — and both now require the leader to be the registrant as well. It tracks
+                // exactly what the handler will accept, so a leader who is shown neither cannot be
+                // shown a dialog offering one.
+                CanOverrideScheduleLeadTime = pendingEdit.ActsAsCampusLeader,
             });
         }
 

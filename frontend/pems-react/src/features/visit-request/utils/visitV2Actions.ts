@@ -34,7 +34,9 @@ export const VisitV2Action = {
    * Edit ONE campus still waiting for its decision. Instance scope, and the only edit that survives on
    * a MIXED request: `EditPendingRequest` above needs EVERY campus still waiting, so on a request with
    * one campus already approved it is refused — and the campus nobody has answered yet still has to be
-   * correctable. Granted to the registrant, this campus's contact, and this campus's Staff Leader.
+   * correctable. Granted to the registrant, to this campus's contact, and to this campus's Staff Leader
+   * ONLY when that leader also filed the request. A leader deciding somebody else's request does not
+   * receive it — and still approves or rejects the campus as usual, from the list screen's own actions.
    */
   EditPendingCampus: 'EDIT_PENDING_CAMPUS',
   UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',

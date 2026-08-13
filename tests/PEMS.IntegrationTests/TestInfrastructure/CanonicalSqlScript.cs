@@ -679,8 +679,17 @@ public static class CanonicalSqlScript
     // deploy the change to a live database; it is the way a FRESH import gets it right.
     //
     // Still 81 base tables, 33 triggers, 252 foreign keys; 33 email templates.
+    // (2026-08-13) Re-pinned to the script as it stands on Dev. NOTHING in this repin belongs to the
+    // change it ships beside — it records a drift that was already there: commit 7eaf1d7f ("fix bug send
+    // email to invite department") edited the canonical script and left this constant on the previous
+    // hash, so ReadVerified threw and EVERY database-backed integration test in the suite failed with
+    // "pems_pr3_test is not reachable" (the reachability probe swallows the real exception). The whole
+    // of that edit is three lines: the TEMPORARY table tmp_seed_operational_contact_repairs gained an
+    // explicit DEFAULT CHARSET=utf8mb4 / COLLATE=utf8mb4_unicode_ci. No table, column, index, trigger or
+    // seed row moved with it, so ExpectedBaseTableCount (81) and ExpectedTriggerCount (33) are unchanged
+    // — confirmed by a fresh disposable import, which is also what re-verified the two counts.
     public const string ExpectedSha256 =
-        "d0769429af2033659535bea460c7b2ee39b416dbbae2fcf94a3cd1f415aa5a1c";
+        "28d46eea4757e380997dc0a2a26c5cd2a5a6fa2b6b21d2cc4618204514e36adf";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

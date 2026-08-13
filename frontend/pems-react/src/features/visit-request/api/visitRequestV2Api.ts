@@ -291,9 +291,14 @@ export interface ResolvedCampusVisit {
    */
   amendmentSelfApproves?: boolean;
   /**
-   * True when the viewer is this campus's Staff Leader, so they may file a start inside the 72-hour
-   * registration floor (after confirming) and may approve in the same call as an edit. A hint for the
-   * UI only — the backend decides both again.
+   * True when the viewer is this campus's Staff Leader AND filed the request, so they may file a start
+   * inside the 72-hour registration floor (after confirming) and may approve in the same call as an
+   * edit. Both privileges live inside the pending-campus edit, which a leader may only open on their
+   * own request — so leading the campus alone does not set this. A hint for the UI only; the backend
+   * decides both again.
+   *
+   * It says nothing about approving or rejecting the campus normally. Those stay with the campus's
+   * leader whoever filed the request, and come from the list screen's own actions.
    */
   canOverrideScheduleLeadTime?: boolean;
 }
@@ -430,9 +435,9 @@ export interface V2ApproveAfterSave {
 export interface V2InstancePendingEditPayload {
   content: V2CampusVisitEdit;
   /**
-   * The campus Staff Leader's explicit "yes, this schedule, with less than 72 hours' notice". Sent only
+   * The leader-registrant's explicit "yes, this schedule, with less than 72 hours' notice". Sent only
    * after the backend has ASKED for it (409 LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED) and the user has
-   * said yes — never pre-set, because the backend honours it for that leader alone and setting it
+   * said yes — never pre-set, because the backend honours it for that actor alone and setting it
    * hopefully would only hide a refusal the user needs to see.
    */
   overrideLeadTimeConfirmed?: boolean;

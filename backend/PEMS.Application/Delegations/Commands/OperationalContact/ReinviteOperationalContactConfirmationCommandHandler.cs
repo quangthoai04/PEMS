@@ -7,6 +7,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -107,6 +108,13 @@ public sealed class ReinviteOperationalContactConfirmationCommandHandler
                     "Cơ sở này chưa có email đầu mối vận hành để gửi lời mời.",
                     VisitRequestErrorCodes.OperationalContactEmailRequired);
             emailMasked = VisitRequestFingerprintBuilder.MaskEmail(email);
+
+            // Re-checked even though this address was accepted when it was first named: a re-invitation
+            // is a NEW invitation, and the account behind an address can change between the two — a
+            // guest who has since joined FPTU, an account whose role was reassigned. Refusing here costs
+            // one query and stops the campus being re-opened to somebody who may no longer hold it.
+            await OperationalContactEligibility.EnsureEmailMayHoldContactRoleAsync(
+                _db, email, cancellationToken);
 
             // A cancelled invitation may have left the campus at WAITING_REQUEST_APPROVAL if it was a
             // correction of an already-confirmed contact. Nobody holds it now, so it belongs back at

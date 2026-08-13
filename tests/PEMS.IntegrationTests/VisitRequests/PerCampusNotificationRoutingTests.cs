@@ -146,23 +146,70 @@ public sealed class PerCampusNotificationRoutingTests
             new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
             "EN", null, "DECLINED", null, null);
 
-    /// <summary>A committed HN+HCM request, both campuses waiting for their decision.</summary>
-    private static async Task<(ulong RequestId, ulong Hn, ulong Hcm)> CreatePendingAsync()
+    /// <summary>
+    /// A committed HN+HCM request, both campuses waiting for their decision.
+    ///
+    /// <para>
+    /// <paramref name="registrantUserId"/> defaults to the VISITOR who also holds both campuses as their
+    /// contact — the ordinary shape. A caller passing an INTERNAL registrant gets a request whose contact
+    /// is still that visitor, because the contact role is external only: the campuses are then confirmed
+    /// directly, which is what the invited guest's acceptance would have done.
+    /// </para>
+    /// </summary>
+    private static async Task<(ulong RequestId, ulong Hn, ulong Hcm)> CreatePendingAsync(
+        ulong? registrantUserId = null)
     {
+        var registrant = registrantUserId ?? Registrant;
         var start = Now.AddDays(20);
-        using var db = NewContext();
-        await using var tx = await db.Database.BeginTransactionAsync();
-        var created = await new VisitRequestV2CreateService(db).CreateV2Async(
-            new VisitRequestFormDataV2(
-                Guid.NewGuid().ToString("N"),
-                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
-                null, new List<CampusVisitFormDto> { Campus("HN", start), Campus("HCM", start.AddDays(1)) }),
-            Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
-        await tx.CommitAsync();
+        ulong requestId, hn, hcm;
+        using (var db = NewContext())
+        {
+            await using var tx = await db.Database.BeginTransactionAsync();
+            var created = await new VisitRequestV2CreateService(db).CreateV2Async(
+                new VisitRequestFormDataV2(
+                    Guid.NewGuid().ToString("N"),
+                    new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(registrant)),
+                    null, new List<CampusVisitFormDto> { Campus("HN", start), Campus("HCM", start.AddDays(1)) }),
+                registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+            await tx.CommitAsync();
 
-        return (created.VisitRequestId,
-            created.CampusInstances.Single(c => c.CampusId == CampusHn).VisitInstanceId,
-            created.CampusInstances.Single(c => c.CampusId == CampusHcm).VisitInstanceId);
+            requestId = created.VisitRequestId;
+            hn = created.CampusInstances.Single(c => c.CampusId == CampusHn).VisitInstanceId;
+            hcm = created.CampusInstances.Single(c => c.CampusId == CampusHcm).VisitInstanceId;
+        }
+
+        if (registrant != Registrant)
+            await ConfirmContactsAsync(requestId);
+
+        return (requestId, hn, hcm);
+    }
+
+    /// <summary>The invited guest accepts every campus, so the request clears the confirmation gate.</summary>
+    private static async Task ConfirmContactsAsync(ulong requestId)
+    {
+        using var db = NewContext();
+        foreach (var instance in await db.VisitRequestCampuses.Where(c => c.VisitRequestId == requestId).ToListAsync())
+        {
+            instance.OperationalContactUserId = Registrant;      // the VISITOR named as contact
+            instance.OperationalContactConfirmedAt = Now;
+            instance.OperationalContactConfirmationSource = OperationalContactSources.EmailConfirmation;
+            instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
+        }
+
+        var visit = await db.VisitRequests.SingleAsync(v => v.VisitRequestId == requestId);
+        visit.Status = VisitRequestStatuses.PendingApproval;
+        visit.ContactGateRevision = 1;
+
+        foreach (var invitation in await db.VisitRequestIdentityChanges
+                     .Where(c => c.VisitRequestId == requestId && c.Status == IdentityChangeStatuses.Pending)
+                     .ToListAsync())
+        {
+            invitation.Status = IdentityChangeStatuses.Applied;
+            invitation.NewUserId = Registrant;
+            invitation.AppliedAt = Now;
+        }
+
+        await db.SaveChangesAsync();
     }
 
     /// <summary>
@@ -304,15 +351,22 @@ public sealed class PerCampusNotificationRoutingTests
     /// <summary>
     /// The skip is deliberate, not an accident of routing: <c>NotifyLeaderAsync</c> returns early when the
     /// leader IS the editor. "You changed something" is not news to the person who changed it.
+    ///
+    /// <para>
+    /// The editor is a leader who FILED the request, which is now the only way a Staff Leader reaches a
+    /// pending-campus edit at all — a leader may no longer rewrite a request somebody else submitted,
+    /// they decide it. The invariant under test is unchanged; only the one actor who can still trigger
+    /// it is.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task A_leader_editing_their_own_campus_is_not_notified_about_it()
+    public async Task A_leader_editing_a_campus_of_their_own_request_is_not_notified_about_it()
     {
         RequireDb();
         var requestId = 0UL;
         try
         {
-            (requestId, _, var hcm) = await CreatePendingAsync();
+            (requestId, _, var hcm) = await CreatePendingAsync(registrantUserId: LeaderHcm);
 
             using (var db = NewContext())
                 await EditHandler(db, Leader(LeaderHcm, CampusHcm)).Handle(

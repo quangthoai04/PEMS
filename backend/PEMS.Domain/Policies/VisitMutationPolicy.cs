@@ -82,7 +82,12 @@ public static class VisitViewerRelations
 {
     /// <summary>Registrant or the ACTIVE primary contact — the requester side.</summary>
     public const string Requester = "REQUESTER";
-    /// <summary>Staff Leader of the campus the action targets.</summary>
+    /// <summary>
+    /// Staff Leader of the campus the action targets, acting AS its leader. For the pending-campus edit
+    /// that also requires them to be the request's registrant — see
+    /// <c>VisitRequestOwnership.ResolvePendingCampusEdit</c>, the only place this relation is issued for
+    /// that action. Approving and rejecting the campus are separate commands and ask no such thing.
+    /// </summary>
     public const string CampusLeader = "CAMPUS_LEADER";
     /// <summary>Anyone else (HO, participant, unrelated). Never mutates.</summary>
     public const string Other = "OTHER";
@@ -257,11 +262,14 @@ public static class VisitMutationPolicy
                 => context.ViewerRelation == VisitViewerRelations.Host,
             VisitMutationAction.TransferHost
                 => context.ViewerRelation == VisitViewerRelations.CampusLeader,
-            // Editing a still-pending campus is the requester side's, and ALSO the Staff Leader's of
-            // that campus: they are the approval authority for it, and the ordinary way a schedule gets
-            // fixed before approval is the leader adjusting it with the guest rather than refusing the
-            // whole request. Which of the two is asking still matters further down — the 72-hour
-            // registration floor is overridable by the leader and by nobody else.
+            // Editing a still-pending campus is the requester side's, and — under CAMPUS_LEADER — the
+            // Staff Leader's of that campus WHEN they filed the request themselves. This branch trusts
+            // its caller for that: the relation is issued only by
+            // VisitRequestOwnership.ResolvePendingCampusEdit, which withholds CAMPUS_LEADER from a
+            // leader who is not the registrant, because a decider who rewrites what they are deciding
+            // leaves nobody holding the requester's version of it. Which of the two relations is asking
+            // still matters further down — the 72-hour registration floor is overridable under
+            // CAMPUS_LEADER and by nobody else.
             VisitMutationAction.EditPendingCampus
                 => context.ViewerRelation is VisitViewerRelations.Requester or VisitViewerRelations.CampusLeader,
             _ => context.ViewerRelation == VisitViewerRelations.Requester,
@@ -346,12 +354,14 @@ public static class VisitMutationPolicy
     /// inside the floor would leave the request frozen with the typo in it.
     /// </para>
     /// <para>
-    /// The Staff Leader of the target campus may pass it deliberately. They are the person the floor
-    /// protects — it exists so nobody is asked to approve a visit they have no time to prepare — so
-    /// their informed "yes" is the rule being satisfied, not bypassed. Anyone else gets a plain refusal,
-    /// including a Staff Leader of a DIFFERENT campus, and including a caller who simply sets the
-    /// confirmation flag by hand: <paramref name="actorMayOverride"/> is decided by the handler from the
-    /// actor's relation to THIS campus, never from the payload.
+    /// The Staff Leader of the target campus may pass it deliberately WHEN the request is their own.
+    /// They are the person the floor protects — it exists so nobody is asked to approve a visit they
+    /// have no time to prepare — so their informed "yes" is the rule being satisfied, not bypassed.
+    /// Anyone else gets a plain refusal, including a Staff Leader of a DIFFERENT campus, including a
+    /// leader who did not file the request (they cannot open this edit at all, so the override is not a
+    /// way in), and including a caller who simply sets the confirmation flag by hand:
+    /// <paramref name="actorMayOverride"/> is decided by the handler from the actor's relation to THIS
+    /// campus, never from the payload.
     /// </para>
     /// </summary>
     public static VisitScheduleLeadTimeDecision EvaluateScheduleLeadTime(

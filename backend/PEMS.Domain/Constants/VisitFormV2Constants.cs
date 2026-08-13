@@ -154,6 +154,15 @@ public static class OperationalContactErrorCodes
     public const string ChangeConflict = "OPERATIONAL_CONTACT_CHANGE_CONFLICT";
     /// <summary>The account is not ACTIVE, so it cannot take the contact role.</summary>
     public const string AccountInactive = "OPERATIONAL_CONTACT_ACCOUNT_INACTIVE";
+    /// <summary>
+    /// The account answering is an INTERNAL FPTU account (ADMIN/HO/STAFF/DEPARTMENT/STUDENT), and the
+    /// operational contact is external by definition — the confirmation exists so somebody outside FPTU
+    /// says they are coming. Distinct from
+    /// <c>CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT</c>, which answers the other half of the same
+    /// rule: that one refuses an address as it is being NAMED, this one refuses an account as it tries
+    /// to TAKE the role.
+    /// </summary>
+    public const string MustBeExternal = "OPERATIONAL_CONTACT_MUST_BE_EXTERNAL";
     /// <summary>A metadata-only save that would write exactly what is already stored.</summary>
     public const string ProfileNoChanges = "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES";
 }

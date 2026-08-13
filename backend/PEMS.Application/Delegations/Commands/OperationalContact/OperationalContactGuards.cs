@@ -331,9 +331,21 @@ internal static class OperationalContactGuards
     }
 
     /// <summary>
-    /// The account answering must BE the invited address, and it must be usable. Internal accounts are
-    /// allowed on purpose (plan §1.7) — an FPTU staff member can be the operational contact of a
-    /// campus; what is never allowed is a DIFFERENT account answering somebody else's invitation.
+    /// The account answering must BE the invited address, it must be usable, and it must be EXTERNAL.
+    ///
+    /// <para>
+    /// The role bar is the reversal of the old §1.7 allowance: an FPTU account used to be able to hold
+    /// a campus's operational contact, and it no longer can — the confirmation exists so somebody
+    /// outside FPTU says in their own name that they are bringing the delegation, and an internal
+    /// account answering it confirms nothing. What was already never allowed, and still is not, is a
+    /// DIFFERENT account answering somebody else's invitation.
+    /// </para>
+    /// <para>
+    /// Checked here rather than only where the address was named, because the two moments are days
+    /// apart: an address that belonged to nobody when the invitation was written can belong to a staff
+    /// account by the time the link is clicked, and this is the last point before the campus changes
+    /// hands.
+    /// </para>
     /// </summary>
     public static void EnsureActorMayTakeContactRole(
         Domain.Entities.Users.User actor, VisitRequestIdentityChange change)
@@ -342,6 +354,11 @@ internal static class OperationalContactGuards
             throw new BusinessRuleException(
                 "Tài khoản này đang không hoạt động nên không thể nhận vai trò đầu mối vận hành.",
                 OperationalContactErrorCodes.AccountInactive);
+
+        // Role.RoleCode, from the Include the caller already does. A null navigation would read as
+        // "no role", which IsExternalRole answers false to — refusing, which is the safe direction.
+        OperationalContactEligibility.EnsureAccountMayHoldContactRole(
+            actor.Role?.RoleCode, actor.Status);
 
         var actorEmail = Services.VisitRequestFingerprintBuilder.NormalizeEmail(actor.Email);
         if (actorEmail != change.NewEmailNormalized)

@@ -46,10 +46,12 @@ import AssignHostPicker from '../../../features/visit-request/components/v2/Assi
  * and nothing else.</p>
  *
  * <p>Three people reach it and the difference matters. The registrant and this campus's operational
- * contact edit within the ordinary rules. This campus's <b>Staff Leader</b> may additionally file a
- * start inside the 72-hour registration floor — the backend asks them to confirm rather than refusing
- * — and may approve in the same action, which is one transaction rather than a save followed by a
- * hopeful approve.</p>
+ * contact edit within the ordinary rules. A <b>Staff Leader</b> reaches it only on a request they filed
+ * themselves, and then may additionally file a start inside the 72-hour registration floor — the
+ * backend asks them to confirm rather than refusing — and may approve in the same action, which is one
+ * transaction rather than a save followed by a hopeful approve. A leader looking at somebody else's
+ * request is not offered this screen at all: they decide that campus by approving or rejecting it,
+ * which they keep in full.</p>
  *
  * <p>Whether any of that is allowed is the backend's answer, always: the screen renders on the
  * EDIT_PENDING_CAMPUS action the read model granted, and every refusal it shows is one the API
@@ -82,7 +84,14 @@ export default function EditPendingCampusV2Page() {
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
   const requestRowVersionRef = useRef(0);
 
-  const isCampusLeader = campus?.canOverrideScheduleLeadTime === true;
+  /**
+   * The backend's verdict on the two leader-only privileges INSIDE this screen: passing the 72-hour
+   * floor, and "Lưu và duyệt". It is true only for this campus's Staff Leader who ALSO filed the
+   * request, so it is not the same question as "is this user a Staff Leader" — and the browser must
+   * never re-derive it from role, which is exactly how a leader deciding somebody else's request would
+   * be shown a button the API then refuses.
+   */
+  const actsAsCampusLeader = campus?.canOverrideScheduleLeadTime === true;
 
   /**
    * The client-side floor is deliberately ZERO, and the 72-hour rule is applied at submit instead.
@@ -225,11 +234,11 @@ export default function EditPendingCampusV2Page() {
 
   /**
    * The 72-hour floor, checked here rather than in the resolver: it applies ONLY when this edit moves
-   * the schedule, and never to the campus's Staff Leader — for them the backend asks for a confirmation
+   * the schedule, and never to the actor the backend lets past it — for them it asks for a confirmation
    * instead, which is a conversation the resolver cannot have.
    */
   const scheduleLeadTimeError = (): string | null => {
-    if (!campus || isCampusLeader) return null;
+    if (!campus || actsAsCampusLeader) return null;
     const cv = form.getValues('campusVisits')[0];
     if (!cv) return null;
     const newStart = new Date(cv.startDatetime);
@@ -355,7 +364,7 @@ export default function EditPendingCampusV2Page() {
           />
         </FormSection>
 
-        {isCampusLeader && (
+        {actsAsCampusLeader && (
           <p className="rounded-xl border border-[#004c91]/20 bg-[#004c91]/5 px-3 py-2 text-sm text-[#004c91]">
             {t('visitRequestV2:pendingCampusEdit.leaderHint')}
           </p>
@@ -392,7 +401,10 @@ export default function EditPendingCampusV2Page() {
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {t('visitRequestV2:pendingCampusEdit.save')}
           </button>
-          {isCampusLeader && (
+          {/* Only for the leader-registrant. Rendered on the backend's flag alone, never on a role the
+              browser read off the token — approving is the one thing a leader keeps on every request,
+              and it must not be reachable from an edit screen they were never granted. */}
+          {actsAsCampusLeader && (
             <button
               type="button"
               data-testid="pending-campus-save-approve"

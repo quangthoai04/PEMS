@@ -40,9 +40,11 @@ public static class VisitFormActions
     /// action at all while its refused sibling had resubmit and its approved sibling had amendments.
     /// </para>
     /// <para>
-    /// Granted to the registrant, to the operational contact of THAT campus, and to the campus's Staff
-    /// Leader (who may additionally file a schedule inside the 72-hour floor, and may approve in the
-    /// same action).
+    /// Granted to the registrant and to the operational contact of THAT campus. A Staff Leader gets it
+    /// only when the campus is theirs AND they filed the request themselves — and then may additionally
+    /// file a schedule inside the 72-hour floor and approve in the same action. A leader deciding
+    /// somebody else's request is not offered this at all; their approve and reject are separate
+    /// commands and are unaffected.
     /// </para>
     /// </summary>
     public const string EditPendingCampus = "EDIT_PENDING_CAMPUS";

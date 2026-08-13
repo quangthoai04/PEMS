@@ -5,6 +5,7 @@ using PEMS.Application.Campuses.Common;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -122,6 +123,24 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 throw new BusinessRuleException(
                     "Mỗi cơ sở phải có email đầu mối vận hành.",
                     VisitRequestErrorCodes.OperationalContactEmailRequired);
+
+        // ── The contact is EXTERNAL, and this is where every create path has to prove it. ──
+        //
+        // The two command handlers check the same thing first, so the ordinary user gets a red message
+        // on the exact campus card rather than a banner. This is the backstop underneath them, and it is
+        // not redundant: three callers reach this service (authenticated create, verify-and-create,
+        // delegated OTP), the OTP path validated a form at INITIATE and creates from the payload sent at
+        // VERIFY, and nothing else stands between an in-process caller and the aggregate.
+        //
+        // It also closes self-match. A registrant whose own address is the campus contact is linked as
+        // that contact immediately, with no invitation and nobody confirming anything — which is exactly
+        // the shortcut an internal registrant must not have, and the check below refuses their address
+        // for the same reason it refuses anybody else's.
+        foreach (var contactEmail in form.CampusVisits
+                     .Select(cv => VisitRequestFingerprintBuilder.NormalizeEmail(cv.OperationalContact.Email))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+            await OperationalContactEligibility.EnsureEmailMayHoldContactRoleAsync(
+                _db, contactEmail, cancellationToken);
 
         // Self-match is decided ONLY by the normalized email of the registrant's own verified address —
         // never by a matching name or phone (plan §1.6). Both create paths have proven that address before

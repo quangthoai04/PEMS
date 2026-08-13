@@ -7,6 +7,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
@@ -65,22 +66,25 @@ public sealed class PublicAcceptOperationalContactConfirmationCommandHandler
             _db, _tokens, request.Token, EmailIntendedActions.Accept, cancellationToken);
 
         // ── The relation is an ACCOUNT, never an email string, so accepting has to end at a user id.
-        //    Reuse the account that already owns this address whatever its role — an FPTU staff member
-        //    is allowed to run a campus (the authenticated path allows it too) — and otherwise
+        //    Reuse the account that already owns this address when it is an EXTERNAL one, and otherwise
         //    provision the same Visitor account the public visit-request flow would create, so a later
-        //    Google sign-in with this address lands on this very user rather than a duplicate. ──
+        //    Google sign-in with this address lands on this very user rather than a duplicate.
+        //
+        //    The role is read here for a reason: this door needs no session, so it is the one an
+        //    internal address could walk through simply by opening the link in the mail. It used to
+        //    accept any account "whatever its role", which is the allowance the external-contact rule
+        //    reverses. ──
         var existing = await _db.Users.AsNoTracking()
             .Where(u => u.Email == change.NewEmailNormalized)
-            .Select(u => new { u.UserId, u.Status })
+            .Select(u => new { u.UserId, u.Status, RoleCode = u.Role.RoleCode })
             .FirstOrDefaultAsync(cancellationToken);
 
         ulong actingUserId;
         if (existing is not null)
         {
-            if (!string.Equals(existing.Status, UserStatuses.Active, StringComparison.OrdinalIgnoreCase))
-                throw new BusinessRuleException(
-                    "Tài khoản của email này đang không hoạt động nên không thể nhận vai trò đầu mối vận hành.",
-                    OperationalContactErrorCodes.AccountInactive);
+            // Role first: an internal account is refused for being internal, not for being inactive,
+            // and the two answers send the reader somewhere different.
+            OperationalContactEligibility.EnsureAccountMayHoldContactRole(existing.RoleCode, existing.Status);
             actingUserId = existing.UserId;
         }
         else

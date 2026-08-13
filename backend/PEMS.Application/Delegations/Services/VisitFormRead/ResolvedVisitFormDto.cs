@@ -265,10 +265,18 @@ public sealed class ResolvedCampusVisitDto
     public bool AmendmentSelfApproves { get; init; }
 
     /// <summary>
-    /// True when this caller is the campus's Staff Leader, and so may (a) file a schedule inside the
-    /// 72-hour registration floor after confirming, and (b) approve the campus in the same call as an
-    /// edit. Lets the client warn EARLY and offer the right buttons; the backend re-decides both, so a
-    /// client that ignores this cannot obtain either.
+    /// True when this caller is the campus's Staff Leader AND the request's registrant, and so may
+    /// (a) file a schedule inside the 72-hour registration floor after confirming, and (b) approve the
+    /// campus in the same call as an edit. Both privileges live inside the pending-campus edit, which a
+    /// leader may only open on a request they filed themselves — so leading the campus alone no longer
+    /// sets this. Lets the client warn EARLY and offer the right buttons; the backend re-decides both,
+    /// so a client that ignores this cannot obtain either.
+    ///
+    /// <para>
+    /// It says nothing about approving or rejecting the campus the ORDINARY way. Those are separate
+    /// commands, still open to the campus's leader whoever filed the request, and the list screen
+    /// decides them from its own APPROVE_AND_ASSIGN_HOST / CAMPUS_REJECT actions.
+    /// </para>
     /// </summary>
     public bool CanOverrideScheduleLeadTime { get; init; }
 }

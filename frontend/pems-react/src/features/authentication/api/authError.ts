@@ -64,6 +64,10 @@ export const KNOWN_AUTH_ERROR_CODES = [
   'INTERNAL_REGISTRANT_CANNOT_BE_CONTACT',
   'REGISTRANT_EMAIL_BELONGS_TO_INTERNAL_ACCOUNT',
   'VISITOR_ACCOUNT_INACTIVE',
+  // The other half of the same rule: the address check above refuses an internal address as it is
+  // NAMED, this one refuses an internal account as it tries to ACCEPT an invitation — which is the
+  // answer a signed-in FPTU account gets on the contact-invitation page.
+  'OPERATIONAL_CONTACT_MUST_BE_EXTERNAL',
 ] as const;
 
 /** Vietnamese-specific diacritics — used to detect an untranslated backend message. */
