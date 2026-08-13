@@ -233,6 +233,44 @@ describe('EditPendingCampusV2Page', () => {
   });
 
   /**
+   * A Staff Leader of a DIFFERENT campus who filed this request. The backend grants the edit (they are
+   * its registrant) but NOT the leader flag, and the screen has to reflect exactly that split: an
+   * ordinary editable form with Save, no "Lưu và duyệt", and no way past the 72-hour floor — moving the
+   * date inside it is refused locally, the same as it would be for a guest, rather than turning into
+   * the leader's "confirm and continue" dialog.
+   */
+  it('gives a registrant who leads another campus the ordinary form and none of the leader extras', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        // Granted the edit; canOverrideScheduleLeadTime deliberately false — this is what the read
+        // model returns for a leader editing a campus they do not lead.
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: false,
+        }),
+      ],
+    }));
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    expect(screen.getByTestId('pending-campus-save')).toBeInTheDocument();
+    expect(screen.queryByTestId('pending-campus-save-approve')).not.toBeInTheDocument();
+
+    // The floor applies to them like any requester: refused in the browser, no call, no dialog.
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = new Date(Date.now() + 24 * 3600_000);
+    fireEvent.change(screen.getByTestId('campus-0-start-date'), {
+      target: { value: `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}` },
+    });
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(screen.getByTestId('pending-campus-leadtime-error')).toBeInTheDocument());
+    expect(updatePendingVisitInstance).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pending-campus-override-body')).not.toBeInTheDocument();
+  });
+
+  /**
    * The campus's Staff Leader, reviewing a request somebody else filed. The backend grants neither the
    * edit nor the leader flag, so the screen offers nothing at all — no form, no save, and above all no
    * "Lưu và duyệt", which is an edit wearing a decision. Their approve and reject live on the list

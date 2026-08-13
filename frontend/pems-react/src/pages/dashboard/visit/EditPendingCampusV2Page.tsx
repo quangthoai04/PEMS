@@ -45,13 +45,14 @@ import AssignHostPicker from '../../../features/visit-request/components/v2/Assi
  * resubmit and HN had amendments. Hence a screen scoped to one campus, whose payload names that campus
  * and nothing else.</p>
  *
- * <p>Three people reach it and the difference matters. The registrant and this campus's operational
- * contact edit within the ordinary rules. A <b>Staff Leader</b> reaches it only on a request they filed
- * themselves, and then may additionally file a start inside the 72-hour registration floor — the
- * backend asks them to confirm rather than refusing — and may approve in the same action, which is one
- * transaction rather than a save followed by a hopeful approve. A leader looking at somebody else's
- * request is not offered this screen at all: they decide that campus by approving or rejecting it,
- * which they keep in full.</p>
+ * <p>The registrant and this campus's operational contact edit within the ordinary rules — a Staff
+ * Leader account among them, on a request they filed. Two extra privileges live on this screen and
+ * belong to ONE actor, the Staff Leader of <i>this</i> campus who is also the registrant: filing a start
+ * inside the 72-hour registration floor (the backend asks them to confirm rather than refusing) and
+ * approving in the same action, which is one transaction rather than a save followed by a hopeful
+ * approve. A leader who filed a request for a campus they do NOT lead gets the ordinary screen and
+ * neither privilege; a leader looking at somebody else's request is not offered the screen at all and
+ * decides that campus by approving or rejecting it, which they keep in full.</p>
  *
  * <p>Whether any of that is allowed is the backend's answer, always: the screen renders on the
  * EDIT_PENDING_CAMPUS action the read model granted, and every refusal it shows is one the API
@@ -86,10 +87,11 @@ export default function EditPendingCampusV2Page() {
 
   /**
    * The backend's verdict on the two leader-only privileges INSIDE this screen: passing the 72-hour
-   * floor, and "Lưu và duyệt". It is true only for this campus's Staff Leader who ALSO filed the
-   * request, so it is not the same question as "is this user a Staff Leader" — and the browser must
-   * never re-derive it from role, which is exactly how a leader deciding somebody else's request would
-   * be shown a button the API then refuses.
+   * floor, and "Lưu và duyệt". True only for the Staff Leader of THIS campus who ALSO filed the
+   * request — so it is not the question "is this user a Staff Leader", and it is false for a leader who
+   * registered a visit to a campus they do not lead even though they are editing it right now. The
+   * browser must never re-derive any of that from a role on the token: that is exactly how somebody
+   * would be shown a button the API then refuses.
    */
   const actsAsCampusLeader = campus?.canOverrideScheduleLeadTime === true;
 

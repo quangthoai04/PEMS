@@ -252,13 +252,13 @@ public sealed class VisitRequestsController : ControllerBase
     /// three touches the others.
     /// </para>
     /// <para>
-    /// Open to the registrant, to the operational contact of THAT campus, and to the campus's Staff
-    /// Leader WHEN they are also the registrant. That leader alone may set a start inside the 72-hour
-    /// registration floor — the first call answers 409
-    /// <c>LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED</c> and the client re-sends with
-    /// <c>overrideLeadTimeConfirmed</c> — and they alone may pass <c>approveAfterSave</c>, which saves
-    /// and approves in ONE transaction. A Staff Leader who did not file the request is refused here
-    /// (403) and decides the campus through the ordinary approve/reject endpoints instead.
+    /// Open to the registrant and to the operational contact of THAT campus — a STAFF LEADER account
+    /// among them, on a request they filed. The campus's OWN Staff Leader, when they are also the
+    /// registrant, additionally may set a start inside the 72-hour registration floor (the first call
+    /// answers 409 <c>LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED</c> and the client re-sends with
+    /// <c>overrideLeadTimeConfirmed</c>) and may pass <c>approveAfterSave</c>, which saves and approves
+    /// in ONE transaction. A Staff Leader who did not file the request is refused here (403) and decides
+    /// the campus through the ordinary approve/reject endpoints instead.
     /// </para>
     /// </summary>
     [HttpPut("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/pending-edit")]

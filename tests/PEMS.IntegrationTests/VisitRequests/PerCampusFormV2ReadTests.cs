@@ -396,6 +396,38 @@ public sealed class PerCampusFormV2ReadTests
     }
 
     /// <summary>
+    /// A Staff Leader of a DIFFERENT campus who filed the request. They are its registrant, so the edit
+    /// is offered — being a leader somewhere else is a fact about that campus and takes nothing away
+    /// here. What is withheld is the leader-only pair: no 72-hour override, no "Lưu và duyệt", because
+    /// those belong to whoever has to prepare THIS campus, and that is somebody else.
+    /// </summary>
+    [Fact]
+    public async Task EditPendingCampus_is_offered_to_a_registrant_who_leads_a_different_campus()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // One campus: Campus1. The registrant is the Staff Leader of Campus2.
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        req.RegistrantUserId = SlCampus2;
+        await db.SaveChangesAsync();
+
+        var view = await Resolver(db, StaffLeader(SlCampus2, Campus2))
+            .ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = Assert.Single(view.CampusVisits);
+        Assert.Equal((long)Campus1, campus.CampusId);
+        Assert.Contains(VisitFormActions.EditPendingCampus, campus.AllowedActions);
+        // The flag the client draws the override dialog and the save-and-approve button from.
+        Assert.False(campus.CanOverrideScheduleLeadTime);
+        // And nothing about deciding Campus1 leaked in with it: the handover is the leader's action on
+        // the campus they actually lead, and this is not it.
+        Assert.DoesNotContain(VisitFormActions.TransferHost, campus.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
     /// The same leader, on a request they filed themselves. Both halves of the rule hold, so the edit is
     /// offered — and with it the flag that carries the 72-hour override and "Lưu và duyệt", which are
     /// the two things that only ever existed inside this screen.

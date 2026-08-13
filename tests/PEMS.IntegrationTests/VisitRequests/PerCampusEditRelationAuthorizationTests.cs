@@ -38,6 +38,10 @@ namespace PEMS.IntegrationTests.VisitRequests;
 /// "Lưu và duyệt", while keeping approve, host assignment and reject in full. Leading the campus makes
 /// them its DECIDER; a decider who also rewrites what they are deciding leaves nobody holding the
 /// requester's version of it.</item>
+/// <item>STAFF LEADER of ANOTHER campus who filed the request — edits it as its REGISTRANT, because the
+/// role is a fact about the campus they lead and about no other. What they do not get is the pair of
+/// leader-only privileges: the 72-hour override and "Lưu và duyệt" belong to whoever has to prepare
+/// THIS campus.</item>
 /// </list>
 /// <para>
 /// The suite drives the COMMAND rather than the service, because authorization lives in the handler; the
@@ -698,41 +702,111 @@ public sealed class PerCampusEditRelationAuthorizationTests
     /// Being the registrant does not restore it: the rule asks for both halves and this actor has one.
     /// </summary>
     [Fact]
-    public async Task A_staff_leader_of_another_campus_is_refused_even_on_a_request_they_filed()
+    public async Task A_staff_leader_of_another_campus_edits_their_own_request_as_its_registrant()
     {
         RequireDb();
         var (requestId, instanceId) = (0UL, 0UL);
         try
         {
-            // Leader of campus 2 files a visit to campus 1 (HN).
+            // Leader of campus 2 (HCM) files a visit to campus 1 (HN). At HN they lead nothing.
             (requestId, instanceId) = await CreatePendingAsync(LeaderHcm);
             var payload = await PayloadAsync(instanceId, "Đoàn leader cơ sở khác tự sửa");
 
             using (var db = NewContext())
-                await Assert.ThrowsAsync<ForbiddenException>(() =>
-                    Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
-                        new UpdatePendingVisitInstanceV2Command(
-                            requestId, instanceId, payload, false, null),
-                        CancellationToken.None));
+            {
+                var res = await Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(requestId, instanceId, payload, false, null),
+                    CancellationToken.None);
+                Assert.False(res.Approved);
+                Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, res.VisitInstanceStatus);
+            }
+
+            Assert.Equal("Đoàn leader cơ sở khác tự sửa", await DelegationOfAsync(instanceId));
         }
         finally { await CleanupAsync(requestId); }
     }
 
     /// <summary>
-    /// Holding a SECOND, requester-side relation does not route a Staff Leader around the leader rule:
-    /// this campus's leader is also its operational contact here, and is still refused because they did
-    /// not file the request. Otherwise the restriction would be avoidable by accepting an invitation.
+    /// …and gains nothing from the role while doing it. "Lưu và duyệt" needs the leader of THIS campus,
+    /// which they are not — so the same actor who just saved successfully is refused the decision, and
+    /// refused before either half runs.
+    /// </summary>
+    [Fact]
+    public async Task A_staff_leader_of_another_campus_may_not_save_and_approve_their_own_request()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(LeaderHcm);
+            var before = await DelegationOfAsync(instanceId);
+            var payload = await PayloadAsync(instanceId, "Đoàn leader cơ sở khác tự duyệt");
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(
+                            requestId, instanceId, payload, false,
+                            new ApproveAfterSaveDto(IcStaffHn, "duyệt hộ cơ sở khác")),
+                        CancellationToken.None));
+
+            // No partial write: not the edit, not a host, not a decision.
+            Assert.Equal(before, await DelegationOfAsync(instanceId));
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, instance.Status);
+            Assert.Null(instance.CurrentHostUserId);
+            Assert.Null(instance.DecidedBy);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The 72-hour registration floor applies to them like any other requester. The override exists to
+    /// protect the leader who has to PREPARE this campus — a leader of somewhere else is not that
+    /// person, so their schedule inside the floor is a plain refusal with no "continue anyway" offered.
+    /// </summary>
+    [Fact]
+    public async Task A_staff_leader_of_another_campus_gets_no_lead_time_override_on_their_own_request()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(LeaderHcm);
+            var tooSoon = TrimToSecond(Now.AddHours(VisitMutationPolicy.MinScheduleLeadHours).AddMinutes(-30));
+            // Sent WITH the confirmation flag already set, which is the strongest form of the question:
+            // the flag is honoured for the campus's own leader-registrant and means nothing here.
+            var payload = await PayloadAsync(instanceId, "Đoàn dời gần", tooSoon);
+
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Handler(db, StaffLeader(LeaderHcm, 2)).Handle(
+                        new UpdatePendingVisitInstanceV2Command(requestId, instanceId, payload, true, null),
+                        CancellationToken.None));
+                Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+            }
+
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.NotEqual(tooSoon, instance.PlannedStartAt);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// A campus leader who holds the campus as its operational CONTACT edits it — as a contact, which is
+    /// a requester-side relation like any other — but gains nothing from also leading it: "Lưu và duyệt"
+    /// still needs the registrant half, and running the campus is not filing the request.
     ///
     /// <para>
     /// The contact row is written directly because the workflow will no longer produce it: an internal
     /// account cannot be appointed or accept the contact role at all any more. That makes this a
-    /// defence-in-depth case rather than a reachable one — rows like it exist in databases created
-    /// before the rule, and the edit door must refuse them on their own merits rather than relying on
-    /// the appointment door having been closed.
+    /// legacy-data case rather than a reachable one — rows like it exist in databases created before
+    /// that rule, and this door has to answer them on their own merits.
     /// </para>
     /// </summary>
     [Fact]
-    public async Task A_campus_leader_who_is_only_the_operational_contact_is_still_refused()
+    public async Task A_campus_leader_who_is_only_the_operational_contact_edits_but_may_not_decide()
     {
         RequireDb();
         var (requestId, instanceId) = (0UL, 0UL);
@@ -740,20 +814,34 @@ public sealed class PerCampusEditRelationAuthorizationTests
         {
             (requestId, instanceId) = await CreatePendingAsync(IcStaffHn);
 
-            // Put the campus's own Staff Leader in the contact seat directly. The invitation workflow
-            // is not the subject here — the question is only which rulebook applies to the person.
+            // Put the campus's own Staff Leader in the contact seat directly. The invitation workflow is
+            // not the subject here — the question is what that relation, once held, is worth.
             using (var db = NewContext())
                 await db.Database.ExecuteSqlRawAsync(
                     "UPDATE visit_request_campuses SET operational_contact_user_id = {0} WHERE visit_instance_id = {1}",
                     LeaderHn, instanceId);
 
-            var payload = await PayloadAsync(instanceId, "Đoàn leader kiêm đầu mối");
+            using (var db = NewContext())
+                await Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(
+                        requestId, instanceId,
+                        await PayloadAsync(instanceId, "Đoàn leader kiêm đầu mối"), false, null),
+                    CancellationToken.None);
+            Assert.Equal("Đoàn leader kiêm đầu mối", await DelegationOfAsync(instanceId));
+
+            // …but the decision does not travel with the contact relation.
+            var savedAndApproved = await PayloadAsync(instanceId, "Đoàn leader kiêm đầu mối tự duyệt");
             using (var db = NewContext())
                 await Assert.ThrowsAsync<ForbiddenException>(() =>
                     Handler(db, StaffLeader(LeaderHn, CampusHn)).Handle(
                         new UpdatePendingVisitInstanceV2Command(
-                            requestId, instanceId, payload, false, null),
+                            requestId, instanceId, savedAndApproved, false,
+                            new ApproveAfterSaveDto(IcStaffHn, "tự duyệt")),
                         CancellationToken.None));
+
+            var instance = await InstanceOfAsync(instanceId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, instance.Status);
+            Assert.Null(instance.CurrentHostUserId);
         }
         finally { await CleanupAsync(requestId); }
     }

@@ -34,9 +34,11 @@ export const VisitV2Action = {
    * Edit ONE campus still waiting for its decision. Instance scope, and the only edit that survives on
    * a MIXED request: `EditPendingRequest` above needs EVERY campus still waiting, so on a request with
    * one campus already approved it is refused — and the campus nobody has answered yet still has to be
-   * correctable. Granted to the registrant, to this campus's contact, and to this campus's Staff Leader
-   * ONLY when that leader also filed the request. A leader deciding somebody else's request does not
-   * receive it — and still approves or rejects the campus as usual, from the list screen's own actions.
+   * correctable. Granted to the registrant and to this campus's contact — a Staff Leader account among
+   * them, on a request they filed, whichever campus it names. A leader deciding somebody ELSE's request
+   * does not receive it, and still approves or rejects the campus as usual from the list screen's own
+   * actions. The leader-only extras (72-hour override, "Lưu và duyệt") are a separate, narrower verdict:
+   * `campusVisit.canOverrideScheduleLeadTime`.
    */
   EditPendingCampus: 'EDIT_PENDING_CAMPUS',
   UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',

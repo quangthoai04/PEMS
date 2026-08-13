@@ -291,11 +291,11 @@ export interface ResolvedCampusVisit {
    */
   amendmentSelfApproves?: boolean;
   /**
-   * True when the viewer is this campus's Staff Leader AND filed the request, so they may file a start
-   * inside the 72-hour registration floor (after confirming) and may approve in the same call as an
-   * edit. Both privileges live inside the pending-campus edit, which a leader may only open on their
-   * own request — so leading the campus alone does not set this. A hint for the UI only; the backend
-   * decides both again.
+   * True when the viewer is the Staff Leader of THIS campus AND filed the request, so they may file a
+   * start inside the 72-hour registration floor (after confirming) and may approve in the same call as
+   * an edit. Both halves are required: leading the campus without having filed the request does not open
+   * the edit at all, and filing the request while leading a DIFFERENT campus opens the edit but sets
+   * this false — that viewer is a requester here. A hint for the UI only; the backend decides both again.
    *
    * It says nothing about approving or rejecting the campus normally. Those stay with the campus's
    * leader whoever filed the request, and come from the list screen's own actions.

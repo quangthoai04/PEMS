@@ -265,12 +265,13 @@ public sealed class ResolvedCampusVisitDto
     public bool AmendmentSelfApproves { get; init; }
 
     /// <summary>
-    /// True when this caller is the campus's Staff Leader AND the request's registrant, and so may
+    /// True when this caller is the Staff Leader of THIS campus AND the request's registrant, and so may
     /// (a) file a schedule inside the 72-hour registration floor after confirming, and (b) approve the
-    /// campus in the same call as an edit. Both privileges live inside the pending-campus edit, which a
-    /// leader may only open on a request they filed themselves — so leading the campus alone no longer
-    /// sets this. Lets the client warn EARLY and offer the right buttons; the backend re-decides both,
-    /// so a client that ignores this cannot obtain either.
+    /// campus in the same call as an edit. Both halves are needed and neither is enough: leading the
+    /// campus without having filed the request does not open the edit at all, and filing the request
+    /// while leading a DIFFERENT campus opens the edit but grants neither privilege — that actor is a
+    /// requester here. Lets the client warn EARLY and offer the right buttons; the backend re-decides
+    /// both, so a client that ignores this cannot obtain either.
     ///
     /// <para>
     /// It says nothing about approving or rejecting the campus the ORDINARY way. Those are separate

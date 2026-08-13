@@ -15,10 +15,20 @@ namespace PEMS.UnitTests.Delegations;
 /// command handler both ask, so a capability and a 403 can never disagree.
 ///
 /// <para>
-/// The rule the suite pins: a STAFF LEADER may edit a pending campus only when it is their own campus
-/// AND they filed the request themselves. Leading the campus makes them its DECIDER, and a decider who
-/// also rewrites what they are deciding leaves nobody holding the requester's version of it. Everyone
-/// else — registrant, this campus's confirmed operational contact — keeps the ordinary rights.
+/// The rule the suite pins, as THREE independent facts rather than one rulebook per person:
+/// </para>
+/// <list type="bullet">
+/// <item>editing is requester-side — the registrant or this campus's confirmed contact, and a STAFF
+/// LEADER account is one of those like anybody else on a request they filed;</item>
+/// <item>the leader-only privileges inside that edit (the 72-hour override, "Lưu và duyệt") need the
+/// leader OF THIS CAMPUS who is ALSO the registrant — leading the campus makes them its decider, and a
+/// decider who rewrites what they are deciding leaves nobody holding the requester's version of it;</item>
+/// <item>deciding the campus is the leader's, registrant or not, and lives in other commands entirely.</item>
+/// </list>
+/// <para>
+/// So the two mixed actors land on opposite sides: the leader of another campus who filed the request
+/// edits it as a REQUESTER with no privileges, and this campus's leader on somebody else's request gets
+/// no edit at all while keeping the decision.
 /// </para>
 /// <para>
 /// Nothing here touches approving or rejecting the campus the ORDINARY way: those are
@@ -124,8 +134,8 @@ public sealed class PendingCampusEditRelationTests
     // ── CASE 7 — an ordinary STAFF registrant edits, but does not decide ────────────────────────
 
     /// <summary>
-    /// Their rights come from being the registrant, not from working here. The sub-role is what the
-    /// leader rule keys on: STAFF/STAFF is not a Staff Leader, so the requester rulebook applies.
+    /// Their rights come from being the registrant, not from working here — and deciding the campus is
+    /// not among them, because they do not lead it.
     /// </summary>
     [Fact]
     public void AStaffRegistrantWhoIsNotALeader_MayEditButMayNotSaveAndApprove()
@@ -134,7 +144,7 @@ public sealed class PendingCampusEditRelationTests
 
         var relation = Resolve(Staff(Registrant, CampusHn), visit, instance);
 
-        Assert.False(relation.ActorIsStaffLeader);
+        Assert.False(relation.IsCampusLeader);
         Assert.True(relation.CanEdit);
         Assert.False(relation.CanSaveAndApprove);
         Assert.Equal(VisitViewerRelations.Requester, relation.ViewerRelation);
@@ -165,46 +175,80 @@ public sealed class PendingCampusEditRelationTests
         Assert.Equal(VisitViewerRelations.Requester, relation.ViewerRelation);
     }
 
-    // ── CASE 9 — a leader of ANOTHER campus gets no leader privilege here, registrant or not ────
+    // ── CASE 9 — a leader of ANOTHER campus keeps their REGISTRANT rights, and gains nothing else ──
 
     /// <summary>
-    /// The HCM leader filed a request for HN. The leader rulebook follows the PERSON, so it applies to
-    /// them at HN too — and at HN they lead nothing, so the edit is refused. Being the registrant does
-    /// not restore it: the rule asks for both halves, and this actor has one.
+    /// The HCM leader filed a request that names HN. At HN they lead nothing, so they are simply the
+    /// person who filed it: they edit as REQUESTER, and none of the leader-only privileges follow them
+    /// there.
+    ///
+    /// <para>
+    /// This is the case an earlier version got wrong, by treating "is a Staff Leader" as a rulebook for
+    /// the PERSON: it refused the edit outright and so took away rights their own request gives them.
+    /// The role is not a restriction — leading a campus is a fact about THAT campus, and about no other.
+    /// The floor and "Lưu và duyệt" stay behind because they protect the leader who will actually have
+    /// to prepare the visit at HN, which is somebody else entirely.
+    /// </para>
     /// </summary>
     [Fact]
-    public void AStaffLeaderOfAnotherCampus_IsRefusedEvenWhenTheyFiledTheRequest()
+    public void AStaffLeaderOfAnotherCampus_EditsAsRegistrantWithNoLeaderPrivileges()
     {
         var (visit, instance) = Pending(registrantUserId: LeaderHcm);
 
         var relation = Resolve(StaffLeader(LeaderHcm, CampusHcm), visit, instance);
 
-        Assert.True(relation.ActorIsStaffLeader);
-        Assert.False(relation.IsCampusLeader);
+        Assert.False(relation.IsCampusLeader);        // not the leader of the campus being edited
         Assert.True(relation.IsRegistrant);
+        Assert.True(relation.CanEdit);                // …and that is enough to edit
+        Assert.False(relation.ActsAsCampusLeader);    // but not to carry the 72-hour override
+        Assert.False(relation.CanSaveAndApprove);     // nor to decide the campus in the same call
+        Assert.Equal(VisitViewerRelations.Requester, relation.ViewerRelation);
+    }
+
+    /// <summary>
+    /// Leading another campus and holding NO requester-side relation is still nothing here — the edit
+    /// needs a relation to the request, and this actor has none.
+    /// </summary>
+    [Fact]
+    public void AStaffLeaderOfAnotherCampusWhoDidNotFileTheRequest_IsRefused()
+    {
+        var (visit, instance) = Pending(registrantUserId: Registrant);
+
+        var relation = Resolve(StaffLeader(LeaderHcm, CampusHcm), visit, instance);
+
         Assert.False(relation.CanEdit);
-        Assert.False(relation.CanSaveAndApprove);
         Assert.Null(relation.ViewerRelation);
     }
 
-    // ── CASE 10 — the leader rule wins over a second relation the same person holds ─────────────
+    // ── CASE 10 — a second relation is counted, but grants only what it is ──────────────────────
 
     /// <summary>
-    /// This campus's leader who is ALSO its operational contact, on somebody else's request. Holding a
-    /// requester-side relation must not route them around the leader rule — otherwise the restriction
-    /// would be avoidable by accepting a contact invitation.
+    /// This campus's leader who is ALSO its operational contact, on somebody else's request. The contact
+    /// relation is real and it opens the edit — as a REQUESTER, which is what a contact is. What it does
+    /// not do is hand them the leader-only privileges: those need the registrant half, and running the
+    /// campus is not filing the request.
+    ///
+    /// <para>
+    /// Unreachable through the workflow now that an operational contact must be EXTERNAL — an internal
+    /// account can no longer be appointed or accept the role. Kept because rows like it exist in
+    /// databases created before that rule, and this door must answer them on their own merits rather
+    /// than assume the appointment door was shut.
+    /// </para>
     /// </summary>
     [Fact]
-    public void ACampusLeaderWhoIsTheOperationalContactButNotTheRegistrant_IsStillRefused()
+    public void ACampusLeaderWhoIsOnlyTheOperationalContact_EditsAsRequesterWithNoLeaderPrivileges()
     {
         var (visit, instance) = Pending(registrantUserId: Registrant, operationalContactUserId: LeaderHn);
 
         var relation = Resolve(StaffLeader(LeaderHn, CampusHn), visit, instance);
 
         Assert.True(relation.IsOperationalContact);
-        Assert.False(relation.CanEdit);
+        Assert.True(relation.IsCampusLeader);
+        Assert.False(relation.IsRegistrant);
+        Assert.True(relation.CanEdit);
+        Assert.False(relation.ActsAsCampusLeader);
         Assert.False(relation.CanSaveAndApprove);
-        Assert.Null(relation.ViewerRelation);
+        Assert.Equal(VisitViewerRelations.Requester, relation.ViewerRelation);
     }
 
     // ── Strangers, as before ────────────────────────────────────────────────────────────────────

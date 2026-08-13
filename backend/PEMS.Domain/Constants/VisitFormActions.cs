@@ -40,11 +40,12 @@ public static class VisitFormActions
     /// action at all while its refused sibling had resubmit and its approved sibling had amendments.
     /// </para>
     /// <para>
-    /// Granted to the registrant and to the operational contact of THAT campus. A Staff Leader gets it
-    /// only when the campus is theirs AND they filed the request themselves — and then may additionally
-    /// file a schedule inside the 72-hour floor and approve in the same action. A leader deciding
-    /// somebody else's request is not offered this at all; their approve and reject are separate
-    /// commands and are unaffected.
+    /// Granted to the registrant and to the operational contact of THAT campus — a STAFF LEADER account
+    /// among them like anyone else, on a request they filed. Two extra privileges live inside the
+    /// screen and need more than the edit does: filing a schedule inside the 72-hour floor and
+    /// approving in the same action both require the leader OF THAT CAMPUS who is also the registrant
+    /// (see <c>campusVisit.canOverrideScheduleLeadTime</c>). A leader deciding somebody else's request
+    /// is not offered this action at all; their approve and reject are separate commands and unaffected.
     /// </para>
     /// </summary>
     public const string EditPendingCampus = "EDIT_PENDING_CAMPUS";

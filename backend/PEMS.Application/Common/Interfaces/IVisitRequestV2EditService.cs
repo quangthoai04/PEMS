@@ -77,9 +77,10 @@ public interface IVisitRequestV2EditService
     /// Whether the actor is acting AS this campus's Staff Leader — which means the Staff Leader of THIS
     /// campus who also filed the request. Resolved by the handler from the actor's relations
     /// (<c>VisitRequestOwnership.ResolvePendingCampusEdit</c>), never from the payload. It decides one
-    /// thing: whether <paramref name="overrideLeadTimeConfirmed"/> means anything at all. A leader
-    /// reviewing somebody else's request never reaches this method — they cannot open the edit — so the
-    /// 72-hour override is not a way into a form they were refused.
+    /// thing: whether <paramref name="overrideLeadTimeConfirmed"/> means anything at all. False for the
+    /// two other actors who reach this method — a leader reviewing somebody else's request never gets
+    /// here (they cannot open the edit), and a registrant who leads a DIFFERENT campus is a requester
+    /// here, so the floor applies to them exactly as it does to a guest.
     /// </param>
     /// <param name="overrideLeadTimeConfirmed">
     /// The leader's explicit "yes, this schedule, with less than the required notice". Transient — it

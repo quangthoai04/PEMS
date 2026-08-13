@@ -12,59 +12,67 @@ namespace PEMS.Application.Delegations.Common;
 /// ask this, so a capability can never promise what the command refuses.
 ///
 /// <para>
-/// Two rulebooks, chosen by the actor's effective role rather than by their relation:
+/// Three INDEPENDENT facts, never a single "which rulebook applies to this person". Editing is a
+/// requester-side right and comes from the relations that own the content; leading the campus is an
+/// approval right and comes from the campus. One account routinely holds both, and neither cancels the
+/// other:
 /// </para>
 /// <list type="bullet">
-/// <item><b>A Staff Leader</b> may edit a campus still awaiting a decision ONLY when it is their own
-/// campus AND they filed the request themselves. Leading the campus is what makes them its DECIDER, and
-/// a decider who also rewrites the thing they are deciding leaves nobody holding the request's version
-/// of it. Their answer to a request they did not file is approve or reject, not edit.</item>
-/// <item><b>Everyone else</b> — the registrant, the campus's confirmed operational contact — keeps the
-/// ordinary requester-side rights, unchanged.</item>
+/// <item><b>Who may edit</b> — the registrant, or this campus's confirmed operational contact. A STAFF
+/// LEADER account is not excluded by being one: a leader who files a request for another campus is a
+/// requester there like anybody else, and taking their own request away from them would be a
+/// restriction on the person rather than a rule about the campus.</item>
+/// <item><b>Who acts AS the campus's leader inside that edit</b> — only the leader OF THIS CAMPUS who
+/// also filed the request. That pairing carries the two leader-only privileges, and nothing else does:
+/// they exist so the person who will ANSWER the request can fix it instead of refusing it, which is
+/// only their business when the request is also theirs to fix.</item>
+/// <item><b>Who may decide the campus</b> — its leader, registrant or not. That lives in the approve
+/// and reject commands and is not this type's business at all.</item>
 /// </list>
 ///
 /// <para>
-/// The role test comes first deliberately. A Staff Leader who is the campus's operational contact, or
-/// who leads a DIFFERENT campus of a request they filed, does not fall back to the requester rulebook:
-/// the leader rule is a restriction on the person, not a privilege they can route around by holding a
-/// second relation.
+/// So the leader of Hà Nội who registered a visit to Đà Nẵng edits Đà Nẵng as its REGISTRANT: no
+/// 72-hour override, no "Lưu và duyệt", no decision — and no loss of the rights their own request gives
+/// them. The leader of Đà Nẵng, on somebody else's request, has the opposite set: they decide it and do
+/// not rewrite it.
 /// </para>
 /// </summary>
-/// <param name="ActorIsStaffLeader">Effective role only — says nothing about which campus.</param>
-/// <param name="IsCampusLeader">Staff Leader of the campus this action targets.</param>
+/// <param name="IsCampusLeader">Staff Leader of the campus this action targets — role AND campus.</param>
 /// <param name="IsRegistrant">Filed the request this campus belongs to.</param>
 /// <param name="IsOperationalContact">Confirmed contact of THIS campus — never of a sibling.</param>
 public readonly record struct PendingCampusEditRelation(
-    bool ActorIsStaffLeader,
     bool IsCampusLeader,
     bool IsRegistrant,
     bool IsOperationalContact)
 {
     /// <summary>
     /// The one condition that carries the leader-only privileges INSIDE this edit: filing a schedule
-    /// within the 72-hour registration floor, and "Lưu và duyệt". Both exist so the person who will
-    /// answer the request can fix it rather than refuse it — which is only their business when the
-    /// request is also theirs to fix.
+    /// within the 72-hour registration floor, and "Lưu và duyệt". Both halves are load-bearing —
+    /// leading a DIFFERENT campus grants neither, and leading this one without having filed the request
+    /// grants neither, because the edit itself is not open to that actor.
     /// </summary>
     public bool ActsAsCampusLeader => IsCampusLeader && IsRegistrant;
 
-    /// <summary>May this actor open the pending-campus edit at all (relation only — lifecycle, cutoff
-    /// and concurrency are still decided afterwards by <see cref="VisitMutationPolicy"/>).</summary>
-    public bool CanEdit => ActorIsStaffLeader
-        ? ActsAsCampusLeader
-        : IsRegistrant || IsOperationalContact;
+    /// <summary>
+    /// May this actor open the pending-campus edit at all — a REQUESTER-side question, answered only by
+    /// requester-side relations. Relation only: lifecycle, the mutation cutoff and concurrency are still
+    /// decided afterwards by <see cref="VisitMutationPolicy"/> and the edit service.
+    /// </summary>
+    public bool CanEdit => IsRegistrant || IsOperationalContact;
 
     /// <summary>
-    /// May this actor approve in the same call. Never widens <see cref="CanEdit"/>: a leader who is not
-    /// the registrant cannot reach the edit, so they cannot reach the approval that travels with it —
-    /// their ordinary approve/reject on the campus is a different command and is untouched by this.
+    /// May this actor approve in the same call. Strictly narrower than <see cref="CanEdit"/>: a leader
+    /// who did not file the request cannot reach the edit at all, and a registrant who does not lead
+    /// THIS campus reaches the edit but never the decision that travels with it. The ordinary
+    /// approve/reject commands ask for neither and are untouched by this.
     /// </summary>
     public bool CanSaveAndApprove => ActsAsCampusLeader;
 
     /// <summary>
     /// The relation to hand <see cref="VisitMutationPolicy"/>, or null when nobody grants the edit.
-    /// <c>CAMPUS_LEADER</c> is issued from HERE and nowhere else, which is what keeps the policy's
-    /// leader branch from becoming a second, registrant-free door into the same action.
+    /// <c>CAMPUS_LEADER</c> is issued from HERE and nowhere else, so the policy's leader branch cannot
+    /// become a second, registrant-free door — and a leader editing a campus they do not lead arrives
+    /// as <c>REQUESTER</c>, which is exactly what they are there.
     /// </summary>
     public string? ViewerRelation => !CanEdit
         ? null
@@ -113,10 +121,10 @@ public static class VisitRequestOwnership
         => userId is not null && instance.CurrentHostUserId == userId;
 
     /// <summary>
-    /// The actor's EFFECTIVE ROLE is Staff Leader — whatever campus they lead, and whatever relation
-    /// they hold to the request in front of them. On its own it authorizes nothing; it answers "which
-    /// rulebook applies to this person", which is what <see cref="ResolvePendingCampusEdit"/> needs and
-    /// what <see cref="IsCampusLeader"/> (role AND campus) cannot express.
+    /// The actor's EFFECTIVE ROLE is Staff Leader, whatever campus they lead. On its own it authorizes
+    /// NOTHING and it is deliberately not an input to any visit decision: every right in this file is
+    /// scoped to a campus or to a relation, and a bare role test is how "leads some campus somewhere"
+    /// would start standing in for "leads THIS one". Use <see cref="IsCampusLeader"/>.
     /// </summary>
     public static bool IsStaffLeader(
         PEMS.Application.Common.Interfaces.ICurrentUserService currentUser)
@@ -149,7 +157,6 @@ public static class VisitRequestOwnership
         VisitRequestCampus instance,
         PEMS.Application.Common.Interfaces.ICurrentUserService currentUser)
         => new(
-            ActorIsStaffLeader: IsStaffLeader(currentUser),
             IsCampusLeader: IsCampusLeader(currentUser, instance.CampusId),
             IsRegistrant: IsRegistrant(visit, currentUser.UserId),
             IsOperationalContact: IsOperationalContact(instance, currentUser.UserId));

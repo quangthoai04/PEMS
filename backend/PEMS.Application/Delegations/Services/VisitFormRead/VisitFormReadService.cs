@@ -312,9 +312,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
             var isContactHere = VisitRequestOwnership.IsOperationalContact(c, userId);
             var requesterSideHere = isRegistrant || isContactHere;
             // WHO may edit this campus while it waits for its decision — the SAME resolver the command
-            // handler authorizes with, so this capability cannot offer a call that then 403s. A Staff
-            // Leader is held to the leader rulebook here (own campus AND own request) even when they
-            // also hold a requester-side relation.
+            // handler authorizes with, so this capability cannot offer a call that then 403s. It answers
+            // two things separately: whether the edit is open at all (a requester-side question, which a
+            // STAFF LEADER account answers yes to on their OWN request, whichever campus it names), and
+            // whether this actor carries the leader-only privileges inside it (this campus's leader AND
+            // the registrant — the pairing behind the flag set further down).
             var pendingEdit = VisitRequestOwnership.ResolvePendingCampusEdit(request, c, _currentUser);
             var instanceCapabilities = new List<VisitActionCapabilityDto>();
 
@@ -355,11 +357,11 @@ public sealed class VisitFormReadService : IVisitFormReadService
             }
             if (isLeaderHere)
             {
-                // Editing this campus is NOT here: a leader edits a pending campus only when they also
-                // filed the request, and that case is granted above by the resolver. Approving and
-                // rejecting the campus are separate commands with their own actions, and neither asks
-                // anything about the registrant — leading the campus is still the whole qualification
-                // for deciding it.
+                // Editing this campus is NOT here, and leading it grants nothing towards the edit: the
+                // door above is requester-side and the resolver has already answered it, for a leader
+                // exactly as for anyone else. Approving and rejecting the campus are separate commands
+                // with their own actions, and neither asks anything about the registrant — leading the
+                // campus is still the whole qualification for deciding it.
 
                 // Transferring the Host presupposes there IS one — before approval the Host arrives with
                 // the approval decision, which is a different action on a different screen.
@@ -446,9 +448,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 // its validation and its history do not.
                 AmendmentSelfApproves = requesterSideHere && isHostHere,
                 // The leader-only privileges INSIDE the pending edit — the 72-hour override and "Lưu và
-                // duyệt" — and both now require the leader to be the registrant as well. It tracks
-                // exactly what the handler will accept, so a leader who is shown neither cannot be
-                // shown a dialog offering one.
+                // duyệt" — which need the leader of THIS campus who is also the registrant. It tracks
+                // exactly what the handler will accept, so neither a leader on somebody else's request
+                // nor a registrant editing a campus they do not lead can be shown a dialog or a button
+                // offering something the API would refuse.
                 CanOverrideScheduleLeadTime = pendingEdit.ActsAsCampusLeader,
             });
         }

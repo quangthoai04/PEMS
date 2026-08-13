@@ -29,14 +29,19 @@ namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitInstanceV2;
 /// <see cref="VisitRequestOwnership.ResolvePendingCampusEdit"/> — which the read model asks too:
 /// </para>
 /// <list type="bullet">
-/// <item><b>Registrant</b> — owns the request, so owns every campus of it.</item>
+/// <item><b>Registrant</b> — owns the request, so owns every campus of it. A STAFF LEADER account that
+/// filed the request is a registrant here like anybody else: their role does not take their own request
+/// away from them.</item>
 /// <item><b>Operational contact of this campus</b> — runs it. Holding a SIBLING campus grants nothing
 /// here, which is the whole reason the check takes the instance rather than the request.</item>
-/// <item><b>Staff Leader of this campus who ALSO filed the request</b> — the only actor who may file a
-/// schedule inside the 72-hour registration floor, and the only one for whom "Lưu và duyệt" exists. A
-/// Staff Leader who did NOT file it is this campus's DECIDER, not its author: they approve or reject
-/// through their own commands, and neither of those is touched by the rule here.</item>
 /// </list>
+/// <para>
+/// Two extra privileges live INSIDE that edit and belong to one actor only — the Staff Leader OF THIS
+/// CAMPUS who is also the registrant: filing a schedule inside the 72-hour registration floor, and
+/// "Lưu và duyệt". A leader who did NOT file the request is this campus's DECIDER rather than its
+/// author, so they get neither and do not reach the edit at all; they approve or reject through their
+/// own commands, which this rule never touches.
+/// </para>
 /// </summary>
 public sealed class UpdatePendingVisitInstanceV2CommandHandler
     : IRequestHandler<UpdatePendingVisitInstanceV2Command, UpdatePendingVisitInstanceV2Response>
@@ -99,16 +104,15 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
             ?? throw new NotFoundException("Lịch thăm tại cơ sở", request.VisitInstanceId);
 
         // WHO is asking, decided once. The read model builds its EDIT_PENDING_CAMPUS capability from the
-        // very same call, so a button that appeared is a call this admits — and a Staff Leader who is
-        // not the registrant is refused here whether or not a client offers them the screen.
+        // very same call, so a button that appeared is a call this admits.
         var relation = VisitRequestOwnership.ResolvePendingCampusEdit(visit, instance, _currentUser);
         if (!relation.CanEdit)
-            throw new ForbiddenException(relation.ActorIsStaffLeader
-                // Their own campus, somebody else's request. Say what they CAN do, because they can
-                // still decide it — sending them away with a bare "no permission" would read as if the
-                // campus had stopped being theirs to answer.
-                ? "Staff Leader chỉ được sửa cơ sở đang chờ duyệt khi chính mình là người đăng ký đơn. "
-                  + "Với đơn của người khác, bạn vẫn duyệt hoặc từ chối cơ sở này như bình thường."
+            throw new ForbiddenException(relation.IsCampusLeader
+                // They lead this campus but did not file the request. Say what they CAN do, because they
+                // can still decide it — a bare "no permission" would read as if the campus had stopped
+                // being theirs to answer.
+                ? "Bạn phụ trách cơ sở này nhưng không phải người đăng ký đơn nên không sửa được nội dung. "
+                  + "Bạn vẫn duyệt hoặc từ chối cơ sở này như bình thường."
                 : "Chỉ người đăng ký hoặc đầu mối vận hành của cơ sở này mới được sửa.");
 
         // The same policy call the read model made when it decided whether to OFFER the button, so a
@@ -121,12 +125,14 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
             relation.ViewerRelation!,
             VisitRequestErrorCodes.PendingCampusNotEditable);
 
-        // "Lưu và duyệt" needs BOTH halves: the campus's Staff Leader (approving is their act) AND the
-        // registrant (editing this request is theirs). A leader deciding somebody else's request keeps
-        // the ordinary approve/reject commands, which ask for neither.
+        // "Lưu và duyệt" needs BOTH halves: the Staff Leader OF THIS CAMPUS (approving is their act) AND
+        // the registrant (editing this request is theirs). Two actors reach the edit and are refused
+        // here — a registrant who leads a DIFFERENT campus, and this campus's leader on somebody else's
+        // request — and both keep whatever they had: the first saves their edit, the second decides the
+        // campus through the ordinary approve/reject commands, which ask for neither half.
         if (request.ApproveAfterSave is not null && !relation.CanSaveAndApprove)
             throw new ForbiddenException(
-                "Chỉ Staff Leader phụ trách cơ sở này và đồng thời là người đăng ký đơn mới được lưu và duyệt.");
+                "Chỉ Staff Leader phụ trách đúng cơ sở này và đồng thời là người đăng ký đơn mới được lưu và duyệt.");
 
         var previousRequestStatus = visit.Status;
         CampusApprovalOutcome? approval = null;
@@ -136,9 +142,10 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
         {
             var result = await _editService.ApplyInstancePendingEditAsync(
                 visit, instance, request.Content, actorId, now,
-                // The 72-hour override is a leader-registrant privilege, not a role's: a leader who did
-                // not file the request never reaches this line, and one editing somebody else's campus
-                // is not acting as its leader here at all.
+                // The 72-hour override belongs to the leader OF THIS CAMPUS who filed the request, and to
+                // nobody else: a leader who did not file it never reaches this line, and a registrant who
+                // leads a different campus edits here as a requester — the floor protects the leader who
+                // will actually have to prepare THIS visit, so only they can knowingly stand it down.
                 actorIsCampusLeader: relation.ActsAsCampusLeader,
                 overrideLeadTimeConfirmed: request.OverrideLeadTimeConfirmed,
                 cancellationToken);
