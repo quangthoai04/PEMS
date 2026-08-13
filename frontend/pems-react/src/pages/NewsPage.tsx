@@ -188,9 +188,11 @@ function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; load
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 px-8 sm:px-12 lg:px-16 pb-5 sm:pb-10 lg:pb-14 max-w-[1600px] mx-auto">
                 <div className="flex items-center gap-3 mb-3">
-                  <span className="px-3 py-1 rounded-full bg-[#f37021] text-white text-xs font-bold uppercase tracking-wide">
-                    {t('news:card.featured')}
-                  </span>
+                  {item.isFeatured && (
+                    <span className="px-3 py-1 rounded-full bg-[#f37021] text-white text-xs font-bold uppercase tracking-wide">
+                      {t('news:card.featured')}
+                    </span>
+                  )}
                   {item.publishedAt && (
                     <span className="flex items-center gap-1.5 text-white/80 text-sm">
                       <Calendar className="w-3.5 h-3.5" />
@@ -533,11 +535,7 @@ export function NewsPage() {
       setTopLoading(true);
       try {
         const featuredRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: HERO_ROTATE_SIZE, isFeatured: true, languageCode: lang });
-        let featured = featuredRes.items ?? [];
-        if (featured.length === 0) {
-          const latestRes = await publicContentApi.getPublicNewsList({ pageIndex: 1, pageSize: 1, sort: 'latest', languageCode: lang });
-          featured = latestRes.items ?? [];
-        }
+        const featured = featuredRes.items ?? [];
         if (!cancelled) {
           setHeroItems(featured);
           setHeroIndex(0);
