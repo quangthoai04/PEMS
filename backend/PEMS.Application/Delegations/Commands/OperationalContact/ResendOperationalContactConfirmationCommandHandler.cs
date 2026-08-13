@@ -74,6 +74,20 @@ public sealed class ResendOperationalContactConfirmationCommandHandler
             OperationalContactGuards.EnsureMayManageContact(visit, instance, actorId,
                 allowCurrentContact: change.ChangeKind == IdentityChangeKinds.Transfer);
 
+            // ── A resend is not a neutral re-delivery of a TRANSFER: it renews the invitation's expiry
+            //    and mints a fresh link, which is what keeps the handover applicable. So it answers the
+            //    same lifecycle question as initiating one, and it answers it NOW — a campus that has
+            //    started must not have its stale handover kept alive for another day. Cleanup still
+            //    works: cancel and decline settle the invitation without touching who holds the campus.
+            //
+            //    Checked BEFORE anything is written, so a refusal leaves token_version, resend_count,
+            //    expires_at and every outstanding link exactly as they were.
+            //
+            //    An initial confirmation is untouched by this: appointing a first contact is not a
+            //    handover, and its own window is the campus's confirmation gate. ──
+            if (change.ChangeKind == IdentityChangeKinds.Transfer)
+                OperationalContactGuards.EnsureTransferWindowOpen(visit, instance);
+
             if (change.ExpiresAt <= now)
                 throw new ConflictException(
                     "Lời mời đã hết hạn. Vui lòng tạo lời mời mới thay vì gửi lại.",

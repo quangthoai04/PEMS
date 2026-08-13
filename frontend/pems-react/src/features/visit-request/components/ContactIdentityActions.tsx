@@ -41,8 +41,8 @@ interface Props {
   /**
    * The backend's verdict for THIS campus (`campusVisit.allowedActions`). Each control is rendered ONLY
    * when its own code is present — never from role, relation or status. The codes mirror the guards in
-   * the contact handlers, so the panel cannot offer a resend past its cap or a transfer inside the lead
-   * time.
+   * the contact handlers, so the panel cannot offer a resend past its cap, or any contact change on a
+   * campus whose visit has already started.
    */
   allowedActions: string[] | undefined;
   onChanged?: () => void;

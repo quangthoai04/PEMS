@@ -140,6 +140,17 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
 
             EnsureCampusStillAcceptsContact(visit, instance);
 
+            // ── A pending TRANSFER is re-tested against the campus AS IT IS NOW, not as it was when
+            //    the invitation was written. The invitation is answerable for a day, and a campus can
+            //    start inside that day: without this, a handover proposed at 08:55 for a 09:00 visit
+            //    would still swap the contact at 09:02, mid-visit, on the strength of a link that was
+            //    legal when it was sent. The lifecycle answer belongs to the moment of the answer.
+            //
+            //    An initial confirmation is NOT re-tested: it appoints a contact to a campus that has
+            //    none, which is what EnsureCampusStillAcceptsContact above already answers. ──
+            if (change.ChangeKind == IdentityChangeKinds.Transfer)
+                OperationalContactGuards.EnsureTransferWindowOpen(visit, instance);
+
             previousContactId = instance.OperationalContactUserId;
             campusLabel = await CampusLabelAsync(instance, cancellationToken);
 

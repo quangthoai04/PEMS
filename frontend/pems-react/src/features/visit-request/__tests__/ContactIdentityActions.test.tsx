@@ -326,4 +326,26 @@ describe('ContactIdentityActions', () => {
     fireEvent.click(screen.getByTestId('contact-cancel-confirm-submit'));
     await waitFor(() => expect(showSuccessToast).toHaveBeenCalledWith('Đã hủy lời mời chuyển giao.'));
   });
+
+  /**
+   * Từ khi chuyến thăm bắt đầu, backend khoá mọi thao tác ĐỔI đầu mối nhưng vẫn cho DỌN lời mời còn
+   * treo — nên panel phải hiện đúng một nút Hủy, không kèm sửa hay gửi lại. Panel không được tự suy
+   * ra điều đó từ trạng thái: nó chỉ đọc `allowedActions`, và bài test này giữ đúng ranh giới ấy
+   * (nếu ai đó thêm `if (status === 'DURING_VISIT')` vào component thì logic nghiệp vụ đã bị nhân đôi
+   * ở nơi không phải nguồn sự thật).
+   */
+  it('still offers the cancel cleanup when every mutation action is withheld', async () => {
+    vi.mocked(getOperationalContactState).mockResolvedValue({
+      ...noPending, campusStatus: 'DURING_VISIT',
+      pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING',
+      pendingEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
+    });
+    // Exactly what VisitFormReadService emits for a started campus holding a stale handover.
+    renderActions({ allowedActions: ['VIEW', 'CANCEL_OPERATIONAL_CONTACT_CHANGE'] });
+
+    expect(await screen.findByTestId('contact-cancel-transfer')).toBeInTheDocument();
+    expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-resend-claim')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('contact-reinvite')).not.toBeInTheDocument();
+  });
 });

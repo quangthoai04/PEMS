@@ -21,16 +21,6 @@ public sealed class VisitFormReadService : IVisitFormReadService
     private readonly IDateTimeService? _clock;
     private readonly PerCampusFormV2WriteOptions? _writeFlag;
 
-    /// <summary>
-    /// Lead time for the operational-contact transfer. This is a different clock from the form-mutation
-    /// policy: handing a campus to someone else has to leave that person time to accept and read the
-    /// request before the visit, which is why it stays at a day rather than following
-    /// <see cref="VisitMutationPolicy.RequiredLeadHours"/>. It mirrors
-    /// <c>OperationalContactGuards.EnsureTransferWindowOpen</c> exactly, and it is measured against
-    /// THAT campus's start — not the earliest campus of the request.
-    /// </summary>
-    private const int ContactTransferLeadHours = 24;
-
     public VisitFormReadService(
         IApplicationDbContext db,
         ICurrentUserService currentUser,
@@ -704,9 +694,15 @@ public sealed class VisitFormReadService : IVisitFormReadService
     /// the UI may offer, so a button can no longer promise something the backend will refuse.
     ///
     /// <para>
-    /// Everything here is measured against THIS campus: its own status, its own start time, its own
-    /// invitation. The previous version asked the request instead, so a campus that was still days away
-    /// lost its transfer button because a sibling had already started.
+    /// Everything here is measured against THIS campus: its own status, its own invitation. The
+    /// previous version asked the request instead, so a campus that was still days away lost its
+    /// transfer button because a sibling had already started.
+    /// </para>
+    /// <para>
+    /// Every MUTATION verdict is decided by the persisted campus status alone — the same whitelist the
+    /// guards apply. The clock is consulted for one thing only: whether an outstanding invitation has
+    /// run out. That split is deliberate; a read model that answered "may this be changed" with a
+    /// countdown could disagree with the handler over a campus neither had looked at.
     /// </para>
     /// </summary>
     private List<string> ContactActionsFor(
@@ -741,11 +737,23 @@ public sealed class VisitFormReadService : IVisitFormReadService
         if (instance.Status == VisitInstanceStatuses.Cancelled)
             return actions;
 
-        // ── Correcting the contact's DETAILS is available wherever the campus is still live, to the
-        //    registrant and to the person currently holding it — mirrors EnsureProfileUpdateAllowed +
-        //    EnsureMayManageContact(allowCurrentContact: true). It is listed first because it is the
-        //    common case: most contact edits are a corrected phone number, not a change of person. ──
-        actions.Add(VisitFormActions.UpdateOperationalContactProfile);
+        // ── Every contact MUTATION closes when the visit starts, and the test is the persisted status
+        //    alone — mirrors EnsureProfileUpdateAllowed. A campus that is running, finished or closed
+        //    has a contact record the visit was received against; correcting it afterwards is editing
+        //    history, not the plan. Cleanup of an outstanding invitation is a different thing and
+        //    survives below. ──
+        var contactMutable = instance.Status is
+            VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval
+            or VisitInstanceStatuses.Assigned
+            or VisitInstanceStatuses.BeforeVisit;
+
+        // ── Correcting the contact's DETAILS, to the registrant and to the person currently holding
+        //    the campus — mirrors EnsureProfileUpdateAllowed + EnsureMayManageContact(allowCurrentContact:
+        //    true). Listed first because it is the common case: most contact edits are a corrected phone
+        //    number, not a change of person. ──
+        if (contactMutable)
+            actions.Add(VisitFormActions.UpdateOperationalContactProfile);
 
         // ── Undecided campus → REPLACE territory (registrant only; EnsureReplaceWindowOpen). ──
         var replaceable = instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
@@ -754,9 +762,9 @@ public sealed class VisitFormReadService : IVisitFormReadService
             actions.Add(VisitFormActions.ReplaceOperationalContact);
 
         // ── Decided but not started → TRANSFER territory (registrant or the current holder). ──
-        // Mirrors EnsureTransferWindowOpen, including its per-campus lead time.
-        var transferable = VisitInstanceStatuses.DecidedNotStarted.Contains(instance.Status)
-            && instance.PlannedStartAt.AddHours(-ContactTransferLeadHours) >= now;
+        // Mirrors EnsureTransferWindowOpen: lifecycle ONLY, no clock. A handover a minute before the
+        // start is offered while the campus still reads BEFORE_VISIT, because the handler accepts it.
+        var transferable = VisitInstanceStatuses.DecidedNotStarted.Contains(instance.Status);
         if (transferable && pending is null)
             actions.Add(VisitFormActions.InitiateOperationalContactTransfer);
 
@@ -776,11 +784,17 @@ public sealed class VisitFormReadService : IVisitFormReadService
         }
 
         // Resend stops at the cap rather than offering a button that returns RATE_LIMITED, and never
-        // resurrects an invitation that has already expired.
-        if (pending.ExpiresAt > now && pending.ResendCount < MaxContactResends)
+        // resurrects an invitation that has already expired. For a TRANSFER it also asks the lifecycle
+        // question again, because resending one renews its expiry and mints a fresh link — the handler
+        // refuses that once the campus has started, so offering it would be a button that 409s.
+        var mayResend = pending.ExpiresAt > now
+            && pending.ResendCount < MaxContactResends
+            && (pending.Kind != IdentityChangeKinds.Transfer || transferable);
+        if (mayResend)
             actions.Add(VisitFormActions.ResendOperationalContactConfirmation);
-        // Cancel is deliberately NOT gated on the lead time: closing an invitation stays possible once
-        // the window to open a new one has passed.
+        // Cancel is CLEANUP, not mutation: it settles the pending invitation and leaves whoever holds
+        // the campus holding it. So it stays available after the mutation window closes — a campus that
+        // started with a stale handover in flight must still be able to close it.
         actions.Add(VisitFormActions.CancelOperationalContactChange);
         return actions;
     }

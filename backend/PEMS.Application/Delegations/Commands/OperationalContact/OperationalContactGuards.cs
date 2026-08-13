@@ -49,11 +49,18 @@ internal static class OperationalContactGuards
     /// <summary>An INITIAL_CONFIRMATION link is valid for three days.</summary>
     public const int InitialConfirmationValidityHours = 72;
 
-    /// <summary>A TRANSFER link is valid for one day — it moves an already-working campus.</summary>
+    /// <summary>
+    /// A TRANSFER link is valid for one day — it moves an already-working campus.
+    ///
+    /// <para>
+    /// This is the INVITATION's validity, and nothing else. It says how long the emailed link stays
+    /// answerable; it says nothing about whether answering it is still allowed, which is decided by
+    /// the campus's own lifecycle at the moment of the answer (see
+    /// <see cref="EnsureTransferWindowOpen"/>). A link can be well inside its day and still be
+    /// refused because the visit has since started.
+    /// </para>
+    /// </summary>
     public const int TransferValidityHours = 24;
-
-    /// <summary>Self-service transfer closes this long before the campus starts.</summary>
-    public const int TransferLeadHours = 24;
 
     /// <summary>
     /// Any authenticated account. Deliberately NO role bar: the registrant may be VISITOR, STAFF or
@@ -148,56 +155,76 @@ internal static class OperationalContactGuards
             return;
 
         throw new ConflictException(
-            instance.Status == VisitInstanceStatuses.BeforeVisit
+            instance.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit
                 ? "Cơ sở này đã được duyệt. Đổi đầu mối lúc này phải qua quy trình chuyển giao."
                 : "Trạng thái của cơ sở này không cho phép đổi đầu mối vận hành.",
             OperationalContactErrorCodes.ChangeConflict);
     }
 
     /// <summary>
-    /// The campus may have its contact's DETAILS corrected — a far wider window than replacing or
-    /// transferring, because nothing about authority moves.
+    /// The campus may have its contact's DETAILS corrected — a wider window than replacing or
+    /// transferring, because nothing about authority moves, but NOT an unlimited one.
     ///
     /// <para>
-    /// Everything except a dead campus qualifies, and deliberately so. An approved campus starting in
-    /// six hours is precisely when a corrected phone number matters most, so the transfer lead time has
-    /// no business here; nor does the visit-registration lead time, which is a rule about when a visit
-    /// may be SCHEDULED. What is refused is a campus nobody will act on — cancelled or rejected — where
-    /// editing the contact would write to a record the workflow has finished with.
+    /// The window is the four statuses before the visit starts, and it is a positive whitelist rather
+    /// than a list of dead ends: a campus that is already running, finished or closed has a contact
+    /// record the visit was actually received against, and rewriting the name or phone on it after the
+    /// fact edits history rather than correcting a plan. The two statuses that never had a plan to
+    /// correct — cancelled and rejected — are refused by the same rule.
+    /// </para>
+    /// <para>
+    /// No clock is consulted. An approved campus starting in six hours is precisely when a corrected
+    /// phone number matters most, so neither the visit-registration lead time (a rule about when a
+    /// visit may be SCHEDULED) nor any transfer cutoff has business here — only the persisted status.
     /// </para>
     /// </summary>
     public static void EnsureProfileUpdateAllowed(VisitRequest visit, VisitRequestCampus instance)
     {
         EnsureRequestLive(visit);
 
-        if (instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected)
-            throw new ConflictException(
-                "Lịch thăm tại cơ sở này đã kết thúc quy trình nên không thể sửa thông tin đầu mối vận hành.",
-                OperationalContactErrorCodes.ChangeConflict);
+        if (instance.Status is
+            VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval
+            or VisitInstanceStatuses.Assigned
+            or VisitInstanceStatuses.BeforeVisit)
+            return;
+
+        throw new ConflictException(
+            instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected
+                ? "Lịch thăm tại cơ sở này đã kết thúc quy trình nên không thể sửa thông tin đầu mối vận hành."
+                : "Chuyến thăm tại cơ sở này đã bắt đầu nên không thể sửa thông tin đầu mối vận hành.",
+            OperationalContactErrorCodes.ChangeConflict);
     }
 
     /// <summary>
-    /// The campus has a decision and has not started, so its contact may be handed over. Blocked once
-    /// the visit is running or finished, and inside the lead time — a handover on the morning of the
-    /// visit leaves nobody who has actually been briefed.
+    /// The campus has a decision and has not started, so its contact may be handed over.
+    ///
+    /// <para>
+    /// Decided by the persisted status ALONE — <c>ASSIGNED</c> or <c>BEFORE_VISIT</c> and nothing else.
+    /// There is deliberately no pre-start cutoff: a handover proposed a minute before the visit begins
+    /// is allowed while the campus still reads BEFORE_VISIT, and one proposed a week out is refused if
+    /// the campus has somehow already been moved to DURING_VISIT. The old 24-hour lead time answered
+    /// the question with a clock, which meant the read model and the handler could disagree about a
+    /// campus neither of them had actually looked at.
+    /// </para>
+    /// <para>
+    /// Re-run at every point that would MOVE the contact — initiate, accept, resend — because a
+    /// transfer that was legal when it was proposed is not thereby legal forever.
+    /// </para>
     /// </summary>
-    public static void EnsureTransferWindowOpen(
-        VisitRequest visit, VisitRequestCampus instance, DateTime vietnamNow)
+    public static void EnsureTransferWindowOpen(VisitRequest visit, VisitRequestCampus instance)
     {
         EnsureRequestLive(visit);
 
-        if (instance.Status != VisitInstanceStatuses.BeforeVisit)
-            throw new ConflictException(
-                instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
-                    or VisitInstanceStatuses.WaitingRequestApproval
-                    ? "Cơ sở này chưa được duyệt. Hãy đổi trực tiếp đầu mối vận hành thay vì chuyển giao."
-                    : "Trạng thái của cơ sở này không cho phép chuyển giao đầu mối vận hành.",
-                OperationalContactErrorCodes.ChangeConflict);
+        if (instance.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit)
+            return;
 
-        if (instance.PlannedStartAt.AddHours(-TransferLeadHours) < vietnamNow)
-            throw new BusinessRuleException(
-                $"Chuyến thăm tại cơ sở này bắt đầu trong vòng {TransferLeadHours} giờ nên không thể tự chuyển giao đầu mối. Vui lòng liên hệ FPTU để được hỗ trợ.",
-                OperationalContactErrorCodes.ChangeConflict);
+        throw new ConflictException(
+            instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
+                or VisitInstanceStatuses.WaitingRequestApproval
+                ? "Cơ sở này chưa được duyệt. Hãy đổi trực tiếp đầu mối vận hành thay vì chuyển giao."
+                : "Chuyến thăm tại cơ sở này đã bắt đầu nên không thể chuyển giao đầu mối vận hành.",
+            OperationalContactErrorCodes.ChangeConflict);
     }
 
     private static void EnsureRequestLive(VisitRequest visit)

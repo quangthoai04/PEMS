@@ -74,7 +74,9 @@ public sealed class InitiateOperationalContactTransferCommandHandler
 
             // The registrant, or the person currently holding THIS campus and handing it on.
             OperationalContactGuards.EnsureMayManageContact(visit, instance, actorId, allowCurrentContact: true);
-            OperationalContactGuards.EnsureTransferWindowOpen(visit, instance, now);
+            // Lifecycle only — `now` still drives the invitation's own timestamps below, but it has no
+            // say in whether the handover is allowed.
+            OperationalContactGuards.EnsureTransferWindowOpen(visit, instance);
 
             var currentContactId = instance.OperationalContactUserId
                 ?? throw new ConflictException(

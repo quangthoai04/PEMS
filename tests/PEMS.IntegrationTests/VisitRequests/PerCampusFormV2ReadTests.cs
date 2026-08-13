@@ -756,6 +756,13 @@ public sealed class PerCampusFormV2ReadTests
         await tx.RollbackAsync();
     }
 
+    /// <summary>
+    /// Seeded on a DECIDED campus, because that is the only place a transfer can exist: an undecided
+    /// campus is replace territory, and its contact is changed outright rather than handed over. The
+    /// seed used to leave the campus at WAITING_REQUEST_APPROVAL, which made the resend it asserted a
+    /// call the handler would have refused — the read model now asks the same lifecycle question the
+    /// resend handler does, so the fixture has to describe a state that can actually occur.
+    /// </summary>
     [Fact]
     public async Task A_pending_transfer_replaces_initiation_with_resend_and_cancel()
     {
@@ -763,7 +770,7 @@ public sealed class PerCampusFormV2ReadTests
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
         await SeedPendingIdentityChangeAsync(
             db, req.VisitRequestId, instances[0].VisitInstanceId,
             IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
@@ -779,28 +786,34 @@ public sealed class PerCampusFormV2ReadTests
     }
 
     /// <summary>
-    /// The 24h lead time gates STARTING a handover, and nothing else. An invitation already in flight
-    /// can still be chased (resend) or closed (cancel) inside the window — that is what
-    /// <c>ResendOperationalContactConfirmationCommandHandler</c> and
-    /// <c>CancelOperationalContactChangeCommandHandler</c> do, neither calling
-    /// <c>EnsureTransferWindowOpen</c> — so offering those two buttons is not a button that 409s.
+    /// A handover stays on offer minutes before the visit begins, because the CAMPUS has not begun.
+    ///
+    /// <para>
+    /// This used to be the opposite assertion: a 24-hour lead time before <c>PlannedStartAt</c> took
+    /// the button away, and the registrant whose contact fell ill the night before was told to
+    /// telephone FPTU. The rule is now the persisted status alone, in the read model exactly as in
+    /// <c>OperationalContactGuards.EnsureTransferWindowOpen</c> — which is the point: a countdown here
+    /// and a status test there is how a screen comes to offer what the API refuses.
+    /// </para>
     /// </summary>
     [Fact]
-    public async Task Inside_the_24h_window_a_transfer_cannot_start_but_one_in_flight_can_be_chased_or_cancelled()
+    public async Task A_handover_is_still_offered_minutes_before_a_start_the_campus_has_not_reached()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+        // host0 → the campus is ASSIGNED: decided, and its Host has not opened preparation.
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
         var instance = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instances[0].VisitInstanceId);
-        instance.PlannedStartAt = DateTime.Now.AddHours(6);
-        instance.PlannedEndAt = DateTime.Now.AddHours(8);
+        instance.PlannedStartAt = DateTime.Now.AddMinutes(1);
+        instance.PlannedEndAt = DateTime.Now.AddHours(2);
         await db.SaveChangesAsync();
 
-        var beforeTransfer = CampusActions(
+        var imminent = CampusActions(
             await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
-        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, beforeTransfer);
+        Assert.Contains(VisitFormActions.InitiateOperationalContactTransfer, imminent);
+        Assert.Contains(VisitFormActions.UpdateOperationalContactProfile, imminent);
 
         await SeedPendingIdentityChangeAsync(
             db, req.VisitRequestId, instances[0].VisitInstanceId,
@@ -808,11 +821,95 @@ public sealed class PerCampusFormV2ReadTests
         var withTransfer = CampusActions(
             await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
 
-        // Neither resend nor cancel is gated on the window; only starting a new handover is.
+        // A second transfer is refused by the one-pending-change guard, so it is never offered; the
+        // invitation in flight can still be chased or closed.
         Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, withTransfer);
         Assert.Contains(VisitFormActions.ResendOperationalContactConfirmation, withTransfer);
         Assert.Contains(VisitFormActions.CancelOperationalContactChange, withTransfer);
         await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// From the moment the campus starts, the screen offers no way to change its contact — the same
+    /// four statuses the guards whitelist, and no others. Read-only is not enough here: every one of
+    /// these codes would come back 409 from its handler, and a button that fails is worse than an
+    /// absent one because the user cannot tell whether the system or their request is at fault.
+    /// </summary>
+    [Theory]
+    [InlineData(VisitInstanceStatuses.DuringVisit)]
+    [InlineData(VisitInstanceStatuses.AfterVisit)]
+    [InlineData(VisitInstanceStatuses.Closed)]
+    public async Task A_started_campus_offers_no_contact_mutation(string status)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        await StartCampusAsync(db, instances[0].VisitInstanceId, status);
+
+        var actions = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+
+        Assert.DoesNotContain(VisitFormActions.UpdateOperationalContactProfile, actions);
+        Assert.DoesNotContain(VisitFormActions.ReplaceOperationalContact, actions);
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, actions);
+        Assert.DoesNotContain(VisitFormActions.ReinviteOperationalContactConfirmation, actions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The asymmetry, from the read model's side. A handover left in flight when the campus started
+    /// can no longer be RESENT — resending renews its expiry and mints a fresh link, which is how a
+    /// transfer that can never be applied would be kept alive — but it can still be CANCELLED, because
+    /// closing it changes nothing about who runs the campus. Withholding cancel would leave the campus
+    /// permanently occupied by a PENDING change, and only one is allowed at a time.
+    /// </summary>
+    [Theory]
+    [InlineData(VisitInstanceStatuses.DuringVisit)]
+    [InlineData(VisitInstanceStatuses.AfterVisit)]
+    public async Task A_stale_handover_on_a_started_campus_offers_cancel_but_not_resend(string status)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, instances) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
+        // Proposed while the campus was still ASSIGNED, and still well inside its 24-hour validity.
+        await SeedPendingIdentityChangeAsync(
+            db, req.VisitRequestId, instances[0].VisitInstanceId,
+            IdentityChangeKinds.Transfer, resendCount: 0, DateTime.Now.AddHours(24));
+        await StartCampusAsync(db, instances[0].VisitInstanceId, status);
+
+        var actions = CampusActions(
+            await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+
+        Assert.Contains(VisitFormActions.CancelOperationalContactChange, actions);
+        Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, actions);
+        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, actions);
+        Assert.DoesNotContain(VisitFormActions.UpdateOperationalContactProfile, actions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Drives an ASSIGNED campus into <paramref name="status"/> the way the database insists on:
+    /// BEFORE_VISIT is the only door into DURING_VISIT, and a campus at DURING_VISIT or beyond must
+    /// have at least one agenda item. Both are enforced by <c>trg_visit_campuses_*_bu</c>, so they are
+    /// satisfied rather than worked around.
+    /// </summary>
+    private static async Task StartCampusAsync(
+        ApplicationDbContext db, ulong visitInstanceId, string status)
+    {
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO visit_agendas (visit_instance_id, sequence_order, title, start_time, created_at) " +
+            "VALUES ({0}, 1, 'Phiên làm việc', {1}, {1})",
+            visitInstanceId, DateTime.Now);
+
+        foreach (var step in new[] { VisitInstanceStatuses.BeforeVisit, VisitInstanceStatuses.DuringVisit, status }
+                     .Distinct())
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE visit_request_campuses SET status = {1} WHERE visit_instance_id = {0}",
+                visitInstanceId, step);
     }
 
     [Fact]
