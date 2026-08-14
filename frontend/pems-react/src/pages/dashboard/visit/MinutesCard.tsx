@@ -120,9 +120,17 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   // Inline field errors (rendered under the specific input/row that failed).
   const [titleError, setTitleError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+  const [actionDateErrors, setActionDateErrors] = useState<Record<string, string>>({});
   const [participantErrors, setParticipantErrors] = useState<Record<string, string>>({});
   const clearActionError = (key: string) =>
     setActionErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  const clearActionDateError = (key: string) =>
+    setActionDateErrors((prev) => {
       if (!prev[key]) return prev;
       const next = { ...prev };
       delete next[key];
@@ -238,6 +246,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     setLoadError(null);
     setTitleError(null);
     setActionErrors({});
+    setActionDateErrors({});
     setParticipantErrors({});
   };
 
@@ -266,27 +275,31 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     // Re-validate from a clean slate so stale field errors don't linger.
     setTitleError(null);
     setActionErrors({});
+    setActionDateErrors({});
     setParticipantErrors({});
 
     // 1) Tiêu đề bắt buộc.
     let titleErr: string | null = null;
     if (!draftTitle.trim()) titleErr = 'Vui lòng nhập tên biên bản.';
 
-    // 2) Đầu mục công việc: bỏ qua dòng rỗng hoàn toàn; dòng đã nhập một phần phải có nội dung.
-    // Hạn hoàn thành (nếu có) không được ở quá khứ — cùng quy tắc với input min= bên dưới,
-    // chặn thêm cả trường hợp gõ tay bỏ qua giao diện lịch.
+    // 2) Đầu mục công việc: bỏ qua dòng rỗng hoàn toàn; dòng đã nhập một phần phải có nội dung
+    // VÀ chọn thời gian hoàn thành (bắt buộc, không cho gửi khi còn dòng chưa chọn hạn). Hạn đã chọn
+    // không được ở quá khứ — cùng quy tắc với input min= bên dưới, chặn thêm cả trường hợp gõ tay
+    // bỏ qua giao diện lịch.
     const filledActions = draftActionItems.filter((a) => !isBlankActionItem(a));
     const nextActionErrors: Record<string, string> = {};
+    const nextActionDateErrors: Record<string, string> = {};
     const nowLocal = vietnamNowDateTimeLocal();
     for (const a of filledActions) {
-      if (!a.title.trim()) { nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.'; continue; }
-      if (a.dueDate && a.dueDate < nowLocal) nextActionErrors[a._key] = 'Hạn hoàn thành không được ở quá khứ.';
+      if (!a.title.trim()) nextActionErrors[a._key] = 'Vui lòng nhập nội dung công việc.';
+      if (!a.dueDate) nextActionDateErrors[a._key] = 'Vui lòng chọn thời gian hoàn thành.';
+      else if (a.dueDate < nowLocal) nextActionDateErrors[a._key] = 'Hạn hoàn thành không được ở quá khứ.';
     }
 
-    const hasActionErr = Object.keys(nextActionErrors).length > 0;
+    const hasActionErr = Object.keys(nextActionErrors).length > 0 || Object.keys(nextActionDateErrors).length > 0;
     if (titleErr || hasActionErr) {
       if (titleErr) setTitleError(titleErr);
-      if (hasActionErr) setActionErrors(nextActionErrors);
+      if (hasActionErr) { setActionErrors(nextActionErrors); setActionDateErrors(nextActionDateErrors); }
       // Inline error tại field + toast tổng quát ở góc phải trên; không gọi API.
       pushToast('error', hasActionErr
         ? 'Vui lòng kiểm tra lại các đầu mục công việc.'
@@ -848,14 +861,19 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                       </span>
                                     )}
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <Calendar className="w-4 h-4 text-orange-500 shrink-0" />
-                                    {editing ? (
-                                      <input type="datetime-local" value={a.dueDate} min={vietnamNowDateTimeLocal()}
-                                        onChange={(e) => updateActionItem(a._key, { dueDate: e.target.value })}
-                                        className="text-xs font-bold text-orange-700 bg-orange-50 px-2 py-1.5 rounded-md border border-orange-200 outline-none hover:border-orange-300" />
-                                    ) : (
-                                      <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
+                                  <div className="flex flex-col items-start gap-1">
+                                    <div className="flex items-center gap-2">
+                                      <Calendar className={`w-4 h-4 shrink-0 ${actionDateErrors[a._key] ? 'text-red-500' : 'text-orange-500'}`} />
+                                      {editing ? (
+                                        <input type="datetime-local" value={a.dueDate} min={vietnamNowDateTimeLocal()}
+                                          onChange={(e) => { updateActionItem(a._key, { dueDate: e.target.value }); clearActionDateError(a._key); }}
+                                          className={`text-xs font-bold px-2 py-1.5 rounded-md border outline-none ${actionDateErrors[a._key] ? 'text-red-700 bg-red-50 border-red-400 focus:border-red-500' : 'text-orange-700 bg-orange-50 border-orange-200 hover:border-orange-300'}`} />
+                                      ) : (
+                                        <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
+                                      )}
+                                    </div>
+                                    {editing && actionDateErrors[a._key] && (
+                                      <p className="text-xs font-semibold text-red-600">{actionDateErrors[a._key]}</p>
                                     )}
                                   </div>
                                   {editing ? (
