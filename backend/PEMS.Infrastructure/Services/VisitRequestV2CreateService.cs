@@ -291,6 +291,14 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         {
             var campusId = campusByCode[form.CampusVisits[i].CampusId.Trim().ToUpperInvariant()].CampusId;
             var instance = request.CampusInstances.First(c => c.CampusId == campusId);
+
+            // Who, of this campus's delegation, the operational contact IS (NP-03). Resolved HERE
+            // because the member ids only exist after the flush above. The picked index is what the
+            // user chose in "Chọn đầu mối từ danh sách đoàn"; without one the snapshot is matched.
+            OperationalContactLink.Resolve(
+                instance.FormDetail!, membersByCampusIndex[i],
+                form.CampusVisits[i].OperationalContactVisitorIndex);
+
             uint linkOrder = 0;
             foreach (var member in membersByCampusIndex[i])
             {

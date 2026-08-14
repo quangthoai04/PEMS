@@ -182,6 +182,20 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       email: buildEmailSchema(t, 'operationalEmail'),
     }),
 
+    /**
+     * Which row of `visitors` the operational contact IS, when the user picked one from the
+     * delegation list instead of typing a separate person (NP-03).
+     *
+     * <p>Carried alongside the snapshot rather than instead of it. The snapshot is what was agreed
+     * and must not follow later edits to the member row; this is the answer to "same person?", which
+     * strings could only ever guess at — a contact who was also in the delegation list used to show
+     * up twice in the biên bản, and one who was only in this block did not show up at all.</p>
+     *
+     * <p>`null` is a perfectly normal value: plenty of campuses are coordinated by somebody who is
+     * not travelling with the delegation.</p>
+     */
+    operationalContactVisitorIndex: z.number().int().min(0).nullable().optional().default(null),
+
     workingLanguage: z.enum(['EN', 'VI']),
     transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)
       .refine(noHtml(t), { message: t('noHtmlChars') })

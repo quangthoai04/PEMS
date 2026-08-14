@@ -68,7 +68,25 @@ public record CampusVisitFormDto(
     string? Notes,                   // "Ghi chú gửi FPTU" — one general remark, independent of consent
 
     // ── Reception-host arrangement (authenticated create only; forced to WAIT_FOR_LATER otherwise) ──
-    CampusHostSelectionV2Dto? HostSelection);
+    CampusHostSelectionV2Dto? HostSelection,
+
+    /// <summary>
+    /// Which row of <see cref="Visitors"/> the operational contact IS, when the user picked one from
+    /// the delegation list rather than typing a separate person (NP-03).
+    ///
+    /// <para>
+    /// Optional, and null is a normal answer — plenty of campuses are coordinated by somebody who is
+    /// not travelling with the delegation. When it IS supplied it is the strongest evidence there is,
+    /// and it is what survives the user then editing the contact's job title: a name/role/organisation
+    /// match would quietly lose the link at that point.
+    /// </para>
+    /// <para>
+    /// An index rather than an id because these members do not exist yet at submit time. Out-of-range
+    /// values are ignored by <c>OperationalContactLink</c> rather than rejected — a stale hint from a
+    /// client should degrade to matching, not fail a submission somebody just spent ten minutes on.
+    /// </para>
+    /// </summary>
+    int? OperationalContactVisitorIndex = null);
 
 /// <summary>
 /// The complete per-campus create payload. <c>visitScope</c> and <c>hasMixedCampusDetails</c> are NOT

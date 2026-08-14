@@ -61,6 +61,31 @@ public class VisitInstanceFormDetail
     [Column("operational_contact_email")]
     public string OperationalContactEmail { get; set; } = null!;
 
+    /// <summary>
+    /// WHICH member of this campus's delegation the operational contact IS (NP-03).
+    ///
+    /// <para>
+    /// The five columns above are a snapshot, and a snapshot cannot be compared: the biên bản, the
+    /// participant list and the delegation list each held their own copy of this person's name, and
+    /// the only way to tell whether they meant one human or two was to match strings. So a contact who
+    /// was also listed among the guests appeared twice, and a contact who was NOT listed did not
+    /// appear at all — the auto-fill had no row to draw them from.
+    /// </para>
+    /// <para>
+    /// This is that missing relation, and it is what makes the contact ONE person with one identity:
+    /// the snapshot stays (it is the audit record of what was agreed, and it must not follow later
+    /// edits to the member row), while this id answers "same person?" outright.
+    /// </para>
+    /// <para>
+    /// NULLABLE, and legitimately null in two cases: rows created before this existed, and a contact
+    /// who genuinely is not part of the delegation. Both are handled — the biên bản falls back to the
+    /// snapshot. It is <c>ON DELETE SET NULL</c>, so removing a member downgrades the link to the
+    /// snapshot rather than deleting the campus's contact.
+    /// </para>
+    /// </summary>
+    [Column("operational_contact_guest_member_id")]
+    public ulong? OperationalContactGuestMemberId { get; set; }
+
     [Column("working_language")]
     public string WorkingLanguage { get; set; } = "EN";
 

@@ -401,8 +401,12 @@ export const useVisitRequestFormV2 = (
   const validationErrorCount = countFieldErrors(form.formState.errors);
   /**
    * …but only after a submit has been attempted. A form nobody has submitted owes the user no list
-   * of everything it is still missing, and `setValue(..., { shouldValidate: true })` — the profile
-   * autofill — can put errors on the tree before they have ever pressed the button.
+   * of everything it is still missing.
+   *
+   * <p>This gate is now belt AND braces: the profile autofill used to validate unconditionally and
+   * put errors on the tree before the user had pressed anything, and it now follows `isSubmitted`
+   * itself (NP-02). Keeping the check here still matters for any other pre-submit error source —
+   * a mapped server error, a manual `setError`.</p>
    */
   const showValidationSummary = form.formState.isSubmitted && validationErrorCount > 0;
 

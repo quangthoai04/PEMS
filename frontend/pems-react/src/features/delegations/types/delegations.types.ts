@@ -322,14 +322,14 @@ export interface VisitProcessPermission {
   // Operational stage transitions (Host only, live instance).
   canStartVisit: boolean;     // BEFORE_VISIT → DURING_VISIT
   /**
-   * Thời điểm sớm nhất được chuyển BEFORE_VISIT → DURING_VISIT (`plannedStartAt - 6h`). Backend trả
-   * suốt giai đoạn BEFORE_VISIT — kể cả khi `canStartVisit` còn false — vì đó chính là lúc màn hình
-   * cần: nút disabled nói rõ MỐC MỞ hữu ích hơn hẳn nút biến mất. Suy từ lịch hiện tại nên lịch đổi
-   * thì mốc đổi theo.
+   * KHUYẾN NGHỊ, không phải hạn chót: mốc `plannedStartAt - 6h`, từ đó việc chuyển sang "Trong tiếp
+   * khách" là bình thường. Host vẫn được chuyển sớm hơn — `canStartVisit` không phụ thuộc mốc này và
+   * backend cũng không (NP-05). Suy từ lịch hiện tại nên lịch đổi thì mốc đổi theo; null ngoài
+   * BEFORE_VISIT.
    */
-  startVisitAvailableAt?: string | null;
-  /** `VISIT_START_WINDOW_NOT_OPEN` khi lý do duy nhất là chưa tới giờ; null nếu vì lý do khác. */
-  startVisitDisabledReasonCode?: string | null;
+  recommendedStartVisitAt?: string | null;
+  /** True khi Host đang chuyển SỚM hơn mốc khuyến nghị — chỉ đổi lời trong hộp xác nhận, không khóa nút. */
+  isBeforeRecommendedStartWindow?: boolean;
   canCompleteVisit: boolean;  // DURING_VISIT → AFTER_VISIT
   canCloseVisit: boolean;     // AFTER_VISIT → CLOSED
 

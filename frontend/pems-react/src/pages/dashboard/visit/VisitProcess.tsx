@@ -54,6 +54,50 @@ const REMINDER_CONFIGS = [
 type ReminderKey = typeof REMINDER_CONFIGS[number]['key'];
 type ReminderRow = { enabled: boolean; days: number; time: string };
 
+/**
+ * What each stage transition asks, and — the part that matters — what it COSTS (NP-05).
+ *
+ * A stage transition is one-way and it closes an editing window. The "before" one is the sharpest:
+ * the moment it lands, the whole preparation tab becomes read-only, and until now the Host found
+ * that out afterwards. So each confirmation names the consequence in the same words the tab uses
+ * ("lịch trình, thành phần tham gia, hậu cần, cảnh báo, ghi chú chuẩn bị") rather than asking a bare
+ * "bạn có chắc không?".
+ *
+ * `notice` is the inline sentence on the confirm bar; `consequence` is the fuller version in the
+ * dialog. They agree by construction because they live in one table.
+ */
+const STAGE_CONFIRM: Record<'before' | 'during' | 'after', {
+  title: string;
+  notice: string;
+  consequence: string;
+  confirmLabel: string;
+}> = {
+  before: {
+    title: 'Xác nhận chuyển sang “Trong tiếp khách”?',
+    notice: 'Sau khi xác nhận, thông tin ở tab Trước tiếp khách sẽ được khóa và quy trình chuyển sang giai đoạn Trong tiếp khách.',
+    consequence:
+      'Sau khi chuyển giai đoạn, toàn bộ thông tin trong tab “Trước tiếp khách” sẽ chỉ còn chế độ xem. '
+      + 'Bạn sẽ không thể tạo, sửa hoặc xóa lịch trình, thành phần tham gia, hậu cần, cảnh báo và ghi chú chuẩn bị.',
+    confirmLabel: 'Xác nhận chuyển',
+  },
+  during: {
+    title: 'Xác nhận kết thúc tiếp khách?',
+    notice: 'Sau khi xác nhận, quy trình sẽ chuyển sang giai đoạn Sau tiếp khách.',
+    consequence:
+      'Quy trình sẽ chuyển sang giai đoạn “Sau tiếp khách”. Các thao tác của giai đoạn đang tiếp khách '
+      + 'sẽ dừng lại, và hệ thống mời các bên đánh giá chuyến thăm.',
+    confirmLabel: 'Xác nhận kết thúc',
+  },
+  after: {
+    title: 'Xác nhận đóng đoàn?',
+    notice: 'Sau khi đóng đoàn, toàn bộ quy trình sẽ chuyển sang chế độ chỉ xem.',
+    consequence:
+      'Đóng đoàn là bước cuối cùng: toàn bộ quy trình tiếp khách sẽ chuyển sang chế độ chỉ xem và '
+      + 'hồ sơ được lưu trữ. Bạn sẽ không thể chỉnh sửa bất kỳ nội dung nào sau bước này.',
+    confirmLabel: 'Xác nhận đóng đoàn',
+  },
+};
+
 export function VisitProcess() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -181,8 +225,9 @@ export function VisitProcess() {
   // type into a form that silently drops the data. Flip this to the backend flag once the real
   // save endpoints exist (see report for the exact APIs required).
   const SETUP_SAVE_AVAILABLE = false;
-  const canEditBefore = SETUP_SAVE_AVAILABLE && (perm ? perm.canEditBeforeVisit : !isDept);
-  const isInfoEditable = isInfoEditableState && !isClosed && canEditBefore;
+  // `canEditBefore` / `isInfoEditable` are defined further down, next to `canMutateBeforeVisit`:
+  // they are the same gate, and one of them reading a different status than the others is exactly
+  // the class of bug NP-04 is about.
   // Tab visibility (backend says every in-scope role may at least view all tabs read-only).
   const canViewBefore = !!perm?.canViewBeforeVisit;
   const canViewDuring = !!perm?.canViewDuringVisit;
@@ -224,16 +269,27 @@ export function VisitProcess() {
     try {
       await delegationsApi.startPreparation(perm.visitRequestId, perm.visitInstanceId);
       // Refetch rather than patching local state: the new status is what unlocks every setup
-      // control, and the backend is the only thing entitled to say what it is.
-      await loadPermissions();
+      // control, and the backend is the only thing entitled to say what it is. All three sources
+      // together — permissions AND detail AND reminders — so no capability is left reading ASSIGNED.
+      await refreshProcessState();
       pushToast('success', 'Đã bắt đầu giai đoạn chuẩn bị.');
     } catch (e: any) {
       pushToast('error', apiErrorMessage(e, 'Không thể bắt đầu chuẩn bị. Vui lòng thử lại.'));
-      if (e?.response?.status === 409) { await loadPermissions(); }
+      if (e?.response?.status === 409) { await refreshProcessState(); }
     } finally {
       setStartingPreparation(false);
     }
   };
+
+  /**
+   * Which stage the Host is being asked to confirm, or null when no dialog is open (NP-05).
+   *
+   * Every stage transition goes through a confirmation now, and the "before" one exists mainly to
+   * say the thing the old flow never did: the preparation tab becomes READ-ONLY. That is not a
+   * detail — it ends the window in which the agenda, the invitations, the logistics and the notes
+   * can be changed at all — and it used to be discovered afterwards.
+   */
+  const [pendingStage, setPendingStage] = useState<'before' | 'during' | 'after' | null>(null);
 
   const advanceStage = async (stage: 'before' | 'during' | 'after') => {
     if (!perm || stageSubmitting) return;
@@ -246,8 +302,12 @@ export function VisitProcess() {
       } else {
         await delegationsApi.completeAfterVisit(perm.visitRequestId, perm.visitInstanceId, confirmNoNews);
       }
-      // Refetch permissions → instanceStatus advances → next tab unlocks.
-      await loadPermissions();
+      // Close the dialog only once the API has said yes: a failure must leave the user where they
+      // were, looking at the error, rather than on a screen that pretends the stage moved.
+      setPendingStage(null);
+      // Refetch permissions AND detail AND reminders → every capability advances together, so the
+      // preparation tab is read-only in the same render the toast appears in (NP-04).
+      await refreshProcessState();
       // After moving to the next stage, jump the user to the TOP of the new tab so they never stay
       // stranded at the bottom of the page where the confirm button was (đặc tả mục 8.5).
       const scrollTabToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -257,7 +317,7 @@ export function VisitProcess() {
     } catch (e: any) {
       pushToast('error', apiErrorMessage(e, 'Đã xảy ra lỗi hệ thống. Vui lòng thử lại sau.'));
       // On a 409 the status changed under us — refetch so the UI reflects the real state.
-      if (e?.response?.status === 409) { await loadPermissions(); }
+      if (e?.response?.status === 409) { setPendingStage(null); await refreshProcessState(); }
     } finally {
       setStageSubmitting(false);
     }
@@ -527,6 +587,29 @@ export function VisitProcess() {
   }, [perm?.visitInstanceId]);
   useEffect(() => { void loadReminders(); }, [loadReminders]);
 
+  /**
+   * Re-read EVERYTHING that describes where this campus is, in one call (NP-04).
+   *
+   * A stage transition changes neither `visitRequestId` nor `visitInstanceId`, so `loadDetail` and
+   * `loadReminders` — both keyed on exactly those two ids — never re-ran after one. Only the
+   * permissions were refetched, and the page ended up holding two contradictory answers at once:
+   *
+   *     permissions.instanceStatus = DURING_VISIT     (fresh)
+   *     detail.instanceStatus      = BEFORE_VISIT     (stale)
+   *
+   * Every capability still computed from `detail` therefore kept the preparation tab looking
+   * editable, and pressing one of those buttons got a toast from the backend about the wrong stage.
+   * Refetching all three together is what makes the screen lock the moment the API confirms, with no
+   * F5 — and closing the edit modes matters too, because an open editor is a form the user could go
+   * on typing into.
+   */
+  const refreshProcessState = React.useCallback(async () => {
+    await Promise.all([loadPermissions(), loadDetail(), loadReminders()]);
+    setIsEditingAgenda(false);
+    setIsEditingPlannedTime(false);
+    setIsInfoEditable(false);
+  }, [loadPermissions, loadDetail, loadReminders]);
+
   // Save the host's preparation note (null clears it). Toast on success/failure.
   const handleSavePreparationNote = async () => {
     if (!perm) return;
@@ -588,14 +671,48 @@ export function VisitProcess() {
     }
   };
 
-  const canEditAgenda = !!detail?.canEditBefore;
   const hasCurrentAgenda = agendaItems.length > 0;
+
+  /**
+   * THE status of this campus instance — one value, read by everything (NP-04).
+   *
+   * `permissions` is preferred because it is the payload a transition refetches first, so it is
+   * never the stale one; `detail` is the fallback for the moment before permissions have loaded (and
+   * for the legacy/mock ids where there are no permissions at all). Reading either one ad hoc, which
+   * is what the page used to do, is how the same screen came to hold DURING_VISIT in one variable
+   * and BEFORE_VISIT in another.
+   */
+  const instanceStatus = perm?.instanceStatus ?? detail?.instanceStatus ?? null;
+
+  /**
+   * The single gate for EVERY mutation of the "Trước tiếp khách" tab — agenda, participants,
+   * invitations, logistics, reminders, preparation note, and every save/send/update/delete button.
+   *
+   * <p>`BEFORE_VISIT` and nothing else, deliberately. `ASSIGNED` used to be accepted here as well,
+   * which was simply wrong: `VisitPreparationGate` on the backend refuses every one of these
+   * commands outside `BEFORE_VISIT`, so on an ASSIGNED campus the page offered controls that could
+   * only ever come back as "Host chưa bắt đầu giai đoạn chuẩn bị". The recovery for that state is
+   * the "Bắt đầu chuẩn bị" button (`canStartPreparation`), not a form.</p>
+   *
+   * <p>`isClosed` also covers the read-only ROUTE (a Staff Leader or HO opening this page to watch),
+   * which no status alone would exclude.</p>
+   */
+  const canMutateBeforeVisit = !isClosed
+    && (perm ? perm.relation === 'HOST' : detail?.relation === 'HOST')
+    && instanceStatus === 'BEFORE_VISIT';
+
+  // Agenda: same gate. It used to read `detail.canEditBefore`, computed by the detail API — the one
+  // payload a stage transition did NOT refetch, so it stayed true after the visit had started.
+  const canEditAgenda = canMutateBeforeVisit;
   // Agenda item fields/buttons are only truly editable in view+permission BOTH being satisfied.
   const editableAgenda = canEditAgenda && isEditingAgenda;
-  // Reminders + preparation note are editable by the instance Host during the prep window. This is
-  // independent of the (always-false) SETUP_SAVE_AVAILABLE gate — the backend re-checks the same rule.
-  const canConfigurePrep = !isClosed && detail?.relation === 'HOST'
-    && (detail?.instanceStatus === 'ASSIGNED' || detail?.instanceStatus === 'BEFORE_VISIT');
+  // Reminders + preparation note: the same gate, and independent of the (always-false)
+  // SETUP_SAVE_AVAILABLE flag — the backend re-checks exactly this rule.
+  const canConfigurePrep = canMutateBeforeVisit;
+  // "1. Thông tin chung": still behind SETUP_SAVE_AVAILABLE (there is no persistence API for it yet),
+  // but the status half of the gate is now the shared one rather than a second opinion.
+  const canEditBefore = SETUP_SAVE_AVAILABLE && canMutateBeforeVisit;
+  const isInfoEditable = isInfoEditableState && canEditBefore;
 
   // ── "Áp dụng mẫu Agenda" panel visibility ──
   // The apply-template panel is a heavy form (dropdown + preview table); leaving it always-open made
@@ -712,59 +829,44 @@ export function VisitProcess() {
         </div>
       );
     }
-    // ── Chưa tới giờ, chứ không phải không được phép ──────────────────────────────────────────
-    // Riêng BEFORE → DURING có cửa sổ thời gian: sớm nhất là 6 giờ trước giờ bắt đầu dự kiến. Đây
-    // chỉ là CHÚ Ý cho Host biết mốc mở, không còn khóa nút — Host vẫn bấm được bình thường; nếu
-    // bấm sớm, backend là nơi quyết định thật sự và sẽ từ chối bằng 409 VISIT_START_WINDOW_NOT_OPEN
-    // (advanceStage đã bắt lỗi này, toast rồi refetch permissions).
-    if (!opts.canDo
-        && opts.stage === 'before'
-        && perm.startVisitDisabledReasonCode === 'VISIT_START_WINDOW_NOT_OPEN') {
-      return (
-        <div
-          data-testid="stage-before-window-closed"
-          className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p className="text-sm font-medium text-amber-800 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span>
-              Đã hoàn tất công tác chuẩn bị.
-              {perm.startVisitAvailableAt
-                ? ` Có thể chuyển sang Trong tiếp khách từ ${formatVietnamDateTime(perm.startVisitAvailableAt)} (6 giờ trước thời gian bắt đầu).`
-                : ' Chờ đến thời điểm được phép bắt đầu tiếp khách.'}
-            </span>
-          </p>
-          <button
-            type="button"
-            disabled={stageSubmitting}
-            onClick={() => advanceStage(opts.stage)}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-          >
-            {stageSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightCircle className="w-4 h-4" />}
-            {opts.label}
-          </button>
-        </div>
-      );
-    }
     if (!opts.canDo) return null;
     // Tab-specific guidance (đặc tả mục 8.6): the "before" notice must warn that the prep tab will
     // be locked; "during" announces the move to the after stage; "after" warns the whole flow goes
     // read-only once closed.
     const stageNotice = opts.stage === 'before'
-      ? 'Sau khi xác nhận, thông tin ở tab Trước tiếp khách sẽ được khóa và quy trình chuyển sang giai đoạn Trong tiếp khách.'
+      ? STAGE_CONFIRM[opts.stage].notice
       : opts.stage === 'during'
         ? 'Sau khi xác nhận, quy trình sẽ chuyển sang giai đoạn Sau tiếp khách.'
         : 'Sau khi đóng đoàn, toàn bộ quy trình sẽ chuyển sang chế độ chỉ xem.';
+    // ── T-6h: KHUYẾN NGHỊ, không phải điều kiện ────────────────────────────────────────────────
+    // Nút không bao giờ bị khóa vì đồng hồ (NP-05): backend chấp nhận chuyển sớm, capability cũng
+    // vậy. Chưa tới mốc thì chỉ thêm một dòng ghi chú mốc dự kiến — đúng nghĩa gợi ý, không phải
+    // lời từ chối như bản cũ ("Có thể chuyển ... từ ...") vốn nói ngược với hành vi thật.
+    const earlyNotice = opts.stage === 'before'
+      && perm.isBeforeRecommendedStartWindow
+      && perm.recommendedStartVisitAt
+      ? `Thông thường bước này được thực hiện từ ${formatVietnamDateTime(perm.recommendedStartVisitAt)} `
+        + '(6 giờ trước giờ bắt đầu dự kiến). Bạn vẫn có thể chuyển sớm nếu đoàn đến trước.'
+      : null;
     return (
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm font-medium text-slate-500 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0" />
-          {stageNotice}
-        </p>
+        <div className="text-sm font-medium text-slate-500 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0 mt-0.5" />
+          <span>
+            {stageNotice}
+            {earlyNotice && (
+              <span data-testid="stage-before-early-notice" className="mt-1 block text-slate-400">
+                {earlyNotice}
+              </span>
+            )}
+          </span>
+        </div>
         <button
           type="button"
+          data-testid={`stage-advance-${opts.stage}`}
           disabled={stageSubmitting}
-          onClick={() => advanceStage(opts.stage)}
+          // Opens the confirmation; the API call happens only if the Host confirms there (NP-05).
+          onClick={() => setPendingStage(opts.stage)}
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#004c91] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#003b70] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         >
           {stageSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRightCircle className="w-4 h-4" />}
@@ -1052,6 +1154,25 @@ export function VisitProcess() {
             </div>
           )}
 
+          {/* Preparation is over: say so, once, at the top (NP-04).
+              Everything below is still shown — the agenda, who was invited, what was requested and
+              what was noted are exactly what a Host refers back to while the visit runs — but none
+              of it can be changed any more. Without this line the tab just quietly loses its
+              buttons, which reads as a page that failed to load rather than a stage that closed. */}
+          {instanceStatus && ['DURING_VISIT', 'AFTER_VISIT', 'CLOSED'].includes(instanceStatus) && (
+            <div
+              data-testid="before-readonly-banner"
+              role="status"
+              className="rounded-[2rem] border border-slate-200 bg-slate-50 p-5 flex items-start gap-3"
+            >
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+              <p className="text-sm font-medium text-slate-600">
+                Giai đoạn chuẩn bị đã kết thúc — tab “Trước tiếp khách” hiện chỉ còn chế độ xem.
+                Bạn vẫn xem được lịch trình, thành phần tham gia, hậu cần, cảnh báo và ghi chú đã lưu.
+              </p>
+            </div>
+          )}
+
           {/* Phần 1: Thông tin chung */}
           <div className="bg-white rounded-[2rem] border border-gray-200 shadow-sm overflow-hidden transition-all duration-300">
             <div 
@@ -1231,9 +1352,13 @@ export function VisitProcess() {
                                 )
                               )}
                             </div>
-                            {perm && (
+                            {/* Applying a template WRITES visit_agendas, so it belongs behind the same
+                                gate as every other agenda edit — it used to be offered on `perm`
+                                alone, which meant a live button after the visit had started (NP-04). */}
+                            {perm && canEditAgenda && (
                               <button
                                 type="button"
+                                data-testid="agenda-template-toggle"
                                 onClick={() => setIsAgendaTemplatePanelOpen((prev) => !prev)}
                                 aria-expanded={isAgendaTemplatePanelOpen}
                                 className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-[#004c91] outline-none transition-colors hover:bg-blue-50"
@@ -1247,7 +1372,7 @@ export function VisitProcess() {
                           {/* Apply an agenda template (auto-default by campus/visit_type → GLOBAL fallback).
                               Backend computes absolute times from planned_start_at + offsets and writes
                               visit_agendas; on success we reload the agenda editor below and auto-collapse. */}
-                          {perm && isAgendaTemplatePanelOpen && (
+                          {perm && canEditAgenda && isAgendaTemplatePanelOpen && (
                             <AgendaSetupPanel
                               visitInstanceId={Number(perm.visitInstanceId)}
                               onApplied={async () => { await loadDetail(); setIsAgendaTemplatePanelOpen(false); }}
@@ -1537,7 +1662,10 @@ export function VisitProcess() {
                             <ParticipantInvitationSection
                               visitInstanceId={Number(perm.visitInstanceId)}
                               relation={detail.relation}
-                              instanceStatus={detail.instanceStatus}
+                              // The SHARED status, not `detail`'s own copy: after a transition the
+                              // detail payload is momentarily the stale one, and this section gates
+                              // every invite/remove button on what it is handed (NP-04).
+                              instanceStatus={instanceStatus ?? detail.instanceStatus}
                               currentUserId={user?.userId ? Number(user.userId) : null}
                               host={detail.host ?? null}
                               participants={detail.participants ?? []}
@@ -1733,7 +1861,8 @@ export function VisitProcess() {
                       <LogisticsRequestSection
                         visitInstanceId={Number(perm.visitInstanceId)}
                         relation={detail.relation}
-                        instanceStatus={detail.instanceStatus}
+                        // Shared status — same reason as ParticipantInvitationSection above (NP-04).
+                        instanceStatus={instanceStatus ?? detail.instanceStatus}
                         delegationName={detail.delegationName}
                         campusName={detail.campusName ?? 'FPT University'}
                         hostName={detail.hostName ?? 'Host'}
@@ -2232,6 +2361,67 @@ export function VisitProcess() {
               },
               idempotencyKey)}
         />
+      )}
+
+      {/* ── Xác nhận chuyển giai đoạn (NP-05) ─────────────────────────────────────────────────
+          Bắt buộc cho MỌI lần chuyển giai đoạn, và nói rõ HỆ QUẢ chứ không chỉ hỏi "chắc chưa?":
+          chuyển khỏi "Trước tiếp khách" là đóng lại cửa sổ duy nhất còn sửa được lịch trình,
+          thành phần tham gia, hậu cần, cảnh báo và ghi chú. Trước đây Host chỉ biết điều đó sau
+          khi đã bấm. Bấm "Hủy" không gọi API; bấm xác nhận chỉ gửi đúng một request (nút khóa
+          theo stageSubmitting) và hộp thoại chỉ đóng khi API trả thành công. */}
+      {pendingStage && (
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => { if (!stageSubmitting) setPendingStage(null); }}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="stage-confirm-title"
+            data-testid="stage-confirm-modal"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="stage-confirm-title" className="text-lg font-bold text-gray-900">
+              {STAGE_CONFIRM[pendingStage].title}
+            </h3>
+            <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-gray-600">
+              {STAGE_CONFIRM[pendingStage].consequence}
+            </p>
+            {pendingStage === 'before' && perm?.isBeforeRecommendedStartWindow && perm?.recommendedStartVisitAt && (
+              <p
+                data-testid="stage-confirm-early"
+                className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800"
+              >
+                Bạn đang chuyển sớm hơn mốc thường lệ
+                {` (${formatVietnamDateTime(perm.recommendedStartVisitAt)}, 6 giờ trước giờ bắt đầu dự kiến).`}
+                {' '}Việc này được phép — chỉ cần chắc chắn đoàn đã tới hoặc sắp tới.
+              </p>
+            )}
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                data-testid="stage-confirm-cancel"
+                disabled={stageSubmitting}
+                onClick={() => setPendingStage(null)}
+                className="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-bold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                data-testid="stage-confirm-submit"
+                disabled={stageSubmitting}
+                onClick={() => void advanceStage(pendingStage)}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#004c91] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#003b70] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {stageSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightCircle className="h-4 w-4" />}
+                {stageSubmitting ? 'Đang xử lý...' : STAGE_CONFIRM[pendingStage].confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toasts (top-right) */}

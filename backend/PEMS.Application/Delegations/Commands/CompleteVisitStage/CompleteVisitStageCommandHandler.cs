@@ -74,10 +74,12 @@ public sealed class CompleteVisitStageCommandHandler
                 if (instance.Status != VisitInstanceStatus.BeforeVisit)
                     throw new ConflictException("Không thể bắt đầu tiếp khách. Cơ sở chưa ở giai đoạn chuẩn bị.");
 
-                // The earliest-start gate (VisitStageTransitionPolicy.CanAdvanceBeforeToDuring, 6 giờ
-                // trước giờ dự kiến) chỉ còn là thông tin tham khảo trên UI (banner + startVisitAvailableAt
-                // từ GetVisitProcessPermissionsQueryHandler) — không còn chặn hành động ở đây. Host được
-                // xác nhận hoàn thành chuẩn bị và chuyển giai đoạn ngay khi muốn.
+                // KHÔNG có điều kiện thời gian ở đây (NP-05). Mốc T-6h trong VisitStageTransitionPolicy
+                // là mốc KHUYẾN NGHỊ, không phải điều kiện chặn: Host đã chuẩn bị xong được chuyển giai
+                // đoạn bất cứ lúc nào. Permission DTO trả RecommendedStartVisitAt +
+                // IsBeforeRecommendedStartWindow để màn hình ghi chú "sớm hơn dự kiến" trong hộp xác
+                // nhận — chỉ là lời nhắc, không khóa nút. Mọi điều kiện chặn dưới đây đều về mức độ SẴN
+                // SÀNG (agenda, lời mời, phiếu bàn giao), không về đồng hồ.
 
                 // Precondition: no mandatory preparation item may still be blocking. Today the only
                 // persisted blocking item is a participant invitation still awaiting a response

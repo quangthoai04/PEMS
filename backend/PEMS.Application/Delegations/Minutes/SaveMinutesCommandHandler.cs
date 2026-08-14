@@ -375,12 +375,12 @@ public sealed class SaveMinutesCommandHandler
         var internalIdentityKeys = kept
             .Where(p => p.UserId != null)
             .Concat(addedInternal)
-            .Select(p => MinuteAutoFill.BuildIdentityKey(p.FullNameSnapshot, p.RoleSnapshot, p.OrganizationSnapshot))
+            .Select(p => PersonIdentity.Key(p.FullNameSnapshot, p.RoleSnapshot, p.OrganizationSnapshot))
             .Where(k => k.Length > 0)
             .ToHashSet();
         foreach (var guestRow in addedGuests)
         {
-            var key = MinuteAutoFill.BuildIdentityKey(
+            var key = PersonIdentity.Key(
                 guestRow.FullNameSnapshot, guestRow.RoleSnapshot, guestRow.OrganizationSnapshot);
             if (key.Length > 0 && internalIdentityKeys.Contains(key))
                 _db.MinuteParticipants.Remove(guestRow); // Added → Detached; nothing is inserted.

@@ -171,7 +171,13 @@ export function LogisticsRequestSection({
   visitInstanceId, relation, instanceStatus, delegationName, campusName, hostName,
   plannedStartAt, plannedEndAt, pushToast,
 }: Props) {
-  const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
+  /**
+   * BEFORE_VISIT only (NP-04) — the same window `VisitPreparationGate` enforces on
+   * `PrepareVisitLogistics` / `CancelVisitLogisticsItem`. Accepting ASSIGNED here meant offering
+   * request/cancel controls on a campus whose Host has not opened preparation yet, where the backend
+   * can only refuse them.
+   */
+  const canManage = relation === 'HOST' && instanceStatus === 'BEFORE_VISIT';
 
   // Default usage window for NEW system forms = the planned window of THIS campus instance,
   // hydrated via the Vietnam datetime-local helper (handles "+07:00" offsets, never shifts the

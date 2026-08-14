@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text.Json;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Shared;
 
@@ -91,6 +92,17 @@ internal static class VisitRequestV2EditOps
                 CreatedAt = now,
                 CreatedBy = actorId,
             });
+
+        // Re-point the operational contact at the member row that now represents them (NP-03).
+        //
+        // StageReplaceMembers has just DELETED every member row this instance had and created fresh
+        // ones, so whatever guest_member_id the contact used to hold names a row that no longer
+        // exists. Without this the link silently degrades to null on the first content edit — the
+        // contact would go back to being a name that has to be string-matched, which is the whole
+        // problem. The contact SNAPSHOT is immutable through this path (EnsureContactSnapshotUnchanged
+        // refuses any change to it), so matching it against the new rows re-finds the same person.
+        if (instance.FormDetail is not null)
+            OperationalContactLink.Resolve(instance.FormDetail, newRows);
     }
 
     /// <summary>

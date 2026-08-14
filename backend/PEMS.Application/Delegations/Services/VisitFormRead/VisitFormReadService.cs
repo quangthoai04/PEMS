@@ -275,6 +275,10 @@ public sealed class VisitFormReadService : IVisitFormReadService
                     ConfirmationStatus = ContactConfirmationStatusOf(c, pendingContactChanges),
                     ConfirmationSource = c.OperationalContactConfirmationSource,
                     ConfirmedAt = c.OperationalContactConfirmedAt,
+                    // Which delegation member this contact IS, when they are one (NP-03). The edit form
+                    // restores its "Đầu mối là ai trong đoàn?" selection from this: without it, reopening
+                    // a request would show the picker empty and quietly drop a link the user had made.
+                    GuestMemberId = d.OperationalContactGuestMemberId is ulong gm ? (long)gm : null,
                 };
                 formRevision = d.FormRevision;
                 approvalRevision = d.ApprovalRevision;

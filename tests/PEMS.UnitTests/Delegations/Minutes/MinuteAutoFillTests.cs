@@ -37,6 +37,12 @@ public class MinuteAutoFillTests
     private const string SupporterRole = "Cán bộ IC";
     private const string SupporterOrg = "Phòng ban 900";
 
+    // The campus's operational contact, as seeded by DelegationsTestData.CreateVisitInstance.
+    private const string ContactName = "Đầu mối cơ sở";
+    private const string ContactJobTitle = "Trưởng phòng Hợp tác";
+    private const string ContactOrg = "Đối tác";
+    private const string ContactEmail = "op@test.local";
+
     // ── Cross-source duplicates ──────────────────────────────────────────────
 
     [Fact]
@@ -142,13 +148,16 @@ public class MinuteAutoFillTests
             role: "Trưởng đoàn", org: "ABC University");
         var savedSupporterRow = SavedRow(8, userId: SupporterUserId, name: "Nguyễn Văn A",
             role: SupporterRole, org: SupporterOrg);
+        var savedContactRow = SavedContactRow(9);
 
         // Everything saved → nothing new to sync.
-        Assert.Empty(await ComputeAsync(db, instance, new[] { savedHostRow, savedGuestRow, savedSupporterRow }));
+        Assert.Empty(await ComputeAsync(db, instance,
+            new[] { savedHostRow, savedGuestRow, savedSupporterRow, savedContactRow }));
 
         // The editor deleted the guest row; the query drops it from "existing" before computing, which
         // is exactly what the handler does with ignoredExistingParticipantIds.
-        var rows = await ComputeAsync(db, instance, new[] { savedHostRow, savedSupporterRow });
+        var rows = await ComputeAsync(db, instance,
+            new[] { savedHostRow, savedSupporterRow, savedContactRow });
 
         var candidate = Assert.Single(rows);
         Assert.Equal(GuestMemberId, candidate.GuestMemberId);
@@ -161,12 +170,98 @@ public class MinuteAutoFillTests
         using var db = DelegationsTestDbContext.Create();
         var (instance, host) = DelegationsTestData.SeedBase(db);
 
-        // Nothing but the host is on either source list. So a row typed in by hand has nothing to be
-        // regenerated FROM: removing a manual participant is final, and sync cannot bring them back.
+        // Nothing but the host and the campus's operational contact is on any source list. So a row
+        // typed in by hand has nothing to be regenerated FROM: removing a manual participant is
+        // final, and sync cannot bring them back.
         var hostRow = SavedRow(1, userId: host.UserId, name: host.FullName, role: "Host", org: SupporterOrg);
-        var rows = await ComputeAsync(db, instance, new[] { hostRow });
+        var rows = await ComputeAsync(db, instance, new[] { hostRow, SavedContactRow(2) });
 
         Assert.Empty(rows);
+    }
+
+    // ── The operational contact (NP-03) ──────────────────────────────────────
+    //
+    // Whether the person who actually ran the visit appeared in the record of it used to depend on
+    // how the form had been filled in: named only in the "Đầu mối" block → they appeared nowhere,
+    // because no source list contained them. Also typed into the delegation → they appeared, but the
+    // only thing preventing a second row was a string comparison.
+
+    [Fact]
+    public async Task A_contact_who_is_not_in_any_source_list_is_still_added()
+    {
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+
+        var rows = await ComputeAsync(db, instance);
+
+        var contact = Assert.Single(rows.Where(r => r.FullNameSnapshot == ContactName));
+        // A snapshot row: the contact is a person the delegation named, not necessarily an account
+        // and not necessarily a member of the delegation.
+        Assert.Null(contact.UserId);
+        Assert.Null(contact.GuestMemberId);
+        Assert.Contains("Đầu mối đoàn khách", contact.RoleSnapshot);
+        Assert.Equal(ContactEmail, contact.EmailSnapshot);
+    }
+
+    [Fact]
+    public async Task A_contact_LINKED_to_a_delegation_member_is_not_added_a_second_time()
+    {
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+        // Same human, reached two ways: listed among the delegation AND named as the contact.
+        AddGuest(db, GuestMemberId, ContactName, ContactJobTitle, ContactOrg);
+        instance.FormDetail!.OperationalContactGuestMemberId = GuestMemberId;
+        db.SaveChanges();
+
+        var rows = await ComputeAsync(db, instance);
+
+        var forThatPerson = rows.Where(r => r.FullNameSnapshot == ContactName).ToList();
+        Assert.Single(forThatPerson);
+        // The GUEST row is what stays — it is the one carrying the stable id.
+        Assert.Equal(GuestMemberId, forThatPerson[0].GuestMemberId);
+    }
+
+    [Fact]
+    public async Task A_contact_matching_a_member_by_name_role_and_org_is_not_duplicated()
+    {
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+        // No stable link (a request created before the column existed), so all that is left is the
+        // fingerprint — it still must not produce two rows for one person.
+        AddGuest(db, GuestMemberId, ContactName, ContactJobTitle, ContactOrg);
+        db.SaveChanges();
+
+        var rows = await ComputeAsync(db, instance);
+
+        Assert.Single(rows.Where(r => r.FullNameSnapshot == ContactName));
+    }
+
+    [Fact]
+    public async Task A_contact_who_is_the_host_is_not_added_a_second_time()
+    {
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, host) = DelegationsTestData.SeedBase(db);
+        instance.OperationalContactUserId = host.UserId;
+        db.SaveChanges();
+
+        var rows = await ComputeAsync(db, instance);
+
+        Assert.DoesNotContain(rows, r => r.FullNameSnapshot == ContactName);
+        Assert.Single(rows.Where(r => r.UserId == host.UserId));
+    }
+
+    [Fact]
+    public async Task Running_the_fill_twice_adds_the_contact_once()
+    {
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+
+        var first = await ComputeAsync(db, instance);
+        // Feed the first run's output back in as "already saved" — exactly what the sync does.
+        var second = await ComputeAsync(db, instance, first);
+
+        Assert.Contains(first, r => r.FullNameSnapshot == ContactName);
+        Assert.Empty(second);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -217,6 +312,15 @@ public class MinuteAutoFillTests
             GuestMemberId = guestMemberId,
             CreatedAt = new DateTime(2026, 6, 1),
         });
+    }
+
+    /// <summary>The row a previous auto-fill would have written for the campus's operational contact.</summary>
+    private static MinuteParticipant SavedContactRow(ulong id)
+    {
+        var row = SavedRow(id, name: ContactName,
+            role: $"{ContactJobTitle} (Đầu mối đoàn khách)", org: ContactOrg);
+        row.EmailSnapshot = ContactEmail;
+        return row;
     }
 
     private static MinuteParticipant SavedRow(

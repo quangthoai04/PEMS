@@ -327,6 +327,23 @@ public sealed class ResolvedOperationalContactDto
     /// <summary>REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER — null until confirmed.</summary>
     public string? ConfirmationSource { get; init; }
     public DateTime? ConfirmedAt { get; init; }
+
+    /// <summary>
+    /// Which member of THIS campus's delegation the contact IS — matches a
+    /// <see cref="ResolvedMemberDto.GuestMemberId"/> in <see cref="ResolvedCampusVisitDto.Visitors"/>
+    /// (NP-03).
+    ///
+    /// <para>
+    /// Null is a normal answer, and means one of two things the reader does not have to tell apart:
+    /// the contact is not travelling with the delegation, or the request predates this link. Either
+    /// way the five snapshot fields above are complete on their own.
+    /// </para>
+    /// <para>
+    /// It is a plain relation, NOT an authorization fact: who may act as the contact is decided by
+    /// <c>visit_request_campuses.operational_contact_user_id</c> and nothing else.
+    /// </para>
+    /// </summary>
+    public long? GuestMemberId { get; init; }
 }
 
 /// <summary>

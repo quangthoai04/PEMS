@@ -1,10 +1,17 @@
 /**
- * The BEFORE → DURING early-start window ("6 giờ trước thời gian bắt đầu") used to render its
- * confirm button permanently `disabled` while the window was closed — the Host saw the notice but
- * could not act on it at all. The button is now always clickable: the amber banner stays a plain
- * heads-up, and the backend (CompleteVisitStageCommandHandler) remains the real authority, refusing
- * an early attempt with a 409 VISIT_START_WINDOW_NOT_OPEN that `advanceStage` already turns into a
- * toast and a permissions refetch.
+ * NP-05 — the BEFORE → DURING policy, as decided: T-6h is a RECOMMENDATION, not a gate.
+ *
+ * The version this replaces pinned a hybrid nobody had actually chosen: the capability flag said
+ * "chưa tới giờ", the banner said "Có thể chuyển … từ 03:00", and the button underneath worked
+ * anyway because the backend had stopped enforcing the window. Three layers, three different
+ * stories.
+ *
+ * What is pinned now:
+ *   • `canStartVisit` is true throughout BEFORE_VISIT — the button is offered, never time-locked.
+ *   • Starting early only changes the WORDS (an advisory line, and an extra note in the dialog).
+ *   • Every transition goes through a confirmation that states the read-only consequence.
+ *   • Cancel calls nothing; confirm sends exactly one request; a failure leaves the dialog's own
+ *     screen state alone rather than pretending the stage moved.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -53,6 +60,7 @@ vi.mock('react-router-dom', () => ({
 
 import { VisitProcess } from '../VisitProcess';
 
+/** Host, preparation open, and EARLIER than the recommended window (the interesting case). */
 const HOST_PERMISSION = {
   visitInstanceId: 501,
   visitRequestId: 9001,
@@ -74,11 +82,14 @@ const HOST_PERMISSION = {
   canEditMinutes: true,
   canViewNews: true,
   canCreateNews: true,
-  canStartVisit: false,
-  startVisitDisabledReasonCode: 'VISIT_START_WINDOW_NOT_OPEN',
-  startVisitAvailableAt: '2026-08-22T03:00:00',
+  // No clock term any more: the capability is true for the whole of BEFORE_VISIT.
+  canStartVisit: true,
+  isBeforeRecommendedStartWindow: true,
+  recommendedStartVisitAt: '2026-08-22T03:00:00',
   canCompleteVisit: false,
   canCloseVisit: false,
+  canSendSetupProgressEmail: false,
+  canStartPreparation: false,
 };
 
 const DETAIL = {
@@ -102,44 +113,92 @@ beforeEach(() => {
   getReminderSettings.mockResolvedValue({ items: [] });
 });
 
-describe('BEFORE → DURING early-start window is a notice, not a lock', () => {
-  it('shows the window-not-open banner with the confirm button enabled, not disabled', async () => {
+const openConfirm = async (user: ReturnType<typeof userEvent.setup>) => {
+  const trigger = await screen.findByTestId('stage-advance-before');
+  await user.click(trigger);
+  return screen.findByTestId('stage-confirm-modal');
+};
+
+describe('BEFORE → DURING: T-6h is advice, and the transition is confirmed', () => {
+  it('offers the transition before the recommended window, with an advisory note', async () => {
     render(<VisitProcess />);
 
-    const banner = await screen.findByTestId('stage-before-window-closed');
-    expect(banner).toHaveTextContent(/Đã hoàn tất công tác chuẩn bị/);
-    expect(banner).toHaveTextContent(/6 giờ trước thời gian bắt đầu/);
-
-    const button = screen.getByRole('button', { name: /Xác nhận hoàn thành chuẩn bị/ });
+    const button = await screen.findByTestId('stage-advance-before');
     expect(button).not.toBeDisabled();
+
+    // Advice, not refusal: it says what is usual and that going early is allowed.
+    const note = screen.getByTestId('stage-before-early-notice');
+    expect(note).toHaveTextContent(/Thông thường bước này được thực hiện từ/);
+    expect(note).toHaveTextContent(/vẫn có thể chuyển sớm/);
   });
 
-  it('still calls the complete-preparation action when clicked before the window opens', async () => {
+  it('asks for confirmation and names the read-only consequence before calling anything', async () => {
+    const user = userEvent.setup();
+    render(<VisitProcess />);
+
+    const modal = await openConfirm(user);
+    expect(modal).toHaveTextContent(/chỉ còn chế độ xem/);
+    expect(modal).toHaveTextContent(/lịch trình, thành phần tham gia, hậu cần, cảnh báo và ghi chú chuẩn bị/);
+    // Starting early gets its own line — inside the dialog, where the decision is made.
+    expect(screen.getByTestId('stage-confirm-early')).toHaveTextContent(/sớm hơn mốc thường lệ/);
+    // Opening a dialog is not an action.
+    expect(completeBeforeVisit).not.toHaveBeenCalled();
+  });
+
+  it('calls nothing when the Host cancels', async () => {
+    const user = userEvent.setup();
+    render(<VisitProcess />);
+
+    await openConfirm(user);
+    await user.click(screen.getByTestId('stage-confirm-cancel'));
+
+    await waitFor(() => expect(screen.queryByTestId('stage-confirm-modal')).not.toBeInTheDocument());
+    expect(completeBeforeVisit).not.toHaveBeenCalled();
+  });
+
+  it('sends exactly one transition request on confirm', async () => {
     completeBeforeVisit.mockResolvedValue({});
     const user = userEvent.setup();
     render(<VisitProcess />);
 
-    const button = await screen.findByRole('button', { name: /Xác nhận hoàn thành chuẩn bị/ });
-    await user.click(button);
+    await openConfirm(user);
+    await user.click(screen.getByTestId('stage-confirm-submit'));
 
     await waitFor(() => expect(completeBeforeVisit).toHaveBeenCalledWith(9001, 501));
+    expect(completeBeforeVisit).toHaveBeenCalledTimes(1);
   });
 
-  it('surfaces the backend 409 refusal instead of pretending the click worked', async () => {
-    const conflict = Object.assign(new Error('409'), {
+  it('does not pretend the stage moved when the API fails', async () => {
+    completeBeforeVisit.mockRejectedValue(Object.assign(new Error('500'), {
       isAxiosError: true,
-      response: { status: 409, data: { message: 'Chưa thể chuyển sang giai đoạn Trong tiếp khách.' } },
-    });
-    completeBeforeVisit.mockRejectedValue(conflict);
+      response: { status: 500, data: { message: 'Lỗi hệ thống.' } },
+    }));
     const user = userEvent.setup();
     render(<VisitProcess />);
 
-    const button = await screen.findByRole('button', { name: /Xác nhận hoàn thành chuẩn bị/ });
-    await user.click(button);
+    await openConfirm(user);
+    await user.click(screen.getByTestId('stage-confirm-submit'));
 
-    // On a 409 advanceStage refetches permissions to reflect the real state.
+    await waitFor(() => expect(completeBeforeVisit).toHaveBeenCalledTimes(1));
+    // Still on the confirm dialog, still on the before tab — nothing advanced, and the button is
+    // live again so the Host can retry.
+    expect(screen.getByTestId('stage-confirm-modal')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('stage-confirm-submit')).not.toBeDisabled());
+  });
+
+  it('refetches the real state when the API answers 409 (it moved under us)', async () => {
+    completeBeforeVisit.mockRejectedValue(Object.assign(new Error('409'), {
+      isAxiosError: true,
+      response: { status: 409, data: { message: 'Chưa thể chuyển sang giai đoạn Trong tiếp khách.' } },
+    }));
+    const user = userEvent.setup();
+    render(<VisitProcess />);
+
+    await openConfirm(user);
+    await user.click(screen.getByTestId('stage-confirm-submit'));
+
+    // Permissions AND detail AND reminders are all re-read — the whole point of refreshProcessState.
     await waitFor(() => expect(getVisitProcessPermissions).toHaveBeenCalledTimes(2));
-    // The banner is still here — the window really did not open, so nothing silently advanced.
-    expect(await screen.findByTestId('stage-before-window-closed')).toBeInTheDocument();
+    expect(getVisitProcessDetail).toHaveBeenCalledTimes(2);
   });
 });

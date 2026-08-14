@@ -160,29 +160,27 @@ public sealed class GetVisitProcessPermissionsQueryHandler
             CanStartPreparation = canStartPreparation,
 
             // Operational stage transitions — Host only, live instance (see CompleteVisitStageCommand).
-            // BEFORE_VISIT only: "finish preparation" presupposes preparation started. The T-6h window
-            // below is informational only — CompleteVisitStageCommandHandler no longer refuses an early
-            // confirm, so CanStartVisit going false before the window just drives the UI's "chú ý"
-            // banner (with StartVisitAvailableAt), not an actual block; the confirm button stays
-            // clickable regardless and the command accepts it.
+            // BEFORE_VISIT only: "finish preparation" presupposes preparation started.
+            //
+            // NO clock term (NP-05). T-6h is a recommendation, not a gate — CompleteVisitStageCommand
+            // accepts an early confirm, so making the capability false before the window put the flag
+            // and the command into open disagreement: the screen printed "chưa tới giờ" over a button
+            // that worked. The two advisory fields below carry the timing guidance instead.
             CanStartVisit = isHost && isLive
-                && instance.Status == VisitInstanceStatus.BeforeVisit
-                && VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(
-                    _clock.VietnamNow, instance.PlannedStartAt),
-            // Returned throughout BEFORE_VISIT, including while the window is shut, because that is
-            // exactly when the UI needs it: a disabled button that says WHEN it opens is far better
-            // than one that only says no. Derived from the CURRENT schedule, so an amendment that
-            // moves the visit moves this with it.
-            StartVisitAvailableAt = instance.Status == VisitInstanceStatus.BeforeVisit
-                ? VisitStageTransitionPolicy.StartVisitAvailableAt(instance.PlannedStartAt)
+                && instance.Status == VisitInstanceStatus.BeforeVisit,
+            // ADVISORY. When starting the visit becomes the expected thing to do, derived from the
+            // CURRENT schedule so an amendment that moves the visit moves this with it.
+            RecommendedStartVisitAt = instance.Status == VisitInstanceStatus.BeforeVisit
+                ? VisitStageTransitionPolicy.RecommendedStartAt(instance.PlannedStartAt)
                 : null,
-            StartVisitDisabledReasonCode =
+            // ADVISORY. True only while the Host would be starting EARLIER than usual — the one case
+            // where the confirmation has something extra worth saying. Computed here rather than on the
+            // client so it uses the server clock the command will be judged by.
+            IsBeforeRecommendedStartWindow =
                 isHost && isLive
                 && instance.Status == VisitInstanceStatus.BeforeVisit
-                && !VisitStageTransitionPolicy.CanAdvanceBeforeToDuring(
-                    _clock.VietnamNow, instance.PlannedStartAt)
-                    ? VisitRequestErrorCodes.VisitStartWindowNotOpen
-                    : null,
+                && !VisitStageTransitionPolicy.IsWithinRecommendedWindow(
+                    _clock.VietnamNow, instance.PlannedStartAt),
             CanCompleteVisit = isHost && isLive && instance.Status == VisitInstanceStatus.DuringVisit,
             // Đóng đoàn nằm ở tab "Sau tiếp khách": Host đóng khi đoàn đã kết thúc (AFTER_VISIT).
             CanCloseVisit = isHost && isLive && instance.Status == VisitInstanceStatus.AfterVisit,

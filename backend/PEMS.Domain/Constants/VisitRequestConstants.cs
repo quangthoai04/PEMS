@@ -112,15 +112,11 @@ public static class VisitRequestErrorCodes
     // the actor who started it — a genuine conflict rather than an idempotent replay.
     public const string VisitPreparationAlreadyStarted = "VISIT_PREPARATION_ALREADY_STARTED";
 
-    /// <summary>
-    /// BEFORE_VISIT → DURING_VISIT was attempted more than
-    /// <see cref="PEMS.Domain.Policies.VisitStageTransitionPolicy.StartVisitEarlyWindowHours"/> hours
-    /// before the campus's planned start. Distinct from the "preparation incomplete" conflict: nothing
-    /// is missing, the Host simply has to wait — so the client can show the exact moment it opens
-    /// instead of asking them to hunt for a blocker that does not exist.
-    /// </summary>
-    public const string VisitStartWindowNotOpen = "VISIT_START_WINDOW_NOT_OPEN";
-
+    // There is deliberately NO "start window not open" code (NP-05). Starting the visit early is
+    // allowed — see VisitStageTransitionPolicy: T-6h is a recommendation, not a gate — so no layer
+    // refuses on time alone and no error code may claim otherwise. The only refusals left on that
+    // transition are the preparation ones (missing agenda, unanswered invitations, unsigned handovers),
+    // which are about readiness rather than the clock.
 
     // contactEmail belongs to an existing non-VISITOR (internal) account — it must
     // never be repurposed as a Visitor nor have its role changed.

@@ -53,6 +53,16 @@ export interface V2CampusVisitForm {
    * anybody, so sending one is a failed request rather than a silently ignored field.
    */
   hostSelection?: V2HostSelectionDto | null;
+  /**
+   * Which row of `visitors` the operational contact IS, when the user picked one from the delegation
+   * list (NP-03). `null`/absent when the contact is somebody outside the delegation, which is normal.
+   *
+   * <p>An index rather than an id because these members do not exist server-side yet. The backend
+   * treats it as the strongest evidence of identity — stronger than a name/role/organisation match,
+   * and therefore still correct after the user edits the contact's job title — and ignores it if it
+   * no longer points at a real row.</p>
+   */
+  operationalContactVisitorIndex?: number | null;
 }
 
 /** SELF | SELECTED | WAIT_FOR_LATER. */
@@ -189,6 +199,12 @@ export interface ResolvedOperationalContact {
   /** REGISTRANT_SELF_MATCH | EMAIL_CONFIRMATION | TRANSFER — null until confirmed. */
   confirmationSource: string | null;
   confirmedAt: string | null;
+  /**
+   * Which delegation member this contact IS — matches a `guestMemberId` in the campus's `visitors`
+   * (NP-03). Null when they are not travelling with the delegation, or on a request that predates
+   * the link. The edit form restores its picker from this.
+   */
+  guestMemberId?: number | null;
 }
 
 export interface ResolvedProposedHost {

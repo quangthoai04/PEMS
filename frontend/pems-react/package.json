@@ -10,6 +10,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.config.ts",
+    "audit:dark": "node scripts/audit-dark-mode.mjs",
     "test:e2e": "playwright test",
     "test:e2e:realstack": "node scripts/run-realstack-e2e.mjs"
   },

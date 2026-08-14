@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Controller, useFieldArray, type UseFormReturn } from 'react-hook-form';
+import { Controller, useFieldArray, type FieldPath, type UseFormReturn } from 'react-hook-form';
 import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Replace, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
@@ -21,6 +21,7 @@ import { CampusHostSelectionV2Panel } from './CampusHostSelectionV2Panel';
 import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
+import { fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
 
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
 
@@ -128,6 +129,22 @@ export const CampusVisitCard: React.FC<Props> = ({
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
   const { register, control, watch, formState: { errors } } = form;
   const base = `campusVisits.${index}` as const;
+
+  /**
+   * The onChange every `Controller`-wrapped control on this card uses (NP-02).
+   *
+   * <p>These controls are all custom (AutoGrowTextField/Textarea, the country and organization
+   * comboboxes, the date-range picker, the campus select), so they only ever call
+   * `field.onChange` — none of RHF's own input plumbing runs for them. Before the first submit the
+   * form does not revalidate on change, so any error already sitting on such a field (put there by
+   * the profile autofill, a mapped server error, or a `setError`) had nothing to clear it: the user
+   * typed a perfectly good value and the red text stayed. `fieldChangeHandler` retriggers the field
+   * — and ONLY when it is currently in error, so an untouched long form still stays quiet.</p>
+   */
+  const revalidatingChange = (field: {
+    name: FieldPath<VisitRequestV2Schema>;
+    onChange: (value: unknown) => void;
+  }) => fieldChangeHandler(form, field.name, field.onChange);
   const cardErrors = errors.campusVisits?.[index];
   const errorCount = countFieldErrors(cardErrors);
 
@@ -282,6 +299,69 @@ export const CampusVisitCard: React.FC<Props> = ({
   const requestQuickFill = (kind: QuickFillSource) => {
     if (operationalContactHasData()) setPendingQuickFill(kind);
     else applyQuickFill(kind);
+    // Copying the registrant in means the contact is NOT one of the guests listed below.
+    form.setValue(`${base}.operationalContactVisitorIndex`, null, { shouldDirty: true });
+  };
+
+  // ── "Đầu mối là ai trong đoàn?" (NP-03) ──────────────────────────────────────────────────────
+  // The contact used to be five free-text fields with no relation to anything, so the system could
+  // only guess — by comparing strings — whether the person coordinating the visit was also one of
+  // the people attending it. Guessing produced both failure modes at once: a contact who WAS in the
+  // list appeared twice in the biên bản, and a contact who was NOT in it appeared nowhere.
+  //
+  // Picking them here answers that outright. The three shared fields are copied down (a guest row
+  // has no phone or email of its own, so those stay for the user to fill), and the index travels
+  // with the payload so the link survives even if the contact's job title is edited afterwards.
+  const watchedVisitors = watch(`${base}.visitors`) ?? [];
+  const contactVisitorIndex = watch(`${base}.operationalContactVisitorIndex`) ?? null;
+  const watchedContact = watch(`${base}.operationalContact`);
+
+  const visitorLabel = (v: { fullName?: string; jobTitle?: string; organization?: string }, i: number) =>
+    [v.fullName?.trim() || t('visitRequestV2:card.contactPickUnnamed', { index: i + 1 }),
+      v.jobTitle?.trim(), v.organization?.trim()].filter(Boolean).join(' — ');
+
+  const pickContactFromDelegation = (rawIndex: string) => {
+    if (rawIndex === '') {
+      form.setValue(`${base}.operationalContactVisitorIndex`, null, { shouldDirty: true });
+      return;
+    }
+    const i = Number(rawIndex);
+    const guest = watchedVisitors[i];
+    if (!guest) return;
+    form.setValue(`${base}.operationalContactVisitorIndex`, i, { shouldDirty: true });
+    // Only what a delegation row actually knows. Overwriting phone/email with blanks would delete
+    // the one thing the campus needs to reach this person.
+    for (const f of ['fullName', 'jobTitle', 'organization'] as const) {
+      const fieldPath = `${base}.operationalContact.${f}` as const;
+      form.setValue(fieldPath, (guest as Record<string, string | undefined>)[f] ?? '',
+        { shouldDirty: true, shouldTouch: true });
+      form.clearErrors(fieldPath);
+    }
+    setQuickFilledFrom(null);
+  };
+
+  /**
+   * True when a contact has been typed who matches nobody in the delegation list.
+   *
+   * <p>Not an error — coordinating a visit you are not attending is completely ordinary — so this
+   * only offers to add them, and says what adding them means. Silence would be worse: the user
+   * would not learn that this person is absent from the delegation until the biên bản.</p>
+   */
+  const contactMatchesNoVisitor =
+    contactVisitorIndex === null
+    && (watchedContact?.fullName ?? '').trim().length > 0
+    && !watchedVisitors.some(v =>
+      (v.fullName ?? '').trim().toLowerCase() === (watchedContact?.fullName ?? '').trim().toLowerCase());
+
+  const addContactToDelegation = () => {
+    visitorFields.append({
+      fullName: (watchedContact?.fullName ?? '').trim(),
+      jobTitle: (watchedContact?.jobTitle ?? '').trim(),
+      organization: (watchedContact?.organization ?? '').trim(),
+      nationality: '',
+    });
+    form.setValue(`${base}.operationalContactVisitorIndex`, watchedVisitors.length, { shouldDirty: true });
+    showSuccessToast(t('visitRequestV2:card.contactAddedToDelegation'));
   };
 
   const fieldError = (path: string): string | undefined => {
@@ -324,7 +404,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           render={({ field: f }) => (field === 'nationality' ? (
             <CountrySelect
               value={f.value ?? ''}
-              onChange={f.onChange}
+              onChange={revalidatingChange(f)}
               onBlur={f.onBlur}
               hasError={hasError}
               placeholder={placeholder}
@@ -333,7 +413,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           ) : (
             <OrganizationCombobox
               value={f.value ?? ''}
-              onChange={f.onChange}
+              onChange={revalidatingChange(f)}
               onBlur={f.onBlur}
               hasError={hasError}
               placeholder={placeholder}
@@ -354,7 +434,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         render={({ field: f }) => (
           <AutoGrowTextField
             value={f.value ?? ''}
-            onChange={f.onChange}
+            onChange={revalidatingChange(f)}
             onBlur={f.onBlur}
             placeholder={placeholder}
             ariaLabel={placeholder}
@@ -623,7 +703,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                     name={field.name}
                     ref={field.ref}
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     className={inputCls(!!fieldError('campus'), !!campusCode, false)}
                     disabled={campusesLoading}
@@ -656,7 +736,13 @@ export const CampusVisitCard: React.FC<Props> = ({
                       minAdvanceHours={minAdvanceHours}
                       startValue={startField.value ?? ''}
                       endValue={endField.value ?? ''}
-                      onChange={({ start, end }) => { startField.onChange(start); endField.onChange(end); }}
+                      // Both halves revalidate: the range rules are cross-field (end after start,
+                      // minimum notice), so fixing either one has to be able to clear the other's
+                      // error too (NP-02).
+                      onChange={({ start, end }) => {
+                        revalidatingChange(startField)(start);
+                        revalidatingChange(endField)(end);
+                      }}
                       startError={fieldError('startDatetime')}
                       endError={fieldError('endDatetime')}
                     />
@@ -677,7 +763,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 <AutoGrowTextField
                   testId="campus-delegation-input"
                   value={field.value ?? ''}
-                  onChange={field.onChange}
+                  onChange={revalidatingChange(field)}
                   onBlur={field.onBlur}
                   hasError={!!fieldError('delegationName')}
                   maxLength={MAX.delegationName}
@@ -703,7 +789,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <AutoGrowTextField
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('visitTypeOther')}
                     maxLength={MAX.visitTypeOther}
@@ -725,7 +811,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               render={({ field }) => (
                 <AutoGrowTextarea
                   value={field.value ?? ''}
-                  onChange={field.onChange}
+                  onChange={revalidatingChange(field)}
                   onBlur={field.onBlur}
                   hasError={!!fieldError('purpose')}
                   maxLength={MAX.purpose}
@@ -741,7 +827,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               render={({ field }) => (
                 <AutoGrowTextarea
                   value={field.value ?? ''}
-                  onChange={field.onChange}
+                  onChange={revalidatingChange(field)}
                   onBlur={field.onBlur}
                   hasError={!!fieldError('workingContent')}
                   maxLength={MAX.workingContent}
@@ -1034,6 +1120,54 @@ export const CampusVisitCard: React.FC<Props> = ({
             </div>
           )}
 
+          {/* ── Đầu mối là ai trong đoàn? (NP-03) ────────────────────────────────────────────
+              Picking here is what gives the contact a real identity instead of a name that has to
+              be string-matched later. Everything below still edits freely — the pick fills the
+              three shared fields and records WHO, it does not lock anything. */}
+          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+            <label
+              htmlFor={`campus-opcontact-pick-${index}`}
+              className="mb-1.5 block text-xs font-bold text-slate-700"
+            >
+              {t('visitRequestV2:card.contactPickLabel')}
+            </label>
+            <select
+              id={`campus-opcontact-pick-${index}`}
+              data-testid={`campus-opcontact-pick-${index}`}
+              value={contactVisitorIndex ?? ''}
+              onChange={e => pickContactFromDelegation(e.target.value)}
+              className={inputCls(false, contactVisitorIndex !== null, false)}
+            >
+              <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
+              {watchedVisitors.map((v, i) => (
+                <option key={i} value={i}>{visitorLabel(v, i)}</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-slate-500">
+              {t('visitRequestV2:card.contactPickHint')}
+            </p>
+
+            {contactMatchesNoVisitor && (
+              <div
+                data-testid={`campus-opcontact-not-in-delegation-${index}`}
+                className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
+              >
+                <p className="text-xs font-medium text-amber-900">
+                  {t('visitRequestV2:card.contactNotInDelegation')}
+                </p>
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-add-to-delegation-${index}`}
+                  onClick={addContactToDelegation}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {t('visitRequestV2:card.contactAddToDelegation')}
+                </button>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
@@ -1042,7 +1176,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <AutoGrowTextField
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('operationalContact.fullName')}
                     maxLength={MAX.contactName}
@@ -1063,7 +1197,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <OrganizationCombobox
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('operationalContact.organization')}
                     placeholder={t('visitRequestV2:person.organization')}
@@ -1084,7 +1218,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <AutoGrowTextField
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('operationalContact.jobTitle')}
                     maxLength={MAX.contactName}
@@ -1155,7 +1289,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <AutoGrowTextField
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('transportationNote')}
                     maxLength={MAX.transportationNote}
@@ -1171,7 +1305,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 render={({ field }) => (
                   <AutoGrowTextField
                     value={field.value ?? ''}
-                    onChange={field.onChange}
+                    onChange={revalidatingChange(field)}
                     onBlur={field.onBlur}
                     hasError={!!fieldError('notes')}
                     maxLength={MAX.notes}

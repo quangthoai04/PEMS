@@ -688,8 +688,19 @@ public static class CanonicalSqlScript
     // explicit DEFAULT CHARSET=utf8mb4 / COLLATE=utf8mb4_unicode_ci. No table, column, index, trigger or
     // seed row moved with it, so ExpectedBaseTableCount (81) and ExpectedTriggerCount (33) are unchanged
     // — confirmed by a fresh disposable import, which is also what re-verified the two counts.
+    //
+    // (2026-08-14) Re-pinned for NP-03: visit_instance_form_details gains
+    // `operational_contact_guest_member_id` — a nullable BIGINT UNSIGNED, one KEY
+    // (idx_vifd_op_contact_member) and one FK (fk_vifd_op_contact_member → visit_guest_members,
+    // ON DELETE SET NULL). It gives the campus's operational contact a stable identity instead of a
+    // name that had to be string-matched, which is why they could appear twice in a biên bản or not
+    // at all. Additive only: no column changed type, none was dropped, no seed row moved. Base
+    // tables stay 81 and triggers stay 33; foreign keys go 252 → 253.
+    // An already-imported database is brought up by
+    // docs/database/scripts/patches/2026-08-14_operational_contact_guest_member_link.sql (additive,
+    // idempotent, with a conservative single-match backfill).
     public const string ExpectedSha256 =
-        "28d46eea4757e380997dc0a2a26c5cd2a5a6fa2b6b21d2cc4618204514e36adf";
+        "3e872a6964753c671229bf9dbaab1cf9469d553a7fcbd9681ec08b6167b53826";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

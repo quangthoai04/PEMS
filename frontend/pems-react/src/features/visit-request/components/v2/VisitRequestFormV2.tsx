@@ -31,6 +31,7 @@ import { useAuthContext } from '../../../../shared/auth/AuthContext';
 import { profileApi } from '../../../profile/api/profileApi';
 import { getApiErrorMessage } from '../../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../../shared/utils/emailIdentity';
+import { commitFieldValue, fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
 
 interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
@@ -287,7 +288,15 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         nationality: me.nationality ?? '',
         jobTitle: me.displayPosition ?? '',
         organization: me.displayDepartmentName ?? me.department?.name ?? me.displayCampusName ?? '',
-      }, { shouldValidate: true, shouldDirty: true });
+        // `shouldValidate` follows the SUBMIT state, and that is the whole fix (NP-02).
+        //
+        // The form runs `mode: 'onSubmit' / reValidateMode: 'onChange'`, so before the first submit
+        // nothing revalidates as the user types. Validating unconditionally here therefore did two
+        // wrong things at once: it accused a profile of being incomplete before the user had asked
+        // for anything, and — because no revalidation was armed yet — the error it wrote STAYED on
+        // screen after they picked a valid value. Once the form HAS been submitted the errors are
+        // real and live, so we keep validating then.
+      }, { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
       setAutofillState('idle');
     } catch (err) {
       setAutofillState('error');
@@ -526,7 +535,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   hasError={!!regErr?.organization}
                   onBlur={field.onBlur}
                   onChange={next => {
-                    field.onChange(next.organization);
+                    // Same revalidation contract as the country select: choosing/typing a real
+                    // organization clears its required-error at once (NP-02).
+                    commitFieldValue(
+                      form, 'registerInfo.organization', next.organization, field.onChange);
                     form.setValue('partnerId', next.partnerId, { shouldDirty: true });
                     form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
                   }}
@@ -544,7 +556,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               render={({ field }) => (
                 <CountrySelect
                   value={field.value ?? ''}
-                  onChange={field.onChange}
+                  // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
+                  // được để trống" error immediately, including the pre-submit case where nothing
+                  // else would revalidate it (NP-02).
+                  onChange={fieldChangeHandler(form, 'registerInfo.nationality', field.onChange)}
                   onBlur={field.onBlur}
                   hasError={!!regErr?.nationality}
                   placeholder={t('visitRequestV2:registrant.nationality')}

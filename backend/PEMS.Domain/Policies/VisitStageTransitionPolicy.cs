@@ -12,30 +12,44 @@ namespace PEMS.Domain.Policies;
 /// the worst version of itself — the list tells the Host to confirm, the screen lets them click, and
 /// the backend answers 409.
 /// </para>
+///
+/// <para><b>The decided policy (NP-05): T-6h is a RECOMMENDATION, not a gate.</b></para>
+/// <list type="bullet">
+///   <item>A Host whose preparation is genuinely complete may start the visit whenever they like —
+///   deliberately, because reality outruns the schedule: a delegation lands early, a campus sets up
+///   the day before, a working session is brought forward.</item>
+///   <item>The only hard conditions are the preparation ones the command already checks (agenda,
+///   answered invitations, signed handovers). Those are about readiness, and readiness is real.</item>
+///   <item>What T-6h buys is a sensible DEFAULT: nothing nudges the Host to flip the status before
+///   then, so a campus does not sit in "đang tiếp khách" for a week. <see cref="RecommendedStartAt"/>
+///   is offered to the UI as guidance, and <see cref="IsWithinRecommendedWindow"/> answers only
+///   "is this the usual time?" — never "may they?".</item>
+/// </list>
+///
+/// <para>
+/// The half-and-half version this replaces was the actual defect: the command accepted an early
+/// confirm, the capability flag refused it, and the screen printed "Có thể chuyển sang Trong tiếp
+/// khách từ …" over a button that worked anyway. Every layer now reads the same rule, and the
+/// consequence the Host actually needs to know — the preparation tab becomes read-only — is what the
+/// confirmation says.
+/// </para>
 /// </summary>
 public static class VisitStageTransitionPolicy
 {
     /// <summary>
-    /// How long before the planned start a campus may enter DURING_VISIT.
+    /// How long before the planned start it becomes NORMAL to enter DURING_VISIT.
     ///
     /// <para>
-    /// The transition used to have no time rule at all: a Host who finished the agenda, the
-    /// invitations and the handover paperwork a week early could put the campus into "đang tiếp
-    /// khách" a week early with it. The status is what every other screen reads to decide whether the
-    /// visit is happening, so an early flip makes the whole system describe a visit that is not
-    /// taking place.
-    /// </para>
-    /// <para>
-    /// Six hours is a working morning's notice: enough to cover an early arrival, a same-day setup
-    /// and a delegation that turns up ahead of schedule, without letting the status run days ahead of
-    /// reality.
+    /// Six hours is a working morning's notice: enough to cover an early arrival, a same-day setup and
+    /// a delegation that turns up ahead of schedule. It shapes what the UI suggests and what the task
+    /// list nags about; it does not block anybody (see the type doc).
     /// </para>
     /// </summary>
     public const int StartVisitEarlyWindowHours = 6;
 
     /// <summary>
-    /// The earliest moment the Host may start the visit — DERIVED from the campus's current planned
-    /// start, never stored.
+    /// The moment from which starting the visit is the expected thing to do — DERIVED from the
+    /// campus's current planned start, never stored.
     ///
     /// <para>
     /// Deriving it is the point. A schedule that moves (an approved amendment, a leader's correction)
@@ -43,24 +57,22 @@ public static class VisitStageTransitionPolicy
     /// longer has.
     /// </para>
     /// </summary>
-    public static DateTime StartVisitAvailableAt(DateTime plannedStartAt)
+    public static DateTime RecommendedStartAt(DateTime plannedStartAt)
         => plannedStartAt.AddHours(-StartVisitEarlyWindowHours);
 
     /// <summary>
     /// True from T-6h onwards, INCLUDING the boundary itself and everything after it.
     ///
     /// <para>
-    /// There is deliberately no upper bound. A visit that has already started — or finished — while
-    /// the campus still reads BEFORE_VISIT is a workflow that got stuck, and refusing the transition
-    /// then would strand it there with no way forward. The rule exists to stop the status running
-    /// AHEAD of reality, not to stop it catching up.
+    /// ADVISORY ONLY — read it as "is this the usual moment to start?", never as "is this allowed?".
+    /// Callers use it to decide whether to nudge (an action-required task, a "sớm hơn dự kiến" note on
+    /// the confirmation); no caller may use it to refuse the transition or to disable the button.
     /// </para>
     /// <para>
     /// <paramref name="vietnamNow"/> must be Vietnam wall-clock: <c>planned_start_at</c> is stored as
-    /// wall clock throughout, so comparing it against UTC would shift the window by seven hours and
-    /// open it at T+1h.
+    /// wall clock throughout, so comparing it against UTC would shift the window by seven hours.
     /// </para>
     /// </summary>
-    public static bool CanAdvanceBeforeToDuring(DateTime vietnamNow, DateTime plannedStartAt)
-        => vietnamNow >= StartVisitAvailableAt(plannedStartAt);
+    public static bool IsWithinRecommendedWindow(DateTime vietnamNow, DateTime plannedStartAt)
+        => vietnamNow >= RecommendedStartAt(plannedStartAt);
 }

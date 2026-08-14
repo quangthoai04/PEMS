@@ -35,6 +35,8 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   visitors: [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
   supportTeam: [],
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
+  // Nobody has been picked from the delegation list yet (NP-03).
+  operationalContactVisitorIndex: null,
   workingLanguage: 'VI',
   transportationNote: '',
   /**
@@ -157,6 +159,16 @@ const toApiCampusVisit = (
     jobTitle: (cv.operationalContact?.jobTitle ?? '').trim(),
     email: (cv.operationalContact?.email ?? '').trim(),
   },
+  // Only sent when it still points at a real row: the user can delete a guest AFTER picking them
+  // as the contact, and a dangling index would just be noise on the wire. The backend ignores an
+  // out-of-range value anyway and falls back to matching the snapshot, so this is tidiness rather
+  // than a guard (NP-03).
+  operationalContactVisitorIndex:
+    typeof cv.operationalContactVisitorIndex === 'number'
+      && cv.operationalContactVisitorIndex >= 0
+      && cv.operationalContactVisitorIndex < (cv.visitors?.length ?? 0)
+      ? cv.operationalContactVisitorIndex
+      : null,
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
   mediaConsentStatus: cv.mediaConsentStatus,
@@ -311,6 +323,15 @@ export const resolvedFormToV2Schema = (
         phone: cv.operationalContact.phone,
         email: cv.operationalContact.email,
       },
+      // Restore "Đầu mối là ai trong đoàn?" by finding the linked member in THIS campus's own guest
+      // list (NP-03). -1 → null: the link may point at somebody who has since been removed from the
+      // list, and the picker showing nothing selected is the honest rendering of that.
+      operationalContactVisitorIndex: (() => {
+        const linkedId = cv.operationalContact.guestMemberId;
+        if (linkedId == null) return null;
+        const i = cv.visitors.findIndex(v => v.guestMemberId === linkedId);
+        return i >= 0 ? i : null;
+      })(),
       workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',

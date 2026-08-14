@@ -177,8 +177,17 @@ export function ParticipantInvitationSection({
   visitInstanceId, relation, instanceStatus, currentUserId, host, participants, onChanged, pushToast,
   delegationName, campusName, plannedStartAt, plannedEndAt,
 }: Props) {
-  // The host manages invitations only while the instance is in the prep window.
-  const canManage = relation === 'HOST' && (instanceStatus === 'ASSIGNED' || instanceStatus === 'BEFORE_VISIT');
+  /**
+   * The host manages invitations only while the instance is in the prep window — BEFORE_VISIT and
+   * nothing else (NP-04).
+   *
+   * ASSIGNED used to be accepted too, and it was never true: `InviteVisitParticipantCommandHandler`
+   * runs `VisitPreparationGate.EnsurePreparationOpen`, which refuses anything but BEFORE_VISIT. So
+   * on an ASSIGNED campus this section rendered live invite controls whose only possible answer was
+   * "Host chưa bắt đầu giai đoạn chuẩn bị" — the fix for that state is the "Bắt đầu chuẩn bị" button
+   * on the process page, not a form here.
+   */
+  const canManage = relation === 'HOST' && instanceStatus === 'BEFORE_VISIT';
   const [busyId, setBusyId] = useState<string | null>(null);
 
   // "Xem mail đã gửi" history modal — bound to one participant at a time.

@@ -1,6 +1,26 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,100..900&display=swap');
 @import "tailwindcss";
 
+/* ── PEMS = LIGHT ONLY (NP-06) ─────────────────────────────────────────────────────────────────
+   Tailwind v4's stock `dark:` variant keys on `prefers-color-scheme`, so every `dark:*` class in
+   the codebase used to fire on any machine whose OS/browser is set to dark — and most PEMS
+   components only ever got a dark BACKGROUND, never dark text/hover/disabled/form styling. The
+   result was a half-light/half-dark UI that differed from machine to machine.
+
+   Redefining the variant to `.dark` makes it opt-in: the app never adds that class, so the whole
+   product renders Light everywhere. Existing `dark:*` classes stay harmless (dormant) and can be
+   cleaned up component by component; this line is what stops them reaching production.
+
+   `color-scheme: light` does the same for the controls the browser paints itself (input, select,
+   textarea, date/datetime pickers, scrollbars). Locally intended dark areas keep their own
+   `[color-scheme:dark]` (SecurityMonitoring / AuditLogManagement date inputs on navy) — that is a
+   deliberate local override, not app-level Dark Mode, and it still wins. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   

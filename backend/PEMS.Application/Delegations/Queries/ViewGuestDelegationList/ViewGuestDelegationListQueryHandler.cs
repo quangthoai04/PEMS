@@ -1041,6 +1041,12 @@ public sealed class ViewGuestDelegationListQueryHandler
                 DelegationName = x.c.FormDetail != null ? x.c.FormDetail.DelegationName : null,
                 x.vr.PartnerId,
                 x.vr.RegistrantOrganization,
+                // Searched by the keyword predicate above, so they have to be readable here too —
+                // otherwise a row matched on the registrant's name comes back with no match context
+                // and the UI has nothing to put after "Khớp tại" (NP-01).
+                x.vr.RegistrantFullName,
+                x.vr.RegistrantNationality,
+                x.vr.RegistrantJobTitle,
                 RequestStatus = x.vr.Status,
                 x.vr.VisitScope,
                 x.vr.CreatedBy,
@@ -1200,21 +1206,18 @@ public sealed class ViewGuestDelegationListQueryHandler
             // sibling campus can never appear. Fields mirror the instance-level keyword predicate exactly;
             // the RAW partner name (not the RegistrantOrganization fallback) is tested for PARTNER. ──
             string? rawPartnerName = r.PartnerId.HasValue && partnerNames.TryGetValue(r.PartnerId.Value, out var rpn) ? rpn : null;
-            var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
-            {
-                new(VisitSearchFieldCodes.RequestCode, r.RequestCode),
-                new(VisitSearchFieldCodes.RegistrantOrganization, r.RegistrantOrganization),
-                new(VisitSearchFieldCodes.Partner, rawPartnerName),
-                new(VisitSearchFieldCodes.OperationalContact, contactName),
-            };
-            var campusMatchFields = new List<VisitSearchMatchContextBuilder.Field>
-            {
-                new(VisitSearchFieldCodes.Campus, campusName),
-                new(VisitSearchFieldCodes.Host, hostName),
-                // Pure V2: the delegation name belongs to the CAMPUS scope (it is per-campus), never to the
-                // request-level field list. r.DelegationName here is this row's own instance detail.
-                new(VisitSearchFieldCodes.DelegationName, r.DelegationName),
-            };
+            var reqMatchFields = VisitSearchFields.RequestScope(
+                requestCode: r.RequestCode,
+                registrantOrganization: r.RegistrantOrganization,
+                registrantFullName: r.RegistrantFullName,
+                registrantNationality: r.RegistrantNationality,
+                registrantJobTitle: r.RegistrantJobTitle,
+                partnerName: rawPartnerName,
+                operationalContactName: contactName);
+            // Pure V2: the delegation name belongs to the CAMPUS scope (it is per-campus), never to the
+            // request-level field list. r.DelegationName here is this row's own instance detail.
+            var campusMatchFields = VisitSearchFields.CampusScope(
+                campusName: campusName, hostName: hostName, delegationName: r.DelegationName);
             var matchedContexts = VisitSearchMatchContextBuilder.Build(
                 request.Keyword, reqMatchFields,
                 new[] { new VisitSearchMatchContextBuilder.CampusScope(r.VisitInstanceId, r.CampusId, campusName, campusMatchFields) });
@@ -1672,22 +1675,25 @@ public sealed class ViewGuestDelegationListQueryHandler
 
             // ── Match contexts (request-level): Visitor owner / HO / registrant see EVERY campus of their
             // own request, so iterating all instances leaks nothing. Fields mirror the request-level keyword
-            // predicate exactly (code/reg-org/partner — NO campus/host/owner name). Pure V2: the delegation
-            // name is per-campus, so it is reported under each campus scope, never as a request-level field. ──
-            var reqMatchFields = new List<VisitSearchMatchContextBuilder.Field>
-            {
-                new(VisitSearchFieldCodes.RequestCode, vr.RequestCode),
-                new(VisitSearchFieldCodes.RegistrantOrganization, vr.RegistrantOrganization),
-                new(VisitSearchFieldCodes.Partner, vr.Partner?.Name),
-            };
+            // predicate exactly — code / reg-org / registrant name+nationality+job title / partner. Campus,
+            // host and contact are NOT searched by this query, so they are passed null and cannot match.
+            // Pure V2: the delegation name is per-campus, reported under each campus scope. ──
+            var reqMatchFields = VisitSearchFields.RequestScope(
+                requestCode: vr.RequestCode,
+                registrantOrganization: vr.RegistrantOrganization,
+                registrantFullName: vr.RegistrantFullName,
+                registrantNationality: vr.RegistrantNationality,
+                registrantJobTitle: vr.RegistrantJobTitle,
+                partnerName: vr.Partner?.Name,
+                operationalContactName: null);
             var campusMatchScopes = instances
                 .Select(i => new VisitSearchMatchContextBuilder.CampusScope(
                     i.VisitInstanceId, i.CampusId,
                     campusNames.TryGetValue(i.CampusId, out var cnm3) ? cnm3 : null,
-                    new List<VisitSearchMatchContextBuilder.Field>
-                    {
-                        new(VisitSearchFieldCodes.DelegationName, i.FormDetail != null ? i.FormDetail.DelegationName : null),
-                    }))
+                    VisitSearchFields.CampusScope(
+                        campusName: null,
+                        hostName: null,
+                        delegationName: i.FormDetail?.DelegationName)))
                 .ToList();
             var matchedContexts = VisitSearchMatchContextBuilder.Build(request.Keyword, reqMatchFields, campusMatchScopes);
 

@@ -1500,6 +1500,8 @@ CREATE TABLE visit_instance_form_details (
     COMMENT 'SĐT đầu mối (snapshot, optional — đầu mối chỉ có email vẫn dùng được). SĐT trùng KHÔNG phải bằng chứng cùng người; blank normalize thành NULL.',
   operational_contact_email VARCHAR(150) NOT NULL
     COMMENT 'BẮT BUỘC. Normalize tại application boundary; là email duy nhất dùng để bind lời mời xác nhận đầu mối cho campus này. Danh tính runtime đọc từ visit_request_campuses.operational_contact_user_id, KHÔNG từ email này.',
+  operational_contact_guest_member_id BIGINT UNSIGNED NULL
+    COMMENT 'Đầu mối của cơ sở này LÀ thành viên nào trong đoàn (visit_guest_members). Snapshot ở trên chỉ là chuỗi nên không so sánh được: đầu mối vừa nằm trong danh sách đoàn từng vào biên bản hai lần, đầu mối chỉ khai ở khối này thì không vào biên bản lần nào. NULL hợp lệ (dòng cũ, hoặc đầu mối không đi cùng đoàn) — biên bản khi đó dựng từ snapshot.',
   working_language ENUM('VI','EN') NOT NULL DEFAULT 'EN',
   transportation_note TEXT NULL,
   media_consent_status ENUM('AGREED','DECLINED') NOT NULL DEFAULT 'DECLINED',
@@ -1517,6 +1519,7 @@ CREATE TABLE visit_instance_form_details (
   KEY idx_vifd_language (working_language),
   KEY idx_vifd_media_consent (media_consent_status),
   KEY idx_vifd_op_contact_email (operational_contact_email),
+  KEY idx_vifd_op_contact_member (operational_contact_guest_member_id),
   FULLTEXT KEY ft_vifd_search (delegation_name, purpose, working_content,
     operational_contact_full_name, operational_contact_organization, operational_contact_email),
   CONSTRAINT ck_vifd_visit_type_other CHECK (visit_type <> 'OTHER'
@@ -1532,7 +1535,13 @@ CREATE TABLE visit_instance_form_details (
   CONSTRAINT ck_vifd_op_contact_email CHECK (TRIM(operational_contact_email) <> ''),
   CONSTRAINT fk_vifd_instance
     FOREIGN KEY (visit_instance_id) REFERENCES visit_request_campuses (visit_instance_id)
-    ON UPDATE CASCADE ON DELETE CASCADE
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  -- SET NULL, không CASCADE: xoá một thành viên đoàn thì đầu mối tụt về mức snapshot,
+  -- KHÔNG kéo theo việc xoá mất cả form detail của cơ sở.
+  CONSTRAINT fk_vifd_op_contact_member
+    FOREIGN KEY (operational_contact_guest_member_id)
+    REFERENCES visit_guest_members (guest_member_id)
+    ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Snapshot form đầy đủ, độc lập cho từng campus instance (v2). Mỗi row là bản hoàn chỉnh; không có cờ same_as_other_campus.';
 

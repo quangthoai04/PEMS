@@ -56,29 +56,30 @@ public sealed class VisitProcessPermissionDto
     public bool CanCloseVisit { get; set; }
 
     /// <summary>
-    /// The earliest moment BEFORE_VISIT → DURING_VISIT may be performed —
+    /// ADVISORY: when starting the visit becomes the expected thing to do —
     /// <c>plannedStartAt - 6h</c> (<see cref="PEMS.Domain.Policies.VisitStageTransitionPolicy"/>).
     ///
     /// <para>
-    /// Returned throughout BEFORE_VISIT, INCLUDING while the window is still shut and
-    /// <see cref="CanStartVisit"/> is false — that is precisely when the screen needs it. A disabled
-    /// button that names the moment it opens ("Có thể chuyển sang Trong tiếp khách từ 03:00
-    /// 29/08/2026") answers the Host's question; a hidden button, or a bare "no", does not.
+    /// NOT a cutoff, and deliberately not named like one any more. The Host may confirm before it;
+    /// <see cref="CanStartVisit"/> does not consult it, and neither does the command. It exists so the
+    /// screen can say "dự kiến từ 03:00 29/08/2026" next to a button that works either way.
     /// </para>
     /// <para>
     /// Derived from the campus's CURRENT planned start on every read, never persisted, so a schedule
-    /// change moves it instead of leaving a stale cutoff behind.
+    /// change moves it instead of leaving a stale cutoff behind. Null outside BEFORE_VISIT.
     /// </para>
     /// </summary>
-    public DateTime? StartVisitAvailableAt { get; set; }
+    public DateTime? RecommendedStartVisitAt { get; set; }
 
     /// <summary>
-    /// Why <see cref="CanStartVisit"/> is false when the only thing missing is time —
-    /// <c>VISIT_START_WINDOW_NOT_OPEN</c>. Null when the action is allowed, and null when it is
-    /// refused for some other reason (wrong status, not the Host), so the UI shows the countdown
-    /// explanation ONLY where waiting is genuinely the answer.
+    /// ADVISORY: true while the Host would be starting the visit EARLIER than the recommended window.
+    ///
+    /// <para>
+    /// It changes what the confirmation says ("sớm hơn dự kiến"), never whether the action is offered.
+    /// Computed server-side so it is measured against the same clock the command runs on.
+    /// </para>
     /// </summary>
-    public string? StartVisitDisabledReasonCode { get; set; }
+    public bool IsBeforeRecommendedStartWindow { get; set; }
 
     /// <summary>
     /// Whether the signed-in user may send the "Gửi cập nhật chuẩn bị" email for this instance.

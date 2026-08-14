@@ -156,5 +156,14 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
             .NotNull().WithMessage("Danh sách nhân sự hỗ trợ không hợp lệ.")
             .Must(s => s is null || s.Count <= MaxMembers).WithMessage($"Tối đa {MaxMembers} nhân sự hỗ trợ mỗi cơ sở.");
         RuleForEach(c => c.ExternalSupportMembers).SetValidator(new SupportTeamMemberV2Validator());
+
+        // "Đầu mối là người thứ N trong đoàn" (NP-03). Only a NEGATIVE index is rejected here: that is
+        // a client bug, and a bug should be told. An index that merely points past the end of the list
+        // is NOT — a user who removes a guest after picking them leaves exactly that, and refusing the
+        // whole submission over a stale hint would throw away a long form for nothing.
+        // OperationalContactLink ignores it and falls back to matching the snapshot.
+        RuleFor(c => c.OperationalContactVisitorIndex)
+            .Must(i => i is null || i >= 0)
+            .WithMessage("Vị trí đầu mối trong danh sách đoàn không hợp lệ.");
     }
 }

@@ -475,17 +475,35 @@ public static class SearchMatchScopes
 /// Stable, PII-free field codes for search match contexts — the ALLOWLIST of what the list/search actually
 /// searches (NOT an aspirational set). Guest/support member names are deliberately absent: they are not
 /// searched by default and never produce a match context.
+///
+/// <para>
+/// Adding a code here is not enough to make it work, and adding a term to the SQL keyword predicate is
+/// not enough either: both have to happen, or a row comes back matched on a field the UI cannot name and
+/// renders with no "Khớp tại" line at all. <see cref="VisitSearchFields"/> is the one place that pairs
+/// them up — put new fields there.
+/// </para>
 /// </summary>
 public static class VisitSearchFieldCodes
 {
     public const string RequestCode = "REQUEST_CODE";
     public const string RegistrantOrganization = "REGISTRANT_ORGANIZATION";
+    /// <summary>Name of the person who submitted the request (visit_requests.registrant_full_name).</summary>
+    public const string RegistrantFullName = "REGISTRANT_FULL_NAME";
+    public const string RegistrantNationality = "REGISTRANT_NATIONALITY";
+    public const string RegistrantJobTitle = "REGISTRANT_JOB_TITLE";
     public const string Partner = "PARTNER";
     /// <summary>Matched on the confirmed operational contact of the campus behind the row.</summary>
     public const string OperationalContact = "OPERATIONAL_CONTACT";
     public const string DelegationName = "DELEGATION_NAME";
     public const string Campus = "CAMPUS";
     public const string Host = "HOST";
+
+    /// <summary>Every code above, for the guard test that keeps this list and the builders in step.</summary>
+    public static readonly IReadOnlyList<string> All = new[]
+    {
+        RequestCode, RegistrantOrganization, RegistrantFullName, RegistrantNationality,
+        RegistrantJobTitle, Partner, OperationalContact, DelegationName, Campus, Host,
+    };
 }
 
 /// <summary>
