@@ -27,7 +27,9 @@ export function DeclineReasonModal({ item, onClose, onSuccess }: Props) {
     setLoading(true);
     try {
       if (item.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.declineInvitation(item.participantId || item.itemId, reason.trim());
+        // Hàng của chính mình, không phải hàng đang hiển thị (xem CurrentUserParticipantId ở backend).
+        await departmentReceptionTasksApi.declineInvitation(
+          item.currentUserParticipantId || item.participantId || item.itemId, reason.trim());
         toast.success('Đã từ chối thư mời');
       } else {
         await departmentReceptionTasksApi.declineAssignment(item.logisticsItemId || item.itemId, reason.trim());

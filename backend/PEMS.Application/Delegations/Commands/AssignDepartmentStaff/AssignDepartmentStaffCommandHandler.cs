@@ -217,7 +217,13 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             _db.VisitParticipants.Add(assignedParticipant);
         }
 
-        leaderParticipant.Status = ParticipantStatuses.Assigned;
+        // The Leader's own row records THEIR relation to the reception, not the delegation. Overwriting
+        // an ACCEPTED Leader with ASSIGNED erased the fact that they had answered: their invitation
+        // dropped out of their own invitation list (which excludes DEPT_SUPPORT + ASSIGNED) the moment
+        // they handed work to a staff member, for having done nothing but handle it. A Leader who has
+        // not answered yet is still moved to ASSIGNED — for them the delegation IS the response.
+        if (leaderParticipant.Status != ParticipantStatuses.Accepted)
+            leaderParticipant.Status = ParticipantStatuses.Assigned;
         leaderParticipant.UpdatedAt = now;
         leaderParticipant.UpdatedBy = userId;
 

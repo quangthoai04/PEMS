@@ -139,6 +139,14 @@ public sealed class ExecuteEmailActionCommandHandler
         if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
             return await MarkInvalidAsync(token, request, now, result, "Đoàn khách đã bị hủy hoặc đã đóng, không thể thao tác.", cancellationToken);
 
+        // The same window the in-app Accept/Decline enforces (see VisitInvitationResponse): an emailed
+        // link is a third door onto one business action, and it must not be the one that stays open
+        // after the visit has already started.
+        if (!PEMS.Application.Delegations.Common.VisitInvitationResponse.IsOpenForResponse(
+                instance.VisitRequest?.Status, instance.Status))
+            return await MarkInvalidAsync(token, request, now, result,
+                "Chuyến thăm đã bắt đầu hoặc kết thúc, không thể phản hồi lời mời.", cancellationToken);
+
         // Strict target status validation
         if (participant.Status == ParticipantStatuses.Removed)
             return await MarkInvalidAsync(token, request, now, result, "Lời mời này đã bị thu hồi hoặc không còn hiệu lực.", cancellationToken);

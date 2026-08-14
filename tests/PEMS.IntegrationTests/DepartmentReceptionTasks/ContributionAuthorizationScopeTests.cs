@@ -209,11 +209,19 @@ public sealed class ContributionAuthorizationScopeTests : IClassFixture<PemsWebA
         return await handler.Handle(new GetVisitInstanceContributionQuery(instanceId), CancellationToken.None);
     }
 
-    /// <summary>The list's flag for a row of the given type on the given instance, or null when absent.</summary>
-    private async Task<bool?> ListFlagAsync(ApplicationDbContext db, ulong instanceId, string itemType)
+    /// <summary>
+    /// The list's flag for a row of the given type on the given instance, or null when absent.
+    /// <paramref name="visitRequestId"/> scopes the query to one request — this department is shared with
+    /// every suite in the run and the list paginates, so an unscoped read can drop the row off page 1 and
+    /// look like "no row produced".
+    /// </summary>
+    private async Task<bool?> ListFlagAsync(
+        ApplicationDbContext db, ulong instanceId, string itemType, ulong? visitRequestId = null)
     {
         var handler = new GetAssignmentsProgressListQueryHandler(db, StaffUser());
-        var result = await handler.Handle(new GetAssignmentsProgressListQuery { ItemType = itemType }, CancellationToken.None);
+        var result = await handler.Handle(
+            new GetAssignmentsProgressListQuery { ItemType = itemType, VisitRequestId = visitRequestId },
+            CancellationToken.None);
         return result.Items.FirstOrDefault(x => x.VisitInstanceId == instanceId)?.CanOpenContribution;
     }
 
@@ -309,6 +317,63 @@ public sealed class ContributionAuthorizationScopeTests : IClassFixture<PemsWebA
         await GiveParticipantAsync(db, vi, ParticipantStatuses.Declined);
 
         await Assert.ThrowsAsync<ForbiddenException>(() => OpenContributionAsync(scope, db, vi));
+    }
+
+    // ── 4b. The Leader who delegated is still a participant ─────────────────────────────────────
+
+    /// <summary>
+    /// The list and the endpoint asked about the SAME person and disagreed. Once the Leader accepted and
+    /// handed the work to a staff member, the assignments list showed the staff member's row and computed
+    /// the Leader's rights from it — so the button vanished — while the Contribution endpoint, reading
+    /// the Leader's own row, let them straight in by URL. Both are asserted here, on both callers, so
+    /// neither half can move without the other.
+    /// </summary>
+    [Fact]
+    public async Task A_leader_who_delegated_still_opens_contribution_in_the_list_and_the_endpoint()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db);
+
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _leaderUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            IsHost = false,
+            Status = ParticipantStatuses.Accepted,
+            InvitedAt = DateTime.Now,
+            RespondedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        });
+        await GiveParticipantAsync(db, vi, ParticipantStatuses.Assigned);   // the delegated staff member
+
+        var leaderUser = new FakeCurrentUser
+        {
+            UserId = _leaderUserId,
+            RoleCode = RoleCodes.Department,
+            SubRole = UserSubRoles.Leader,
+            PrimaryCampusId = _campusId,
+            DepartmentId = _departmentId,
+        };
+
+        // Scoped by request: this department is shared with every other suite in the run, and the list
+        // paginates — an unscoped query can drop the row off page 1 and read as "no row produced".
+        var listHandler = new GetAssignmentsProgressListQueryHandler(db, leaderUser);
+        var list = await listHandler.Handle(
+            new GetAssignmentsProgressListQuery { ItemType = "INVITATION", VisitRequestId = vr },
+            CancellationToken.None);
+        var row = list.Items.FirstOrDefault(x => x.VisitInstanceId == vi);
+        Assert.NotNull(row);
+        Assert.True(row!.CanOpenContribution);
+
+        var endpoint = new GetVisitInstanceContributionQueryHandler(
+            db, leaderUser, scope.ServiceProvider.GetRequiredService<IVisitFormReadService>());
+        Assert.NotNull(await endpoint.Handle(new GetVisitInstanceContributionQuery(vi), CancellationToken.None));
+
+        // The staff member holds their own relation and their own verdict — unchanged by any of this.
+        Assert.True(await ListFlagAsync(db, vi, "INVITATION", vr));
+        Assert.NotNull(await OpenContributionAsync(scope, db, vi));
     }
 
     // ── 5. A relation is to ONE campus instance, never to its neighbours ─────────────────────────

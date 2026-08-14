@@ -12,6 +12,8 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.TransferVisitHost;
 using PEMS.Application.Delegations.Commands.VisitAmendments;
+using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Queries.GetVisitInvitations;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
@@ -177,7 +179,7 @@ public sealed class VisitHostTransferV2Tests
     }
 
     /// <summary>An ACTIVE IC Staff of the campus — the eligible pool a handover can draw from.</summary>
-    private static async Task<ulong> EligibleIcStaffAsync(ulong campusId, ulong excluding)
+    private static async Task<ulong> EligibleIcStaffAsync(ulong campusId, ulong excluding, ulong? alsoExcluding = null)
     {
         using var db = NewContext();
         return await (from u in db.Users
@@ -186,6 +188,7 @@ public sealed class VisitHostTransferV2Tests
                       where r.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Staff
                             && u.PrimaryCampusId == campusId && u.Status == UserStatuses.Active
                             && d.DepartmentType == "IC" && u.UserId != excluding
+                            && (alsoExcluding == null || u.UserId != alsoExcluding.Value)
                       orderby u.UserId
                       select u.UserId).FirstAsync();
     }
@@ -304,6 +307,202 @@ public sealed class VisitHostTransferV2Tests
                 Assert.NotNull(outgoing);
                 Assert.False(outgoing!.IsHost);
                 Assert.Equal(ParticipantRoles.IcSupport, outgoing.ParticipantRole);
+
+                // …and the STATUS, which is the half this test used to leave unasserted while the
+                // handler left it at ASSIGNED. IC_SUPPORT + ASSIGNED is a relation no read model
+                // honours — every invitation/attending list excludes it, the process screen and the
+                // agenda's responsible pool admit only ACCEPTED support — so the outgoing Host was
+                // "kept on the visit" in the table and gone from every screen. Asserting the pair is
+                // what stops that shape passing as a success again.
+                Assert.Equal(ParticipantStatuses.Accepted, outgoing.Status);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The demotion is aimed at the row that carries the HOST role, not at every row belonging to the
+    /// outgoing Host's id — and never at somebody else's history. A colleague who declined an
+    /// invitation to this same visit must read exactly the same afterwards, reason included.
+    /// </summary>
+    [Fact]
+    public async Task Transfer_leaves_another_participant_s_declined_row_untouched()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var leaderId) = await CreateApprovedAsync(Now.AddDays(20));
+            var newHost = await EligibleIcStaffAsync(Campus1, leaderId);
+            var bystander = await EligibleIcStaffAsync(Campus1, excluding: newHost, alsoExcluding: leaderId);
+
+            ulong declinedRowId;
+            using (var db = NewContext())
+            {
+                var declined = new PEMS.Domain.Entities.Delegations.VisitParticipant
+                {
+                    VisitInstanceId = instanceId,
+                    UserId = bystander,
+                    ParticipantRole = ParticipantRoles.IcSupport,
+                    IsHost = false,
+                    Status = ParticipantStatuses.Declined,
+                    Note = "Trùng lịch công tác",
+                    InvitedBy = leaderId,
+                    InvitedAt = Now,
+                    RespondedAt = Now,
+                    CreatedAt = Now,
+                    CreatedBy = leaderId,
+                };
+                db.VisitParticipants.Add(declined);
+                await db.SaveChangesAsync();
+                declinedRowId = declined.ParticipantId;
+            }
+
+            var version = await RowVersionAsync(instanceId);
+            using (var db = NewContext())
+                await Handler(db, leaderId, Campus1).Handle(
+                    new TransferVisitHostCommand(instanceId, newHost, "Bàn giao", version), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var row = await db.VisitParticipants.AsNoTracking()
+                    .SingleAsync(p => p.ParticipantId == declinedRowId);
+                Assert.Equal(ParticipantStatuses.Declined, row.Status);
+                Assert.Equal(ParticipantRoles.IcSupport, row.ParticipantRole);
+                Assert.False(row.IsHost);
+                Assert.Equal("Trùng lịch công tác", row.Note);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The incoming Host already had a row here and DECLINED it. visit_participants is unique on
+    /// (visit_instance_id, user_id), so the appointment has to be recorded on that very row — adding a
+    /// second one would fail the whole handover on a duplicate key. Declining a support invitation does
+    /// not disqualify anyone from being APPOINTED Host; what must not survive is the decline's reason,
+    /// which would otherwise read as a note against the person now running the visit.
+    /// </summary>
+    [Fact]
+    public async Task An_incoming_host_who_had_declined_is_promoted_on_their_existing_row()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var leaderId) = await CreateApprovedAsync(Now.AddDays(20));
+            var newHost = await EligibleIcStaffAsync(Campus1, leaderId);
+
+            using (var db = NewContext())
+            {
+                db.VisitParticipants.Add(new PEMS.Domain.Entities.Delegations.VisitParticipant
+                {
+                    VisitInstanceId = instanceId,
+                    UserId = newHost,
+                    ParticipantRole = ParticipantRoles.IcSupport,
+                    IsHost = false,
+                    Status = ParticipantStatuses.Declined,
+                    Note = "Tôi bận hôm đó",
+                    InvitedBy = leaderId,
+                    InvitedAt = Now,
+                    RespondedAt = Now,
+                    CreatedAt = Now,
+                    CreatedBy = leaderId,
+                });
+                await db.SaveChangesAsync();
+            }
+
+            var version = await RowVersionAsync(instanceId);
+            using (var db = NewContext())
+                await Handler(db, leaderId, Campus1).Handle(
+                    new TransferVisitHostCommand(instanceId, newHost, "Bàn giao", version), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                // Single(): one user, one row on this instance — a promotion that ADDED a row would
+                // either fail the unique key or leave two conflicting relations behind.
+                var promoted = await db.VisitParticipants.AsNoTracking()
+                    .SingleAsync(p => p.VisitInstanceId == instanceId && p.UserId == newHost);
+                Assert.True(promoted.IsHost);
+                Assert.Equal(ParticipantRoles.IcHost, promoted.ParticipantRole);
+                Assert.Equal(ParticipantStatuses.Assigned, promoted.Status);
+                Assert.Null(promoted.Note);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// What the state fix is FOR, asked of a real read model rather than of the row: the outgoing Host
+    /// can still be given an agenda item or a minutes action. That pool admits only ACCEPTED supporting
+    /// participants, so it returned nothing for them while the handover left them at ASSIGNED.
+    /// </summary>
+    [Fact]
+    public async Task The_outgoing_host_is_still_eligible_to_be_made_responsible_for_an_agenda_item()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var leaderId) = await CreateApprovedAsync(Now.AddDays(20));
+            var newHost = await EligibleIcStaffAsync(Campus1, leaderId);
+            var version = await RowVersionAsync(instanceId);
+
+            using (var db = NewContext())
+                await Handler(db, leaderId, Campus1).Handle(
+                    new TransferVisitHostCommand(instanceId, newHost, "Bàn giao", version), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var eligible = await ResponsibleCandidateEligibility.GetEligibleUserIdsAsync(
+                    db, instanceId, newHost, CancellationToken.None);
+                Assert.Contains(newHost, eligible);      // the new Host, as its own entry
+                Assert.Contains(leaderId, eligible);     // …and the outgoing one, now ACCEPTED support
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The other half of "they stay on the visit": their own invitation list. That query excludes
+    /// IC_SUPPORT + ASSIGNED — the shape the handover used to leave behind — so the row simply vanished
+    /// from the screen the outgoing Host would look at to find the visit again.
+    /// </summary>
+    [Fact]
+    public async Task The_outgoing_host_can_still_find_the_visit_in_their_invitation_list()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var leaderId) = await CreateApprovedAsync(Now.AddDays(20));
+            var newHost = await EligibleIcStaffAsync(Campus1, leaderId);
+            var version = await RowVersionAsync(instanceId);
+
+            using (var db = NewContext())
+                await Handler(db, leaderId, Campus1).Handle(
+                    new TransferVisitHostCommand(instanceId, newHost, "Bàn giao", version), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var handler = new GetVisitInvitationsQueryHandler(
+                    db,
+                    new FakeUser
+                    {
+                        UserId = leaderId, RoleCode = RoleCodes.Staff,
+                        SubRole = UserSubRoles.Leader, PrimaryCampusId = Campus1,
+                    },
+                    new FixedClock());
+
+                var page = await handler.Handle(
+                    new GetVisitInvitationsQuery { PageSize = 100 }, CancellationToken.None);
+
+                var row = page.Items.SingleOrDefault(i => i.VisitInstanceId == instanceId);
+                Assert.NotNull(row);
+                Assert.Equal(ParticipantStatuses.Accepted, row!.InvitationStatus);
+                // ACCEPTED participation is what opens "Đóng góp kết quả", so the list and the
+                // contribution endpoint agree about them too.
+                Assert.Contains("OPEN_CONTRIBUTION", row.AllowedActions);
             }
         }
         finally { await CleanupAsync(requestId); }

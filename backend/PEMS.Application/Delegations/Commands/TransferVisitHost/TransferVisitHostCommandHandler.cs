@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
@@ -138,21 +139,41 @@ public sealed class TransferVisitHostCommandHandler
 
         // ── Participant rows. The outgoing Host STAYS on the visit as ordinary IC support rather than
         //    being removed: they have been preparing this visit, may hold logistics items, and dropping
-        //    them would revoke their access to the very request they were handing over. ──
+        //    them would revoke their access to the very request they were handing over.
+        //
+        //    REMOVED rows are loaded too, and deliberately: the unique key below means a person who was
+        //    once revoked from this instance still owns their row, so the incoming Host has to REUSE it.
+        //    Adding a second row for them would violate uq_visit_participants_user and fail the whole
+        //    handover on a duplicate key. ──
         var participants = await _db.VisitParticipants
-            .Where(p => p.VisitInstanceId == instance.VisitInstanceId
-                        && p.Status != ParticipantStatuses.Removed)
+            .Where(p => p.VisitInstanceId == instance.VisitInstanceId)
             .ToListAsync(ct);
 
-        foreach (var p in participants.Where(p => p.UserId == previousHostId))
+        // Only the row that actually CARRIES the host role is demoted (see VisitParticipantRelation) —
+        // matching on user id alone would rewrite whatever other relation that person held here, and
+        // would turn a DECLINED row into an ACCEPTED one purely because the ids matched.
+        foreach (var p in VisitParticipantRelation.HostRowsOf(participants, previousHostId))
         {
             p.IsHost = false;
             p.ParticipantRole = ParticipantRoles.IcSupport;
+            // ASSIGNED is the HOST's status — it means "handed this campus to run". The read models say
+            // so out loud: every invitation/attending list excludes IC_SUPPORT + ASSIGNED
+            // (GetVisitInvitations, ViewGuestDelegationList), the process screen admits only ACCEPTED
+            // support, and so does the agenda's responsible-person pool. Leaving it behind therefore did
+            // not keep the outgoing Host on the visit at all — it produced a relation no list shows and
+            // no screen honours, so they vanished. What they now are is a support member who is IN,
+            // which is ACCEPTED. The alternative, INVITED, would be a fresh invitation nobody sent and
+            // would demand an answer from someone who has already been working on this visit.
+            p.Status = ParticipantStatuses.Accepted;
             p.UpdatedAt = now;
             p.UpdatedBy = actorId;
         }
 
-        var incoming = participants.FirstOrDefault(p => p.UserId == command.NewHostUserId);
+        // The incoming Host's own row — resolved rather than taken off the top of an unordered list, so
+        // a superseded row can never be the one promoted. A previously DECLINED support invitation does
+        // not disqualify anyone from being APPOINTED Host: the leader's decision replaces it, and the
+        // unique key means that row is the only place the appointment can be recorded.
+        var incoming = VisitParticipantRelation.RowOf(participants, command.NewHostUserId);
         if (incoming is null)
         {
             _db.VisitParticipants.Add(new VisitParticipant
@@ -170,6 +191,10 @@ public sealed class TransferVisitHostCommandHandler
         }
         else
         {
+            // Reviving a DECLINED or REMOVED row: the note on it belongs to that ending — a decline's
+            // reason — and carrying it over would show "tôi bận" against the person now running the visit.
+            if (incoming.Status is ParticipantStatuses.Declined or ParticipantStatuses.Removed)
+                incoming.Note = null;
             incoming.ParticipantRole = ParticipantRoles.IcHost;
             incoming.IsHost = true;
             incoming.Status = ParticipantStatuses.Assigned;

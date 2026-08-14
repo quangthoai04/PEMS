@@ -39,6 +39,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'CHANGE_PROPOSED', label: 'Đang đề xuất' },
   { value: 'IN_PROGRESS', label: 'Trong tiến trình' },
   { value: 'DONE', label: 'Hoàn thành' },
+  { value: 'EXPIRED', label: 'Hết hạn / Không phản hồi' },
   { value: 'CANCELLED', label: 'Đã hủy' },
 ];
 
@@ -48,6 +49,8 @@ const STATUS_BADGE: Record<string, string> = {
   DECLINED: 'bg-slate-100 text-slate-600 border-slate-200',
   IN_PROGRESS: 'bg-cyan-100 text-cyan-700 border-cyan-200',
   DONE: 'bg-slate-100 text-slate-600 border-slate-200',
+  // Hết hạn không phải "hoàn thành": thư mời chưa từng được phản hồi và chuyến đã qua.
+  EXPIRED: 'bg-amber-50 text-amber-800 border-amber-200',
   CANCELLED: 'bg-gray-100 text-gray-500 border-gray-200',
   CHANGE_PROPOSED: 'bg-amber-100 text-amber-700 border-amber-200',
   REJECTED: 'bg-rose-100 text-rose-700 border-rose-200',
@@ -56,6 +59,7 @@ const STATUS_BADGE: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   ASSIGNED: 'Mới được giao', ACCEPTED: 'Đã chấp nhận', DECLINED: 'Đã từ chối',
   IN_PROGRESS: 'Đang thực hiện', DONE: 'Hoàn thành', CANCELLED: 'Đã hủy',
+  EXPIRED: 'Hết hạn / Không phản hồi',
   CHANGE_PROPOSED: 'Đang đề xuất', REJECTED: 'Đã từ chối',
 };
 
@@ -93,6 +97,7 @@ function toTaskModalItem(item: AssignedTask): StaffLeaderTaskModalItem {
     rawId: item.itemType === 'INVITATION'
       ? (item.participantId || item.itemId)
       : (item.logisticsItemId || item.itemId),
+    currentUserParticipantId: item.currentUserParticipantId,
     visitRequestId: item.visitRequestId,
     visitInstanceId: item.visitInstanceId,
     status: item.uiStatus || item.rawStatus,
@@ -131,7 +136,9 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
     setActionLoadingId(key);
     try {
       if (item.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.acceptInvitation(item.participantId || item.itemId);
+        // Hàng của chính mình, không phải hàng đang hiển thị (xem CurrentUserParticipantId ở backend).
+        await departmentReceptionTasksApi.acceptInvitation(
+          item.currentUserParticipantId || item.participantId || item.itemId);
         toast.success('Đã chấp nhận thư mời');
       } else {
         await departmentReceptionTasksApi.acceptAssignment(item.logisticsItemId || item.itemId);

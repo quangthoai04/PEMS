@@ -14,6 +14,11 @@ import { toVietnamCalendarDate } from '../../../shared/utils/vietnamTime';
 export type CalendarItem = {
   id: string;
   rawId: number | string;
+  /**
+   * Thư mời của CHÍNH người đang đăng nhập trên chuyến này. Ô lịch chỉ hiện 1 dòng/chuyến nên `rawId`
+   * có thể là dòng của người khác (nhân viên được giao); đồng ý/từ chối phải gửi id này.
+   */
+  currentUserParticipantId?: number | string;
   itemType: 'INVITATION' | 'REQUEST' | 'PERSONAL';
   visitRequestId?: number;
   visitInstanceId?: number;
@@ -38,7 +43,11 @@ export type AssignedTask = {
   visitRequestId: number;
   visitInstanceId: number;
   logisticsItemId?: number;
+  /** Hàng participant được HIỂN THỊ trên dòng. */
   participantId?: number;
+  /** Hàng participant của CHÍNH người đang đăng nhập — hàng phải gửi lên khi đồng ý/từ chối. */
+  currentUserParticipantId?: number;
+  currentUserParticipantStatus?: string;
   delegationName: string;
   requestCode: string;
   organizationName?: string;
@@ -83,6 +92,7 @@ export type TaskStatusFilter =
   | 'CHANGE_PROPOSED'
   | 'IN_PROGRESS'
   | 'DONE'
+  | 'EXPIRED'
   | 'CANCELLED';
 
 // ── Calendar colour logic for staff ──────────────────────────────────────────
@@ -132,6 +142,7 @@ function mapCalendarItem(item: any, idx: number, currentUserId?: string | number
   return {
     id: `${rawId}_${idx}`,
     rawId,
+    currentUserParticipantId: item.currentUserParticipantId,
     itemType: item.itemType,
     visitRequestId: item.visitRequestId,
     visitInstanceId: item.visitInstanceId,

@@ -38,6 +38,8 @@ function parseHHMM(val?: string) {
 export type StaffLeaderTaskModalItem = {
   itemType: 'INVITATION' | 'REQUEST';
   rawId: number | string;
+  /** Thư mời của CHÍNH người đang đăng nhập — `rawId` có thể là dòng hiển thị của người khác. */
+  currentUserParticipantId?: number | string;
   visitRequestId?: number;
   visitInstanceId?: number;
   status?: string;
@@ -278,7 +280,8 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
         await departmentReceptionTasksApi.acceptAssignment(item.rawId);
         toast.success('Đã chấp nhận phân công');
       } else {
-        await departmentReceptionTasksApi.acceptInvitation(item.rawId);
+        // Thư mời của chính mình, không phải dòng đang hiển thị.
+        await departmentReceptionTasksApi.acceptInvitation(item.currentUserParticipantId || item.rawId);
         toast.success('Đã chấp nhận thư mời');
       }
       await refreshDetail();
@@ -300,7 +303,8 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
         await departmentReceptionTasksApi.declineAssignment(item.rawId, rejectReason.trim());
         toast.success('Đã từ chối phân công');
       } else {
-        await departmentReceptionTasksApi.declineInvitation(item.rawId, rejectReason.trim());
+        await departmentReceptionTasksApi.declineInvitation(
+          item.currentUserParticipantId || item.rawId, rejectReason.trim());
         toast.success('Đã từ chối thư mời');
       }
       await refreshDetail();

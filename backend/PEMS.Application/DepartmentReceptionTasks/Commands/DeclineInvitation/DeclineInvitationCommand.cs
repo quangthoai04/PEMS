@@ -6,56 +6,66 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Delegations.Common;
+
 namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineInvitation
 {
     public class DeclineInvitationCommand : IRequest<bool>
     {
         public ulong ParticipantId { get; set; }
-        public string Reason { get; set; }
+        public string Reason { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// The department screens' entry point for declining a reception invitation. Like its Accept
+    /// counterpart it no longer owns the transition — ownership, role, current status and the visit
+    /// lifecycle are all enforced by <see cref="VisitInvitationResponse"/>, which the delegations screen
+    /// calls too, so declining means the same thing wherever the button is.
+    /// </summary>
     public class DeclineInvitationCommandHandler : IRequestHandler<DeclineInvitationCommand, bool>
     {
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
         public DeclineInvitationCommandHandler(
             IApplicationDbContext context,
             ICurrentUserService currentUserService,
-            PEMS.Application.Notifications.Common.INotificationService notificationService)
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
             _context = context;
             _currentUserService = currentUserService;
             _notificationService = notificationService;
+            _lockService = lockService;
         }
 
         public async Task<bool> Handle(DeclineInvitationCommand request, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(request.Reason)) throw new Exception("Vui lòng nhập lý do từ chối");
+            if (!_currentUserService.IsAuthenticated || _currentUserService.UserId is null)
+                throw new ForbiddenException();
 
-            var p = await _context.VisitParticipants
-                .Include(x => x.VisitInstance).ThenInclude(v => v.VisitRequest)
-                .FirstOrDefaultAsync(x => x.ParticipantId == request.ParticipantId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(request.Reason))
+                throw new ValidationException("Vui lòng nhập lý do từ chối");
 
-            if (p == null) throw new Exception("Không tìm thấy thư mời");
+            var userId = _currentUserService.UserId.Value;
+            var now = VietnamTime.Now();
 
-            // Allow declining anytime
-            // if (p.Status != "INVITED") throw new Exception("Thư mời không ở trạng thái chờ xác nhận.");
+            await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+            await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
 
-            var userId = _currentUserService.UserId;
-            p.Status = "DECLINED";
-            p.Note = request.Reason;
-            p.RespondedAt = VietnamTime.Now();
-            p.UpdatedBy = userId;
-            p.UpdatedAt = VietnamTime.Now();
+            var p = await VisitInvitationResponse.ApplyAsync(
+                _context, userId, request.ParticipantId, accept: false, request.Reason, now, cancellationToken);
 
             await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
-            if (p.VisitInstance?.CurrentHostUserId != null && userId.HasValue)
+            if (p.VisitInstance?.CurrentHostUserId != null)
             {
                 var actorName = await _context.Users
-                    .Where(u => u.UserId == userId.Value)
+                    .Where(u => u.UserId == userId)
                     .Select(u => u.FullName)
                     .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban";
                 // Mixed per-campus v2: notification text uses THIS instance's detail name.
@@ -71,7 +81,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineInvitation
                         NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
                         RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
                         RelatedId: p.ParticipantId,
-                        ActorUserId: userId.Value,
+                        ActorUserId: userId,
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
                         VisitInstanceId: p.VisitInstanceId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,

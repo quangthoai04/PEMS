@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using PEMS.Application.Common;
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalendar
 {
     public class GetDepartmentCalendarQuery : IRequest<List<DepartmentCalendarItemDto>>
@@ -31,7 +32,13 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
         public ulong? VisitInstanceId { get; set; }
         public ulong? VisitRequestId { get; set; }
         public ulong? LogisticsItemId { get; set; }
+        /// <summary>Hàng participant được HIỂN THỊ cho ô lịch này.</summary>
         public ulong? ParticipantId { get; set; }
+        /// <summary>
+        /// Hàng participant của CHÍNH người đang đăng nhập, nếu có — id phải gửi lên khi đồng ý/từ chối
+        /// thư mời. <see cref="ParticipantId"/> có thể là hàng của người khác (nhân viên được giao).
+        /// </summary>
+        public ulong? CurrentUserParticipantId { get; set; }
         public string DelegationName { get; set; }
         public ulong? RelatedUserId { get; set; }
         public string SenderName { get; set; }
@@ -128,12 +135,23 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                         .Where(x => x.p.AssignedBy != null && x.p.Status == "DECLINED")
                         .OrderByDescending(x => x.p.RespondedAt ?? x.p.AssignedAt ?? x.p.CreatedAt)
                         .FirstOrDefault();
-                    return activeStaff ?? leaderRow ?? nonDeclined ?? declinedStaff ?? g.First();
+                    // The row this calendar entry DISPLAYS, and — separately — the caller's own row.
+                    // One entry per instance means the displayed row is often somebody else's (the
+                    // delegated staff member), and Accept/Decline is about the caller's row, not that
+                    // one. See VisitInvitationResponse: answering a colleague's invitation is refused.
+                    var currentUserRow = g
+                        .Where(x => x.p.UserId == userId)
+                        .OrderBy(x => VisitParticipantRelation.LivenessRank(x.p.Status))
+                        .ThenByDescending(x => x.p.ParticipantId)
+                        .FirstOrDefault();
+                    var display = activeStaff ?? leaderRow ?? nonDeclined ?? declinedStaff ?? g.First();
+                    return new { display, currentUserRow };
                 })
                 .ToList();
 
-            foreach (var item in invitationGroups)
+            foreach (var group in invitationGroups)
             {
+                var item = group.display;
                 var camp = item.c;
                 string senderName = item.p.InvitedBy != null && senders.ContainsKey(item.p.InvitedBy.Value) ? senders[item.p.InvitedBy.Value] : "Hệ thống";
 
@@ -158,6 +176,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetDepartmentCalenda
                     VisitInstanceId = camp.VisitInstanceId, // This is visit_instance_id ! SQL says vrc.visit_instance_id
                     VisitRequestId = camp.VisitRequestId,
                     ParticipantId = item.p.ParticipantId,
+                    CurrentUserParticipantId = group.currentUserRow?.p.ParticipantId,
                     DelegationName = item.EffectiveDelegationName,
                     RelatedUserId = item.p.UserId,
                     SenderName = senderName,

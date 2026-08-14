@@ -456,7 +456,8 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
     setActionLoading(true);
     try {
       if (activeEvent.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.acceptInvitation(activeEvent.rawId);
+        // Thư mời của chính mình, không phải dòng đang hiển thị trên ô lịch.
+        await departmentReceptionTasksApi.acceptInvitation(activeEvent.currentUserParticipantId || activeEvent.rawId);
         toast.success('Đã chấp nhận thư mời');
       } else {
         await departmentReceptionTasksApi.acceptAssignment(activeEvent.rawId);
@@ -474,7 +475,8 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
     setActionLoading(true);
     try {
       if (activeEvent.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.declineInvitation(activeEvent.rawId, rejectReason.trim());
+        await departmentReceptionTasksApi.declineInvitation(
+          activeEvent.currentUserParticipantId || activeEvent.rawId, rejectReason.trim());
         toast.success('Đã từ chối thư mời');
       } else {
         await departmentReceptionTasksApi.declineAssignment(activeEvent.rawId, rejectReason.trim());

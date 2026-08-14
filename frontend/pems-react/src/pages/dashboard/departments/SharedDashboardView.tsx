@@ -76,7 +76,11 @@ type AssignmentProgressItem = {
   visitRequestId: number;
   visitInstanceId: number;
   logisticsItemId?: number;
+  /** Hàng participant được HIỂN THỊ (là nhân viên được giao, nếu có). */
   participantId?: number;
+  /** Hàng participant của CHÍNH người đang đăng nhập — hàng phải gửi lên khi đồng ý/từ chối. */
+  currentUserParticipantId?: number;
+  currentUserParticipantStatus?: string;
   delegationName: string;
   requestCode: string;
   organizationName?: string;
@@ -639,6 +643,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             return {
               id: item.itemId + '_' + idx,
               rawId: item.itemId || item.id,
+              // Ô lịch hiển thị 1 dòng/chuyến (có thể là dòng của nhân viên được giao), nhưng đồng ý /
+              // từ chối là hành động trên thư mời của CHÍNH mình — backend từ chối nếu gửi id người khác.
+              currentUserParticipantId: item.currentUserParticipantId,
               visitRequestId: item.visitRequestId,
               visitInstanceId: item.visitInstanceId,
               itemType: item.itemType,
@@ -1337,6 +1344,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       case 'CHANGE_PROPOSED': return 'bg-amber-50 text-amber-700 border-amber-100';
       case 'IN_PROGRESS': return 'bg-cyan-50 text-cyan-700 border-cyan-100';
       case 'DONE': return 'bg-slate-100 text-slate-700 border-slate-200';
+      // Hết hạn không phải "hoàn thành": thư mời chưa từng được phản hồi và chuyến đã qua.
+      case 'EXPIRED': return 'bg-amber-50 text-amber-800 border-amber-200';
       case 'CANCELLED': return 'bg-gray-100 text-gray-500 border-gray-200';
       default: return 'bg-slate-50 text-slate-700 border-slate-100';
     }
@@ -1349,7 +1358,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (item.isLeaderSelfAccepted) return false;
     if (isSelfHandled) return false;
     if (item.uiStatus === 'REJECTED') return false;
-    if (item.uiStatus === 'DONE' || item.uiStatus === 'CANCELLED') return false;
+    if (item.uiStatus === 'DONE' || item.uiStatus === 'EXPIRED' || item.uiStatus === 'CANCELLED') return false;
     return !!isDeptLeader && item.uiStatus === 'REQUESTED';
   };
 
@@ -1372,6 +1381,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       setActivePopoverEvent({
         id: `invitation_${item.itemId}`,
         rawId: item.participantId || item.itemId,
+        currentUserParticipantId: item.currentUserParticipantId,
         itemType: 'INVITATION',
         category: 'Lời mời tham gia',
         title: item.title,
@@ -1408,7 +1418,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const handleAcceptSelf = async (item: AssignmentProgressItem) => {
     try {
       if (item.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.acceptInvitation(item.participantId || item.itemId);
+        // Hàng của chính mình, không phải hàng đang hiển thị: Trưởng phòng đã giao việc xuống nhân viên
+        // thì dòng hiển thị là của nhân viên, gửi id đó lên sẽ bị backend từ chối vì không phải thư mời
+        // của mình.
+        await departmentReceptionTasksApi.acceptInvitation(
+          item.currentUserParticipantId || item.participantId || item.itemId);
         toast.success('Đã chấp nhận thư mời.');
       } else {
         await departmentReceptionTasksApi.acceptRequestSelf(item.logisticsItemId || item.itemId);
@@ -1425,7 +1439,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     if (!reason?.trim()) return;
     try {
       if (item.itemType === 'INVITATION') {
-        await departmentReceptionTasksApi.declineInvitation(item.participantId || item.itemId, reason.trim());
+        await departmentReceptionTasksApi.declineInvitation(
+          item.currentUserParticipantId || item.participantId || item.itemId, reason.trim());
         toast.success('Đã từ chối thư mời.');
       } else if (item.canDecline) {
         await departmentReceptionTasksApi.declineAssignment(item.logisticsItemId || item.itemId, reason.trim());
@@ -1592,6 +1607,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <option value="CHANGE_PROPOSED">Đang đề xuất</option>
               <option value="IN_PROGRESS">Trong tiến trình</option>
               <option value="DONE">Hoàn thành</option>
+              <option value="EXPIRED">Hết hạn / Không phản hồi</option>
               <option value="CANCELLED">Đã hủy</option>
             </select>
             <select value={assignmentOwnerScope} onChange={e => setAssignmentOwnerScope(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-bold text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
@@ -3299,7 +3315,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               setIsSendingInvitationReject(true);
                               try {
                                 if (activePopoverEvent?.rawId) {
-                                  await departmentReceptionTasksApi.declineInvitation(activePopoverEvent.rawId, rejectReason);
+                                  await departmentReceptionTasksApi.declineInvitation(
+                                    activePopoverEvent.currentUserParticipantId || activePopoverEvent.rawId, rejectReason);
                                   toast.success('Đã gửi phản hồi từ chối');
                                   setInvitationStatus('rejected');
                                   const now = toVietnamCalendarDate(new Date())!;
@@ -3404,7 +3421,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               }
                               try {
                                 if (activePopoverEvent?.rawId) {
-                                  await departmentReceptionTasksApi.acceptInvitation(activePopoverEvent.rawId);
+                                  await departmentReceptionTasksApi.acceptInvitation(
+                                    activePopoverEvent.currentUserParticipantId || activePopoverEvent.rawId);
                                   toast.success('Xác nhận tham gia thành công');
                                   const now = toVietnamCalendarDate(new Date())!;
                                   const timeStr = `${String(now.getUTCDate()).padStart(2, '0')}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${now.getUTCFullYear()}, ${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')}`;

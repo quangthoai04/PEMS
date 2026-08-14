@@ -4,8 +4,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
-using PEMS.Domain.Constants;
-using PEMS.Domain.Entities.Users;
+using PEMS.Application.Delegations.Common;
 
 namespace PEMS.Application.Delegations.Commands.RespondVisitParticipantInvitation;
 
@@ -45,80 +44,15 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
         await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
 
-        var participant = await _db.VisitParticipants
-            .Include(p => p.VisitInstance).ThenInclude(v => v.VisitRequest)
-            .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
-            ?? throw new NotFoundException("VisitParticipant", request.ParticipantId);
-
-        // Ownership: a user may only respond to their OWN invitation.
-        if (participant.UserId != userId)
-            throw new ForbiddenException("Bạn chỉ có thể phản hồi lời mời của chính mình.");
-
-        // The host slot is not an invitation; only the 3 non-host invitee roles can respond.
-        if (participant.IsHost || participant.ParticipantRole == ParticipantRoles.IcHost)
-            throw new ForbiddenException("Lời mời này không thể phản hồi.");
-
-        if (participant.ParticipantRole != ParticipantRoles.IcSupport
-            && participant.ParticipantRole != ParticipantRoles.DeptSupport
-            && participant.ParticipantRole != ParticipantRoles.Student)
-            throw new ForbiddenException("Loại lời mời không hợp lệ.");
-
-        // Must still be pending — already-responded invitations are immutable here.
-        if (participant.Status != ParticipantStatuses.Invited && participant.Status != ParticipantStatuses.Assigned)
-            throw new ConflictException("Lời mời đã được phản hồi hoặc không còn hiệu lực.");
-
-        var requestStatus = participant.VisitInstance?.VisitRequest?.Status;
-        var campusStatus = participant.VisitInstance?.Status;
-
-        var actionName = request.Accept ? "xác nhận tham gia" : "từ chối";
-
-        if (requestStatus == VisitRequestStatuses.Cancelled || requestStatus == VisitRequestStatuses.Rejected
-            || campusStatus == VisitInstanceStatuses.Cancelled || campusStatus == VisitInstanceStatuses.Rejected)
-            throw new ConflictException($"Không thể {actionName} vì lịch thăm đã bị hủy hoặc từ chối.");
-
-        // BEFORE_VISIT only, and it cannot be otherwise: an invitation can only exist on a campus
-        // whose Host already opened preparation, because inviting is itself a setup action.
-        if (campusStatus != VisitInstanceStatuses.BeforeVisit)
-            throw new ConflictException($"Không thể {actionName} vì chuyến thăm đã bắt đầu hoặc kết thúc.");
-
         var now = _clock.VietnamNow;
-        string newStatus;
 
-        if (request.Accept)
-        {
-            participant.Status = ParticipantStatuses.Accepted;
-            newStatus = ParticipantStatuses.Accepted;
-        }
-        else
-        {
-            participant.Status = ParticipantStatuses.Declined;
-            // No decline_reason column on visit_participants — record it on note (per schema).
-            // Validator guarantees a non-empty 5–1000 char reason here; store it trimmed.
-            participant.Note = request.DeclineReason!.Trim();
-            newStatus = ParticipantStatuses.Declined;
-        }
-
-        participant.RespondedAt = now;
-        participant.UpdatedAt = now;
-        participant.UpdatedBy = userId;
-
-        // Invite and remove already file the participant's campus; the invitee's own response was the
-        // one participant event a campus-filtered audit could not see. It is scoped to a single
-        // instance, so it records that instance too.
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = userId,
-            CampusId = participant.VisitInstance?.CampusId,
-            Action = request.Accept ? "ACCEPT_VISIT_INVITATION" : "DECLINE_VISIT_INVITATION",
-            EntityType = "VisitParticipant",
-            EntityId = participant.ParticipantId,
-            VisitRequestId = participant.VisitInstance?.VisitRequestId,
-            VisitInstanceId = participant.VisitInstanceId,
-            CreatedAt = now
-        });
-
-        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
-            _db, EmailActionTargetTypes.VisitParticipant, participant.ParticipantId, "Lời mời này đã được phản hồi.", now, cancellationToken);
+        // Ownership, role, current status, lifecycle, the write itself, the audit entry and the emailed
+        // token invalidation all live in the shared transition (see VisitInvitationResponse) — the
+        // department screens go through exactly the same call, so one business action has one
+        // implementation. The validator guarantees a non-empty 5–1000 char decline reason here.
+        var participant = await VisitInvitationResponse.ApplyAsync(
+            _db, userId, request.ParticipantId, request.Accept, request.DeclineReason, now, cancellationToken);
+        var newStatus = participant.Status;
 
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

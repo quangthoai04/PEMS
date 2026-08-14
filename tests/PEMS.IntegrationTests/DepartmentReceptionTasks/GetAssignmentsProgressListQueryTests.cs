@@ -109,7 +109,11 @@ public sealed class GetAssignmentsProgressListQueryTests : IClassFixture<PemsWeb
 
     public Task DisposeAsync() => Task.CompletedTask;
 
-    private async Task<(ulong VisitRequestId, ulong VisitInstanceId)> CreateVisitInstance(ApplicationDbContext db)
+    private Task<(ulong VisitRequestId, ulong VisitInstanceId)> CreateVisitInstance(ApplicationDbContext db)
+        => CreateVisitInstance(db, DateTime.Now, DateTime.Now.AddHours(2));
+
+    private async Task<(ulong VisitRequestId, ulong VisitInstanceId)> CreateVisitInstance(
+        ApplicationDbContext db, DateTime plannedStart, DateTime plannedEnd)
     {
         var visit = new VisitRequest
         {
@@ -131,8 +135,8 @@ public sealed class GetAssignmentsProgressListQueryTests : IClassFixture<PemsWeb
             VisitRequestId = visit.VisitRequestId,
             CampusId = _campusId,
             OperationalContactUserId = _leaderUserId,
-            PlannedStartAt = DateTime.Now,
-            PlannedEndAt = DateTime.Now.AddHours(2),
+            PlannedStartAt = plannedStart,
+            PlannedEndAt = plannedEnd,
             Status = VisitInstanceStatuses.WaitingRequestApproval,
             CreatedAt = DateTime.Now,
         };
@@ -272,5 +276,199 @@ public sealed class GetAssignmentsProgressListQueryTests : IClassFixture<PemsWeb
         Assert.Equal("REQUESTED", item!.UiStatus);
         Assert.Null(item.CurrentResponsibleUserId);
         Assert.False(item.CanOpenContribution);
+    }
+
+    // ── Contribution: the CALLER's relation decides, never the row being displayed ───────────────
+
+    /// <summary>A Leader who has accepted the invitation is a participant, and participants contribute.</summary>
+    [Fact]
+    public async Task Invitation_AcceptedByLeader_OpensContribution()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db);
+
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _leaderUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Accepted,
+            InvitedAt = DateTime.Now,
+            RespondedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+
+        var item = await LeaderRowAsync(db, vr, vi);
+        Assert.NotNull(item);
+        Assert.True(item!.CanOpenContribution);
+    }
+
+    /// <summary>
+    /// The regression this file exists for. After the Leader accepts and then hands the work to a staff
+    /// member, the row DISPLAYS the staff member — and the flag used to be computed from that same row,
+    /// so the Leader was told they were not a participant of a visit they had accepted. The button
+    /// disappeared from the list while the Contribution endpoint kept letting them in by URL.
+    /// </summary>
+    [Fact]
+    public async Task Invitation_LeaderKeepsContribution_AfterDelegatingToStaff()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db);
+
+        var leaderRow = new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _leaderUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Accepted,
+            InvitedAt = DateTime.Now,
+            RespondedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        };
+        var staffRow = new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _staffUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Assigned,
+            AssignedBy = _leaderUserId,
+            AssignedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        };
+        db.VisitParticipants.AddRange(leaderRow, staffRow);
+        await db.SaveChangesAsync();
+
+        var item = await LeaderRowAsync(db, vr, vi);
+        Assert.NotNull(item);
+
+        // The line still SHOWS the staff member — that part was never wrong.
+        Assert.Equal(staffRow.ParticipantId, item!.ParticipantId);
+        Assert.Equal(_staffUserId, item.CurrentResponsibleUserId);
+
+        // …and the Leader's own rights come from the Leader's own row.
+        Assert.True(item.CanOpenContribution);
+        Assert.Equal(leaderRow.ParticipantId, item.CurrentUserParticipantId);
+        Assert.Equal(ParticipantStatuses.Accepted, item.CurrentUserParticipantStatus);
+    }
+
+    /// <summary>A staff member who accepted the work they were given contributes on their own account.</summary>
+    [Fact]
+    public async Task Invitation_AcceptedByStaff_OpensContributionForThatStaff()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db);
+
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _staffUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Accepted,
+            AssignedBy = _leaderUserId,
+            AssignedAt = DateTime.Now,
+            RespondedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+
+        var handler = new GetAssignmentsProgressListQueryHandler(db,
+            new FakeCurrentUser { UserId = _staffUserId, RoleCode = RoleCodes.Department, SubRole = UserSubRoles.Staff, PrimaryCampusId = _campusId, DepartmentId = _departmentId });
+        var result = await handler.Handle(
+            new GetAssignmentsProgressListQuery { ItemType = "INVITATION", VisitRequestId = vr },
+            CancellationToken.None);
+        var item = result.Items.FirstOrDefault(x => x.VisitInstanceId == vi);
+
+        Assert.NotNull(item);
+        Assert.True(item!.CanOpenContribution);
+        Assert.True(item.IsActedByCurrentUser);
+    }
+
+    // ── Lifecycle: an unanswered invitation on a past visit is not "Hoàn thành" ──────────────────
+
+    /// <summary>
+    /// Nobody answered, the visit came and went. Reporting that as DONE / "Hoàn thành" told the reader
+    /// they had taken part and finished — while the row was still INVITED, with no acceptance and no
+    /// contribution behind it. It ran out: EXPIRED. The stored status stays INVITED; only the derived
+    /// one changes, because "was invited, never answered" is the row's real history.
+    /// </summary>
+    [Fact]
+    public async Task Invitation_NeverAnswered_OnAPastVisit_ReadsExpiredNotDone()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db, DateTime.Now.AddDays(-3), DateTime.Now.AddDays(-3).AddHours(2));
+
+        var p = new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _leaderUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Invited,
+            InvitedAt = DateTime.Now.AddDays(-10),
+            CreatedAt = DateTime.Now.AddDays(-10),
+        };
+        db.VisitParticipants.Add(p);
+        await db.SaveChangesAsync();
+
+        var item = await LeaderRowAsync(db, vr, vi);
+        Assert.NotNull(item);
+        Assert.Equal("EXPIRED", item!.UiStatus);
+        Assert.Equal("Hết hạn / Không phản hồi", item.StatusLabel);
+
+        // The raw row is untouched — EXPIRED is derived, never written.
+        Assert.Equal(ParticipantStatuses.Invited, item.RawStatus);
+
+        // No participation, so nothing to report; and no button offering an answer the endpoint would
+        // now refuse (the campus is long past its preparation window).
+        Assert.False(item.CanOpenContribution);
+        Assert.False(item.CanAccept);
+        Assert.False(item.CanDecline);
+    }
+
+    /// <summary>An invitation still inside the visit's window stays actionable, not expired.</summary>
+    [Fact]
+    public async Task Invitation_NeverAnswered_BeforeTheVisit_StaysRequested()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var (vr, vi) = await CreateVisitInstance(db, DateTime.Now.AddDays(5), DateTime.Now.AddDays(5).AddHours(2));
+
+        db.VisitParticipants.Add(new VisitParticipant
+        {
+            VisitInstanceId = vi,
+            UserId = _leaderUserId,
+            ParticipantRole = ParticipantRoles.DeptSupport,
+            Status = ParticipantStatuses.Invited,
+            InvitedAt = DateTime.Now,
+            CreatedAt = DateTime.Now,
+        });
+        await db.SaveChangesAsync();
+
+        var item = await LeaderRowAsync(db, vr, vi);
+        Assert.NotNull(item);
+        Assert.Equal("REQUESTED", item!.UiStatus);
+    }
+
+    /// <summary>
+    /// The invitation row this instance produces for the Department Leader.
+    ///
+    /// Scoped by visit request rather than filtered out of the default page: this department is shared
+    /// with every other suite in the run, and the list paginates by soonest start — a fixture dated a few
+    /// days out simply falls off page 1 once enough siblings exist, which looks exactly like the row not
+    /// being produced at all.
+    /// </summary>
+    private async Task<AssignmentsProgressItemDto?> LeaderRowAsync(
+        ApplicationDbContext db, ulong visitRequestId, ulong visitInstanceId)
+    {
+        var handler = new GetAssignmentsProgressListQueryHandler(db,
+            new FakeCurrentUser { UserId = _leaderUserId, RoleCode = RoleCodes.Department, SubRole = UserSubRoles.Leader, PrimaryCampusId = _campusId, DepartmentId = _departmentId });
+        var result = await handler.Handle(
+            new GetAssignmentsProgressListQuery { ItemType = "INVITATION", VisitRequestId = visitRequestId },
+            CancellationToken.None);
+        return result.Items.FirstOrDefault(x => x.VisitInstanceId == visitInstanceId);
     }
 }

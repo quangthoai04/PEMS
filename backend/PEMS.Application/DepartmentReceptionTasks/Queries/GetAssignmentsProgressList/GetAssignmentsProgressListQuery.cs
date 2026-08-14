@@ -5,6 +5,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 
 using PEMS.Application.Common;
+using PEMS.Application.Delegations.Common;
 namespace PEMS.Application.DepartmentReceptionTasks.Queries.GetAssignmentsProgressList;
 
 public sealed class GetAssignmentsProgressListQuery : IRequest<AssignmentsProgressListDto>
@@ -39,7 +40,16 @@ public sealed class AssignmentsProgressItemDto
     public ulong VisitRequestId { get; set; }
     public ulong VisitInstanceId { get; set; }
     public ulong? LogisticsItemId { get; set; }
+    /// <summary>The participant row this line DISPLAYS (the delegated staff member, when there is one).</summary>
     public ulong? ParticipantId { get; set; }
+    /// <summary>
+    /// The current user's OWN participant row on this visit, when they have one. Every Accept/Decline
+    /// verdict on this line is about this row, so it is the id the client must post — posting
+    /// <see cref="ParticipantId"/> would be answering somebody else's invitation.
+    /// </summary>
+    public ulong? CurrentUserParticipantId { get; set; }
+    /// <summary>Raw status of <see cref="CurrentUserParticipantId"/> (INVITED / ACCEPTED / ...).</summary>
+    public string? CurrentUserParticipantStatus { get; set; }
     public string DelegationName { get; set; } = "";
     public string RequestCode { get; set; } = "";
     public string? OrganizationName { get; set; }
@@ -302,8 +312,19 @@ public sealed class GetAssignmentsProgressListQueryHandler
                     .Where(x => leaderUserId == null || x.p.UserId == leaderUserId.Value)
                     .OrderByDescending(x => x.p.InvitedAt ?? x.p.CreatedAt)
                     .FirstOrDefault();
+                // The row that represents THIS caller — kept apart from `selected` on purpose.
+                // `selected` answers "which participant does this row DISPLAY", and for a delegated
+                // invitation that is the staff member. Answering an AUTHORIZATION question with it told
+                // a Leader who had accepted and then handed the work down that they were not a
+                // participant at all: their own live relation was still there, it just was not the row
+                // being shown. Display relation is not authorization relation.
+                var currentUserRow = g
+                    .Where(x => x.p.UserId == currentUserId)
+                    .OrderBy(x => VisitParticipantRelation.LivenessRank(x.p.Status))
+                    .ThenByDescending(x => x.p.ParticipantId)
+                    .FirstOrDefault();
                 var selected = activeStaff ?? declinedStaff ?? leaderRow ?? g.First();
-                return new { selected, activeStaff, declinedStaff, leaderRow };
+                return new { selected, activeStaff, declinedStaff, leaderRow, currentUserRow };
             })
             .Where(x => x.selected != null)
             .ToList();
@@ -313,9 +334,17 @@ public sealed class GetAssignmentsProgressListQueryHandler
             var row = group.selected!;
             var activeStaff = group.activeStaff;
             var leaderRow = group.leaderRow;
+            // Everything about the CALLER is read off their own row; everything about what the row shows
+            // is read off `row`. Mixing the two is the bug this split exists to stop.
+            var mine = group.currentUserRow;
             var uiStatus = NormalizeInvitationStatus(row.p.Status, activeStaff != null, row.inst.Status, row.inst.PlannedStartAt, row.inst.PlannedEndAt, now);
-            var isLeaderSelfAccepted = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Accepted;
+            var isLeaderSelfAccepted = mine != null && mine.p.Status == ParticipantStatuses.Accepted;
             var canLeaderHandle = uiStatus is "REQUESTED" or "DECLINED";
+            // A response is only possible while the campus is still in preparation — the same window the
+            // Accept/Decline endpoints enforce. Offering the button outside it would hand the UI a 409 to
+            // walk into, which is the "button hiện nhưng API 403" half of the drift.
+            var canRespond = mine != null
+                && VisitInvitationResponse.IsOpenForResponse(row.vr.Status, row.inst.Status);
 
             var hasActiveAssignee = activeStaff != null && uiStatus != "REQUESTED";
             var activeUserId = hasActiveAssignee ? activeStaff!.p.UserId : (uiStatus != "REQUESTED" ? row.p.UserId : (ulong?)null);
@@ -327,6 +356,11 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 ItemType = "INVITATION",
                 ItemId = row.p.ParticipantId,
                 ParticipantId = row.p.ParticipantId,
+                // The row the CALLER would act on, which is not always the row being displayed. Without
+                // it a Leader offered "Chấp nhận" on a delegated invitation would post the STAFF's
+                // participant id and be refused for not owning it.
+                CurrentUserParticipantId = mine?.p.ParticipantId,
+                CurrentUserParticipantStatus = mine?.p.Status,
                 VisitInstanceId = row.inst.VisitInstanceId,
                 VisitRequestId = row.vr.VisitRequestId,
                 DelegationName = row.EffectiveDelegationName ?? "",
@@ -343,7 +377,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 IsCurrentUserResponsible = activeUserId == currentUserId,
                 IsLeaderSelfAccepted = isLeaderSelfAccepted,
                 // True khi chính current user là participant (đã đồng ý hoặc từ chối thư mời)
-                IsActedByCurrentUser = row.p.UserId == currentUserId,
+                IsActedByCurrentUser = mine != null,
                 RawStatus = row.p.Status,
                 UiStatus = uiStatus,
                 StatusLabel = ToStatusLabel(uiStatus),
@@ -352,18 +386,21 @@ public sealed class GetAssignmentsProgressListQueryHandler
                 CanViewDetail = true,
                 CanViewDelegationDetail = true,
                 CanAssign = !isDepartmentStaff && canLeaderHandle,
-                CanAccept = row.p.UserId == currentUserId && row.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
-                CanDecline = row.p.UserId == currentUserId && row.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
-                CanRejectRequest = row.p.UserId == currentUserId && row.p.Status == ParticipantStatuses.Invited,
+                CanAccept = canRespond && mine!.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
+                CanDecline = canRespond && mine!.p.Status is ParticipantStatuses.Invited or ParticipantStatuses.Assigned,
+                CanRejectRequest = canRespond && mine!.p.Status == ParticipantStatuses.Invited,
                 CanProposeChange = false,
                 CanSignBorrow = false,
                 CanSignReturn = false,
                 LatestDeclineReason = group.declinedStaff?.p.Note,
                 LatestAssignmentAttemptStatus = activeStaff == null ? null : activeStaff.p.Status,
-                NeedsAttention = IsInvitationNeedsAttention(uiStatus, row.p.UserId, currentUserId, row.inst.PlannedStartAt, now),
+                NeedsAttention = IsInvitationNeedsAttention(uiStatus, mine != null, row.inst.PlannedStartAt, now),
                 AttentionReason = uiStatus == "REQUESTED" ? "Thư mời chưa được xử lý/phân công" : null,
                 CancelReason = row.inst.CancellationReason ?? row.vr.CancellationReason,
-                CanOpenContribution = PEMS.Application.Delegations.Common.ContributionAccess.IsDepartmentContributorForInvitation(currentUserId, row.p.UserId, row.p.Status)
+                // Read off the CALLER's own relation, never off the displayed one — and off the same
+                // rule the Contribution endpoint applies, so the button and the page agree.
+                CanOpenContribution = mine != null
+                    && ContributionAccess.IsDepartmentContributorForInvitation(currentUserId, mine.p.UserId, mine.p.Status)
             });
         }
 
@@ -409,7 +446,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.Status) && !request.Status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x => x.UiStatus.Equals(request.Status, StringComparison.OrdinalIgnoreCase));
         else if (!string.IsNullOrWhiteSpace(request.StatusGroup) && request.StatusGroup.Equals("STAFF_HISTORY", StringComparison.OrdinalIgnoreCase))
-            query = query.Where(x => x.UiStatus is "ACCEPTED" or "DECLINED" or "REJECTED" or "CHANGE_PROPOSED" or "IN_PROGRESS" or "DONE" or "CANCELLED");
+            query = query.Where(x => x.UiStatus is "ACCEPTED" or "DECLINED" or "REJECTED" or "CHANGE_PROPOSED" or "IN_PROGRESS" or "DONE" or "EXPIRED" or "CANCELLED");
 
         if (!string.IsNullOrWhiteSpace(request.OwnerScope) && request.OwnerScope.Equals("ME", StringComparison.OrdinalIgnoreCase))
             query = query.Where(x =>
@@ -480,10 +517,22 @@ public sealed class GetAssignmentsProgressListQueryHandler
     {
         if (instanceStatus == "CANCELLED") return "CANCELLED";
         if (status == ParticipantStatuses.Declined) return "REJECTED";
-        // Once the reception window has closed, the task is over regardless of whether this row
-        // ever got an explicit Accept — a delegated or never-answered invitation for a visit that
-        // has already happened is not still pending; it is history.
-        if (instanceStatus is "AFTER_VISIT" or "CLOSED" || now > endAt) return "DONE";
+
+        var ended = instanceStatus is "AFTER_VISIT" or "CLOSED" || now > endAt;
+
+        // An invitation nobody ever answered did not become participation just because the visit
+        // happened. "Hoàn thành" told the reader they had taken part and finished, while the row was
+        // still INVITED — no Accept, no contribution, nothing done. It is history, but the kind that
+        // ran out: EXPIRED. Only rows that were actually taken on (ASSIGNED, ACCEPTED) can end DONE.
+        //
+        // Delegation is not "unanswered": once the Leader handed the work to a staff member the group
+        // is read through that assignment, so it keeps falling through to the branches below.
+        if (status == ParticipantStatuses.Invited && !hasActiveStaffAssignment)
+            return ended ? "EXPIRED" : "REQUESTED";
+
+        // Only a derived status. The stored INVITED is left exactly as it is: the row's real history is
+        // "was invited, never answered", and rewriting it would destroy that.
+        if (ended) return "DONE";
         if (hasActiveStaffAssignment && status != ParticipantStatuses.Accepted) return "ASSIGNED";
         if (status == ParticipantStatuses.Assigned) return "ASSIGNED";
         if (status == ParticipantStatuses.Invited) return "REQUESTED";
@@ -506,6 +555,7 @@ public sealed class GetAssignmentsProgressListQueryHandler
             "CHANGE_PROPOSED" => "Đang đề xuất",
             "IN_PROGRESS" => "Trong tiến trình",
             "DONE" => "Hoàn thành",
+            "EXPIRED" => "Hết hạn / Không phản hồi",
             "CANCELLED" => "Đã hủy",
             _ => status
         };
@@ -515,8 +565,8 @@ public sealed class GetAssignmentsProgressListQueryHandler
            && status is "ASSIGNED" or "ACCEPTED" or "IN_PROGRESS"
            && startAt <= now.AddDays(2);
 
-    private static bool IsInvitationNeedsAttention(string uiStatus, ulong responsibleId, ulong currentUserId, DateTime startAt, DateTime now)
-        => responsibleId == currentUserId
+    private static bool IsInvitationNeedsAttention(string uiStatus, bool currentUserIsParticipant, DateTime startAt, DateTime now)
+        => currentUserIsParticipant
            && uiStatus is "REQUESTED" or "ASSIGNED" or "ACCEPTED" or "IN_PROGRESS"
            && startAt <= now.AddDays(2);
 
