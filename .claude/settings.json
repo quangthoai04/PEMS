@@ -54,7 +54,8 @@
       "Bash(grep -o 'aspect-\\\\\\\\\\\\[4' \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx.css\")",
       "Bash(curl -s \"http://localhost:3000/src/index.css\" -o \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/idx2.css\")",
       "Bash(curl -s \"https://pems-fpt.site/api/public/partners?pageSize=36\" -H \"Accept: application/json\")",
-      "Bash(curl -sL \"https://www.pems-fpt.site/api/public/partners?pageSize=36\" -H \"Accept: application/json\" -o \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/partners.json\" -w \"HTTP:%{http_code}\\\\n\")"
+      "Bash(curl -sL \"https://www.pems-fpt.site/api/public/partners?pageSize=36\" -H \"Accept: application/json\" -o \"C:/Users/ADMIN/AppData/Local/Temp/claude/d--ki9-PEMS/75c1611b-69be-4940-8eb8-530555af2e61/scratchpad/partners.json\" -w \"HTTP:%{http_code}\\\\n\")",
+      "Bash(echo \"EXIT_GREP=$?\")"
     ],
     "additionalDirectories": [
       "\\tmp"
