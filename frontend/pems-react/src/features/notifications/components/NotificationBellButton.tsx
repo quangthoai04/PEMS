@@ -106,6 +106,19 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
   return link;
 }
 
+/** Item ảo (client-side) đại diện cho một lời mời đánh giá đoàn (pendingFeedback), trộn chung
+ * dòng thời gian với notification thật thay vì ghim cứng ở đầu — sắp theo thời gian thực. */
+type FeedbackInviteItem = {
+  kind: 'feedback-invite';
+  key: string;
+  visitInstanceId: number;
+  delegationName: string;
+  campusName?: string | null;
+  createdAt: string;
+};
+
+type DisplayItem = (NotificationItem & { kind: 'notification' }) | FeedbackInviteItem;
+
 interface NotificationBellButtonProps {
   variant?: 'header-desktop' | 'header-mobile' | 'dashboard';
   onNavigate?: () => void;
@@ -144,7 +157,28 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleItemClick = async (item: NotificationItem) => {
+  // Lời mời đánh giá đoàn trộn vào cùng danh sách theo mốc thời gian thực (plannedStartAt),
+  // sắp xếp sớm nhất lên đầu — không còn ghim cố định ở trên cùng bất kể thời gian.
+  const feedbackInviteItems: FeedbackInviteItem[] = pendingFeedback.map((p) => ({
+    kind: 'feedback-invite',
+    key: `fb-${p.visitInstanceId}`,
+    visitInstanceId: p.visitInstanceId,
+    delegationName: p.delegationName,
+    campusName: p.campusName,
+    createdAt: p.plannedStartAt || new Date().toISOString(),
+  }));
+  const notificationDisplayItems: DisplayItem[] = items.map((it) => ({ ...it, kind: 'notification' as const }));
+  const displayItems: DisplayItem[] = [...feedbackInviteItems, ...notificationDisplayItems].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+  );
+
+  const handleItemClick = async (item: DisplayItem) => {
+    if (item.kind === 'feedback-invite') {
+      setIsOpen(false);
+      setFeedbackModalInstanceId(item.visitInstanceId);
+      return;
+    }
+
     if (!item.isRead) await markAsRead(item.notificationId);
 
     if (item.actionType === 'OPEN_HOST_FEEDBACK_MODAL' && item.visitInstanceId) {
@@ -214,69 +248,61 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
             </div>
 
             <div className="max-h-[70vh] overflow-y-auto">
-              {pendingFeedback.length > 0 && (
-                <div className="flex flex-col divide-y divide-orange-100/60 border-b border-orange-100 bg-orange-50/40">
-                  {pendingFeedback.map((p) => (
-                    <button
-                      key={`fb-${p.visitInstanceId}`}
-                      onClick={() => {
-                        setIsOpen(false);
-                        setFeedbackModalInstanceId(p.visitInstanceId!);
-                      }}
-                      className="flex w-full items-start gap-2.5 p-4 text-left transition-colors hover:bg-orange-50"
-                    >
-                      <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F37021]" />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-gray-900">
-                          {t('notifications:dropdown.pendingFeedbackTitle')}
-                        </span>
-                        <span className="block truncate text-xs text-gray-500">
-                          {p.delegationName}{p.campusName ? ` • ${p.campusName}` : ''}
-                        </span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {loading && items.length === 0 ? (
+              {loading && displayItems.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
                   <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />
                   <span className="text-sm">{t('notifications:dropdown.loading')}</span>
                 </div>
-              ) : items.length === 0 ? (
-                pendingFeedback.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">
-                    <p className="text-sm">{t('notifications:dropdown.empty')}</p>
-                  </div>
-                ) : null
+              ) : displayItems.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">
+                  <p className="text-sm">{t('notifications:dropdown.empty')}</p>
+                </div>
               ) : (
                 <div className="flex flex-col divide-y divide-gray-50">
-                  {items.map((item: NotificationItem) => (
-                    <button
-                      key={item.notificationId}
-                      onClick={() => handleItemClick(item)}
-                      className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
-                        !item.isRead ? 'bg-blue-50/40' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
-                          {!item.isRead && (
-                            <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
-                          )}
-                          {item.title}
+                  {displayItems.map((item) =>
+                    item.kind === 'feedback-invite' ? (
+                      <button
+                        key={item.key}
+                        onClick={() => handleItemClick(item)}
+                        className="flex w-full items-start gap-2.5 p-4 text-left transition-colors hover:bg-orange-50 bg-orange-50/40"
+                      >
+                        <Star className="mt-0.5 h-4 w-4 shrink-0 text-[#F37021]" />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-gray-900">
+                            {t('notifications:dropdown.pendingFeedbackTitle')}
+                          </span>
+                          <span className="block truncate text-xs text-gray-500">
+                            {item.delegationName}{item.campusName ? ` • ${item.campusName}` : ''}
+                          </span>
                         </span>
-                        <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                          {timeAgo(item.createdAt)}
-                        </span>
-                      </div>
-                      {item.message && (
-                        <p className="text-xs text-gray-500 line-clamp-2 pl-0">
-                          {item.message}
-                        </p>
-                      )}
-                    </button>
-                  ))}
+                      </button>
+                    ) : (
+                      <button
+                        key={item.notificationId}
+                        onClick={() => handleItemClick(item)}
+                        className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
+                          !item.isRead ? 'bg-blue-50/40' : ''
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                            {!item.isRead && (
+                              <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
+                            )}
+                            {item.title}
+                          </span>
+                          <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
+                            {timeAgo(item.createdAt)}
+                          </span>
+                        </div>
+                        {item.message && (
+                          <p className="text-xs text-gray-500 line-clamp-2 pl-0">
+                            {item.message}
+                          </p>
+                        )}
+                      </button>
+                    )
+                  )}
                 </div>
               )}
             </div>
