@@ -45,20 +45,27 @@ interface Props {
   onChanged?: () => void;
 }
 
-/** Badge trạng thái theo profile_status của partner đã liên kết (chỉ chứa trạng thái, không kèm tên). */
+/**
+ * Badge cho TRẠNG THÁI HỒ SƠ ĐỐI TÁC — chỉ trả lời "hồ sơ tổ chức đã được duyệt chưa".
+ *
+ * Nhãn đều mở đầu bằng "Hồ sơ" để không lẫn với trạng thái QUAN HỆ (đã liên kết / gợi ý / chưa
+ * liên kết). Trước đây APPROVED hiển thị "Đã liên kết" và REJECTED hiển thị "Từ chối" — hai câu trả
+ * lời cho hai câu hỏi khác nhau nằm chung một chỗ, nên "Từ chối" đọc được thành "người dùng đã bỏ
+ * qua gợi ý" lẫn "Staff Leader đã từ chối hồ sơ" (PART-05).
+ */
 function partnerStatusMeta(status?: string | null): { label: string; cls: string } {
   switch (status) {
     case 'APPROVED':
-      return { label: 'Đã liên kết', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      return { label: 'Hồ sơ đã duyệt', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
     case 'PENDING_APPROVAL':
-      return { label: 'Chờ duyệt', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+      return { label: 'Hồ sơ chờ duyệt', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
     case 'REJECTED':
-      return { label: 'Từ chối', cls: 'bg-red-50 text-red-700 border-red-200' };
+      return { label: 'Hồ sơ bị từ chối', cls: 'bg-red-50 text-red-700 border-red-200' };
     case 'DRAFT':
-      return { label: 'Bản nháp', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
+      return { label: 'Hồ sơ nháp', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
     default:
-      // Trạng thái lạ/null → không crash, coi như đã liên kết.
-      return { label: 'Đã liên kết', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+      // Trạng thái lạ/null → không crash, và cũng không khẳng định điều mình không biết.
+      return { label: 'Hồ sơ', cls: 'bg-slate-100 text-slate-600 border-slate-200' };
   }
 }
 
@@ -119,42 +126,89 @@ export function ParticipantPartnerCell({
     } finally { setBusy(false); }
   };
 
-  // Đã liên kết (CONFIRMED) — badge trạng thái + tên truncate + Xem hồ sơ.
+  // Đã liên kết (CONFIRMED) — quan hệ đã xong, việc còn lại là THÔNG TIN LIÊN HỆ.
+  //
+  // Hai badge tách bạch: "Đã liên kết" nói về QUAN HỆ (thành viên này thuộc đối tác nào), badge
+  // trạng thái hồ sơ nói về HỒ SƠ ĐỐI TÁC (đã duyệt chưa). Trước đây hai thứ dùng chung một badge
+  // nên "Chờ duyệt" đọc thành "chưa liên kết xong", còn "Từ chối" thì không rõ là từ chối liên kết
+  // hay từ chối hồ sơ (PART-05).
+  //
+  // Và KHÔNG còn "Tạo / liên kết" ở đây: đối tác đã xác định rồi, mời tạo tiếp chỉ dẫn người dùng
+  // đi tạo hồ sơ trùng (PART-07).
   if (activeLink && activeLink.matchStatus === 'CONFIRMED') {
     const meta = partnerStatusMeta(activeLink.partnerProfileStatus);
+    const hasContact = (activeLink.partnerContactId ?? 0) > 0;
     return (
       <div className="flex flex-col items-start gap-1 max-w-[190px]">
-        <span className={`${BADGE_BASE} ${meta.cls}`}>{meta.label}</span>
+        <span className="flex flex-wrap items-center gap-1">
+          <span className={`${BADGE_BASE} bg-emerald-50 text-emerald-700 border-emerald-200`}>
+            Đã liên kết
+          </span>
+          <span className={`${BADGE_BASE} ${meta.cls}`}>{meta.label}</span>
+        </span>
         <div className={NAME_CLS} title={activeLink.partnerName}>
           {activeLink.partnerName}
         </div>
-        <button
-          onClick={() => navigate(`/dashboard/partners/${activeLink.partnerId}`)}
-          className="text-[11px] font-bold text-[#004c91] hover:underline cursor-pointer"
-        >
-          Xem hồ sơ
-        </button>
+        {hasContact && activeLink.partnerContactName && (
+          <div className="max-w-[180px] truncate text-[11px] text-slate-500" title={activeLink.partnerContactName}>
+            Đầu mối: {activeLink.partnerContactName}
+          </div>
+        )}
+        <span className="flex items-center gap-2">
+          <button
+            onClick={() => navigate(`/dashboard/partners/${activeLink.partnerId}`)}
+            className="text-[11px] font-bold text-[#004c91] hover:underline cursor-pointer"
+          >
+            Xem hồ sơ
+          </button>
+          {canManage && (
+            <button
+              onClick={() => navigate(`/dashboard/partners/${activeLink.partnerId}#contacts`)}
+              className="text-[11px] font-bold text-[#004c91] hover:underline cursor-pointer inline-flex items-center gap-0.5"
+            >
+              <UserPlus className="w-3 h-3" />
+              {hasContact ? 'Cập nhật liên hệ' : 'Thêm liên hệ'}
+            </button>
+          )}
+        </span>
       </div>
     );
   }
 
-  // Gợi ý (SUGGESTED) — badge "Gợi ý" + tên truncate + Liên kết / Bỏ qua.
+  // Gợi ý (SUGGESTED) — CHƯA phải quan hệ, chỉ là kết quả đối chiếu chờ người xác nhận.
+  //
+  // "Gợi ý" (quan hệ) và badge trạng thái hồ sơ đứng cạnh nhau chứ không gộp: một gợi ý trỏ tới hồ
+  // sơ đã bị từ chối thì không được xác nhận, và người dùng phải thấy được VÌ SAO ngay tại dòng đó
+  // thay vì bấm rồi nhận lỗi (PART-04/PART-05).
   if (activeLink && activeLink.matchStatus === 'SUGGESTED') {
+    const meta = partnerStatusMeta(activeLink.partnerProfileStatus);
+    const profileLinkable = activeLink.partnerProfileStatus === 'APPROVED'
+      || activeLink.partnerProfileStatus === 'PENDING_APPROVAL';
     return (
       <div className="flex flex-col items-start gap-1 max-w-[190px]">
-        <span className={`${BADGE_BASE} bg-sky-50 text-sky-700 border-sky-200`}>Gợi ý</span>
+        <span className="flex flex-wrap items-center gap-1">
+          <span className={`${BADGE_BASE} bg-sky-50 text-sky-700 border-sky-200`}>Gợi ý</span>
+          <span className={`${BADGE_BASE} ${meta.cls}`}>{meta.label}</span>
+        </span>
         <div className={NAME_CLS} title={activeLink.partnerName}>
           {activeLink.partnerName}
         </div>
         {canManage && (
           <span className="flex items-center gap-2">
-            <button onClick={() => void confirmSuggestion()} disabled={busy}
-              className="text-[11px] font-bold text-[#004c91] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
-              <Link2 className="w-3 h-3" /> Liên kết
-            </button>
+            {profileLinkable ? (
+              <button onClick={() => void confirmSuggestion()} disabled={busy}
+                className="text-[11px] font-bold text-[#004c91] hover:underline disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
+                <Link2 className="w-3 h-3" /> Xác nhận liên kết
+              </button>
+            ) : (
+              <button onClick={() => navigate(`/dashboard/partners/${activeLink.partnerId}`)}
+                className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer">
+                Xem lý do
+              </button>
+            )}
             <button onClick={() => void dismissSuggestion()} disabled={busy}
               className="text-[11px] font-bold text-gray-400 hover:text-red-500 disabled:opacity-40 cursor-pointer inline-flex items-center gap-0.5">
-              <X className="w-3 h-3" /> Bỏ qua
+              <X className="w-3 h-3" /> Không phải
             </button>
           </span>
         )}

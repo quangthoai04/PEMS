@@ -960,7 +960,8 @@ public sealed class VisitFormReadService : IVisitFormReadService
     }
 
     private static VisitFormMemberRow ToRow(VisitGuestMember m) => new(
-        (long)m.GuestMemberId, m.MemberType, m.FullName, m.Organization, m.JobTitle, m.Nationality, (int)m.DisplayOrder);
+        (long)m.GuestMemberId, m.MemberType, m.FullName, m.Organization, m.JobTitle, m.Nationality,
+        (int)m.DisplayOrder, m.OrganizationPartnerId);
 
     private static ResolvedMemberDto MapMember(VisitGuestMember m) => new()
     {
@@ -968,6 +969,7 @@ public sealed class VisitFormReadService : IVisitFormReadService
         MemberType = m.MemberType,
         FullName = m.FullName,
         Organization = m.Organization,
+        OrganizationPartnerId = m.OrganizationPartnerId,
         JobTitle = m.JobTitle,
         Nationality = m.Nationality,
         DisplayOrder = (int)m.DisplayOrder

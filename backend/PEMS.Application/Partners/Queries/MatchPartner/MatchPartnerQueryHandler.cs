@@ -27,16 +27,23 @@ public sealed class MatchPartnerQueryHandler : IRequestHandler<MatchPartnerQuery
 
         var result = await PartnerMatcher.MatchAsync(_db, request.Organization, request.Email, cancellationToken);
 
-        // Flag which candidates the caller may actually link to (campus scope), so the picker
-        // can disable out-of-scope rows instead of failing on click.
+        // Flag which candidates the caller may actually CONFIRM a link to, and why not when they
+        // can't, so the picker can explain the row instead of failing on click. The link policy is
+        // profile-status aware — reading a rejected profile is fine, linking to it is not (PART-04).
         foreach (var c in result.Candidates)
         {
-            c.CanLink = PartnerAccess.CanViewPartner(_currentUser, new Partner
+            var probe = new Partner
             {
                 OwnerCampusId = c.OwnerCampusId,
                 ProfileStatus = c.ProfileStatus,
                 Visibility = c.Visibility,
-            });
+            };
+            var blockReason = PartnerAccess.LinkBlockReason(_currentUser, probe);
+            c.CanLink = blockReason is null;
+            c.BlockedReason = blockReason;
+            c.RecommendedAction = PartnerAccess.RecommendedActionFor(blockReason);
+            // Never hand back the rejection note of a profile the caller cannot even see.
+            if (blockReason == PartnerLinkBlockReasons.OutOfScope) c.ReviewNote = null;
         }
 
         return result;

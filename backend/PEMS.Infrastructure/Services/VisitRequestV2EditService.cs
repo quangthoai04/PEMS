@@ -9,6 +9,8 @@ using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Partners.Common;
+using PEMS.Application.Partners.VisitLinks.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -55,15 +57,45 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </summary>
     private readonly IVisitRequestAggregateStatusService _aggregateStatus;
 
-    public VisitRequestV2EditService(IApplicationDbContext db, IVisitRequestAggregateStatusService aggregateStatus)
+    /// <summary>
+    /// Only used to scope which partner profiles the editor was entitled to pick. Optional for the
+    /// same reason as in <see cref="VisitRequestV2CreateService"/>: absent means "no session", which
+    /// resolves to the PUBLIC option set — the narrowest one — so a missing wiring tightens the check
+    /// rather than skipping it.
+    /// </summary>
+    private readonly ICurrentUserService? _currentUser;
+
+    public VisitRequestV2EditService(
+        IApplicationDbContext db,
+        IVisitRequestAggregateStatusService aggregateStatus,
+        ICurrentUserService? currentUser = null)
     {
         _db = db;
         _aggregateStatus = aggregateStatus;
+        _currentUser = currentUser;
     }
+
+    /// <summary>
+    /// Every edit path re-sends the whole member list, so every edit path can smuggle in a partner id
+    /// the editor was never offered. Validated here, once, against the editor's own audience — a
+    /// Visitor editing their own request stays on the public option set (PART-01/PART-03).
+    /// </summary>
+    private Task EnsureMemberOrganizationsSelectableAsync(
+        IEnumerable<CampusVisitEditV2Dto> contents, CancellationToken ct) =>
+        GuestOrganizationPartnerPolicy.EnsureFormSelectableAsync(
+            _db,
+            contents.SelectMany(c =>
+                (c.Visitors ?? new List<VisitorDto>()).Select(v => v.OrganizationPartnerId)
+                    .Concat((c.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                        .Select(m => m.OrganizationPartnerId))),
+            _currentUser,
+            ct);
 
     public async Task<V2EditResult> ApplyPendingEditAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
     {
+        await EnsureMemberOrganizationsSelectableAsync(edit.CampusVisits, ct);
+
         // ── 0. Optimistic concurrency — request level (stable 409, never last-write-wins).
         //       row_version is a plain int (no EF concurrency token), so the guard is an explicit
         //       SELECT … FOR UPDATE against the CURRENT committed row: concurrent editors serialize on the
@@ -171,7 +203,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         _db.AuditLogs.Add(audit);
 
         // ── 6. Per instance: change detection → apply only what changed ──
-        var changedInstances = new List<(VisitRequestCampus Instance, List<VisitGuestMember> NewMembers)>();
+        var changedInstances =
+            new List<(VisitRequestCampus Instance, List<VisitGuestMember> NewMembers, CampusVisitEditV2Dto Content)>();
         foreach (var (content, instance) in kept)
         {
             var detail = instance.FormDetail
@@ -225,7 +258,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
             if (contentChanged)
-                changedInstances.Add((instance, newMembers));
+                changedInstances.Add((instance, newMembers, content));
         }
 
         // ── 7. Request-level common fields (mutable subset only) + canonical recompute ──
@@ -255,9 +288,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         await _db.SaveChangesAsync(ct);
 
         // ── 8. Post-flush: composite links + immutable revision snapshots ──
-        foreach (var (instance, newMembers) in changedInstances)
+        foreach (var (instance, newMembers, content) in changedInstances)
         {
-            VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
+            VisitRequestV2EditOps.LinkMembers(
+                _db, request, instance, newMembers, now, actorId,
+                VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,
@@ -298,6 +333,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         // ── FLUSH #2 — links + revisions. Caller commits. ──
         await _db.SaveChangesAsync(ct);
+        await ResolvePartnerLinksAsync(request.VisitRequestId, now, actorId, ct);
 
         return new V2EditResult(scope, hasMixed, request.RowVersion);
     }
@@ -305,6 +341,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     public async Task<V2EditResult> ApplyResubmitAsync(
         VisitRequest request, VisitRequestEditV2Dto edit, ulong actorId, DateTime now, CancellationToken ct)
     {
+        await EnsureMemberOrganizationsSelectableAsync(edit.CampusVisits, ct);
+
         // ── 0. Concurrency guard (FOR UPDATE — concurrent resubmits serialize; exactly one winner,
         //       the loser gets a stable 409 after seeing the winner's bumped version/status). ──
         await AssertCurrentRequestVersionAsync(request, edit.ExpectedRequestRowVersion, ct);
@@ -483,7 +521,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         // ── Phase 2: per instance — KEEP the id; replace content + members (copy-on-write), clear the old
         //    decision (already snapshotted), reset to WAITING and re-route to the CURRENT Staff Leader. ──
-        var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members)>();
+        var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members, CampusVisitEditV2Dto Content)>();
         foreach (var (content, instance) in pairs)
         {
             VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
@@ -512,15 +550,17 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             instance.RowVersion += 1;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
-            staging.Add((instance, newMembers));
+            staging.Add((instance, newMembers, content));
         }
 
         await _db.SaveChangesAsync(ct); // FLUSH #2 — instance resets + new member ids
 
         // ── Phase 3: member links + RESUBMIT revision snapshots (history keeps every prior revision). ──
-        foreach (var (instance, members) in staging)
+        foreach (var (instance, members, content) in staging)
         {
-            VisitRequestV2EditOps.LinkMembers(_db, request, instance, members, now, actorId);
+            VisitRequestV2EditOps.LinkMembers(
+                _db, request, instance, members, now, actorId,
+                VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,
@@ -558,6 +598,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         _ = commonChanged; // resubmit always records a request revision; the audit already carries field diffs
 
         await _db.SaveChangesAsync(ct); // FLUSH #3 — links + revisions. Caller commits.
+        await ResolvePartnerLinksAsync(request.VisitRequestId, now, actorId, ct);
 
         return new V2EditResult(scope, hasMixed, request.RowVersion);
     }
@@ -568,6 +609,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         ulong actorId, DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
         CancellationToken ct)
     {
+        await EnsureMemberOrganizationsSelectableAsync(new[] { content }, ct);
+
         // ── 1. THIS campus must still be waiting for its own decision. Nothing is asked about the
         //       request aggregate on purpose: with a sibling already approved the request reads
         //       PARTIALLY_APPROVED, and letting that decide would re-create the dead end this exists to
@@ -725,7 +768,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         if (contentChanged)
         {
-            VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
+            VisitRequestV2EditOps.LinkMembers(
+                _db, request, instance, newMembers, now, actorId,
+                VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,
@@ -746,6 +791,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         // never infer theirs from the one campus it was given.
         await V2CanonicalRefresh.RecomputeAsync(_db, request, ct);
         await _db.SaveChangesAsync(ct);
+        await ResolvePartnerLinksAsync(request.VisitRequestId, now, actorId, ct);
 
         return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
     }
@@ -755,6 +801,8 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, DateTime now, CancellationToken ct)
     {
+        await EnsureMemberOrganizationsSelectableAsync(new[] { content }, ct);
+
         // ── 1. Only THIS campus need be rejected. Deliberately not the whole-request gate: a campus
         //       refused beside one that was approved is exactly the case this exists for. ──
         if (request.Status == VisitRequestStatuses.Cancelled)
@@ -897,7 +945,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         await _db.SaveChangesAsync(ct);
 
         // ── Phase 3: member links + a RESUBMIT revision snapshot for THIS instance. ──
-        VisitRequestV2EditOps.LinkMembers(_db, request, instance, newMembers, now, actorId);
+        VisitRequestV2EditOps.LinkMembers(
+            _db, request, instance, newMembers, now, actorId,
+            VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
         _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
         {
             VisitRequestId = request.VisitRequestId,
@@ -912,8 +962,23 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         });
 
         await _db.SaveChangesAsync(ct);
+        await ResolvePartnerLinksAsync(request.VisitRequestId, now, actorId, ct);
 
         return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
+    }
+
+    /// <summary>
+    /// Re-runs the partner-link resolver after an edit. An edit REPLACES member rows, so the ids the
+    /// old links pointed at are gone; the resolver re-seeds from the new rows and clears the links
+    /// that were left pointing at nothing. Idempotent — an already-confirmed relationship survives
+    /// untouched (PART-06).
+    /// </summary>
+    private async Task ResolvePartnerLinksAsync(
+        ulong visitRequestId, DateTime now, ulong actorId, CancellationToken ct)
+    {
+        var changed = await GuestPartnerLinkResolver.ResolveForRequestAsync(
+            _db, visitRequestId, now, actorId, ct);
+        if (changed > 0) await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -1246,9 +1311,11 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             string.Empty, instance.PlannedStartAt, instance.PlannedEndAt,
             d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
             linked.Where(m => m.MemberType == "GUEST")
-                .Select(m => new VisitorDto(m.FullName, m.Nationality ?? string.Empty, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty)).ToList(),
+                .Select(m => new VisitorDto(m.FullName, m.Nationality ?? string.Empty, m.JobTitle ?? string.Empty,
+                    m.Organization ?? string.Empty, m.OrganizationPartnerId)).ToList(),
             linked.Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
+                .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty,
+                    m.Organization ?? string.Empty, m.Nationality ?? string.Empty, m.OrganizationPartnerId)).ToList(),
             new ContactPointDto(d.OperationalContactFullName, d.OperationalContactOrganization,
                 d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
             d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes,

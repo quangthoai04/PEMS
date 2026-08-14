@@ -41,14 +41,25 @@ public record CampusVisitEditV2Dto(
     string WorkingLanguage,
     string? TransportationNote,
     string MediaConsentStatus,
-    string? Notes)
+    string? Notes,
+
+    /// <inheritdoc cref="CampusVisitFormDto.OperationalContactClientMemberKey"/>
+    /// <remarks>
+    /// On an EXISTING campus the five contact snapshot columns are immutable through this path, but
+    /// WHICH member they describe still has to travel: the edit replaces every member row (copy-on-
+    /// write), so the id the contact held names a deleted row by the time the links are rebuilt. The
+    /// key is what re-finds the same person among the new rows — without it the link falls back to
+    /// comparing strings, which is the failure this whole change removes.
+    /// </remarks>
+    string? OperationalContactClientMemberKey = null)
 {
     /// <summary>Projects the campus content into the shared create DTO shape so create/edit reuse ONE
     /// canonical recompute (<c>VisitRequestV2Canonical</c>). The host arrangement is not campus CONTENT, so it is not part of this projection — it is edited through its own endpoint.</summary>
     public CampusVisitFormDto ToFormDto() => new(
         CampusId, PlannedStartAt, PlannedEndAt, DelegationName, VisitType, VisitTypeOther, Purpose, WorkingContent,
         Visitors, ExternalSupportMembers, OperationalContact, WorkingLanguage, TransportationNote,
-        MediaConsentStatus, Notes, HostSelection: null);
+        MediaConsentStatus, Notes, HostSelection: null,
+        OperationalContactClientMemberKey: OperationalContactClientMemberKey);
 }
 
 /// <summary>

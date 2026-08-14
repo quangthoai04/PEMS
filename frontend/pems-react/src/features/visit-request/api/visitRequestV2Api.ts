@@ -10,14 +10,30 @@ export interface V2VisitorDto {
   fullName: string;
   nationality: string;
   jobTitle: string;
+  /** Display snapshot of the organization — kept verbatim even if the partner is later renamed. */
   organization: string;
+  /**
+   * Which partner profile the organization was picked from, or null for free text. The identity the
+   * whole partner chain runs on: without it the backend has only a name to go on, and the minutes
+   * screen asks the user to link an organization they already chose (PART-01).
+   */
+  organizationPartnerId?: number | null;
+  /**
+   * The form's own identity for this row, so `operationalContactClientMemberKey` can name a person
+   * who has no `guestMemberId` yet. The backend maps key → inserted id inside one transaction and
+   * stores nothing (NP-03).
+   */
+  clientMemberKey?: string | null;
 }
 
 export interface V2SupportMemberDto {
   fullName: string;
   jobTitle: string;
   organization: string;
+  organizationPartnerId?: number | null;
   nationality: string;
+  /** @see V2VisitorDto.clientMemberKey — support staff may hold the contact role too. */
+  clientMemberKey?: string | null;
 }
 
 export interface V2ContactPointDto {
@@ -54,15 +70,17 @@ export interface V2CampusVisitForm {
    */
   hostSelection?: V2HostSelectionDto | null;
   /**
-   * Which row of `visitors` the operational contact IS, when the user picked one from the delegation
-   * list (NP-03). `null`/absent when the contact is somebody outside the delegation, which is normal.
+   * WHICH member the operational contact is — the `clientMemberKey` of one row of `visitors` or
+   * `externalSupportMembers` (NP-03). `null`/absent when the contact is somebody outside the
+   * delegation, which is normal.
    *
-   * <p>An index rather than an id because these members do not exist server-side yet. The backend
-   * treats it as the strongest evidence of identity — stronger than a name/role/organisation match,
-   * and therefore still correct after the user edits the contact's job title — and ignores it if it
-   * no longer points at a real row.</p>
+   * <p>A key rather than an array index, because an index names a position and a position stops
+   * meaning the same person as soon as a row is added, removed or reordered. The backend treats it as
+   * the only evidence of identity when present, and REFUSES a key that names nobody rather than
+   * falling back to guessing — sending a stale one is a failed submit, so only send a key that is
+   * still in this payload.</p>
    */
-  operationalContactVisitorIndex?: number | null;
+  operationalContactClientMemberKey?: string | null;
 }
 
 /** SELF | SELECTED | WAIT_FOR_LATER. */
@@ -183,6 +201,8 @@ export interface ResolvedMember {
   memberType: string;
   fullName: string;
   organization: string;
+  /** Restores the CHOICE on an edit reload, not just the text it printed (PART-01). */
+  organizationPartnerId?: number | null;
   jobTitle: string;
   nationality: string;
   displayOrder: number;
@@ -201,8 +221,8 @@ export interface ResolvedOperationalContact {
   confirmedAt: string | null;
   /**
    * Which delegation member this contact IS — matches a `guestMemberId` in the campus's `visitors`
-   * (NP-03). Null when they are not travelling with the delegation, or on a request that predates
-   * the link. The edit form restores its picker from this.
+   * OR its `supportMembers` (NP-03). Null when they are not travelling with the delegation, or on a
+   * request that predates the link. The edit form restores its picker from this.
    */
   guestMemberId?: number | null;
 }

@@ -699,8 +699,23 @@ public static class CanonicalSqlScript
     // An already-imported database is brought up by
     // docs/database/scripts/patches/2026-08-14_operational_contact_guest_member_link.sql (additive,
     // idempotent, with a conservative single-match backfill).
+    //
+    // (2026-08-14) Re-pinned for PART-01: `visit_guest_members` gains `organization_partner_id` — a
+    // nullable BIGINT UNSIGNED, one KEY (idx_vgm_organization_partner) and one FK
+    // (fk_vgm_organization_partner → partners, ON DELETE SET NULL); and
+    // `visit_guest_partner_links.match_source` gains the ENUM value 'REGISTRATION_SELECTED', appended
+    // LAST so every existing value keeps its ordinal.
+    //
+    // It gives each delegation member the partner identity the registrant actually chose, instead of
+    // an organization NAME that had to be string-matched — which is why a member picked from the
+    // system's own dropdown still arrived at the biên bản as "Chưa liên kết". Additive only: no
+    // column changed type, none was dropped, no seed row moved. Base tables stay 83 and triggers stay
+    // 32; foreign keys go 253 → 254.
+    // An already-imported database is brought up by
+    // docs/database/scripts/patches/2026-08-14_visit_guest_member_organization_partner.sql (additive,
+    // idempotent, backfilling ONLY from links a human already confirmed — never from a name match).
     public const string ExpectedSha256 =
-        "3e872a6964753c671229bf9dbaab1cf9469d553a7fcbd9681ec08b6167b53826";
+        "00226a757e61dd0b98d33937bb195c736655be7fea8cf06e24210e596a2a16d4";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

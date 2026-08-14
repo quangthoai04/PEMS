@@ -49,6 +49,11 @@ public sealed class VisitFormOperationalContact
 }
 
 /// <summary>A guest / external-support member row, already resolved to the campus that should show it.</summary>
+/// <param name="OrganizationPartnerId">
+/// The partner profile this member was actually picked from, or null for free text. Carried through
+/// the read path so an edit round-trip cannot silently drop the identity the registrant chose
+/// (PART-01). Defaulted so existing positional constructions stay valid.
+/// </param>
 public sealed record VisitFormMemberRow(
     long GuestMemberId,
     string MemberType,
@@ -56,4 +61,5 @@ public sealed record VisitFormMemberRow(
     string? Organization,
     string? JobTitle,
     string? Nationality,
-    int DisplayOrder);
+    int DisplayOrder,
+    ulong? OrganizationPartnerId = null);

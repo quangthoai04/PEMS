@@ -71,22 +71,29 @@ public record CampusVisitFormDto(
     CampusHostSelectionV2Dto? HostSelection,
 
     /// <summary>
-    /// Which row of <see cref="Visitors"/> the operational contact IS, when the user picked one from
-    /// the delegation list rather than typing a separate person (NP-03).
+    /// WHICH member of this campus the operational contact is — the <c>ClientMemberKey</c> of one row
+    /// of <see cref="Visitors"/> or <see cref="ExternalSupportMembers"/> (NP-03).
     ///
     /// <para>
     /// Optional, and null is a normal answer — plenty of campuses are coordinated by somebody who is
-    /// not travelling with the delegation. When it IS supplied it is the strongest evidence there is,
-    /// and it is what survives the user then editing the contact's job title: a name/role/organisation
-    /// match would quietly lose the link at that point.
+    /// not travelling with the delegation. When it IS supplied it is the only evidence used: a
+    /// name/role/organisation match is a guess, and this is an answer.
     /// </para>
     /// <para>
-    /// An index rather than an id because these members do not exist yet at submit time. Out-of-range
-    /// values are ignored by <c>OperationalContactLink</c> rather than rejected — a stale hint from a
-    /// client should degrade to matching, not fail a submission somebody just spent ten minutes on.
+    /// A key rather than an array index. An index names a POSITION, and a position stops meaning the
+    /// same person the moment a row is inserted above it, removed, or reordered — the previous version
+    /// of this field re-aimed the contact at a stranger on any of those, silently. A key rather than
+    /// an id because these members have no id until the insert; the service resolves the two together
+    /// inside one transaction.
+    /// </para>
+    /// <para>
+    /// Support staff are eligible on purpose: an interpreter or a coordinator travelling with the
+    /// delegation is frequently the person a campus actually rings. What is NOT eligible is anybody on
+    /// FPTU's side — hosts and internal participants live in different tables entirely and cannot be
+    /// named here at all.
     /// </para>
     /// </summary>
-    int? OperationalContactVisitorIndex = null);
+    string? OperationalContactClientMemberKey = null);
 
 /// <summary>
 /// The complete per-campus create payload. <c>visitScope</c> and <c>hasMixedCampusDetails</c> are NOT

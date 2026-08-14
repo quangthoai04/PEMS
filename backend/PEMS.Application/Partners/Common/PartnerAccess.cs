@@ -87,4 +87,55 @@ public static class PartnerAccess
     /// <summary>Contacts/aliases/documents mutations: campus scope (Staff/Staff Leader) only.</summary>
     public static bool CanManagePartnerChildren(ICurrentUserService user, Partner partner) =>
         CanEditPartner(user, partner);
+
+    /// <summary>
+    /// Whether a guest/minute participant may be CONFIRMED as belonging to this partner.
+    ///
+    /// <para>Deliberately NOT the same question as <see cref="CanViewPartner"/>. Reading a profile and
+    /// asserting a business relationship against it are different acts: campus staff can see every
+    /// profile of their own campus — including the ones their Staff Leader has just rejected — and
+    /// reusing the read rule as the write rule is what let a REJECTED organization be linked as if it
+    /// were a real partner (PART-04).</para>
+    ///
+    /// <para>Profile-status policy: APPROVED links freely within scope; PENDING_APPROVAL links only for
+    /// the OWNER campus's own staff, so work can continue while the Staff Leader decides; DRAFT and
+    /// REJECTED never link. A rejected organization is fixed by edit + resubmit, never by linking to
+    /// the dead profile and never by creating a second profile under the same name.</para>
+    /// </summary>
+    public static bool CanLinkPartner(ICurrentUserService user, Partner partner) =>
+        LinkBlockReason(user, partner) is null;
+
+    /// <summary>
+    /// The reason <paramref name="partner"/> may NOT be linked, or <c>null</c> when it may.
+    /// Values come from <see cref="PartnerLinkBlockReasons"/>; the matcher hands them to the UI so a
+    /// blocked candidate can explain itself instead of failing on click.
+    /// </summary>
+    public static string? LinkBlockReason(ICurrentUserService user, Partner partner)
+    {
+        // Scope first: never leak "this profile is rejected" about a partner the caller cannot see.
+        if (!CanViewPartner(user, partner)) return PartnerLinkBlockReasons.OutOfScope;
+
+        return partner.ProfileStatus switch
+        {
+            PartnerProfileStatuses.Approved => null,
+            PartnerProfileStatuses.PendingApproval => IsOwnerCampusStaff(user, partner)
+                ? null
+                : PartnerLinkBlockReasons.PendingOtherCampus,
+            PartnerProfileStatuses.Rejected => PartnerLinkBlockReasons.Rejected,
+            PartnerProfileStatuses.Draft => PartnerLinkBlockReasons.Draft,
+            _ => PartnerLinkBlockReasons.OutOfScope,
+        };
+    }
+
+    /// <summary>What the UI should offer for a candidate the caller cannot link.</summary>
+    public static string RecommendedActionFor(string? blockReason) => blockReason switch
+    {
+        null => PartnerLinkRecommendedActions.Link,
+        PartnerLinkBlockReasons.Rejected => PartnerLinkRecommendedActions.Resubmit,
+        _ => PartnerLinkRecommendedActions.None,
+    };
+
+    private static bool IsOwnerCampusStaff(ICurrentUserService user, Partner partner) =>
+        Effective(user) is EffectiveRole.Staff or EffectiveRole.StaffLeader
+        && user.PrimaryCampusId == partner.OwnerCampusId;
 }

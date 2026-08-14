@@ -41,4 +41,57 @@ public static class VisitLinkSupport
 
         return instance;
     }
+
+    /// <summary>
+    /// The guest member must belong to THIS campus instance — proven by the
+    /// <c>visit_instance_guest_members</c> row, which is the only record that says which delegation
+    /// member attends which campus.
+    ///
+    /// <para>There is deliberately no "the id exists somewhere" fallback. The previous version ORed one
+    /// in, which made every scope check above it dead code: any guest_member_id in the database
+    /// satisfied it, so a caller could attach a guest of another visit — another campus, another
+    /// customer — to this instance's partner, corrupting that partner's visit history and handing out
+    /// an IDOR to anyone who could guess an id (PART-08).</para>
+    ///
+    /// <para>404, not 403: an id the caller may not touch must not be distinguishable from one that does
+    /// not exist, or the endpoint becomes an existence oracle.</para>
+    /// </summary>
+    public static async Task EnsureGuestMemberInInstanceAsync(
+        IApplicationDbContext db, VisitRequestCampus instance, ulong guestMemberId, CancellationToken ct)
+    {
+        var belongs = await db.VisitInstanceGuestMembers.AnyAsync(
+            l => l.VisitInstanceId == instance.VisitInstanceId
+                 && l.GuestMemberId == guestMemberId
+                 && l.VisitRequestId == instance.VisitRequestId, ct);
+
+        if (!belongs) throw new NotFoundException("VisitGuestMember", guestMemberId);
+    }
+
+    /// <summary>
+    /// The minute participant must sit in a minutes record of THIS instance. Same reasoning as
+    /// <see cref="EnsureGuestMemberInInstanceAsync"/>: the join through <c>minutes</c> is the scope.
+    /// </summary>
+    public static async Task EnsureMinuteParticipantInInstanceAsync(
+        IApplicationDbContext db, VisitRequestCampus instance, ulong minuteParticipantId, CancellationToken ct)
+    {
+        var belongs = await (
+            from mp in db.MinuteParticipants
+            join m in db.Minutes on mp.MinutesId equals m.MinutesId
+            where mp.MinuteParticipantId == minuteParticipantId
+                  && m.VisitInstanceId == instance.VisitInstanceId
+            select mp.MinuteParticipantId).AnyAsync(ct);
+
+        if (!belongs) throw new NotFoundException("MinuteParticipant", minuteParticipantId);
+    }
+
+    /// <summary>Validates both possible link targets in one call (either may be null).</summary>
+    public static async Task EnsureTargetsInInstanceAsync(
+        IApplicationDbContext db, VisitRequestCampus instance,
+        ulong? guestMemberId, ulong? minuteParticipantId, CancellationToken ct)
+    {
+        if (guestMemberId is { } gid)
+            await EnsureGuestMemberInInstanceAsync(db, instance, gid, ct);
+        if (minuteParticipantId is { } mid)
+            await EnsureMinuteParticipantInInstanceAsync(db, instance, mid, ct);
+    }
 }

@@ -22,8 +22,20 @@ public class VisitGuestMember
     [Column("full_name")]
     public string FullName { get; set; } = null!;
 
+    /// <summary>
+    /// Display SNAPSHOT of the organization exactly as the registrant submitted it. Never rewritten
+    /// when the partner is later renamed — an old request must keep reading the way it was filed.
+    /// </summary>
     [Column("organization")]
     public string Organization { get; set; } = null!;
+
+    /// <summary>
+    /// The partner profile the registrant actually PICKED for this member, or null for free text /
+    /// not yet determined. This — not a string comparison against <see cref="Organization"/> — is how
+    /// the system knows which organization a member belongs to (PART-01).
+    /// </summary>
+    [Column("organization_partner_id")]
+    public ulong? OrganizationPartnerId { get; set; }
 
     [Column("job_title")]
     public string JobTitle { get; set; } = null!;

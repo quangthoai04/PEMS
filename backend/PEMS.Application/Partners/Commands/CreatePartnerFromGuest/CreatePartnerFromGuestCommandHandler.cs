@@ -36,6 +36,11 @@ public sealed class CreatePartnerFromGuestCommandHandler
         var instance = await VisitLinkSupport.LoadInstanceWithAccessAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
 
+        // Target scope BEFORE anything is read from it — the snapshot below (họ tên, đơn vị, chức vụ,
+        // email) is exactly the payload an out-of-scope id would leak (PART-08).
+        await VisitLinkSupport.EnsureTargetsInInstanceAsync(
+            _db, instance, request.GuestMemberId, request.MinuteParticipantId, cancellationToken);
+
         // Prefill từ snapshot khách/biên bản.
         string? organization = null, contactName = null, jobTitle = null, contactEmail = null;
         if (request.GuestMemberId is { } gid)

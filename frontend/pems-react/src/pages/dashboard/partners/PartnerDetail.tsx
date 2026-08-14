@@ -6,7 +6,7 @@
  * (CRUD + set-primary), aliases, documents, OCR "Quét danh thiếp" (module 02).
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Info, History, FileText, Plus, Trash2, MapPin, Globe, CheckCircle,
   Edit3, Check, Eye, X, Loader2, AlertTriangle, Star, ScanLine, Download, Users, Tag,
@@ -104,6 +104,7 @@ function ProfileStatusBadge({ status }: { status: PartnerProfileStatus }) {
 export function PartnerDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const { hash } = useLocation();
 
   const [partner, setPartner] = useState<PartnerDetailType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -238,6 +239,16 @@ export function PartnerDetail() {
     void loadDocuments();
     void loadVisitHistory();
   }, [loadContacts, loadAliases, loadDocuments, loadVisitHistory]);
+
+  // A `#contacts` deep link (from the minutes screen, where the partner is already settled and only
+  // the contact is missing) has to actually land on the contacts card. React Router does not scroll
+  // to a hash on its own, and the card only exists once the partner has loaded — hence the dependency
+  // on `partner` rather than on the hash alone.
+  useEffect(() => {
+    if (!hash || !partner) return;
+    const target = document.getElementById(hash.slice(1));
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [hash, partner]);
 
   const approve = async () => {
     if (!id) return;
@@ -774,8 +785,9 @@ export function PartnerDetail() {
         </div>
       </div>
 
-      {/* Danh sách người liên hệ */}
-      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-gray-100 overflow-hidden mb-8">
+      {/* Danh sách người liên hệ — có id để màn biên bản deep-link thẳng vào đây khi thành viên đã
+          xác định được đối tác và việc còn lại là bổ sung/cập nhật liên hệ (PART-07). */}
+      <div id="contacts" className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.03)] border border-gray-100 overflow-hidden mb-8 scroll-mt-24">
         <div className="bg-[#00a651] px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2.5">
             <div className="bg-white/20 p-1.5 rounded-lg text-white">

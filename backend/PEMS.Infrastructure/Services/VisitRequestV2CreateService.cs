@@ -7,6 +7,8 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Partners.Common;
+using PEMS.Application.Partners.VisitLinks.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -28,7 +30,20 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
 
     private readonly IApplicationDbContext _db;
 
-    public VisitRequestV2CreateService(IApplicationDbContext db) => _db = db;
+    /// <summary>
+    /// Only used to scope which partner profiles this caller was entitled to pick for a delegation
+    /// member. Optional because the aggregate builder is also driven directly (tests, in-process
+    /// callers) where no session exists — and "no session" resolves to the PUBLIC option set with no
+    /// campus, i.e. the narrowest one. An absent dependency therefore makes the check stricter, never
+    /// laxer, so a missed wiring cannot quietly open the door.
+    /// </summary>
+    private readonly ICurrentUserService? _currentUser;
+
+    public VisitRequestV2CreateService(IApplicationDbContext db, ICurrentUserService? currentUser = null)
+    {
+        _db = db;
+        _currentUser = currentUser;
+    }
 
     public async Task<VisitRequest> CreateV2Async(
         VisitRequestFormDataV2 form,
@@ -109,6 +124,21 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 throw new BusinessRuleException("Tổ chức/đối tác đã chọn không hợp lệ.", "INVALID_PARTNER");
             registrantOrg = string.IsNullOrWhiteSpace(partner.ShortName) ? partner.Name : $"{partner.Name} ({partner.ShortName})";
         }
+
+        // ── Per-MEMBER organization identity (PART-01) ──
+        // Whoever the request as a whole names as its partner, each member carries their own choice:
+        // one delegation routinely mixes organizations, so the request-level partner above says nothing
+        // about the person on row 4. Validated against the audience that actually submitted this form,
+        // not against the payload's word for it.
+        await GuestOrganizationPartnerPolicy.EnsureSelectableAsync(
+            _db,
+            form.CampusVisits.SelectMany(cv =>
+                cv.Visitors.Select(v => v.OrganizationPartnerId)
+                    .Concat(cv.ExternalSupportMembers.Select(m => m.OrganizationPartnerId)))
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            isPublicAudience: createdSource != CreatedSource.StaffCreated,
+            actorCampusId: _currentUser?.PrimaryCampusId,
+            cancellationToken);
 
         // ── Backend-derived scope + mixed flag (NEVER from the client). has_mixed compares only normalized
         //    COPYABLE form content + member sets — not campus_id, not schedule. Shared with edit/resubmit. ──
@@ -258,27 +288,60 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         //    rows here — new campuses never share a mutable member row. Members are staged per campus so the
         //    links can be built after the flush. ──
         var membersByCampusIndex = new List<List<VisitGuestMember>>();
+        // The member keys the FORM used, in the same order the rows were built. They exist only for the
+        // length of this method: they are what lets the payload say "the contact is THIS person" about
+        // somebody who has no id yet, and they are never stored (NP-03).
+        var memberKeysByCampusIndex = new List<List<string?>>();
         foreach (var cv in form.CampusVisits)
         {
             var rows = new List<VisitGuestMember>();
+            var keys = new List<string?>();
             uint order = 1;
             foreach (var v in cv.Visitors)
+            {
                 rows.Add(new VisitGuestMember
                 {
                     FullName = v.FullName, Organization = v.Organization, JobTitle = v.JobTitle,
+                    OrganizationPartnerId = v.OrganizationPartnerId,
                     Nationality = v.Nationality, MemberType = "GUEST", DisplayOrder = order++,
                     CreatedAt = vietnamNow, CreatedBy = creatorUserId,
                 });
+                keys.Add(v.ClientMemberKey);
+            }
             foreach (var m in cv.ExternalSupportMembers)
+            {
                 rows.Add(new VisitGuestMember
                 {
                     FullName = m.FullName, Organization = m.Organization, JobTitle = m.JobTitle,
+                    OrganizationPartnerId = m.OrganizationPartnerId,
                     Nationality = m.Nationality, MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
                     CreatedAt = vietnamNow, CreatedBy = creatorUserId,
                 });
+                keys.Add(m.ClientMemberKey);
+            }
             // Added via the request navigation so EF fills VisitRequestId (FK) from the parent on insert.
             foreach (var r in rows) request.GuestMembers.Add(r);
             membersByCampusIndex.Add(rows);
+            memberKeysByCampusIndex.Add(keys);
+        }
+
+        // ── The contact's three shared fields come FROM the member when one was picked ──
+        // Before the flush, so the row is INSERTED describing the right person rather than corrected
+        // afterwards. A payload cannot then carry one member's key beside a different person's name:
+        // whatever it says about the name, the stored snapshot is the member's own. Phone and email are
+        // left alone — a delegation row has neither, and blanking them removes the only way to make
+        // contact. An unresolvable key throws here and takes the whole transaction with it.
+        for (var i = 0; i < form.CampusVisits.Count; i++)
+        {
+            var pickedKey = form.CampusVisits[i].OperationalContactClientMemberKey;
+            if (string.IsNullOrWhiteSpace(pickedKey)) continue;
+
+            var campusId = campusByCode[form.CampusVisits[i].CampusId.Trim().ToUpperInvariant()].CampusId;
+            var picked = OperationalContactLink.FindByClientKey(
+                OperationalContactLink.Pair(membersByCampusIndex[i], memberKeysByCampusIndex[i]), pickedKey);
+            if (picked is not null)
+                OperationalContactLink.ApplySnapshotFromMember(
+                    request.CampusInstances.First(c => c.CampusId == campusId).FormDetail!, picked);
         }
 
         // ── FLUSH #1 — resolves request id, instance ids, form-detail shared PKs, guest_member ids. ──
@@ -293,11 +356,13 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             var instance = request.CampusInstances.First(c => c.CampusId == campusId);
 
             // Who, of this campus's delegation, the operational contact IS (NP-03). Resolved HERE
-            // because the member ids only exist after the flush above. The picked index is what the
-            // user chose in "Chọn đầu mối từ danh sách đoàn"; without one the snapshot is matched.
+            // because the member ids only exist after the flush above. The picked KEY is what the user
+            // chose in "Đầu mối là ai trong đoàn?" — a stable per-row identity, not a position in the
+            // list; without one the snapshot is matched, which is a guess and is treated as one.
             OperationalContactLink.Resolve(
-                instance.FormDetail!, membersByCampusIndex[i],
-                form.CampusVisits[i].OperationalContactVisitorIndex);
+                instance.FormDetail!,
+                OperationalContactLink.Pair(membersByCampusIndex[i], memberKeysByCampusIndex[i]),
+                form.CampusVisits[i].OperationalContactClientMemberKey);
 
             uint linkOrder = 0;
             foreach (var member in membersByCampusIndex[i])
@@ -450,6 +515,14 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
 
         // ── FLUSH #2 — links + revisions + identity + audit. Caller commits. ──
         await _db.SaveChangesAsync(cancellationToken);
+
+        // ── Partner links, seeded from what the registrant actually chose (PART-02) ──
+        // Runs AFTER flush #2 because it reads back the instance↔member links it works from. Doing it
+        // here, in the create transaction, is the point: the relationship must exist the moment the
+        // request does, not the first time somebody happens to open the minutes screen.
+        if (await GuestPartnerLinkResolver.ResolveForRequestAsync(
+                _db, request.VisitRequestId, vietnamNow, creatorUserId, cancellationToken) > 0)
+            await _db.SaveChangesAsync(cancellationToken);
 
         return request;
     }

@@ -141,7 +141,7 @@ public static class PartnerMatcher
             .Select(p => new
             {
                 p.PartnerId, p.Name, p.ShortName, p.ProfileStatus, p.Visibility,
-                p.OwnerCampusId, p.Country, p.City,
+                p.OwnerCampusId, p.Country, p.City, p.ReviewNote,
             })
             .ToListAsync(cancellationToken);
 
@@ -168,6 +168,11 @@ public static class PartnerMatcher
                     City = p.City,
                     MatchScore = score,
                     MatchReason = reason,
+                    // A rejected profile is still returned — suppressing it would just invite a
+                    // duplicate record for the same organization, which is the thing the "một tổ chức,
+                    // một hồ sơ" guard exists to prevent. It comes back BLOCKED instead, carrying the
+                    // reason so the UI offers "gửi duyệt lại" rather than "liên kết" (PART-04).
+                    ReviewNote = p.ProfileStatus == PartnerProfileStatuses.Rejected ? p.ReviewNote : null,
                 };
             })
             .OrderByDescending(c => c.MatchScore)

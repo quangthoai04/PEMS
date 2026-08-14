@@ -115,12 +115,32 @@ const buildEmailSchema = (t: ValidationTranslator, fieldKey: string) => {
 const buildPersonSchema = (t: ValidationTranslator, role: 'visitor' | 'support') => {
   const label = (field: string) => t(`fields.${role}${field}`);
   return z.object({
+    /**
+     * Stable client-side identity for THIS row, minted once (`crypto.randomUUID()`) and never
+     * regenerated — the same idea as the card's own `clientKey`, one level down.
+     *
+     * <p>It exists so the form can point at a person who has no id yet. The operational contact used
+     * to be named by array position, and a position stops meaning the same person the moment a row is
+     * inserted above it, removed, or reordered — the contact silently became somebody else with
+     * nothing on screen to show for it.</p>
+     *
+     * <p>Optional in the SCHEMA so a draft written before this field existed still parses; the form
+     * mints one for every row it creates or restores, so a submitted payload always carries them.</p>
+     */
+    clientMemberKey: z.string().optional(),
     fullName: bounded(
       z.string().trim().min(1, t('requiredField', { field: label('FullName') })), 150, label('FullName'), t),
     jobTitle: bounded(
       z.string().trim().min(1, t('requiredField', { field: label('JobTitle') })), 150, label('JobTitle'), t),
     organization: bounded(
       z.string().trim().min(1, t('requiredField', { field: label('Organization') })), 200, label('Organization'), t),
+    /**
+     * Which partner profile the organization text was picked from, or null for free text.
+     * Deliberately NOT validated against the text: the name is a display snapshot and may be edited
+     * or go stale, while this is the identity. The backend re-checks the id against the submitter's
+     * own audience, so a tampered payload gets rejected there rather than trusted here (PART-01).
+     */
+    organizationPartnerId: z.number().nullable().optional(),
     nationality: bounded(
       z.string().trim().min(1, t('requiredField', { field: label('Nationality') })), 100, label('Nationality'), t),
   });
@@ -183,18 +203,22 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
     }),
 
     /**
-     * Which row of `visitors` the operational contact IS, when the user picked one from the
-     * delegation list instead of typing a separate person (NP-03).
+     * WHICH member of this campus the operational contact is — the `clientMemberKey` of one row of
+     * `visitors` or `supportTeam` (NP-03).
      *
      * <p>Carried alongside the snapshot rather than instead of it. The snapshot is what was agreed
      * and must not follow later edits to the member row; this is the answer to "same person?", which
      * strings could only ever guess at — a contact who was also in the delegation list used to show
      * up twice in the biên bản, and one who was only in this block did not show up at all.</p>
      *
+     * <p>Support staff are pickable too: the interpreter or coordinator travelling with the
+     * delegation is often exactly who the campus rings, and offering only guests meant the true
+     * answer had to be retyped by hand as a separate person.</p>
+     *
      * <p>`null` is a perfectly normal value: plenty of campuses are coordinated by somebody who is
      * not travelling with the delegation.</p>
      */
-    operationalContactVisitorIndex: z.number().int().min(0).nullable().optional().default(null),
+    operationalContactClientMemberKey: z.string().nullable().optional(),
 
     workingLanguage: z.enum(['EN', 'VI']),
     transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)

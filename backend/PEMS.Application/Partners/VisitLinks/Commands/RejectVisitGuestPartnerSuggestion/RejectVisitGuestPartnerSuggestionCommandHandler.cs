@@ -31,10 +31,22 @@ public sealed class RejectVisitGuestPartnerSuggestionCommandHandler
         var instance = await VisitLinkSupport.LoadInstanceWithAccessAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
 
+        // Scoped to the request AND this instance — dismissing through a sibling campus's endpoint is
+        // a cross-instance write (PART-08). Legacy request-wide rows carry a null instance.
         var link = await _db.VisitGuestPartnerLinks
             .FirstOrDefaultAsync(l => l.LinkId == request.LinkId
-                                      && l.VisitRequestId == instance.VisitRequestId, cancellationToken)
+                                      && l.VisitRequestId == instance.VisitRequestId
+                                      && (l.VisitInstanceId == null
+                                          || l.VisitInstanceId == instance.VisitInstanceId), cancellationToken)
             ?? throw new NotFoundException("VisitGuestPartnerLink", request.LinkId);
+
+        // "Bỏ qua gợi ý" only ever applies to a SUGGESTION. A CONFIRMED relationship is a decision
+        // somebody made on the record; dropping it must be its own audited use case, not a side effect
+        // of the dismiss button (PART-05).
+        if (link.MatchStatus == PartnerLinkMatchStatuses.Confirmed)
+            throw new BusinessRuleException(
+                "Liên kết này đã được xác nhận. Hãy dùng chức năng huỷ liên kết nếu muốn gỡ bỏ.",
+                PartnerErrorCodes.LinkNotFound);
 
         var now = _clock.VietnamNow;
         link.MatchStatus = PartnerLinkMatchStatuses.Rejected;

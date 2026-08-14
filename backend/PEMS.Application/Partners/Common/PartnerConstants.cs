@@ -76,13 +76,51 @@ public static class PartnerLinkMatchSources
     public const string CreatedFromGuest = "CREATED_FROM_GUEST";
     public const string BusinessCardOcr = "BUSINESS_CARD_OCR";
 
-    public static readonly string[] All = { AutoName, AutoEmailDomain, Manual, CreatedFromGuest, BusinessCardOcr };
+    /// <summary>
+    /// The registrant picked the partner themselves in the registration form. Distinct from
+    /// <see cref="Manual"/> (staff clicked "link" on the minutes screen) and from
+    /// <see cref="AutoName"/> (the system inferred it) — recording all three the same way would lose
+    /// the only thing that distinguishes a decision from a guess (PART-01/PART-02).
+    /// </summary>
+    public const string RegistrationSelected = "REGISTRATION_SELECTED";
+
+    public static readonly string[] All =
+        { AutoName, AutoEmailDomain, Manual, CreatedFromGuest, BusinessCardOcr, RegistrationSelected };
+}
+
+/// <summary>
+/// Why a candidate/partner may NOT be linked to a guest. A blocked candidate is still SHOWN
+/// (it stops a duplicate profile being created for the same organization) but carries no link
+/// action — see <see cref="PartnerLinkRecommendedActions"/> for what the user should do instead.
+/// </summary>
+public static class PartnerLinkBlockReasons
+{
+    /// <summary>Profile was rejected by the campus Staff Leader — edit + resubmit, never re-create.</summary>
+    public const string Rejected = "PARTNER_REJECTED";
+    /// <summary>Profile is still a draft — it has not been submitted for approval yet.</summary>
+    public const string Draft = "PARTNER_DRAFT";
+    /// <summary>Pending approval and owned by ANOTHER campus — only the owner campus may link it early.</summary>
+    public const string PendingOtherCampus = "PARTNER_PENDING_OTHER_CAMPUS";
+    /// <summary>Outside the caller's campus/visibility scope.</summary>
+    public const string OutOfScope = "PARTNER_OUT_OF_SCOPE";
+}
+
+/// <summary>What the UI should offer instead of "Liên kết" for a blocked candidate.</summary>
+public static class PartnerLinkRecommendedActions
+{
+    public const string Link = "LINK";
+    public const string Resubmit = "RESUBMIT";
+    public const string None = "NONE";
 }
 
 public static class PartnerErrorCodes
 {
     public const string Forbidden = "PARTNER_FORBIDDEN";
     public const string NotFound = "PARTNER_NOT_FOUND";
+    /// <summary>Caller may VIEW the partner but its profile status forbids linking (rejected/draft/pending).</summary>
+    public const string NotLinkable = "PARTNER_NOT_LINKABLE";
+    /// <summary>Specifically: the profile was rejected. Kept separate so the UI can offer "resubmit".</summary>
+    public const string RejectedCannotLink = "PARTNER_REJECTED_CANNOT_LINK";
     public const string CodeDuplicated = "PARTNER_CODE_DUPLICATED";
     public const string NameDuplicated = "PARTNER_NAME_DUPLICATED";
     public const string PublicRequiresApproved = "PARTNER_PUBLIC_REQUIRES_APPROVED";

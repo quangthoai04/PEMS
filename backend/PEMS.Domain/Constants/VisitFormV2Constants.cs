@@ -165,6 +165,49 @@ public static class OperationalContactErrorCodes
     public const string MustBeExternal = "OPERATIONAL_CONTACT_MUST_BE_EXTERNAL";
     /// <summary>A metadata-only save that would write exactly what is already stored.</summary>
     public const string ProfileNoChanges = "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES";
+
+    // ── Which MEMBER of the delegation the contact is (NP-03 stable identity) ──
+    // Separate from the codes above, which are all about the confirmation workflow. These three are
+    // about the relation itself, and each has its own way out, which is why they are not one code.
+
+    /// <summary>
+    /// The submitted member key names nobody in this campus. In practice that means the person who is
+    /// the campus's contact was removed from the delegation in the same edit — refused rather than
+    /// absorbed, because silently dropping the link puts the contact back to being a name to be
+    /// string-matched, and silently keeping it would point at a deleted row.
+    /// </summary>
+    public const string MemberNotFound = "OPERATIONAL_CONTACT_MEMBER_NOT_FOUND";
+
+    /// <summary>Two member rows arrived under one key — the client's identities are not identities.</summary>
+    public const string MemberAmbiguous = "OPERATIONAL_CONTACT_MEMBER_AMBIGUOUS";
+
+    /// <summary>
+    /// The named row is not a guest-side member of this campus. The role belongs to the delegation's
+    /// own side (GUEST / EXTERNAL_SUPPORT); FPTU's host and internal participants are not eligible.
+    /// </summary>
+    public const string MemberNotEligible = "OPERATIONAL_CONTACT_MEMBER_NOT_ELIGIBLE";
+}
+
+/// <summary>
+/// User-facing sentences for the member-identity refusals above. Kept beside the codes so the same
+/// wording is raised wherever the rule is enforced — the delete guard, the create path and the edit
+/// path all describe one situation and must not describe it three different ways.
+/// </summary>
+public static class OperationalContactMessages
+{
+    /// <summary>
+    /// Shown when an edit removes the member who holds the role. It names the reason and the way out
+    /// in one sentence, because "không tìm thấy thành viên" would leave the user re-reading a form
+    /// that looks perfectly fine.
+    /// </summary>
+    public const string MemberNotInDelegation =
+        "Người này đang là đầu mối của đoàn. Vui lòng chọn đầu mối khác trước khi thực hiện thao tác này.";
+
+    public const string MemberAmbiguous =
+        "Không xác định được đầu mối của đoàn vì có nhiều thành viên trùng định danh. Vui lòng tải lại biểu mẫu và chọn lại.";
+
+    public const string MemberNotEligible =
+        "Chỉ khách trong đoàn hoặc nhân sự hỗ trợ đi cùng đoàn mới có thể làm đầu mối.";
 }
 
 /// <summary>Scope / decision error codes shared by the campus-approval endpoints (plan §5.2).</summary>

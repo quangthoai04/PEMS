@@ -14,17 +14,48 @@ namespace PEMS.Application.Common.DTOs;
 
 // Guest member fields mirror visit_guest_members in pems_full(3).sql — there is no
 // passport/identity column, so none is collected or sent.
+/// <param name="Organization">
+/// Display snapshot of the organization, as typed or as picked. Kept verbatim so an old request
+/// still reads the way it was filed even after the partner is renamed.
+/// </param>
+/// <param name="OrganizationPartnerId">
+/// The partner profile the user PICKED from the dropdown, or null for free text. Defaulted so every
+/// existing positional construction (tests, mappers, revision snapshots) stays valid; the backend
+/// never trusts <paramref name="Organization"/> to identify a partner — only this id (PART-01).
+/// </param>
+/// <param name="ClientMemberKey">
+/// A client-minted identity for THIS row, stable for as long as the form is open, so the payload can
+/// point at a person who does not exist in the database yet.
+///
+/// <para>
+/// Rows are created and destroyed on screen before anything is saved, which leaves the submit with a
+/// list of people and no ids. The form used to name the operational contact by ARRAY POSITION, and a
+/// position is not an identity: inserting a row above the chosen one, deleting one, or sorting the
+/// list re-aimed the contact at somebody else without a single visible change. This key is minted
+/// once per row (<c>crypto.randomUUID()</c>) and never regenerated, so it survives all three.
+/// </para>
+/// <para>
+/// It is a CORRELATION token for one request, never stored and never authorization: the backend maps
+/// it to the <c>guest_member_id</c> it has just inserted, inside the same transaction, and forgets it.
+/// Null is normal — a caller that names no contact member (or an older client) simply sends none.
+/// </para>
+/// </param>
 public record VisitorDto(
     string FullName,
     string Nationality,
     string JobTitle,
-    string Organization);
+    string Organization,
+    ulong? OrganizationPartnerId = null,
+    string? ClientMemberKey = null);
 
+/// <inheritdoc cref="VisitorDto"/>
 public record SupportTeamMemberDto(
     string FullName,
     string JobTitle,
     string Organization,
-    string Nationality);
+    string Nationality,
+    ulong? OrganizationPartnerId = null,
+    string? ClientMemberKey = null);
 
 /// <summary>
 /// One person's contact details as typed on the form — a SNAPSHOT, never a login. Identity at

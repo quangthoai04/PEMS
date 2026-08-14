@@ -23,6 +23,7 @@ using PEMS.Application.Partners.Queries.GetPartnerVisitHistory;
 using PEMS.Application.Partners.Queries.GetPartners;
 using PEMS.Application.Partners.Queries.GetPendingPartnerApprovals;
 using PEMS.Application.Partners.Queries.MatchPartner;
+using PEMS.Application.Partners.Queries.SearchInternalPartnerOptions;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,6 +56,20 @@ namespace PEMS.Api.Controllers
         [HttpGet("match")]
         public async Task<IActionResult> Match([FromQuery] MatchPartnerQuery query, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(query, cancellationToken));
+
+        /// <summary>
+        /// Organization options for an AUTHENTICATED internal user filling in the visit form. The
+        /// public counterpart lives at <c>GET /api/public/partners/search</c> and is deliberately
+        /// narrower — see <see cref="SearchInternalPartnerOptionsQuery"/>.
+        /// </summary>
+        [HttpGet("options")]
+        public async Task<IActionResult> GetOptions(
+            [FromQuery] string? keyword,
+            [FromQuery] int limit = 20,
+            CancellationToken cancellationToken = default)
+            => Ok(await _mediator.Send(
+                new SearchInternalPartnerOptionsQuery { Keyword = keyword, Limit = limit },
+                cancellationToken));
 
         [HttpGet("{partnerId}")]
         public async Task<IActionResult> GetPartnerDetail(ulong partnerId, CancellationToken cancellationToken)

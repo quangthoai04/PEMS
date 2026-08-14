@@ -20,6 +20,26 @@ export const newClientKey = (): string =>
     ? crypto.randomUUID()
     : `ck-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
+/** One person row in a campus card — the shape both `visitors` and `supportTeam` hold. */
+type MemberRow = CampusVisitSchema['visitors'][number];
+
+/**
+ * A blank member row WITH its stable identity already on it (NP-03).
+ *
+ * <p>Minted here, at the one moment a row comes into existence, and never again: a key regenerated on
+ * re-render would be exactly as useless as the array index it replaced. Every place that adds a row —
+ * the "thêm khách" buttons, an Excel import, "thêm đầu mối vào đoàn" — goes through this, so there is
+ * no way to create a row the contact picker cannot name.</p>
+ */
+export const createEmptyMember = (): MemberRow => ({
+  clientMemberKey: newClientKey(),
+  fullName: '',
+  jobTitle: '',
+  organization: '',
+  organizationPartnerId: null,
+  nationality: '',
+});
+
 export const createEmptyCampusVisit = (clientKey: string = newClientKey()): CampusVisitSchema => ({
   clientKey,
   visitInstanceId: null,
@@ -32,11 +52,11 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   visitTypeOther: '',
   purpose: '',
   workingContent: '',
-  visitors: [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
+  visitors: [createEmptyMember()],
   supportTeam: [],
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   // Nobody has been picked from the delegation list yet (NP-03).
-  operationalContactVisitorIndex: null,
+  operationalContactClientMemberKey: null,
   workingLanguage: 'VI',
   transportationNote: '',
   /**
@@ -72,15 +92,83 @@ const deepClone = <T>(value: T): T =>
 export const cloneCampusVisitContent = (
   source: CampusVisitSchema,
   target: CampusVisitSchema,
-): CampusVisitSchema => ({
-  ...deepClone(source),
-  clientKey: target.clientKey,
-  visitInstanceId: target.visitInstanceId ?? null,
-  expectedRowVersion: target.expectedRowVersion ?? null,
-  campus: target.campus,
-  startDatetime: target.startDatetime,
-  endDatetime: target.endDatetime,
-});
+): CampusVisitSchema => {
+  // `withMemberKeys` first, so a card that arrived without identities (an old draft) is healed
+  // before it is copied — otherwise the copy inherits the same gap and its members can never be
+  // named as the contact.
+  const cloned = withMemberKeys(deepClone(source));
+  // The copy is a DIFFERENT set of people — each campus keeps its own independent member rows, and
+  // the backend inserts a distinct guest_member_id per campus. Carrying the source's member keys over
+  // would make one identity name two rows, so every row is re-minted and the contact pick is
+  // re-pointed at the copy of the person it named (NP-03).
+  const remapped = remintMemberKeys(cloned);
+  return {
+    ...remapped,
+    clientKey: target.clientKey,
+    visitInstanceId: target.visitInstanceId ?? null,
+    expectedRowVersion: target.expectedRowVersion ?? null,
+    campus: target.campus,
+    startDatetime: target.startDatetime,
+    endDatetime: target.endDatetime,
+  };
+};
+
+/** Fresh member identities for a copied card, with the contact pick following its person. */
+const remintMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
+  const mapping = new Map<string, string>();
+  const remint = (rows: MemberRow[]): MemberRow[] =>
+    rows.map(row => {
+      const next = newClientKey();
+      if (row.clientMemberKey) mapping.set(row.clientMemberKey, next);
+      return { ...row, clientMemberKey: next };
+    });
+
+  const visitors = remint(cv.visitors ?? []);
+  const supportTeam = remint(cv.supportTeam ?? []);
+  const picked = cv.operationalContactClientMemberKey;
+  return {
+    ...cv,
+    visitors,
+    supportTeam,
+    operationalContactClientMemberKey: picked ? mapping.get(picked) ?? null : null,
+  };
+};
+
+/**
+ * Gives every member row of a campus card an identity, and repairs a pick that has lost its meaning.
+ *
+ * <p>Called when a card arrives from somewhere that did not mint keys: a draft written before this
+ * field existed, or one written by an older build. Without it those rows would submit with no key at
+ * all and the contact could not be named — the user would reopen a resumed draft to find the pick
+ * quietly gone.</p>
+ *
+ * <p>A draft from the ARRAY-INDEX era carries `operationalContactVisitorIndex` instead. It is read
+ * once, here, and translated into the key of whichever row it happens to point at now — the last time
+ * that number is trusted anywhere.</p>
+ */
+export const withMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
+  const keyed = (rows: MemberRow[] | undefined): MemberRow[] =>
+    (rows ?? []).map(row => (row?.clientMemberKey ? row : { ...row, clientMemberKey: newClientKey() }));
+
+  const visitors = keyed(cv.visitors);
+  const supportTeam = keyed(cv.supportTeam);
+
+  const legacyIndex = (cv as { operationalContactVisitorIndex?: unknown }).operationalContactVisitorIndex;
+  const fromLegacyIndex =
+    typeof legacyIndex === 'number' && legacyIndex >= 0 && legacyIndex < visitors.length
+      ? visitors[legacyIndex].clientMemberKey ?? null
+      : null;
+
+  const picked = cv.operationalContactClientMemberKey ?? fromLegacyIndex;
+  const stillPresent = [...visitors, ...supportTeam].some(m => m.clientMemberKey === picked);
+
+  return {
+    ...cv,
+    visitors,
+    supportTeam,
+    operationalContactClientMemberKey: picked && stillPresent ? picked : null,
+  };
+};
 
 /**
  * "Apply to the remaining campuses": returns a NEW array where every campus except the
@@ -140,17 +228,23 @@ const toApiCampusVisit = (
   visitTypeOther: cv.visitType === 'OTHER' ? trimOrNull(cv.visitTypeOther) : null,
   purpose: (cv.purpose ?? '').trim(),
   workingContent: trimOrNull(cv.workingContent),
+  // `organizationPartnerId` rides along with the organization text: the text is what the request
+  // will display, the id is which partner profile it actually IS (PART-01).
   visitors: (cv.visitors ?? []).map(v => ({
     fullName: (v.fullName ?? '').trim(),
     jobTitle: (v.jobTitle ?? '').trim(),
     organization: (v.organization ?? '').trim(),
+    organizationPartnerId: v.organizationPartnerId ?? null,
     nationality: (v.nationality ?? '').trim(),
+    clientMemberKey: v.clientMemberKey ?? null,
   })),
   externalSupportMembers: (cv.supportTeam ?? []).map(s => ({
     fullName: (s.fullName ?? '').trim(),
     jobTitle: (s.jobTitle ?? '').trim(),
     organization: (s.organization ?? '').trim(),
+    organizationPartnerId: s.organizationPartnerId ?? null,
     nationality: (s.nationality ?? '').trim(),
+    clientMemberKey: s.clientMemberKey ?? null,
   })),
   operationalContact: {
     fullName: (cv.operationalContact?.fullName ?? '').trim(),
@@ -159,15 +253,15 @@ const toApiCampusVisit = (
     jobTitle: (cv.operationalContact?.jobTitle ?? '').trim(),
     email: (cv.operationalContact?.email ?? '').trim(),
   },
-  // Only sent when it still points at a real row: the user can delete a guest AFTER picking them
-  // as the contact, and a dangling index would just be noise on the wire. The backend ignores an
-  // out-of-range value anyway and falls back to matching the snapshot, so this is tidiness rather
-  // than a guard (NP-03).
-  operationalContactVisitorIndex:
-    typeof cv.operationalContactVisitorIndex === 'number'
-      && cv.operationalContactVisitorIndex >= 0
-      && cv.operationalContactVisitorIndex < (cv.visitors?.length ?? 0)
-      ? cv.operationalContactVisitorIndex
+  // Only sent when it still names a row that is actually in this payload. A key naming nobody is
+  // REFUSED by the backend — deleting the person who is the contact has to be told, not absorbed —
+  // so sending a stale one would turn a form the user has already fixed into a failed submit. Both
+  // lists are searched: support staff travelling with the delegation may hold the role (NP-03).
+  operationalContactClientMemberKey:
+    cv.operationalContactClientMemberKey
+      && [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])]
+        .some(m => m.clientMemberKey === cv.operationalContactClientMemberKey)
+      ? cv.operationalContactClientMemberKey
       : null,
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
@@ -296,7 +390,29 @@ export const resolvedFormToV2Schema = (
     },
     partnerSelectionMode: form.partnerId != null ? 'EXISTING_PARTNER' : 'NEW_ORGANIZATION',
     partnerId: form.partnerId ?? null,
-    campusVisits: form.campusVisits.map((cv): CampusVisitSchema => ({
+    campusVisits: form.campusVisits.map((cv): CampusVisitSchema => {
+      // Fresh member identities for this editing session, remembered per stored guest_member_id so
+      // the contact's link can be translated back into a pick below. The KEY is client-side and
+      // per-session; the guest_member_id is the server's, and this map is the only place the two
+      // meet (NP-03).
+      const keyByGuestMemberId = new Map<number, string>();
+      const hydrateMember = (m: {
+        guestMemberId: number; fullName: string; jobTitle: string;
+        organization: string; organizationPartnerId?: number | null; nationality: string;
+      }): MemberRow => {
+        const clientMemberKey = newClientKey();
+        keyByGuestMemberId.set(m.guestMemberId, clientMemberKey);
+        return {
+          clientMemberKey,
+          fullName: m.fullName, jobTitle: m.jobTitle, organization: m.organization,
+          organizationPartnerId: m.organizationPartnerId ?? null, nationality: m.nationality,
+        };
+      };
+
+      const visitors = cv.visitors.map(hydrateMember);
+      const supportTeam = cv.supportMembers.map(hydrateMember);
+
+      return {
       clientKey: newClientKey(),
       visitInstanceId: cv.visitInstanceId,
       expectedRowVersion: cv.rowVersion,
@@ -308,14 +424,8 @@ export const resolvedFormToV2Schema = (
       visitTypeOther: cv.visitTypeOther ?? '',
       purpose: cv.purpose,
       workingContent: cv.workingContent ?? '',
-      visitors: cv.visitors.length
-        ? cv.visitors.map(v => ({
-          fullName: v.fullName, jobTitle: v.jobTitle, organization: v.organization, nationality: v.nationality,
-        }))
-        : [{ fullName: '', jobTitle: '', organization: '', nationality: '' }],
-      supportTeam: cv.supportMembers.map(s => ({
-        fullName: s.fullName, jobTitle: s.jobTitle, organization: s.organization, nationality: s.nationality,
-      })),
+      visitors: visitors.length ? visitors : [createEmptyMember()],
+      supportTeam,
       operationalContact: {
         fullName: cv.operationalContact.fullName,
         organization: cv.operationalContact.organization,
@@ -323,22 +433,23 @@ export const resolvedFormToV2Schema = (
         phone: cv.operationalContact.phone,
         email: cv.operationalContact.email,
       },
-      // Restore "Đầu mối là ai trong đoàn?" by finding the linked member in THIS campus's own guest
-      // list (NP-03). -1 → null: the link may point at somebody who has since been removed from the
-      // list, and the picker showing nothing selected is the honest rendering of that.
-      operationalContactVisitorIndex: (() => {
-        const linkedId = cv.operationalContact.guestMemberId;
-        if (linkedId == null) return null;
-        const i = cv.visitors.findIndex(v => v.guestMemberId === linkedId);
-        return i >= 0 ? i : null;
-      })(),
+      // Restore "Đầu mối là ai trong đoàn?" from the stored link (NP-03). Both lists were fed into
+      // the same map above, so a contact who is one of the SUPPORT staff restores just as a guest
+      // does — the previous version searched `visitors` only and silently showed those picks as
+      // "chưa chọn". A link naming somebody no longer in either list restores as null, which is the
+      // honest rendering of a member who has since been removed.
+      operationalContactClientMemberKey:
+        cv.operationalContact.guestMemberId == null
+          ? null
+          : keyByGuestMemberId.get(cv.operationalContact.guestMemberId) ?? null,
       workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',
       // Hydrated from the server, not blanked. Seeding '' here is what made an edit silently erase
       // whatever the guest had written: the form loaded empty and saved that emptiness back.
       notes: cv.notes ?? '',
-    })),
+      };
+    }),
   },
 });
 
@@ -351,6 +462,8 @@ export const applyImportedMembersToCampus = (
 ): CampusVisitSchema[] => {
   const target = campusVisits[campusIndex];
   if (!target) return campusVisits;
-  const clipped = rows.slice(0, 200).map(r => deepClone(r));
+  // An imported row is a new person, so it is born with an identity like any other — a spreadsheet
+  // carries names, never keys, and a row with no key is a row the contact picker cannot name.
+  const clipped = rows.slice(0, 200).map(r => ({ ...createEmptyMember(), ...deepClone(r) }));
   return campusVisits.map((cv, i) => (i === campusIndex ? { ...cv, [kind]: clipped } : cv));
 };

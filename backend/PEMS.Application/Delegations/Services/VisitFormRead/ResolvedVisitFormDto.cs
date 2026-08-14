@@ -290,6 +290,11 @@ public sealed class ResolvedMemberDto
     public string MemberType { get; init; } = "";
     public string FullName { get; init; } = "";
     public string Organization { get; init; } = "";
+    /// <summary>
+    /// Which partner profile this member's organization was picked from, or null for free text.
+    /// Returned so re-opening the edit form restores the CHOICE and not just the text (PART-01).
+    /// </summary>
+    public ulong? OrganizationPartnerId { get; init; }
     public string JobTitle { get; init; } = "";
     public string Nationality { get; init; } = "";
     public int DisplayOrder { get; init; }

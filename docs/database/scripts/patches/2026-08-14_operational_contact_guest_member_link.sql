@@ -75,8 +75,12 @@ PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- đoán bừa ở đây là gán nhầm danh tính, và NULL vẫn chạy đúng (biên bản dùng snapshot).
 --
 -- KHÔNG dùng riêng họ tên để khớp: trùng tên trong một đoàn là chuyện thường.
--- Chỉ xét thành viên GUEST: EXTERNAL_SUPPORT là người phía FPTU thu xếp, không phải đầu mối
--- của đoàn khách.
+--
+-- Xét CẢ hai loại thành viên GUEST và EXTERNAL_SUPPORT. "Nhân sự hỗ trợ" ở đây là người đi
+-- CÙNG ĐOÀN KHÁCH (phiên dịch, trợ lý, điều phối viên) — chính là những người cơ sở hay gọi
+-- nhất — chứ không phải nhân sự nội bộ FPTU (nhân sự nội bộ nằm ở visit_participants, không
+-- có mặt trong bảng này nên không thể lọt vào). Bản trước chỉ lọc GUEST nên đúng những dòng
+-- đáng nối nhất lại để NULL.
 --
 -- Chuẩn hoá phải GIỐNG HỆT `PersonIdentity.Key` phía ứng dụng (trim + lower + gộp khoảng trắng
 -- giữa các từ), nếu không backfill và runtime sẽ trả lời khác nhau cho cùng một cặp dữ liệu:
@@ -92,7 +96,7 @@ JOIN (
   FROM visit_instance_guest_members l
   JOIN visit_guest_members g
     ON g.guest_member_id = l.guest_member_id
-   AND g.member_type = 'GUEST'
+   AND g.member_type IN ('GUEST', 'EXTERNAL_SUPPORT')
   JOIN visit_instance_form_details fd
     ON fd.visit_instance_id = l.visit_instance_id
   WHERE LOWER(TRIM(REGEXP_REPLACE(g.full_name, '[[:space:]]+', ' ')))
@@ -123,6 +127,9 @@ WHERE d.operational_contact_guest_member_id IS NOT NULL
   AND g.visit_request_id <> c.visit_request_id;
 
 -- Không dòng nào được trỏ tới thành viên KHÔNG thuộc chính cơ sở đó. Kỳ vọng: 0 dòng.
+-- Khoá ngoại chỉ bảo đảm "thành viên có tồn tại", KHÔNG bảo đảm "đúng cơ sở này" — nên phần kiểm
+-- tra đó nằm ở tầng ứng dụng (OperationalContactLink chỉ tra trong đúng danh sách của cơ sở) và
+-- được soi lại ở đây.
 SELECT d.visit_instance_id, d.operational_contact_guest_member_id
 FROM visit_instance_form_details d
 WHERE d.operational_contact_guest_member_id IS NOT NULL
@@ -130,6 +137,13 @@ WHERE d.operational_contact_guest_member_id IS NOT NULL
     SELECT 1 FROM visit_instance_guest_members l
     WHERE l.visit_instance_id = d.visit_instance_id
       AND l.guest_member_id = d.operational_contact_guest_member_id);
+
+-- Không dòng nào được trỏ tới loại thành viên ngoài {GUEST, EXTERNAL_SUPPORT}. Kỳ vọng: 0 dòng.
+SELECT d.visit_instance_id, d.operational_contact_guest_member_id, g.member_type
+FROM visit_instance_form_details d
+JOIN visit_guest_members g ON g.guest_member_id = d.operational_contact_guest_member_id
+WHERE d.operational_contact_guest_member_id IS NOT NULL
+  AND g.member_type NOT IN ('GUEST', 'EXTERNAL_SUPPORT');
 
 -- ── §5. Rollback (chạy tay nếu cần) ──────────────────────────────────────────────────────────
 -- ALTER TABLE visit_instance_form_details DROP FOREIGN KEY fk_vifd_op_contact_member;

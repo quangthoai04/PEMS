@@ -19,7 +19,7 @@ import {
   dismissToast,
 } from '../../../shared/utils/toast';
 import {
-  PARTNER_TYPE_LABELS, PROFILE_STATUS_LABELS, VISIBILITY_LABELS,
+  PARTNER_LINK_BLOCKED_LABELS, PARTNER_TYPE_LABELS, PROFILE_STATUS_LABELS, VISIBILITY_LABELS,
   type PartnerDetail, type PartnerType, type PartnerMatchResult, type PartnerMatchCandidate,
   type PartnerProfileStatus, type PartnerVisibility,
 } from '../types/partners.types';
@@ -71,10 +71,16 @@ function deriveCandidates(m: PartnerMatchResult | null): PartnerMatchCandidate[]
   if (!m) return [];
   if (m.candidates && m.candidates.length > 0) return m.candidates;
   if (m.partnerId) {
+    // Legacy shape: only the best match came back, with no per-candidate link policy. Assume the
+    // SAFE answer rather than the convenient one — a rejected or draft profile is never linkable, so
+    // defaulting this to `true` would put the button back exactly where PART-04 removed it. The
+    // backend re-checks on click regardless.
+    const status = (m.profileStatus ?? 'PENDING_APPROVAL') as PartnerProfileStatus;
+    const linkable = status === 'APPROVED' || status === 'PENDING_APPROVAL';
     return [{
       partnerId: m.partnerId,
       name: m.partnerName ?? '',
-      profileStatus: (m.profileStatus ?? 'PENDING_APPROVAL') as PartnerProfileStatus,
+      profileStatus: status,
       visibility: 'INTERNAL' as PartnerVisibility,
       ownerCampusId: 0,
       ownerCampusName: null,
@@ -82,7 +88,9 @@ function deriveCandidates(m: PartnerMatchResult | null): PartnerMatchCandidate[]
       city: null,
       matchScore: m.confidence ?? 0,
       matchReason: m.reason ?? null,
-      canLink: true,
+      canLink: linkable,
+      blockedReason: linkable ? null : (status === 'REJECTED' ? 'PARTNER_REJECTED' : 'PARTNER_DRAFT'),
+      recommendedAction: linkable ? 'LINK' : (status === 'REJECTED' ? 'RESUBMIT' : 'NONE'),
     }];
   }
   return [];
@@ -207,28 +215,32 @@ function CandidateDetailPanel({
       </div>
 
       <div className="flex flex-wrap items-center gap-2 pt-0.5">
+        {/* Opening the full profile is a READ, so it is offered whether or not linking is allowed —
+            "xem lý do" is exactly what a blocked candidate needs (PART-04). */}
+        <a
+          href={profileHref}
+          target="_blank"
+          rel="noreferrer"
+          className="mr-auto text-xs font-semibold text-slate-500 hover:text-[#004c91] inline-flex items-center gap-1"
+        >
+          {candidate.canLink ? 'Mở hồ sơ đầy đủ' : 'Xem lý do / hồ sơ'} <ExternalLink className="w-3 h-3" />
+        </a>
         {candidate.canLink ? (
-          <a
-            href={profileHref}
-            target="_blank"
-            rel="noreferrer"
-            className="mr-auto text-xs font-semibold text-slate-500 hover:text-[#004c91] inline-flex items-center gap-1"
+          <button
+            onClick={onLink}
+            disabled={busy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Mở hồ sơ đầy đủ <ExternalLink className="w-3 h-3" />
-          </a>
+            {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+            {linking ? 'Đang liên kết...' : 'Liên kết đối tác này'}
+          </button>
         ) : (
-          <span className="mr-auto text-[11px] text-amber-700">
-            Bạn không có quyền liên kết đối tác này hoặc đối tác nằm ngoài phạm vi cơ sở của bạn.
+          <span className="text-[11px] font-semibold text-amber-700 max-w-[22rem] text-right">
+            {candidate.blockedReason
+              ? PARTNER_LINK_BLOCKED_LABELS[candidate.blockedReason]
+              : 'Bạn không có quyền liên kết đối tác này.'}
           </span>
         )}
-        <button
-          onClick={onLink}
-          disabled={busy || !candidate.canLink}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-          {linking ? 'Đang liên kết...' : 'Liên kết đối tác này'}
-        </button>
       </div>
     </div>
   );
@@ -479,6 +491,18 @@ export function CreatePartnerFromParticipantModal({
                               Lý do: {c.matchReason}
                             </div>
                           )}
+                          {/* Why this candidate is here but cannot be linked. Shown on the ROW, where
+                              the decision is made — not hidden behind "Chi tiết". */}
+                          {!c.canLink && c.blockedReason && (
+                            <div className="mt-1 text-[11px] font-semibold text-amber-700">
+                              {PARTNER_LINK_BLOCKED_LABELS[c.blockedReason]}
+                              {c.reviewNote?.trim() && (
+                                <span className="block font-normal text-amber-800">
+                                  Lý do từ chối: {c.reviewNote.trim()}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <button
@@ -490,15 +514,29 @@ export function CreatePartnerFromParticipantModal({
                             {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <Info className="w-3.5 h-3.5" />}
                             Chi tiết
                           </button>
-                          <button
-                            onClick={() => void linkExisting(c.partnerId)}
-                            disabled={anyBusy || !c.canLink}
-                            title={!c.canLink ? 'Đối tác nằm ngoài phạm vi cơ sở của bạn' : undefined}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            {linkingId === c.partnerId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-                            {linkingId === c.partnerId ? 'Đang liên kết...' : 'Liên kết'}
-                          </button>
+                          {/* A blocked candidate gets NO link button at all — not a disabled one.
+                              A greyed-out "Liên kết" still reads as "the right action, temporarily
+                              unavailable", when the right action for a rejected profile is to fix and
+                              resubmit it (PART-04). */}
+                          {c.canLink ? (
+                            <button
+                              onClick={() => void linkExisting(c.partnerId)}
+                              disabled={anyBusy}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-white bg-[#004c91] hover:bg-[#00386b] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              {linkingId === c.partnerId ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                              {linkingId === c.partnerId ? 'Đang liên kết...' : 'Liên kết'}
+                            </button>
+                          ) : c.recommendedAction === 'RESUBMIT' ? (
+                            <a
+                              href={`/dashboard/partners/${c.partnerId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold text-amber-800 border border-amber-300 bg-amber-50 hover:bg-amber-100 transition-colors"
+                            >
+                              Chỉnh sửa và gửi duyệt lại <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          ) : null}
                         </div>
                       </div>
                       {expanded && (

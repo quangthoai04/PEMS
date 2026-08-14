@@ -261,6 +261,7 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
     {
         FullName = m.FullName,
         Organization = m.Organization,
+        OrganizationPartnerId = m.OrganizationPartnerId,
         JobTitle = m.JobTitle,
         Nationality = m.Nationality,
     };
@@ -270,6 +271,7 @@ public sealed class GetEditableVisitRequestDetailQueryHandler
     {
         FullName = r.FullName,
         Organization = r.Organization,
+        OrganizationPartnerId = r.OrganizationPartnerId,
         JobTitle = r.JobTitle,
         Nationality = r.Nationality,
     };

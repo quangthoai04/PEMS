@@ -10,6 +10,7 @@ import {
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
   resolvedFormToV2Schema,
+  withMemberKeys,
 } from '../utils/visitRequestV2Form';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
 import type { ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -64,7 +65,25 @@ describe('cloneCampusVisitContent', () => {
     expect(result.visitInstanceId).toBe(42);
     expect(result.expectedRowVersion).toBe(3);
     expect(result.delegationName).toBe('Đoàn HN');
-    expect(result.visitors).toEqual(source.visitors);
+    // Same PEOPLE, different identities: the copy becomes its own guest_member rows on the server,
+    // so re-using the source's member keys would make one key name two rows (NP-03).
+    expect(result.visitors.map(v => ({ ...v, clientMemberKey: undefined })))
+      .toEqual(source.visitors.map(v => ({ ...v, clientMemberKey: undefined })));
+    expect(result.visitors[0].clientMemberKey).toBeTruthy();
+    expect(result.visitors[0].clientMemberKey).not.toBe(source.visitors[0].clientMemberKey);
+  });
+
+  it('re-points the contact pick at the COPY of the person it named', () => {
+    const source = filledCampus('ck-src', 'HN');
+    const picked = 'member-key-hn';
+    source.visitors[0].clientMemberKey = picked;
+    source.operationalContactClientMemberKey = picked;
+
+    const result = cloneCampusVisitContent(source, campus({ clientKey: 'ck-tgt', campus: 'DN' }));
+
+    // Not the source's key (that names another campus's row) and not null (the pick is not lost).
+    expect(result.operationalContactClientMemberKey).toBe(result.visitors[0].clientMemberKey);
+    expect(result.operationalContactClientMemberKey).not.toBe(picked);
   });
 
   it('editing the copy never mutates the source (no shared references)', () => {
@@ -334,6 +353,120 @@ describe('resolvedFormToV2Schema (edit/resubmit hydration)', () => {
     expect(payload.campusVisits[1].visitInstanceId).toBe(11);
     expect(payload.campusVisits[1].expectedRowVersion).toBe(6);
     expect(payload.campusVisits[1].campusId).toBe('HCM');
+  });
+
+  // ── "Đầu mối là ai trong đoàn?" survives the round trip (NP-03) ──────────────
+
+  it('restores the pick when the contact is one of the GUESTS', () => {
+    const form = resolved();
+    form.campusVisits[0].operationalContact.guestMemberId = 1;
+
+    const { values } = resolvedFormToV2Schema(form);
+    const hn = values.campusVisits[0];
+
+    expect(hn.operationalContactClientMemberKey).toBe(hn.visitors[0].clientMemberKey);
+    expect(hn.operationalContactClientMemberKey).toBeTruthy();
+  });
+
+  it('restores the pick when the contact is one of the SUPPORT staff', () => {
+    // The previous version searched `visitors` only, so a contact who was the delegation's
+    // interpreter reloaded as "chưa chọn" and the link was dropped on the next save.
+    const form = resolved();
+    form.campusVisits[1].operationalContact.guestMemberId = 3; // the HCM support member
+
+    const { values } = resolvedFormToV2Schema(form);
+    const hcm = values.campusVisits[1];
+
+    expect(hcm.operationalContactClientMemberKey).toBe(hcm.supportTeam[0].clientMemberKey);
+  });
+
+  it('restores as "nobody" when the linked member is no longer in either list', () => {
+    const form = resolved();
+    form.campusVisits[0].operationalContact.guestMemberId = 9999;
+
+    const { values } = resolvedFormToV2Schema(form);
+    expect(values.campusVisits[0].operationalContactClientMemberKey).toBeNull();
+  });
+
+  it('gives every hydrated member its own key, and keeps campuses independent', () => {
+    const { values } = resolvedFormToV2Schema(resolved());
+    const keys = values.campusVisits.flatMap(cv =>
+      [...cv.visitors, ...cv.supportTeam].map(m => m.clientMemberKey));
+
+    expect(keys.every(Boolean)).toBe(true);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('sends the pick on to the edit payload, and drops one that names nobody', () => {
+    const form = resolved();
+    form.campusVisits[0].operationalContact.guestMemberId = 1;
+    const { values, expectedRequestRowVersion } = resolvedFormToV2Schema(form);
+
+    const payload = buildV2EditPayload(values, expectedRequestRowVersion);
+    expect(payload.campusVisits[0].operationalContactClientMemberKey)
+      .toBe(values.campusVisits[0].visitors[0].clientMemberKey);
+    expect(payload.campusVisits[0].visitors[0].clientMemberKey)
+      .toBe(values.campusVisits[0].visitors[0].clientMemberKey);
+
+    // A key naming nobody is REFUSED by the backend, so a stale one must not be put on the wire —
+    // that would turn a form the user has already corrected into a failed submit.
+    values.campusVisits[0].operationalContactClientMemberKey = 'gone';
+    expect(buildV2EditPayload(values, expectedRequestRowVersion)
+      .campusVisits[0].operationalContactClientMemberKey).toBeNull();
+  });
+
+  it('accepts a support member as the pick on the wire', () => {
+    const form = resolved();
+    form.campusVisits[1].operationalContact.guestMemberId = 3;
+    const { values, expectedRequestRowVersion } = resolvedFormToV2Schema(form);
+
+    const payload = buildV2EditPayload(values, expectedRequestRowVersion);
+    expect(payload.campusVisits[1].operationalContactClientMemberKey)
+      .toBe(payload.campusVisits[1].externalSupportMembers[0].clientMemberKey);
+  });
+});
+
+describe('withMemberKeys (restoring a draft written by an older build)', () => {
+  it('mints an identity for every row that has none', () => {
+    const stale = campus({ clientKey: 'ck', visitors: [
+      { fullName: 'A', jobTitle: 'GV', organization: 'ĐH X', organizationPartnerId: null, nationality: 'VN' },
+      { fullName: 'B', jobTitle: 'TS', organization: 'ĐH X', organizationPartnerId: null, nationality: 'VN' },
+    ] });
+
+    const healed = withMemberKeys(stale);
+    const keys = healed.visitors.map(v => v.clientMemberKey);
+    expect(keys.every(Boolean)).toBe(true);
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('translates a draft that still remembers the pick as an array INDEX', () => {
+    // The last place that number is trusted. Read once, turned into the key of whatever row it
+    // points at now, and never consulted again.
+    const legacy = {
+      ...campus({ clientKey: 'ck', visitors: [
+        { fullName: 'A', jobTitle: 'GV', organization: 'ĐH X', organizationPartnerId: null, nationality: 'VN' },
+        { fullName: 'B', jobTitle: 'TS', organization: 'ĐH X', organizationPartnerId: null, nationality: 'VN' },
+      ] }),
+      operationalContactVisitorIndex: 1,
+    } as CampusVisitSchema;
+
+    const healed = withMemberKeys(legacy);
+    expect(healed.operationalContactClientMemberKey).toBe(healed.visitors[1].clientMemberKey);
+  });
+
+  it('leaves an existing identity alone — a re-minted key is as useless as an index', () => {
+    const kept = campus({ clientKey: 'ck', visitors: [
+      { clientMemberKey: 'stable-1', fullName: 'A', jobTitle: 'GV', organization: 'ĐH X', organizationPartnerId: null, nationality: 'VN' },
+    ], operationalContactClientMemberKey: 'stable-1' });
+
+    const healed = withMemberKeys(kept);
+    expect(healed.visitors[0].clientMemberKey).toBe('stable-1');
+    expect(healed.operationalContactClientMemberKey).toBe('stable-1');
+  });
+
+  it('drops a pick that names nobody in the restored lists', () => {
+    const orphaned = campus({ clientKey: 'ck', operationalContactClientMemberKey: 'deleted-row' });
+    expect(withMemberKeys(orphaned).operationalContactClientMemberKey).toBeNull();
   });
 });
 

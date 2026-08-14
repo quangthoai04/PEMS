@@ -157,13 +157,43 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
             .Must(s => s is null || s.Count <= MaxMembers).WithMessage($"Tối đa {MaxMembers} nhân sự hỗ trợ mỗi cơ sở.");
         RuleForEach(c => c.ExternalSupportMembers).SetValidator(new SupportTeamMemberV2Validator());
 
-        // "Đầu mối là người thứ N trong đoàn" (NP-03). Only a NEGATIVE index is rejected here: that is
-        // a client bug, and a bug should be told. An index that merely points past the end of the list
-        // is NOT — a user who removes a guest after picking them leaves exactly that, and refusing the
-        // whole submission over a stale hint would throw away a long form for nothing.
-        // OperationalContactLink ignores it and falls back to matching the snapshot.
-        RuleFor(c => c.OperationalContactVisitorIndex)
-            .Must(i => i is null || i >= 0)
-            .WithMessage("Vị trí đầu mối trong danh sách đoàn không hợp lệ.");
+        // ── "Đầu mối là ai trong đoàn?" — the member key (NP-03) ──
+        // Structural half of the rule only: the payload must NAME exactly one of its own rows. Whether
+        // that row may hold the role, and which guest_member_id it becomes, is decided inside the
+        // transaction by OperationalContactLink — the ids do not exist yet at this point.
+        //
+        // Checked here as well as there because this runs before a transaction is opened: a payload
+        // whose keys are duplicated or whose contact names nobody is a client fault, and telling it so
+        // without touching the database is both cheaper and clearer than a rolled-back write.
+        RuleFor(c => c)
+            .Must(c => MemberKeysAreDistinct(c))
+            .WithMessage("Danh sách thành viên có định danh trùng nhau. Vui lòng tải lại biểu mẫu.");
+        RuleFor(c => c)
+            .Must(c => ContactKeyNamesAMember(c))
+            .WithMessage(OperationalContactMessages.MemberNotInDelegation)
+            .When(c => !string.IsNullOrWhiteSpace(c.OperationalContactClientMemberKey));
     }
+
+    /// <summary>Every non-empty member key in ONE campus, visitors and support together.</summary>
+    private static IEnumerable<string> MemberKeysOf(CampusVisitFormDto c) =>
+        (c.Visitors ?? new List<VisitorDto>()).Select(v => v.ClientMemberKey)
+            .Concat((c.ExternalSupportMembers ?? new List<SupportTeamMemberDto>()).Select(m => m.ClientMemberKey))
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => k!);
+
+    /// <summary>
+    /// A key that appears twice is not an identity, and the contact would resolve to whichever row was
+    /// enumerated first — the exact silent mis-aiming this replaced. Scope is the CAMPUS, because that
+    /// is where members live: two campuses of one request keep their own independent copies of the same
+    /// people, and requiring keys to be unique across the request would refuse an ordinary "áp dụng cho
+    /// các cơ sở còn lại".
+    /// </summary>
+    private static bool MemberKeysAreDistinct(CampusVisitFormDto c)
+    {
+        var keys = MemberKeysOf(c).ToList();
+        return keys.Count == keys.Distinct(StringComparer.Ordinal).Count();
+    }
+
+    private static bool ContactKeyNamesAMember(CampusVisitFormDto c) =>
+        MemberKeysOf(c).Count(k => string.Equals(k, c.OperationalContactClientMemberKey, StringComparison.Ordinal)) == 1;
 }

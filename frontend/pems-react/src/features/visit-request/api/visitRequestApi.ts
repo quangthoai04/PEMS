@@ -38,6 +38,13 @@ export interface PublicPartnerOptionDto {
   city: string | null;
   partnerType: string;
   displayName: string;
+  /**
+   * Only the internal endpoint fills these. A profile still awaiting approval must SAY so in the
+   * dropdown rather than looking identical to an approved partner (PART-03).
+   */
+  profileStatus?: 'APPROVED' | 'PENDING_APPROVAL';
+  ownerCampusId?: number;
+  ownerCampusName?: string | null;
 }
 
 
@@ -149,9 +156,17 @@ export const visitRequestApi = {
 
 
 
-  async searchOrganizations(query: string): Promise<PublicPartnerOptionDto[]> {
+  /**
+   * Organization options for the visit form.
+   *
+   * <p>`internal` picks the authenticated endpoint. The two are NOT interchangeable: the public one
+   * returns ACTIVE + APPROVED + PUBLIC only, so staff filling in the same form could not find an
+   * organization that exists internally and had to retype it as free text — losing the partner id at
+   * the exact moment it was known (PART-03).</p>
+   */
+  async searchOrganizations(query: string, internal = false): Promise<PublicPartnerOptionDto[]> {
     const { data } = await httpClient.get<PublicPartnerOptionDto[]>(
-      API_ENDPOINTS.publicPartners.search,
+      internal ? API_ENDPOINTS.partners.options : API_ENDPOINTS.publicPartners.search,
       { params: { keyword: query, limit: 20 } }
     );
     return data;

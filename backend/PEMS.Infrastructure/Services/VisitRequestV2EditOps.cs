@@ -62,6 +62,7 @@ internal static class VisitRequestV2EditOps
             rows.Add(new VisitGuestMember
             {
                 FullName = v.FullName, Organization = v.Organization, JobTitle = v.JobTitle,
+                OrganizationPartnerId = v.OrganizationPartnerId,
                 Nationality = v.Nationality, MemberType = "GUEST", DisplayOrder = order++,
                 CreatedAt = now, CreatedBy = actorId,
             });
@@ -69,6 +70,7 @@ internal static class VisitRequestV2EditOps
             rows.Add(new VisitGuestMember
             {
                 FullName = m.FullName, Organization = m.Organization, JobTitle = m.JobTitle,
+                OrganizationPartnerId = m.OrganizationPartnerId,
                 Nationality = m.Nationality, MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
                 CreatedAt = now, CreatedBy = actorId,
             });
@@ -76,10 +78,31 @@ internal static class VisitRequestV2EditOps
         return rows;
     }
 
+    /// <summary>
+    /// The client-minted member keys carried by ONE campus's edit content, in the order
+    /// <see cref="StageReplaceMembers"/> builds the rows from it (visitors, then support). Kept beside
+    /// that method so the two orderings are read together and cannot drift apart.
+    /// </summary>
+    public static List<string?> MemberKeys(CampusVisitEditV2Dto content)
+    {
+        var keys = new List<string?>();
+        foreach (var v in content.Visitors ?? new List<VisitorDto>()) keys.Add(v.ClientMemberKey);
+        foreach (var m in content.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+            keys.Add(m.ClientMemberKey);
+        return keys;
+    }
+
     /// <summary>Phase 2 — create the composite links for the staged member rows (ids resolved after flush #1).</summary>
+    /// <param name="clientMemberKeys">
+    /// The keys those rows arrived under, index-aligned with <paramref name="newRows"/>. Null for the
+    /// paths that have none — an amendment replays member lists stored days ago, and no key from that
+    /// form still exists.
+    /// </param>
+    /// <param name="pickedClientMemberKey">Which of them the campus's operational contact is.</param>
     public static void LinkMembers(
         IApplicationDbContext db, VisitRequest request, VisitRequestCampus instance,
-        IReadOnlyList<VisitGuestMember> newRows, System.DateTime now, ulong? actorId)
+        IReadOnlyList<VisitGuestMember> newRows, System.DateTime now, ulong? actorId,
+        IReadOnlyList<string?>? clientMemberKeys = null, string? pickedClientMemberKey = null)
     {
         uint linkOrder = 0;
         foreach (var m in newRows)
@@ -99,10 +122,19 @@ internal static class VisitRequestV2EditOps
         // ones, so whatever guest_member_id the contact used to hold names a row that no longer
         // exists. Without this the link silently degrades to null on the first content edit — the
         // contact would go back to being a name that has to be string-matched, which is the whole
-        // problem. The contact SNAPSHOT is immutable through this path (EnsureContactSnapshotUnchanged
-        // refuses any change to it), so matching it against the new rows re-finds the same person.
+        // problem.
+        //
+        // The KEY is what re-finds them, and it is the only thing that can: the contact snapshot is
+        // immutable through this path (EnsureContactSnapshotUnchanged refuses any change to it) while
+        // the member row is freely editable, so correcting a spelling in the delegation list used to
+        // be enough for the snapshot match to find nobody. Re-pointing by key also means editing that
+        // member — their name, their job title, the partner behind their organisation — never changes
+        // WHO the contact is. Only removing them does, and that is refused rather than absorbed.
         if (instance.FormDetail is not null)
-            OperationalContactLink.Resolve(instance.FormDetail, newRows);
+            OperationalContactLink.Resolve(
+                instance.FormDetail,
+                OperationalContactLink.Pair(newRows, clientMemberKeys),
+                pickedClientMemberKey);
     }
 
     /// <summary>

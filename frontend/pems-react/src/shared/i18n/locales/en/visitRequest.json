@@ -296,6 +296,7 @@
     "partnerComboPlaceholder": "Type or search for an organization/partner...",
     "partnerSelected": "An existing partner is selected",
     "orgKnown": "✓ Already in the system",
+    "orgPendingApproval": "Profile awaiting approval",
     "partnerFreeText": "This is a free-text organization (not linked to an existing partner).",
     "clear": "Clear",
     "phoneSearchPlaceholder": "Search country or code...",

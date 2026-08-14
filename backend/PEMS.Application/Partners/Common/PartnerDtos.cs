@@ -155,8 +155,22 @@ public sealed class PartnerMatchCandidateDto
     /// <summary>0–100 match score (higher = stronger).</summary>
     public decimal MatchScore { get; set; }
     public string? MatchReason { get; set; }
-    /// <summary>Whether the CURRENT user is allowed to link a guest to this partner (campus scope).</summary>
+
+    /// <summary>
+    /// Whether the CURRENT user may CONFIRM a guest as belonging to this partner. Not the same as
+    /// "may read it": a rejected or draft profile of the caller's own campus is visible but not
+    /// linkable (PART-04).
+    /// </summary>
     public bool CanLink { get; set; }
+
+    /// <summary>Why <see cref="CanLink"/> is false — <see cref="PartnerLinkBlockReasons"/>, else null.</summary>
+    public string? BlockedReason { get; set; }
+
+    /// <summary>What the UI should offer instead — <see cref="PartnerLinkRecommendedActions"/>.</summary>
+    public string RecommendedAction { get; set; } = PartnerLinkRecommendedActions.Link;
+
+    /// <summary>Why the Staff Leader rejected this profile — shown on a blocked rejected candidate.</summary>
+    public string? ReviewNote { get; set; }
 }
 
 public sealed class VisitGuestPartnerLinkDto

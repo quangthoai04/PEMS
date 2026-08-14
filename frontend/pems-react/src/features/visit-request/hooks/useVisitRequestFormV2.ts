@@ -18,6 +18,7 @@ import {
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
   newClientKey,
+  withMemberKeys,
 } from '../utils/visitRequestV2Form';
 import {
   clearOtpChallengeToken,
@@ -423,7 +424,11 @@ export const useVisitRequestFormV2 = (
       ...draft.data,
       campusVisits:
         draft.data.campusVisits && draft.data.campusVisits.length > 0
-          ? draft.data.campusVisits.map(cv => ({ ...createEmptyCampusVisit(cv.clientKey || newClientKey()), ...cv }))
+          // `withMemberKeys` gives every restored member row its stable identity back and translates a
+          // draft written in the array-index era into a real pick. A draft saved before either field
+          // existed would otherwise resume with rows the contact picker cannot name (NP-03).
+          ? draft.data.campusVisits.map(cv =>
+            withMemberKeys({ ...createEmptyCampusVisit(cv.clientKey || newClientKey()), ...cv }))
           : defaults.campusVisits,
     });
     // Restoring the TYPING without restoring the submission intent is what turns a resumed draft

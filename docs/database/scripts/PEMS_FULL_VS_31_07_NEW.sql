@@ -1319,6 +1319,8 @@ CREATE TABLE visit_guest_members (
   member_type ENUM('GUEST','EXTERNAL_SUPPORT') NOT NULL DEFAULT 'GUEST',
   full_name VARCHAR(150) NOT NULL,
   organization VARCHAR(200) NOT NULL,
+  organization_partner_id BIGINT UNSIGNED NULL
+    COMMENT 'Thành viên này đã được người đăng ký chọn từ hồ sơ đối tác nào (partners). NULL = tổ chức gõ tay hoặc chưa xác định — matcher có thể gợi ý sau. Cột organization ở trên vẫn là snapshot hiển thị và KHÔNG chạy theo đối tác đổi tên.',
   job_title VARCHAR(150) NOT NULL,
   nationality VARCHAR(100) NOT NULL,
   display_order INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1332,13 +1334,19 @@ CREATE TABLE visit_guest_members (
   UNIQUE KEY uq_vgm_request_member (visit_request_id, guest_member_id),
   KEY idx_guest_members_request (visit_request_id),
   KEY idx_guest_members_type_order (visit_request_id, member_type, display_order),
+  KEY idx_vgm_organization_partner (organization_partner_id),
   CHECK (TRIM(full_name) <> ''),
   CHECK (TRIM(organization) <> ''),
   CHECK (TRIM(job_title) <> ''),
   CHECK (TRIM(nationality) <> ''),
   CONSTRAINT fk_guest_members_request
     FOREIGN KEY (visit_request_id) REFERENCES visit_requests(visit_request_id)
-    ON UPDATE CASCADE ON DELETE RESTRICT) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  -- SET NULL: xoá hồ sơ đối tác thì dòng thành viên tụt về mức snapshot (cột organization ở trên),
+  -- KHÔNG kéo theo việc mất thành viên khỏi đoàn.
+  CONSTRAINT fk_vgm_organization_partner
+    FOREIGN KEY (organization_partner_id) REFERENCES partners(partner_id)
+    ON UPDATE CASCADE ON DELETE SET NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Danh sách từng người trong đoàn khách. Không lưu consent hình ảnh vì form đã bỏ phần xác nhận sử dụng hình ảnh/thông tin.';
 
 CREATE TABLE visit_participants (
@@ -2417,7 +2425,11 @@ CREATE TABLE visit_guest_partner_links (
     'AUTO_EMAIL_DOMAIN',
     'MANUAL',
     'CREATED_FROM_GUEST',
-    'BUSINESS_CARD_OCR'
+    'BUSINESS_CARD_OCR',
+    -- Người đăng ký tự chọn hồ sơ đối tác ngay trên form: danh tính ổn định, không phải máy suy ra.
+    -- Tách khỏi MANUAL (nhân viên bấm liên kết ở màn biên bản) và AUTO_NAME (hệ thống suy từ tên) để
+    -- về sau còn trả lời được "quan hệ này do ai quyết".
+    'REGISTRATION_SELECTED'
   ) NOT NULL DEFAULT 'MANUAL',
 
   match_status ENUM('SUGGESTED','CONFIRMED','REJECTED') NOT NULL DEFAULT 'CONFIRMED',

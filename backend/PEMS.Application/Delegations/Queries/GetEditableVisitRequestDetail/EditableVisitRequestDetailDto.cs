@@ -97,6 +97,12 @@ public sealed class EditableGuestMemberDto
 {
     public string FullName { get; set; } = "";
     public string? Organization { get; set; }
+    /// <summary>
+    /// The partner profile this member was picked from, so re-opening the form restores the CHOICE and
+    /// not just the text it printed. Without it, every edit silently downgraded a picked organization
+    /// back to free text (PART-01).
+    /// </summary>
+    public ulong? OrganizationPartnerId { get; set; }
     public string? JobTitle { get; set; }
     public string? Nationality { get; set; }
 }

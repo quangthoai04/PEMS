@@ -169,6 +169,11 @@ internal static class MinuteAutoFill
     ///   never enough to merge anything a user can see.</item>
     /// </list>
     /// <para>
+    /// The link in check 1 may name a GUEST or an EXTERNAL_SUPPORT row: an interpreter or coordinator
+    /// travelling with the delegation is eligible to hold the role, and step 3 loads both kinds, so
+    /// asking by id rather than by list is what makes the two cases identical here.
+    /// </para>
+    /// <para>
     /// Only if all four say "not here" is a snapshot row added, and it carries no ids at all: the
     /// contact is a person the delegation named, not necessarily an account and not necessarily a
     /// member. That is exactly what <c>minute_participants</c>' nullable id columns are for.
@@ -192,6 +197,10 @@ internal static class MinuteAutoFill
         if (detail is null) return;
 
         // 1. Linked to a delegation member → step 3 (or a pre-existing row) already covers them.
+        //    The link may name a GUEST or an EXTERNAL_SUPPORT row and step 3 reads both: it takes
+        //    every member of this instance whatever their member_type, so an interpreter who
+        //    coordinates the visit arrives there exactly like a guest who does. That is why this
+        //    check is by ID and not by which list the person was written down in.
         if (detail.OperationalContactGuestMemberId is ulong linkedGuestId
             && seenGuestIds.Contains(linkedGuestId))
             return;
@@ -207,7 +216,12 @@ internal static class MinuteAutoFill
                 PersonIdentity.NormalizeEmail(p.EmailSnapshot) == contactEmail))
             return;
 
-        // 4. Same name + role + organisation as ANY row already present.
+        // 4. Same name + role + organisation as ANY row already present. Deliberately still reached
+        //    when the contact HAS a linked id: step 3 above skips a delegation member whose
+        //    fingerprint already belongs to an internal row, so the linked member can be legitimately
+        //    absent from seenGuestIds — and adding the contact then would put the same human in the
+        //    biên bản twice, once as staff and once as the coordinator. Name+role+organisation, never
+        //    name alone: two people who share only a name are two people.
         var contactKey = PersonIdentity.Key(
             detail.OperationalContactFullName,
             detail.OperationalContactJobTitle,

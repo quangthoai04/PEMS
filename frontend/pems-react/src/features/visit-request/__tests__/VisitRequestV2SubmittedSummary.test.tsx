@@ -29,7 +29,7 @@ const campus = (over: Partial<CampusVisitSchema>): CampusVisitSchema => ({
   visitors: [{ fullName: 'Visitor A', jobTitle: 'Dean', organization: 'Univ A', nationality: 'US' }],
   supportTeam: [],
   operationalContact: { fullName: 'Op A', organization: 'OrgA', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op-a@example.com' },
-  operationalContactVisitorIndex: null,
+  operationalContactClientMemberKey: null,
   workingLanguage: 'EN',
   transportationNote: '',
   mediaConsentStatus: 'DECLINED',

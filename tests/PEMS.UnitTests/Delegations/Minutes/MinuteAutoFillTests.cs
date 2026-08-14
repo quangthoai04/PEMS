@@ -222,6 +222,41 @@ public class MinuteAutoFillTests
     }
 
     [Fact]
+    public async Task A_contact_who_is_one_of_the_SUPPORT_staff_is_filled_in_once_as_that_member()
+    {
+        // The role is open to anybody travelling with the delegation — an interpreter, an assistant,
+        // a coordinator — and those are written down in the support list, not the guest list. The
+        // biên bản must treat that exactly like a guest holding the role: one row, carrying the id.
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+        AddGuest(db, GuestMemberId, ContactName, ContactJobTitle, ContactOrg, memberType: "EXTERNAL_SUPPORT");
+        instance.FormDetail!.OperationalContactGuestMemberId = GuestMemberId;
+        db.SaveChanges();
+
+        var rows = await ComputeAsync(db, instance);
+
+        var forThatPerson = rows.Where(r => r.FullNameSnapshot == ContactName).ToList();
+        Assert.Single(forThatPerson);
+        Assert.Equal(GuestMemberId, forThatPerson[0].GuestMemberId);
+    }
+
+    [Fact]
+    public async Task A_member_who_only_SHARES_A_NAME_with_the_contact_does_not_absorb_them()
+    {
+        // Two different people, one of them the campus's contact. Merging on the name alone would
+        // leave the person who actually ran the visit out of the record of it; the fingerprint
+        // carries role and organisation precisely so it cannot.
+        using var db = DelegationsTestDbContext.Create();
+        var (instance, _) = DelegationsTestData.SeedBase(db);
+        AddGuest(db, GuestMemberId, ContactName, "Sinh viên", "ABC University");
+        db.SaveChanges();
+
+        var rows = await ComputeAsync(db, instance);
+
+        Assert.Equal(2, rows.Count(r => r.FullNameSnapshot == ContactName));
+    }
+
+    [Fact]
     public async Task A_contact_matching_a_member_by_name_role_and_org_is_not_duplicated()
     {
         using var db = DelegationsTestDbContext.Create();
@@ -293,12 +328,14 @@ public class MinuteAutoFillTests
     }
 
     private static void AddGuest(
-        DelegationsTestDbContext db, ulong guestMemberId, string fullName, string jobTitle, string organization)
+        DelegationsTestDbContext db, ulong guestMemberId, string fullName, string jobTitle, string organization,
+        string memberType = "GUEST")
     {
         db.GuestMembers.Add(new VisitGuestMember
         {
             GuestMemberId = guestMemberId,
             VisitRequestId = DelegationsTestData.VisitRequestId,
+            MemberType = memberType,
             FullName = fullName,
             JobTitle = jobTitle,
             Organization = organization,

@@ -243,9 +243,35 @@ export interface PartnerMatchCandidate {
   /** 0–100 match score. */
   matchScore: number;
   matchReason?: string | null;
-  /** Whether the current user may link to this partner (campus scope). */
+  /**
+   * Whether the current user may CONFIRM a guest as belonging to this partner.
+   *
+   * <p>Not the same as "may read it". A rejected profile of your own campus is perfectly visible and
+   * must NOT be linkable — the previous code derived this flag from the read permission, so the modal
+   * happily offered "Liên kết" on an organization the Staff Leader had just turned down (PART-04).</p>
+   */
   canLink: boolean;
+  /** Why `canLink` is false: PARTNER_REJECTED | PARTNER_DRAFT | PARTNER_PENDING_OTHER_CAMPUS | PARTNER_OUT_OF_SCOPE. */
+  blockedReason?: PartnerLinkBlockedReason | null;
+  /** What to offer instead of linking. */
+  recommendedAction?: 'LINK' | 'RESUBMIT' | 'NONE';
+  /** The Staff Leader's rejection note, present only on a blocked rejected candidate. */
+  reviewNote?: string | null;
 }
+
+export type PartnerLinkBlockedReason =
+  | 'PARTNER_REJECTED'
+  | 'PARTNER_DRAFT'
+  | 'PARTNER_PENDING_OTHER_CAMPUS'
+  | 'PARTNER_OUT_OF_SCOPE';
+
+/** Why a candidate cannot be linked, in the words shown to the user. */
+export const PARTNER_LINK_BLOCKED_LABELS: Record<PartnerLinkBlockedReason, string> = {
+  PARTNER_REJECTED: 'Hồ sơ đối tác đã bị từ chối — hãy chỉnh sửa và gửi duyệt lại thay vì liên kết.',
+  PARTNER_DRAFT: 'Hồ sơ đối tác còn là bản nháp, chưa thể liên kết.',
+  PARTNER_PENDING_OTHER_CAMPUS: 'Hồ sơ đang chờ duyệt ở cơ sở khác nên chưa thể liên kết.',
+  PARTNER_OUT_OF_SCOPE: 'Đối tác nằm ngoài phạm vi cơ sở của bạn.',
+};
 
 export interface PartnerMatchResult {
   matchStatus: 'NONE' | 'SUGGESTED' | 'PENDING_APPROVAL' | 'APPROVED';

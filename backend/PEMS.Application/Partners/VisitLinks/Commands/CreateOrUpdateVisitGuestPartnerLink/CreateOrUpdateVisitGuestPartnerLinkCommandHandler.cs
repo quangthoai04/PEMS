@@ -43,32 +43,30 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
             .FirstOrDefaultAsync(p => p.PartnerId == request.PartnerId, cancellationToken)
             ?? throw new NotFoundException("Partner", request.PartnerId);
 
-        // Confirming a link to a foreign-campus partner is only allowed once that partner
-        // is APPROVED and not PRIVATE (scope rule 8.3).
-        if (!PartnerAccess.CanViewPartner(_currentUser, partner))
-            throw new AuthBusinessException(PartnerErrorCodes.Forbidden,
-                "Bạn không có quyền liên kết tới đối tác này.", 403);
+        // Asserting "this person belongs to that organization" is a stronger act than reading the
+        // profile, so it has its OWN policy: a REJECTED or DRAFT profile is never a valid link target
+        // even for the campus staff who can see it (PART-04).
+        var blockReason = PartnerAccess.LinkBlockReason(_currentUser, partner);
+        if (blockReason is not null)
+            throw blockReason switch
+            {
+                PartnerLinkBlockReasons.Rejected => new AuthBusinessException(
+                    PartnerErrorCodes.RejectedCannotLink,
+                    "Hồ sơ đối tác này đã bị từ chối nên không thể liên kết. Hãy chỉnh sửa và gửi duyệt lại.",
+                    409),
+                PartnerLinkBlockReasons.Draft => new AuthBusinessException(
+                    PartnerErrorCodes.NotLinkable,
+                    "Hồ sơ đối tác này còn là bản nháp, chưa thể liên kết.", 409),
+                PartnerLinkBlockReasons.PendingOtherCampus => new AuthBusinessException(
+                    PartnerErrorCodes.NotLinkable,
+                    "Hồ sơ đối tác đang chờ duyệt ở cơ sở khác nên chưa thể liên kết.", 409),
+                _ => new AuthBusinessException(PartnerErrorCodes.Forbidden,
+                    "Bạn không có quyền liên kết tới đối tác này.", 403),
+            };
 
-        // Validate the guest/participant really belongs to this visit request or campus instance.
-        if (request.GuestMemberId is { } gid)
-        {
-            var belongs = await _db.VisitInstanceGuestMembers.AnyAsync(
-                l => l.VisitInstanceId == instance.VisitInstanceId && l.GuestMemberId == gid, cancellationToken)
-                || await _db.VisitGuestMembers.AnyAsync(
-                g => g.GuestMemberId == gid && (g.VisitRequestId == instance.VisitRequestId || g.VisitRequestId == 0), cancellationToken)
-                || await _db.VisitGuestMembers.AnyAsync(
-                g => g.GuestMemberId == gid, cancellationToken);
-            if (!belongs) throw new NotFoundException("VisitGuestMember", gid);
-        }
-        if (request.MinuteParticipantId is { } mid)
-        {
-            var belongs = await (
-                from mp in _db.MinuteParticipants
-                join m in _db.Minutes on mp.MinutesId equals m.MinutesId
-                where mp.MinuteParticipantId == mid && m.VisitInstanceId == instance.VisitInstanceId
-                select mp.MinuteParticipantId).AnyAsync(cancellationToken);
-            if (!belongs) throw new NotFoundException("MinuteParticipant", mid);
-        }
+        // The guest/participant must belong to THIS instance — no "exists anywhere" fallback (PART-08).
+        await VisitLinkSupport.EnsureTargetsInInstanceAsync(
+            _db, instance, request.GuestMemberId, request.MinuteParticipantId, cancellationToken);
 
         if (request.PartnerContactId is { } contactId)
         {
@@ -90,16 +88,32 @@ public sealed class CreateOrUpdateVisitGuestPartnerLinkCommandHandler
         VisitGuestPartnerLink? link = null;
         if (request.LinkId is { } linkId)
         {
+            // Scoped to the request AND this instance (legacy request-wide rows carry a null instance).
             link = await _db.VisitGuestPartnerLinks
                 .FirstOrDefaultAsync(l => l.LinkId == linkId
-                                          && l.VisitRequestId == instance.VisitRequestId, cancellationToken)
+                                          && l.VisitRequestId == instance.VisitRequestId
+                                          && (l.VisitInstanceId == null
+                                              || l.VisitInstanceId == instance.VisitInstanceId), cancellationToken)
                 ?? throw new NotFoundException("VisitGuestPartnerLink", linkId);
+
+            // A link id identifies ONE person's relationship. Re-pointing it at somebody else would
+            // silently rewrite whose organization this is — that is a new link, not an update.
+            var retargeted =
+                (request.GuestMemberId is { } newGid && link.GuestMemberId is { } oldGid && newGid != oldGid)
+                || (request.MinuteParticipantId is { } newMid && link.MinuteParticipantId is { } oldMid && newMid != oldMid)
+                || (request.GuestMemberId is not null && link.MinuteParticipantId is not null && link.GuestMemberId is null)
+                || (request.MinuteParticipantId is not null && link.GuestMemberId is not null && link.MinuteParticipantId is null);
+            if (retargeted)
+                throw new BusinessRuleException(
+                    "Không thể đổi người được liên kết của một liên kết đã có. Hãy tạo liên kết mới cho người đó.",
+                    PartnerErrorCodes.LinkTargetRequired);
         }
         else
         {
             // One target keeps at most one active link — reuse the existing row.
             link = await _db.VisitGuestPartnerLinks.FirstOrDefaultAsync(
                 l => l.VisitRequestId == instance.VisitRequestId
+                     && (l.VisitInstanceId == null || l.VisitInstanceId == instance.VisitInstanceId)
                      && ((request.GuestMemberId != null && l.GuestMemberId == request.GuestMemberId)
                          || (request.MinuteParticipantId != null && l.MinuteParticipantId == request.MinuteParticipantId)),
                 cancellationToken);

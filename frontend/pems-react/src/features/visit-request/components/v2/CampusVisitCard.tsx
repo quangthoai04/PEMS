@@ -12,7 +12,7 @@ import { PhoneField } from '../shared/PhoneField';
 import { VisitDateTimeRangePicker } from '../shared/VisitDateTimeRangePicker';
 import { CountrySelect } from '../shared/CountrySelect';
 import { OrganizationCombobox } from '../shared/OrganizationCombobox';
-import { showSuccessToast } from '../../../../shared/utils/toast';
+import { showMessageErrorToast, showSuccessToast } from '../../../../shared/utils/toast';
 import { countFieldErrors } from '../../utils/formErrorNavigation';
 import { validatePersonExcel, canApplyImport, type ExcelTranslator, type PersonRow } from '../ExcelUpload/excelValidator';
 import { ExcelImportPanel, type ExcelImportState } from '../ExcelUpload/ExcelImportPanel';
@@ -22,6 +22,7 @@ import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 import { fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
+import { createEmptyMember } from '../../utils/visitRequestV2Form';
 
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
 
@@ -160,6 +161,15 @@ export const CampusVisitCard: React.FC<Props> = ({
     { kind: 'visitors' | 'supportTeam'; rows: PersonRow[]; fileName: string } | null
   >(null);
   const [selectedSource, setSelectedSource] = useState<string>('');
+  /**
+   * Raised the FIRST time somebody edits the member who is this campus's contact, on a campus that
+   * already exists (NP-03 §10). One prompt per card, not one per keystroke: the point is to be told
+   * once what the relationship is, not to be interrogated while typing.
+   */
+  const [contactMemberEdit, setContactMemberEdit] = useState<
+    { kind: 'visitors' | 'supportTeam'; rowIndex: number; field: string; previous: string } | null
+  >(null);
+  const contactEditAcknowledgedRef = useRef(false);
   const visitorFileRef = useRef<HTMLInputElement>(null);
   const supportFileRef = useRef<HTMLInputElement>(null);
 
@@ -202,8 +212,13 @@ export const CampusVisitCard: React.FC<Props> = ({
     setSection(kind, { report });
     if (!canApplyImport(report)) return;
 
+    // An imported spreadsheet carries names, never ids — every row lands as free text, and the
+    // matcher offers candidates later. Filling an id in from a name match here would be the exact
+    // guess-as-decision this whole change removes (PART-06).
     const rows = report.data.map(r => ({
-      fullName: r.fullName, jobTitle: r.jobTitle, organization: r.organization, nationality: r.nationality,
+      ...createEmptyMember(),
+      fullName: r.fullName, jobTitle: r.jobTitle, organization: r.organization,
+      organizationPartnerId: null, nationality: r.nationality,
     }));
     const fields = kind === 'visitors' ? visitorFields : supportFields;
     const blanks = currentRows(kind).map(isBlank);
@@ -222,8 +237,23 @@ export const CampusVisitCard: React.FC<Props> = ({
    * for it, and only once the form has been submitted (before that there are no errors to correct).
    */
   const removePersonRow = (kind: 'visitors' | 'supportTeam', rowIndex: number) => {
+    // The person holding the contact role is not deletable from here (NP-03 §9). Removing them
+    // leaves the campus with a coordinator who is not in the delegation and a link naming a row that
+    // no longer exists — the backend refuses exactly this, so blocking it here turns a failed submit
+    // at the end of a long form into a sentence at the moment of the click. Nothing is silently
+    // re-pointed at somebody else: choosing a different contact is the user's decision to make.
+    if (memberHoldsContactRole(kind, rowIndex)) {
+      showMessageErrorToast(t('visitRequestV2:card.contactMemberCannotRemove'));
+      return;
+    }
     (kind === 'visitors' ? visitorFields : supportFields).remove(rowIndex);
     if (form.formState.isSubmitted) void form.trigger(`${base}.${kind}`);
+  };
+
+  /** Whether THIS row is the campus's operational contact — asked by key, never by position. */
+  const memberHoldsContactRole = (kind: 'visitors' | 'supportTeam', rowIndex: number): boolean => {
+    const key = form.getValues(`${base}.${kind}.${rowIndex}.clientMemberKey`);
+    return !!key && key === form.getValues(`${base}.operationalContactClientMemberKey`);
   };
 
   /** Whether the last import for this section still holds rows a replace could use. */
@@ -241,7 +271,9 @@ export const CampusVisitCard: React.FC<Props> = ({
   const confirmReplace = () => {
     if (!pendingReplace) return;
     const fields = pendingReplace.kind === 'visitors' ? visitorFields : supportFields;
-    fields.replace(pendingReplace.rows);
+    // Replaced rows are NEW people, so each gets its own identity. Reusing the outgoing keys would
+    // silently leave the contact pointing at a row that now describes somebody else entirely.
+    fields.replace(pendingReplace.rows.map(r => ({ ...createEmptyMember(), ...r, organizationPartnerId: null })));
     setPendingReplace(null);
   };
 
@@ -295,12 +327,35 @@ export const CampusVisitCard: React.FC<Props> = ({
       : 'visitRequestV2:card.quickFillCopiedContact'));
   };
 
-  /** Never overwrites silently: anything already typed here is confirmed away first (plan §13). */
+  /**
+   * "Dùng người đăng ký" — never overwrites silently: anything already typed here is confirmed away
+   * first (plan §13).
+   *
+   * <p>If the registrant is ALREADY in the delegation, that member is selected instead of a second
+   * copy of them being typed into the contact block. Matching is on name + job title + organisation
+   * together, never on the name alone: two members of one delegation sharing a name is ordinary, and
+   * merging them would attach the visit's coordinator to a stranger. Member rows carry no email, so
+   * that is the strongest evidence available here (§8).</p>
+   */
   const requestQuickFill = (kind: QuickFillSource) => {
+    const v = quickFillValues(kind);
+    const sameHuman = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+    const already = eligibleMembers.find(m =>
+      m.complete
+      && sameHuman(m.fullName, v.fullName)
+      && sameHuman(m.jobTitle, v.jobTitle)
+      && sameHuman(m.organization, v.organization));
+
+    if (already) {
+      pickContactFromDelegation(already.key);
+      showSuccessToast(t('visitRequestV2:card.contactPickedExistingMember', { name: already.fullName }));
+      return;
+    }
+
     if (operationalContactHasData()) setPendingQuickFill(kind);
     else applyQuickFill(kind);
-    // Copying the registrant in means the contact is NOT one of the guests listed below.
-    form.setValue(`${base}.operationalContactVisitorIndex`, null, { shouldDirty: true });
+    // Copying the registrant in means the contact is NOT one of the members listed below.
+    form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
   };
 
   // ── "Đầu mối là ai trong đoàn?" (NP-03) ──────────────────────────────────────────────────────
@@ -309,35 +364,153 @@ export const CampusVisitCard: React.FC<Props> = ({
   // the people attending it. Guessing produced both failure modes at once: a contact who WAS in the
   // list appeared twice in the biên bản, and a contact who was NOT in it appeared nowhere.
   //
-  // Picking them here answers that outright. The three shared fields are copied down (a guest row
-  // has no phone or email of its own, so those stay for the user to fill), and the index travels
-  // with the payload so the link survives even if the contact's job title is edited afterwards.
+  // Picking them here answers that outright, by the row's own stable key. A key rather than its
+  // position in the list, because a position is not an identity: adding a row above the chosen one,
+  // deleting one, or reordering used to re-aim the contact at a different person silently.
   const watchedVisitors = watch(`${base}.visitors`) ?? [];
-  const contactVisitorIndex = watch(`${base}.operationalContactVisitorIndex`) ?? null;
+  const watchedSupport = watch(`${base}.supportTeam`) ?? [];
+  const contactMemberKey = watch(`${base}.operationalContactClientMemberKey`) ?? null;
   const watchedContact = watch(`${base}.operationalContact`);
 
-  const visitorLabel = (v: { fullName?: string; jobTitle?: string; organization?: string }, i: number) =>
-    [v.fullName?.trim() || t('visitRequestV2:card.contactPickUnnamed', { index: i + 1 }),
-      v.jobTitle?.trim(), v.organization?.trim()].filter(Boolean).join(' — ');
+  type MemberKind = 'visitors' | 'supportTeam';
+  interface EligibleMember {
+    kind: MemberKind;
+    rowIndex: number;
+    key: string;
+    fullName: string;
+    jobTitle: string;
+    organization: string;
+    organizationPartnerId: number | null;
+    /** Whether every field the role needs is filled in — an incomplete row is shown but not pickable. */
+    complete: boolean;
+  }
 
-  const pickContactFromDelegation = (rawIndex: string) => {
-    if (rawIndex === '') {
-      form.setValue(`${base}.operationalContactVisitorIndex`, null, { shouldDirty: true });
+  /**
+   * Everybody who could be this campus's contact: the delegation AND the support staff travelling
+   * with it. Support staff are eligible on purpose — an interpreter, an assistant or a coordinator
+   * is frequently exactly who the campus rings, and offering only guests meant that person had to be
+   * retyped as a separate contact, which is how the link was lost in the first place. FPTU's own
+   * people are absent because they are not in these two lists at all.
+   */
+  // Rebuilt on every render rather than memoized on the watched arrays. React Hook Form mutates its
+  // value tree IN PLACE, so `watch('…visitors')` hands back the same array object with different
+  // contents — a `useMemo` keyed on it never recomputes, and the picker silently kept showing the
+  // list as it stood when the card first mounted.
+  const buildEligible = (rows: typeof watchedVisitors, kind: MemberKind): EligibleMember[] =>
+    (rows ?? []).map((m, rowIndex) => {
+      const fullName = (m?.fullName ?? '').trim();
+      const jobTitle = (m?.jobTitle ?? '').trim();
+      const organization = (m?.organization ?? '').trim();
+      return {
+        kind,
+        rowIndex,
+        key: m?.clientMemberKey ?? '',
+        fullName,
+        jobTitle,
+        organization,
+        organizationPartnerId: m?.organizationPartnerId ?? null,
+        // The same three fields the contact snapshot needs. A row missing any of them cannot
+        // describe a contact, so it is listed as "chưa hoàn tất" rather than silently omitted —
+        // omitting it left the user hunting for a person they had definitely typed in.
+        complete: !!m?.clientMemberKey && !!fullName && !!jobTitle && !!organization,
+      };
+    });
+
+  const eligibleMembers: EligibleMember[] = [
+    ...buildEligible(watchedVisitors, 'visitors'),
+    ...buildEligible(watchedSupport, 'supportTeam'),
+  ];
+  /** Which members exist right now, as a value an effect can actually depend on. */
+  const eligibleKeys = eligibleMembers.map(m => m.key).join('|');
+
+  const pickedMember = eligibleMembers.find(m => m.key === contactMemberKey) ?? null;
+
+  const memberLabel = (m: EligibleMember) => {
+    const kindLabel = t(m.kind === 'visitors'
+      ? 'visitRequestV2:card.contactPickKindGuest'
+      : 'visitRequestV2:card.contactPickKindSupport');
+    if (!m.complete) {
+      return t('visitRequestV2:card.contactPickIncomplete', {
+        name: m.fullName || t('visitRequestV2:card.contactPickUnnamed', { index: m.rowIndex + 1 }),
+        kind: kindLabel,
+      });
+    }
+    return [m.fullName, m.jobTitle, m.organization, kindLabel].filter(Boolean).join(' — ');
+  };
+
+  /** Copies the member's three shared fields into the contact snapshot. */
+  const syncContactFromMember = React.useCallback((m: {
+    fullName: string; jobTitle: string; organization: string;
+  }, options?: { touch?: boolean }) => {
+    // Only what a delegation row actually knows. Overwriting phone/email with blanks would delete
+    // the one thing the campus needs to reach this person, and neither is on a member row.
+    ([['fullName', m.fullName], ['jobTitle', m.jobTitle], ['organization', m.organization]] as const)
+      .forEach(([field, value]) => {
+        const fieldPath = `${base}.operationalContact.${field}` as const;
+        if (form.getValues(fieldPath) === value) return;
+        form.setValue(fieldPath, value, { shouldDirty: true, shouldTouch: options?.touch ?? false });
+        form.clearErrors(fieldPath);
+      });
+  }, [base, form]);
+
+  const pickContactFromDelegation = (key: string) => {
+    if (key === '') {
+      form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
       return;
     }
-    const i = Number(rawIndex);
-    const guest = watchedVisitors[i];
-    if (!guest) return;
-    form.setValue(`${base}.operationalContactVisitorIndex`, i, { shouldDirty: true });
-    // Only what a delegation row actually knows. Overwriting phone/email with blanks would delete
-    // the one thing the campus needs to reach this person.
-    for (const f of ['fullName', 'jobTitle', 'organization'] as const) {
-      const fieldPath = `${base}.operationalContact.${f}` as const;
-      form.setValue(fieldPath, (guest as Record<string, string | undefined>)[f] ?? '',
-        { shouldDirty: true, shouldTouch: true });
-      form.clearErrors(fieldPath);
-    }
+    const member = eligibleMembers.find(m => m.key === key);
+    if (!member || !member.complete) return;
+    form.setValue(`${base}.operationalContactClientMemberKey`, key, { shouldDirty: true });
+    syncContactFromMember(member, { touch: true });
     setQuickFilledFrom(null);
+  };
+
+  /**
+   * Keeps the contact snapshot on the SAME person as the member row while the form is open (NP-03).
+   *
+   * <p>Before submit the contact block is a draft, not a record: the user picks somebody from a row
+   * that is often still half-typed ("Khách 1", no job title yet), then fills that row in. The copy
+   * used to happen once, at the moment of picking, so everything typed afterwards stayed in the
+   * member row and never reached the contact — the request was filed naming a contact with no title
+   * and the wrong organisation, and nothing on screen said so.</p>
+   *
+   * <p>It follows the KEY, so it survives rows being added, removed or reordered around it, and it
+   * is deliberately one-directional: the member row is the source, the snapshot the copy. Changing
+   * the partner behind a member's organisation is an edit to that member, not a different person, so
+   * the pick is untouched and only the text follows.</p>
+   *
+   * <p>Runs only while the contact is editable. On an EXISTING campus the snapshot is what was
+   * agreed and the backend refuses to change it, so following the member there would produce an edit
+   * that cannot be saved.</p>
+   */
+  React.useEffect(() => {
+    if (contactReadOnly || !pickedMember || !pickedMember.complete) return;
+    syncContactFromMember(pickedMember);
+    // The picked member's own VALUES, not the object: `pickedMember` is rebuilt on every render, so
+    // depending on it would re-run this constantly. These four are exactly what the copy reads.
+  }, [
+    contactReadOnly, syncContactFromMember,
+    pickedMember?.key, pickedMember?.fullName, pickedMember?.jobTitle, pickedMember?.organization,
+  ]);
+
+  /**
+   * A pick that no longer names a row — the member was removed by something other than the guarded
+   * delete button (an Excel replace, an apply-to-all). The pick is cleared rather than left dangling,
+   * because a payload carrying a key that names nobody is refused by the backend.
+   */
+  React.useEffect(() => {
+    if (!contactMemberKey || contactReadOnly) return;
+    if (eligibleKeys.split('|').includes(contactMemberKey)) return;
+    form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
+  }, [contactMemberKey, contactReadOnly, eligibleKeys, form, base]);
+
+  /** Focuses the member row the contact is, so "Sửa thông tin thành viên" lands somewhere useful. */
+  const focusContactMemberRow = () => {
+    if (!pickedMember) return;
+    const el = document.querySelector<HTMLElement>(
+      `[data-testid="${pickedMember.kind}-${pickedMember.rowIndex}-fullName"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.focus();
   };
 
   /**
@@ -348,19 +521,23 @@ export const CampusVisitCard: React.FC<Props> = ({
    * would not learn that this person is absent from the delegation until the biên bản.</p>
    */
   const contactMatchesNoVisitor =
-    contactVisitorIndex === null
+    contactMemberKey === null
     && (watchedContact?.fullName ?? '').trim().length > 0
-    && !watchedVisitors.some(v =>
-      (v.fullName ?? '').trim().toLowerCase() === (watchedContact?.fullName ?? '').trim().toLowerCase());
+    && !eligibleMembers.some(m =>
+      m.fullName.toLowerCase() === (watchedContact?.fullName ?? '').trim().toLowerCase());
 
   const addContactToDelegation = () => {
-    visitorFields.append({
+    // Born with its identity, and picked by that identity — never by "the row I just appended",
+    // which is a position and would be wrong the moment anything else changed the list.
+    const row = { ...createEmptyMember(),
       fullName: (watchedContact?.fullName ?? '').trim(),
       jobTitle: (watchedContact?.jobTitle ?? '').trim(),
       organization: (watchedContact?.organization ?? '').trim(),
-      nationality: '',
-    });
-    form.setValue(`${base}.operationalContactVisitorIndex`, watchedVisitors.length, { shouldDirty: true });
+      organizationPartnerId: null,
+      nationality: '' };
+    visitorFields.append(row);
+    form.setValue(`${base}.operationalContactClientMemberKey`, row.clientMemberKey ?? null,
+      { shouldDirty: true });
     showSuccessToast(t('visitRequestV2:card.contactAddedToDelegation'));
   };
 
@@ -396,6 +573,25 @@ export const CampusVisitCard: React.FC<Props> = ({
     const hasError = !!fieldError(`${kind}.${rowIndex}.${field}`);
     const placeholder = t(`visitRequestV2:person.${field}`);
 
+    /**
+     * Editing the person who is the campus's contact, on a campus that ALREADY EXISTS (NP-03 §10).
+     *
+     * <p>After submit the contact's five recorded fields are history — what was agreed, when it was
+     * agreed — and the backend refuses to change them through an edit. The member row is still
+     * freely editable, so the two can legitimately end up describing the same person differently,
+     * and that has to be a deliberate act rather than something the user discovers later on the
+     * detail screen. The edit is applied and then explained, with an undo, because interrupting a
+     * keystroke to ask permission loses what was typed.</p>
+     *
+     * <p>The identity of the contact does NOT move: same person, updated details, same
+     * <c>guest_member_id</c>.</p>
+     */
+    const noteContactMemberEdit = (previous: string) => {
+      if (!contactReadOnly || contactEditAcknowledgedRef.current) return;
+      if (!memberHoldsContactRole(kind, rowIndex)) return;
+      setContactMemberEdit({ kind, rowIndex, field, previous });
+    };
+
     if (field === 'organization' || field === 'nationality') {
       return (
         <Controller
@@ -413,7 +609,20 @@ export const CampusVisitCard: React.FC<Props> = ({
           ) : (
             <OrganizationCombobox
               value={f.value ?? ''}
-              onChange={revalidatingChange(f)}
+              partnerId={watch(`${base}.${kind}.${rowIndex}.organizationPartnerId`) ?? null}
+              onChange={(val, pickedPartnerId) => {
+                noteContactMemberEdit((f.value as string | undefined) ?? '');
+                revalidatingChange(f)(val);
+                // The id is a SIBLING field, so it has to be written explicitly. Doing it in the same
+                // handler is what keeps the two honest: text and identity always change together, and
+                // typing over a picked organization clears the id rather than leaving the form
+                // pointing at a partner the user has edited away from (PART-01).
+                form.setValue(
+                  `${base}.${kind}.${rowIndex}.organizationPartnerId`,
+                  pickedPartnerId,
+                  { shouldDirty: true },
+                );
+              }}
               onBlur={f.onBlur}
               hasError={hasError}
               placeholder={placeholder}
@@ -434,7 +643,10 @@ export const CampusVisitCard: React.FC<Props> = ({
         render={({ field: f }) => (
           <AutoGrowTextField
             value={f.value ?? ''}
-            onChange={revalidatingChange(f)}
+            onChange={(val: string) => {
+              noteContactMemberEdit((f.value as string | undefined) ?? '');
+              revalidatingChange(f)(val);
+            }}
             onBlur={f.onBlur}
             placeholder={placeholder}
             ariaLabel={placeholder}
@@ -516,7 +728,20 @@ export const CampusVisitCard: React.FC<Props> = ({
           <tbody className="divide-y divide-slate-200">
             {rows.map((f, i) => (
               <tr key={f.id} className="transition-colors hover:bg-slate-50">
-                <td className="border-r border-slate-200 p-3 text-center align-middle font-bold text-slate-400">{i + 1}</td>
+                {/* The ordinal is RE-DERIVED, never stored — and the badge says which row the campus's
+                    contact is, so editing that person is a deliberate act rather than a surprise. */}
+                <td className="border-r border-slate-200 p-3 text-center align-middle font-bold text-slate-400">
+                  {i + 1}
+                  {memberHoldsContactRole(kind, i) && (
+                    <span
+                      data-testid={`${kind}-${i}-is-contact`}
+                      title={t('visitRequestV2:card.contactMemberBadgeTitle')}
+                      className="mt-1 block text-[10px] font-bold uppercase leading-tight text-[#0F5DA6]"
+                    >
+                      {t('visitRequestV2:card.contactMemberBadge')}
+                    </span>
+                  )}
+                </td>
                 {PERSON_COLUMNS.map(c => (
                   <td key={c} className="group border-r border-slate-200 p-0 align-top focus-within:bg-white focus-within:shadow-[inset_0_0_0_2px_rgba(15,93,166,0.16)] hover:bg-slate-50/50">
                     {personFieldCell(kind, i, c, true)}
@@ -524,10 +749,15 @@ export const CampusVisitCard: React.FC<Props> = ({
                   </td>
                 ))}
                 <td className="p-2 text-center align-middle">
+                  {/* Deliberately still CLICKABLE for the contact's own row: the click is what
+                      surfaces the reason. A disabled button explains nothing on a phone, where
+                      there is no tooltip to hover. */}
                   <button
                     type="button"
                     aria-label={kind === 'visitors' ? t('visitRequestV2:person.removeGuest') : t('visitRequestV2:person.removeSupport')}
-                    title={kind === 'visitors' ? t('visitRequestV2:person.removeGuest') : t('visitRequestV2:person.removeSupport')}
+                    title={memberHoldsContactRole(kind, i)
+                      ? t('visitRequestV2:card.contactMemberCannotRemove')
+                      : (kind === 'visitors' ? t('visitRequestV2:person.removeGuest') : t('visitRequestV2:person.removeSupport'))}
                     disabled={!canRemoveRow(i)}
                     className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                     onClick={() => onRemoveRow(i)}
@@ -838,6 +1068,53 @@ export const CampusVisitCard: React.FC<Props> = ({
           </FormField>
         </div>
 
+        {/* ── Editing the member who IS this campus's contact, after submit (NP-03 §10) ──
+            Says what the edit does and, just as importantly, what it does NOT do: the contact's
+            recorded details stay as they were agreed, and the person is still the same person. The
+            third option the workflow would need — "update the recorded contact too" — is not offered
+            here because it is not this form's to make: changing those five fields can require the new
+            person to accept, so it lives on the detail screen with the rest of that workflow. */}
+        {contactMemberEdit && (
+          <div
+            role="alertdialog"
+            data-testid={`campus-contact-member-edit-${index}`}
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3"
+          >
+            <p className="text-sm font-bold text-amber-900">
+              {t('visitRequestV2:card.contactMemberEditTitle')}
+            </p>
+            <p className="mt-1 text-xs text-amber-900">
+              {t('visitRequestV2:card.contactMemberEditBody')}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid={`campus-contact-member-edit-keep-${index}`}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                onClick={() => { contactEditAcknowledgedRef.current = true; setContactMemberEdit(null); }}
+              >
+                {t('visitRequestV2:card.contactMemberEditKeep')}
+              </button>
+              <button
+                type="button"
+                data-testid={`campus-contact-member-edit-undo-${index}`}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                onClick={() => {
+                  form.setValue(
+                    `${base}.${contactMemberEdit.kind}.${contactMemberEdit.rowIndex}.${contactMemberEdit.field}` as
+                      FieldPath<VisitRequestV2Schema>,
+                    contactMemberEdit.previous,
+                    { shouldDirty: true },
+                  );
+                  setContactMemberEdit(null);
+                }}
+              >
+                {t('visitRequestV2:card.contactMemberEditUndo')}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Visitors */}
         <fieldset>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
@@ -901,13 +1178,13 @@ export const CampusVisitCard: React.FC<Props> = ({
             visitorFields.fields,
             i => removePersonRow('visitors', i),
             () => true,
-            () => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
+            () => visitorFields.append(createEmptyMember())
           )}
           <button
             type="button"
             className="mt-4 inline-flex items-center justify-center gap-2 w-full sm:w-auto rounded-xl border-2 border-dashed border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:opacity-40"
             disabled={visitorFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
-            onClick={() => visitorFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
+            onClick={() => visitorFields.append(createEmptyMember())}
           >
             <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addVisitor')}
           </button>
@@ -973,14 +1250,14 @@ export const CampusVisitCard: React.FC<Props> = ({
             supportFields.fields,
             i => removePersonRow('supportTeam', i),
             () => true,
-            () => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })
+            () => supportFields.append(createEmptyMember())
           )}
           {supportFields.fields.length > 0 && (
             <button
               type="button"
               className="mt-4 inline-flex items-center justify-center gap-2 w-full sm:w-auto rounded-xl border-2 border-dashed border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:opacity-40"
               disabled={supportFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
-              onClick={() => supportFields.append({ fullName: '', jobTitle: '', organization: '', nationality: '' })}
+              onClick={() => supportFields.append(createEmptyMember())}
             >
               <Plus className="h-4 w-4" /> {t('visitRequestV2:card.addSupport')}
             </button>
@@ -1134,18 +1411,49 @@ export const CampusVisitCard: React.FC<Props> = ({
             <select
               id={`campus-opcontact-pick-${index}`}
               data-testid={`campus-opcontact-pick-${index}`}
-              value={contactVisitorIndex ?? ''}
+              value={contactMemberKey ?? ''}
               onChange={e => pickContactFromDelegation(e.target.value)}
-              className={inputCls(false, contactVisitorIndex !== null, false)}
+              className={inputCls(false, contactMemberKey !== null, false)}
             >
               <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
-              {watchedVisitors.map((v, i) => (
-                <option key={i} value={i}>{visitorLabel(v, i)}</option>
+              {/* An unfinished row is LISTED but not selectable: hiding it would leave the user
+                  looking for somebody they had definitely typed in, and enabling it would let the
+                  campus's contact be a person with no name. The label says which it is. */}
+              {eligibleMembers.map(m => (
+                <option
+                  key={m.key || `${m.kind}-${m.rowIndex}`}
+                  value={m.key}
+                  disabled={!m.complete}
+                >
+                  {memberLabel(m)}
+                </option>
               ))}
             </select>
             <p className="mt-1.5 text-xs text-slate-500">
               {t('visitRequestV2:card.contactPickHint')}
             </p>
+
+            {/* What picking somebody MEANS, said where the consequence is visible: the three shared
+                fields below stop being editable here and follow that person's row instead. Without
+                this the read-only fields read as a bug. */}
+            {pickedMember && (
+              <div
+                data-testid={`campus-opcontact-picked-${index}`}
+                className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-slate-200 bg-white p-3"
+              >
+                <p className="min-w-0 flex-1 text-xs text-slate-600">
+                  {t('visitRequestV2:card.contactPickedNotice', { name: pickedMember.fullName })}
+                </p>
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-edit-member-${index}`}
+                  onClick={focusContactMemberRow}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  {t('visitRequestV2:card.contactEditMember')}
+                </button>
+              </div>
+            )}
 
             {contactMatchesNoVisitor && (
               <div
@@ -1169,6 +1477,20 @@ export const CampusVisitCard: React.FC<Props> = ({
           </div>
 
           <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
+            {/* ── The three fields a delegation row already answers ──────────────────────────
+                Editable while the contact is somebody outside the delegation; READ-ONLY the moment a
+                member is picked, because then the member row is the source and this is its copy.
+                Leaving them editable is what let the form hold "Daniel Kim's id" beside a different
+                person's name and job title — one record describing two people, with nothing to say
+                which half was true. Correcting them is still possible, at the row itself, through
+                "Sửa thông tin thành viên" above. */}
+            {pickedMember ? (
+              <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required showValidIcon={false}>
+                <p data-testid="campus-opcontact-name-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                  {watchedContact?.fullName || '—'}
+                </p>
+              </FormField>
+            ) : (
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.fullName`}
@@ -1186,10 +1508,20 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
+            )}
             {/* The same searchable organization control the guest rows use. The stored value is
                 still plain text — this contact is a snapshot and the schema has no relation to a
                 partner record, so picking a known organization links nothing and the request's own
-                partner selection is untouched. */}
+                partner selection is untouched. When a member holds the role their organisation (and
+                the partner behind it) is theirs, so this shows it rather than offering a second,
+                contradictable copy. */}
+            {pickedMember ? (
+              <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required showValidIcon={false}>
+                <p data-testid="campus-opcontact-org-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                  {watchedContact?.organization || '—'}
+                </p>
+              </FormField>
+            ) : (
             <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.organization`}
@@ -1207,10 +1539,18 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
+            )}
             {/* Required like the rest: it is what tells the campus whether the person on the other
                 end of the phone can settle a schedule or has to go and ask. Every detail screen has
                 always had a row for it, and the row was blank on every request because this field
                 did not exist. */}
+            {pickedMember ? (
+              <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required showValidIcon={false}>
+                <p data-testid="campus-opcontact-jobtitle-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                  {watchedContact?.jobTitle || '—'}
+                </p>
+              </FormField>
+            ) : (
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required error={fieldError('operationalContact.jobTitle')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.jobTitle`}
@@ -1228,6 +1568,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
+            )}
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <PhoneField
                 field={register(`${base}.operationalContact.phone`)}

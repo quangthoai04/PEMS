@@ -130,6 +130,12 @@ export const API_ENDPOINTS = {
     reject: (id: string | number) => `/partners/${id}/reject`,
     pendingApprovals: '/partners/pending-approvals',
     match: '/partners/match',
+    /**
+     * Organization options for an AUTHENTICATED internal user (Staff / Staff Leader / HO …).
+     * Wider than `publicPartners.search`, which only ever returns ACTIVE + APPROVED + PUBLIC and
+     * therefore hid every internal-only organization from the staff filling in the form (PART-03).
+     */
+    options: '/partners/options',
     contacts: (id: string | number) => `/partners/${id}/contacts`,
     contact: (id: string | number, contactId: string | number) => `/partners/${id}/contacts/${contactId}`,
     contactSetPrimary: (id: string | number, contactId: string | number) =>
