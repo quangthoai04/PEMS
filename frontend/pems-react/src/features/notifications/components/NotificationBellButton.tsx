@@ -158,7 +158,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
   }, []);
 
   // Lời mời đánh giá đoàn trộn vào cùng danh sách theo mốc thời gian thực (plannedStartAt),
-  // sắp xếp sớm nhất lên đầu — không còn ghim cố định ở trên cùng bất kể thời gian.
+  // sắp xếp mới nhất lên đầu — không còn ghim cố định ở trên cùng bất kể thời gian.
   const feedbackInviteItems: FeedbackInviteItem[] = pendingFeedback.map((p) => ({
     kind: 'feedback-invite',
     key: `fb-${p.visitInstanceId}`,
@@ -169,7 +169,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
   }));
   const notificationDisplayItems: DisplayItem[] = items.map((it) => ({ ...it, kind: 'notification' as const }));
   const displayItems: DisplayItem[] = [...feedbackInviteItems, ...notificationDisplayItems].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
   const handleItemClick = async (item: DisplayItem) => {
