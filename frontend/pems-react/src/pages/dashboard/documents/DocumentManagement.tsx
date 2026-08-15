@@ -102,12 +102,7 @@ export function DocumentManagement() {
 
       <div className="border-b border-gray-100 pb-3 mb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài liệu</h1>
-            <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-100 text-blue-800 border border-blue-200 shadow-sm">
-              Campus: {user?.campusName || 'Hệ thống'}
-            </span>
-          </div>
+          <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài liệu</h1>
         </div>
       </div>
 
