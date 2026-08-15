@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using PEMS.Domain.Entities.Users;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Shared;
 
 namespace PEMS.Domain.Entities.Minutes;
 
@@ -20,6 +21,33 @@ public class MinuteParticipant
 
     [Column("guest_member_id")]
     public ulong? GuestMemberId { get; set; }
+
+    /// <summary>
+    /// Which list the delegation member came from — <c>GUEST</c> or <c>EXTERNAL_SUPPORT</c> — as it
+    /// stood when the row entered the biên bản. NULL for internal and manual rows (MIN-02).
+    ///
+    /// <para>A SNAPSHOT, not a lookup. Reading <c>visit_guest_members.member_type</c> at render time
+    /// would let a member reclassified next month rewrite a biên bản signed last month; a biên bản is
+    /// a record of what was, and what was is stored here.</para>
+    /// </summary>
+    [Column("source_member_type")]
+    public string? SourceMemberType { get; set; }
+
+    /// <summary>
+    /// Whether this person is the campus's operational contact. An ADDITIONAL role, never a kind:
+    /// a guest who coordinates the visit is "Khách · Đầu mối", not something other than a guest.
+    /// </summary>
+    [Column("is_operational_contact")]
+    public bool IsOperationalContact { get; set; }
+
+    /// <summary>
+    /// <c>ACTIVE</c> or <c>EXCLUDED</c> (MIN-03). Removing a source-linked person from the biên bản
+    /// used to DELETE the row, after which the next "đồng bộ người mới" found them still on the
+    /// official list and added them straight back — the Host's decision had nowhere to live. An
+    /// excluded row stays, out of the biên bản but remembered, and can be restored.
+    /// </summary>
+    [Column("sync_state")]
+    public string SyncState { get; set; } = MinuteParticipantSyncStates.Active;
 
     [Column("full_name_snapshot")]
     public string FullNameSnapshot { get; set; } = null!;

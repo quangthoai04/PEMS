@@ -26,6 +26,8 @@ import {
   resolvedFormToV2Schema,
 } from '../../../features/visit-request/utils/visitRequestV2Form';
 import { CampusVisitCard } from '../../../features/visit-request/components/v2/CampusVisitCard';
+import { ContactLinkPromptDialog } from '../../../features/visit-request/components/v2/ContactLinkPromptDialog';
+import { useContactLinkPrompt } from '../../../features/visit-request/hooks/useContactLinkPrompt';
 import { FormField, inputCls } from '../../../features/visit-request/components/shared/FormField';
 import { PhoneField } from '../../../features/visit-request/components/shared/PhoneField';
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
@@ -206,8 +208,15 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
     return mapped;
   };
 
+  // The same question the create form asks, on the screen that could also retype the contact block
+  // and asked nothing. Without it, identical typing linked the contact to a delegation member on one
+  // screen and left the request naming two people on the other.
+  const resumeSubmitRef = useRef<() => void>(() => {});
+  const contactLink = useContactLinkPrompt(form, () => resumeSubmitRef.current());
+
   const onSubmit = form.handleSubmit(
     async data => {
+      if (contactLink.interrupts(data)) return;
       setIsSubmitting(true);
       setSubmitError(null);
       setConflict(false);
@@ -243,6 +252,12 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
       }
     },
   );
+
+  // Kept current through a ref: the prompt hook is created before this handler exists, and an answer
+  // has to resume THIS submit rather than a closure from an earlier render.
+  useEffect(() => {
+    resumeSubmitRef.current = () => { void onSubmit(); };
+  });
 
   if (loading) {
     return (
@@ -290,6 +305,15 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
         </h1>
         <p className="mt-1 text-sm text-slate-600">{t('visitRequestV2:edit.subtitle')}</p>
       </header>
+
+      {contactLink.prompt && (
+        <ContactLinkPromptDialog
+          prompt={contactLink.prompt}
+          onSame={contactLink.confirmSame}
+          onDifferent={contactLink.confirmDifferent}
+          onReview={contactLink.dismiss}
+        />
+      )}
 
       <form onSubmit={onSubmit} noValidate className="space-y-2">
         <FormSection id="v2e-registrant" title={t('visitRequestV2:sections.registrant')}>

@@ -2373,6 +2373,9 @@ CREATE TABLE minute_participants (
   minutes_id BIGINT UNSIGNED NOT NULL,
   user_id BIGINT UNSIGNED NULL,
   guest_member_id BIGINT UNSIGNED NULL,
+  source_member_type VARCHAR(30) NULL COMMENT 'Loại thành viên nguồn khi được đưa vào biên bản: GUEST | EXTERNAL_SUPPORT. NULL = dòng nội bộ (user_id) hoặc dòng nhập tay. Là SNAPSHOT: biên bản đã chốt không đổi theo việc phân loại lại thành viên về sau.',
+  is_operational_contact TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1 = người này là đầu mối của cơ sở. Là vai trò BỔ SUNG: một dòng vừa là GUEST vừa là đầu mối, hiển thị "Khách · Đầu mối". Không thay source_member_type.',
+  sync_state ENUM('ACTIVE','EXCLUDED') NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE = đang trong biên bản. EXCLUDED = đã loại khỏi biên bản nhưng GIỮ dòng, để "Đồng bộ người mới" không thêm lại và để khôi phục. Dòng nhập tay vẫn được xoá hẳn.',
   full_name_snapshot VARCHAR(255) NOT NULL,
   role_snapshot VARCHAR(120) NULL,
   organization_snapshot VARCHAR(255) NULL,
@@ -2389,6 +2392,10 @@ CREATE TABLE minute_participants (
   KEY idx_minute_participants_guest_member (guest_member_id),
   KEY idx_minute_participants_attendance (minutes_id, attendance_status),
   KEY idx_minute_participants_checked_by (checked_by),
+  KEY idx_minute_participants_sync_state (minutes_id, sync_state),
+  -- Một thành viên đoàn chỉ xuất hiện MỘT lần trong một biên bản (MIN-01). MySQL cho phép nhiều
+  -- NULL trong UNIQUE index, nên dòng nội bộ và dòng nhập tay (guest_member_id NULL) không bị chặn.
+  UNIQUE KEY uq_minute_participants_minute_guest (minutes_id, guest_member_id),
   CONSTRAINT fk_minute_participants_minutes
     FOREIGN KEY (minutes_id) REFERENCES minutes(minutes_id)
     ON UPDATE CASCADE ON DELETE CASCADE,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFieldArray, useForm, type FieldPath } from 'react-hook-form';
+import { useFieldArray, useForm, type FieldPath, type UseFormReturn } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
@@ -32,6 +32,7 @@ import {
   type VisitRequestV2OtpContext,
 } from '../utils/visitRequestV2DraftStorage';
 import { countFieldErrors } from '../utils/formErrorNavigation';
+import { useContactLinkPrompt } from './useContactLinkPrompt';
 import { visitRequestApi, type CampusHostSelectionChoice } from '../api/visitRequestApi';
 import {
   createVisitRequestV2,
@@ -172,6 +173,46 @@ const SINGLE_FIELD_ERROR_PATHS: Record<string, FieldPath<VisitRequestV2Schema>> 
 };
 
 /**
+ * A member's `organizationPartnerId` names a profile a registration form may not cite (PART-09) —
+ * anything that is not ACTIVE + APPROVED + PUBLIC.
+ *
+ * <p>The dropdown stopped offering those, so the live way to hit this is a DRAFT or an edit whose id
+ * was picked while the rules were wider, or a request made outside the UI entirely.</p>
+ */
+const PARTNER_NOT_SELECTABLE = 'PARTNER_NOT_SELECTABLE';
+
+/**
+ * Puts the server's refusal on every member row that carries a partner id, and reports where the
+ * first one is so the card can be opened.
+ *
+ * <p>The organisation TEXT is left exactly as it is: it is the name the delegation gave, it is what
+ * the request will display, and losing it because the profile behind it went out of state would cost
+ * the user data they never got wrong. Only the choice needs re-making.</p>
+ */
+const markUnselectablePartnerFields = (
+  form: UseFormReturn<VisitRequestV2Schema>,
+  message: string,
+): { count: number; firstCampusIndex: number | null } => {
+  const campuses = form.getValues('campusVisits') ?? [];
+  let count = 0;
+  let firstCampusIndex: number | null = null;
+  campuses.forEach((cv, campusIndex) => {
+    (['visitors', 'supportTeam'] as const).forEach(kind => {
+      (cv?.[kind] ?? []).forEach((member, rowIndex) => {
+        if (member?.organizationPartnerId == null) return;
+        form.setError(
+          `campusVisits.${campusIndex}.${kind}.${rowIndex}.organization` as FieldPath<VisitRequestV2Schema>,
+          { type: 'server', message },
+        );
+        count += 1;
+        if (firstCampusIndex === null) firstCampusIndex = campusIndex;
+      });
+    });
+  });
+  return { count, firstCampusIndex };
+};
+
+/**
  * Where a submit intent has got to (plan §3). Exactly one of these is true at any moment.
  *
  * CREATE_UNCERTAIN is the one that did not exist before and matters most: when the verify call
@@ -251,6 +292,10 @@ export interface ApplyToAllPrompt {
   sourceIndex: number;
   overwrittenLabels: string[];
 }
+
+// Re-exported from its own module now that the EDIT screen asks the same question. Kept here so the
+// components already importing it from this hook keep compiling.
+export type { ContactLinkPrompt } from './useContactLinkPrompt';
 
 /**
  * Per-campus form v2 hook: `campusVisits[]` field array with STABLE client keys, one-time
@@ -655,6 +700,14 @@ export const useVisitRequestFormV2 = (
 
   const cancelApplyToAll = useCallback(() => setApplyToAllPrompt(null), []);
 
+  // ── "Đầu mối này có phải là người trong đoàn?" (ID-01) ──────────────────────────────────────
+  //
+  // The question itself lives in useContactLinkPrompt, because the EDIT screen has to ask it too and
+  // for a while only this one did. Resumed through a ref: the answer re-enters the submit defined
+  // below, which cannot be referenced before it exists.
+  const resumeSubmitRef = useRef<() => void>(() => {});
+  const contactLink = useContactLinkPrompt(form, () => resumeSubmitRef.current());
+
   // ── Server error mapping: land field errors on the exact campus card ──
   const applyServerFieldErrors = useCallback(
     (error: unknown): boolean => {
@@ -666,6 +719,23 @@ export const useVisitRequestFormV2 = (
       // to put it, so it fell through to the banner at the bottom of a long page — the user was told
       // an email was unusable with nothing pointing at which of the form's several email boxes.
       if (!fieldErrors) {
+        // A partner id the form may no longer cite (PART-09). The server refuses the SET without
+        // naming which id offended — telling them apart would turn the form into a probe for which
+        // partner ids exist and what state they are in — but the client knows exactly which rows
+        // carry an id, and those are the only rows that can be at fault. Marking them is what makes
+        // this fixable: the alternative is a banner about "an organisation" on a form with thirty of
+        // them. Nothing is cleared or re-pointed — which organisation a member works for is the
+        // user's answer to change, not ours.
+        if (getApiErrorCode(error) === PARTNER_NOT_SELECTABLE) {
+          const mapped = markUnselectablePartnerFields(
+            form, translateErrorCode(getApiErrorCode(error)) ?? getApiErrorMessage(error));
+          if (mapped.count > 0) {
+            if (mapped.firstCampusIndex !== null) setFirstErrorCampusIndex(mapped.firstCampusIndex);
+            setFocusErrorsToken(n => n + 1);
+            return true;
+          }
+          return false;
+        }
         const path = SINGLE_FIELD_ERROR_PATHS[getApiErrorCode(error) ?? ''];
         if (!path) return false;
         form.setError(path, {
@@ -760,6 +830,15 @@ export const useVisitRequestFormV2 = (
   );
 
   const onSubmit = form.handleSubmit(async data => {
+    // Asked BEFORE anything is sent, because the answer is what the payload MEANS. "Cùng một người"
+    // adds the member key; "hai người khác nhau" deliberately leaves it out, and the backend reads
+    // that absence as the answer — a payload that carries member keys but names no contact member is
+    // one that asked this question and was told they are two humans, so it links nobody rather than
+    // re-matching the fingerprint (OperationalContactLink.Match). Do NOT "fix" the decline branch by
+    // making it write something: what it must send is nothing. The submit resumes from the resolver
+    // below rather than continuing here — a modal cannot be awaited in the middle of a handler
+    // without leaving the form locked if the user walks away.
+    if (contactLink.interrupts(data)) return;
     // ONE submit at a time. The button is disabled and the fields are locked for as long as the
     // request is in flight, but a second click landing in the same tick — or an Enter arriving from
     // a control the lock has not reached — would otherwise start a second create: a duplicate
@@ -839,6 +918,12 @@ export const useVisitRequestFormV2 = (
     setSubmitError(null);
     setFocusErrorsToken(n => n + 1);
     onInvalid?.(errors);
+  });
+
+  // The submit an answer returns to. Kept in a ref so the shared prompt hook, which is created
+  // BEFORE this handler exists, still resumes the current one rather than a stale closure.
+  useEffect(() => {
+    resumeSubmitRef.current = () => { void onSubmit(); };
   });
 
   const verifyOtp = useCallback(
@@ -1168,6 +1253,10 @@ export const useVisitRequestFormV2 = (
     confirmApplyToAll,
     cancelApplyToAll,
     applyToAllPrompt,
+    contactLinkPrompt: contactLink.prompt,
+    confirmContactLink: contactLink.confirmSame,
+    declineContactLink: contactLink.confirmDifferent,
+    dismissContactLink: contactLink.dismiss,
     /** clientKey -> version, bumped on copy/apply-to-all so the card can be force-remounted. */
     cardVersion,
     // Submit

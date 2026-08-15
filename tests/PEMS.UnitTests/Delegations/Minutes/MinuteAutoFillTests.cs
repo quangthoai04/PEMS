@@ -257,18 +257,32 @@ public class MinuteAutoFillTests
     }
 
     [Fact]
-    public async Task A_contact_matching_a_member_by_name_role_and_org_is_not_duplicated()
+    public async Task An_UNLINKED_member_with_the_same_fingerprint_is_a_second_person_and_both_are_kept()
     {
+        // The reported bug, from the far end. A member and the contact matching on name, job title
+        // AND organisation is exactly what the form asks about before submitting; answering "hai
+        // người khác nhau" leaves the contact deliberately unlinked. Absorbing them here by
+        // fingerprint overruled that answer without saying so — the Staff Leader opened the biên bản
+        // and found ONE row wearing both "Khách" and "Đầu mối" where two people had been entered.
+        //
+        // Requests predating the link column do not reach this branch: the backfill in
+        // patches/2026-08-14_operational_contact_guest_member_link.sql linked them by this same
+        // fingerprint, so an unlinked match now only ever means the user said so.
         using var db = DelegationsTestDbContext.Create();
         var (instance, _) = DelegationsTestData.SeedBase(db);
-        // No stable link (a request created before the column existed), so all that is left is the
-        // fingerprint — it still must not produce two rows for one person.
         AddGuest(db, GuestMemberId, ContactName, ContactJobTitle, ContactOrg);
         db.SaveChanges();
 
         var rows = await ComputeAsync(db, instance);
 
-        Assert.Single(rows.Where(r => r.FullNameSnapshot == ContactName));
+        var sameName = rows.Where(r => r.FullNameSnapshot == ContactName).ToList();
+        Assert.Equal(2, sameName.Count);
+        // The delegation member stays a plain guest; only the contact row wears the badge.
+        Assert.False(Assert.Single(sameName, r => r.GuestMemberId == GuestMemberId).IsOperationalContact);
+        Assert.True(Assert.Single(sameName, r => r.GuestMemberId == null).IsOperationalContact);
+
+        // And the pair is stable: the next "đồng bộ người mới" recognises both and offers neither.
+        Assert.Empty(await ComputeAsync(db, instance, rows));
     }
 
     [Fact]

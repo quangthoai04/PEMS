@@ -235,7 +235,44 @@ public class OperationalContactLinkTests
         Assert.Null(detail.OperationalContactOrganization);
     }
 
-    // ── No key: the fallback is a guess, and behaves like one ────────────────────
+    // ── No pick, from a client that mints keys: "nobody" is the answer ───────────
+
+    [Fact]
+    public void A_client_that_mints_keys_and_picks_nobody_links_to_nobody()
+    {
+        // "Đây là hai người khác nhau." The form asks precisely that before it submits, whenever an
+        // unlinked contact's fingerprint fits exactly one member — and the answer used to travel no
+        // further than the browser. The payload arrived with no pick, the fingerprint fallback
+        // matched anyway, and the two buttons in the dialog produced identical data: the biên bản
+        // showed ONE row wearing both "Khách" and "Đầu mối" for two humans.
+        var detail = Detail();                                       // Trần Thị B / Trưởng đoàn / ABC
+        var members = Keyed(
+            (Member(1, "Nguyễn Văn A", "Thành viên", "ABC University"), "k-a"),
+            (Member(2, "Trần Thị B", "Trưởng đoàn", "ABC University"), "k-b")); // same fingerprint
+
+        OperationalContactLink.Resolve(detail, members, null);
+
+        Assert.Null(detail.OperationalContactGuestMemberId);
+    }
+
+    [Fact]
+    public void One_member_carrying_a_key_is_enough_to_take_the_client_at_its_word()
+    {
+        // A payload that names keys at all is one that asked the question. It does not have to key
+        // every row for its silence about the contact to mean something.
+        var detail = Detail();
+        var members = new List<KeyedMember>
+        {
+            new(Member(1, "Nguyễn Văn A", "Thành viên", "ABC University"), "k-a"),
+            new(Member(2, "Trần Thị B", "Trưởng đoàn", "ABC University"), null),
+        };
+
+        OperationalContactLink.Resolve(detail, members, null);
+
+        Assert.Null(detail.OperationalContactGuestMemberId);
+    }
+
+    // ── No keys at all: the fallback is a guess, and behaves like one ────────────
 
     [Fact]
     public void Without_a_key_the_snapshot_is_matched_on_name_role_and_organisation()
@@ -342,8 +379,8 @@ public class OperationalContactLinkTests
         var paired = OperationalContactLink.Pair(rows, new List<string?> { "k-a" });
 
         Assert.Equal("k-a", paired[0].ClientMemberKey);
-        // A short (or absent) key list is not a fault: an older client simply names no contact member,
-        // and the snapshot fallback still runs.
+        // A short (or absent) key list is not a fault — Pair simply leaves the tail unkeyed. What the
+        // resolver then makes of it is decided in Match, not here.
         Assert.Null(paired[1].ClientMemberKey);
         Assert.Equal(2, OperationalContactLink.Pair(rows, null).Count);
     }

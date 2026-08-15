@@ -901,6 +901,19 @@ export interface MinuteParticipant {
   minutesId: number;
   userId: number | null;
   guestMemberId: number | null;
+  /**
+   * GUEST | EXTERNAL_SUPPORT for a delegation row; null for internal and manual rows (MIN-02).
+   * A stored snapshot, not a live lookup — the biên bản records what the person WAS at the meeting.
+   */
+  sourceMemberType: string | null;
+  /** The campus's contact. An ADDITIONAL badge ("Khách · Đầu mối"), never a kind of its own. */
+  isOperationalContact: boolean;
+  /** Neither id set: a person who exists only in this biên bản, and the only row whose
+   * name / role / organisation may be edited here (MIN-04). */
+  isManual: boolean;
+  /** ACTIVE | EXCLUDED (MIN-03). An EXCLUDED row is out of the biên bản but remembered, so sync
+   * does not put the person back and the Host can restore them. */
+  syncState: string;
   fullNameSnapshot: string;
   roleSnapshot: string | null;
   organizationSnapshot: string | null;
@@ -910,7 +923,7 @@ export interface MinuteParticipant {
   checkedAt: string | null;
   checkedBy: number | null;
   displayOrder: number;
-  participantKind: string; // INTERNAL | GUEST | MANUAL
+  participantKind: string; // INTERNAL | GUEST | EXTERNAL_SUPPORT | MANUAL
   /** Looked up live from the linked guest's nationality (null for INTERNAL/MANUAL rows). */
   guestNationality: string | null;
 }
@@ -981,6 +994,11 @@ export interface SaveMinuteParticipantPayload {
   emailSnapshot: string | null;
   attendanceStatus: string;
   attendanceNote: string | null;
+  /**
+   * ACTIVE | EXCLUDED for a source-linked row; omit (or null) to leave it as it is (MIN-03).
+   * Ignored for manual rows, which are deleted outright when dropped from the list.
+   */
+  syncState?: string | null;
 }
 
 /** Payload row for saving an action item (matches SaveMinuteActionItemInput on the backend). */

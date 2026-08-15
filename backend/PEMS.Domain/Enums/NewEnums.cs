@@ -28,6 +28,21 @@ public static class GuestMemberType
     public const string ExternalSupport = "EXTERNAL_SUPPORT";
 }
 
+/// <summary>
+/// Whether a <c>minute_participants</c> row is part of the biên bản or has been set aside (MIN-03).
+///
+/// <para>Removing a source-linked person used to delete the row outright, so the next "đồng bộ người
+/// mới" saw somebody still on the official delegation/participant list and added them straight back.
+/// The Host's decision had nowhere to live. An EXCLUDED row does not appear in the biên bản and is
+/// not offered by sync, but it still exists — which is what makes it restorable, and what makes the
+/// removal survive a save.</para>
+/// </summary>
+public static class MinuteParticipantSyncStates
+{
+    public const string Active = "ACTIVE";
+    public const string Excluded = "EXCLUDED";
+}
+
 public static class FaqType
 {
     // PEMS v10: FAQ grouped by system functional area (Vietnamese-only, no language_code).

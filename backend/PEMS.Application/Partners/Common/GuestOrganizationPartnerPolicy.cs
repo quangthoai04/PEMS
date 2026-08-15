@@ -13,25 +13,60 @@ namespace PEMS.Application.Partners.Common;
 /// Who may be offered — and therefore who may be SUBMITTED — as the organization of a delegation
 /// member (<c>visit_guest_members.organization_partner_id</c>).
 ///
-/// <para>The audience split is the point. The public form is filled in by people outside FPTU, so it
-/// may only ever reveal profiles that are already published: anything else would leak the existence
-/// of internal partner records to anonymous callers. Staff filling the same form from inside need the
-/// internal set, or they end up retyping an organization that already exists — which is precisely how
-/// a stable partner id gets lost and the minutes screen ends up asking them to "create" it again
-/// (PART-03).</para>
+/// <para><b>The split is by USE CASE, not by who is logged in (PART-09).</b> It used to be by
+/// audience: an authenticated Staff Leader got the internal option set, which includes their own
+/// campus's profiles still awaiting a decision. That put "Hồ sơ chờ duyệt · FPT University Hà Nội"
+/// into the "Đơn vị công tác" dropdown of a registration form — a profile nobody has approved,
+/// attached to a delegation member, on a request that then travels through approval carrying it.
+/// Being signed in is not a reason to be offered an unapproved partner; the question the form asks is
+/// "which published organisation does this guest work for", and that question has the same answer for
+/// everybody.</para>
+///
+/// <list type="bullet">
+///   <item><c>REQUEST_FORM</c> (<see cref="RequestFormSelectable"/>) — the registration form, for
+///   every caller: ACTIVE + APPROVED + PUBLIC and nothing else.</item>
+///   <item><c>PARTNER_MANAGEMENT</c> (<see cref="InternalSelectable"/>) — the partner module, where
+///   seeing a pending or internal profile IS the job. Unchanged, and deliberately so: this class does
+///   not narrow who may VIEW partners, only who may be attached to a delegation member.</item>
+///   <item><c>PARTNER_MATCHING</c> — the duplicate matcher, which must keep showing pending/rejected
+///   candidates so a second profile is not created for an organisation that already has one. It has
+///   its own endpoint (<c>/partners/match</c>) and is untouched here.</item>
+/// </list>
 ///
 /// <para>Both the option query and the create/edit write path run through here, so what the dropdown
 /// offers and what the backend accepts can never drift apart. The backend never infers the partner
-/// from the submitted organization NAME — a name is a display snapshot, not an identity.</para>
+/// from the submitted organization NAME — a name is a display snapshot, not an identity — and it
+/// never trusts an id just because the client sent it.</para>
 /// </summary>
 public static class GuestOrganizationPartnerPolicy
 {
+    /// <summary>
+    /// Refused id on a registration form. Distinct from the module's own access errors: nothing is
+    /// forbidden to the CALLER here — the profile is simply not in a state a request may cite.
+    /// </summary>
+    public const string NotSelectableCode = "PARTNER_NOT_SELECTABLE";
+
+    public const string NotSelectableMessage =
+        "Đối tác này chưa được duyệt và công khai nên không thể sử dụng trong đơn đăng ký. "
+        + "Vui lòng chọn lại đơn vị công tác cho thành viên trong đoàn.";
+
     /// <summary>The only combination an anonymous/Visitor caller may see or select.</summary>
     public static IQueryable<Partner> PublicSelectable(IQueryable<Partner> partners) =>
         partners.Where(p =>
             p.CooperationStatus == "ACTIVE"
             && p.ProfileStatus == PartnerProfileStatuses.Approved
             && p.Visibility == PartnerVisibilities.Public);
+
+    /// <summary>
+    /// What a REGISTRATION FORM may offer and accept, for every caller alike (PART-09).
+    ///
+    /// <para>Identical to <see cref="PublicSelectable"/> today, and named separately on purpose: the
+    /// two answer different questions and only happen to agree. "What may an anonymous caller see"
+    /// is about disclosure; "what may a request cite as a member's employer" is about the state of the
+    /// profile. Should the disclosure rule ever loosen, this one must not follow it silently.</para>
+    /// </summary>
+    public static IQueryable<Partner> RequestFormSelectable(IQueryable<Partner> partners) =>
+        PublicSelectable(partners);
 
     /// <summary>
     /// What an authenticated internal caller may see or select: every APPROVED non-private profile,
@@ -57,53 +92,47 @@ public static class GuestOrganizationPartnerPolicy
     public static bool IsInternalAudience(ICurrentUserService? user) =>
         user is not null && PartnerAccess.CanViewPartnerModule(user);
 
-    /// <summary>Validates the ids carried by every member of a per-campus form payload.</summary>
+    /// <summary>
+    /// Validates the ids carried by every member of a per-campus form payload.
+    ///
+    /// <para>The caller is no longer consulted (PART-09). A Staff Leader's session widened the option
+    /// set AND widened what the write path would accept, so a pending profile picked from the widened
+    /// dropdown sailed through to <c>visit_guest_members</c>. Both halves are now the form's rule
+    /// rather than the session's, which is also what makes a direct API call carrying a pending id
+    /// fail in the same way as the UI: <c>user</c> is kept in the signature only so call sites read
+    /// the same, and is deliberately unused.</para>
+    /// </summary>
     public static Task EnsureFormSelectableAsync(
         IApplicationDbContext db,
         IEnumerable<ulong?> submittedIds,
         ICurrentUserService? user,
         CancellationToken ct) =>
-        EnsureSelectableAsync(
-            db,
-            submittedIds.Where(id => id.HasValue).Select(id => id!.Value),
-            isPublicAudience: !IsInternalAudience(user),
-            actorCampusId: user?.PrimaryCampusId,
-            ct);
+        EnsureRequestFormSelectableAsync(
+            db, submittedIds.Where(id => id.HasValue).Select(id => id!.Value), ct);
 
     /// <summary>
-    /// Rejects every submitted <c>organizationPartnerId</c> the caller was not entitled to pick.
+    /// Rejects every submitted <c>organizationPartnerId</c> a registration form may not cite —
+    /// anything that is not ACTIVE + APPROVED + PUBLIC, whoever is submitting.
     ///
     /// <para>Validates the ids as a SET in one round trip rather than per member — a delegation of
     /// thirty people from three organizations is three ids, not thirty queries.</para>
     /// </summary>
-    /// <param name="isPublicAudience">
-    /// True for the visitor/anonymous submit paths. Derived from the create path itself, never from
-    /// the payload: a client that says it is internal does not make it so.
-    /// </param>
-    public static async Task EnsureSelectableAsync(
+    public static async Task EnsureRequestFormSelectableAsync(
         IApplicationDbContext db,
         IEnumerable<ulong> partnerIds,
-        bool isPublicAudience,
-        ulong? actorCampusId,
         CancellationToken ct)
     {
         var ids = partnerIds.Distinct().ToList();
         if (ids.Count == 0) return;
 
-        var baseQuery = db.Partners.AsNoTracking().Where(p => ids.Contains(p.PartnerId));
-        var allowed = await (isPublicAudience
-                ? PublicSelectable(baseQuery)
-                : InternalSelectable(baseQuery, actorCampusId))
+        var allowed = await RequestFormSelectable(
+                db.Partners.AsNoTracking().Where(p => ids.Contains(p.PartnerId)))
             .Select(p => p.PartnerId)
             .ToListAsync(ct);
 
-        var rejected = ids.Except(allowed).ToList();
-        if (rejected.Count == 0) return;
-
-        // One message for "does not exist" and for "not yours": distinguishing them turns the form
-        // into a probe for which partner ids exist.
-        throw new BusinessRuleException(
-            "Tổ chức đã chọn cho thành viên trong đoàn không hợp lệ hoặc không còn khả dụng.",
-            "INVALID_MEMBER_ORGANIZATION_PARTNER");
+        if (ids.Except(allowed).Any())
+            // One message for "does not exist", for "not approved" and for "not public": telling them
+            // apart turns the form into a probe for which partner ids exist and what state they are in.
+            throw new BusinessRuleException(NotSelectableMessage, NotSelectableCode);
     }
 }

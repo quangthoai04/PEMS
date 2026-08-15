@@ -77,8 +77,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
     /// <summary>
     /// Every edit path re-sends the whole member list, so every edit path can smuggle in a partner id
-    /// the editor was never offered. Validated here, once, against the editor's own audience — a
-    /// Visitor editing their own request stays on the public option set (PART-01/PART-03).
+    /// the editor was never offered. Validated here, once, against the REQUEST FORM's rule rather than
+    /// the editor's session (PART-09): an edit is the same form as a create, so a profile a create may
+    /// not cite is not one an edit may quietly introduce either.
     /// </summary>
     private Task EnsureMemberOrganizationsSelectableAsync(
         IEnumerable<CampusVisitEditV2Dto> contents, CancellationToken ct) =>

@@ -124,7 +124,17 @@
     "mediaDeclined": "Declined",
     "transportationNote": "Transportation identification",
     "notes": "Notes",
-    "addCampus": "Add campus ({{count}}/{{max}})"
+    "addCampus": "Add campus ({{count}}/{{max}})",
+    "contactPickMicrocopy": "Name, job title and organisation follow the member you pick.",
+    "contactLostAfterReplace": "The previous contact is no longer in the list after the replacement. Please pick a contact again before submitting.",
+    "duplicateMemberTitle": "Somebody is listed twice for this campus",
+    "duplicateMemberCross": "{{name}} is in both the {{first}} list (row {{firstRow}}) and the {{second}} list (row {{secondRow}}).",
+    "duplicateMemberSameList": "{{name}} appears twice in the {{first}} list (rows {{firstRow}} and {{secondRow}}).",
+    "duplicateActionDrop": "Remove the duplicate row",
+    "duplicateActionMove": "Move this person to support staff",
+    "duplicateActionDifferent": "These are two different people",
+    "duplicateMemberHint": "The two rows match on every field, so the system cannot tell them apart. If they really are two people, give them a different job title, organisation or nationality.",
+    "duplicateMovedToSupport": "{{name}} moved to support staff — still the same person in the delegation."
   },
   "excel": {
     "template": "Template",
@@ -135,13 +145,8 @@
     "importedVisitors": "Imported {{count}} guests for this campus.",
     "importedSupport": "Imported {{count}} support members for this campus.",
     "checking": "Checking {{fileName}}...",
-    "replaceAll": "Replace the whole list with this file",
-    "replaceConfirmTitle": "Replace the whole list?",
-    "replaceConfirmBody": "All {{current}} people currently listed will be removed and replaced by {{count}} from {{fileName}}. Anything typed by hand will be lost.",
-    "replaceConfirmYes": "Replace",
     "replaceConfirmNo": "Keep as is",
     "report": {
-      "successTitle": "Excel import succeeded",
       "failedTitle": "The file could not be imported",
       "fileName": "File name",
       "totalRows": "Total data rows",
@@ -168,8 +173,22 @@
       "campus": "Campus",
       "checkedAt": "Checked at",
       "fatal": "Rejected because",
-      "sheetName": "Error report"
-    }
+      "sheetName": "Error report",
+      "listGuests": "guest list",
+      "listSupport": "support staff list",
+      "targetList": "Applied to",
+      "appendedTitle": "The {{list}} was updated from the Excel file",
+      "replacedTitle": "The {{list}} was replaced from the Excel file"
+    },
+    "replaceAllGuests": "Replace the guest list with this file",
+    "replaceAllSupport": "Replace the support list with this file",
+    "replaceConfirmTitleFor": "Replace the whole {{list}}?",
+    "replaceConfirmBodyFor": "All {{current}} people currently in the {{list}} will be removed and replaced by {{count}} from {{fileName}}. Anything typed by hand in this list will be lost.",
+    "replaceConfirmYesFor": "Replace the {{list}}",
+    "replaceBothTitle": "Two lists are waiting to be replaced",
+    "replaceBothBody": "Guest list: {{guestCount}} people from {{guestFile}}. Support staff: {{supportCount}} people from {{supportFile}}. Replacing both at once lets the system check for the same person appearing in both files before anything is overwritten; otherwise use each list own confirmation below.",
+    "replaceBothYes": "Replace both",
+    "replaceBothBlocked": "Nothing was replaced: {{names}} appears in both files. Fix the files and try again — both current lists are untouched."
   },
   "applyAll": {
     "title": "Apply to the remaining campuses?",
@@ -1078,5 +1097,13 @@
     "actionFailed": "Could not process the invitation. Please try again.",
     "bannerTitle": "You have {{count}} operational contact invitation(s) waiting for an answer.",
     "bannerCta": "View invitations"
+  },
+  "contactLink": {
+    "title": "Is this contact one of the delegation?",
+    "body": "The contact details match {{name}} ({{kind}}) in this campus delegation list.",
+    "consequence": "If they are the same person, the contact is linked to that member and the minutes list them once. If they are two different people, the request keeps both and this will not be asked again in this session.",
+    "same": "Same person — link them",
+    "different": "Different people",
+    "review": "Go back"
   }
 }

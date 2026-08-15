@@ -4,22 +4,31 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 vi.mock('../api/visitRequestV2Api', () => ({
   getOperationalContactState: vi.fn(),
   resendOperationalContactConfirmation: vi.fn(),
+  reinviteOperationalContactConfirmation: vi.fn(),
   saveOperationalContact: vi.fn(),
   cancelOperationalContactChange: vi.fn(),
 }));
 
 const showSuccessToast = vi.fn();
 const showErrorToast = vi.fn();
+const showMessageErrorToast = vi.fn();
+// The two error toasts are kept APART on purpose. `showErrorToast` takes the error and extracts the
+// message itself; `showMessageErrorToast` takes an already-built sentence. Handing a built sentence
+// to the first one is not a harmless mix-up — it has nothing to extract from a string, so every
+// error in the panel came out as the generic "something went wrong", including the codes with a
+// sentence of their own. The old mock here hid that: it stubbed getApiErrorMessage to return its
+// fallback, so the tests saw a message the users never got.
 vi.mock('../../../shared/utils/toast', () => ({
   showSuccessToast: (...a: unknown[]) => showSuccessToast(...a),
   showErrorToast: (...a: unknown[]) => showErrorToast(...a),
-  getApiErrorMessage: (_e: unknown, fallback: string) => fallback,
+  showMessageErrorToast: (...a: unknown[]) => showMessageErrorToast(...a),
 }));
 
 import ContactIdentityActions from '../components/ContactIdentityActions';
 import {
   getOperationalContactState,
   resendOperationalContactConfirmation,
+  reinviteOperationalContactConfirmation,
   cancelOperationalContactChange,
   saveOperationalContact,
 } from '../api/visitRequestV2Api';
@@ -276,13 +285,103 @@ describe('ContactIdentityActions', () => {
   });
 
   it('reports a failed mutation through the shared error toast', async () => {
-    vi.mocked(resendOperationalContactConfirmation).mockRejectedValue(new Error('boom'));
+    const boom = new Error('boom');
+    vi.mocked(resendOperationalContactConfirmation).mockRejectedValue(boom);
     renderActions({ contactConfirmed: false, allowedActions: UNDECIDED_ACTIONS });
 
     fireEvent.click(screen.getByTestId('contact-resend-claim'));
 
     await waitFor(() => expect(showErrorToast).toHaveBeenCalled());
+    // The ERROR itself, so the helper can still find a server message inside it. Pre-digesting it
+    // into a string here is what silently reduced every unknown failure to "something went wrong".
+    expect(showErrorToast).toHaveBeenCalledWith(boom, expect.any(String));
     expect(showSuccessToast).not.toHaveBeenCalled();
+  });
+
+  // ── A refusal has to say WHY (plan §18) ────────────────────────────────────────────────────────
+  // Each of these arrives as a stable code the backend already has a sentence for. The panel's only
+  // job is to put that sentence where the user is looking — which it was not doing: both branches
+  // handed a built string to showErrorToast, whose whole job is to extract one FROM an error, so
+  // every refusal came out as the generic default instead.
+
+  /** What axios raises for the 409 the eligibility check answers an internal address with. */
+  const rejectSaveWith = (errorCode: string, message: string, status = 409) =>
+    vi.mocked(saveOperationalContact).mockRejectedValue({
+      response: { status, data: { success: false, errorCode, message } },
+    });
+
+  it('refuses an internal address inline on the email field, saying why', async () => {
+    rejectSaveWith(
+      'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT',
+      'Không thể sử dụng email này cho đầu mối của đoàn.',
+    );
+    renderActions({ contactConfirmed: false, allowedActions: UNDECIDED_ACTIONS });
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(emailField(), { target: { value: 'library.staff@fpt.edu.vn' } });
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalled());
+    // The reason, next to the field that has to change — and the form still open on it, so the fix
+    // is one edit away rather than a reopen from stored values.
+    expect(await screen.findByRole('alert')).toHaveTextContent(/cannot be used as the delegation contact/i);
+    expect(screen.getByTestId('contact-form')).toBeInTheDocument();
+    expect(showErrorToast).not.toHaveBeenCalled();
+    expect(showMessageErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('refuses a deactivated account inline too, with its own different answer', async () => {
+    // Not the same answer as the one above: the address is the right KIND of account, so another
+    // address is not the only way forward and the wording must not imply it is.
+    rejectSaveWith('VISITOR_ACCOUNT_INACTIVE', 'Tài khoản gắn với email này hiện không hoạt động.', 422);
+    renderActions({ contactConfirmed: false, allowedActions: UNDECIDED_ACTIONS });
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(emailField(), { target: { value: 'dormant@example.com' } });
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not active/i);
+    expect(showErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('falls back to a toast for an email refusal raised with no form open', async () => {
+    // "Mời lại" re-checks the STORED address, which may have become an internal account since it
+    // was written. There is no field on screen to hang the message on, so it has to be said anyway.
+    vi.mocked(reinviteOperationalContactConfirmation).mockRejectedValue({
+      response: {
+        status: 409,
+        data: { errorCode: 'CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT', message: 'nội bộ' },
+      },
+    });
+    renderActions({
+      contactConfirmed: false,
+      allowedActions: [...UNDECIDED_ACTIONS, 'REINVITE_OPERATIONAL_CONTACT_CONFIRMATION'],
+    });
+
+    fireEvent.click(await screen.findByTestId('contact-reinvite'));
+
+    await waitFor(() => expect(showMessageErrorToast).toHaveBeenCalled());
+    expect(showMessageErrorToast).toHaveBeenCalledWith(
+      expect.stringMatching(/cannot be used as the delegation contact/i),
+    );
+    expect(showErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('states the known conflict rather than the generic default, and reloads the state', async () => {
+    rejectSaveWith('OPERATIONAL_CONTACT_CHANGE_CONFLICT', 'Đã có thay đổi khác.');
+    const onChanged = vi.fn();
+    renderActions({ contactConfirmed: false, allowedActions: UNDECIDED_ACTIONS, onChanged });
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(emailField(), { target: { value: 'someone.else@example.com' } });
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(showMessageErrorToast).toHaveBeenCalled());
+    expect(showMessageErrorToast).toHaveBeenCalledWith(
+      expect.stringMatching(/changed elsewhere|reloaded/i),
+    );
+    // The screen is now behind the server — reload rather than leave a stale button live.
+    expect(onChanged).toHaveBeenCalled();
   });
 
   it('surfaces a state load failure with a retry instead of claiming there is none', async () => {

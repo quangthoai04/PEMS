@@ -180,7 +180,7 @@ describe('Excel import — the panel (plan §22)', () => {
   it('announces which file is being checked', () => {
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop}
         state={{ loadingFileName: 'danh-sach-khach.xlsx' }}
       />,
     );
@@ -193,7 +193,7 @@ describe('Excel import — the panel (plan §22)', () => {
 
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
       />,
     );
 
@@ -213,7 +213,7 @@ describe('Excel import — the panel (plan §22)', () => {
 
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
       />,
     );
 
@@ -233,7 +233,7 @@ describe('Excel import — the panel (plan §22)', () => {
 
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
       />,
     );
     expect(screen.getByTestId('p-error')).toHaveTextContent(/form is unchanged/i);
@@ -245,10 +245,10 @@ describe('Excel import — the panel (plan §22)', () => {
 
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
       />,
     );
-    expect(screen.getByTestId('p-success')).toHaveTextContent('Nhập Excel thành công');
+    expect(screen.getByTestId('p-success')).toHaveTextContent('danh sách khách');
     await act(async () => { await i18n.changeLanguage('en'); });
   });
 
@@ -258,7 +258,7 @@ describe('Excel import — the panel (plan §22)', () => {
 
     render(
       <ExcelImportPanel
-        testId="p" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
+        testId="p" kind="visitors" campusLabel="Hòa Lạc" onChooseAnother={noop} onDismiss={noop} state={{ report }}
       />,
     );
     // There is no row table to export — only a reason and a way to pick another file.

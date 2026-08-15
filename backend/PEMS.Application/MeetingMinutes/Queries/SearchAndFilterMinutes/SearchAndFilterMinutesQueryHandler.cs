@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Shared;
 using System;
 
 using PEMS.Application.Common;
@@ -173,8 +174,13 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
             .Where(u => neededUserIds.Contains(u.UserId))
             .ToDictionaryAsync(u => u.UserId, u => u.FullName, cancellationToken);
 
+        // A person the Host removed from a biên bản keeps their row so the next sync does not offer
+        // them again (MIN-03), but they are no longer in that biên bản — so they must not be counted
+        // or listed in a view of it.
         var participantsByMinutes = (await _db.MinuteParticipants.AsNoTracking()
-                .Where(p => pageMinutesIds.Contains(p.MinutesId)).ToListAsync(cancellationToken))
+                .Where(p => pageMinutesIds.Contains(p.MinutesId)
+                    && p.SyncState != MinuteParticipantSyncStates.Excluded)
+                .ToListAsync(cancellationToken))
             .GroupBy(p => p.MinutesId).ToDictionary(g => g.Key, g => g.ToList());
         var actionItemsByMinutes = (await _db.MinuteActionItems.AsNoTracking()
                 .Where(ai => pageMinutesIds.Contains(ai.MinutesId)).ToListAsync(cancellationToken))

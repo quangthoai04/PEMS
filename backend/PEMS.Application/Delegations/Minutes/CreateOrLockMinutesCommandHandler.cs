@@ -4,12 +4,17 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Minutes;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Minutes;
 
 public sealed class CreateOrLockMinutesCommandHandler
     : IRequestHandler<CreateOrLockMinutesCommand, MinuteDto>
 {
+    /// <summary>Refusal code for opening a FIRST biên bản on a campus that has not started yet.</summary>
+    public const string MinutesNotStartedYet = "MINUTES_VISIT_NOT_STARTED";
+
+
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
@@ -58,6 +63,23 @@ public sealed class CreateOrLockMinutesCommandHandler
 
         if (minute == null)
         {
+            // A biên bản is the record of a meeting that is HAPPENING or has happened, and until now
+            // nothing in the backend said so — the only thing standing between an approved campus and
+            // a biên bản opened three weeks early was the frontend, which does not render the tab
+            // before DURING_VISIT. That left the rule unstated where it counts: a direct API call
+            // could open one at ASSIGNED, and the auto-fill would freeze a delegation list, a host and
+            // an đầu mối that were all still free to change afterwards.
+            //
+            // Only CREATION is gated. Re-opening an existing record is deliberately not: a biên bản
+            // written during the visit must stay editable while the campus finishes, and a rule that
+            // locked it out retroactively would be worse than the gap it closes. CLOSED and CANCELLED
+            // are already refused above, by canEdit.
+            if (instance.Status != VisitInstanceStatus.DuringVisit
+                && instance.Status != VisitInstanceStatus.AfterVisit)
+                throw new ConflictException(
+                    "Chưa thể tạo biên bản cho chuyến thăm này: biên bản chỉ mở khi đã bắt đầu tiếp khách.",
+                    MinutesNotStartedYet);
+
             // First open → create the single minutes record, already locked by the caller.
             minute = new Minute
             {

@@ -13,13 +13,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ChevronUp, ChevronDown, FileText, Lock, Edit3, Save, X, Plus, Clock, Users, ClipboardList,
   Trash2, UserPlus, RefreshCw, Calendar, Building2, CheckCircle2, AlertCircle, Info,
-  CheckSquare, Square, Eye, Mail,
+  CheckSquare, Square, Eye, Mail, UserMinus, RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { sanitizeHtml } from '../../../shared/security/sanitizeHtml';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type {
-  VisitMinute, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload, AgendaResponsibleCandidate,
+  VisitMinute, MinuteParticipant, SaveMinuteParticipantPayload, SaveMinuteActionItemPayload,
+  AgendaResponsibleCandidate,
 } from '../../../features/delegations/types/delegations.types';
 import { selectNewSyncCandidates } from '../../../features/delegations/utils/participantIdentity';
 import { partnersApi } from '../../../features/partners/api/partnersApi';
@@ -59,15 +60,31 @@ type DraftParticipant = {
   minuteParticipantId: number; // 0 = new
   userId: number | null;
   guestMemberId: number | null;
+  /** GUEST | EXTERNAL_SUPPORT for a delegation row; null for internal/manual (MIN-02). */
+  sourceMemberType: string | null;
+  /** An ADDITIONAL badge on top of the kind, never a kind of its own. */
+  isOperationalContact: boolean;
+  /**
+   * Whether this person exists only in the biên bản. The ONE thing that decides whether the identity
+   * fields are editable (MIN-04) — it used to be "is this a new row", which was wrong in both
+   * directions: a freshly synced guest is new AND source-linked, so the editor offered inputs for a
+   * name the backend takes from `visit_guest_members` and quietly discards on save.
+   */
+  isManual: boolean;
+  /** ACTIVE | EXCLUDED (MIN-03). */
+  syncState: string;
   fullNameSnapshot: string;
   roleSnapshot: string;
   organizationSnapshot: string;
   emailSnapshot: string;
   attendanceStatus: string;
   attendanceNote: string;
-  participantKind: string; // INTERNAL | GUEST | MANUAL
+  participantKind: string; // INTERNAL | GUEST | EXTERNAL_SUPPORT | MANUAL
   guestNationality: string | null;
 };
+
+const SYNC_ACTIVE = 'ACTIVE';
+const SYNC_EXCLUDED = 'EXCLUDED';
 
 type DraftActionItem = {
   _key: string;
@@ -81,11 +98,45 @@ type DraftActionItem = {
   status: string;
 };
 
+/**
+ * Four kinds, not three (MIN-02). `EXTERNAL_SUPPORT` used to be rendered as "Khách", because the
+ * backend only told the client "this row has a guest_member_id" — so an interpreter or a travelling
+ * coordinator was recorded in the minutes as a member of the delegation they were accompanying. And
+ * MANUAL shared the guest badge too, which hid the one distinction that matters for editing: a
+ * manual person exists only here, everybody else is a copy of a record kept elsewhere.
+ */
 const KIND_META: Record<string, { label: string; cls: string }> = {
   INTERNAL: { label: 'Nội bộ', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   GUEST: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  MANUAL: { label: 'Khách', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  EXTERNAL_SUPPORT: { label: 'Nhân sự hỗ trợ đoàn', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  MANUAL: { label: 'Thêm thủ công', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
 };
+const kindMetaOf = (kind: string) => KIND_META[kind] ?? KIND_META.MANUAL;
+
+/**
+ * One server row as the editor holds it. `_key` prefix keeps the React keys distinct between the
+ * "editing the draft" and "viewing the saved snapshot" renders of the same participant.
+ */
+const toDraftParticipant = (p: MinuteParticipant, keyPrefix = 'p'): DraftParticipant => ({
+  _key: `${keyPrefix}-${p.minuteParticipantId}`,
+  minuteParticipantId: p.minuteParticipantId,
+  userId: p.userId,
+  guestMemberId: p.guestMemberId,
+  sourceMemberType: p.sourceMemberType ?? null,
+  isOperationalContact: !!p.isOperationalContact,
+  // Trusted from the server when it says so, and derived otherwise, so a response from an older
+  // build cannot make a delegation member look editable.
+  isManual: p.isManual ?? (p.userId == null && p.guestMemberId == null),
+  syncState: p.syncState || SYNC_ACTIVE,
+  fullNameSnapshot: p.fullNameSnapshot ?? '',
+  roleSnapshot: p.roleSnapshot ?? '',
+  organizationSnapshot: p.organizationSnapshot ?? '',
+  emailSnapshot: p.emailSnapshot ?? '',
+  attendanceStatus: p.attendanceStatus || 'ABSENT',
+  attendanceNote: p.attendanceNote ?? '',
+  participantKind: p.participantKind,
+  guestNationality: p.guestNationality,
+});
 // Điểm danh giờ là tick nhanh (không còn dropdown/badge trạng thái). Ánh xạ checkbox ↔ enum backend:
 //   ticked   → PRESENT
 //   unticked → ABSENT   (backend enum vẫn còn EXCUSED cho dữ liệu cũ, nhưng UI không dùng/không hiện)
@@ -216,20 +267,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
     expiresRef.current = d.editLockExpiresAt ?? null;
     setDraftTitle(d.title ?? 'Biên bản cuộc họp');
     setDraftContent(d.content ?? '');
-    setDraftParticipants((d.participants ?? []).map((p) => ({
-      _key: `p-${p.minuteParticipantId}`,
-      minuteParticipantId: p.minuteParticipantId,
-      userId: p.userId,
-      guestMemberId: p.guestMemberId,
-      fullNameSnapshot: p.fullNameSnapshot ?? '',
-      roleSnapshot: p.roleSnapshot ?? '',
-      organizationSnapshot: p.organizationSnapshot ?? '',
-      emailSnapshot: p.emailSnapshot ?? '',
-      attendanceStatus: p.attendanceStatus || 'ABSENT',
-      attendanceNote: p.attendanceNote ?? '',
-      participantKind: p.participantKind,
-      guestNationality: p.guestNationality,
-    })));
+    setDraftParticipants((d.participants ?? []).map((p) => toDraftParticipant(p)));
     setDraftActionItems((d.actionItems ?? []).map((a) => ({
       _key: `a-${a.actionItemId}`,
       actionItemId: a.actionItemId,
@@ -332,6 +370,9 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         emailSnapshot: p.emailSnapshot.trim() || null,
         attendanceStatus: p.attendanceStatus,
         attendanceNote: p.attendanceNote.trim() || null,
+        // Sent for source-linked rows only. On a manual row it means nothing (dropping one deletes
+        // it), and the backend ignores it there rather than storing a state with no meaning.
+        syncState: p.isManual ? null : p.syncState,
       });
     }
     const actionItems: SaveMinuteActionItemPayload[] = filledActions.map((a) => ({
@@ -364,6 +405,14 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       const msg = errMsg(e, 'Không thể lưu biên bản. Vui lòng thử lại.');
       // Map known backend field errors back to the matching input where possible.
       if (/tiêu đề|tên biên bản/i.test(msg)) setTitleError(msg);
+      // An identity edit on a row whose identity belongs to another table (MIN-04). The editor no
+      // longer offers those inputs, so reaching this means a stale tab or a direct API call — the
+      // message names the person and says where the edit does belong, and nothing is silently kept.
+      if (code === 'SOURCE_PARTICIPANT_IDENTITY_READONLY') {
+        const marks: Record<string, string> = {};
+        for (const p of draftParticipants) if (!p.isManual) marks[p._key] = msg;
+        if (Object.keys(marks).length > 0) setParticipantErrors(marks);
+      }
       // Guest scope error → flag the newly-synced guest rows so the user knows which to re-sync.
       if (code === 'MINUTE_GUEST_NOT_IN_CURRENT_REQUEST') {
         const marks: Record<string, string> = {};
@@ -398,18 +447,38 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
 
   const updateParticipant = (key: string, patch: Partial<DraftParticipant>) =>
     setDraftParticipants((prev) => prev.map((p) => (p._key === key ? { ...p, ...patch } : p)));
+  /**
+   * Takes somebody out of the biên bản (MIN-03).
+   *
+   * <p>A MANUAL person exists only here, so removing them deletes the row — there is nothing else it
+   * could mean, and nothing regenerates it.</p>
+   *
+   * <p>A SOURCE-LINKED person is marked EXCLUDED and kept. Deleting them made the person "missing"
+   * again as far as the next "đồng bộ người mới" was concerned — they were still on the official
+   * delegation/participant list, so sync helpfully added them straight back and the Host's decision
+   * was quietly undone every time. Kept and marked, it survives the save and can be reversed.</p>
+   */
   const removeParticipant = (key: string) =>
     setDraftParticipants((prev) => {
-      // A row that exists server-side is remembered so "Đồng bộ người mới" can offer this person
-      // again while the session is still open; a row that was only ever in the draft has nothing to
-      // remember (and sync would never regenerate a manual row anyway).
       const row = prev.find((p) => p._key === key);
-      if (row && row.minuteParticipantId > 0) {
-        setRemovedParticipantIds((ids) =>
-          ids.includes(row.minuteParticipantId) ? ids : [...ids, row.minuteParticipantId]);
-      }
-      return prev.filter((p) => p._key !== key);
+      if (!row) return prev;
+      if (row.isManual) return prev.filter((p) => p._key !== key);
+      // A source row that was never saved (just synced into the draft) has nothing to exclude —
+      // dropping it from the draft is enough, and sending an EXCLUDED row with no id would create
+      // one for the sole purpose of hiding it.
+      if (row.minuteParticipantId <= 0) return prev.filter((p) => p._key !== key);
+      // Kept in the draft, marked. That is also what keeps "Đồng bộ người mới" quiet about them:
+      // the row is still in the list `selectNewSyncCandidates` matches against, so the person is not
+      // offered again. `removedParticipantIds` deliberately does NOT gain this id — that list exists
+      // to tell the backend "treat this row as already gone", which is the opposite of the decision
+      // being made here.
+      return prev.map((p) => (p._key === key ? { ...p, syncState: SYNC_EXCLUDED } : p));
     });
+
+  /** Puts an excluded person back. The identity snapshot is untouched — same row, same person. */
+  const restoreParticipant = (key: string) =>
+    setDraftParticipants((prev) =>
+      prev.map((p) => (p._key === key ? { ...p, syncState: SYNC_ACTIVE } : p)));
   const updateActionItem = (key: string, patch: Partial<DraftActionItem>) =>
     setDraftActionItems((prev) => prev.map((a) => (a._key === key ? { ...a, ...patch } : a)));
   const removeActionItem = (key: string) =>
@@ -421,13 +490,19 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
       minuteParticipantId: 0,
       userId: null,
       guestMemberId: null,
+      sourceMemberType: null,
+      isOperationalContact: false,
+      // Typed in here and nowhere else — the one row whose name / role / organisation this screen
+      // owns, and the reason MANUAL is a kind of its own rather than a flavour of "Khách".
+      isManual: true,
+      syncState: SYNC_ACTIVE,
       fullNameSnapshot: '',
       roleSnapshot: '',
       organizationSnapshot: '',
       emailSnapshot: '',
       attendanceStatus: 'ABSENT',
       attendanceNote: '',
-      participantKind: 'GUEST',
+      participantKind: 'MANUAL',
       guestNationality: null,
     }]);
   };
@@ -448,6 +523,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
         minuteParticipantId: 0,
         userId: c.userId,
         guestMemberId: c.guestMemberId,
+        sourceMemberType: c.sourceMemberType ?? null,
+        isOperationalContact: !!c.isOperationalContact,
+        // A synced person is NEVER manual, however new the row is. Treating "new" as "editable" is
+        // what put inputs in front of the user for a name the backend rebuilds from the source
+        // record and discards on save (MIN-04).
+        isManual: false,
+        syncState: SYNC_ACTIVE,
         fullNameSnapshot: c.fullNameSnapshot ?? '',
         roleSnapshot: c.roleSnapshot ?? '',
         organizationSnapshot: c.organizationSnapshot ?? '',
@@ -468,22 +550,14 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
   const ss = String(Math.max(0, Math.floor((remainingMs % 60000) / 1000))).padStart(2, '0');
 
   // Unified render rows (same shape whether editing the draft or viewing the saved snapshot).
-  const participantRows: DraftParticipant[] = editing
+  const allParticipantRows: DraftParticipant[] = editing
     ? draftParticipants
-    : (data?.participants ?? []).map((p) => ({
-        _key: `v-${p.minuteParticipantId}`,
-        minuteParticipantId: p.minuteParticipantId,
-        userId: p.userId,
-        guestMemberId: p.guestMemberId,
-        fullNameSnapshot: p.fullNameSnapshot ?? '',
-        roleSnapshot: p.roleSnapshot ?? '',
-        organizationSnapshot: p.organizationSnapshot ?? '',
-        emailSnapshot: p.emailSnapshot ?? '',
-        attendanceStatus: p.attendanceStatus || 'ABSENT',
-        attendanceNote: p.attendanceNote ?? '',
-        participantKind: p.participantKind,
-        guestNationality: p.guestNationality,
-      }));
+    : (data?.participants ?? []).map((p) => toDraftParticipant(p, 'v'));
+  // Somebody the Host took out of the biên bản. Kept in the data (so "Đồng bộ người mới" does not
+  // put them back and so the decision can be undone) but NOT part of the biên bản — they are listed
+  // separately below, never mixed into the attendance table (MIN-03).
+  const participantRows = allParticipantRows.filter((p) => p.syncState !== SYNC_EXCLUDED);
+  const excludedRows = allParticipantRows.filter((p) => p.syncState === SYNC_EXCLUDED);
   const actionRows: DraftActionItem[] = editing
     ? draftActionItems
     : (data?.actionItems ?? []).map((a) => ({
@@ -628,9 +702,13 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                              {participantRows.map((p) => {
-                              const selectedKind = p.participantKind === 'INTERNAL' ? 'INTERNAL' : 'GUEST';
-                              const kind = KIND_META[selectedKind];
-                              const isNewRow = p.minuteParticipantId <= 0;
+                              const kind = kindMetaOf(p.participantKind);
+                              // Identity follows the SOURCE, not the age of the row (MIN-04). A guest
+                              // freshly synced into the draft is new AND source-linked: the editor
+                              // used to offer inputs for a name the backend takes from
+                              // visit_guest_members and discards, so the correction the user typed
+                              // was gone the next time they opened the biên bản.
+                              const canEditIdentity = editing && p.isManual;
                               const rowError = participantErrors[p._key];
                               const isPresent = isPresentStatus(p.attendanceStatus);
                               return (
@@ -652,7 +730,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     </button>
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isNewRow ? (
+                                    {canEditIdentity ? (
                                       <input
                                         value={p.fullNameSnapshot}
                                         onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
@@ -667,7 +745,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isNewRow ? (
+                                    {canEditIdentity ? (
                                       <input
                                         value={p.roleSnapshot}
                                         onChange={(e) => updateParticipant(p._key, { roleSnapshot: e.target.value })}
@@ -679,7 +757,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {editing && isNewRow ? (
+                                    {canEditIdentity ? (
                                       <input
                                         value={p.organizationSnapshot}
                                         onChange={(e) => updateParticipant(p._key, { organizationSnapshot: e.target.value })}
@@ -692,19 +770,27 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                       </span>
                                     )}
                                   </td>
+                                  {/* Read-only in BOTH modes now. The dropdown here used to let a
+                                      source row be re-labelled between "Nội bộ" and "Khách", but
+                                      nothing carried that choice to the server — where a row came
+                                      from is a fact about the data, not a display preference. And
+                                      it could not express EXTERNAL_SUPPORT at all (MIN-02). */}
                                   <td className="px-4 py-3">
-                                    {editing ? (
-                                      <select
-                                        value={selectedKind}
-                                        onChange={(e) => updateParticipant(p._key, { participantKind: e.target.value })}
-                                        className="text-xs font-bold rounded-lg border border-gray-300 px-2 py-1.5 outline-none bg-white focus:border-[#004c91] shadow-xs cursor-pointer"
-                                      >
-                                        <option value="INTERNAL">Nội bộ</option>
-                                        <option value="GUEST">Khách</option>
-                                      </select>
-                                    ) : (
+                                    <span className="flex flex-wrap items-center gap-1">
                                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kind.cls}`}>{kind.label}</span>
-                                    )}
+                                      {/* An ADDITIONAL badge — "Khách · Đầu mối" — never a kind of
+                                          its own: being the campus's contact does not stop somebody
+                                          being a member of the delegation. */}
+                                      {p.isOperationalContact && (
+                                        <span
+                                          data-testid={`minute-participant-contact-${p._key}`}
+                                          title="Đầu mối của đoàn tại cơ sở này"
+                                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border bg-amber-50 text-amber-700 border-amber-200"
+                                        >
+                                          Đầu mối
+                                        </span>
+                                      )}
+                                    </span>
                                   </td>
                                   {!editing && (
                                     <td className="px-4 py-3">
@@ -741,12 +827,19 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   </td>
                                   {editing && (
                                     <td className="px-4 py-3 text-center">
+                                      {/* "Xóa" only for somebody who exists nowhere else. Taking a
+                                          source-linked person out is "loại khỏi biên bản": the row
+                                          survives, so the next sync does not put them back and the
+                                          decision can be undone (MIN-03). */}
                                       <button
                                         type="button"
+                                        data-testid={`minute-participant-remove-${p._key}`}
                                         onClick={() => removeParticipant(p._key)}
+                                        title={p.isManual ? 'Xóa khỏi biên bản' : 'Loại khỏi biên bản'}
+                                        aria-label={p.isManual ? 'Xóa khỏi biên bản' : 'Loại khỏi biên bản'}
                                         className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors"
                                       >
-                                        <Trash2 className="w-4 h-4" />
+                                        {p.isManual ? <Trash2 className="w-4 h-4" /> : <UserMinus className="w-4 h-4" />}
                                       </button>
                                     </td>
                                   )}
@@ -758,6 +851,52 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                             )}
                           </tbody>
                         </table>
+                      </div>
+                    )}
+
+                    {/* ── Đã loại khỏi biên bản (MIN-03) ─────────────────────────────────────
+                        Shown, not hidden. These people are still on the official delegation /
+                        participant list — the Host decided they do not belong in this record, and
+                        that decision is only reversible if it is visible. Keeping the row is also
+                        what stops "Đồng bộ người mới" from cheerfully adding them back. */}
+                    {excludedRows.length > 0 && (
+                      <div
+                        data-testid="minute-excluded-participants"
+                        className="px-5 py-3 border-t border-gray-200 bg-slate-50/60"
+                      >
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                          Đã loại khỏi biên bản ({excludedRows.length})
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Những người này vẫn thuộc danh sách đoàn / danh sách tham gia, nhưng không được
+                          tính vào biên bản này. "Đồng bộ người mới" sẽ không thêm lại họ.
+                        </p>
+                        <ul className="mt-2 space-y-1.5">
+                          {excludedRows.map((p) => (
+                            <li
+                              key={p._key}
+                              className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <span className="text-sm font-semibold text-slate-700">{p.fullNameSnapshot || '-'}</span>
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${kindMetaOf(p.participantKind).cls}`}>
+                                {kindMetaOf(p.participantKind).label}
+                              </span>
+                              {p.organizationSnapshot && (
+                                <span className="text-xs text-slate-500">{p.organizationSnapshot}</span>
+                              )}
+                              {editing && (
+                                <button
+                                  type="button"
+                                  data-testid={`minute-participant-restore-${p._key}`}
+                                  onClick={() => restoreParticipant(p._key)}
+                                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#004c91]/30 bg-white px-3 py-1.5 text-xs font-bold text-[#004c91] transition-colors hover:bg-blue-50"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" /> Khôi phục vào biên bản
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
 

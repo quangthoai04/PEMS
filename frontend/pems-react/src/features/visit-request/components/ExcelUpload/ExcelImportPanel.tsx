@@ -8,12 +8,23 @@ export interface ExcelImportState {
   /** Name of the file being checked; drives the loading line. */
   loadingFileName?: string;
   report?: ExcelImportReport;
+  /**
+   * What the form ACTUALLY did with the rows, and what the list holds now (IMP-04).
+   *
+   * <p>The panel used to be headed "Nhập Excel thành công" over a report whose "Danh sách hiện tại"
+   * was computed for an APPEND — so after a replace it stated a size the list did not have, and the
+   * word "thành công" described a check rather than a change. Every line the user reads now names an
+   * action that has already happened to a list that is named.</p>
+   */
+  applied?: { phase: 'APPENDED' | 'REPLACED'; resultingCount: number };
 }
 
 interface Props {
   state: ExcelImportState;
   /** Campus name for the downloadable report — the report travels outside this screen. */
   campusLabel: string;
+  /** Which list this panel is reporting on, so the message can say so (IMP-02/IMP-04). */
+  kind: 'visitors' | 'supportTeam';
   /** Re-opens the file picker for THIS section. */
   onChooseAnother: () => void;
   onDismiss: () => void;
@@ -33,10 +44,13 @@ const Row: React.FC<{ label: string; value: React.ReactNode; strong?: boolean }>
  * it was talking about, and the second import silently overwrote the first one's result.
  */
 export const ExcelImportPanel: React.FC<Props> = ({
-  state, campusLabel, onChooseAnother, onDismiss, testId,
+  state, campusLabel, kind, onChooseAnother, onDismiss, testId,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
   const excelT: ExcelTranslator = (key, options) => t(key, options) as string;
+  const listLabel = t(kind === 'visitors'
+    ? 'visitRequestV2:excel.report.listGuests'
+    : 'visitRequestV2:excel.report.listSupport');
 
   if (state.loadingFileName) {
     return (
@@ -65,7 +79,11 @@ export const ExcelImportPanel: React.FC<Props> = ({
       >
         <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-emerald-800">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {t('visitRequestV2:excel.report.successTitle')}
+          {/* Names the ACTION and the LIST. "Nhập Excel thành công" said neither, so on a card with
+              two importers it could not be told which list had just changed, or how. */}
+          {t(state.applied?.phase === 'REPLACED'
+            ? 'visitRequestV2:excel.report.replacedTitle'
+            : 'visitRequestV2:excel.report.appendedTitle', { list: listLabel })}
           <button
             type="button"
             aria-label={t('visitRequestV2:excel.report.dismiss')}
@@ -76,6 +94,7 @@ export const ExcelImportPanel: React.FC<Props> = ({
           </button>
         </div>
         <div className="space-y-1 text-sm">
+          <Row label={t('visitRequestV2:excel.report.targetList')} value={listLabel} />
           <Row label={t('visitRequestV2:excel.report.fileName')} value={report.fileName} />
           <Row label={t('visitRequestV2:excel.report.totalRows')} value={report.totalRows} />
           <Row label={t('visitRequestV2:excel.report.imported')} value={report.validRows} strong />
@@ -83,7 +102,9 @@ export const ExcelImportPanel: React.FC<Props> = ({
           <Row
             label={t('visitRequestV2:excel.report.currentList')}
             value={t('visitRequestV2:excel.report.currentListValue', {
-              count: report.resultingCount, max: EXCEL_MAX_MEMBERS,
+              // The size the list ACTUALLY has. `report.resultingCount` is computed for an append, so
+              // after a replace it named a number that was never true.
+              count: state.applied?.resultingCount ?? report.resultingCount, max: EXCEL_MAX_MEMBERS,
             })}
           />
         </div>

@@ -160,6 +160,29 @@ public sealed class MinutesMutationScopeV2Tests
             .ToDictionaryAsync(c => c.CampusId, c => c.VisitInstanceId);
     }
 
+    /// <summary>
+    /// Moves the campus to DURING_VISIT — where a biên bản may first be opened. Written straight to
+    /// the column rather than driven through the Host's stage commands, which belong to a test about
+    /// stage transitions rather than to every test that needs a biên bản.
+    /// </summary>
+    private static async Task StartVisitAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        // A campus cannot be DURING_VISIT with no agenda — a trigger says so, because from here on
+        // the delegation is actually being received.
+        await db.Database.ExecuteSqlRawAsync(
+            "INSERT INTO visit_agendas (visit_instance_id, sequence_order, title, start_time) "
+            + "SELECT {0}, 1, 'Tiếp đoàn', planned_start_at FROM visit_request_campuses "
+            + "WHERE visit_instance_id = {0}",
+            instanceId);
+        // One step at a time: a second trigger enforces the stage machine, and DURING_VISIT is only
+        // reachable from BEFORE_VISIT.
+        foreach (var status in new[] { "BEFORE_VISIT", "DURING_VISIT" })
+            await db.Database.ExecuteSqlRawAsync(
+                "UPDATE visit_request_campuses SET status = {0} WHERE visit_instance_id = {1}",
+                status, instanceId);
+    }
+
     private static CreateOrLockMinutesCommandHandler OpenHandler(ApplicationDbContext db, ulong actor)
         => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock());
 
@@ -194,6 +217,55 @@ public sealed class MinutesMutationScopeV2Tests
     }
 
     [Fact]
+    public async Task A_biên_bản_cannot_be_opened_before_the_visit_starts_but_stays_open_afterwards()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), "Đoàn chưa bắt đầu"));
+            var instances = await InstanceIdsAsync(requestId);
+            await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            var hn = instances[CampusHn];
+
+            // An approved campus has a Host, and until now that was the whole of the rule: nothing in
+            // the backend said a biên bản is the record of a meeting that has STARTED. Only the
+            // frontend did, by not rendering the tab — so a direct call could open one three weeks
+            // early and freeze a delegation, a host and an đầu mối that were all still free to change.
+            using (var db = NewContext())
+            {
+                var refusal = await Assert.ThrowsAsync<ConflictException>(() =>
+                    OpenHandler(db, HostHn).Handle(
+                        new CreateOrLockMinutesCommand(hn, "Biên bản sớm"), CancellationToken.None));
+                Assert.Equal(CreateOrLockMinutesCommandHandler.MinutesNotStartedYet, refusal.ErrorCode);
+            }
+
+            using (var db = NewContext())
+                Assert.False(await db.Minutes.AnyAsync(m => m.VisitInstanceId == hn));
+
+            // Once it starts, the same call works…
+            await StartVisitAsync(hn);
+            using (var db = NewContext())
+                await OpenHandler(db, HostHn).Handle(
+                    new CreateOrLockMinutesCommand(hn, "Biên bản HN"), CancellationToken.None);
+
+            // …and the campus moving on does not lock the Host out of what they already wrote. Only
+            // CREATION is gated; a rule that took an existing biên bản away would be worse than the
+            // gap it closes.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_campuses SET status = 'AFTER_VISIT' WHERE visit_instance_id = {0}", hn);
+            using (var db = NewContext())
+            {
+                var reopened = await OpenHandler(db, HostHn).Handle(
+                    new CreateOrLockMinutesCommand(hn, "Biên bản HN"), CancellationToken.None);
+                Assert.True(reopened.IsLockedByMe);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
     public async Task The_host_creates_and_saves_minutes_with_an_action_item_on_their_own_instance()
     {
         RequireDb();
@@ -203,6 +275,7 @@ public sealed class MinutesMutationScopeV2Tests
             requestId = await CreateAsync(Campus("HN", Now.AddDays(20), "Đoàn biên bản"));
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
+            await StartVisitAsync(instances[CampusHn]);
             var hn = instances[CampusHn];
 
             ulong minutesId; string lockToken; uint rowVersion;
@@ -249,6 +322,8 @@ public sealed class MinutesMutationScopeV2Tests
             var instances = await InstanceIdsAsync(requestId);
             await ApproveAsync(requestId, instances[CampusHn], LeaderHn, CampusHn, HostHn);
             await ApproveAsync(requestId, instances[CampusHcm], LeaderHcm, CampusHcm, HostHcm);
+            await StartVisitAsync(instances[CampusHn]);
+            await StartVisitAsync(instances[CampusHcm]);
             var hn = instances[CampusHn];
 
             // The HN host opens and saves HN's minute.

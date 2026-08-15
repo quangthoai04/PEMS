@@ -12,7 +12,7 @@ import {
 } from '../api/visitRequestV2Api';
 import { errorCodeOf, hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
-import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
@@ -73,9 +73,30 @@ const CONTACT_ERROR_KEYS: Record<string, string> = {
   OPERATIONAL_CONTACT_CONFIRMATION_EXPIRED: 'visitRequestV2:contact.errorInvitationExpired',
   OPERATIONAL_CONTACT_CONFIRMATION_SUPERSEDED: 'visitRequestV2:contact.errorInvitationSuperseded',
   OPERATIONAL_CONTACT_CONFIRMATION_RATE_LIMITED: 'visitRequestV2:contact.errorRateLimited',
-  OPERATIONAL_CONTACT_ACCOUNT_INACTIVE: 'visitRequestV2:contact.errorAccountInactive',
   OPERATIONAL_CONTACT_PROFILE_NO_CHANGES: 'visitRequestV2:contact.errorNoChanges',
   VISIT_INSTANCE_VERSION_CONFLICT: 'visitRequestV2:contact.errorVersionConflict',
+};
+
+/**
+ * Lỗi thuộc về ĐỊA CHỈ vừa nhập, không phải về thao tác nói chung — nên hiện dưới ô Email chứ
+ * không phải bằng toast.
+ *
+ * Cả ba đều bị từ chối TRƯỚC khi ghi bất cứ thứ gì (OperationalContactEligibility): cơ sở vẫn
+ * nguyên đầu mối cũ, lời mời cũ, trạng thái cũ. Việc duy nhất cần làm là sửa lại email — mà một
+ * toast tắt sau 3 giây thì bỏ người dùng lại trước đúng cái ô đó, không còn dấu vết gì.
+ *
+ * `OPERATIONAL_CONTACT_ACCOUNT_INACTIVE` cũng nằm ở đây (không còn trong bảng toast phía trên):
+ * trong panel này nó chỉ đến từ nhánh chuyển giao kiểm tra tài khoản của email MỚI. Bản thể còn
+ * lại của mã đó — người bấm link xác nhận có tài khoản đã khoá — xảy ra ở trang xác nhận công
+ * khai, không phải màn này.
+ */
+const CONTACT_EMAIL_ERROR_KEYS: Record<string, string> = {
+  // Dùng chung câu chữ với form tạo đơn public, để một người nhập nhầm email nội bộ ở hai chỗ
+  // khác nhau nhận đúng một lời giải thích.
+  CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT:
+    'errors:api.CONTACT_EMAIL_CANNOT_BE_USED_FOR_VISITOR_ACCOUNT',
+  VISITOR_ACCOUNT_INACTIVE: 'errors:api.VISITOR_ACCOUNT_INACTIVE',
+  OPERATIONAL_CONTACT_ACCOUNT_INACTIVE: 'visitRequestV2:contact.errorAccountInactive',
 };
 
 const labelCls = 'block text-xs font-semibold text-slate-500';
@@ -109,7 +130,7 @@ export default function ContactIdentityActions({
   allowedActions,
   onChanged,
 }: Props) {
-  const { t } = useTranslation(['visitRequestV2', 'validation']);
+  const { t } = useTranslation(['visitRequestV2', 'validation', 'errors']);
   const isPending = !contactConfirmed;
   const contactEmail = contact.email || null;
 
@@ -198,17 +219,33 @@ export default function ContactIdentityActions({
       // Các xung đột nghiệp vụ ĐÃ BIẾT phải nói đúng chuyện, không rơi về "Đã xảy ra lỗi. Vui lòng
       // thử lại." — câu đó vừa vô nghĩa (thử lại sẽ hỏng y hệt) vừa che mất việc thao tác có thể đã
       // thành công một phần. Map theo MÃ ổn định của backend, không parse message.
+      //
+      // Cả ba nhánh dưới đây đều dùng showMessageErrorToast / showErrorToast(err) cho ĐÚNG kiểu:
+      // showErrorToast nhận LỖI rồi tự trích message. Đưa cho nó một chuỗi đã dựng sẵn thì chuỗi
+      // ấy không có `response`/`message` nào để trích, và mọi lỗi của panel — kể cả những mã có
+      // câu chữ riêng ngay trên kia — cùng rơi về "Đã xảy ra lỗi. Vui lòng thử lại."
       const code = errorCodeOf(err);
+
+      const emailKey = code ? CONTACT_EMAIL_ERROR_KEYS[code] : undefined;
+      if (emailKey) {
+        // Form đang mở → gắn vào ô Email để sửa tại chỗ. Đóng rồi (bấm "Mời lại" chẳng hạn) thì
+        // không có ô nào để gắn, lúc đó vẫn phải nói bằng toast. Không refresh: lời từ chối này
+        // xảy ra trước mọi thay đổi, màn hình đang hiển thị đúng thực tế.
+        if (showForm) setEmailError(t(emailKey));
+        else showMessageErrorToast(t(emailKey));
+        return;
+      }
+
       const known = code ? CONTACT_ERROR_KEYS[code] : undefined;
       if (known) {
-        showErrorToast(t(known));
+        showMessageErrorToast(t(known));
         // Trạng thái phía server đã khác với những gì màn hình đang hiển thị (đã có lời mời chờ, đã
         // có người xác nhận, lời mời đã bị thay...) — tải lại để người dùng thấy đúng thực tế thay
         // vì bấm lại vào một nút không còn hợp lệ.
         await refreshState();
         onChanged?.();
       } else {
-        showErrorToast(getApiErrorMessage(err, t('visitRequestV2:contact.actionFailed')));
+        showErrorToast(err, t('visitRequestV2:contact.actionFailed'));
       }
     } finally {
       setBusy(false);

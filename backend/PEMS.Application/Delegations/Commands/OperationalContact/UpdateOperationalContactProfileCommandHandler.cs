@@ -129,6 +129,12 @@ public sealed class UpdateOperationalContactProfileCommandHandler
         detail.OperationalContactOrganization = newOrganization;
         detail.OperationalContactJobTitle = newJobTitle;
         detail.OperationalContactPhone = newPhone;
+        // operational_contact_guest_member_id is deliberately UNTOUCHED, unlike the replace and
+        // transfer paths which clear it. This corrects the DETAILS of the person already holding the
+        // role — a misspelt name, a new phone — and correcting somebody's spelling does not make them
+        // a different human. Clearing the link here would strip the "· Đầu mối" badge off the right
+        // person in the biên bản for a typo fix; the address, which is what identity actually turns
+        // on, cannot be changed through this handler at all.
         detail.RowVersion += 1;
         detail.UpdatedAt = now;
         detail.UpdatedBy = actorId;

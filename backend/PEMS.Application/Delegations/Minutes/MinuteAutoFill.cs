@@ -5,6 +5,7 @@ using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Minutes;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Minutes;
 
@@ -28,6 +29,16 @@ namespace PEMS.Application.Delegations.Minutes;
 /// internal row is skipped, because a user_id is the stronger identity. Name alone is never enough to
 /// merge two people — that rule lives in <see cref="PersonIdentity"/> and is shared with the create /
 /// edit services, so the biên bản and the request form can never disagree about who is who.
+///
+/// <para><b>Rows the Host has set aside count as present (MIN-03).</b> <paramref name="existing"/> is
+/// every row of the biên bản, EXCLUDED ones included, so somebody deliberately taken out is "already
+/// seen" here and is not offered again. That is the whole point of keeping the row instead of deleting
+/// it: a delete made the person "missing" again, and the next sync helpfully put them back.</para>
+///
+/// <para><b>What a row records about its source.</b> Each guest row carries the member's
+/// <c>member_type</c> as it stands now (<c>GUEST</c> / <c>EXTERNAL_SUPPORT</c>) and whether that
+/// person is the campus's operational contact. Both are SNAPSHOTS: a biên bản describes the meeting
+/// that happened, and reclassifying a member next month must not edit last month's record.</para>
 /// </summary>
 internal static class MinuteAutoFill
 {
@@ -115,6 +126,13 @@ internal static class MinuteAutoFill
             .Select(x => x.Member)
             .ToListAsync(ct);
 
+        // Which member, if any, holds the contact role — so the row can carry the badge from the
+        // moment it is created rather than being worked out again on every render.
+        var contactDetail = instance.FormDetail
+            ?? await db.VisitInstanceFormDetails
+                .FirstOrDefaultAsync(d => d.VisitInstanceId == instance.VisitInstanceId, ct);
+        var contactGuestMemberId = contactDetail?.OperationalContactGuestMemberId;
+
         foreach (var g in guests)
         {
             if (seenGuestIds.Contains(g.GuestMemberId)) continue;
@@ -127,6 +145,11 @@ internal static class MinuteAutoFill
                 MinutesId = minutesId,
                 UserId = null,
                 GuestMemberId = g.GuestMemberId,
+                // Recorded, not looked up later: the biên bản says what this person WAS when the
+                // meeting happened, and reclassifying the member afterwards must not rewrite it.
+                SourceMemberType = g.MemberType,
+                IsOperationalContact = contactGuestMemberId == g.GuestMemberId,
+                SyncState = MinuteParticipantSyncStates.Active,
                 FullNameSnapshot = g.FullName,
                 RoleSnapshot = g.JobTitle,
                 OrganizationSnapshot = g.Organization,
@@ -165,8 +188,10 @@ internal static class MinuteAutoFill
     ///   <item><c>operational_contact_user_id</c> — a confirmed contact holds an account, and the Host
     ///   or an internal participant may be that same account.</item>
     ///   <item>The contact's email against an internal row's email snapshot.</item>
-    ///   <item>Name + job title + organisation, the weakest — enough to skip an auto-filled duplicate,
-    ///   never enough to merge anything a user can see.</item>
+    ///   <item>Name + job title + organisation, the weakest — and only against rows that carry no
+    ///   member id of their own (an internal participant, or the contact row a previous run wrote).
+    ///   A delegation member is answered for by check 1; matching one by name HERE would overrule the
+    ///   user's own answer to "cùng một người, hay hai người khác nhau?".</item>
     /// </list>
     /// <para>
     /// The link in check 1 may name a GUEST or an EXTERNAL_SUPPORT row: an interpreter or coordinator
@@ -216,22 +241,39 @@ internal static class MinuteAutoFill
                 PersonIdentity.NormalizeEmail(p.EmailSnapshot) == contactEmail))
             return;
 
-        // 4. Same name + role + organisation as ANY row already present. Deliberately still reached
-        //    when the contact HAS a linked id: step 3 above skips a delegation member whose
-        //    fingerprint already belongs to an internal row, so the linked member can be legitimately
-        //    absent from seenGuestIds — and adding the contact then would put the same human in the
-        //    biên bản twice, once as staff and once as the coordinator. Name+role+organisation, never
-        //    name alone: two people who share only a name are two people.
+        // 4. Same name + role + organisation as a row that has NO member id of its own. Deliberately
+        //    still reached when the contact HAS a linked id: step 3 above skips a delegation member
+        //    whose fingerprint already belongs to an internal row, so the linked member can be
+        //    legitimately absent from seenGuestIds — and adding the contact then would put the same
+        //    human in the biên bản twice, once as staff and once as the coordinator. It also catches
+        //    the contact row a previous run wrote, which keeps the sync idempotent.
+        //
+        //    A DELEGATION member is compared by id in check 1 and never by name here. Their being
+        //    unlinked is now a decision, not a gap: the form asks about an exact fingerprint match
+        //    before it submits, and the create path records "cùng một người" as the link. So a member
+        //    who reaches this point with the same fingerprint is somebody the user has explicitly
+        //    said is a DIFFERENT human — and absorbing them by name is how the biên bản ended up with
+        //    one row wearing both "Khách" and "Đầu mối" for two people. Legacy rows predating the
+        //    link column were reconciled by the backfill in
+        //    docs/database/scripts/patches/2026-08-14_operational_contact_guest_member_link.sql,
+        //    which used this same fingerprint, so they arrive here already linked.
         var contactKey = PersonIdentity.Key(
             detail.OperationalContactFullName,
             detail.OperationalContactJobTitle,
             detail.OperationalContactOrganization);
         if (contactKey.Length > 0
-            && existing.Concat(result).Any(p =>
+            && existing.Concat(result).Where(p => p.GuestMemberId == null).Any(p =>
                 PersonIdentity.Key(p.FullNameSnapshot, p.RoleSnapshot, p.OrganizationSnapshot) == contactKey))
             return;
 
         if (string.IsNullOrWhiteSpace(detail.OperationalContactFullName)) return;
+
+        // The contact's own member row, when the link names one — so the added row can record what
+        // kind of member they are (guest or travelling support) rather than defaulting to "khách".
+        var linkedMember = detail.OperationalContactGuestMemberId is ulong contactMemberId
+            ? await db.VisitGuestMembers
+                .FirstOrDefaultAsync(g => g.GuestMemberId == contactMemberId, ct)
+            : null;
 
         result.Add(new MinuteParticipant
         {
@@ -241,6 +283,9 @@ internal static class MinuteAutoFill
             // covered them). Recording it keeps the next run idempotent by id instead of by name.
             UserId = instance.OperationalContactUserId,
             GuestMemberId = detail.OperationalContactGuestMemberId,
+            SourceMemberType = linkedMember?.MemberType,
+            IsOperationalContact = true,
+            SyncState = MinuteParticipantSyncStates.Active,
             FullNameSnapshot = detail.OperationalContactFullName,
             RoleSnapshot = string.IsNullOrWhiteSpace(detail.OperationalContactJobTitle)
                 ? OperationalContactRole

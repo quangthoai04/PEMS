@@ -32,6 +32,7 @@ import { profileApi } from '../../../profile/api/profileApi';
 import { getApiErrorMessage } from '../../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../../shared/utils/emailIdentity';
 import { commitFieldValue, fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
+import { ContactLinkPromptDialog } from './ContactLinkPromptDialog';
 
 interface Props {
   mode: UseVisitRequestFormV2Options['mode'];
@@ -737,6 +738,22 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── "Đầu mối này có phải là người trong đoàn?" (ID-01) ──────────────────────────────
+          Raised at submit, because that is the last moment the answer can still change what is
+          stored. A contact typed out by hand who IS in the delegation arrives as a SECOND record of
+          one person — the member row has a guest_member_id, the snapshot has nothing — and from
+          then on the two are two people to everything downstream, the biên bản included.
+          Asked, not assumed: one exact match on name + job title + organisation is worth a question
+          and is not proof, and "they are two different people" is a real answer. */}
+      {vm.contactLinkPrompt && (
+        <ContactLinkPromptDialog
+          prompt={vm.contactLinkPrompt}
+          onSame={vm.confirmContactLink}
+          onDifferent={vm.declineContactLink}
+          onReview={vm.dismissContactLink}
+        />
       )}
 
       {/* ── Remove-dirty-campus confirmation ── */}

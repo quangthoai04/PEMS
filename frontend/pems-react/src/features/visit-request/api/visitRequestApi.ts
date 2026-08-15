@@ -157,12 +157,13 @@ export const visitRequestApi = {
 
 
   /**
-   * Organization options for the visit form.
+   * Organization options.
    *
-   * <p>`internal` picks the authenticated endpoint. The two are NOT interchangeable: the public one
-   * returns ACTIVE + APPROVED + PUBLIC only, so staff filling in the same form could not find an
-   * organization that exists internally and had to retype it as free text — losing the partner id at
-   * the exact moment it was known (PART-03).</p>
+   * <p>`internal` picks the authenticated endpoint, which returns pending and internal-visibility
+   * profiles as well. That set belongs to the PARTNER MODULE and to nothing else: a registration form
+   * — public or staff-filled — asks the public endpoint, which returns ACTIVE + APPROVED + PUBLIC
+   * only (PART-09). Callers choose by use case through `OrganizationCombobox`'s `searchMode`, never
+   * by whether a session happens to exist.</p>
    */
   async searchOrganizations(query: string, internal = false): Promise<PublicPartnerOptionDto[]> {
     const { data } = await httpClient.get<PublicPartnerOptionDto[]>(

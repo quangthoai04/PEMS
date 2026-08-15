@@ -4,6 +4,7 @@ using System.Linq;
 using FluentValidation;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Validation;
+using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using static PEMS.Application.Delegations.Commands.CreateVisitRequestV2.LengthMessages;
 
@@ -172,7 +173,36 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
             .Must(c => ContactKeyNamesAMember(c))
             .WithMessage(OperationalContactMessages.MemberNotInDelegation)
             .When(c => !string.IsNullOrWhiteSpace(c.OperationalContactClientMemberKey));
+
+        // ── One person, one member row — across BOTH lists (ID-02) ──
+        // Guests and support staff are two doors into `visit_guest_members`, and until now nothing
+        // compared them: the importer de-duplicated inside the list it was importing and each array
+        // was validated on its own, so the same human written into both was stored as two rows with
+        // two different guest_member_ids. Every id-first rule downstream then correctly read that as
+        // two people — which is how the biên bản ended up listing somebody twice with no way to tell
+        // that the two rows were one person. Validating the MERGED list is the only place that can
+        // see it. The client applies the same rule and asks first; this is the layer that does not
+        // depend on the client having done so.
+        RuleFor(c => c)
+            .Must(c => MemberDuplicatePolicy.FindDuplicates(MemberIdentitiesOf(c)).Count == 0)
+            .WithMessage(c => MemberDuplicatePolicy.DescribeConflicts(
+                MemberDuplicatePolicy.FindDuplicates(MemberIdentitiesOf(c))))
+            .WithErrorCode(MemberDuplicatePolicy.DuplicateCode);
     }
+
+    /// <summary>
+    /// One campus's members as the duplicate check sees them — visitors then support, in payload
+    /// order, so a reported "#2" is the row the user is looking at.
+    /// </summary>
+    private static IEnumerable<MemberIdentityInput> MemberIdentitiesOf(CampusVisitFormDto c) =>
+        (c.Visitors ?? new List<VisitorDto>())
+            .Select((v, i) => new MemberIdentityInput(
+                MemberDuplicatePolicy.GuestKind, i, v.FullName, v.JobTitle, v.Organization,
+                v.OrganizationPartnerId, v.Nationality))
+            .Concat((c.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                .Select((m, i) => new MemberIdentityInput(
+                    MemberDuplicatePolicy.SupportKind, i, m.FullName, m.JobTitle, m.Organization,
+                    m.OrganizationPartnerId, m.Nationality)));
 
     /// <summary>Every non-empty member key in ONE campus, visitors and support together.</summary>
     private static IEnumerable<string> MemberKeysOf(CampusVisitFormDto c) =>

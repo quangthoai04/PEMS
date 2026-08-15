@@ -7,6 +7,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Shared;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -121,7 +122,12 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
                     // Người tham gia
                     col.Item().Column(section =>
                     {
-                        var participants = minute.Participants.OrderBy(p => p.DisplayOrder).ToList();
+                        // Somebody the Host took out of the biên bản is kept as a row so the next
+                        // sync does not put them back (MIN-03) — they are not part of the record and
+                        // must not appear in the document that IS the record.
+                        var participants = minute.Participants
+                            .Where(p => p.SyncState != MinuteParticipantSyncStates.Excluded)
+                            .OrderBy(p => p.DisplayOrder).ToList();
                         section.Item().Text($"NGƯỜI THAM GIA & ĐIỂM DANH ({participants.Count})").Bold().FontSize(11).FontColor(PrimaryColor);
 
                         section.Item().PaddingTop(4).Table(table =>

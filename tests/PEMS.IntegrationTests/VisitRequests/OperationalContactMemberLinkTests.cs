@@ -57,6 +57,10 @@ public sealed class OperationalContactMemberLinkTests
     private static VisitorDto Guest(string name, string key) =>
         new(name, "VN", "Trưởng đoàn", "ABC University", null, key);
 
+    /// <summary>A member row as an amendment or a pre-key client sends it: no identity of its own.</summary>
+    private static VisitorDto GuestWithoutKey(string name) =>
+        new(name, "VN", "Trưởng đoàn", "ABC University", null, null);
+
     private static SupportTeamMemberDto Support(string name, string key) =>
         new(name, "Phiên dịch", "ABC University", "VN", null, key);
 
@@ -265,16 +269,43 @@ public sealed class OperationalContactMemberLinkTests
     }
 
     [Fact]
-    public async Task A_contact_typed_to_MATCH_a_member_still_links_without_a_key()
+    public async Task A_contact_typed_to_MATCH_a_member_is_NOT_linked_when_the_form_minted_keys()
     {
-        // The fallback an amendment and any older client rely on. It is a guess and stays one, but
-        // losing the link entirely would be worse.
+        // A form that mints per-row keys is a form that ASKS: an unlinked contact whose fingerprint
+        // fits exactly one member raises "cùng một người, hay hai người khác nhau?" before it
+        // submits. So keys present + no pick is the recorded answer "two people", and matching the
+        // fingerprint here would answer it again, the other way, in silence — which is how the biên
+        // bản came to show ONE row badged "Khách · Đầu mối" for the two the user had entered.
         RequireDb();
         ulong requestId = 0;
         try
         {
             requestId = await CreateAsync(Campus(
                 new List<VisitorDto> { Guest("Daniel Kim", "k-b") },
+                new List<SupportTeamMemberDto>(),
+                contactKey: null,
+                new ContactPointDto("Daniel Kim", "ABC University", "Trưởng đoàn", "+8410", V2SeedActor.Email(OtherVisitor))));
+
+            var stored = await ReadContactAsync(requestId);
+            Assert.Null(stored.LinkedGuestMemberId);
+            // The typed snapshot is kept as the second person's own record.
+            Assert.Equal("Daniel Kim", stored.FullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task A_contact_typed_to_MATCH_a_member_still_links_when_NO_key_was_minted()
+    {
+        // The fallback an amendment and any older client rely on: no keys anywhere means nobody was
+        // asked, so a fingerprint is all there is. It is a guess and stays one, but losing the link
+        // entirely would be worse.
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus(
+                new List<VisitorDto> { GuestWithoutKey("Daniel Kim") },
                 new List<SupportTeamMemberDto>(),
                 contactKey: null,
                 new ContactPointDto("Daniel Kim", "ABC University", "Trưởng đoàn", "+8410", V2SeedActor.Email(OtherVisitor))));

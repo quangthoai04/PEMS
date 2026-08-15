@@ -128,16 +128,18 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         // ── Per-MEMBER organization identity (PART-01) ──
         // Whoever the request as a whole names as its partner, each member carries their own choice:
         // one delegation routinely mixes organizations, so the request-level partner above says nothing
-        // about the person on row 4. Validated against the audience that actually submitted this form,
-        // not against the payload's word for it.
-        await GuestOrganizationPartnerPolicy.EnsureSelectableAsync(
+        // about the person on row 4.
+        //
+        // The rule is the FORM's, not the submitter's (PART-09). Staff-created used to be validated
+        // against the wider internal set, which is what let a Staff Leader attach their own campus's
+        // still-pending profile to a guest — offered by a dropdown that had widened for the same
+        // reason. A registration form cites published organisations, whoever is filling it in.
+        await GuestOrganizationPartnerPolicy.EnsureRequestFormSelectableAsync(
             _db,
             form.CampusVisits.SelectMany(cv =>
                 cv.Visitors.Select(v => v.OrganizationPartnerId)
                     .Concat(cv.ExternalSupportMembers.Select(m => m.OrganizationPartnerId)))
                 .Where(id => id.HasValue).Select(id => id!.Value),
-            isPublicAudience: createdSource != CreatedSource.StaffCreated,
-            actorCampusId: _currentUser?.PrimaryCampusId,
             cancellationToken);
 
         // ── Backend-derived scope + mixed flag (NEVER from the client). has_mixed compares only normalized

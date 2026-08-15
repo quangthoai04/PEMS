@@ -8,6 +8,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Shared;
 
 namespace PEMS.Application.MeetingMinutes.Queries.ExportMinutes;
 
@@ -69,7 +70,11 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
         wsParticipants.Cell(1, 5).Value = "Ghi chú";
         
         int row = 2;
-        foreach (var p in minute.Participants.OrderBy(p => p.DisplayOrder))
+        // Excluded rows are kept in the table so sync remembers the decision (MIN-03); they are not
+        // part of the biên bản, so they are not exported as if they had attended.
+        foreach (var p in minute.Participants
+            .Where(p => p.SyncState != MinuteParticipantSyncStates.Excluded)
+            .OrderBy(p => p.DisplayOrder))
         {
             wsParticipants.Cell(row, 1).Value = p.FullNameSnapshot;
             wsParticipants.Cell(row, 2).Value = p.RoleSnapshot;

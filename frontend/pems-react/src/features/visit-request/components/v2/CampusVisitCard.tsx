@@ -1,9 +1,13 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, type FieldPath, type UseFormReturn } from 'react-hook-form';
 import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Replace, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
-import { V2_MAX_MEMBERS_PER_CAMPUS, V2_MIN_ADVANCE_HOURS_CREATE } from '../../schema/visitRequestV2.schema';
+import {
+  buildCampusVisitSchema,
+  V2_MAX_MEMBERS_PER_CAMPUS,
+  V2_MIN_ADVANCE_HOURS_CREATE,
+} from '../../schema/visitRequestV2.schema';
 import type { RegistrationCampusOption } from '../../api/visitRequestApi';
 import { FormField, inputCls } from '../shared/FormField';
 import { AutoGrowTextarea } from '../shared/AutoGrowTextarea';
@@ -23,6 +27,12 @@ import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { HelpTooltip } from '../shared/HelpTooltip';
 import { fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
 import { createEmptyMember } from '../../utils/visitRequestV2Form';
+import {
+  campusMemberRows,
+  findCampusMemberDuplicates,
+  findMemberDuplicates,
+  type MemberDuplicatePair,
+} from '../../utils/memberDuplicates';
 
 const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', 'EXCHANGE', 'OTHER'] as const;
 
@@ -157,9 +167,32 @@ export const CampusVisitCard: React.FC<Props> = ({
   const [excelState, setExcelState] = useState<Record<'visitors' | 'supportTeam', ExcelImportState>>({
     visitors: {}, supportTeam: {},
   });
+  /**
+   * A replace waiting to be confirmed, PER SECTION (IMP-01/IMP-02).
+   *
+   * <p>This used to be one slot with a `kind` tag on it, and one confirmation block rendered after
+   * BOTH tables. Importing a guest list therefore put "Thay thế toàn bộ danh sách?" underneath the
+   * support staff — asking about one list while pointing at the other — and importing a second file
+   * silently overwrote the first pending answer, so one of the two questions disappeared unanswered.
+   * Two slots, each rendered inside the section it belongs to, is what makes the question and its
+   * subject the same thing on screen.</p>
+   */
   const [pendingReplace, setPendingReplace] = useState<
-    { kind: 'visitors' | 'supportTeam'; rows: PersonRow[]; fileName: string } | null
-  >(null);
+    Record<'visitors' | 'supportTeam', { rows: PersonRow[]; fileName: string } | null>
+  >({ visitors: null, supportTeam: null });
+  /** Where the confirmation lives, so a freshly raised one is brought into view (IMP-01). */
+  const replaceConfirmRefs = {
+    visitors: useRef<HTMLDivElement>(null),
+    supportTeam: useRef<HTMLDivElement>(null),
+  };
+  /**
+   * Said once, after a replace that dropped the person holding the contact role. Never re-pointed at
+   * somebody else automatically: a name matching in the new file does not make it the same person,
+   * and choosing the campus's coordinator is the user's decision (IMP-03).
+   */
+  const [contactLostByReplace, setContactLostByReplace] = useState(false);
+  /** A Replace Both that would build a list containing one person twice — nothing was applied. */
+  const [replaceBothBlocked, setReplaceBothBlocked] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<string>('');
   /**
    * Raised the FIRST time somebody edits the member who is this campus's contact, on a campus that
@@ -177,6 +210,28 @@ export const CampusVisitCard: React.FC<Props> = ({
   const visitType = watch(`${base}.visitType`);
   const campusName = campuses.find(c => c.campusCode === campusCode)?.campusName;
   const headerLabel = campusName ?? t('visitRequestV2:card.unselectedCampus');
+
+  /**
+   * Whether the header may claim this card is "Đã đủ thông tin" — answered by the SAME schema that
+   * validates the submit, never by a hand-picked list of fields.
+   *
+   * <p>The badge used to read `campus && visitType && delegationName`, three of the dozen fields a
+   * card actually requires — and `visitType` is seeded with `CAMPUS_TOUR`, so it was never falsy.
+   * Picking a campus and typing one letter into "Tên đoàn" therefore turned the card green while the
+   * schedule, purpose, working content, delegation list and campus contact were all still empty. The
+   * red branch could not catch it either: the form runs `mode: 'onSubmit'`, so before the first
+   * submit `errors` is empty by construction and the count is always 0.</p>
+   *
+   * <p>Not memoised on the values: `watch` hands back the same object mutated in place, so a
+   * `useMemo` keyed on it would freeze at its mount value and the badge would never move again. Only
+   * the schema — which depends on nothing but `minAdvanceHours` — is built once. The translator is a
+   * stub because this asks pass/fail; the wording of a failure belongs to the resolver, not here.</p>
+   */
+  const completenessSchema = useMemo(
+    () => buildCampusVisitSchema(minAdvanceHours, () => ''),
+    [minAdvanceHours],
+  );
+  const cardComplete = completenessSchema.safeParse(watch(base)).success;
 
   const excelT: ExcelTranslator = (key, options) => t(key, options);
 
@@ -204,13 +259,20 @@ export const CampusVisitCard: React.FC<Props> = ({
    */
   const importExcel = async (kind: 'visitors' | 'supportTeam', file: File) => {
     setSection(kind, { loadingFileName: file.name });
+    // A file for THIS section can never invalidate a replace the user is still deciding on for the
+    // OTHER one, so only this section's pending answer is dropped (IMP-02).
+    setPendingReplace(prev => ({ ...prev, [kind]: null }));
+    setReplaceBothBlocked(null);
     const existing = currentRows(kind).filter(r => !isBlank(r));
 
     // validatePersonExcel never throws: an unreadable workbook comes back as a report with a
     // fatalMessage, so the panel can explain it instead of the promise rejecting silently.
     const report = await validatePersonExcel(file, kind, existing, excelT);
-    setSection(kind, { report });
-    if (!canApplyImport(report)) return;
+    if (!canApplyImport(report)) {
+      // Refused: nothing was applied, so the panel must not claim an action. `applied` stays unset.
+      setSection(kind, { report });
+      return;
+    }
 
     // An imported spreadsheet carries names, never ids — every row lands as free text, and the
     // matcher offers candidates later. Filling an id in from a name match here would be the exact
@@ -225,6 +287,11 @@ export const CampusVisitCard: React.FC<Props> = ({
     // Drop the untouched placeholder rows so the imported list starts where the user's does.
     for (let i = blanks.length - 1; i >= 0; i--) if (blanks[i]) fields.remove(i);
     fields.append(rows);
+    // Reported only now, and as what it is: the rows are in the list (IMP-04).
+    setSection(kind, {
+      report,
+      applied: { phase: 'APPENDED', resultingCount: existing.length + rows.length },
+    });
   };
 
   /**
@@ -265,16 +332,96 @@ export const CampusVisitCard: React.FC<Props> = ({
   const requestReplace = (kind: 'visitors' | 'supportTeam') => {
     const report = excelState[kind].report;
     if (!report || !canApplyImport(report)) return;
-    setPendingReplace({ kind, rows: report.data, fileName: report.fileName });
+    setContactLostByReplace(false);
+    setReplaceBothBlocked(null);
+    setPendingReplace(prev => ({ ...prev, [kind]: { rows: report.data, fileName: report.fileName } }));
+    // The question is raised where the list is, which on a long card can be off screen — the user
+    // clicked "Thay thế toàn bộ" and would otherwise see nothing happen. After the paint that
+    // creates it, hence the timeout.
+    window.setTimeout(() => bringIntoView(replaceConfirmRefs[kind].current), 0);
   };
 
-  const confirmReplace = () => {
-    if (!pendingReplace) return;
-    const fields = pendingReplace.kind === 'visitors' ? visitorFields : supportFields;
-    // Replaced rows are NEW people, so each gets its own identity. Reusing the outgoing keys would
-    // silently leave the contact pointing at a row that now describes somebody else entirely.
-    fields.replace(pendingReplace.rows.map(r => ({ ...createEmptyMember(), ...r, organizationPartnerId: null })));
-    setPendingReplace(null);
+  /**
+   * Scrolls something into view when the environment can, and does nothing when it cannot.
+   *
+   * <p>`scrollIntoView` is not universally implemented — jsdom has no layout at all, so it is simply
+   * absent there. Calling it unguarded from a timeout throws OUTSIDE React's error boundary, which
+   * turns a cosmetic nicety into an uncaught exception. Bringing a panel into view is a courtesy;
+   * nothing depends on it.</p>
+   */
+  const bringIntoView = (el: HTMLElement | null) => {
+    if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  /** Imported rows as member rows: NEW people, each born with its own identity. */
+  const toMemberRows = (rows: PersonRow[]) =>
+    rows.map(r => ({ ...createEmptyMember(), ...r, organizationPartnerId: null }));
+
+  /**
+   * Applies one section's pending replace. Reusing the outgoing keys would silently leave the
+   * contact pointing at a row that now describes somebody else entirely, so every row is re-minted
+   * and a contact who is no longer in the list is REPORTED rather than re-aimed.
+   */
+  const confirmReplace = (kind: 'visitors' | 'supportTeam') => {
+    const pending = pendingReplace[kind];
+    if (!pending) return;
+    const contactKey = form.getValues(`${base}.operationalContactClientMemberKey`);
+    // The OTHER list is untouched by this replace, so a contact who lives there still exists.
+    const survives = contactKey
+      ? (form.getValues(`${base}.${kind === 'visitors' ? 'supportTeam' : 'visitors'}`) ?? [])
+        .some(m => m?.clientMemberKey === contactKey)
+      : true;
+    (kind === 'visitors' ? visitorFields : supportFields).replace(toMemberRows(pending.rows));
+    setPendingReplace(prev => ({ ...prev, [kind]: null }));
+    setContactLostByReplace(!survives);
+    setSection(kind, {
+      ...excelState[kind],
+      applied: { phase: 'REPLACED', resultingCount: pending.rows.length },
+    });
+  };
+
+  const cancelReplace = (kind: 'visitors' | 'supportTeam') =>
+    setPendingReplace(prev => ({ ...prev, [kind]: null }));
+
+  /**
+   * Replaces BOTH lists as one indivisible change (IMP-03).
+   *
+   * <p>Two separate confirmations leave a real state between them — guests replaced, support staff
+   * not — in which the campus's delegation is half of one file and half of another. Worse, the
+   * duplicate check that matters here is on the MERGED list: a person appearing in both files is
+   * only visible once both are in hand, and applying one of them first means the conflict is
+   * discovered after the other list has already been destroyed.</p>
+   *
+   * <p>So the new lists are BUILT first, checked, and only then written. Nothing is applied if
+   * anything is wrong — the old lists, including everything typed by hand, are still there to
+   * correct.</p>
+   */
+  const confirmReplaceBoth = () => {
+    const guestPending = pendingReplace.visitors;
+    const supportPending = pendingReplace.supportTeam;
+    if (!guestPending || !supportPending) return;
+
+    const nextVisitors = toMemberRows(guestPending.rows);
+    const nextSupport = toMemberRows(supportPending.rows);
+
+    const duplicates = findCampusMemberDuplicates({ visitors: nextVisitors, supportTeam: nextSupport });
+    if (duplicates.length > 0) {
+      // Named, not counted: "2 dòng trùng" tells the user nothing about which file to fix.
+      setReplaceBothBlocked(duplicates.map(d => d.first.fullName).join(', '));
+      return;
+    }
+
+    // Both keys are re-minted, so a contact picked from either list cannot survive this.
+    const contactKey = form.getValues(`${base}.operationalContactClientMemberKey`);
+    visitorFields.replace(nextVisitors);
+    supportFields.replace(nextSupport);
+    setPendingReplace({ visitors: null, supportTeam: null });
+    setReplaceBothBlocked(null);
+    setContactLostByReplace(!!contactKey);
+    setExcelState(prev => ({
+      visitors: { ...prev.visitors, applied: { phase: 'REPLACED', resultingCount: nextVisitors.length } },
+      supportTeam: { ...prev.supportTeam, applied: { phase: 'REPLACED', resultingCount: nextSupport.length } },
+    }));
   };
 
   // ── Operational-contact quick fill (plan §11–§13) ──────────────────────────────────────────
@@ -425,6 +572,61 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   const pickedMember = eligibleMembers.find(m => m.key === contactMemberKey) ?? null;
 
+  // ── One person, one member row (ID-02) ────────────────────────────────────────────────────────
+  // Guests and support staff are two doors into the same table, and nothing compared them: the
+  // importer de-duplicates inside the list it is importing, and each array was validated on its own.
+  // So the same human written into both was submitted as two members, stored with two different
+  // guest_member_ids, and every id-first rule downstream then correctly read that as two people —
+  // which is how the biên bản ended up listing somebody twice with nothing able to tell that the two
+  // rows were one person. Recomputed each render for the same reason `eligibleMembers` is: React
+  // Hook Form mutates its value tree in place, so a memo keyed on the watched arrays never reruns.
+  const memberDuplicates: MemberDuplicatePair[] = findMemberDuplicates(
+    campusMemberRows({ visitors: watchedVisitors, supportTeam: watchedSupport }));
+
+  /** Drops the SECOND of a duplicate pair — the redundant row, not the one already established. */
+  const dropDuplicateMember = (pair: MemberDuplicatePair) => {
+    if (memberHoldsContactRole(pair.second.kind, pair.second.rowIndex)) {
+      showMessageErrorToast(t('visitRequestV2:card.contactMemberCannotRemove'));
+      return;
+    }
+    (pair.second.kind === 'visitors' ? visitorFields : supportFields).remove(pair.second.rowIndex);
+    if (form.formState.isSubmitted) void form.trigger(`${base}.${pair.second.kind}`);
+  };
+
+  /**
+   * "Đây là nhân sự hỗ trợ, không phải khách": ONE member changes list, keeping its identity.
+   *
+   * <p>The guest row is moved across WITH ITS OWN `clientMemberKey` and the duplicate support row is
+   * dropped — so the person the contact picker names, and the member the backend will insert, is the
+   * same one throughout. Deleting the guest and typing them into the support list instead would mint
+   * a new identity, which is the very thing that produced two rows for one person.</p>
+   */
+  const moveMemberToSupport = (pair: MemberDuplicatePair) => {
+    const guest = pair.first.kind === 'visitors' ? pair.first : pair.second;
+    const support = pair.first.kind === 'visitors' ? pair.second : pair.first;
+    if (guest.kind !== 'visitors' || support.kind !== 'supportTeam') return;
+    const moved = form.getValues(`${base}.visitors.${guest.rowIndex}`);
+    if (!moved) return;
+    // The duplicate goes first: removing the guest first would shift nothing in the support list,
+    // but doing it in one order consistently keeps both index reads valid.
+    supportFields.remove(support.rowIndex);
+    visitorFields.remove(guest.rowIndex);
+    supportFields.append({ ...moved });
+    if (form.formState.isSubmitted) {
+      void form.trigger(`${base}.visitors`);
+      void form.trigger(`${base}.supportTeam`);
+    }
+    showSuccessToast(t('visitRequestV2:card.duplicateMovedToSupport', { name: guest.fullName }));
+  };
+
+  /** Sends the user to the row that has to gain a distinguishing detail — nothing is changed here. */
+  const focusDuplicateRow = (pair: MemberDuplicatePair) => {
+    const el = document.querySelector<HTMLElement>(
+      `[data-testid="${pair.second.kind}-${pair.second.rowIndex}-jobTitle"]`);
+    bringIntoView(el);
+    el?.focus();
+  };
+
   const memberLabel = (m: EligibleMember) => {
     const kindLabel = t(m.kind === 'visitors'
       ? 'visitRequestV2:card.contactPickKindGuest'
@@ -509,7 +711,7 @@ export const CampusVisitCard: React.FC<Props> = ({
     if (!pickedMember) return;
     const el = document.querySelector<HTMLElement>(
       `[data-testid="${pickedMember.kind}-${pickedMember.rowIndex}-fullName"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    bringIntoView(el);
     el?.focus();
   };
 
@@ -657,6 +859,59 @@ export const CampusVisitCard: React.FC<Props> = ({
           />
         )}
       />
+    );
+  };
+
+  /**
+   * The "thay thế toàn bộ?" question for ONE section, rendered INSIDE that section (IMP-01).
+   *
+   * <p>It used to live once, after both tables, so importing a guest list asked the question
+   * underneath the support staff. The two are now separate questions in separate places, and both
+   * can be open at the same time without either overwriting the other's answer.</p>
+   */
+  const replaceConfirm = (kind: 'visitors' | 'supportTeam') => {
+    const pending = pendingReplace[kind];
+    if (!pending) return null;
+    const label = t(kind === 'visitors'
+      ? 'visitRequestV2:excel.report.listGuests'
+      : 'visitRequestV2:excel.report.listSupport');
+    return (
+      <div
+        ref={replaceConfirmRefs[kind]}
+        role="alertdialog"
+        data-testid={`v2-replace-confirm-${kind}`}
+        className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+      >
+        <p className="text-sm font-bold text-amber-900">
+          {t('visitRequestV2:excel.replaceConfirmTitleFor', { list: label })}
+        </p>
+        <p className="mt-1 text-sm text-amber-800">
+          {t('visitRequestV2:excel.replaceConfirmBodyFor', {
+            list: label,
+            fileName: pending.fileName,
+            count: pending.rows.length,
+            current: currentRows(kind).filter(r => !isBlank(r)).length,
+          })}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid={`v2-replace-confirm-yes-${kind}`}
+            className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+            onClick={() => confirmReplace(kind)}
+          >
+            {t('visitRequestV2:excel.replaceConfirmYesFor', { list: label })}
+          </button>
+          <button
+            type="button"
+            data-testid={`v2-replace-confirm-no-${kind}`}
+            className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+            onClick={() => cancelReplace(kind)}
+          >
+            {t('visitRequestV2:excel.replaceConfirmNo')}
+          </button>
+        </div>
+      </div>
     );
   };
 
@@ -853,7 +1108,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               <AlertCircle className="h-3.5 w-3.5" />
               {t('visitRequestV2:card.errorBadge', { count: errorCount })}
             </span>
-          ) : (campusCode && visitType && watch(`${base}.delegationName`)) ? (
+          ) : cardComplete ? (
             <span className="ml-2 hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
               {t('visitRequestV2:status.complete')}
             </span>
@@ -1115,6 +1370,65 @@ export const CampusVisitCard: React.FC<Props> = ({
           </div>
         )}
 
+        {/* ── Two files waiting at once (IMP-03) ────────────────────────────────────────────
+            Answering the two confirmations one after the other leaves a real state in between —
+            guests from the new file, support staff from the old — and, worse, the duplicate check
+            that matters spans the two lists: a person in both files is only visible once both are
+            in hand. Doing it as one action is what lets that be checked BEFORE anything is
+            destroyed. "Xử lý từng danh sách" is not a second mode; it is just the two confirmations
+            below, which are always available. */}
+        {pendingReplace.visitors && pendingReplace.supportTeam && (
+          <div
+            data-testid={`campus-replace-both-${index}`}
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3"
+          >
+            <p className="text-sm font-bold text-amber-900">
+              {t('visitRequestV2:excel.replaceBothTitle')}
+            </p>
+            <p className="mt-1 text-sm text-amber-800">
+              {t('visitRequestV2:excel.replaceBothBody', {
+                guestFile: pendingReplace.visitors.fileName,
+                guestCount: pendingReplace.visitors.rows.length,
+                supportFile: pendingReplace.supportTeam.fileName,
+                supportCount: pendingReplace.supportTeam.rows.length,
+              })}
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid={`campus-replace-both-yes-${index}`}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                onClick={confirmReplaceBoth}
+              >
+                {t('visitRequestV2:excel.replaceBothYes')}
+              </button>
+            </div>
+            {/* Nothing was applied — both old lists, including everything typed by hand, are
+                untouched. Naming the person is what makes the file fixable. */}
+            {replaceBothBlocked && (
+              <p
+                data-testid={`campus-replace-both-blocked-${index}`}
+                role="alert"
+                className="mt-2 rounded-lg bg-amber-100 px-2.5 py-2 text-xs font-semibold text-amber-900"
+              >
+                {t('visitRequestV2:excel.replaceBothBlocked', { names: replaceBothBlocked })}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* The campus is left WITHOUT a coordinator rather than with a guessed one: a name matching
+            in the new file does not make it the same person (IMP-03). */}
+        {contactLostByReplace && (
+          <div
+            role="alert"
+            data-testid={`campus-contact-lost-${index}`}
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900"
+          >
+            {t('visitRequestV2:card.contactLostAfterReplace')}
+          </div>
+        )}
+
         {/* Visitors */}
         <fieldset>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
@@ -1159,20 +1473,22 @@ export const CampusVisitCard: React.FC<Props> = ({
           <ExcelImportPanel
             testId="v2-excel-visitors"
             state={excelState.visitors}
+            kind="visitors"
             campusLabel={headerLabel}
             onChooseAnother={() => visitorFileRef.current?.click()}
             onDismiss={() => setSection('visitors', {})}
           />
-          {canReplaceFrom('visitors') && (
+          {canReplaceFrom('visitors') && !pendingReplace.visitors && (
             <button
               type="button"
               data-testid="v2-visitors-replace"
               className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
               onClick={() => requestReplace('visitors')}
             >
-              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
+              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAllGuests')}
             </button>
           )}
+          {replaceConfirm('visitors')}
           {personTable(
             'visitors',
             visitorFields.fields,
@@ -1231,20 +1547,22 @@ export const CampusVisitCard: React.FC<Props> = ({
           <ExcelImportPanel
             testId="v2-excel-support"
             state={excelState.supportTeam}
+            kind="supportTeam"
             campusLabel={headerLabel}
             onChooseAnother={() => supportFileRef.current?.click()}
             onDismiss={() => setSection('supportTeam', {})}
           />
-          {canReplaceFrom('supportTeam') && (
+          {canReplaceFrom('supportTeam') && !pendingReplace.supportTeam && (
             <button
               type="button"
               data-testid="v2-support-replace"
               className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50"
               onClick={() => requestReplace('supportTeam')}
             >
-              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAll')}
+              <Replace className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.replaceAllSupport')}
             </button>
           )}
+          {replaceConfirm('supportTeam')}
           {personTable(
             'supportTeam',
             supportFields.fields,
@@ -1264,36 +1582,77 @@ export const CampusVisitCard: React.FC<Props> = ({
           )}
         </fieldset>
 
-        {/* Replacing a list is destructive and is never what "import" alone does — it asks first. */}
-        {pendingReplace && (
-          <div role="alertdialog" data-testid="v2-replace-confirm" className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+        {/* ── One person, one member row (ID-02) ────────────────────────────────────────────
+            Rendered under BOTH tables because that is the only place the conflict exists: each
+            list on its own is fine, and it is the pair spanning them that would become two
+            members, two guest_member_ids and two rows in the biên bản. Nothing is merged or
+            deleted automatically — both answers are legitimate and only the user knows which. */}
+        {memberDuplicates.length > 0 && (
+          <div
+            role="alert"
+            data-testid={`campus-member-duplicates-${index}`}
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3"
+          >
             <p className="text-sm font-bold text-amber-900">
-              {t('visitRequestV2:excel.replaceConfirmTitle')}
+              {t('visitRequestV2:card.duplicateMemberTitle')}
             </p>
-            <p className="mt-1 text-sm text-amber-800">
-              {t('visitRequestV2:excel.replaceConfirmBody', {
-                fileName: pendingReplace.fileName,
-                count: pendingReplace.rows.length,
-                current: currentRows(pendingReplace.kind).filter(r => !isBlank(r)).length,
-              })}
+            <ul className="mt-2 space-y-3">
+              {memberDuplicates.map(pair => (
+                <li key={pair.id} className="rounded-lg border border-amber-200 bg-white p-2.5">
+                  <p className="text-xs font-semibold text-amber-900">
+                    {t(pair.crossList
+                      ? 'visitRequestV2:card.duplicateMemberCross'
+                      : 'visitRequestV2:card.duplicateMemberSameList', {
+                      name: pair.first.fullName,
+                      first: t(pair.first.kind === 'visitors'
+                        ? 'visitRequestV2:card.contactPickKindGuest'
+                        : 'visitRequestV2:card.contactPickKindSupport'),
+                      second: t(pair.second.kind === 'visitors'
+                        ? 'visitRequestV2:card.contactPickKindGuest'
+                        : 'visitRequestV2:card.contactPickKindSupport'),
+                      firstRow: pair.first.rowIndex + 1,
+                      secondRow: pair.second.rowIndex + 1,
+                    })}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      data-testid={`campus-duplicate-drop-${index}`}
+                      className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                      onClick={() => dropDuplicateMember(pair)}
+                    >
+                      {t('visitRequestV2:card.duplicateActionDrop')}
+                    </button>
+                    {/* Only for a pair that spans the lists: within one list "chuyển sang hỗ trợ"
+                        would answer a question nobody asked. */}
+                    {pair.crossList && (
+                      <button
+                        type="button"
+                        data-testid={`campus-duplicate-move-${index}`}
+                        className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                        onClick={() => moveMemberToSupport(pair)}
+                      >
+                        {t('visitRequestV2:card.duplicateActionMove')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      data-testid={`campus-duplicate-differentiate-${index}`}
+                      className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                      onClick={() => focusDuplicateRow(pair)}
+                    >
+                      {t('visitRequestV2:card.duplicateActionDifferent')}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {/* Says why the third button does not simply dismiss this: two rows agreeing on every
+                field the form collects have nothing left that could tell them apart, so the server
+                refuses them — and "add the detail" is the answer that makes them two people. */}
+            <p className="mt-2 text-xs text-amber-800">
+              {t('visitRequestV2:card.duplicateMemberHint')}
             </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                data-testid="v2-replace-confirm-yes"
-                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
-                onClick={confirmReplace}
-              >
-                {t('visitRequestV2:excel.replaceConfirmYes')}
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
-                onClick={() => setPendingReplace(null)}
-              >
-                {t('visitRequestV2:excel.replaceConfirmNo')}
-              </button>
-            </div>
           </div>
         )}
 
@@ -1402,12 +1761,22 @@ export const CampusVisitCard: React.FC<Props> = ({
               be string-matched later. Everything below still edits freely — the pick fills the
               three shared fields and records WHO, it does not lock anything. */}
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-            <label
-              htmlFor={`campus-opcontact-pick-${index}`}
-              className="mb-1.5 block text-xs font-bold text-slate-700"
-            >
-              {t('visitRequestV2:card.contactPickLabel')}
-            </label>
+            {/* The long explanation moved into the `?` (UX-01). It was four lines of standing text
+                under the dropdown — read once, scrolled past on every campus of every visit after
+                that — and it pushed the field it was explaining off the first screenful. */}
+            <div className="mb-1.5 flex items-center">
+              <label
+                htmlFor={`campus-opcontact-pick-${index}`}
+                className="block text-xs font-bold text-slate-700"
+              >
+                {t('visitRequestV2:card.contactPickLabel')}
+              </label>
+              <HelpTooltip
+                testId={`campus-opcontact-pick-help-${index}`}
+                label={t('visitRequestV2:card.contactPickLabel')}
+                content={t('visitRequestV2:card.contactPickHint')}
+              />
+            </div>
             <select
               id={`campus-opcontact-pick-${index}`}
               data-testid={`campus-opcontact-pick-${index}`}
@@ -1429,8 +1798,10 @@ export const CampusVisitCard: React.FC<Props> = ({
                 </option>
               ))}
             </select>
+            {/* What is left under the control is the one consequence the user needs at the moment of
+                choosing; the rest is in the `?` above. */}
             <p className="mt-1.5 text-xs text-slate-500">
-              {t('visitRequestV2:card.contactPickHint')}
+              {t('visitRequestV2:card.contactPickMicrocopy')}
             </p>
 
             {/* What picking somebody MEANS, said where the consequence is visible: the three shared

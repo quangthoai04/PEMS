@@ -3,8 +3,26 @@ import { useTranslation } from 'react-i18next';
 import AsyncCreatableSelect from 'react-select/async-creatable';
 import type { StylesConfig, SingleValue } from 'react-select';
 import { visitRequestApi } from '../../api/visitRequestApi';
-import { authStorage } from '../../../../shared/auth/authStorage';
-import { resolveEffectiveRole } from '../../../../shared/auth/resolveEffectiveRole';
+
+/**
+ * WHICH question the dropdown is answering, which is what decides the option set (PART-09).
+ *
+ * <p>It used to be decided by whether the user was signed in, so a Staff Leader filling in a
+ * registration form was offered "Hồ sơ chờ duyệt · FPT University Hà Nội" — a profile nobody has
+ * approved — as a guest's employer. Being logged in is not a reason to be shown an unapproved
+ * partner; the form asks the same question of everyone and must get the same answers.</p>
+ *
+ * <ul>
+ *   <li><c>REQUEST_FORM</c> — registration/edit/resubmit. ACTIVE + APPROVED + PUBLIC only.</li>
+ *   <li><c>PARTNER_MANAGEMENT</c> — the partner module, where pending/internal profiles are the
+ *   point. Scoped by the caller's own rights, server-side.</li>
+ * </ul>
+ *
+ * <p>The duplicate matcher (<c>PARTNER_MATCHING</c>) deliberately has no entry here: it must keep
+ * surfacing pending and rejected candidates so a second profile is not created for an organisation
+ * that already has one, and it runs through its own endpoint rather than this control.</p>
+ */
+export type OrganizationSearchMode = 'REQUEST_FORM' | 'PARTNER_MANAGEMENT';
 
 /**
  * One dropdown entry.
@@ -108,6 +126,11 @@ interface Props {
   ariaLabel?: string;
   /** `id` on the search input, so a `<label htmlFor>` can point at it. */
   inputId?: string;
+  /**
+   * What this dropdown is FOR. Defaults to the registration form, which is the narrow set: a caller
+   * that forgets to pass it cannot accidentally widen what a request may cite (PART-09).
+   */
+  searchMode?: OrganizationSearchMode;
 }
 
 export const OrganizationCombobox: React.FC<Props> = ({
@@ -121,34 +144,19 @@ export const OrganizationCombobox: React.FC<Props> = ({
   testId,
   ariaLabel,
   inputId,
+  searchMode = 'REQUEST_FORM',
 }) => {
   const { t } = useTranslation(['visitRequest']);
-  /**
-   * Read straight from the session store rather than from React context. This control is rendered on
-   * the ANONYMOUS public form as well as inside the dashboard, so it must not require an
-   * <AuthProvider> to exist; and the store is the same source the HTTP client uses to decide whether
-   * it can send a bearer token at all — so the endpoint we choose and the credentials we send can
-   * never disagree.
-   */
-  const internalRoles = ['HO', 'STAFF_LEADER', 'STAFF', 'DEPARTMENT_LEAD', 'DEPARTMENT', 'STUDENT'];
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputValue, setInputValue] = React.useState('');
 
   /**
-   * Which option set to ask for. A Visitor account is logged in but is still on the public side of
-   * the split — the account is theirs, the internal partner records are not (PART-03). The backend
-   * enforces the same rule; this only decides which endpoint to call.
+   * Which endpoint answers this mode. The public one returns ACTIVE + APPROVED + PUBLIC and nothing
+   * else, which is exactly the registration form's rule — so the form asks it whether or not anybody
+   * is signed in, and this control no longer reads the session at all. The backend applies the same
+   * rule to the SUBMIT, so a stale draft or a hand-made request cannot get round the dropdown.
    */
-  const useInternalOptions = React.useMemo(() => {
-    if (!authStorage.getAccessToken()) return false;
-    const user = authStorage.getUser();
-    if (!user) return false;
-    const role = resolveEffectiveRole(user);
-    // A VISITOR account is signed in, but is still on the public side of the split: the account is
-    // theirs, the internal partner records are not (PART-03).
-    return !!role && internalRoles.includes(role);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const useInternalOptions = searchMode === 'PARTNER_MANAGEMENT';
 
   /**
    * True while the CURRENT value came from the list. It drives a light "already in the system" note
@@ -194,7 +202,10 @@ export const OrganizationCombobox: React.FC<Props> = ({
   return (
     <div data-testid={testId}>
       <AsyncCreatableSelect<OrgOption>
-        cacheOptions
+        // Keyed by MODE, not just `true`. react-select drops its cache whenever this value changes,
+        // so a result set fetched for the partner module can never be replayed into a registration
+        // form — which would put back exactly the pending profiles this change removes (PART-09).
+        cacheOptions={searchMode}
         defaultOptions={true}
         loadOptions={loadOptions}
         value={selectedOption}

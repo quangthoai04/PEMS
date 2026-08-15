@@ -21,6 +21,17 @@ public class CreateVisitRequestV2CommandValidatorTests
 
     private static VisitorDto Guest() => new("Khách 1", "VN", "GV", "ĐH X");
 
+    /// <summary>
+    /// A roster of DISTINCT people, for the tests that are about list SIZE.
+    ///
+    /// <para>They used to build N copies of <see cref="Guest"/>, which stopped being a delegation of
+    /// N once the campus was checked for one person appearing twice (ID-02): 200 identical rows is
+    /// one person entered 200 times, and that is refused on purpose. Numbering the names keeps the
+    /// ceiling tests about the ceiling.</para>
+    /// </summary>
+    private static IList<VisitorDto> Roster(int count) =>
+        Enumerable.Range(1, count).Select(i => new VisitorDto($"Khách {i}", "VN", "GV", "ĐH X")).ToList();
+
     private static CampusVisitFormDto Campus(
         string? workingContent = "Nội dung làm việc",
         ContactPointDto? opContact = null,
@@ -168,13 +179,12 @@ public class CreateVisitRequestV2CommandValidatorTests
 
     [Fact]
     public void Exactly_the_two_hundred_guest_ceiling_is_accepted()
-        => Assert.True(_validator.Validate(Command(Campus(
-            visitors: Enumerable.Range(0, 200).Select(_ => Guest()).ToList()))).IsValid);
+        => Assert.True(_validator.Validate(Command(Campus(visitors: Roster(200)))).IsValid);
 
     [Fact]
     public void More_than_two_hundred_guests_is_rejected()
         => Assert.Contains(
-            ErrorsFor(Command(Campus(visitors: Enumerable.Range(0, 201).Select(_ => Guest()).ToList()))),
+            ErrorsFor(Command(Campus(visitors: Roster(201)))),
             p => p.Contains("Visitors"));
 
     // ── Support members: optional list, mandatory columns ────────────────────

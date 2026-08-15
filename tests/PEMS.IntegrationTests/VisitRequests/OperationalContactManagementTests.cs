@@ -220,6 +220,37 @@ public sealed class OperationalContactManagementTests
         return (row.UserId, row.Email!);
     }
 
+    /// <summary>A SECOND active visitor, for the person a campus is handed over TO.</summary>
+    private static async Task<(ulong UserId, string Email)> SuccessorUserAsync(ApplicationDbContext db)
+    {
+        var row = await db.Users.AsNoTracking()
+            .Where(u => u.Role.RoleCode == RoleCodes.Visitor && u.Status == UserStatuses.Active
+                        && u.UserId != Registrant)
+            .OrderBy(u => u.UserId).Skip(1)
+            .Select(u => new { u.UserId, u.Email })
+            .FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException("This database needs a SECOND active VISITOR.");
+        return (row.UserId, row.Email!);
+    }
+
+    /// <summary>
+    /// Points the campus's contact at one of its delegation members — the ordinary arrangement, and
+    /// the one a stale link damages: the biên bản reads this column to decide who wears "· Đầu mối".
+    /// Written directly so the test is about what happens NEXT, not about how the link was made.
+    /// </summary>
+    private static async Task<ulong> LinkContactToFirstMemberAsync(ulong requestId, ulong instanceId)
+    {
+        using var db = NewContext();
+        var memberId = await db.VisitGuestMembers.AsNoTracking()
+            .Where(g => g.VisitRequestId == requestId)
+            .OrderBy(g => g.GuestMemberId).Select(g => g.GuestMemberId).FirstAsync();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE visit_instance_form_details SET operational_contact_guest_member_id = {0} "
+            + "WHERE visit_instance_id = {1}",
+            memberId, instanceId);
+        return memberId;
+    }
+
     private static CampusVisitFormDto Campus(string code, string contactEmail)
     {
         var start = Now.AddDays(25);
@@ -640,6 +671,100 @@ public sealed class OperationalContactManagementTests
             var snapshot = await DetailAsync(decided.InstanceId);
             Assert.Equal(detail.OperationalContactEmail, snapshot.OperationalContactEmail);
             Assert.Equal(detail.OperationalContactFullName, snapshot.OperationalContactFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── The link to a delegation member belongs to the person who HELD the role ──────────────────
+    //
+    // The contact snapshot and the link answer two different questions — "what was agreed" and "which
+    // member of the delegation is that" — and every path that rewrites the first must settle the
+    // second. Neither of these two did: they rewrote all five snapshot columns and left the id alone,
+    // so it went on naming the previous contact for the rest of the request's life. The biên bản is
+    // where that surfaced: it badges "· Đầu mối" from this column, so the campus kept naming the
+    // person who had handed the role over, and the person who took it never appeared in the record at
+    // all — the auto-fill saw the old member already in the list and stopped there.
+
+    [Fact]
+    public async Task Replacing_the_contact_clears_the_link_to_the_previous_delegation_member()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var memberId = await LinkContactToFirstMemberAsync(requestId, before.InstanceId);
+            Assert.Equal(memberId, (await DetailAsync(before.InstanceId)).OperationalContactGuestMemberId);
+
+            var detail = await DetailAsync(before.InstanceId);
+            var successor = "oc-new-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+            using (var db = NewContext())
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        fullName: "Người kế nhiệm", email: successor),
+                    CancellationToken.None);
+
+            Assert.Null((await DetailAsync(before.InstanceId)).OperationalContactGuestMemberId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Accepting_a_handover_clears_the_link_to_the_previous_delegation_member()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId, successorId;
+            string contactEmail, successorEmail;
+            using (var db = NewContext())
+            {
+                (contactId, contactEmail) = await VisitorUserAsync(db);
+                (successorId, successorEmail) = await SuccessorUserAsync(db);
+            }
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            string token;
+            using (var db = NewContext())
+                token = await IssueInvitationAsync(db, mail, invitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+
+            await DriveToBeforeVisitAsync(created.InstanceId);
+            await LinkContactToFirstMemberAsync(requestId, created.InstanceId);
+
+            // Hand the campus over, then let the successor take it — the post-approval path, where a
+            // replace is refused and only a transfer exists.
+            var detail = await DetailAsync(created.InstanceId);
+            using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, created.InstanceId, detail,
+                        fullName: "Người nhận bàn giao", email: successorEmail),
+                    CancellationToken.None);
+
+            var pending = (await ChangesAsync(requestId))
+                .Single(c => c.Status == IdentityChangeStatuses.Pending);
+            Assert.Equal(IdentityChangeKinds.Transfer, pending.ChangeKind);
+
+            string handoverToken;
+            using (var db = NewContext())
+                handoverToken = await IssueInvitationAsync(db, mail, pending.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, successorId, successorEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(handoverToken), CancellationToken.None);
+
+            Assert.Equal(successorId, (await CampusStateAsync(requestId)).ContactUserId);
+            Assert.Null((await DetailAsync(created.InstanceId)).OperationalContactGuestMemberId);
         }
         finally { await CleanupAsync(requestId); }
     }

@@ -118,7 +118,21 @@ public static class OperationalContactLink
 
         if (members.Count == 0) return null;
 
-        // 2. Otherwise match the snapshot. Guests first: an "external support" row is somebody FPTU's
+        // 2. No pick, from a client that mints keys → "nobody", and that is an ANSWER rather than a gap.
+        //
+        //    Such a client asks before it submits: an unlinked contact whose name, job title and
+        //    organisation match exactly one member raises "cùng một người, hay hai người khác nhau?".
+        //    So the payload arriving here with keys but no pick means the user was shown that question
+        //    and said they are two people. Falling through to the fingerprint below would answer it
+        //    again, the other way, and silently — which is precisely what the question exists to stop:
+        //    the biên bản then held ONE row badged "Khách · Đầu mối" for what the user had just said
+        //    were two humans, and the two buttons in the dialog produced identical data.
+        //
+        //    Only a client with no keys at all can still be guessed for, and only because it never
+        //    asked: an amendment replaying member lists stored days ago, or a legacy payload.
+        if (members.Any(m => !string.IsNullOrWhiteSpace(m.ClientMemberKey))) return null;
+
+        // 3. Otherwise match the snapshot. Guests first: an "external support" row is somebody FPTU's
         //    side arranged, and the guest-side contact is more likely to be one of the delegation
         //    proper. Within each group the FIRST match wins — deterministically, by display order.
         var key = PersonIdentity.Key(
@@ -140,7 +154,7 @@ public static class OperationalContactLink
                 return member.GuestMemberId;
         }
 
-        // 3. No match is a real, normal answer: plenty of campuses are coordinated by somebody who is
+        // 4. No match is a real, normal answer: plenty of campuses are coordinated by somebody who is
         //    not travelling with the delegation. The biên bản adds them from the snapshot instead.
         return null;
     }

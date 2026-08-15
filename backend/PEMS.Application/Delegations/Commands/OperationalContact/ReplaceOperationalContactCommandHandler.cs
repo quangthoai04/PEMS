@@ -143,6 +143,14 @@ public sealed class ReplaceOperationalContactCommandHandler
             detail.OperationalContactJobTitle = request.JobTitle.Trim();
             detail.OperationalContactPhone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
             detail.OperationalContactEmail = newEmail;
+            // A different person now holds the role, so the link naming which delegation member the
+            // PREVIOUS contact was is stale — and a stale link is not harmless here: the biên bản
+            // decides the "· Đầu mối" badge from it, so it would go on naming the person who was
+            // replaced and would never list the replacement. Cleared, not re-pointed: a replacement
+            // is given as an email address and a delegation member row has none, so nothing could
+            // honestly tie this contact to one. See AcceptOperationalContactConfirmationCommandHandler
+            // .ApplyTransfer, which clears it for the same reason on the post-approval path.
+            detail.OperationalContactGuestMemberId = null;
 
             var registrantEmail = VisitRequestFingerprintBuilder.NormalizeEmail(visit.RegistrantEmail);
             // Self-match needs BOTH a matching address and a verified registrant account to link to.

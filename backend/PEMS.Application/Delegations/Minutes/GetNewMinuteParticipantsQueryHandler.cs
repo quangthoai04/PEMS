@@ -76,6 +76,13 @@ public sealed class GetNewMinuteParticipantsQueryHandler
             MinutesId = p.MinutesId,
             UserId = p.UserId,
             GuestMemberId = p.GuestMemberId,
+            // Carried into the candidate too, not only into rows that already exist: the editor
+            // shows a synced person BEFORE the save, and a support member offered as "Khách" would
+            // be mislabelled for exactly as long as the draft is open (MIN-02).
+            SourceMemberType = p.SourceMemberType,
+            IsOperationalContact = p.IsOperationalContact,
+            IsManual = p.UserId == null && p.GuestMemberId == null,
+            SyncState = p.SyncState,
             FullNameSnapshot = p.FullNameSnapshot,
             RoleSnapshot = p.RoleSnapshot,
             OrganizationSnapshot = p.OrganizationSnapshot,
@@ -83,7 +90,11 @@ public sealed class GetNewMinuteParticipantsQueryHandler
             AttendanceStatus = p.AttendanceStatus,
             AttendanceNote = p.AttendanceNote,
             DisplayOrder = p.DisplayOrder,
-            ParticipantKind = MinuteParticipantDto.KindOf(p.UserId, p.GuestMemberId),
+            // The badge decides the kind too: a candidate for the đầu mối role is guest-side even
+            // though the auto-fill carries their account id, and reading that id as "nội bộ" put the
+            // head of the visiting delegation under "Nội bộ" in the editor before it was even saved.
+            ParticipantKind = MinuteParticipantDto.KindOf(
+                p.UserId, p.GuestMemberId, p.SourceMemberType, p.IsOperationalContact),
         }).ToList();
     }
 }

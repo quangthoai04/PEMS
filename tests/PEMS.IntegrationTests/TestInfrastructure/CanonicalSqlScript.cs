@@ -714,8 +714,44 @@ public static class CanonicalSqlScript
     // An already-imported database is brought up by
     // docs/database/scripts/patches/2026-08-14_visit_guest_member_organization_partner.sql (additive,
     // idempotent, backfilling ONLY from links a human already confirmed — never from a name match).
+    //
+    // (2026-08-15) Re-pinned for MIN-01..MIN-04: `minute_participants` gains three columns and two
+    // indexes, all additive.
+    //   • source_member_type VARCHAR(30) NULL — GUEST | EXTERNAL_SUPPORT as it stood when the row
+    //     entered the biên bản. Without it every guest-side row read as "Khách", so an interpreter or
+    //     a travelling coordinator was recorded as a member of the delegation (MIN-02). A SNAPSHOT
+    //     rather than a live read of visit_guest_members: a member reclassified next month must not
+    //     rewrite a biên bản from last month.
+    //   • is_operational_contact TINYINT(1) NOT NULL DEFAULT 0 — an ADDITIONAL badge ("Khách · Đầu
+    //     mối"), never a kind of its own.
+    //   • sync_state ENUM('ACTIVE','EXCLUDED') NOT NULL DEFAULT 'ACTIVE' — removing a source-linked
+    //     person used to DELETE the row, after which the next "đồng bộ người mới" found them still on
+    //     the official list and added them back, undoing the decision every time (MIN-03).
+    //   • KEY idx_minute_participants_sync_state (minutes_id, sync_state).
+    //   • UNIQUE KEY uq_minute_participants_minute_guest (minutes_id, guest_member_id) — one member
+    //     of a delegation, one row per biên bản, enforced where a concurrent save cannot get round it
+    //     (MIN-01). MySQL allows repeated NULLs in a unique index, so internal and manual rows are
+    //     untouched by it. Verified against the seed: 60 participant rows, 0 duplicate pairs.
+    // No column changed type, none was dropped, no seed row moved. Base tables stay 83, triggers stay
+    // 32, foreign keys stay 254.
+    // An already-imported database is brought up by
+    // docs/database/scripts/patches/2026-08-15_minute_participant_source_identity.sql (additive,
+    // idempotent; it BACKFILLS source_member_type from the linked member and is_operational_contact
+    // from the form detail's link, and REFUSES to create the unique index while duplicates exist —
+    // merging legacy duplicates is a decision for the owner, never for a migration).
+    // A "one đầu mối per biên bản" UNIQUE index was written against this table and then WITHDRAWN
+    // before it shipped, so no database ever carried it and there is nothing to undo. Recorded here
+    // because the idea is an obvious one to have again: MySQL has no partial index, so the rule needs
+    // a generated column spelling "not the contact" as NULL — a column carrying no information, read
+    // by nothing, whose only job is to make the constraint expressible. What it guarded was two rows
+    // wearing the badge at once, which needs the campus's đầu mối to change while a biên bản already
+    // exists; the create-minutes gate below (DURING_VISIT or later) and the contact windows (replace:
+    // before approval, transfer: ASSIGNED/BEFORE_VISIT) no longer overlap, and campus status never
+    // moves backwards. The handler re-derives the badge on save and on read (MinuteContactBadge),
+    // which is what actually fixed the defect. Weigh the schema cost against a case the lifecycle
+    // already forbids before adding it back.
     public const string ExpectedSha256 =
-        "00226a757e61dd0b98d33937bb195c736655be7fea8cf06e24210e596a2a16d4";
+        "6508394fe87d934a8dfcb07e072a61fbffb42ed5af53fb973cf60106d6c74d50";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

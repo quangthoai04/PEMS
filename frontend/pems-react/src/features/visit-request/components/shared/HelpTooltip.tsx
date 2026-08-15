@@ -4,16 +4,71 @@ import { HelpCircle } from 'lucide-react';
 interface HelpTooltipProps {
   content: React.ReactNode;
   className?: string;
+  /** Accessible name for the trigger — what the icon is ABOUT, not "help". */
+  label?: string;
+  /** Test hook for the trigger, so a test can open the tooltip the way a user does. */
+  testId?: string;
 }
 
-export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '' }) => {
+let tooltipSeq = 0;
+
+/**
+ * The `?` next to a label, holding the explanation that would otherwise be a standing paragraph
+ * under the field (UX-01).
+ *
+ * <p>This used to be a hover-only `<div>`: no keyboard could reach it, a tap did nothing, and the
+ * text it hid was announced to nobody. Guidance that only exists for a mouse is guidance half the
+ * users cannot have — and the field it explains ("Đầu mối là ai trong đoàn?") is one where not
+ * reading it means picking the wrong person.</p>
+ *
+ * <p>Three ways in, because they are three different users: hover for a pointer, focus for a
+ * keyboard, click for a touch screen where hover does not exist. <c>aria-describedby</c> is what
+ * makes the text part of the field's description rather than decoration — the HTML <c>title</c>
+ * attribute is deliberately not used, since it is unreachable by keyboard and unreliable on touch.</p>
+ */
+export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '', label, testId }) => {
+  const [open, setOpen] = React.useState(false);
+  // Stable across renders; `useId` is React 18+, and this file is imported by tests that render
+  // the component many times, so a module counter keeps the ids readable and unique either way.
+  const id = React.useRef(`help-tooltip-${++tooltipSeq}`).current;
+
   return (
-    <div className={`group relative inline-flex items-center align-middle ml-1.5 ${className}`}>
-      <HelpCircle className="w-4 h-4 text-slate-400 hover:text-[#004c91] cursor-help transition-colors" />
-      <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs opacity-0 transition-opacity group-hover:opacity-100 z-50">
-        <div className="bg-slate-800 text-white text-xs leading-5 rounded-lg py-2 px-3 shadow-xl relative text-center">
+    <div className={`relative inline-flex items-center align-middle ml-1.5 ${className}`}>
+      <button
+        type="button"
+        data-testid={testId}
+        aria-label={label ?? 'Trợ giúp'}
+        aria-expanded={open}
+        // Present only while the tooltip is on screen: pointing at a hidden element would have a
+        // screen reader read out a description the sighted user is not being shown.
+        aria-describedby={open ? id : undefined}
+        className="inline-flex items-center rounded-full text-slate-400 transition-colors hover:text-[#004c91] focus:text-[#004c91] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#004c91]"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={e => {
+          // The trigger often sits inside a <label>/<legend>; without this a tap would also
+          // activate the field the label points at.
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(v => !v);
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') setOpen(false);
+        }}
+      >
+        <HelpCircle className="h-4 w-4" />
+      </button>
+      <div
+        id={id}
+        role="tooltip"
+        hidden={!open}
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-xs -translate-x-1/2"
+      >
+        <div className="relative rounded-lg bg-slate-800 px-3 py-2 text-center text-xs leading-5 text-white shadow-xl">
           {content}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-800" />
+          <div className="absolute left-1/2 top-full -mt-px -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
         </div>
       </div>
     </div>

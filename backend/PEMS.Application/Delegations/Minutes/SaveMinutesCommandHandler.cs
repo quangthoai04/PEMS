@@ -7,6 +7,7 @@ using PEMS.Application.Emails.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Emails;
 using PEMS.Domain.Entities.Minutes;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Minutes;
 
@@ -93,7 +94,10 @@ public sealed class SaveMinutesCommandHandler
         minute.EditLockToken = null;
 
         if (request.Participants != null)
-            await ReconcileParticipants(minute.MinutesId, instance.VisitRequestId, request.Participants, userId, now, cancellationToken);
+            await ReconcileParticipants(
+                minute.MinutesId, instance.VisitRequestId, instance.VisitInstanceId,
+                instance.OperationalContactUserId,
+                request.Participants, userId, now, cancellationToken);
 
         List<MinuteActionItem> newlyAssignedItems = new();
         if (request.ActionItems != null)
@@ -230,7 +234,8 @@ public sealed class SaveMinutesCommandHandler
     }
 
     private async Task ReconcileParticipants(
-        ulong minutesId, ulong requestId, IReadOnlyList<SaveMinuteParticipantInput> inputs, ulong userId, DateTime now, CancellationToken ct)
+        ulong minutesId, ulong requestId, ulong visitInstanceId, ulong? contactUserId,
+        IReadOnlyList<SaveMinuteParticipantInput> inputs, ulong userId, DateTime now, CancellationToken ct)
     {
         var existing = await _db.MinuteParticipants
             .Where(p => p.MinutesId == minutesId)
@@ -251,6 +256,40 @@ public sealed class SaveMinutesCommandHandler
         var liveUserIds = kept.Where(p => p.UserId != null).Select(p => p.UserId!.Value).ToHashSet();
         var liveGuestIds = kept.Where(p => p.GuestMemberId != null).Select(p => p.GuestMemberId!.Value).ToHashSet();
         uint maxOrder = existing.Count == 0 ? 0u : existing.Max(p => p.DisplayOrder);
+
+        // Source-linked rows the client did NOT send back, indexed by the id that identifies the
+        // person. These are no longer deleted — they become EXCLUDED — so re-adding that person is a
+        // RESTORE, not an insert. Inserting instead would put the same guest_member_id in the biên
+        // bản twice, which is exactly what `uq_minute_participants_minute_guest` refuses at the
+        // database (MIN-01), and what the whole exclude/restore mechanism exists to make coherent.
+        var droppedByGuestId = existing
+            .Where(p => p.GuestMemberId != null && !keptIds.Contains(p.MinuteParticipantId))
+            .GroupBy(p => p.GuestMemberId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+        var droppedByUserId = existing
+            .Where(p => p.UserId != null && !keptIds.Contains(p.MinuteParticipantId))
+            .GroupBy(p => p.UserId!.Value)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        // Who the campus's contact is, so a row created here carries the same badge the sync would
+        // have given it — and so the rows already present can be re-checked against it. The address
+        // is fetched too: it is how a contact who is NOT a delegation member is recognised, having no
+        // member id to be recognised by. Read from the instance, never from the client.
+        var contact = await _db.VisitInstanceFormDetails
+            .Where(d => d.VisitInstanceId == visitInstanceId)
+            .Select(d => new { d.OperationalContactGuestMemberId, d.OperationalContactEmail })
+            .FirstOrDefaultAsync(ct);
+        var contactGuestMemberId = contact?.OperationalContactGuestMemberId;
+        var contactEmail = contact?.OperationalContactEmail;
+
+        // The badge describes the CURRENT arrangement, not the moment a row was created. Re-derived
+        // on every save because the contact can change while a biên bản already exists.
+        MinuteContactBadge.ApplyTo(existing, contactGuestMemberId);
+
+        // Whether a surviving row already wears it, so a row created below cannot become a second.
+        // The role belongs to the campus, not to a row: two rows wearing it is data that cannot say
+        // who coordinated the visit, so it is refused here rather than written and reconciled later.
+        var contactBadgeTaken = existing.Any(r => r.IsOperationalContact);
 
         // New rows created by this save, kept per source so the cross-source guard below can drop a
         // guest that duplicates an internal person (see the guard for why it runs after the loop).
@@ -277,10 +316,12 @@ public sealed class SaveMinutesCommandHandler
                 }
                 row.AttendanceStatus = status;
                 row.AttendanceNote = note;
+                ApplySyncState(row, input.SyncState, isManual);
 
-                // Snapshot is editable ONLY for manual rows (if any still exist)
                 if (isManual)
                 {
+                    // The one kind of row whose identity lives HERE and nowhere else, so this is the
+                    // only place it can be corrected.
                     var fullName = (input.FullNameSnapshot ?? string.Empty).Trim();
                     if (fullName.Length == 0)
                         throw new BusinessRuleException("Họ tên người tham gia không được để trống.");
@@ -288,6 +329,15 @@ public sealed class SaveMinutesCommandHandler
                     row.RoleSnapshot = Clean(input.RoleSnapshot);
                     row.OrganizationSnapshot = Clean(input.OrganizationSnapshot);
                     row.EmailSnapshot = Clean(input.EmailSnapshot);
+                }
+                else
+                {
+                    // A source-linked row is a copy of a record kept elsewhere. Changing it here used
+                    // to be accepted and dropped on the floor: the editor rendered inputs, the user
+                    // typed a corrected job title, saved, was told it had worked, and reopened the
+                    // biên bản to find the old value. Refusing says which row and what to do instead;
+                    // silence taught the user their edit had been kept (MIN-04).
+                    EnsureSourceIdentityUnchanged(row, input);
                 }
                 continue;
             }
@@ -311,6 +361,16 @@ public sealed class SaveMinutesCommandHandler
             if (input.UserId is ulong newUserId)
             {
                 if (liveUserIds.Contains(newUserId)) continue; // already in the list → ignore duplicate
+                // This person already HAS a row that this save was about to set aside. Bringing them
+                // back is what the client asked for, so the existing row is restored rather than a
+                // second one created for the same account.
+                if (droppedByUserId.TryGetValue(newUserId, out var restoredInternal))
+                {
+                    RestoreDropped(restoredInternal, status, note, userId, now);
+                    processed.Add(restoredInternal.MinuteParticipantId);
+                    liveUserIds.Add(newUserId);
+                    continue;
+                }
                 var u = await _db.Users
                     .Include(x => x.Department).Include(x => x.PrimaryCampus).Include(x => x.Role)
                     .FirstOrDefaultAsync(x => x.UserId == newUserId, ct);
@@ -322,7 +382,19 @@ public sealed class SaveMinutesCommandHandler
                 newRow.FullNameSnapshot = u.FullName;
                 newRow.EmailSnapshot = u.Email;
                 newRow.RoleSnapshot = Clean(input.RoleSnapshot);
-                newRow.OrganizationSnapshot = u.Department?.Name ?? u.PrimaryCampus?.Name;
+                // The account's own unit wins, but an EXTERNAL account has neither a department nor a
+                // campus — and blanking the column for them threw away the organisation the sync had
+                // just supplied. The contact confirms with an outside address, so this is exactly the
+                // row it happened to.
+                newRow.OrganizationSnapshot =
+                    u.Department?.Name ?? u.PrimaryCampus?.Name ?? Clean(input.OrganizationSnapshot);
+                // A contact who is not in the delegation reaches the biên bản as an ACCOUNT row like
+                // this one — the auto-fill carries their user_id — and the badge was set nowhere on
+                // this path, so syncing them in and saving quietly dropped "· Đầu mối".
+                newRow.IsOperationalContact = !contactBadgeTaken && contactGuestMemberId is null
+                    && MinuteContactBadge.IsContactWithoutMemberId(
+                        newUserId, newRow.EmailSnapshot, contactUserId, contactEmail);
+                contactBadgeTaken |= newRow.IsOperationalContact;
                 liveUserIds.Add(newUserId);
             }
             else if (input.GuestMemberId is ulong newGuestId)
@@ -332,6 +404,15 @@ public sealed class SaveMinutesCommandHandler
                 // request's guests and the snapshot is taken from the guest record — mirroring the create-time
                 // auto-fill, never trusted from the client. This is what "Đồng bộ người mới" emits for guests.
                 if (liveGuestIds.Contains(newGuestId)) continue; // already in the list → ignore duplicate
+                // Same person, row already there but on its way out — restore it. Inserting a second
+                // row for one guest_member_id is precisely the duplicate the unique index refuses.
+                if (droppedByGuestId.TryGetValue(newGuestId, out var restoredGuest))
+                {
+                    RestoreDropped(restoredGuest, status, note, userId, now);
+                    processed.Add(restoredGuest.MinuteParticipantId);
+                    liveGuestIds.Add(newGuestId);
+                    continue;
+                }
                 // Scope check: the guest must belong to THIS minutes' visit_request. A non-existent id or
                 // an id from another request is a reference/scope error — NOT a free-text/external person,
                 // so it gets its own message + code (never the "ngoài hệ thống" one).
@@ -346,6 +427,13 @@ public sealed class SaveMinutesCommandHandler
                 newRow.RoleSnapshot = guest.JobTitle;
                 newRow.OrganizationSnapshot = guest.Organization;
                 newRow.EmailSnapshot = null;
+                // Which KIND of member, recorded now rather than looked up at render time: an
+                // interpreter travelling with the delegation is EXTERNAL_SUPPORT, and calling them a
+                // guest in the record of the meeting is simply wrong (MIN-02). Taken from the guest
+                // record the id resolved to, never from the client.
+                newRow.SourceMemberType = guest.MemberType;
+                newRow.IsOperationalContact = !contactBadgeTaken && contactGuestMemberId == newGuestId;
+                contactBadgeTaken |= newRow.IsOperationalContact;
                 liveGuestIds.Add(newGuestId);
             }
             else
@@ -357,6 +445,13 @@ public sealed class SaveMinutesCommandHandler
                 newRow.RoleSnapshot = Clean(input.RoleSnapshot);
                 newRow.OrganizationSnapshot = Clean(input.OrganizationSnapshot);
                 newRow.EmailSnapshot = Clean(input.EmailSnapshot);
+                // Same reason as the account branch above: a contact who is neither a delegation
+                // member nor an account holder arrives here, matched on the address they were invited
+                // at. A row the Host simply typed matches nothing and stays unbadged.
+                newRow.IsOperationalContact = !contactBadgeTaken && contactGuestMemberId is null
+                    && MinuteContactBadge.IsContactWithoutMemberId(
+                        null, newRow.EmailSnapshot, contactUserId, contactEmail);
+                contactBadgeTaken |= newRow.IsOperationalContact;
             }
 
             _db.MinuteParticipants.Add(newRow);
@@ -386,10 +481,90 @@ public sealed class SaveMinutesCommandHandler
                 _db.MinuteParticipants.Remove(guestRow); // Added → Detached; nothing is inserted.
         }
 
-        // Rows omitted by the client are removed from the snapshot (never from the source tables).
+        // ── Rows the client left out ─────────────────────────────────────────────────────────
+        // A MANUAL row exists only here, so dropping it from the list deletes it — there is nothing
+        // else it could mean, and nothing regenerates it.
+        //
+        // A SOURCE-LINKED row is different (MIN-03). Deleting it made the person "not in the biên
+        // bản" and therefore, to the next "đồng bộ người mới", somebody still on the official list
+        // who was missing — so they came straight back and the Host's decision was quietly undone.
+        // The row is kept and marked EXCLUDED instead: out of the biên bản, remembered by sync, and
+        // restorable. Source tables are never touched either way.
         foreach (var row in existing)
-            if (!processed.Contains(row.MinuteParticipantId))
+        {
+            if (processed.Contains(row.MinuteParticipantId)) continue;
+            if (row.UserId == null && row.GuestMemberId == null)
                 _db.MinuteParticipants.Remove(row);
+            else
+                row.SyncState = MinuteParticipantSyncStates.Excluded;
+        }
+    }
+
+    /// <summary>
+    /// Applies an explicit exclude/restore, refusing a state that does not exist.
+    ///
+    /// <para>Null means "leave it as it is", so a client that has never heard of the field cannot
+    /// reset somebody's state simply by not sending it. A MANUAL row has no sync to be excluded from
+    /// — it is deleted outright when dropped — so the field is ignored there rather than storing a
+    /// state that means nothing.</para>
+    /// </summary>
+    private static void ApplySyncState(MinuteParticipant row, string? requested, bool isManual)
+    {
+        if (isManual || string.IsNullOrWhiteSpace(requested)) return;
+        var state = requested.Trim().ToUpperInvariant();
+        if (state != MinuteParticipantSyncStates.Active && state != MinuteParticipantSyncStates.Excluded)
+            throw new BusinessRuleException(
+                $"Trạng thái người tham gia không hợp lệ: '{requested}'.");
+        row.SyncState = state;
+    }
+
+    /// <summary>
+    /// Refuses an edit to the identity of a row whose identity belongs to another table.
+    ///
+    /// <para>Only a CHANGE is refused. A client that echoes back the values it was given — which is
+    /// what every well-behaved save does — passes straight through; the refusal is reserved for an
+    /// edit that would otherwise be accepted and thrown away. Null fields are treated as "not sent"
+    /// for the same reason.</para>
+    /// </summary>
+    private static void EnsureSourceIdentityUnchanged(MinuteParticipant row, SaveMinuteParticipantInput input)
+    {
+        static bool Changed(string? incoming, string? stored) =>
+            incoming is not null
+            && !string.Equals(incoming.Trim(), (stored ?? string.Empty).Trim(), StringComparison.Ordinal);
+
+        if (!Changed(input.FullNameSnapshot, row.FullNameSnapshot)
+            && !Changed(input.RoleSnapshot, row.RoleSnapshot)
+            && !Changed(input.OrganizationSnapshot, row.OrganizationSnapshot)
+            && !Changed(input.EmailSnapshot, row.EmailSnapshot))
+            return;
+
+        throw new BusinessRuleException(
+            $"Không thể sửa họ tên, vai trò hoặc đơn vị của \"{row.FullNameSnapshot}\" trong biên bản: "
+            + "đây là người được lấy từ danh sách đoàn hoặc danh sách tham gia. "
+            + "Vui lòng sửa ở thông tin đoàn / thông tin người tham gia, rồi đồng bộ lại. "
+            + "Điểm danh và ghi chú vẫn sửa được ở đây.",
+            SourceParticipantIdentityReadonly);
+    }
+
+    /// <summary>Refusal code for an attempt to edit a source-linked participant's identity (MIN-04).</summary>
+    public const string SourceParticipantIdentityReadonly = "SOURCE_PARTICIPANT_IDENTITY_READONLY";
+
+    /// <summary>
+    /// Brings a source-linked row that this save had set aside back into the biên bản, carrying the
+    /// attendance the client sent with it. The identity snapshot is left ALONE: it is the record of
+    /// the person as they were when they entered the biên bản, and coming back is not a new arrival.
+    /// </summary>
+    private static void RestoreDropped(
+        MinuteParticipant row, string status, string? note, ulong actorId, DateTime now)
+    {
+        row.SyncState = MinuteParticipantSyncStates.Active;
+        if (row.AttendanceStatus != status || row.AttendanceNote != note)
+        {
+            row.CheckedBy = actorId;
+            row.CheckedAt = now;
+        }
+        row.AttendanceStatus = status;
+        row.AttendanceNote = note;
     }
 
     private async Task<List<MinuteActionItem>> ReconcileActionItems(

@@ -331,6 +331,18 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
             detail.OperationalContactJobTitle = snapshot?.ResolvedJobTitle ?? detail.OperationalContactJobTitle;
             detail.OperationalContactPhone = snapshot?.ResolvedPhone ?? detail.OperationalContactPhone;
             detail.OperationalContactEmail = change.NewEmailNormalized!;
+
+            // The role has moved to somebody else, so the link that said WHICH delegation member held
+            // it describes the previous person and nothing more. Left behind, it outlived them: the
+            // biên bản reads this column to decide who wears "· Đầu mối", so the campus went on
+            // naming the person who handed the role over — and the one who took it never appeared in
+            // the record at all, because the auto-fill saw the old member already listed and stopped.
+            //
+            // Cleared rather than re-pointed: a transfer names an EMAIL ADDRESS, a delegation member
+            // row has none, and there is no other evidence that could tie the two together. "Không
+            // phải thành viên nào của đoàn" is the honest answer, and the biên bản knows what to do
+            // with it — it adds the contact from this snapshot instead.
+            detail.OperationalContactGuestMemberId = null;
         }
     }
 
