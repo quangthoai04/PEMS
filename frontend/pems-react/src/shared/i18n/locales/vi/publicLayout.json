@@ -57,7 +57,8 @@
     "backToHome": "Về trang chủ",
     "openNavMenu": "Mở menu điều hướng",
     "dashboardTitle": "Dashboard",
-    "guestName": "Khách"
+    "guestName": "Khách",
+    "unknownCampus": "Không rõ"
   },
   "roles": {
     "VISITOR": "Khách tham quan"

@@ -30,6 +30,11 @@ public sealed class GetVisitFeedbackTargetsResponse
     public List<FeedbackGroupDto> Groups { get; set; } = new();
     public List<ExistingFeedbackDto> ExistingFeedbacks { get; set; } = new();
     public string? SubmitHintMessage { get; set; }
+
+    /// <summary>Stable code for <see cref="SubmitHintMessage"/> — one of NOT_ELIGIBLE / ALL_SUBMITTED /
+    /// VISITOR_HINT / HOST_HINT. SubmitHintMessage stays Vietnamese-only (unchanged); the frontend
+    /// uses this code to render an independent EN string for a Visitor reading in English.</summary>
+    public string? SubmitHintKey { get; set; }
 }
 
 public sealed class ExistingFeedbackDto

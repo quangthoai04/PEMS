@@ -66,6 +66,10 @@ public sealed class VisitorNotificationDto
     public bool IsRead { get; set; }
     public DateTime? ReadAt { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Raw `{"messageKey":"...","params":{...}}` JSON — see
+    /// <see cref="Notifications.Common.NotificationMessageKeys"/>. Null falls back to Title/Message.</summary>
+    public string? MetadataJson { get; set; }
 }
 
 /// <summary>Mirror of the guest-submitted form, shown read-only on the process screen.</summary>

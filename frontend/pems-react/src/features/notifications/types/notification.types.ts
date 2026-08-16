@@ -16,6 +16,7 @@ export type NotificationItem = {
   readAt: string | null;
   createdAt: string;
   timeAgoText: string;
+  metadataJson?: string | null;
   targetUrl: string | null;
   canOpen: boolean;
   disabledReason: string | null;

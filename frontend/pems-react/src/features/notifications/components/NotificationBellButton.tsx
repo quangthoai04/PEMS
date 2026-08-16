@@ -11,7 +11,8 @@ import { HostFeedbackModal } from '../../feedbacks/components/HostFeedbackModal'
 import { VisitorFeedbackDetailModal } from '../../feedbacks/components/VisitorFeedbackDetailModal';
 import { NotificationDetailModal } from './NotificationDetailModal';
 import type { AuthUser } from '../../authentication/types/authentication.types';
-import { formatVietnamRelative } from '../../../shared/utils/vietnamTime';
+import { formatVietnamRelative, formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { resolveNotificationText } from '../utils/resolveNotificationText';
 
 export function timeAgo(dateStr: string): string {
   // API trả ISO +07:00 (giờ Việt Nam) — parse offset-aware, tuyệt đối không nối 'Z'.
@@ -125,7 +126,8 @@ interface NotificationBellButtonProps {
 }
 
 export function NotificationBellButton({ variant = 'dashboard', onNavigate }: NotificationBellButtonProps) {
-  const { t } = useTranslation(['notifications']);
+  const { t, i18n } = useTranslation(['notifications']);
+  const language = i18n.language as UiLanguage;
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -276,32 +278,35 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
                           </span>
                         </span>
                       </button>
-                    ) : (
-                      <button
-                        key={item.notificationId}
-                        onClick={() => handleItemClick(item)}
-                        className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
-                          !item.isRead ? 'bg-blue-50/40' : ''
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
-                            {!item.isRead && (
-                              <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
-                            )}
-                            {item.title}
-                          </span>
-                          <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                            {timeAgo(item.createdAt)}
-                          </span>
-                        </div>
-                        {item.message && (
-                          <p className="text-xs text-gray-500 line-clamp-2 pl-0">
-                            {item.message}
-                          </p>
-                        )}
-                      </button>
-                    )
+                    ) : (() => {
+                      const resolved = resolveNotificationText(item, language, t);
+                      return (
+                        <button
+                          key={item.notificationId}
+                          onClick={() => handleItemClick(item)}
+                          className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
+                            !item.isRead ? 'bg-blue-50/40' : ''
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                              {!item.isRead && (
+                                <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
+                              )}
+                              {resolved.title}
+                            </span>
+                            <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
+                              {formatLocalizedRelativeTime(item.createdAt, language, t)}
+                            </span>
+                          </div>
+                          {resolved.message && (
+                            <p className="text-xs text-gray-500 line-clamp-2 pl-0">
+                              {resolved.message}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })()
                   )}
                 </div>
               )}

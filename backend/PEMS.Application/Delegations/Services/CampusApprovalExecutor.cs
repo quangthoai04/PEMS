@@ -296,7 +296,10 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: detailUrl));
+                ActionUrl: detailUrl,
+                MetadataJson: NotificationMessageKeys.BuildMetadata(
+                    NotificationMessageKeys.CampusApproved,
+                    new { campusName, requestCode = visit.RequestCode, hostName })));
         }
 
         // Self-host: the approver already knows — skip the "you were assigned" notification.

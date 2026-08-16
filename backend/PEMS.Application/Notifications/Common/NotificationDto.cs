@@ -20,6 +20,11 @@ public sealed class NotificationDto
     public DateTime CreatedAt { get; set; }
     public string TimeAgoText { get; set; } = string.Empty;
 
+    /// <summary>Raw `{"messageKey":"...","params":{...}}` JSON, present only for the notification
+    /// templates in <see cref="NotificationMessageKeys"/>. Null for every other notification
+    /// (including all historical rows) — the client falls back to Title/Message when null.</summary>
+    public string? MetadataJson { get; set; }
+
     // Backward-compatible fields the existing frontend already consumes.
     // TargetUrl is a direct alias of the stored ActionUrl (static, written at creation time).
     public string? TargetUrl { get; set; }

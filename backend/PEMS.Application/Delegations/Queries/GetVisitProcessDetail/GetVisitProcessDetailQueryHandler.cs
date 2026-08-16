@@ -258,7 +258,8 @@ public sealed class GetVisitProcessDetailQueryHandler
                     NotificationType = n.NotificationType,
                     IsRead = n.IsRead,
                     ReadAt = n.ReadAt,
-                    CreatedAt = n.CreatedAt
+                    CreatedAt = n.CreatedAt,
+                    MetadataJson = n.MetadataJson
                 })
                 .ToListAsync(cancellationToken);
 

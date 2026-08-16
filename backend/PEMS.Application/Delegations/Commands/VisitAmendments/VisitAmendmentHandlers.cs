@@ -303,7 +303,7 @@ public sealed class DecideVisitAmendmentCommandHandlers :
             result = await _amendments.ApproveAsync(amendment, actorId, request.Note, _clock.VietnamNow, cancellationToken);
             await tx.CommitAsync(cancellationToken);
         }
-        await NotifyDecisionAsync(request.VisitInstanceId, result, "được DUYỆT và áp dụng", actorId, cancellationToken);
+        await NotifyDecisionAsync(request.VisitInstanceId, result, "được DUYỆT và áp dụng", approved: true, actorId, cancellationToken);
         return result;
     }
 
@@ -322,7 +322,7 @@ public sealed class DecideVisitAmendmentCommandHandlers :
             result = await _amendments.RejectAsync(amendment, actorId, request.Note, _clock.VietnamNow, cancellationToken);
             await tx.CommitAsync(cancellationToken);
         }
-        await NotifyDecisionAsync(request.VisitInstanceId, result, "bị TỪ CHỐI (nội dung hiện tại giữ nguyên)", actorId, cancellationToken);
+        await NotifyDecisionAsync(request.VisitInstanceId, result, "bị TỪ CHỐI (nội dung hiện tại giữ nguyên)", approved: false, actorId, cancellationToken);
         return result;
     }
 
@@ -379,7 +379,7 @@ public sealed class DecideVisitAmendmentCommandHandlers :
     }
 
     private async Task NotifyDecisionAsync(
-        ulong visitInstanceId, VisitAmendmentDecisionResponse result, string outcome,
+        ulong visitInstanceId, VisitAmendmentDecisionResponse result, string outcome, bool approved,
         ulong actorId, CancellationToken ct)
     {
         try
@@ -410,7 +410,12 @@ public sealed class DecideVisitAmendmentCommandHandlers :
                     VisitRequestId: row.VisitRequestId,
                     VisitInstanceId: visitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={row.VisitRequestId}")).ToList();
+                    ActionUrl: $"/dashboard/visit?visitRequestId={row.VisitRequestId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
+                        approved
+                            ? PEMS.Application.Notifications.Common.NotificationMessageKeys.AmendmentApproved
+                            : PEMS.Application.Notifications.Common.NotificationMessageKeys.AmendmentRejected,
+                        new { }))).ToList();
             await _notificationService.CreateManyAsync(notifications, ct);
         }
         catch (System.Exception ex)

@@ -32,5 +32,17 @@
   "starRating": {
     "groupLabel": "Star rating",
     "starLabel": "{{count}} star"
+  },
+  "overallGroup": {
+    "title": "Overall visit rating",
+    "subtitleWithCampus": "Reception delegation • {{campusName}}",
+    "subtitleNoCampus": "Reception delegation",
+    "targetContext": "Reception delegation"
+  },
+  "submitHint": {
+    "NOT_ELIGIBLE": "You can only rate while the visit is in progress or completed.",
+    "ALL_SUBMITTED": "You have already rated this visit.",
+    "VISITOR_HINT": "Star rating is required; comment is optional.",
+    "HOST_HINT": "Rate each item (required for items you want to submit); comment is optional."
   }
 }

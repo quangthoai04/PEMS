@@ -11,6 +11,8 @@ import { VisitProcessDetail, VisitProcessPermission } from '../../../features/de
 import { format } from 'date-fns';
 import { vi, enUS } from 'date-fns/locale';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
+import { resolveNotificationText } from '../../../features/notifications/utils/resolveNotificationText';
+import type { UiLanguage } from '../../../shared/utils/vietnamTime';
 
 /** Visitor-only page (never rendered for Staff/HO/Department) — full bilingual, no role scoping needed. */
 function useDateLocale() {
@@ -513,7 +515,8 @@ function VisitorCancelledBanner() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function VisitorNotificationsSection({ notifications }: { notifications: VisitorNotification[] }) {
-  const { t } = useTranslation('visitorVisitDetail');
+  const { t, i18n } = useTranslation('visitorVisitDetail');
+  const language = i18n.language as UiLanguage;
   const dateLocale = useDateLocale();
   const formatDateTime = (iso?: string | null) => {
     if (!iso) return '';
@@ -528,17 +531,20 @@ function VisitorNotificationsSection({ notifications }: { notifications: Visitor
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
       <SectionTitle>{t('notifications.title')}</SectionTitle>
       <div className="space-y-3">
-        {notifications.map((item) => (
-          <div key={item.notificationId} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
-            <p className="text-[13px] font-bold text-slate-900">{item.title}</p>
-            {item.message && (
-              <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">{item.message}</p>
-            )}
-            <p className="mt-1.5 text-[11px] font-medium text-slate-400">
-              {formatDateTime(item.createdAt)}
-            </p>
-          </div>
-        ))}
+        {notifications.map((item) => {
+          const resolved = resolveNotificationText(item, language, t);
+          return (
+            <div key={item.notificationId} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-[13px] font-bold text-slate-900">{resolved.title}</p>
+              {resolved.message && (
+                <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">{resolved.message}</p>
+              )}
+              <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+                {formatDateTime(item.createdAt)}
+              </p>
+            </div>
+          );
+        })}
       </div>
     </section>
   );

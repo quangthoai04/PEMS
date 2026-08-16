@@ -98,6 +98,13 @@ public sealed class GetVisitFeedbackTargetsQueryHandler
                 : actorType == FeedbackSubmitterRoles.Visitor
                     ? "Chấm sao bắt buộc; nhận xét không bắt buộc."
                     : "Chấm sao cho từng mục (bắt buộc với mục muốn gửi); nhận xét không bắt buộc.";
+        response.SubmitHintKey = !statusEligible
+            ? "NOT_ELIGIBLE"
+            : response.AlreadySubmittedAllRequired
+                ? "ALL_SUBMITTED"
+                : actorType == FeedbackSubmitterRoles.Visitor
+                    ? "VISITOR_HINT"
+                    : "HOST_HINT";
         return response;
     }
 

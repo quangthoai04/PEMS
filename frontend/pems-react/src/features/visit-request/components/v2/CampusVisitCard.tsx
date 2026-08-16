@@ -1982,7 +1982,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               label={
                 <span className="inline-flex items-center gap-1">
                   {t('visitRequestV2:card.mediaConsent')}
-                  <HelpTooltip content="Cho phép FPTU ghi hình, chụp ảnh và sử dụng hình ảnh của đoàn cho các bài viết truyền thông, tin tức sự kiện." />
+                  <HelpTooltip content={t('visitRequestV2:card.mediaConsentTooltip')} />
                 </span>
               }
               required

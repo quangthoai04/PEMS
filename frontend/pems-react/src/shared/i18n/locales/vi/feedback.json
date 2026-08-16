@@ -32,5 +32,17 @@
   "starRating": {
     "groupLabel": "Đánh giá sao",
     "starLabel": "{{count}} sao"
+  },
+  "overallGroup": {
+    "title": "Đánh giá chung chuyến thăm",
+    "subtitleWithCampus": "Đoàn tiếp đón • {{campusName}}",
+    "subtitleNoCampus": "Đoàn tiếp đón",
+    "targetContext": "Đoàn tiếp đón"
+  },
+  "submitHint": {
+    "NOT_ELIGIBLE": "Chỉ đánh giá được khi chuyến thăm đang diễn ra hoặc đã hoàn tất.",
+    "ALL_SUBMITTED": "Bạn đã đánh giá chuyến thăm này.",
+    "VISITOR_HINT": "Chấm sao bắt buộc; nhận xét không bắt buộc.",
+    "HOST_HINT": "Chấm sao cho từng mục (bắt buộc với mục muốn gửi); nhận xét không bắt buộc."
   }
 }

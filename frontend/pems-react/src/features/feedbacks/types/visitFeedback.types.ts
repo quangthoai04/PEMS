@@ -69,6 +69,7 @@ export interface VisitFeedbackTargetsResponse {
   groups: FeedbackGroup[];
   existingFeedbacks: ExistingFeedback[];
   submitHintMessage?: string | null;
+  submitHintKey?: string | null;
 }
 
 export interface SubmitVisitFeedbackItem {

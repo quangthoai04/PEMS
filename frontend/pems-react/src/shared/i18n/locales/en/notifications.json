@@ -63,5 +63,43 @@
     "noFeedback": "No feedback yet.",
     "loading": "Loading feedback...",
     "close": "Close"
+  },
+  "messages": {
+    "CAMPUS_APPROVED": {
+      "title": "Campus accepted your request",
+      "body": "{{campusName}} has accepted your visit request {{requestCode}}. Assigned host: {{hostName}}."
+    },
+    "CAMPUS_REJECTED": {
+      "title": "Campus declined your request",
+      "body": "{{campusName}} has declined visit request {{requestCode}}. Reason: {{reason}}"
+    },
+    "FEEDBACK_INVITE_VISITOR": {
+      "title": "We'd love your feedback",
+      "body": "Visit {{requestCode}} has ended. Please take a moment to rate your experience."
+    },
+    "VISIT_CLOSED": {
+      "title": "Visit completed",
+      "body": "Your visit {{requestCode}} has been completed. Thank you!"
+    },
+    "VISIT_CANCELLED_BY_HOST": {
+      "title": "Visit schedule cancelled",
+      "body": "The host cancelled campus {{campusName}} of request {{requestCode}}."
+    },
+    "OPCONTACT_TRANSFER_FROM": {
+      "title": "Operational contact role transferred",
+      "body": "Your operational contact role at {{campusLabel}} for request {{requestCode}} was transferred to someone else. Other campuses and your account are unaffected."
+    },
+    "OPCONTACT_TRANSFER_TO": {
+      "title": "Operational contact transfer completed",
+      "body": "The new operational contact at {{campusLabel}} has confirmed for request {{requestCode}}."
+    },
+    "AMENDMENT_APPROVED": {
+      "title": "Change request processed",
+      "body": "Your proposed change was approved and applied."
+    },
+    "AMENDMENT_REJECTED": {
+      "title": "Change request processed",
+      "body": "Your proposed change was rejected (current content stays unchanged)."
+    }
   }
 }

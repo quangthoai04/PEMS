@@ -57,7 +57,8 @@
     "backToHome": "Back to home",
     "openNavMenu": "Open navigation menu",
     "dashboardTitle": "Dashboard",
-    "guestName": "Guest"
+    "guestName": "Guest",
+    "unknownCampus": "Unknown"
   },
   "roles": {
     "VISITOR": "Visitor"

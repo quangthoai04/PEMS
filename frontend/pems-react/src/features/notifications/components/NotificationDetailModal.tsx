@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { NotificationItem } from '../types/notification.types';
-import { timeAgo } from './NotificationBellButton';
+import { resolveNotificationText } from '../utils/resolveNotificationText';
+import { formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   item: NotificationItem | null;
@@ -16,7 +17,9 @@ export function NotificationDetailModal({ item, onClose }: Props) {
 }
 
 function NotificationDetailModalInner({ item, onClose }: { item: NotificationItem; onClose: () => void }) {
-  const { t } = useTranslation(['notifications']);
+  const { t, i18n } = useTranslation(['notifications']);
+  const language = i18n.language as UiLanguage;
+  const resolved = resolveNotificationText(item, language, t);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -44,17 +47,17 @@ function NotificationDetailModalInner({ item, onClose }: { item: NotificationIte
 
         <div className="flex-1 overflow-y-auto px-4 py-4">
           <div className="flex items-start justify-between gap-2 mb-2">
-            <h4 className="text-base font-bold text-slate-900">{item.title}</h4>
+            <h4 className="text-base font-bold text-slate-900">{resolved.title}</h4>
             {item.isActionRequired && (
               <span className="shrink-0 inline-block px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded">
                 {t('notifications:filters.actionRequired')}
               </span>
             )}
           </div>
-          {item.message && (
-            <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{item.message}</p>
+          {resolved.message && (
+            <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{resolved.message}</p>
           )}
-          <p className="mt-4 text-xs text-slate-400">{timeAgo(item.createdAt)}</p>
+          <p className="mt-4 text-xs text-slate-400">{formatLocalizedRelativeTime(item.createdAt, language, t)}</p>
         </div>
       </div>
     </div>,

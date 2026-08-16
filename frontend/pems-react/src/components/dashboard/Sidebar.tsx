@@ -118,7 +118,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
   // and this card is cosmetic. Changing it would alter the UI for Staff Leader and Department
   // Lead without any security benefit.
   const displayName = authUser?.fullName ?? tt('publicLayout:sidebar.guestName');
-  const displayCampus = authUser?.campusName ?? authUser?.campusCode ?? "Không rõ";
+  const displayCampus = authUser?.campusName ?? authUser?.campusCode ?? tt('publicLayout:sidebar.unknownCampus');
   // Every other role intentionally shows the raw roleCode (see comment above) — only VISITOR is
   // ever shown to an audience that switches language, so only VISITOR gets a localized label.
   const displayRole = isVisitor ? tt('publicLayout:roles.VISITOR') : (authUser?.roleCode ?? "GUEST");

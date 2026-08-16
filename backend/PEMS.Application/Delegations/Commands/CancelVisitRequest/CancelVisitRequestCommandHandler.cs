@@ -479,6 +479,12 @@ public sealed class CancelVisitRequestCommandHandler
             .GroupBy(u => u.CampusId)
             .ToDictionary(g => g.Key, g => g.Select(u => u.UserId).ToList());
 
+        // Campus display names for the Guest/Visitor-facing EN notification metadata only (the
+        // existing Vietnamese Message text below is unchanged and still shows the raw campus id).
+        var campusNamesById = await _db.Campuses.AsNoTracking()
+            .Where(c => targetCampusIds.Contains(c.CampusId))
+            .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
         foreach (var instance in targets)
         {
             var staffLeaderIds = staffLeadersByCampus.TryGetValue(instance.CampusId, out var leaders)
@@ -561,7 +567,13 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationMessageKeys.VisitCancelledByHost,
+                            new {
+                                campusName = campusNamesById.TryGetValue(instance.CampusId, out var cn) ? cn : instance.CampusId.ToString(),
+                                requestCode = visit.RequestCode,
+                            })
                     ));
                 }
                 foreach (var staffLeaderId in staffLeaderIds)

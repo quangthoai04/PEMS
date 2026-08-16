@@ -18,6 +18,39 @@ export function feedbackApiError(e: any, fallback: string): string {
   return getApiErrorMessage(e, fallback);
 }
 
+/**
+ * Overrides the Visitor-only "overall visit" group's Vietnamese-only backend strings (group title,
+ * target subtitle/context, submit hint) with i18n text when reading in English. The backend keeps
+ * emitting Vietnamese for everyone else (Host groups are untouched — out of scope, Host is never
+ * Visitor) and additionally sends stable codes (`groupCode: "OVERALL"`, `submitHintKey`) precisely so
+ * the frontend can do this without guessing at free text. VI mode and the Host actor type are
+ * returned unchanged.
+ */
+function applyVisitorEnglishOverrides(data: VisitFeedbackTargetsResponse): VisitFeedbackTargetsResponse {
+  if (i18n.language !== 'en' || data.actorType !== 'VISITOR') return data;
+
+  const groups = data.groups.map((g) => {
+    if (g.groupCode !== 'OVERALL') return g;
+    return {
+      ...g,
+      title: i18n.t('feedback:overallGroup.title'),
+      targets: g.targets.map((tgt) => ({
+        ...tgt,
+        subtitle: data.campusName
+          ? i18n.t('feedback:overallGroup.subtitleWithCampus', { campusName: data.campusName })
+          : i18n.t('feedback:overallGroup.subtitleNoCampus'),
+        targetContext: i18n.t('feedback:overallGroup.targetContext'),
+      })),
+    };
+  });
+
+  const submitHintMessage = data.submitHintKey
+    ? i18n.t(`feedback:submitHint.${data.submitHintKey}`)
+    : data.submitHintMessage;
+
+  return { ...data, groups, submitHintMessage };
+}
+
 export function useVisitFeedback(visitInstanceId: string | number | undefined) {
   const [data, setData] = useState<VisitFeedbackTargetsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,7 +64,7 @@ export function useVisitFeedback(visitInstanceId: string | number | undefined) {
     setLoadError(null);
     try {
       const res = await visitFeedbackApi.getTargets(visitInstanceId);
-      setData(res);
+      setData(applyVisitorEnglishOverrides(res));
     } catch (e: any) {
       setLoadError(feedbackApiError(e, i18n.t('feedback:loadDataErrorFallback')));
     } finally {

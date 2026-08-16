@@ -518,6 +518,7 @@ export type VisitorNotification = {
   isRead: boolean;
   readAt?: string | null;
   createdAt: string;
+  metadataJson?: string | null;
 };
 
 export type VisitorPublicNewsListItem = {

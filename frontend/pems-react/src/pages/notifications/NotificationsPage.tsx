@@ -17,6 +17,8 @@ import {
   getVisibleNotificationFilters,
   type NotificationFilterKey,
 } from '../../features/notifications/constants/notificationFilters';
+import { resolveNotificationText } from '../../features/notifications/utils/resolveNotificationText';
+import { formatLocalizedRelativeTime, type UiLanguage } from '../../shared/utils/vietnamTime';
 
 type PaginatedResult<T> = { items: T[]; page: number; pageSize: number; totalItems: number; totalPages: number };
 
@@ -34,7 +36,8 @@ type FeedbackInviteItem = {
 type DisplayItem = (NotificationItem & { kind: 'notification' }) | FeedbackInviteItem;
 
 export function NotificationsPage() {
-  const { t } = useTranslation(['notifications']);
+  const { t, i18n } = useTranslation(['notifications']);
+  const language = i18n.language as UiLanguage;
   const navigate = useNavigate();
   const { user } = useAuth();
   const { markAsRead, markAllAsRead, unreadCount, pendingFeedback, fetchPendingFeedback } = useNotifications();
@@ -203,33 +206,36 @@ export function NotificationsPage() {
                       {item.delegationName}{item.campusName ? ` • ${item.campusName}` : ''}
                     </p>
                   </button>
-                ) : (
-                  <button
-                    key={item.notificationId}
-                    onClick={() => handleItemClick(item)}
-                    className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
-                      !item.isRead ? 'bg-blue-50/40' : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
-                        {!item.isRead && (
-                          <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
-                        )}
-                        {item.title}
-                        {item.isActionRequired && (
-                          <span className="ml-2 inline-block px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded">
-                            {t('notifications:filters.actionRequired')}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                        {item.timeAgoText}
-                      </span>
-                    </div>
-                    {item.message && <p className="text-xs text-gray-500 line-clamp-2">{item.message}</p>}
-                  </button>
-                )
+                ) : (() => {
+                  const resolved = resolveNotificationText(item, language, t);
+                  return (
+                    <button
+                      key={item.notificationId}
+                      onClick={() => handleItemClick(item)}
+                      className={`flex flex-col gap-1 p-4 text-left transition-colors hover:bg-gray-50 w-full ${
+                        !item.isRead ? 'bg-blue-50/40' : ''
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                          {!item.isRead && (
+                            <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
+                          )}
+                          {resolved.title}
+                          {item.isActionRequired && (
+                            <span className="ml-2 inline-block px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-bold rounded">
+                              {t('notifications:filters.actionRequired')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
+                          {formatLocalizedRelativeTime(item.createdAt, language, t)}
+                        </span>
+                      </div>
+                      {resolved.message && <p className="text-xs text-gray-500 line-clamp-2">{resolved.message}</p>}
+                    </button>
+                  );
+                })()
               )}
             </div>
           )}

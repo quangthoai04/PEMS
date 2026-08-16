@@ -280,7 +280,10 @@ public sealed class CompleteVisitStageCommandHandler
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: feedbackUrl,
-                    DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}_{recipientId}"
+                    DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}_{recipientId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationMessageKeys.FeedbackInviteVisitor,
+                        new { requestCode = instance.VisitRequest?.RequestCode })
                 ));
             }
             if (instance.CurrentHostUserId.HasValue)
@@ -324,7 +327,10 @@ public sealed class CompleteVisitStageCommandHandler
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: visitDetailUrl
+                    ActionUrl: visitDetailUrl,
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationMessageKeys.VisitClosed,
+                        new { requestCode = instance.VisitRequest.RequestCode })
                 ));
             }
         }

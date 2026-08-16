@@ -122,6 +122,7 @@
     "languageVi": "Vietnamese",
     "languageEn": "English",
     "mediaConsent": "Media coverage",
+    "mediaConsentTooltip": "Allows FPTU to film, photograph, and use images of the delegation for media posts and event news.",
     "mediaAgreed": "Agreed",
     "mediaDeclined": "Declined",
     "transportationNote": "Transportation identification",

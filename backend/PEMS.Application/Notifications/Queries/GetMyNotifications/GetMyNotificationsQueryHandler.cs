@@ -67,6 +67,7 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
             ReadAt = n.ReadAt,
             CreatedAt = n.CreatedAt,
             TimeAgoText = ComputeTimeAgo(n.CreatedAt),
+            MetadataJson = n.MetadataJson,
             TargetUrl = n.ActionUrl,
             CanOpen = !string.IsNullOrEmpty(n.ActionUrl),
             DisabledReason = string.IsNullOrEmpty(n.ActionUrl)

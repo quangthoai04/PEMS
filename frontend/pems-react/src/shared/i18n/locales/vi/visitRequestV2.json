@@ -122,6 +122,7 @@
     "languageVi": "Tiếng Việt",
     "languageEn": "Tiếng Anh",
     "mediaConsent": "Truyền thông",
+    "mediaConsentTooltip": "Cho phép FPTU ghi hình, chụp ảnh và sử dụng hình ảnh của đoàn cho các bài viết truyền thông, tin tức sự kiện.",
     "mediaAgreed": "Đồng ý",
     "mediaDeclined": "Từ chối",
     "transportationNote": "Nhận diện phương tiện di chuyển",
