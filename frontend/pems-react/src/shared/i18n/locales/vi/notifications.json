@@ -101,6 +101,22 @@
       "title": "Đề xuất thay đổi đã được xử lý",
       "message": "Đề xuất thay đổi của cơ sở đã bị TỪ CHỐI (nội dung hiện tại giữ nguyên)."
     },
+    "HOST_CHANGED": {
+      "title": "Host phụ trách chuyến thăm đã thay đổi",
+      "message": "Cơ sở {{campusName}} đã đổi Host phụ trách đơn {{requestCode}} sang {{hostName}}. Lịch và nội dung chuyến thăm giữ nguyên."
+    },
+    "ACCOUNT_CREATED": {
+      "title": "Tài khoản được tạo",
+      "message": "Tài khoản PEMS của bạn đã được khởi tạo thành công."
+    },
+    "ACCOUNT_LOCKED": {
+      "title": "Cập nhật trạng thái tài khoản",
+      "message": "Tài khoản của bạn đã bị khóa vì lý do bảo mật."
+    },
+    "ACCOUNT_UNLOCKED": {
+      "title": "Cập nhật trạng thái tài khoản",
+      "message": "Tài khoản của bạn đã được mở khóa và có thể đăng nhập lại."
+    },
     "unknown": {
       "title": "Bạn có một thông báo mới."
     }

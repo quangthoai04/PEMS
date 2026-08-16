@@ -382,7 +382,15 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
-                    ActionUrl: "/dashboard/accounts"),
+                    ActionUrl: "/dashboard/accounts",
+                    // Only a VISITOR-role account is Guest/Visitor i18n-reachable — every other role
+                    // recipient here (STAFF/HO/DEPARTMENT/STUDENT/ADMIN) stays on the raw VI Message
+                    // above, unchanged, same as the rest of this notification architecture.
+                    MetadataJson: shape.RoleCode == RoleCodes.Visitor
+                        ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.AccountCreated,
+                            new { })
+                        : null),
                 cancellationToken
             );
 

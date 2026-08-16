@@ -36,6 +36,10 @@ const KNOWN_EVENT_KEYS = new Set([
   'OPCONTACT_TRANSFER_TO',
   'AMENDMENT_APPROVED',
   'AMENDMENT_REJECTED',
+  'HOST_CHANGED',
+  'ACCOUNT_CREATED',
+  'ACCOUNT_LOCKED',
+  'ACCOUNT_UNLOCKED',
 ]);
 
 export type NotificationPresentationInput = {

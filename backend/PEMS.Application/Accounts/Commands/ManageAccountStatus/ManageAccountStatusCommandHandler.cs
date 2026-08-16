@@ -225,6 +225,17 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
             SecurityAction.Unlock => "Tài khoản của bạn đã được mở khóa và có thể đăng nhập lại.",
             _ => $"Tài khoản của bạn đã được {(newStatus == UserStatuses.Active ? "kích hoạt" : newStatus == UserStatuses.Inactive ? "vô hiệu hóa" : "khóa")}.",
         };
+        // Only the two ADMIN security actions (Lock/Unlock) are reachable for a VISITOR target: the
+        // HO/Staff-Leader business-status branch below (the `_ =>` case, Active/Inactive) explicitly
+        // excludes VISITOR from targetInScope above, so it never needs Guest/Visitor i18n metadata —
+        // left as the raw VI Message, unchanged, same as every other non-Visitor-reachable branch in
+        // this notification architecture.
+        var accountStatusEventKey = securityAction switch
+        {
+            SecurityAction.Lock => PEMS.Application.Notifications.Common.NotificationEventKeys.AccountLocked,
+            SecurityAction.Unlock => PEMS.Application.Notifications.Common.NotificationEventKeys.AccountUnlocked,
+            _ => null,
+        };
         await _notificationService.CreateAsync(
             new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                 RecipientUserId: user.UserId,
@@ -236,7 +247,11 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
                 ActorUserId: actorId,
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
-                ActionUrl: "/dashboard/accounts"),
+                ActionUrl: "/dashboard/accounts",
+                MetadataJson: accountStatusEventKey is null
+                    ? null
+                    : PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        accountStatusEventKey, new { })),
             cancellationToken
         );
 

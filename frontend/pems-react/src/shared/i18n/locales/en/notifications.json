@@ -101,6 +101,22 @@
       "title": "Change request processed",
       "message": "Your proposed change was rejected (current content stays unchanged)."
     },
+    "HOST_CHANGED": {
+      "title": "Visit host has changed",
+      "message": "{{campusName}} changed the host in charge of request {{requestCode}} to {{hostName}}. The visit schedule and content stay the same."
+    },
+    "ACCOUNT_CREATED": {
+      "title": "Account created",
+      "message": "Your PEMS account has been created successfully."
+    },
+    "ACCOUNT_LOCKED": {
+      "title": "Account status updated",
+      "message": "Your account has been locked for security reasons."
+    },
+    "ACCOUNT_UNLOCKED": {
+      "title": "Account status updated",
+      "message": "Your account has been unlocked and you can sign in again."
+    },
     "unknown": {
       "title": "You have a new notification."
     }

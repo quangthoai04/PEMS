@@ -271,7 +271,7 @@ public sealed class TransferVisitHostCommandHandler
 
             CreateNotificationRequest Build(
                 ulong recipient, string title, string message, string type,
-                bool actionRequired, string url) => new(
+                bool actionRequired, string url, string? metadataJson = null) => new(
                     RecipientUserId: recipient,
                     Title: title,
                     Message: message,
@@ -285,7 +285,8 @@ public sealed class TransferVisitHostCommandHandler
                     VisitInstanceId: visitInstanceId,
                     CampusId: campusId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: url);
+                    ActionUrl: url,
+                    MetadataJson: metadataJson);
 
             // The leader who made the change already knows; telling them is noise.
             if (previousHostId != actorId)
@@ -307,7 +308,10 @@ public sealed class TransferVisitHostCommandHandler
                     visitor,
                     "Host phụ trách chuyến thăm đã thay đổi",
                     $"Cơ sở {campusName} đã đổi Host phụ trách đơn {requestCode} sang {newHostName}. Lịch và nội dung chuyến thăm giữ nguyên.",
-                    NotificationTypes.VisitStatusChanged, actionRequired: false, detailUrl));
+                    NotificationTypes.VisitStatusChanged, actionRequired: false, detailUrl,
+                    metadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.HostChanged,
+                        new { campusName, requestCode, hostName = newHostName })));
 
             var leaders = await _db.Users.AsNoTracking()
                 .Where(u => u.Role.RoleCode == RoleCodes.Staff

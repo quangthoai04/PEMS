@@ -34,6 +34,10 @@ const EVENT_PARAMS: Record<string, string[]> = {
   OPCONTACT_TRANSFER_TO: ['campusLabel', 'requestCode'],
   AMENDMENT_APPROVED: [],
   AMENDMENT_REJECTED: [],
+  HOST_CHANGED: ['campusName', 'requestCode', 'hostName'],
+  ACCOUNT_CREATED: [],
+  ACCOUNT_LOCKED: [],
+  ACCOUNT_UNLOCKED: [],
 };
 
 type EventEntry = { title: string; message?: string };

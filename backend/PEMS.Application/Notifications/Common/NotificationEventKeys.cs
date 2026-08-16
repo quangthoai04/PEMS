@@ -39,6 +39,10 @@ public static class NotificationEventKeys
     public const string OperationalContactTransferredTo = "OPCONTACT_TRANSFER_TO";
     public const string AmendmentApproved = "AMENDMENT_APPROVED";
     public const string AmendmentRejected = "AMENDMENT_REJECTED";
+    public const string HostChanged = "HOST_CHANGED";
+    public const string AccountCreated = "ACCOUNT_CREATED";
+    public const string AccountLocked = "ACCOUNT_LOCKED";
+    public const string AccountUnlocked = "ACCOUNT_UNLOCKED";
 
     /// <summary>
     /// Builds the `MetadataJson` payload: `{"eventKey":"...","params":{...}}`. `params` must be
