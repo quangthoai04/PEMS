@@ -86,7 +86,7 @@ function PublicPartnerCard({
 
       {partner.partnerType && (
         <span className="self-start mb-3 px-2.5 py-1 rounded-full bg-[#004c91]/5 text-[#004c91] text-[11px] font-bold uppercase tracking-wide">
-          {partner.partnerType}
+          {t(`partners:types.${partner.partnerType}`, { defaultValue: partner.partnerType })}
         </span>
       )}
 
@@ -495,9 +495,9 @@ export function PartnersPage() {
                     onChange={(e) => setSelectedType(e.target.value)}
                     className="h-11 px-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-colors"
                   >
-                    {typeDropdownOptions.map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.value === ALL_TYPES_LABEL ? t.label : `${t.label} (${t.count})`}
+                    {typeDropdownOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.value === ALL_TYPES_LABEL ? opt.label : `${t(`partners:types.${opt.value}`, { defaultValue: opt.label })} (${opt.count})`}
                       </option>
                     ))}
                   </select>

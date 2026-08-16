@@ -83,6 +83,7 @@
     "capabilityError": "Không kiểm tra được chế độ đăng ký. Vui lòng thử lại.",
     "retry": "Thử lại"
   },
+  "close": "Đóng",
   "process": {
     "notFoundTitle": "Không tìm thấy thông tin chuyến thăm",
     "noAccessTitle": "Không có quyền truy cập",

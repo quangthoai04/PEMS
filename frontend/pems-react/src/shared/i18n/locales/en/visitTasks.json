@@ -83,6 +83,7 @@
     "capabilityError": "Could not check the registration mode. Please try again.",
     "retry": "Try again"
   },
+  "close": "Close",
   "process": {
     "notFoundTitle": "Visit not found",
     "noAccessTitle": "Access denied",

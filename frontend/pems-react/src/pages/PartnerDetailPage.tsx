@@ -178,7 +178,7 @@ export function PartnerDetailPage() {
                   <div className="flex items-center gap-1.5 text-slate-500 text-sm">
                     <Building2 className="w-4 h-4 text-[#004c91] shrink-0" />
                     <span className="px-2 py-0.5 rounded-full bg-[#004c91]/5 text-[#004c91] text-xs font-bold uppercase tracking-wide">
-                      {partner.partnerType}
+                      {t(`partners:types.${partner.partnerType}`, { defaultValue: partner.partnerType })}
                     </span>
                   </div>
                 )}

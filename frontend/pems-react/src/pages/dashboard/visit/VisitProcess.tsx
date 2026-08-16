@@ -2450,7 +2450,7 @@ export function VisitProcess() {
             >
               {t.type === 'success' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
               <span className="flex-1">{t.msg}</span>
-              <button type="button" aria-label="Đóng" onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
+              <button type="button" aria-label={tt('close')} onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} className="text-current/70 hover:text-current">
                 <X className="h-4 w-4" />
               </button>
             </motion.div>

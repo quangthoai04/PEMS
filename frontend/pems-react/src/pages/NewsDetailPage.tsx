@@ -9,11 +9,10 @@ import { Calendar, User, Image as ImageIcon } from 'lucide-react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { publicContentApi } from '../features/public-content/api/publicContentApi';
 import { PublicNewsDetail, PublicNewsSection } from '../features/public-content/types/publicContent.types';
-import { format } from 'date-fns';
-import { vi } from 'date-fns/locale';
 import { sanitizeHtml } from '../shared/security/sanitizeHtml';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
 import { useTranslation } from 'react-i18next';
+import { formatLocalizedDate, type UiLanguage } from '../shared/utils/vietnamTime';
 
 export function NewsDetailPage() {
   const { t, i18n } = useTranslation(['news']);
@@ -88,13 +87,7 @@ export function NewsDetailPage() {
     );
   }
 
-  const formatDate = (iso: string) => {
-    try {
-      return format(new Date(iso), 'dd/MM/yyyy', { locale: vi });
-    } catch {
-      return iso;
-    }
-  };
+  const formatDate = (iso: string) => formatLocalizedDate(iso, i18n.language as UiLanguage, { fallback: iso });
 
   return (
     <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen">

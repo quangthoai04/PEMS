@@ -1483,10 +1483,10 @@ export function CampusDetailVisitPage() {
   const gridVideoCount = gridItems.filter((i) => (i.mediaKind || "").toUpperCase() === "VIDEO").length;
   const gridMixedCount = gridItems.filter((i) => (i.mediaKind || "").toUpperCase() === "MIXED").length;
   const gridStats = [
-    `${gridItems.length} nội dung`,
-    gridImageCount > 0 ? `${gridImageCount} hình ảnh` : null,
-    gridVideoCount > 0 ? `${gridVideoCount} video` : null,
-    gridMixedCount > 0 ? `${gridMixedCount} hỗn hợp` : null,
+    t("visitFptu:gallery.labels.itemsCount", { count: gridItems.length }),
+    gridImageCount > 0 ? t("visitFptu:gallery.labels.imagesCount", { count: gridImageCount }) : null,
+    gridVideoCount > 0 ? t("visitFptu:gallery.labels.videosCount", { count: gridVideoCount }) : null,
+    gridMixedCount > 0 ? t("visitFptu:gallery.labels.mixedCount", { count: gridMixedCount }) : null,
   ].filter(Boolean).join(" · ");
 
   // Sibling locations of the current area → quick-switch chips under the header.

@@ -1,4 +1,11 @@
 {
+  "types": {
+    "UNIVERSITY": "Trường đại học",
+    "COMPANY": "Doanh nghiệp",
+    "GOVERNMENT": "Cơ quan nhà nước",
+    "NGO": "Tổ chức phi chính phủ",
+    "OTHER": "Khác"
+  },
   "list": {
     "allCountries": "Tất cả quốc gia",
     "allTypes": "Tất cả loại hình",

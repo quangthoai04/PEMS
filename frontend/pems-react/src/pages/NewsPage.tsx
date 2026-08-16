@@ -22,7 +22,7 @@ import { PublicNewsListItem } from '../features/public-content/types/publicConte
 import { CampusOption } from '../features/authentication/types/authentication.types';
 import { resolveFileUrl } from '../shared/utils/resolveFileUrl';
 import { useTranslation } from 'react-i18next';
-import { formatVietnamDate } from '../shared/utils/vietnamTime';
+import { formatLocalizedDate, type UiLanguage } from '../shared/utils/vietnamTime';
 
 const LATEST_INITIAL_SIZE = 3;
 const LATEST_LOAD_MORE_STEP = 3;
@@ -39,8 +39,8 @@ type SortOrder = 'latest' | 'oldest';
 
 // We'll generate TYPE_OPTIONS using useTranslation inside the component or via a function.
 
-function formatDate(iso?: string | null): string {
-  return formatVietnamDate(iso, { fallback: '' });
+function formatDate(iso: string | null | undefined, language: UiLanguage): string {
+  return formatLocalizedDate(iso, language, { fallback: '' });
 }
 
 const fadeUp = {
@@ -157,7 +157,7 @@ function EmptyState({ title, subtitle }: { title: string; subtitle?: string }) {
 /* ───────────────────────── Hero ───────────────────────── */
 
 function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; loading: boolean }) {
-  const { t } = useTranslation(['news']);
+  const { t, i18n } = useTranslation(['news']);
   if (loading) {
     return (
       <div className="relative left-1/2 right-1/2 -mx-[50vw] w-screen">
@@ -196,7 +196,7 @@ function NewsroomHero({ item, loading }: { item: PublicNewsListItem | null; load
                   {item.publishedAt && (
                     <span className="flex items-center gap-1.5 text-white/80 text-sm">
                       <Calendar className="w-3.5 h-3.5" />
-                      {formatDate(item.publishedAt)}
+                      {formatDate(item.publishedAt, i18n.language as UiLanguage)}
                     </span>
                   )}
                 </div>
@@ -327,7 +327,7 @@ function FilterBar({
 /* ───────────────────────── Editorial Top Stories ───────────────────────── */
 
 function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: boolean }) {
-  const { t } = useTranslation(['news']);
+  const { t, i18n } = useTranslation(['news']);
   if (loading) {
     return (
       <FadeSection className="mb-14">
@@ -360,7 +360,7 @@ function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: 
             <CampusBadge item={big} />
             {big.publishedAt && (
               <span className="flex items-center gap-1 text-slate-500 text-xs">
-                <Calendar className="w-3.5 h-3.5" /> {formatDate(big.publishedAt)}
+                <Calendar className="w-3.5 h-3.5" /> {formatDate(big.publishedAt, i18n.language as UiLanguage)}
               </span>
             )}
           </div>
@@ -385,7 +385,7 @@ function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: 
                 </h4>
                 {item.publishedAt && (
                   <span className="mt-1.5 flex items-center gap-1 text-slate-500 text-xs">
-                    <Calendar className="w-3 h-3" /> {formatDate(item.publishedAt)}
+                    <Calendar className="w-3 h-3" /> {formatDate(item.publishedAt, i18n.language as UiLanguage)}
                   </span>
                 )}
               </div>
@@ -400,7 +400,7 @@ function TopStories({ items, loading }: { items: PublicNewsListItem[]; loading: 
 /* ───────────────────────── Visit Highlights (vertical, left column) ───────────────────────── */
 
 function VisitHighlights({ items }: { items: PublicNewsListItem[] }) {
-  const { t } = useTranslation(['news']);
+  const { t, i18n } = useTranslation(['news']);
   return (
     <FadeSection>
       <h2 className="text-lg font-bold text-slate-900 uppercase tracking-wide mb-5 flex items-center gap-2">
@@ -419,7 +419,7 @@ function VisitHighlights({ items }: { items: PublicNewsListItem[] }) {
               </h4>
               {item.publishedAt && (
                 <span className="mt-1.5 flex items-center gap-1 text-slate-500 text-xs">
-                  <Calendar className="w-3 h-3" /> {formatDate(item.publishedAt)}
+                  <Calendar className="w-3 h-3" /> {formatDate(item.publishedAt, i18n.language as UiLanguage)}
                 </span>
               )}
             </div>
@@ -433,7 +433,7 @@ function VisitHighlights({ items }: { items: PublicNewsListItem[] }) {
 /* ───────────────────────── Latest News Grid ───────────────────────── */
 
 function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; key?: React.Key }) {
-  const { t } = useTranslation(['news']);
+  const { t, i18n } = useTranslation(['news']);
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -466,7 +466,7 @@ function NewsCard({ item, index }: { item: PublicNewsListItem; index: number; ke
           <div className="mt-3 flex items-center justify-between">
             {item.publishedAt && (
               <span className="flex items-center gap-1.5 text-slate-500 text-xs">
-                <Calendar className="w-3.5 h-3.5" /> {formatDate(item.publishedAt)}
+                <Calendar className="w-3.5 h-3.5" /> {formatDate(item.publishedAt, i18n.language as UiLanguage)}
               </span>
             )}
             <span className="text-[#004c91] text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity">

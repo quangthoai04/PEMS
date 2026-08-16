@@ -1,4 +1,11 @@
 {
+  "types": {
+    "UNIVERSITY": "University",
+    "COMPANY": "Company",
+    "GOVERNMENT": "Government agency",
+    "NGO": "Non-governmental organization",
+    "OTHER": "Other"
+  },
   "list": {
     "allCountries": "All countries",
     "allTypes": "All types",
