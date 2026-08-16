@@ -6,16 +6,11 @@
  */
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, Loader2, Send, Star, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { feedbackApiError, useVisitFeedback } from '../hooks/useVisitFeedback';
 import { FeedbackGroupSection } from './FeedbackGroupSection';
-
-const STATUS_LABELS: Record<string, string> = {
-  DURING_VISIT: 'Đang diễn ra',
-  AFTER_VISIT: 'Chờ đóng đoàn',
-  CLOSED: 'Đã hoàn tất',
-};
 
 interface Props {
   open: boolean;
@@ -35,6 +30,7 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
   onClose: () => void;
   onSubmitted?: (visitInstanceId: number) => void;
 }) {
+  const { t } = useTranslation('feedback');
   const {
     data, loading, loadError,
     drafts, setRating, setComment,
@@ -55,11 +51,11 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
       onSubmitted?.(Number(visitInstanceId));
       onClose();
     } catch (e: any) {
-      toast.error(e?.response ? feedbackApiError(e, 'Không gửi được đánh giá. Vui lòng thử lại.') : (e?.message || 'Không gửi được đánh giá.'));
+      toast.error(e?.response ? feedbackApiError(e, t('submitError')) : (e?.message || t('submitError')));
     }
   };
 
-  const statusLabel = data ? (STATUS_LABELS[data.instanceStatus] ?? data.instanceStatus) : '';
+  const statusLabel = data ? t(`status.${data.instanceStatus}`, { defaultValue: data.instanceStatus }) : '';
   const disabled = !data?.canSubmit || submitting;
   let runningIndex = 1;
 
@@ -71,7 +67,7 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-              <Star className="h-4 w-4 text-[#F37021]" /> Đánh giá chuyến thăm
+              <Star className="h-4 w-4 text-[#F37021]" /> {t('title')}
               {data && (
                 <span className="ml-1 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                   {statusLabel}
@@ -89,7 +85,7 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
             onClick={onClose}
             disabled={submitting}
             className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 outline-none"
-            aria-label="Đóng"
+            aria-label={t('close')}
           >
             <X className="h-4 w-4" />
           </button>
@@ -99,16 +95,16 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" /> Đang tải dữ liệu đánh giá...
+              <Loader2 className="h-4 w-4 animate-spin" /> {t('loading')}
             </div>
           ) : loadError || !data ? (
-            <p className="py-10 text-center text-sm text-red-600">{loadError || 'Không tải được dữ liệu.'}</p>
+            <p className="py-10 text-center text-sm text-red-600">{loadError || t('loadErrorFallback')}</p>
           ) : (
             <>
               {data.alreadySubmittedAllRequired ? (
                 <div className="mb-3 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  {data.actorType === 'VISITOR' ? 'Bạn đã đánh giá chuyến thăm này.' : 'Bạn đã đánh giá đầy đủ các mục của chuyến thăm này.'}
+                  {data.actorType === 'VISITOR' ? t('alreadySubmittedVisitor') : t('alreadySubmittedOther')}
                 </div>
               ) : data.submitHintMessage ? (
                 <p className="mb-2 text-xs text-slate-500">{data.submitHintMessage}</p>
@@ -140,7 +136,7 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
         {data?.canSubmit && (
           <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-2.5 rounded-b-2xl sm:rounded-b-xl">
             <p className="text-xs text-slate-500">
-              {ratedItems.length > 0 ? `${ratedItems.length} mục sẽ được gửi` : 'Chấm sao để gửi đánh giá'}
+              {ratedItems.length > 0 ? t('itemsToSubmit', { count: ratedItems.length }) : t('rateToSubmitHint')}
             </p>
             <button
               type="button"
@@ -149,7 +145,7 @@ function VisitFeedbackModalInner({ visitInstanceId, onClose, onSubmitted }: {
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#F37021] px-4 py-2 text-sm font-bold text-white hover:bg-[#e0611d] disabled:opacity-50 outline-none"
             >
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Gửi đánh giá
+              {t('submit')}
             </button>
           </div>
         )}

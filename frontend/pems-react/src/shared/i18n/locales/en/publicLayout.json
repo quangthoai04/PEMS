@@ -49,5 +49,17 @@
     "guest": "Partner / Guest",
     "myForms": "My requests",
     "manage": "Manage"
+  },
+  "sidebar": {
+    "closeMenu": "Close menu",
+    "expandMenu": "Expand menu",
+    "collapseMenu": "Collapse menu",
+    "backToHome": "Back to home",
+    "openNavMenu": "Open navigation menu",
+    "dashboardTitle": "Dashboard",
+    "guestName": "Guest"
+  },
+  "roles": {
+    "VISITOR": "Visitor"
   }
 }

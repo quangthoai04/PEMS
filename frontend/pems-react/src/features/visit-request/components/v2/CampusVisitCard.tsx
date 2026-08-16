@@ -1070,8 +1070,8 @@ export const CampusVisitCard: React.FC<Props> = ({
           type="button"
           aria-expanded={open}
           aria-controls={bodyId}
-          aria-label={open ? t('visitRequestV2:card.collapse', 'Thu gọn') : t('visitRequestV2:card.expand', 'Mở rộng')}
-          title={open ? t('visitRequestV2:card.collapse', 'Thu gọn') : t('visitRequestV2:card.expand', 'Mở rộng')}
+          aria-label={open ? t('visitRequestV2:card.collapse') : t('visitRequestV2:card.expand')}
+          title={open ? t('visitRequestV2:card.collapse') : t('visitRequestV2:card.expand')}
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={onToggle}
         >

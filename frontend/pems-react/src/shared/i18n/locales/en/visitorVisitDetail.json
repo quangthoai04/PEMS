@@ -1,0 +1,117 @@
+{
+  "loading": "Loading your visit details...",
+  "noHost": {
+    "title": "This visit has not been assigned a host yet",
+    "desc": "Please go back to My Visit Requests to check the request status.",
+    "back": "Go back"
+  },
+  "breadcrumb": {
+    "dashboard": "Dashboard",
+    "myRequests": "My Visit Requests",
+    "detail": "Visit Details"
+  },
+  "status": {
+    "ASSIGNED": "Visit schedule confirmed",
+    "BEFORE_VISIT": "Visit schedule confirmed",
+    "DURING_VISIT": "Visit in progress",
+    "AFTER_VISIT": "Visit completed",
+    "CLOSED": "Visit finished",
+    "CANCELLED": "Cancelled"
+  },
+  "hero": {
+    "delegationPrefix": "Delegation {{name}}"
+  },
+  "hostSection": {
+    "title": "Host",
+    "waitingHost": "FPT University is arranging a suitable host. Their information will appear here once assigned.",
+    "fullName": "Full name",
+    "department": "Department",
+    "email": "Email",
+    "phone": "Phone number",
+    "campus": "Visiting campus",
+    "time": "Time",
+    "timeUnknown": "Not yet determined"
+  },
+  "nextStep": {
+    "title": "Guidance / Notice",
+    "ASSIGNED": "Your visit schedule has been confirmed. Please follow the itinerary and contact your host if anything changes.",
+    "BEFORE_VISIT": "Your visit schedule has been confirmed. Please follow the itinerary and contact your host if anything changes.",
+    "DURING_VISIT": "Your visit is currently in progress. Please contact your host if you need assistance.",
+    "AFTER_VISIT": "Your visit has ended. Thank you sincerely for your interest in FPT University.",
+    "CLOSED": "Your visit is complete. Thank you for visiting FPT University.",
+    "default": "Please check back for the latest updates from the system."
+  },
+  "agenda": {
+    "title": "Visit itinerary",
+    "empty": "The detailed itinerary is still being prepared by FPT University.",
+    "time": "Time",
+    "content": "Activity",
+    "location": "Location"
+  },
+  "requestInfo": {
+    "title": "Submitted registration information",
+    "registrant": "Registrant",
+    "fullName": "Full name",
+    "email": "Email",
+    "phone": "Phone number",
+    "nationality": "Nationality",
+    "organization": "Organization",
+    "jobTitle": "Job title",
+    "delegationInfo": "Delegation information",
+    "delegationName": "Delegation name",
+    "partner": "Partner",
+    "guestCount": "Number of guests",
+    "guestCountUnit_one": "{{count}} member",
+    "guestCountUnit_other": "{{count}} members",
+    "guestCountUnknown": "Not set",
+    "purpose": "Visit purpose",
+    "workingContent": "Working content",
+    "additionalInfo": "Additional information",
+    "visitType": "Visit type",
+    "workingLanguage": "Working language",
+    "transportation": "Vehicle identification",
+    "mediaConsent": "Media consent",
+    "mediaConsentAgreed": "Agreed",
+    "mediaConsentDeclined": "Declined",
+    "notes": "Notes sent to FPTU"
+  },
+  "guestMembers": {
+    "title": "Delegation member list",
+    "no": "No.",
+    "fullName": "Full name",
+    "jobTitle": "Job title",
+    "organization": "Organization",
+    "nationality": "Nationality"
+  },
+  "operationalContact": {
+    "title": "Delegation Coordination Contact at Campus",
+    "fullName": "Full name",
+    "organization": "Organization",
+    "jobTitle": "Job title",
+    "phone": "Phone number",
+    "email": "Email"
+  },
+  "externalSupport": {
+    "title": "Delegation support staff list"
+  },
+  "campusInfo": {
+    "title": "Campus information"
+  },
+  "feedbackCard": {
+    "title": "Visit feedback",
+    "thanks": "Thank you for submitting feedback about this visit!",
+    "prompt": "FPT University would love to hear your feedback about this visit.",
+    "cta": "Submit feedback"
+  },
+  "cancelledBanner": {
+    "title": "This visit has been cancelled",
+    "desc": "This visit has been cancelled and will not take place as planned. If you need further assistance, please contact FPT University."
+  },
+  "notifications": {
+    "title": "Notices & Updates"
+  },
+  "publicNews": {
+    "title": "Visit news",
+    "viewDetail": "View details"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "title": "Visit Feedback",
+  "status": {
+    "DURING_VISIT": "In progress",
+    "AFTER_VISIT": "Awaiting closure",
+    "CLOSED": "Completed"
+  },
+  "close": "Close",
+  "back": "Back",
+  "loading": "Loading feedback data...",
+  "loadErrorFallback": "Could not load data.",
+  "loadDataErrorFallback": "Could not load feedback data.",
+  "alreadySubmittedVisitor": "You have already rated this visit.",
+  "alreadySubmittedOther": "You have already rated every item for this visit.",
+  "itemsToSubmit_one": "{{count}} item will be submitted",
+  "itemsToSubmit_other": "{{count}} items will be submitted",
+  "rateToSubmitHint": "Rate at least one item to submit",
+  "submit": "Submit feedback",
+  "submitSuccess": "Feedback submitted successfully.",
+  "submitError": "Could not submit feedback. Please try again.",
+  "needAtLeastOneRating": "Please rate at least one item before submitting.",
+  "targetCount_one": "{{count}} item",
+  "targetCount_other": "{{count}} items",
+  "row": {
+    "alreadyRated": "Rated",
+    "notRatedYet": "Not rated",
+    "viewComment": "View comment",
+    "hideComment": "Hide comment",
+    "addComment": "Add comment",
+    "commentPlaceholder": "Additional comment (optional)..."
+  },
+  "starRating": {
+    "groupLabel": "Star rating",
+    "starLabel": "{{count}} star"
+  }
+}

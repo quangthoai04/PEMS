@@ -1,0 +1,49 @@
+{
+  "breadcrumb": {
+    "dashboard": "Dashboard",
+    "profile": "Profile"
+  },
+  "title": "Profile",
+  "edit": "Edit profile",
+  "cancel": "Cancel",
+  "save": "Save changes",
+  "saving": "Saving...",
+  "loadError": "Could not load your profile.",
+  "avatar": {
+    "alt": "Avatar",
+    "change": "Change avatar",
+    "save": "Save photo",
+    "saving": "Saving...",
+    "cancel": "Cancel",
+    "successToast": "Avatar updated successfully.",
+    "errorToast": "Could not update your avatar. Please try again."
+  },
+  "fields": {
+    "gender": "Gender",
+    "genderPlaceholder": "Select gender",
+    "phone": "Phone number",
+    "phonePlaceholder": "e.g. 0912345678",
+    "email": "Email",
+    "studentCode": "Student ID",
+    "department": "Department",
+    "position": "Position",
+    "nationality": "Nationality",
+    "nationalityPlaceholder": "Search or select nationality...",
+    "campus": "Campus",
+    "campusNotConfigured": "Not configured",
+    "notUpdated": "Not set"
+  },
+  "gender": {
+    "MALE": "Male",
+    "FEMALE": "Female",
+    "OTHER": "Other"
+  },
+  "validation": {
+    "fullNameRequired": "Full name cannot be empty.",
+    "fullNameTooLong": "Full name is too long (150 characters max).",
+    "phoneInvalidChars": "Phone number may only contain digits and the characters + - . ( ).",
+    "phoneLength": "Phone number must be 8 to 15 digits long."
+  },
+  "saveSuccess": "Profile updated successfully.",
+  "saveError": "Could not update your profile. Please try again."
+}

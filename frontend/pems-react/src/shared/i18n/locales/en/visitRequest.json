@@ -251,6 +251,10 @@
     "validity": "Code is valid for 5 minutes. Do not share your code with anyone.",
     "remainingAttempts": "{{count}} attempts remaining",
     "retryIn": "Please try again in {{count}} seconds",
+    "rateLimited": {
+      "title": "Verification code unavailable right now",
+      "desc": "You have requested a code too many times. Please try again after the countdown below."
+    },
     "human": {
       "title": "Verify you are human",
       "desc": "You entered the wrong code too many times. Please complete the verification below to receive a new code.",

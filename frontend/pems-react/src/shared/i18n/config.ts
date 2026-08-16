@@ -20,6 +20,9 @@ import viNotifications from './locales/vi/notifications.json';
 import viVisitFaceScan from './locales/vi/visitFaceScan.json';
 import viFiles from './locales/vi/files.json';
 import viLegal from './locales/vi/legal.json';
+import viProfile from './locales/vi/profile.json';
+import viVisitorVisitDetail from './locales/vi/visitorVisitDetail.json';
+import viFeedback from './locales/vi/feedback.json';
 
 import enCommon from './locales/en/common.json';
 import enPublicLayout from './locales/en/publicLayout.json';
@@ -40,6 +43,9 @@ import enNotifications from './locales/en/notifications.json';
 import enVisitFaceScan from './locales/en/visitFaceScan.json';
 import enFiles from './locales/en/files.json';
 import enLegal from './locales/en/legal.json';
+import enProfile from './locales/en/profile.json';
+import enVisitorVisitDetail from './locales/en/visitorVisitDetail.json';
+import enFeedback from './locales/en/feedback.json';
 
 const resources = {
   vi: {
@@ -62,6 +68,9 @@ const resources = {
     visitFaceScan: viVisitFaceScan,
     files: viFiles,
     legal: viLegal,
+    profile: viProfile,
+    visitorVisitDetail: viVisitorVisitDetail,
+    feedback: viFeedback,
   },
   en: {
     common: enCommon,
@@ -83,6 +92,9 @@ const resources = {
     visitFaceScan: enVisitFaceScan,
     files: enFiles,
     legal: enLegal,
+    profile: enProfile,
+    visitorVisitDetail: enVisitorVisitDetail,
+    feedback: enFeedback,
   },
 };
 
@@ -110,7 +122,8 @@ i18n
     ns: [
       'common', 'publicLayout', 'home', 'news', 'partners',
       'faq', 'gallery', 'visitRequest', 'visitRequestV2', 'validation', 'errors', 'toast',
-      'loginModal', 'search', 'visitFptu', 'notifications', 'visitFaceScan', 'files', 'legal'
+      'loginModal', 'search', 'visitFptu', 'notifications', 'visitFaceScan', 'files', 'legal', 'profile',
+      'visitorVisitDetail', 'feedback'
     ],
     defaultNS: 'common',
     interpolation: {

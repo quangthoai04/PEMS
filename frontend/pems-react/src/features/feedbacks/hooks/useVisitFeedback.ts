@@ -10,13 +10,12 @@ import type {
   SubmitVisitFeedbackItem,
   VisitFeedbackTargetsResponse,
 } from '../types/visitFeedback.types';
+import { getApiErrorMessage } from '../../../shared/utils/toast';
+import i18n from '../../../shared/i18n/config';
 
+/** Thin wrapper over the shared API-error helper (errorCode -> i18n, raw VI suppressed in EN mode). */
 export function feedbackApiError(e: any, fallback: string): string {
-  const data = e?.response?.data;
-  if (typeof data === 'string' && data.trim()) return data;
-  if (data?.message) return data.message;
-  if (Array.isArray(data?.errors) && data.errors.length) return data.errors[0];
-  return fallback;
+  return getApiErrorMessage(e, fallback);
 }
 
 export function useVisitFeedback(visitInstanceId: string | number | undefined) {
@@ -34,7 +33,7 @@ export function useVisitFeedback(visitInstanceId: string | number | undefined) {
       const res = await visitFeedbackApi.getTargets(visitInstanceId);
       setData(res);
     } catch (e: any) {
-      setLoadError(feedbackApiError(e, 'Không tải được dữ liệu đánh giá.'));
+      setLoadError(feedbackApiError(e, i18n.t('feedback:loadDataErrorFallback')));
     } finally {
       setLoading(false);
     }
@@ -73,14 +72,16 @@ export function useVisitFeedback(visitInstanceId: string | number | undefined) {
   /** Gửi batch; trả message thành công hoặc throw (caller hiển thị toast). */
   const submit = useCallback(async (): Promise<string> => {
     if (!visitInstanceId || ratedItems.length === 0) {
-      throw new Error('Vui lòng chấm sao ít nhất một mục trước khi gửi.');
+      throw new Error(i18n.t('feedback:needAtLeastOneRating'));
     }
     setSubmitting(true);
     try {
-      const res = await visitFeedbackApi.submit(visitInstanceId, ratedItems);
+      // Ignore the backend's raw message — it is Vietnamese-only prose, not a stable code, and would
+      // leak untranslated text into English mode.
+      await visitFeedbackApi.submit(visitInstanceId, ratedItems);
       setDrafts({});
       await load();
-      return res.message || 'Đã gửi đánh giá.';
+      return i18n.t('feedback:submitSuccess');
     } finally {
       setSubmitting(false);
     }

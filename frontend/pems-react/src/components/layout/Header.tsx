@@ -341,7 +341,9 @@ export function Header() {
                     <img src={avatarSrc} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-250 object-cover" onError={(e) => { e.currentTarget.src = avatarImg; }} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold text-[#004c91] truncate">{user.name}</p>
-                      <p className="text-xs text-slate-405 truncate">{user.role || t('publicLayout:profile.guest')}</p>
+                      <p className="text-xs text-slate-405 truncate">
+                        {user.role === 'VISITOR' ? t('publicLayout:roles.VISITOR') : (user.role || t('publicLayout:profile.guest'))}
+                      </p>
                     </div>
                   </div>
 

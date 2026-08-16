@@ -1,4 +1,28 @@
 {
+  "relativeTime": {
+    "justNow": "Just now",
+    "minutesAgo_one": "{{count}} minute ago",
+    "minutesAgo_other": "{{count}} minutes ago",
+    "hoursAgo_one": "{{count}} hour ago",
+    "hoursAgo_other": "{{count}} hours ago",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago"
+  },
+  "confirmEmail": {
+    "pageTitle": "Confirm your PEMS account email",
+    "loading": "Confirming your email…",
+    "missingToken": "This confirmation link is invalid (missing confirmation code).",
+    "successTitle": "Confirmed successfully",
+    "alreadyConfirmedTitle": "Email already confirmed",
+    "expiredTitle": "This link has expired",
+    "expiredHint": "Please contact an administrator to resend the confirmation email.",
+    "invalidTitle": "Invalid link",
+    "errorTitle": "Confirmation failed",
+    "errorTransient": "Could not reach the server to confirm your email. Please try again.",
+    "errorGeneric": "Something went wrong while confirming your email.",
+    "retry": "Try again",
+    "backHome": "Back to home"
+  },
   "asyncState": {
     "loading": "Loading…",
     "retry": "Try again",

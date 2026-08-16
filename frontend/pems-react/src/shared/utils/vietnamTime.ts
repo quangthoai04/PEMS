@@ -231,3 +231,110 @@ export function formatVietnamRelative(value: string | Date | null | undefined): 
   if (days < 7) return `${days} ngày trước`;
   return formatVietnamDate(date);
 }
+
+// ── Locale-aware formatting (VI/EN wording, timezone always Asia/Ho_Chi_Minh) ──────────────
+//
+// The functions above (`formatVietnamDate*`) are intentionally VI-only and still used by
+// Staff/HO/Department screens that never switch language. Guest/VISITOR-facing screens must use
+// the `formatLocalized*` variants below instead, so English mode never renders a Vietnamese
+// weekday/month or a hardcoded Vietnamese relative-time string. Business timezone is unaffected —
+// only the wording changes with `language`.
+
+export type UiLanguage = 'vi' | 'en';
+
+const INTL_LOCALE: Record<UiLanguage, string> = { vi: 'vi-VN', en: 'en-GB' };
+
+/** Locale-aware "dd/MM/yyyy HH:mm" (or with seconds). VI/EN wording, always Vietnam time. */
+export function formatLocalizedDateTime(
+  value: string | Date | null | undefined,
+  language: UiLanguage,
+  options?: { seconds?: boolean; fallback?: string },
+): string {
+  const date = parseApiDate(value);
+  if (!date) return options?.fallback ?? '—';
+  return new Intl.DateTimeFormat(INTL_LOCALE[language], {
+    timeZone: VIETNAM_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(options?.seconds ? { second: '2-digit' } : {}),
+    hour12: false,
+  }).format(date);
+}
+
+/** Locale-aware "dd/MM/yyyy". VI/EN wording, always Vietnam time. */
+export function formatLocalizedDate(
+  value: string | Date | null | undefined,
+  language: UiLanguage,
+  options?: { fallback?: string },
+): string {
+  const date = parseApiDate(value);
+  if (!date) return options?.fallback ?? '—';
+  return new Intl.DateTimeFormat(INTL_LOCALE[language], {
+    timeZone: VIETNAM_TIME_ZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+/** Locale-aware "HH:mm". VI/EN wording, always Vietnam time. */
+export function formatLocalizedTime(
+  value: string | Date | null | undefined,
+  language: UiLanguage,
+  options?: { fallback?: string },
+): string {
+  const date = parseApiDate(value);
+  if (!date) return options?.fallback ?? '—';
+  return new Intl.DateTimeFormat(INTL_LOCALE[language], {
+    timeZone: VIETNAM_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
+
+/**
+ * Locale-aware long form (e.g. "12 thg 7, 2026, 20:00" / "12 Jul 2026, 20:00"). Timezone is ALWAYS
+ * Vietnam; only the wording follows `language`.
+ */
+export function formatLocalizedDateTimeLong(
+  value: string | Date | null | undefined,
+  language: UiLanguage,
+  options?: Intl.DateTimeFormatOptions & { fallback?: string },
+): string {
+  const date = parseApiDate(value);
+  if (!date) return options?.fallback ?? '—';
+  const { fallback: _fallback, ...intl } = options ?? {};
+  return new Intl.DateTimeFormat(INTL_LOCALE[language], {
+    timeZone: VIETNAM_TIME_ZONE,
+    ...(Object.keys(intl).length > 0
+      ? intl
+      : { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }),
+  }).format(date);
+}
+
+/**
+ * Locale-aware relative time ("Just now" / "Vừa xong", "5 minutes ago" / "5 phút trước", …),
+ * falling back to `formatLocalizedDate` past 7 days. `t` is the `i18next` translate function
+ * (namespace `common`, keys under `relativeTime.*` with i18next `_one`/`_other` plural suffixes).
+ */
+export function formatLocalizedRelativeTime(
+  value: string | Date | null | undefined,
+  language: UiLanguage,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  const date = parseApiDate(value);
+  if (!date) return '';
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return t('common:relativeTime.justNow');
+  if (minutes < 60) return t('common:relativeTime.minutesAgo', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('common:relativeTime.hoursAgo', { count: hours });
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t('common:relativeTime.daysAgo', { count: days });
+  return formatLocalizedDate(date, language);
+}

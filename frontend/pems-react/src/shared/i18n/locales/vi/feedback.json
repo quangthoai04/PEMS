@@ -1,0 +1,36 @@
+{
+  "title": "Đánh giá chuyến thăm",
+  "status": {
+    "DURING_VISIT": "Đang diễn ra",
+    "AFTER_VISIT": "Chờ đóng đoàn",
+    "CLOSED": "Đã hoàn tất"
+  },
+  "close": "Đóng",
+  "back": "Quay lại",
+  "loading": "Đang tải dữ liệu đánh giá...",
+  "loadErrorFallback": "Không tải được dữ liệu.",
+  "loadDataErrorFallback": "Không tải được dữ liệu đánh giá.",
+  "alreadySubmittedVisitor": "Bạn đã đánh giá chuyến thăm này.",
+  "alreadySubmittedOther": "Bạn đã đánh giá đầy đủ các mục của chuyến thăm này.",
+  "itemsToSubmit_one": "{{count}} mục sẽ được gửi",
+  "itemsToSubmit_other": "{{count}} mục sẽ được gửi",
+  "rateToSubmitHint": "Chấm sao để gửi đánh giá",
+  "submit": "Gửi đánh giá",
+  "submitSuccess": "Đã gửi đánh giá thành công.",
+  "submitError": "Không gửi được đánh giá. Vui lòng thử lại.",
+  "needAtLeastOneRating": "Vui lòng chấm sao ít nhất một mục trước khi gửi.",
+  "targetCount_one": "{{count}} mục",
+  "targetCount_other": "{{count}} mục",
+  "row": {
+    "alreadyRated": "Đã đánh giá",
+    "notRatedYet": "Chưa chấm",
+    "viewComment": "Xem nhận xét",
+    "hideComment": "Ẩn nhận xét",
+    "addComment": "Thêm nhận xét",
+    "commentPlaceholder": "Nhận xét thêm (không bắt buộc)..."
+  },
+  "starRating": {
+    "groupLabel": "Đánh giá sao",
+    "starLabel": "{{count}} sao"
+  }
+}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import httpClient from '../../shared/api/httpClient';
 import { normalizeApiError } from '../../shared/api/normalizeApiError';
 
@@ -12,9 +13,9 @@ interface ConfirmResponse {
 
 type ViewState =
   | { kind: 'loading' }
-  | { kind: 'success'; alreadyConfirmed: boolean; message: string }
-  | { kind: 'invalid'; message: string }
-  | { kind: 'expired'; message: string }
+  | { kind: 'success'; alreadyConfirmed: boolean }
+  | { kind: 'invalid' }
+  | { kind: 'expired' }
   | { kind: 'error'; message: string; retryable: boolean };
 
 /**
@@ -24,6 +25,7 @@ type ViewState =
  * user in automatically.
  */
 export default function ConfirmEmailPage() {
+  const { t } = useTranslation('common');
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const [state, setState] = useState<ViewState>({ kind: 'loading' });
@@ -32,7 +34,7 @@ export default function ConfirmEmailPage() {
 
   const confirm = useCallback(async () => {
     if (!token) {
-      setState({ kind: 'invalid', message: 'Liên kết xác nhận không hợp lệ (thiếu mã xác nhận).' });
+      setState({ kind: 'invalid' });
       return;
     }
     setState({ kind: 'loading' });
@@ -43,29 +45,27 @@ export default function ConfirmEmailPage() {
       );
       switch (data.status) {
         case 'CONFIRMED':
-          setState({ kind: 'success', alreadyConfirmed: false, message: data.message });
+          setState({ kind: 'success', alreadyConfirmed: false });
           break;
         case 'ALREADY_CONFIRMED':
-          setState({ kind: 'success', alreadyConfirmed: true, message: data.message });
+          setState({ kind: 'success', alreadyConfirmed: true });
           break;
         case 'EXPIRED':
-          setState({ kind: 'expired', message: data.message });
+          setState({ kind: 'expired' });
           break;
         default:
-          setState({ kind: 'invalid', message: data.message });
+          setState({ kind: 'invalid' });
       }
     } catch (error) {
       const normalized = normalizeApiError(error);
       const isTransient = normalized.category === 'network' || normalized.category === 'timeout' || normalized.category === 'server';
       setState({
         kind: 'error',
-        message: isTransient
-          ? 'Không thể kết nối máy chủ để xác nhận. Vui lòng thử lại.'
-          : (normalized.message || 'Đã xảy ra lỗi khi xác nhận email.'),
+        message: isTransient ? t('confirmEmail.errorTransient') : (normalized.message || t('confirmEmail.errorGeneric')),
         retryable: true,
       });
     }
-  }, [token]);
+  }, [token, t]);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -76,24 +76,23 @@ export default function ConfirmEmailPage() {
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
-        <h1 className="text-xl font-bold text-[#004c91] mb-6">Xác nhận email tài khoản PEMS</h1>
+        <h1 className="text-xl font-bold text-[#004c91] mb-6">{t('confirmEmail.pageTitle')}</h1>
 
         {state.kind === 'loading' && (
           <div data-testid="confirm-loading" className="text-gray-600">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-[#004c91]" />
-            Đang xác nhận email của bạn…
+            {t('confirmEmail.loading')}
           </div>
         )}
 
         {state.kind === 'success' && (
           <div data-testid="confirm-success">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-3xl text-emerald-600">✓</div>
-            <p className="mb-2 font-semibold text-emerald-700">
-              {state.alreadyConfirmed ? 'Email đã được xác nhận' : 'Xác nhận thành công'}
+            <p className="mb-6 font-semibold text-emerald-700">
+              {state.alreadyConfirmed ? t('confirmEmail.alreadyConfirmedTitle') : t('confirmEmail.successTitle')}
             </p>
-            <p className="mb-6 text-sm text-gray-600">{state.message}</p>
             <Link to="/" className="inline-block rounded-md bg-[#004c91] px-6 py-2.5 font-semibold text-white hover:bg-[#013565]">
-              Về trang chủ
+              {t('confirmEmail.backHome')}
             </Link>
           </div>
         )}
@@ -101,10 +100,10 @@ export default function ConfirmEmailPage() {
         {state.kind === 'expired' && (
           <div data-testid="confirm-expired">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-3xl text-amber-600">⏱</div>
-            <p className="mb-2 font-semibold text-amber-700">Liên kết đã hết hạn</p>
-            <p className="mb-6 text-sm text-gray-600">{state.message} Vui lòng liên hệ quản trị để được gửi lại email xác nhận.</p>
+            <p className="mb-2 font-semibold text-amber-700">{t('confirmEmail.expiredTitle')}</p>
+            <p className="mb-6 text-sm text-gray-600">{t('confirmEmail.expiredHint')}</p>
             <Link to="/" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
-              Về trang chủ
+              {t('confirmEmail.backHome')}
             </Link>
           </div>
         )}
@@ -112,10 +111,9 @@ export default function ConfirmEmailPage() {
         {state.kind === 'invalid' && (
           <div data-testid="confirm-invalid">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-3xl text-red-600">✕</div>
-            <p className="mb-2 font-semibold text-red-700">Liên kết không hợp lệ</p>
-            <p className="mb-6 text-sm text-gray-600">{state.message}</p>
+            <p className="mb-6 font-semibold text-red-700">{t('confirmEmail.invalidTitle')}</p>
             <Link to="/" className="inline-block rounded-md border border-gray-300 px-6 py-2.5 font-semibold text-gray-700 hover:bg-gray-50">
-              Về trang chủ
+              {t('confirmEmail.backHome')}
             </Link>
           </div>
         )}
@@ -123,7 +121,7 @@ export default function ConfirmEmailPage() {
         {state.kind === 'error' && (
           <div data-testid="confirm-error">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-3xl text-red-600">!</div>
-            <p className="mb-2 font-semibold text-red-700">Không thể xác nhận</p>
+            <p className="mb-2 font-semibold text-red-700">{t('confirmEmail.errorTitle')}</p>
             <p className="mb-6 text-sm text-gray-600">{state.message}</p>
             {state.retryable && (
               <button
@@ -131,11 +129,11 @@ export default function ConfirmEmailPage() {
                 onClick={() => void confirm()}
                 className="mb-3 inline-block w-full rounded-md bg-[#004c91] px-6 py-2.5 font-semibold text-white hover:bg-[#013565]"
               >
-                Thử lại
+                {t('confirmEmail.retry')}
               </button>
             )}
             <Link to="/" className="inline-block text-sm text-[#004c91] hover:underline">
-              Về trang chủ
+              {t('confirmEmail.backHome')}
             </Link>
           </div>
         )}

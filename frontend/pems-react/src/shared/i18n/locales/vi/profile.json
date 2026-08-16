@@ -1,0 +1,49 @@
+{
+  "breadcrumb": {
+    "dashboard": "Dashboard",
+    "profile": "Hồ sơ cá nhân"
+  },
+  "title": "Hồ sơ cá nhân",
+  "edit": "Chỉnh sửa hồ sơ",
+  "cancel": "Hủy",
+  "save": "Lưu thay đổi",
+  "saving": "Đang lưu...",
+  "loadError": "Không thể tải hồ sơ cá nhân.",
+  "avatar": {
+    "alt": "Ảnh đại diện",
+    "change": "Đổi ảnh đại diện",
+    "save": "Lưu ảnh",
+    "saving": "Đang lưu...",
+    "cancel": "Hủy",
+    "successToast": "Cập nhật ảnh đại diện thành công.",
+    "errorToast": "Không thể cập nhật ảnh đại diện. Vui lòng thử lại."
+  },
+  "fields": {
+    "gender": "Giới tính",
+    "genderPlaceholder": "Chọn giới tính",
+    "phone": "Số điện thoại",
+    "phonePlaceholder": "VD: 0912345678",
+    "email": "Email",
+    "studentCode": "MSSV",
+    "department": "Phòng ban",
+    "position": "Chức vụ",
+    "nationality": "Quốc tịch",
+    "nationalityPlaceholder": "Tìm hoặc chọn quốc tịch...",
+    "campus": "Cơ sở",
+    "campusNotConfigured": "Chưa cấu hình",
+    "notUpdated": "Chưa cập nhật"
+  },
+  "gender": {
+    "MALE": "Nam",
+    "FEMALE": "Nữ",
+    "OTHER": "Khác"
+  },
+  "validation": {
+    "fullNameRequired": "Họ và tên không được để trống.",
+    "fullNameTooLong": "Họ và tên quá dài (tối đa 150 ký tự).",
+    "phoneInvalidChars": "Số điện thoại chỉ được chứa chữ số và các ký tự + - . ( ).",
+    "phoneLength": "Số điện thoại phải có từ 8 đến 15 chữ số."
+  },
+  "saveSuccess": "Cập nhật hồ sơ thành công.",
+  "saveError": "Không thể cập nhật hồ sơ. Vui lòng thử lại."
+}

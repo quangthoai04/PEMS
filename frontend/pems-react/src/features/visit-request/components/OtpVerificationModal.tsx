@@ -203,10 +203,10 @@ export const OtpVerificationModal: React.FC<Props> = ({
             </div>
 
             <h2 id="otp-dialog-title" className="text-2xl font-bold text-gray-900 text-center mb-2">
-              {t('visitRequest:otp.rateLimited.title', 'Chưa thể gửi mã xác thực')}
+              {t('visitRequest:otp.rateLimited.title')}
             </h2>
             <p className="text-sm text-gray-500 text-center mb-6">
-              {t('visitRequest:otp.rateLimited.desc', 'Bạn đã yêu cầu mã quá nhiều lần. Vui lòng quay lại sau khoảng thời gian đếm ngược dưới đây.')}
+              {t('visitRequest:otp.rateLimited.desc')}
             </p>
 
             <div className="mb-6 flex justify-center">

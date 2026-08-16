@@ -7,9 +7,11 @@
 // Đây là component layout bao bọc toàn bộ các trang trong khu vực quản trị (Dashboard)
 import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Sidebar } from '../dashboard/Sidebar';
 import { NotificationBellButton } from '../../features/notifications/components/NotificationBellButton';
 import { ForcedResponseGate } from '../../features/department-reception-tasks/components/ForcedResponseGate';
+import { useAuth } from '../../shared/hooks/useAuth';
 import { Menu } from 'lucide-react';
 import logo from '../../assets/images/2021-FPTU-Eng.png';
 
@@ -17,6 +19,12 @@ import logo from '../../assets/images/2021-FPTU-Eng.png';
 const SIDEBAR_COLLAPSED_KEY = 'pems_sidebar_collapsed';
 
 export function DashboardLayout() {
+  const { effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('publicLayout');
+  // Same VISITOR-only bilingual boundary as Sidebar.tsx's `tt` — every other role keeps
+  // reading Vietnamese regardless of the site-wide language setting.
+  const isVisitor = effectiveRole === 'VISITOR';
+  const tt = (key: string) => t(key, { lng: isVisitor ? i18n.language : 'vi' });
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   // Sidebar thu vào / mở ra (desktop) — persist qua localStorage để giữ sau reload.
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
@@ -51,11 +59,11 @@ export function DashboardLayout() {
           <button
             onClick={() => setIsMobileSidebarOpen(true)}
             className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            aria-label="Mở menu điều hướng"
+            aria-label={tt('sidebar.openNavMenu')}
           >
             <Menu className="w-6 h-6 text-[#004c91]" />
           </button>
-          <span className="font-bold text-[#004c91] text-base">Dashboard</span>
+          <span className="font-bold text-[#004c91] text-base">{tt('sidebar.dashboardTitle')}</span>
         </div>
         <div className="flex items-center gap-2">
           <NotificationBellButton variant="dashboard" />

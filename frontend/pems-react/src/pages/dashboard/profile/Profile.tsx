@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { motion } from 'motion/react';
 import {
   Edit2, Phone, School, ShieldCheck, User, Save, X, Mail, Briefcase, Globe, IdCard, Building2, CheckCircle2, AlertCircle, Camera, Loader2,
@@ -15,14 +16,23 @@ import { useProfile } from '../../../features/profile/hooks/useProfile';
 import { profileApi, validateAvatarFile } from '../../../features/profile/api/profileApi';
 import type { GenderValue, UpdateProfileRequest, ViewProfileResponse } from '../../../features/profile/types/profile.types';
 import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
-import { getViCountryNames } from '../../../shared/utils/countryNames';
+import { getViCountryNames, getEnCountryNames, countryNameToAlpha2 } from '../../../shared/utils/countryNames';
 import { getAuthErrorMessage } from '../../../features/authentication/api/authError';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { useAuth } from '../../../shared/hooks/useAuth';
 
-/** Chuyển mã alpha-2 (lưu trong DB) hoặc tên tiếng Anh về tên tiếng Việt để hiển thị. */
-function resolveNationalityLabel(value: string | null | undefined): string {
-  if (!value) return 'Chưa cập nhật';
+/**
+ * Chuyển mã alpha-2 (lưu trong DB) hoặc tên tiếng Anh về tên hiển thị theo `language` hiện tại.
+ * VI dùng tên ngắn thông dụng (Hoa Kỳ, Nhật Bản...); EN dùng tên official (đã là dạng lưu trong DB).
+ */
+function resolveNationalityLabel(value: string | null | undefined, language: 'vi' | 'en', notUpdatedLabel: string): string {
+  if (!value) return notUpdatedLabel;
+  if (language === 'en') {
+    const code = /^[A-Z]{2}$/.test(value) ? value : countryNameToAlpha2(value);
+    const enNames = getEnCountryNames();
+    if (code && enNames[code]) return enNames[code];
+    return value;
+  }
   const viNames = getViCountryNames();
   // Nếu value là mã alpha-2 (2 ký tự viết hoa)
   if (/^[A-Z]{2}$/.test(value) && viNames[value]) return viNames[value];
@@ -32,23 +42,6 @@ function resolveNationalityLabel(value: string | null | undefined): string {
   );
   if (found) return found[1];
   return value;
-}
-
-const GENDER_LABELS: Record<GenderValue, string> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
-
-/** Validate a phone number (optional field). Returns an error message, or null when valid.
- *  International-friendly: optional leading +, separators - . ( ) and spaces, 8–15 digits. */
-function validatePhone(raw: string): string | null {
-  const phone = raw.trim();
-  if (!phone) return null; // optional — empty clears it
-  if (!/^\+?[0-9\s.\-()]+$/.test(phone)) {
-    return 'Số điện thoại chỉ được chứa chữ số và các ký tự + - . ( ).';
-  }
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 8 || digits.length > 15) {
-    return 'Số điện thoại phải có từ 8 đến 15 chữ số.';
-  }
-  return null;
 }
 
 interface EditForm {
@@ -93,7 +86,15 @@ function syncLocalUser(updated: ViewProfileResponse) {
 export function Profile() {
   const navigate = useNavigate();
   const { profile, loading, error, update, applyAvatar } = useProfile();
-  const { updateUser } = useAuth();
+  const { updateUser, effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('profile');
+  // Same VISITOR-only bilingual boundary already established for Sidebar/DashboardLayout/Header:
+  // Profile is shared by every role, but only VISITOR ever switches the site language. Scoped off
+  // AuthContext's effectiveRole (known at login) rather than profile?.roleCode so the boundary still
+  // works while `profile` itself hasn't loaded yet (e.g. the load-error branch below).
+  const isVisitor = effectiveRole === 'VISITOR';
+  const language = (isVisitor ? i18n.language : 'vi') as 'vi' | 'en';
+  const tt = (key: string, options?: Record<string, unknown>) => t(key, { ...(options || {}), lng: language });
 
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<EditForm>({ fullName: '', gender: '', phone: '', nationality: '' });
@@ -114,8 +115,8 @@ export function Profile() {
 
   useEffect(() => {
     if (toast) {
-      const t = setTimeout(() => setToast(null), 3500);
-      return () => clearTimeout(t);
+      const timer = setTimeout(() => setToast(null), 3500);
+      return () => clearTimeout(timer);
     }
   }, [toast]);
 
@@ -159,15 +160,14 @@ export function Profile() {
       // Keep the preview shown (it equals what we just uploaded) so the avatar doesn't flash while
       // the authenticated blob for the new URL is (re)fetched. Only clear the pending state.
       setPendingFile(null);
-      setToast({ type: 'success', message: 'Cập nhật ảnh đại diện thành công.' });
+      setToast({ type: 'success', message: tt('avatar.successToast') });
     } catch (err) {
-      setToast({ type: 'error', message: getAuthErrorMessage(err, 'Không thể cập nhật ảnh đại diện. Vui lòng thử lại.') });
+      setToast({ type: 'error', message: getAuthErrorMessage(err, tt('avatar.errorToast')) });
     } finally {
       setUploadingAvatar(false);
     }
   };
 
-  const isVisitor = profile?.roleCode === 'VISITOR';
   const isStudent = profile?.roleCode === 'STUDENT';
   const isStaffOrDept = profile?.roleCode === 'STAFF' || profile?.roleCode === 'DEPARTMENT';
 
@@ -183,10 +183,20 @@ export function Profile() {
     setFieldErrors({});
   };
 
+  /** International-friendly: optional leading +, separators - . ( ) and spaces, 8-15 digits. */
+  const validatePhone = (raw: string): string | null => {
+    const phone = raw.trim();
+    if (!phone) return null; // optional — empty clears it
+    if (!/^\+?[0-9\s.\-()]+$/.test(phone)) return tt('validation.phoneInvalidChars');
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 8 || digits.length > 15) return tt('validation.phoneLength');
+    return null;
+  };
+
   const validate = (): boolean => {
     const errs: { fullName?: string; phone?: string } = {};
-    if (!form.fullName.trim()) errs.fullName = 'Họ và tên không được để trống.';
-    else if (form.fullName.trim().length > 150) errs.fullName = 'Họ và tên quá dài (tối đa 150 ký tự).';
+    if (!form.fullName.trim()) errs.fullName = tt('validation.fullNameRequired');
+    else if (form.fullName.trim().length > 150) errs.fullName = tt('validation.fullNameTooLong');
     const phoneErr = validatePhone(form.phone);
     if (phoneErr) errs.phone = phoneErr;
     setFieldErrors(errs);
@@ -208,10 +218,10 @@ export function Profile() {
       const updated = await update(payload);
       syncLocalUser(updated);
       setIsEditing(false);
-      setToast({ type: 'success', message: 'Cập nhật hồ sơ thành công.' });
+      setToast({ type: 'success', message: tt('saveSuccess') });
     } catch (err) {
       // Keep edit mode + entered data on failure.
-      setToast({ type: 'error', message: getAuthErrorMessage(err, 'Không thể cập nhật hồ sơ. Vui lòng thử lại.') });
+      setToast({ type: 'error', message: getAuthErrorMessage(err, tt('saveError')) });
     } finally {
       setSaving(false);
     }
@@ -244,13 +254,13 @@ export function Profile() {
       )}
 
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">
-        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">Dashboard</button>
+        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors">{tt('breadcrumb.dashboard')}</button>
         <span className="mx-2">/</span>
-        <span className="text-[#004c91]">Hồ sơ cá nhân</span>
+        <span className="text-[#004c91]">{tt('breadcrumb.profile')}</span>
       </div>
 
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#004c91]">Hồ sơ cá nhân</h1>
+        <h1 className="text-3xl font-bold text-[#004c91]">{tt('title')}</h1>
       </div>
 
       {loading ? (
@@ -258,7 +268,7 @@ export function Profile() {
       ) : error || !profile ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
           <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-500" />
-          <p className="font-medium text-red-700">{getAuthErrorMessage(error, 'Không thể tải hồ sơ cá nhân.')}</p>
+          <p className="font-medium text-red-700">{getAuthErrorMessage(error, tt('loadError'))}</p>
         </div>
       ) : (
         <div className="relative overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
@@ -272,7 +282,7 @@ export function Profile() {
                 className="absolute top-6 right-6 flex items-center gap-2 rounded-xl border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:bg-white/30"
               >
                 <Edit2 className="h-4 w-4" />
-                Chỉnh sửa hồ sơ
+                {tt('edit')}
               </button>
             )}
             {isEditing && (
@@ -283,7 +293,7 @@ export function Profile() {
                   className="flex items-center gap-1.5 rounded-xl border border-white/40 bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow-sm backdrop-blur-sm transition-all hover:bg-white/30 disabled:opacity-60"
                 >
                   <X className="h-4 w-4" />
-                  Hủy
+                  {tt('cancel')}
                 </button>
                 <button
                   onClick={handleSave}
@@ -291,7 +301,7 @@ export function Profile() {
                   className="flex items-center gap-1.5 rounded-xl border border-white bg-white px-4 py-2 text-sm font-bold text-[#004c91] shadow-sm transition-all hover:bg-gray-50 disabled:opacity-60"
                 >
                   <Save className="h-4 w-4" />
-                  {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
+                  {saving ? tt('saving') : tt('save')}
                 </button>
               </div>
             )}
@@ -303,7 +313,7 @@ export function Profile() {
               <div className="relative -mt-16 flex flex-shrink-0 flex-col items-center">
                 <div className="relative h-36 w-36">
                   <div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-full bg-gray-100 shadow-md">
-                    <img src={displayedAvatar} alt="Avatar" className="h-full w-full object-cover" />
+                    <img src={displayedAvatar} alt={tt('avatar.alt')} className="h-full w-full object-cover" />
                   </div>
 
                   {/* Loading overlay while uploading */}
@@ -318,7 +328,7 @@ export function Profile() {
                     <button
                       type="button"
                       onClick={handlePickAvatar}
-                      title="Đổi ảnh đại diện"
+                      title={tt('avatar.change')}
                       className="absolute bottom-1 right-1 flex h-10 w-10 items-center justify-center rounded-full border-2 border-white bg-[#004c91] text-white shadow-md transition-all hover:bg-[#0066c0]"
                     >
                       <Camera className="h-5 w-5" />
@@ -344,7 +354,7 @@ export function Profile() {
                       className="flex items-center gap-1.5 rounded-lg bg-[#004c91] px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#0066c0] disabled:opacity-60"
                     >
                       <Save className="h-3.5 w-3.5" />
-                      {uploadingAvatar ? 'Đang lưu...' : 'Lưu ảnh'}
+                      {uploadingAvatar ? tt('avatar.saving') : tt('avatar.save')}
                     </button>
                     <button
                       type="button"
@@ -353,7 +363,7 @@ export function Profile() {
                       className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-all hover:bg-gray-50 disabled:opacity-60"
                     >
                       <X className="h-3.5 w-3.5" />
-                      Hủy
+                      {tt('avatar.cancel')}
                     </button>
                   </div>
                 )}
@@ -361,7 +371,9 @@ export function Profile() {
                 <div className="mt-4 flex flex-col items-center">
                   <div className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-wide shadow-sm ${roleBadge}`}>
                     <ShieldCheck className="h-3.5 w-3.5" />
-                    {profile.displayRole}
+                    {/* Backend `displayRole` is Vietnamese-only prose; only VISITOR needs a localized
+                        label (same boundary as Sidebar's displayRole — see comment there). */}
+                    {isVisitor ? t('publicLayout:roles.VISITOR', { lng: language }) : profile.displayRole}
                   </div>
                 </div>
               </div>
@@ -388,55 +400,55 @@ export function Profile() {
                 {!isVisitor && (
                   <div className="mt-2 flex items-center gap-2 font-semibold text-[#f37021]">
                     <School className="h-5 w-5" />
-                    <span>Cơ sở: {profile.displayCampusName ?? 'Chưa cấu hình'}</span>
+                    <span>{tt('fields.campus')}: {profile.displayCampusName ?? tt('fields.campusNotConfigured')}</span>
                   </div>
                 )}
 
                 <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
                   {/* Giới tính */}
-                  <InfoCard icon={<User className="h-5 w-5" />} label="Giới tính">
+                  <InfoCard icon={<User className="h-5 w-5" />} label={tt('fields.gender')}>
                     {isEditing ? (
                       <select
                         value={form.gender}
                         onChange={(e) => setForm({ ...form, gender: e.target.value as GenderValue | '' })}
                         className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
                       >
-                        <option value="" disabled hidden>Chọn giới tính</option>
-                        <option value="MALE">Nam</option>
-                        <option value="FEMALE">Nữ</option>
-                        <option value="OTHER">Khác</option>
+                        <option value="" disabled hidden>{tt('fields.genderPlaceholder')}</option>
+                        <option value="MALE">{tt('gender.MALE')}</option>
+                        <option value="FEMALE">{tt('gender.FEMALE')}</option>
+                        <option value="OTHER">{tt('gender.OTHER')}</option>
                       </select>
                     ) : (
-                      <ValueText>{profile.gender ? GENDER_LABELS[profile.gender] : 'Chưa cập nhật'}</ValueText>
+                      <ValueText>{profile.gender ? tt(`gender.${profile.gender}`) : tt('fields.notUpdated')}</ValueText>
                     )}
                   </InfoCard>
 
                   {/* Số điện thoại */}
-                  <InfoCard icon={<Phone className="h-5 w-5" />} label="Số điện thoại">
+                  <InfoCard icon={<Phone className="h-5 w-5" />} label={tt('fields.phone')}>
                     {isEditing ? (
                       <>
                         <input
                           type="text"
                           value={form.phone}
                           onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                          placeholder="VD: 0912345678"
+                          placeholder={tt('fields.phonePlaceholder')}
                           className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
                         />
                         {fieldErrors.phone && <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>}
                       </>
                     ) : (
-                      <ValueText>{profile.phone || 'Chưa cập nhật'}</ValueText>
+                      <ValueText>{profile.phone || tt('fields.notUpdated')}</ValueText>
                     )}
                   </InfoCard>
 
                   {/* Email — readonly */}
-                  <InfoCard icon={<Mail className="h-5 w-5" />} label="Email" full>
+                  <InfoCard icon={<Mail className="h-5 w-5" />} label={tt('fields.email')} full>
                     <ValueText>{profile.email}</ValueText>
                   </InfoCard>
 
                   {/* MSSV — STUDENT */}
                   {isStudent && (
-                    <InfoCard icon={<IdCard className="h-5 w-5" />} label="MSSV" full>
+                    <InfoCard icon={<IdCard className="h-5 w-5" />} label={tt('fields.studentCode')} full>
                       <ValueText className="uppercase">{profile.studentCode || '—'}</ValueText>
                     </InfoCard>
                   )}
@@ -444,10 +456,10 @@ export function Profile() {
                   {/* Phòng ban + Chức vụ — STAFF / DEPARTMENT */}
                   {isStaffOrDept && (
                     <>
-                      <InfoCard icon={<Building2 className="h-5 w-5" />} label="Phòng ban">
+                      <InfoCard icon={<Building2 className="h-5 w-5" />} label={tt('fields.department')}>
                         <ValueText>{profile.displayDepartmentName || '—'}</ValueText>
                       </InfoCard>
-                      <InfoCard icon={<Briefcase className="h-5 w-5" />} label="Chức vụ">
+                      <InfoCard icon={<Briefcase className="h-5 w-5" />} label={tt('fields.position')}>
                         <ValueText>{profile.displayPosition || '—'}</ValueText>
                       </InfoCard>
                     </>
@@ -455,16 +467,16 @@ export function Profile() {
 
                   {/* Quốc tịch — chỉ VISITOR */}
                   {isVisitor && (
-                    <InfoCard icon={<Globe className="h-5 w-5" />} label="Quốc tịch" full>
+                    <InfoCard icon={<Globe className="h-5 w-5" />} label={tt('fields.nationality')} full>
                       {isEditing ? (
                         <CountrySelect
                           value={form.nationality ?? ''}
                           onChange={(v) => setForm({ ...form, nationality: v })}
-                          placeholder="Tìm hoặc chọn quốc tịch..."
+                          placeholder={tt('fields.nationalityPlaceholder')}
                           storeLang="en"
                         />
                       ) : (
-                        <ValueText>{resolveNationalityLabel(profile.nationality)}</ValueText>
+                        <ValueText>{resolveNationalityLabel(profile.nationality, language, tt('fields.notUpdated'))}</ValueText>
                       )}
                     </InfoCard>
                   )}

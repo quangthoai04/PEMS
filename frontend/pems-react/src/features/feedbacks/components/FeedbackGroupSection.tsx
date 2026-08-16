@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Info } from 'lucide-react';
 import { FeedbackTargetRow, type FeedbackDraft } from './FeedbackTargetRow';
 import type { FeedbackGroup } from '../types/visitFeedback.types';
@@ -20,6 +21,7 @@ interface Props {
  * Group "Đoàn khách" hoặc chỉ có 1 target sẽ hiển thị 1 cột toàn chiều rộng.
  */
 export function FeedbackGroupSection({ group, startIndex, drafts, disabled, forceShowComment, onRate, onChangeComment }: Props) {
+  const { t } = useTranslation('feedback');
   // Dùng 2 cột nếu group có >1 target và không phải group "Đoàn khách" chung
   const useGrid = group.targets.length > 1 && group.groupCode !== 'DELEGATION';
 
@@ -28,7 +30,7 @@ export function FeedbackGroupSection({ group, startIndex, drafts, disabled, forc
       {/* Header group */}
       <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
         <h3 className="text-[13px] font-bold text-[#004c91]">{group.title}</h3>
-        <span className="text-[11px] font-semibold text-slate-400">{group.targets.length} mục</span>
+        <span className="text-[11px] font-semibold text-slate-400">{t('targetCount', { count: group.targets.length })}</span>
       </div>
 
       {/* Info note nếu có */}

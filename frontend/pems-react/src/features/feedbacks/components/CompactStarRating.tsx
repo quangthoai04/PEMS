@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Star } from 'lucide-react';
 
 interface Props {
@@ -11,9 +12,10 @@ interface Props {
 
 /** Rating sao 1–5 dạng compact, đủ lớn để bấm trên mobile. */
 export function CompactStarRating({ value, onChange, readOnly = false, size = 'sm' }: Props) {
+  const { t } = useTranslation('feedback');
   const px = size === 'sm' ? 'w-4.5 h-4.5 w-[18px] h-[18px]' : 'w-6 h-6';
   return (
-    <div className="inline-flex items-center gap-0.5" role="radiogroup" aria-label="Đánh giá sao">
+    <div className="inline-flex items-center gap-0.5" role="radiogroup" aria-label={t('starRating.groupLabel')}>
       {[1, 2, 3, 4, 5].map((star) => {
         const filled = star <= value;
         return (
@@ -22,7 +24,7 @@ export function CompactStarRating({ value, onChange, readOnly = false, size = 's
             type="button"
             role="radio"
             aria-checked={star === value}
-            aria-label={`${star} sao`}
+            aria-label={t('starRating.starLabel', { count: star })}
             disabled={readOnly}
             onClick={() => onChange?.(star)}
             className={`p-0.5 outline-none ${readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110 transition-transform'}`}

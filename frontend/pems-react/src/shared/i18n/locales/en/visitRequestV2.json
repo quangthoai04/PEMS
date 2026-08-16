@@ -57,6 +57,8 @@
     "removeSupport": "Remove support member"
   },
   "card": {
+    "collapse": "Collapse",
+    "expand": "Expand",
     "cardN": "Campus {{n}}",
     "unselectedCampus": "No campus selected",
     "errorBadge": "{{count}} error(s)",
@@ -755,6 +757,56 @@
     "statePending": "No request was created — the verification session is still open. Go back to the form and enter the code to finish.",
     "stateFailed": "This submission ended without creating a request. Go back to the form and submit again.",
     "stateNotFound": "No trace of this submission was found. Nothing was created — go back to the form and submit again."
+  },
+  "contactInvitation": {
+    "claim": {
+      "title": "Operational Contact Invitation",
+      "intro": "You have been designated as the operational contact for the visit request below.",
+      "acceptCta": "Accept the contact role",
+      "windowNote": "This invitation is valid for 72 hours from when it was sent."
+    },
+    "transfer": {
+      "title": "Invitation to Take Over the Contact Role",
+      "intro": "You are being asked to TAKE OVER the operational contact role from the current contact. The current contact keeps all rights until you confirm.",
+      "acceptCta": "Accept the role transfer",
+      "windowNote": "This invitation is valid for 24 hours from when it was sent."
+    },
+    "fields": {
+      "requestCode": "Request code",
+      "delegation": "Delegation",
+      "invitedEmail": "Invited email",
+      "campus": "Campus",
+      "expiresAt": "Valid until"
+    },
+    "status": {
+      "APPLIED": "This invitation has already been accepted.",
+      "DECLINED": "This invitation has been declined.",
+      "EXPIRED": "This invitation has expired. Please ask the registrant to send a new one.",
+      "CANCELLED": "This invitation has been cancelled.",
+      "SUPERSEDED": "This invitation has been replaced by a newer one — please use the link in the latest email.",
+      "INVALID": "This link is invalid or no longer exists."
+    },
+    "actions": {
+      "goToManagement": "Go to my visit requests",
+      "declineReasonLabel": "Reason for declining (optional)",
+      "confirmDecline": "Confirm decline",
+      "processing": "Processing…",
+      "noActionAvailable": "This link cannot perform any action right now. Please reopen the link in the latest email, or ask the registrant to resend the invitation."
+    },
+    "auth": {
+      "signedInAs": "Signed in as: {{identity}}. If this is not the invited email, please sign out and sign in with the correct account before confirming.",
+      "anonymousNote": "You do not need to sign in to answer this invitation — the link in the email already identifies the recipient ({{email}}) and can only be used once.",
+      "loginCta": "Or sign in with Google (if you already have a PEMS account)",
+      "currentAccountFallback": "current account"
+    },
+    "outcome": {
+      "acceptSuccessClaim": "You are now the operational contact for this request.",
+      "acceptSuccessTransfer": "You have taken over the operational contact role.",
+      "declineSuccess": "You have declined this invitation.",
+      "genericError": "Could not process this invitation. Please check your signed-in account and try again."
+    },
+    "loading": "Loading invitation…",
+    "invalidBanner": "This link is invalid or no longer exists."
   },
   "operationalContact": {
     "title": "Guest Delegation Coordination Contact at Campus",

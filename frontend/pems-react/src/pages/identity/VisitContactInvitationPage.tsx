@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../shared/hooks/useAuth';
 import {
   acceptOperationalContactInvitation,
@@ -9,6 +10,10 @@ import {
   getOperationalContactInvitationInfo,
   type OperationalContactInvitationInfo,
 } from '../../features/visit-request/api/visitRequestV2Api';
+import { getApiErrorMessage } from '../../shared/utils/toast';
+import { formatLocalizedDateTime, type UiLanguage } from '../../shared/utils/vietnamTime';
+
+const INVITATION_STATUS_KEYS = new Set(['APPLIED', 'DECLINED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED', 'INVALID']);
 
 type InvitationKind = 'claim' | 'transfer';
 
@@ -34,6 +39,8 @@ type Info = OperationalContactInvitationInfo;
  * address exactly. Possession of a token proves nothing on its own.
  */
 export default function VisitContactInvitationPage({ kind }: Props) {
+  const { t, i18n } = useTranslation('visitRequestV2');
+  const language = i18n.language as UiLanguage;
   const { token = '' } = useParams();
   const navigate = useNavigate();
   const { isAuthenticated, user } = useAuth();
@@ -74,19 +81,18 @@ export default function VisitContactInvitationPage({ kind }: Props) {
     () =>
       effectiveKind === 'claim'
         ? {
-            title: 'Lời mời làm đầu mối liên hệ',
-            intro: 'Bạn được chỉ định làm đầu mối liên hệ cho đơn đăng ký tham quan dưới đây.',
-            acceptCta: 'Đồng ý làm đầu mối',
-            windowNote: 'Lời mời có hiệu lực 72 giờ kể từ khi gửi.',
+            title: t('contactInvitation.claim.title'),
+            intro: t('contactInvitation.claim.intro'),
+            acceptCta: t('contactInvitation.claim.acceptCta'),
+            windowNote: t('contactInvitation.claim.windowNote'),
           }
         : {
-            title: 'Lời mời tiếp nhận vai trò đầu mối',
-            intro:
-              'Bạn được đề nghị TIẾP NHẬN vai trò đầu mối liên hệ thay cho đầu mối hiện tại. Đầu mối hiện tại vẫn giữ nguyên quyền cho tới khi bạn xác nhận.',
-            acceptCta: 'Đồng ý tiếp nhận vai trò',
-            windowNote: 'Lời mời có hiệu lực 24 giờ kể từ khi gửi.',
+            title: t('contactInvitation.transfer.title'),
+            intro: t('contactInvitation.transfer.intro'),
+            acceptCta: t('contactInvitation.transfer.acceptCta'),
+            windowNote: t('contactInvitation.transfer.windowNote'),
           },
-    [effectiveKind],
+    [effectiveKind, t],
   );
 
   const loadInfo = useCallback(async () => {
@@ -115,40 +121,32 @@ export default function VisitContactInvitationPage({ kind }: Props) {
       // the authorization. The invited person is usually an external guest with no PEMS account, and
       // demanding one before they may answer is why invitations went unanswered and campuses stayed
       // behind the confirmation gate.
-      const result = action === 'accept'
+      await (action === 'accept'
         ? (isAuthenticated
-            ? await acceptOperationalContactInvitation(token)
-            : await publicAcceptOperationalContactInvitation(token))
+            ? acceptOperationalContactInvitation(token)
+            : publicAcceptOperationalContactInvitation(token))
         : (isAuthenticated
-            ? await declineOperationalContactInvitation(token, declineReason || undefined)
-            : await publicDeclineOperationalContactInvitation(token, declineReason || undefined));
-      setOutcome({ ok: action === 'accept', message: result.message });
+            ? declineOperationalContactInvitation(token, declineReason || undefined)
+            : publicDeclineOperationalContactInvitation(token, declineReason || undefined)));
+      const successMessage =
+        action === 'accept'
+          ? t(effectiveKind === 'transfer' ? 'contactInvitation.outcome.acceptSuccessTransfer' : 'contactInvitation.outcome.acceptSuccessClaim')
+          : t('contactInvitation.outcome.declineSuccess');
+      setOutcome({ ok: action === 'accept', message: successMessage });
     } catch (err: unknown) {
-      const message =
-        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        'Không thể xử lý lời mời. Vui lòng kiểm tra tài khoản đăng nhập và thử lại.';
-      setOutcome({ ok: false, message });
+      setOutcome({ ok: false, message: getApiErrorMessage(err, t('contactInvitation.outcome.genericError')) });
     } finally {
       setSubmitting(false);
     }
   };
 
-  const statusBanner = (status: string) => {
-    const map: Record<string, string> = {
-      APPLIED: 'Lời mời này đã được chấp nhận trước đó.',
-      DECLINED: 'Lời mời này đã bị từ chối.',
-      EXPIRED: 'Lời mời đã hết hạn. Vui lòng đề nghị người đăng ký gửi lại lời mời mới.',
-      CANCELLED: 'Lời mời đã bị hủy.',
-      SUPERSEDED: 'Lời mời này đã được thay bằng một lời mời mới hơn — hãy dùng liên kết trong email mới nhất.',
-      INVALID: 'Liên kết không hợp lệ hoặc không còn tồn tại.',
-    };
-    return map[status] ?? null;
-  };
+  const statusBanner = (status: string): string | null =>
+    INVITATION_STATUS_KEYS.has(status) ? t(`contactInvitation.status.${status}`) : null;
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <p className="text-gray-500" role="status">Đang tải lời mời…</p>
+        <p className="text-gray-500" role="status">{t('contactInvitation.loading')}</p>
       </div>
     );
   }
@@ -161,7 +159,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
 
         {!info || info.status === 'INVALID' ? (
           <div className="mt-6 rounded-lg bg-red-50 dark:bg-red-900/30 p-4 text-sm text-red-700 dark:text-red-300" role="alert">
-            Liên kết không hợp lệ hoặc không còn tồn tại.
+            {t('contactInvitation.invalidBanner')}
           </div>
         ) : outcome ? (
           <div
@@ -175,7 +173,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                 className="mt-4 block w-full rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700"
                 onClick={() => navigate('/dashboard/visit')}
               >
-                Vào trang quản lý đơn
+                {t('contactInvitation.actions.goToManagement')}
               </button>
             )}
           </div>
@@ -183,30 +181,30 @@ export default function VisitContactInvitationPage({ kind }: Props) {
           <>
             <dl className="mt-6 space-y-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 p-4 text-sm">
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500 dark:text-gray-400">Mã đơn</dt>
+                <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.requestCode')}</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{info.requestCode ?? '—'}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500 dark:text-gray-400">Đoàn khách</dt>
+                <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.delegation')}</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{info.delegationName ?? '—'}</dd>
               </div>
               <div className="flex justify-between gap-4">
-                <dt className="text-gray-500 dark:text-gray-400">Email được mời</dt>
+                <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.invitedEmail')}</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{info.maskedEmail ?? '—'}</dd>
               </div>
               {/* The campus this invitation is about. It is the whole point of a per-campus
                   invitation: accepting binds the recipient to THIS campus and no other. */}
               {info.campusName ? (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500 dark:text-gray-400">Cơ sở</dt>
+                  <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.campus')}</dt>
                   <dd className="font-medium text-gray-900 dark:text-gray-100">{info.campusName}</dd>
                 </div>
               ) : null}
               {info.expiresAt && (
                 <div className="flex justify-between gap-4">
-                  <dt className="text-gray-500 dark:text-gray-400">Hiệu lực đến</dt>
+                  <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.expiresAt')}</dt>
                   <dd className="font-medium text-gray-900 dark:text-gray-100">
-                    {new Date(info.expiresAt).toLocaleString('vi-VN')}
+                    {formatLocalizedDateTime(info.expiresAt, language)}
                   </dd>
                 </div>
               )}
@@ -223,8 +221,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                  a button the token cannot honour is worse than no button: it spends the reader's one
                  attempt and answers them with an error about a link that is perfectly valid. */
               <div className="mt-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 p-4 text-sm text-amber-800 dark:text-amber-200" role="alert">
-                Liên kết này hiện không thực hiện được thao tác nào. Vui lòng mở lại liên kết trong email mới
-                nhất, hoặc đề nghị người đăng ký gửi lại lời mời.
+                {t('contactInvitation.actions.noActionAvailable')}
               </div>
             ) : (
               <div className="mt-6 space-y-3">
@@ -235,21 +232,21 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                     nhận. Ai đã có tài khoản PEMS thì vẫn đi đường đăng nhập như cũ. */}
                 {isAuthenticated ? (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Đang đăng nhập: <b>{user?.email ?? user?.fullName ?? 'tài khoản hiện tại'}</b>. Nếu đây không phải
-                    email được mời, hãy đăng xuất và đăng nhập đúng tài khoản trước khi xác nhận.
+                    {t('contactInvitation.auth.signedInAs', {
+                      identity: user?.email ?? user?.fullName ?? t('contactInvitation.auth.currentAccountFallback'),
+                    })}
                   </p>
                 ) : (
                   <div className="space-y-2">
                     <p className="text-sm text-gray-600 dark:text-gray-300" role="note">
-                      Bạn <b>không cần đăng nhập</b> để trả lời lời mời này — liên kết trong email đã xác định
-                      người nhận ({info.maskedEmail}) và chỉ dùng được một lần.
+                      {t('contactInvitation.auth.anonymousNote', { email: info.maskedEmail ?? '' })}
                     </p>
                     <button
                       type="button"
                       className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
                       onClick={() => navigate(`/?login=true&returnUrl=${encodeURIComponent(window.location.pathname)}`)}
                     >
-                      Hoặc đăng nhập bằng Google (nếu bạn đã có tài khoản PEMS)
+                      {t('contactInvitation.auth.loginCta')}
                     </button>
                   </div>
                 )}
@@ -259,7 +256,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                 {mutationAction === 'DECLINE' ? (
                   <div className="space-y-2">
                     <label htmlFor="decline-reason" className="text-sm text-gray-600 dark:text-gray-300">
-                      Lý do từ chối (không bắt buộc)
+                      {t('contactInvitation.actions.declineReasonLabel')}
                     </label>
                     <textarea
                       id="decline-reason"
@@ -275,7 +272,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                       className="w-full rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700 disabled:opacity-50"
                       onClick={() => void act('decline')}
                     >
-                      {submitting ? 'Đang xử lý…' : 'Xác nhận từ chối'}
+                      {submitting ? t('contactInvitation.actions.processing') : t('contactInvitation.actions.confirmDecline')}
                     </button>
                   </div>
                 ) : (
@@ -285,7 +282,7 @@ export default function VisitContactInvitationPage({ kind }: Props) {
                     className="w-full rounded-lg bg-orange-600 px-4 py-2 font-medium text-white hover:bg-orange-700 disabled:opacity-50"
                     onClick={() => void act('accept')}
                   >
-                    {submitting ? 'Đang xử lý…' : labels.acceptCta}
+                    {submitting ? t('contactInvitation.actions.processing') : labels.acceptCta}
                   </button>
                 )}
               </div>

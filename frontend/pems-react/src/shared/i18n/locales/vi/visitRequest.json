@@ -251,6 +251,10 @@
     "validity": "Mã có hiệu lực trong 5 phút. Không chia sẻ mã với bất kỳ ai.",
     "remainingAttempts": "Còn {{count}} lần thử",
     "retryIn": "Vui lòng thử lại sau {{count}} giây",
+    "rateLimited": {
+      "title": "Chưa thể gửi mã xác thực",
+      "desc": "Bạn đã yêu cầu mã quá nhiều lần. Vui lòng quay lại sau khoảng thời gian đếm ngược dưới đây."
+    },
     "human": {
       "title": "Xác minh bạn không phải robot",
       "desc": "Bạn đã nhập sai mã quá nhiều lần. Vui lòng hoàn thành bước xác minh bên dưới để nhận mã mới.",

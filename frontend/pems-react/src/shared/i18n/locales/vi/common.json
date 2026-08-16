@@ -1,4 +1,28 @@
 {
+  "relativeTime": {
+    "justNow": "Vừa xong",
+    "minutesAgo_one": "{{count}} phút trước",
+    "minutesAgo_other": "{{count}} phút trước",
+    "hoursAgo_one": "{{count}} giờ trước",
+    "hoursAgo_other": "{{count}} giờ trước",
+    "daysAgo_one": "{{count}} ngày trước",
+    "daysAgo_other": "{{count}} ngày trước"
+  },
+  "confirmEmail": {
+    "pageTitle": "Xác nhận email tài khoản PEMS",
+    "loading": "Đang xác nhận email của bạn…",
+    "missingToken": "Liên kết xác nhận không hợp lệ (thiếu mã xác nhận).",
+    "successTitle": "Xác nhận thành công",
+    "alreadyConfirmedTitle": "Email đã được xác nhận",
+    "expiredTitle": "Liên kết đã hết hạn",
+    "expiredHint": "Vui lòng liên hệ quản trị để được gửi lại email xác nhận.",
+    "invalidTitle": "Liên kết không hợp lệ",
+    "errorTitle": "Không thể xác nhận",
+    "errorTransient": "Không thể kết nối máy chủ để xác nhận. Vui lòng thử lại.",
+    "errorGeneric": "Đã xảy ra lỗi khi xác nhận email.",
+    "retry": "Thử lại",
+    "backHome": "Về trang chủ"
+  },
   "asyncState": {
     "loading": "Đang tải…",
     "retry": "Thử lại",

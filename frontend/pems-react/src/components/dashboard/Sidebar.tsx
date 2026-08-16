@@ -117,9 +117,11 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
   // effective role (STAFF_LEADER, DEPARTMENT_LEAD, ...): it is the label users already know,
   // and this card is cosmetic. Changing it would alter the UI for Staff Leader and Department
   // Lead without any security benefit.
-  const displayName = authUser?.fullName ?? "Khách";
+  const displayName = authUser?.fullName ?? tt('publicLayout:sidebar.guestName');
   const displayCampus = authUser?.campusName ?? authUser?.campusCode ?? "Không rõ";
-  const displayRole = authUser?.roleCode ?? "GUEST";
+  // Every other role intentionally shows the raw roleCode (see comment above) — only VISITOR is
+  // ever shown to an audience that switches language, so only VISITOR gets a localized label.
+  const displayRole = isVisitor ? tt('publicLayout:roles.VISITOR') : (authUser?.roleCode ?? "GUEST");
 
   // Avatar comes from the shared AuthContext so it updates reactively right after an upload.
   // It lives behind an authenticated endpoint, so fetch it as a blob; fall back to the default.
@@ -187,7 +189,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
           <button
             onClick={onCloseMobile}
             className="absolute top-4 right-4 p-2 text-gray-500 hover:bg-gray-100 rounded-full lg:hidden"
-            aria-label="Đóng menu"
+            aria-label={tt('publicLayout:sidebar.closeMenu')}
           >
             <X className="w-5 h-5 text-gray-600" />
           </button>
@@ -199,8 +201,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
           <button
             onClick={onToggleCollapsed}
             className="hidden lg:flex absolute -right-4 top-1/2 -translate-y-1/2 z-50 h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-md hover:text-[#004c91] hover:border-[#004c91]/40 hover:bg-blue-50 transition-all focus:outline-none focus:ring-2 focus:ring-[#004c91]/20"
-            aria-label={collapsed ? "Mở rộng menu" : "Thu gọn menu"}
-            title={collapsed ? "Mở rộng menu" : "Thu gọn menu"}
+            aria-label={collapsed ? tt('publicLayout:sidebar.expandMenu') : tt('publicLayout:sidebar.collapseMenu')}
+            title={collapsed ? tt('publicLayout:sidebar.expandMenu') : tt('publicLayout:sidebar.collapseMenu')}
           >
             {collapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
@@ -209,7 +211,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
         {/* Logo — click to go back to the public home page. Khi thu gọn: logo nhỏ + đẩy menu
             xuống thấp hơn (mb lớn hơn) để icon không dính sát logo. */}
         <div className={`flex justify-center flex-shrink-0 ${collapsed ? "px-2 mb-10 mt-2" : "px-6 mb-8"}`}>
-          <Link to="/" className="block cursor-pointer" aria-label="Về trang chủ" title="Về trang chủ">
+          <Link to="/" className="block cursor-pointer" aria-label={tt('publicLayout:sidebar.backToHome')} title={tt('publicLayout:sidebar.backToHome')}>
             <img src={logo} alt="FPT University" className={`${collapsed ? "h-10" : "h-20"} object-contain transition-all duration-300`} />
           </Link>
         </div>

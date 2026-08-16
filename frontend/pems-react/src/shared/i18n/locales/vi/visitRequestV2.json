@@ -57,6 +57,8 @@
     "removeSupport": "Xóa nhân sự hỗ trợ"
   },
   "card": {
+    "collapse": "Thu gọn",
+    "expand": "Mở rộng",
     "cardN": "Cơ sở {{n}}",
     "unselectedCampus": "Chưa chọn cơ sở",
     "errorBadge": "{{count}} lỗi",
@@ -755,6 +757,56 @@
     "statePending": "Đơn chưa được tạo — phiên xác minh vẫn còn hiệu lực. Anh/chị có thể quay lại form và nhập mã để hoàn tất.",
     "stateFailed": "Phiên gửi đơn này đã kết thúc mà không tạo được đơn. Vui lòng quay lại form và gửi lại.",
     "stateNotFound": "Không tìm thấy dấu vết của lần gửi này. Đơn chưa được tạo — anh/chị có thể quay lại form và gửi lại."
+  },
+  "contactInvitation": {
+    "claim": {
+      "title": "Lời mời làm đầu mối liên hệ",
+      "intro": "Bạn được chỉ định làm đầu mối liên hệ cho đơn đăng ký tham quan dưới đây.",
+      "acceptCta": "Đồng ý làm đầu mối",
+      "windowNote": "Lời mời có hiệu lực 72 giờ kể từ khi gửi."
+    },
+    "transfer": {
+      "title": "Lời mời tiếp nhận vai trò đầu mối",
+      "intro": "Bạn được đề nghị TIẾP NHẬN vai trò đầu mối liên hệ thay cho đầu mối hiện tại. Đầu mối hiện tại vẫn giữ nguyên quyền cho tới khi bạn xác nhận.",
+      "acceptCta": "Đồng ý tiếp nhận vai trò",
+      "windowNote": "Lời mời có hiệu lực 24 giờ kể từ khi gửi."
+    },
+    "fields": {
+      "requestCode": "Mã đơn",
+      "delegation": "Đoàn khách",
+      "invitedEmail": "Email được mời",
+      "campus": "Cơ sở",
+      "expiresAt": "Hiệu lực đến"
+    },
+    "status": {
+      "APPLIED": "Lời mời này đã được chấp nhận trước đó.",
+      "DECLINED": "Lời mời này đã bị từ chối.",
+      "EXPIRED": "Lời mời đã hết hạn. Vui lòng đề nghị người đăng ký gửi lại lời mời mới.",
+      "CANCELLED": "Lời mời đã bị hủy.",
+      "SUPERSEDED": "Lời mời này đã được thay bằng một lời mời mới hơn — hãy dùng liên kết trong email mới nhất.",
+      "INVALID": "Liên kết không hợp lệ hoặc không còn tồn tại."
+    },
+    "actions": {
+      "goToManagement": "Vào trang quản lý đơn",
+      "declineReasonLabel": "Lý do từ chối (không bắt buộc)",
+      "confirmDecline": "Xác nhận từ chối",
+      "processing": "Đang xử lý…",
+      "noActionAvailable": "Liên kết này hiện không thực hiện được thao tác nào. Vui lòng mở lại liên kết trong email mới nhất, hoặc đề nghị người đăng ký gửi lại lời mời."
+    },
+    "auth": {
+      "signedInAs": "Đang đăng nhập: {{identity}}. Nếu đây không phải email được mời, hãy đăng xuất và đăng nhập đúng tài khoản trước khi xác nhận.",
+      "anonymousNote": "Bạn không cần đăng nhập để trả lời lời mời này — liên kết trong email đã xác định người nhận ({{email}}) và chỉ dùng được một lần.",
+      "loginCta": "Hoặc đăng nhập bằng Google (nếu bạn đã có tài khoản PEMS)",
+      "currentAccountFallback": "tài khoản hiện tại"
+    },
+    "outcome": {
+      "acceptSuccessClaim": "Bạn đã trở thành đầu mối liên hệ cho đơn này.",
+      "acceptSuccessTransfer": "Bạn đã tiếp nhận vai trò đầu mối liên hệ.",
+      "declineSuccess": "Bạn đã từ chối lời mời này.",
+      "genericError": "Không thể xử lý lời mời. Vui lòng kiểm tra tài khoản đăng nhập và thử lại."
+    },
+    "loading": "Đang tải lời mời…",
+    "invalidBanner": "Liên kết không hợp lệ hoặc không còn tồn tại."
   },
   "operationalContact": {
     "title": "Đầu mối đoàn khách phối hợp tại cơ sở",

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   MapPin, User, Mail, Phone, Calendar, Clock, Star, AlertCircle,
   Building, Globe, Briefcase, Car, Users, MessageSquare, ShieldCheck, CheckCircle2,
@@ -8,8 +9,14 @@ import {
 import { VisitorNotification, VisitorPublicNewsListItem } from '../../../features/delegations/types/delegations.types';
 import { VisitProcessDetail, VisitProcessPermission } from '../../../features/delegations/types/delegations.types';
 import { format } from 'date-fns';
-import { vi } from 'date-fns/locale';
+import { vi, enUS } from 'date-fns/locale';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
+
+/** Visitor-only page (never rendered for Staff/HO/Department) — full bilingual, no role scoping needed. */
+function useDateLocale() {
+  const { i18n } = useTranslation();
+  return i18n.language?.startsWith('en') ? enUS : vi;
+}
 
 interface VisitorVisitDetailPageProps {
   perm: VisitProcessPermission | null;
@@ -21,12 +28,13 @@ interface VisitorVisitDetailPageProps {
 // ─────────────────────────────────────────────────────────────────────────────
 export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation('visitorVisitDetail');
 
   if (!detail || !perm) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-500 font-medium">Đang tải thông tin chuyến thăm...</p>
+        <p className="text-gray-500 font-medium">{t('loading')}</p>
       </div>
     );
   }
@@ -41,13 +49,13 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
           <AlertCircle className="w-8 h-8 text-slate-400" />
         </div>
-        <h2 className="text-xl font-bold text-slate-800 mb-2">Chuyến thăm chưa được phân công người phụ trách</h2>
-        <p className="text-slate-500 mb-6 max-w-md">Vui lòng quay lại trang Đơn tham quan của tôi để xem trạng thái đơn.</p>
-        <button 
+        <h2 className="text-xl font-bold text-slate-800 mb-2">{t('noHost.title')}</h2>
+        <p className="text-slate-500 mb-6 max-w-md">{t('noHost.desc')}</p>
+        <button
           onClick={() => navigate(-1)}
           className="px-6 py-2.5 bg-[#004c91] text-white font-bold rounded-xl shadow-sm hover:bg-[#003b70] transition-colors"
         >
-          Quay lại
+          {t('noHost.back')}
         </button>
       </div>
     );
@@ -145,31 +153,21 @@ const SectionTitle = ({ index, children }: { index?: number; children: React.Rea
 
 function VisitorBreadcrumb() {
   const navigate = useNavigate();
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-2">
-      <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
+      <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">{t('breadcrumb.dashboard')}</button>
       <ChevronRight className="w-4 h-4" />
-      <button onClick={() => navigate(-1)} className="hover:text-[#004c91] transition-colors outline-none">Đơn tham quan của tôi</button>
+      <button onClick={() => navigate(-1)} className="hover:text-[#004c91] transition-colors outline-none">{t('breadcrumb.myRequests')}</button>
       <ChevronRight className="w-4 h-4" />
-      <span className="text-[#004c91] font-bold">Chi tiết chuyến thăm</span>
+      <span className="text-[#004c91] font-bold">{t('breadcrumb.detail')}</span>
     </div>
   );
 }
 
 function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'ASSIGNED':
-      case 'BEFORE_VISIT': return 'Đã xác nhận lịch tham quan';
-      case 'DURING_VISIT': return 'Chuyến thăm đang diễn ra';
-      case 'AFTER_VISIT': return 'Chuyến thăm đã kết thúc';
-      case 'CLOSED': return 'Chuyến thăm đã hoàn tất';
-      case 'CANCELLED': return 'Đã hủy';
-      default: return status;
-    }
-  };
-
-  const statusText = getStatusText(detail.instanceStatus);
+  const { t } = useTranslation('visitorVisitDetail');
+  const statusText = t(`status.${detail.instanceStatus}`, { defaultValue: detail.instanceStatus });
 
   return (
     <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -184,7 +182,7 @@ function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
         )}
       </div>
       <h1 className="text-xl lg:text-2xl font-black leading-tight text-slate-900">
-        Đoàn {detail.delegationName}
+        {t('hero.delegationPrefix', { name: detail.delegationName })}
       </h1>
     </div>
   );
@@ -192,59 +190,47 @@ function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
 
 function VisitorContactStrip({ detail }: { detail: VisitProcessDetail }) {
   const host = detail.host;
-  
+  const { t } = useTranslation('visitorVisitDetail');
+  const dateLocale = useDateLocale();
+
   if (!host) {
     return (
       <section className="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 text-center">
-        <p className="text-slate-500 font-medium italic">Nhà trường đang sắp xếp người phụ trách tiếp đón phù hợp. Thông tin sẽ hiển thị tại đây khi được phân công.</p>
+        <p className="text-slate-500 font-medium italic">{t('hostSection.waitingHost')}</p>
       </section>
     );
   }
 
   const formatVisitTime = (start?: string | null, end?: string | null) => {
-    if (!start) return 'Chưa xác định';
-    const s = format(new Date(start), 'HH:mm dd/MM', { locale: vi });
-    const e = end ? format(new Date(end), 'HH:mm dd/MM', { locale: vi }) : '...';
+    if (!start) return t('hostSection.timeUnknown');
+    const s = format(new Date(start), 'HH:mm dd/MM', { locale: dateLocale });
+    const e = end ? format(new Date(end), 'HH:mm dd/MM', { locale: dateLocale }) : '...';
     return `${s} - ${e}`;
   };
 
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Người phụ trách tiếp đón</SectionTitle>
+      <SectionTitle>{t('hostSection.title')}</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-        <KV label="Họ và tên" value={host.fullName} />
-        <KV label="Đơn vị" value={host.departmentName} />
-        <KV label="Email" value={host.email} />
-        <KV label="Số điện thoại" value={host.phone} />
-        <KV label="Cơ sở tham quan" value={detail.campusName} />
-        <KV label="Thời gian" value={formatVisitTime(detail.plannedStartAt, detail.plannedEndAt)} />
+        <KV label={t('hostSection.fullName')} value={host.fullName} />
+        <KV label={t('hostSection.department')} value={host.departmentName} />
+        <KV label={t('hostSection.email')} value={host.email} />
+        <KV label={t('hostSection.phone')} value={host.phone} />
+        <KV label={t('hostSection.campus')} value={detail.campusName} />
+        <KV label={t('hostSection.time')} value={formatVisitTime(detail.plannedStartAt, detail.plannedEndAt)} />
       </div>
     </section>
   );
 }
 
 function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
+  const { t } = useTranslation('visitorVisitDetail');
   const status = detail.instanceStatus;
   if (status === 'CANCELLED') return null;
 
-  let text = '';
-  switch (status) {
-    case 'ASSIGNED':
-    case 'BEFORE_VISIT':
-      text = 'Lịch tham quan của bạn đã được xác nhận. Vui lòng theo dõi lịch trình và liên hệ người phụ trách nếu có thay đổi.';
-      break;
-    case 'DURING_VISIT':
-      text = 'Chuyến thăm đang diễn ra. Vui lòng liên hệ người phụ trách nếu cần hỗ trợ.';
-      break;
-    case 'AFTER_VISIT':
-      text = 'Chuyến thăm đã kết thúc. Xin chân thành cảm ơn sự quan tâm của bạn dành cho FPT University.';
-      break;
-    case 'CLOSED':
-      text = 'Chuyến thăm đã hoàn tất. Cảm ơn bạn đã ghé thăm FPT University.';
-      break;
-    default:
-      text = 'Vui lòng theo dõi thông tin cập nhật mới nhất từ hệ thống.';
-  }
+  const text = ['ASSIGNED', 'BEFORE_VISIT', 'DURING_VISIT', 'AFTER_VISIT', 'CLOSED'].includes(status)
+    ? t(`nextStep.${status}`)
+    : t('nextStep.default');
 
   return (
     <div className="mb-6 bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-4 shadow-sm">
@@ -252,7 +238,7 @@ function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
         <Info className="w-5 h-5 text-[#004c91]" />
       </div>
       <div>
-        <h3 className="text-[14px] font-bold text-[#004c91] mb-1">Hướng dẫn / Thông báo</h3>
+        <h3 className="text-[14px] font-bold text-[#004c91] mb-1">{t('nextStep.title')}</h3>
         <p className="text-[13px] text-slate-700 font-medium leading-relaxed">{text}</p>
       </div>
     </div>
@@ -260,6 +246,7 @@ function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
 }
 
 function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
+  const { t } = useTranslation('visitorVisitDetail');
   const formatTime = (iso?: string | null) => {
     if (!iso) return '';
     try { return format(new Date(iso), 'HH:mm'); } catch { return iso; }
@@ -267,17 +254,17 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
 
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Lịch trình chuyến thăm</SectionTitle>
+      <SectionTitle>{t('agenda.title')}</SectionTitle>
       {(!agenda || agenda.length === 0) ? (
-        <p className="text-[13px] italic text-slate-400">Lịch trình chi tiết đang được nhà trường cập nhật.</p>
+        <p className="text-[13px] italic text-slate-400">{t('agenda.empty')}</p>
       ) : (
         <div className="overflow-x-auto rounded-md border border-slate-200">
           <table className="w-full min-w-[480px] border-collapse text-[13px]">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr className="text-left text-xs text-slate-500">
-                <th className="px-3 py-2 font-semibold w-[140px]">Thời gian</th>
-                <th className="px-3 py-2 font-semibold">Nội dung</th>
-                <th className="px-3 py-2 font-semibold">Địa điểm</th>
+                <th className="px-3 py-2 font-semibold w-[140px]">{t('agenda.time')}</th>
+                <th className="px-3 py-2 font-semibold">{t('agenda.content')}</th>
+                <th className="px-3 py-2 font-semibold">{t('agenda.location')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -302,48 +289,52 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
 }
 
 function VisitorRequestInfoSection({ summary }: { summary: any }) {
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Thông tin đăng ký đã gửi</SectionTitle>
+      <SectionTitle>{t('requestInfo.title')}</SectionTitle>
       <div className="space-y-5">
         <div>
-          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Người đại diện đăng ký</h4>
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">{t('requestInfo.registrant')}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-            <KV label="Họ và tên" value={summary.registrantName} />
-            <KV label="Email" value={summary.registrantEmail} />
-            <KV label="Số điện thoại" value={summary.registrantPhone} />
-            <KV label="Quốc tịch" value={summary.registrantNationality} />
-            <KV label="Tổ chức" value={summary.registrantOrganization} />
-            <KV label="Chức danh" value={summary.registrantJobTitle} />
+            <KV label={t('requestInfo.fullName')} value={summary.registrantName} />
+            <KV label={t('requestInfo.email')} value={summary.registrantEmail} />
+            <KV label={t('requestInfo.phone')} value={summary.registrantPhone} />
+            <KV label={t('requestInfo.nationality')} value={summary.registrantNationality} />
+            <KV label={t('requestInfo.organization')} value={summary.registrantOrganization} />
+            <KV label={t('requestInfo.jobTitle')} value={summary.registrantJobTitle} />
           </div>
         </div>
 
         <div>
-          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Thông tin đoàn khách</h4>
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">{t('requestInfo.delegationInfo')}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-            <KV label="Tên đoàn" value={summary.delegationName} />
-            <KV label="Đối tác" value={summary.registrantOrganization} />
-            <KV label="Số lượng khách" value={summary.guestMembers?.length ? `${summary.guestMembers.length} thành viên` : 'Chưa cập nhật'} />
+            <KV label={t('requestInfo.delegationName')} value={summary.delegationName} />
+            <KV label={t('requestInfo.partner')} value={summary.registrantOrganization} />
+            <KV
+              label={t('requestInfo.guestCount')}
+              value={summary.guestMembers?.length ? t('requestInfo.guestCountUnit', { count: summary.guestMembers.length }) : t('requestInfo.guestCountUnknown')}
+            />
           </div>
           <div className="mt-1.5 space-y-1.5">
-            <KVBlock label="Mục đích tham quan" value={summary.purpose} />
-            <KVBlock label="Nội dung làm việc" value={summary.workingContent} />
+            <KVBlock label={t('requestInfo.purpose')} value={summary.purpose} />
+            <KVBlock label={t('requestInfo.workingContent')} value={summary.workingContent} />
           </div>
         </div>
 
         <div>
-          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">Thông tin bổ sung</h4>
+          <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">{t('requestInfo.additionalInfo')}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-            <KV label="Loại hình" value={summary.visitType} />
-            <KV label="Ngôn ngữ" value={summary.workingLanguage} />
-            <KV label="Nhận diện phương tiện" value={summary.transportationNote || null} />
+            <KV label={t('requestInfo.visitType')} value={summary.visitType} />
+            <KV label={t('requestInfo.workingLanguage')} value={summary.workingLanguage} />
+            <KV label={t('requestInfo.transportation')} value={summary.transportationNote || null} />
             {/* The stored value is AGREED, not AGREE — the old comparison never matched, so a guest
                 who had agreed was shown as having declined on their own submitted form. */}
-            <KV label="Đồng ý truyền thông" value={summary.mediaConsentStatus === 'AGREED' ? 'Đồng ý' : 'Không đồng ý'} />
+            <KV label={t('requestInfo.mediaConsent')} value={summary.mediaConsentStatus === 'AGREED' ? t('requestInfo.mediaConsentAgreed') : t('requestInfo.mediaConsentDeclined')} />
           </div>
           {/* Always shown: this is the visitor's own submitted form, and a row that disappears when
               they left it blank makes them doubt the note was ever sent. KVBlock renders "-". */}
-          <KVBlock label="Ghi chú gửi FPTU" value={summary.notes} />
+          <KVBlock label={t('requestInfo.notes')} value={summary.notes} />
         </div>
       </div>
     </section>
@@ -351,18 +342,19 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
 }
 
 function VisitorGuestMembersSection({ members }: { members: any[] }) {
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Danh sách thành viên đoàn</SectionTitle>
+      <SectionTitle>{t('guestMembers.title')}</SectionTitle>
       <div className="overflow-x-auto rounded-md border border-slate-200">
         <table className="w-full min-w-[560px] border-collapse text-[13px]">
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr className="text-left text-xs text-slate-500">
-              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">STT</th>
-              <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
-              <th className="px-2.5 py-1.5 font-semibold">Chức danh</th>
-              <th className="px-2.5 py-1.5 font-semibold">Tổ chức</th>
-              <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
+              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">{t('guestMembers.no')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.fullName')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.jobTitle')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.organization')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.nationality')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -383,33 +375,35 @@ function VisitorGuestMembersSection({ members }: { members: any[] }) {
 }
 
 function VisitorOperationalContactSection({ summary }: { summary: any }) {
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Đầu mối đoàn khách phối hợp tại cơ sở</SectionTitle>
+      <SectionTitle>{t('operationalContact.title')}</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-        <KV label="Họ và tên" value={summary.operationalContactFullName} />
-        <KV label="Đơn vị công tác" value={summary.operationalContactOrganization} />
-        <KV label="Chức vụ" value={summary.operationalContactJobTitle} />
-        <KV label="Số điện thoại" value={summary.operationalContactPhone} />
-        <KV label="Email" value={summary.operationalContactEmail} />
+        <KV label={t('operationalContact.fullName')} value={summary.operationalContactFullName} />
+        <KV label={t('operationalContact.organization')} value={summary.operationalContactOrganization} />
+        <KV label={t('operationalContact.jobTitle')} value={summary.operationalContactJobTitle} />
+        <KV label={t('operationalContact.phone')} value={summary.operationalContactPhone} />
+        <KV label={t('operationalContact.email')} value={summary.operationalContactEmail} />
       </div>
     </section>
   );
 }
 
 function VisitorExternalSupportSection({ members }: { members: any[] }) {
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Danh sách hỗ trợ đoàn</SectionTitle>
+      <SectionTitle>{t('externalSupport.title')}</SectionTitle>
       <div className="overflow-x-auto rounded-md border border-slate-200">
         <table className="w-full min-w-[560px] border-collapse text-[13px]">
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr className="text-left text-xs text-slate-500">
-              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">STT</th>
-              <th className="px-2.5 py-1.5 font-semibold">Họ và tên</th>
-              <th className="px-2.5 py-1.5 font-semibold">Chức danh</th>
-              <th className="px-2.5 py-1.5 font-semibold">Tổ chức</th>
-              <th className="px-2.5 py-1.5 font-semibold">Quốc tịch</th>
+              <th className="px-2.5 py-1.5 w-10 text-center font-semibold">{t('guestMembers.no')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.fullName')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.jobTitle')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.organization')}</th>
+              <th className="px-2.5 py-1.5 font-semibold">{t('guestMembers.nationality')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -430,11 +424,12 @@ function VisitorExternalSupportSection({ members }: { members: any[] }) {
 }
 
 function VisitorCampusInfoSection({ campusName }: { campusName?: string | null }) {
+  const { t } = useTranslation('visitorVisitDetail');
   if (!campusName) return null;
-  
+
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Thông tin cơ sở</SectionTitle>
+      <SectionTitle>{t('campusInfo.title')}</SectionTitle>
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center shrink-0">
           <MapPin className="w-5 h-5 text-[#f37021]" />
@@ -449,6 +444,7 @@ function VisitorCampusInfoSection({ campusName }: { campusName?: string | null }
 }
 
 function VisitorFeedbackCard({ visitInstanceId, status, isCancelled }: { visitInstanceId: number, status: string, isCancelled: boolean }) {
+  const { t } = useTranslation('visitorVisitDetail');
   const [modalOpen, setModalOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -464,20 +460,20 @@ function VisitorFeedbackCard({ visitInstanceId, status, isCancelled }: { visitIn
             ? <CheckCircle2 className="w-6 h-6 text-emerald-500" />
             : <Star className="w-6 h-6 text-[#f37021] fill-[#f37021]" />}
         </div>
-        <h3 className="text-[15px] font-bold text-slate-900 mb-1">Phản hồi chuyến thăm</h3>
+        <h3 className="text-[15px] font-bold text-slate-900 mb-1">{t('feedbackCard.title')}</h3>
         {submitted ? (
-          <p className="text-[13px] text-emerald-600 font-bold">Cảm ơn bạn đã gửi phản hồi về chuyến thăm này!</p>
+          <p className="text-[13px] text-emerald-600 font-bold">{t('feedbackCard.thanks')}</p>
         ) : (
           <>
             <p className="text-[13px] text-slate-600 font-medium max-w-lg mx-auto mb-4">
-              Nhà trường rất mong nhận được phản hồi của bạn về chuyến thăm này.
+              {t('feedbackCard.prompt')}
             </p>
             <button
               type="button"
               onClick={() => setModalOpen(true)}
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#f37021] hover:bg-orange-600 text-white text-[13px] font-bold rounded-xl shadow-sm transition-colors"
             >
-              <Star className="w-4 h-4" /> Gửi đánh giá
+              <Star className="w-4 h-4" /> {t('feedbackCard.cta')}
             </button>
           </>
         )}
@@ -494,6 +490,7 @@ function VisitorFeedbackCard({ visitInstanceId, status, isCancelled }: { visitIn
 }
 
 function VisitorCancelledBanner() {
+  const { t } = useTranslation('visitorVisitDetail');
   return (
     <section className="mb-6 bg-rose-50 border border-rose-200 rounded-xl p-4 sm:p-5 text-center sm:text-left">
       <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
@@ -501,9 +498,9 @@ function VisitorCancelledBanner() {
           <XCircle className="w-5 h-5 text-rose-600" />
         </div>
         <div>
-          <h3 className="text-[14px] font-bold text-rose-800 mb-1">Chuyến thăm đã bị hủy</h3>
+          <h3 className="text-[14px] font-bold text-rose-800 mb-1">{t('cancelledBanner.title')}</h3>
           <p className="text-rose-700 text-[13px] font-medium">
-            Chuyến tham quan này đã được hủy bỏ và sẽ không diễn ra như dự kiến. Nếu bạn cần hỗ trợ thêm, vui lòng liên hệ nhà trường.
+            {t('cancelledBanner.desc')}
           </p>
         </div>
       </div>
@@ -516,10 +513,12 @@ function VisitorCancelledBanner() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function VisitorNotificationsSection({ notifications }: { notifications: VisitorNotification[] }) {
+  const { t } = useTranslation('visitorVisitDetail');
+  const dateLocale = useDateLocale();
   const formatDateTime = (iso?: string | null) => {
     if (!iso) return '';
     try {
-      return format(new Date(iso), 'HH:mm - dd/MM/yyyy', { locale: vi });
+      return format(new Date(iso), 'HH:mm - dd/MM/yyyy', { locale: dateLocale });
     } catch {
       return iso;
     }
@@ -527,7 +526,7 @@ function VisitorNotificationsSection({ notifications }: { notifications: Visitor
 
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Thông báo & Cập nhật</SectionTitle>
+      <SectionTitle>{t('notifications.title')}</SectionTitle>
       <div className="space-y-3">
         {notifications.map((item) => (
           <div key={item.notificationId} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
@@ -556,12 +555,14 @@ function VisitorPublicNewsSection({
   news: VisitorPublicNewsListItem[],
   onOpenDetail?: (item: VisitorPublicNewsListItem) => void
 }) {
+  const { t } = useTranslation('visitorVisitDetail');
+  const dateLocale = useDateLocale();
   if (!news || news.length === 0) return null;
 
   const formatDateTime = (iso?: string | null) => {
     if (!iso) return '';
     try {
-      return format(new Date(iso), 'dd/MM/yyyy', { locale: vi });
+      return format(new Date(iso), 'dd/MM/yyyy', { locale: dateLocale });
     } catch {
       return iso;
     }
@@ -569,7 +570,7 @@ function VisitorPublicNewsSection({
 
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-      <SectionTitle>Bản tin chuyến thăm</SectionTitle>
+      <SectionTitle>{t('publicNews.title')}</SectionTitle>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {news.map((item) => (
           <article
@@ -603,7 +604,7 @@ function VisitorPublicNewsSection({
                     onClick={() => onOpenDetail(item)}
                     className="text-[12px] font-bold text-[#004c91] hover:underline flex items-center gap-1 group"
                   >
-                    Xem chi tiết
+                    {t('publicNews.viewDetail')}
                     <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                   </button>
                 </div>

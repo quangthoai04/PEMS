@@ -49,5 +49,17 @@
     "guest": "Đối tác / Khách",
     "myForms": "Đơn của tôi",
     "manage": "Quản lý"
+  },
+  "sidebar": {
+    "closeMenu": "Đóng menu",
+    "expandMenu": "Mở rộng menu",
+    "collapseMenu": "Thu gọn menu",
+    "backToHome": "Về trang chủ",
+    "openNavMenu": "Mở menu điều hướng",
+    "dashboardTitle": "Dashboard",
+    "guestName": "Khách"
+  },
+  "roles": {
+    "VISITOR": "Khách tham quan"
   }
 }
