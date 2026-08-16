@@ -16,7 +16,9 @@
     "saving": "Saving...",
     "cancel": "Cancel",
     "successToast": "Avatar updated successfully.",
-    "errorToast": "Could not update your avatar. Please try again."
+    "errorToast": "Could not update your avatar. Please try again.",
+    "invalidType": "Avatar images must be JPG, PNG, or WEBP.",
+    "tooLarge": "Avatar images must not exceed 2MB."
   },
   "fields": {
     "gender": "Gender",

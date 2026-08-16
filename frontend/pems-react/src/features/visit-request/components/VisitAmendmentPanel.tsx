@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   approveAmendment,
   getActiveAmendment,
@@ -7,7 +8,7 @@ import {
   type AmendmentDto,
 } from '../api/visitRequestV2Api';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
-import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   visitRequestId: number;
@@ -19,21 +20,23 @@ interface Props {
   onChanged?: () => void;
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  'instance.delegationName': 'Tên đoàn',
-  'instance.visitType': 'Loại hình',
-  'instance.visitTypeOther': 'Loại hình khác',
-  'instance.purpose': 'Mục đích',
-  'instance.workingContent': 'Nội dung làm việc',
-  'instance.workingLanguage': 'Ngôn ngữ',
-  'instance.operationalContact.fullName': 'Đầu mối phối hợp — họ tên',
-  'instance.operationalContact.organization': 'Đầu mối phối hợp — đơn vị',
-  'instance.operationalContact.phone': 'Đầu mối phối hợp — điện thoại',
-  'instance.operationalContact.email': 'Đầu mối phối hợp — email',
-  'instance.members.visitors': 'Danh sách khách',
-  'instance.members.externalSupport': 'Nhân sự hỗ trợ',
-  'instance.plannedStartAt': 'Bắt đầu',
-  'instance.plannedEndAt': 'Kết thúc',
+/** Maps a backend fieldPath to a dot-free i18n key segment under `detail.amendment.fields.*`
+ * (fieldPath itself contains dots, which i18next would otherwise parse as nesting). */
+const FIELD_LABEL_KEYS: Record<string, string> = {
+  'instance.delegationName': 'delegationName',
+  'instance.visitType': 'visitType',
+  'instance.visitTypeOther': 'visitTypeOther',
+  'instance.purpose': 'purpose',
+  'instance.workingContent': 'workingContent',
+  'instance.workingLanguage': 'workingLanguage',
+  'instance.operationalContact.fullName': 'operationalContactFullName',
+  'instance.operationalContact.organization': 'operationalContactOrganization',
+  'instance.operationalContact.phone': 'operationalContactPhone',
+  'instance.operationalContact.email': 'operationalContactEmail',
+  'instance.members.visitors': 'membersVisitors',
+  'instance.members.externalSupport': 'membersExternalSupport',
+  'instance.plannedStartAt': 'plannedStartAt',
+  'instance.plannedEndAt': 'plannedEndAt',
 };
 
 const pretty = (json: string | null): string => {
@@ -63,6 +66,8 @@ export default function VisitAmendmentPanel({
   canWithdraw,
   onChanged,
 }: Props) {
+  const { t, i18n } = useTranslation('visitRequestV2');
+  const language = i18n.language as UiLanguage;
   const [amendment, setAmendment] = useState<AmendmentDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -83,20 +88,39 @@ export default function VisitAmendmentPanel({
 
   if (!amendment) return null;
 
-  const run = async (fn: () => Promise<{ message: string }>) => {
+  const emptyValue = t('detail.amendment.emptyValue');
+  const pretty = (json: string | null): string => {
+    if (json == null) return emptyValue;
+    try {
+      const value = JSON.parse(json) as unknown;
+      if (Array.isArray(value)) {
+        return value
+          .map(v => (typeof v === 'object' && v !== null ? Object.values(v as Record<string, unknown>).filter(Boolean).join(' · ') : String(v)))
+          .join('\n');
+      }
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    } catch {
+      return json;
+    }
+  };
+
+  // The backend's own success message is discarded — it's fixed Vietnamese prose, not a stable
+  // code, and would leak untranslated text into English mode. A fixed localized string keyed by
+  // which action just ran is used instead.
+  const run = async (fn: () => Promise<{ message: string }>, successMessage: string) => {
     setBusy(true);
     setMessage(null);
     try {
-      const result = await fn();
+      await fn();
       // Deciding an amendment makes this panel disappear (the proposal is no longer active), so an
       // inline confirmation would be unmounted before it could be read.
-      showSuccessToast(result.message);
+      showSuccessToast(successMessage);
       setRejectMode(false);
       setNote('');
       await refresh();
       onChanged?.();
     } catch (err: unknown) {
-      showErrorToast(err, 'Không thể xử lý đề xuất. Vui lòng tải lại và thử lại.');
+      showErrorToast(err, t('detail.amendment.processError'));
     } finally {
       setBusy(false);
     }
@@ -105,42 +129,45 @@ export default function VisitAmendmentPanel({
   return (
     <section
       data-testid={`amendment-panel-${visitInstanceId}`}
-      aria-label="Đề xuất thay đổi đang chờ duyệt"
+      aria-label={t('detail.amendment.sectionAria')}
       className="rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50/60 dark:bg-amber-900/20 p-4"
     >
       <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-          Đề xuất thay đổi #{amendment.amendmentNo} — chờ người phụ trách đơn duyệt
+          {t('detail.amendment.heading', { no: amendment.amendmentNo })}
         </h3>
         <span className="rounded bg-amber-200/70 dark:bg-amber-800/60 px-1.5 py-0.5 text-[11px] text-amber-900 dark:text-amber-100">
-          Nội dung đang hiệu lực KHÔNG thay đổi cho tới khi duyệt
+          {t('detail.amendment.activeUnchangedBadge')}
         </span>
       </div>
       <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
-        Người đề xuất: {amendment.requestedByName ?? '—'} · {formatVietnamDateTime(amendment.requestedAt)}
-        {amendment.reason ? ` · Lý do: ${amendment.reason}` : ''}
+        {t('detail.amendment.requestedBy', { name: amendment.requestedByName ?? emptyValue })} · {formatLocalizedDateTime(amendment.requestedAt, language)}
+        {amendment.reason ? ` · ${t('detail.amendment.reasonSuffix', { reason: amendment.reason })}` : ''}
       </p>
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full min-w-[480px] text-left text-xs">
-          <caption className="sr-only">Chi tiết thay đổi đề xuất (giá trị cũ và mới)</caption>
+          <caption className="sr-only">{t('detail.amendment.tableCaption')}</caption>
           <thead>
             <tr className="border-b border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-100">
-              <th scope="col" className="py-1 pr-2 font-medium">Trường</th>
-              <th scope="col" className="py-1 pr-2 font-medium">Đang hiệu lực</th>
-              <th scope="col" className="py-1 font-medium">Đề xuất</th>
+              <th scope="col" className="py-1 pr-2 font-medium">{t('detail.amendment.columnField')}</th>
+              <th scope="col" className="py-1 pr-2 font-medium">{t('detail.amendment.columnCurrent')}</th>
+              <th scope="col" className="py-1 font-medium">{t('detail.amendment.columnProposed')}</th>
             </tr>
           </thead>
           <tbody>
-            {amendment.changes.map(c => (
-              <tr key={c.fieldPath} className="border-b border-amber-100 dark:border-amber-900 align-top">
-                <th scope="row" className="py-1.5 pr-2 font-medium text-gray-800 dark:text-gray-100">
-                  {FIELD_LABELS[c.fieldPath] ?? c.fieldPath}
-                </th>
-                <td className="py-1.5 pr-2 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{pretty(c.oldValueJson)}</td>
-                <td className="py-1.5 whitespace-pre-wrap font-medium text-gray-900 dark:text-gray-50">{pretty(c.newValueJson)}</td>
-              </tr>
-            ))}
+            {amendment.changes.map(c => {
+              const labelKey = FIELD_LABEL_KEYS[c.fieldPath];
+              return (
+                <tr key={c.fieldPath} className="border-b border-amber-100 dark:border-amber-900 align-top">
+                  <th scope="row" className="py-1.5 pr-2 font-medium text-gray-800 dark:text-gray-100">
+                    {labelKey ? t(`detail.amendment.fields.${labelKey}`) : c.fieldPath}
+                  </th>
+                  <td className="py-1.5 pr-2 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{pretty(c.oldValueJson)}</td>
+                  <td className="py-1.5 whitespace-pre-wrap font-medium text-gray-900 dark:text-gray-50">{pretty(c.newValueJson)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -153,9 +180,12 @@ export default function VisitAmendmentPanel({
               data-testid={`amendment-approve-${amendment.amendmentId}`}
               disabled={busy}
               className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
-              onClick={() => void run(() => approveAmendment(visitInstanceId, amendment.amendmentId, note || undefined))}
+              onClick={() => void run(
+                () => approveAmendment(visitInstanceId, amendment.amendmentId, note || undefined),
+                t('detail.amendment.approve'),
+              )}
             >
-              Duyệt & áp dụng
+              {t('detail.amendment.approve')}
             </button>
             <button
               type="button"
@@ -164,14 +194,14 @@ export default function VisitAmendmentPanel({
               className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-300"
               onClick={() => setRejectMode(true)}
             >
-              Từ chối…
+              {t('detail.amendment.reject')}
             </button>
           </>
         )}
         {canDecide && rejectMode && (
           <div className="w-full space-y-2">
             <label htmlFor="amendment-reject-note" className="block text-xs text-amber-900 dark:text-amber-100">
-              Lý do từ chối <span className="text-red-500">*</span>
+              {t('detail.amendment.rejectReasonLabel')} <span className="text-red-500">*</span>
             </label>
             <textarea
               id="amendment-reject-note"
@@ -188,16 +218,19 @@ export default function VisitAmendmentPanel({
                 data-testid={`amendment-reject-confirm-${amendment.amendmentId}`}
                 disabled={busy || note.trim().length === 0}
                 className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                onClick={() => void run(() => rejectAmendment(visitInstanceId, amendment.amendmentId, note.trim()))}
+                onClick={() => void run(
+                  () => rejectAmendment(visitInstanceId, amendment.amendmentId, note.trim()),
+                  t('detail.amendment.reject'),
+                )}
               >
-                Xác nhận từ chối
+                {t('detail.amendment.rejectConfirm')}
               </button>
               <button
                 type="button"
                 className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm"
                 onClick={() => setRejectMode(false)}
               >
-                Quay lại
+                {t('detail.amendment.back')}
               </button>
             </div>
           </div>
@@ -208,9 +241,12 @@ export default function VisitAmendmentPanel({
             data-testid={`amendment-withdraw-${amendment.amendmentId}`}
             disabled={busy}
             className="rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-1.5 text-sm"
-            onClick={() => void run(() => withdrawAmendment(visitRequestId, visitInstanceId, amendment.amendmentId))}
+            onClick={() => void run(
+              () => withdrawAmendment(visitRequestId, visitInstanceId, amendment.amendmentId),
+              t('detail.amendment.withdraw'),
+            )}
           >
-            Rút đề xuất
+            {t('detail.amendment.withdraw')}
           </button>
         )}
       </div>

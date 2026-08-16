@@ -16,7 +16,9 @@
     "saving": "Đang lưu...",
     "cancel": "Hủy",
     "successToast": "Cập nhật ảnh đại diện thành công.",
-    "errorToast": "Không thể cập nhật ảnh đại diện. Vui lòng thử lại."
+    "errorToast": "Không thể cập nhật ảnh đại diện. Vui lòng thử lại.",
+    "invalidType": "Ảnh đại diện chỉ hỗ trợ JPG, PNG hoặc WEBP.",
+    "tooLarge": "Ảnh đại diện không được vượt quá 2MB."
   },
   "fields": {
     "gender": "Giới tính",

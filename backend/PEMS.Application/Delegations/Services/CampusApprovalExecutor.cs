@@ -297,8 +297,8 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
                 CampusId: instance.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
                 ActionUrl: detailUrl,
-                MetadataJson: NotificationMessageKeys.BuildMetadata(
-                    NotificationMessageKeys.CampusApproved,
+                MetadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.CampusApproved,
                     new { campusName, requestCode = visit.RequestCode, hostName })));
         }
 

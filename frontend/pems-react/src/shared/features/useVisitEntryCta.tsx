@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import toast from 'react-hot-toast';
+import i18n from '../i18n/config';
 import { usePerCampusV2Capability } from './perCampusV2Capability';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -45,13 +46,13 @@ export function notifyCapabilityError(retry: () => void): void {
   toast.error(
     (tt) => (
       <span className="flex items-center gap-3">
-        <span>Không kiểm tra được chế độ đăng ký. Vui lòng thử lại.</span>
+        <span>{i18n.t('common:visitEntryCta.capabilityErrorMessage')}</span>
         <button
           type="button"
           className="rounded-md bg-white/20 px-2 py-1 text-xs font-bold hover:bg-white/30"
           onClick={() => { toast.dismiss(tt.id); retry(); }}
         >
-          Thử lại
+          {i18n.t('common:visitEntryCta.retry')}
         </button>
       </span>
     ),
@@ -61,13 +62,13 @@ export function notifyCapabilityError(retry: () => void): void {
 
 export function notifyCapabilityDisabled(): void {
   toast.error(
-    'Cấu hình hệ thống không hợp lệ (V2 bị tắt). Vui lòng liên hệ quản trị viên.',
+    i18n.t('common:visitEntryCta.capabilityDisabled'),
     { id: ERROR_TOAST_ID, duration: 8000 },
   );
 }
 
 export function notifyCapabilityLoading(): void {
-  toast.loading('Đang kiểm tra chế độ đăng ký…', { id: LOADING_TOAST_ID, duration: 2500 });
+  toast.loading(i18n.t('common:visitEntryCta.capabilityLoading'), { id: LOADING_TOAST_ID, duration: 2500 });
 }
 
 export function dismissCapabilityToasts(): void {

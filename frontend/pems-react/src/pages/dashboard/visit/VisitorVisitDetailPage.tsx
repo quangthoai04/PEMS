@@ -11,7 +11,7 @@ import { VisitProcessDetail, VisitProcessPermission } from '../../../features/de
 import { format } from 'date-fns';
 import { vi, enUS } from 'date-fns/locale';
 import { VisitFeedbackModal } from '../../../features/feedbacks/components/VisitFeedbackModal';
-import { resolveNotificationText } from '../../../features/notifications/utils/resolveNotificationText';
+import { resolveNotificationPresentation } from '../../../features/notifications/utils/resolveNotificationPresentation';
 import type { UiLanguage } from '../../../shared/utils/vietnamTime';
 
 /** Visitor-only page (never rendered for Staff/HO/Department) — full bilingual, no role scoping needed. */
@@ -532,7 +532,11 @@ function VisitorNotificationsSection({ notifications }: { notifications: Visitor
       <SectionTitle>{t('notifications.title')}</SectionTitle>
       <div className="space-y-3">
         {notifications.map((item) => {
-          const resolved = resolveNotificationText(item, language, t);
+          const resolved = resolveNotificationPresentation(
+            { metadataJson: item.metadataJson, createdAt: item.createdAt, legacyTitle: item.title, legacyMessage: item.message },
+            language,
+            t,
+          );
           return (
             <div key={item.notificationId} className="rounded-lg border border-slate-100 bg-slate-50 px-4 py-3">
               <p className="text-[13px] font-bold text-slate-900">{resolved.title}</p>

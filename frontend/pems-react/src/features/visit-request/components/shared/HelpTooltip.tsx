@@ -1,5 +1,6 @@
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface HelpTooltipProps {
   content: React.ReactNode;
@@ -27,6 +28,7 @@ let tooltipSeq = 0;
  * attribute is deliberately not used, since it is unreachable by keyboard and unreliable on touch.</p>
  */
 export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '', label, testId }) => {
+  const { t } = useTranslation('common');
   const [open, setOpen] = React.useState(false);
   // Stable across renders; `useId` is React 18+, and this file is imported by tests that render
   // the component many times, so a module counter keeps the ids readable and unique either way.
@@ -37,7 +39,7 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '
       <button
         type="button"
         data-testid={testId}
-        aria-label={label ?? 'Trợ giúp'}
+        aria-label={label ?? t('help')}
         aria-expanded={open}
         // Present only while the tooltip is on screen: pointing at a hidden element would have a
         // screen reader read out a description the sighted user is not being shown.

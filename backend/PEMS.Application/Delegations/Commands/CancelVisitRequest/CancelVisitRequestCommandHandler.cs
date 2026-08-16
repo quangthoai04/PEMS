@@ -568,8 +568,8 @@ public sealed class CancelVisitRequestCommandHandler
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                         ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
-                        MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
-                            PEMS.Application.Notifications.Common.NotificationMessageKeys.VisitCancelledByHost,
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitCancelledByHost,
                             new {
                                 campusName = campusNamesById.TryGetValue(instance.CampusId, out var cn) ? cn : instance.CampusId.ToString(),
                                 requestCode = visit.RequestCode,

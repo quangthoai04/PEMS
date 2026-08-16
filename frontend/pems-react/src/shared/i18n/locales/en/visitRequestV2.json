@@ -459,7 +459,42 @@
     "contactAccessStatus": "Confirmation status",
     "contactActive": "Confirmed",
     "contactVerifiedAt": "Confirmed at",
-    "noCampusInScope": "No campus in your viewing scope."
+    "noCampusInScope": "No campus in your viewing scope.",
+    "amendment": {
+      "sectionAria": "Pending change proposal",
+      "heading": "Change proposal #{{no}} — awaiting the request owner's decision",
+      "activeUnchangedBadge": "The current live content is UNCHANGED until this is decided",
+      "requestedBy": "Requested by: {{name}}",
+      "reasonSuffix": "Reason: {{reason}}",
+      "tableCaption": "Proposed change detail (old and new values)",
+      "columnField": "Field",
+      "columnCurrent": "Current",
+      "columnProposed": "Proposed",
+      "approve": "Approve & apply",
+      "reject": "Reject…",
+      "rejectReasonLabel": "Rejection reason",
+      "rejectConfirm": "Confirm rejection",
+      "back": "Back",
+      "withdraw": "Withdraw proposal",
+      "processError": "Could not process the proposal. Please reload and try again.",
+      "emptyValue": "—",
+      "fields": {
+        "delegationName": "Delegation name",
+        "visitType": "Visit type",
+        "visitTypeOther": "Other visit type",
+        "purpose": "Purpose",
+        "workingContent": "Working content",
+        "workingLanguage": "Working language",
+        "operationalContactFullName": "Operational contact — full name",
+        "operationalContactOrganization": "Operational contact — organization",
+        "operationalContactPhone": "Operational contact — phone",
+        "operationalContactEmail": "Operational contact — email",
+        "membersVisitors": "Delegation members",
+        "membersExternalSupport": "Support staff",
+        "plannedStartAt": "Start time",
+        "plannedEndAt": "End time"
+      }
+    }
   },
   "preparation": {
     "hostAssigned": "Host assigned",

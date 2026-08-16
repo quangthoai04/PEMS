@@ -459,7 +459,42 @@
     "contactAccessStatus": "Trạng thái xác nhận",
     "contactActive": "Đã xác nhận",
     "contactVerifiedAt": "Xác nhận lúc",
-    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem."
+    "noCampusInScope": "Không có cơ sở nào trong phạm vi bạn được xem.",
+    "amendment": {
+      "sectionAria": "Đề xuất thay đổi đang chờ duyệt",
+      "heading": "Đề xuất thay đổi #{{no}} — chờ người phụ trách đơn duyệt",
+      "activeUnchangedBadge": "Nội dung đang hiệu lực KHÔNG thay đổi cho tới khi duyệt",
+      "requestedBy": "Người đề xuất: {{name}}",
+      "reasonSuffix": "Lý do: {{reason}}",
+      "tableCaption": "Chi tiết thay đổi đề xuất (giá trị cũ và mới)",
+      "columnField": "Trường",
+      "columnCurrent": "Đang hiệu lực",
+      "columnProposed": "Đề xuất",
+      "approve": "Duyệt & áp dụng",
+      "reject": "Từ chối…",
+      "rejectReasonLabel": "Lý do từ chối",
+      "rejectConfirm": "Xác nhận từ chối",
+      "back": "Quay lại",
+      "withdraw": "Rút đề xuất",
+      "processError": "Không thể xử lý đề xuất. Vui lòng tải lại và thử lại.",
+      "emptyValue": "—",
+      "fields": {
+        "delegationName": "Tên đoàn",
+        "visitType": "Loại hình",
+        "visitTypeOther": "Loại hình khác",
+        "purpose": "Mục đích",
+        "workingContent": "Nội dung làm việc",
+        "workingLanguage": "Ngôn ngữ",
+        "operationalContactFullName": "Đầu mối phối hợp — họ tên",
+        "operationalContactOrganization": "Đầu mối phối hợp — đơn vị",
+        "operationalContactPhone": "Đầu mối phối hợp — điện thoại",
+        "operationalContactEmail": "Đầu mối phối hợp — email",
+        "membersVisitors": "Danh sách khách",
+        "membersExternalSupport": "Nhân sự hỗ trợ",
+        "plannedStartAt": "Bắt đầu",
+        "plannedEndAt": "Kết thúc"
+      }
+    }
   },
   "preparation": {
     "hostAssigned": "Đã phân công Host",

@@ -6,13 +6,16 @@ import type { UpdateProfileRequest, UploadAvatarResponse, ViewProfileResponse } 
 export const MAX_AVATAR_SIZE = 2 * 1024 * 1024;
 export const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 
-/** Client-side avatar validation. Returns an error message, or null when valid. */
-export function validateAvatarFile(file: File): string | null {
+export type AvatarValidationError = 'INVALID_TYPE' | 'TOO_LARGE';
+
+/** Client-side avatar validation. Returns a stable error code (for the caller to localize via
+ * profile:avatar.invalidType/tooLarge), or null when valid. */
+export function validateAvatarFile(file: File): AvatarValidationError | null {
   if (!(ALLOWED_AVATAR_TYPES as readonly string[]).includes(file.type)) {
-    return 'Ảnh đại diện chỉ hỗ trợ JPG, PNG hoặc WEBP.';
+    return 'INVALID_TYPE';
   }
   if (file.size > MAX_AVATAR_SIZE) {
-    return 'Ảnh đại diện không được vượt quá 2MB.';
+    return 'TOO_LARGE';
   }
   return null;
 }

@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { NotificationItem } from '../types/notification.types';
-import { resolveNotificationText } from '../utils/resolveNotificationText';
-import { formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { resolveNotificationPresentation } from '../utils/resolveNotificationPresentation';
+import type { UiLanguage } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   item: NotificationItem | null;
@@ -19,7 +19,11 @@ export function NotificationDetailModal({ item, onClose }: Props) {
 function NotificationDetailModalInner({ item, onClose }: { item: NotificationItem; onClose: () => void }) {
   const { t, i18n } = useTranslation(['notifications']);
   const language = i18n.language as UiLanguage;
-  const resolved = resolveNotificationText(item, language, t);
+  const resolved = resolveNotificationPresentation(
+    { metadataJson: item.metadataJson, createdAt: item.createdAt, legacyTitle: item.title, legacyMessage: item.message },
+    language,
+    t,
+  );
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -57,7 +61,7 @@ function NotificationDetailModalInner({ item, onClose }: { item: NotificationIte
           {resolved.message && (
             <p className="text-sm text-slate-600 whitespace-pre-line leading-relaxed">{resolved.message}</p>
           )}
-          <p className="mt-4 text-xs text-slate-400">{formatLocalizedRelativeTime(item.createdAt, language, t)}</p>
+          <p className="mt-4 text-xs text-slate-400">{resolved.relativeTime}</p>
         </div>
       </div>
     </div>,

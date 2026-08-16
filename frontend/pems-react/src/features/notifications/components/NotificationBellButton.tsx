@@ -11,8 +11,8 @@ import { HostFeedbackModal } from '../../feedbacks/components/HostFeedbackModal'
 import { VisitorFeedbackDetailModal } from '../../feedbacks/components/VisitorFeedbackDetailModal';
 import { NotificationDetailModal } from './NotificationDetailModal';
 import type { AuthUser } from '../../authentication/types/authentication.types';
-import { formatVietnamRelative, formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
-import { resolveNotificationText } from '../utils/resolveNotificationText';
+import { formatVietnamRelative, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { resolveNotificationPresentation } from '../utils/resolveNotificationPresentation';
 
 export function timeAgo(dateStr: string): string {
   // API trả ISO +07:00 (giờ Việt Nam) — parse offset-aware, tuyệt đối không nối 'Z'.
@@ -279,7 +279,11 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
                         </span>
                       </button>
                     ) : (() => {
-                      const resolved = resolveNotificationText(item, language, t);
+                      const resolved = resolveNotificationPresentation(
+                        { metadataJson: item.metadataJson, createdAt: item.createdAt, legacyTitle: item.title, legacyMessage: item.message },
+                        language,
+                        t,
+                      );
                       return (
                         <button
                           key={item.notificationId}
@@ -296,7 +300,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
                               {resolved.title}
                             </span>
                             <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                              {formatLocalizedRelativeTime(item.createdAt, language, t)}
+                              {resolved.relativeTime}
                             </span>
                           </div>
                           {resolved.message && (

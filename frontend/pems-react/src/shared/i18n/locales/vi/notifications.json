@@ -64,42 +64,45 @@
     "loading": "Đang tải đánh giá...",
     "close": "Đóng"
   },
-  "messages": {
+  "events": {
     "CAMPUS_APPROVED": {
       "title": "Cơ sở đã tiếp nhận yêu cầu",
-      "body": "Cơ sở {{campusName}} đã tiếp nhận yêu cầu tham quan {{requestCode}} của bạn. Host phụ trách: {{hostName}}."
+      "message": "Cơ sở {{campusName}} đã tiếp nhận yêu cầu tham quan {{requestCode}} của bạn. Host phụ trách: {{hostName}}."
     },
     "CAMPUS_REJECTED": {
       "title": "Cơ sở từ chối tiếp nhận",
-      "body": "Cơ sở {{campusName}} đã từ chối tiếp nhận yêu cầu tham quan {{requestCode}}. Lý do: {{reason}}"
+      "message": "Cơ sở {{campusName}} đã từ chối tiếp nhận yêu cầu tham quan {{requestCode}}. Lý do: {{reason}}"
     },
     "FEEDBACK_INVITE_VISITOR": {
       "title": "Mời bạn đánh giá chuyến thăm",
-      "body": "Chuyến thăm {{requestCode}} đã kết thúc tiếp khách. Hãy dành chút thời gian đánh giá trải nghiệm của bạn."
+      "message": "Chuyến thăm {{requestCode}} đã kết thúc tiếp khách. Hãy dành chút thời gian đánh giá trải nghiệm của bạn."
     },
     "VISIT_CLOSED": {
       "title": "Kết thúc chuyến thăm",
-      "body": "Chuyến thăm {{requestCode}} của bạn đã hoàn tất. Cảm ơn bạn!"
+      "message": "Chuyến thăm {{requestCode}} của bạn đã hoàn tất. Cảm ơn bạn!"
     },
     "VISIT_CANCELLED_BY_HOST": {
       "title": "Lịch thăm quan bị hủy",
-      "body": "Host đã hủy cơ sở {{campusName}} thuộc đơn {{requestCode}}."
+      "message": "Host đã hủy cơ sở {{campusName}} thuộc đơn {{requestCode}}."
     },
     "OPCONTACT_TRANSFER_FROM": {
       "title": "Vai trò đầu mối vận hành đã được chuyển giao",
-      "body": "Vai trò đầu mối vận hành tại {{campusLabel}} của đơn {{requestCode}} đã chuyển cho người khác. Các cơ sở khác và tài khoản của bạn không bị ảnh hưởng."
+      "message": "Vai trò đầu mối vận hành tại {{campusLabel}} của đơn {{requestCode}} đã chuyển cho người khác. Các cơ sở khác và tài khoản của bạn không bị ảnh hưởng."
     },
     "OPCONTACT_TRANSFER_TO": {
       "title": "Chuyển giao đầu mối vận hành đã hoàn tất",
-      "body": "Đầu mối vận hành mới tại {{campusLabel}} đã xác nhận cho đơn {{requestCode}}."
+      "message": "Đầu mối vận hành mới tại {{campusLabel}} đã xác nhận cho đơn {{requestCode}}."
     },
     "AMENDMENT_APPROVED": {
       "title": "Đề xuất thay đổi đã được xử lý",
-      "body": "Đề xuất thay đổi của cơ sở đã được DUYỆT và áp dụng."
+      "message": "Đề xuất thay đổi của cơ sở đã được DUYỆT và áp dụng."
     },
     "AMENDMENT_REJECTED": {
       "title": "Đề xuất thay đổi đã được xử lý",
-      "body": "Đề xuất thay đổi của cơ sở đã bị TỪ CHỐI (nội dung hiện tại giữ nguyên)."
+      "message": "Đề xuất thay đổi của cơ sở đã bị TỪ CHỐI (nội dung hiện tại giữ nguyên)."
+    },
+    "unknown": {
+      "title": "Bạn có một thông báo mới."
     }
   }
 }

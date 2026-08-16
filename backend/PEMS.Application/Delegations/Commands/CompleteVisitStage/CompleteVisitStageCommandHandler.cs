@@ -281,8 +281,8 @@ public sealed class CompleteVisitStageCommandHandler
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: feedbackUrl,
                     DedupeKey: $"FEEDBACK_INVITE_VISITOR_{instance.VisitInstanceId}_{recipientId}",
-                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
-                        PEMS.Application.Notifications.Common.NotificationMessageKeys.FeedbackInviteVisitor,
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.FeedbackInviteVisitor,
                         new { requestCode = instance.VisitRequest?.RequestCode })
                 ));
             }
@@ -328,8 +328,8 @@ public sealed class CompleteVisitStageCommandHandler
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: visitDetailUrl,
-                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
-                        PEMS.Application.Notifications.Common.NotificationMessageKeys.VisitClosed,
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitClosed,
                         new { requestCode = instance.VisitRequest.RequestCode })
                 ));
             }

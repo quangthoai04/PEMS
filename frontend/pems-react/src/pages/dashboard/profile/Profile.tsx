@@ -134,7 +134,7 @@ export function Profile() {
 
     const err = validateAvatarFile(file);
     if (err) {
-      setToast({ type: 'error', message: err });
+      setToast({ type: 'error', message: tt(err === 'INVALID_TYPE' ? 'avatar.invalidType' : 'avatar.tooLarge') });
       return;
     }
     if (avatarPreview) URL.revokeObjectURL(avatarPreview);

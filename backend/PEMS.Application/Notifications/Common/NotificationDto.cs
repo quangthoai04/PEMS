@@ -20,8 +20,8 @@ public sealed class NotificationDto
     public DateTime CreatedAt { get; set; }
     public string TimeAgoText { get; set; } = string.Empty;
 
-    /// <summary>Raw `{"messageKey":"...","params":{...}}` JSON, present only for the notification
-    /// templates in <see cref="NotificationMessageKeys"/>. Null for every other notification
+    /// <summary>Raw `{"eventKey":"...","params":{...}}` JSON, present only for the notification
+    /// templates in <see cref="NotificationEventKeys"/>. Null for every other notification
     /// (including all historical rows) — the client falls back to Title/Message when null.</summary>
     public string? MetadataJson { get; set; }
 

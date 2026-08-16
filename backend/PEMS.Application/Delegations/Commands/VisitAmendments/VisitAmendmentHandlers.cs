@@ -411,10 +411,10 @@ public sealed class DecideVisitAmendmentCommandHandlers :
                     VisitInstanceId: visitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: $"/dashboard/visit?visitRequestId={row.VisitRequestId}",
-                    MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
                         approved
-                            ? PEMS.Application.Notifications.Common.NotificationMessageKeys.AmendmentApproved
-                            : PEMS.Application.Notifications.Common.NotificationMessageKeys.AmendmentRejected,
+                            ? PEMS.Application.Notifications.Common.NotificationEventKeys.AmendmentApproved
+                            : PEMS.Application.Notifications.Common.NotificationEventKeys.AmendmentRejected,
                         new { }))).ToList();
             await _notificationService.CreateManyAsync(notifications, ct);
         }

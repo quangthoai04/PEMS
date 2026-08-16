@@ -67,8 +67,8 @@ public sealed class VisitorNotificationDto
     public DateTime? ReadAt { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>Raw `{"messageKey":"...","params":{...}}` JSON — see
-    /// <see cref="Notifications.Common.NotificationMessageKeys"/>. Null falls back to Title/Message.</summary>
+    /// <summary>Raw `{"eventKey":"...","params":{...}}` JSON — see
+    /// <see cref="Notifications.Common.NotificationEventKeys"/>. Null falls back to Title/Message.</summary>
     public string? MetadataJson { get; set; }
 }
 

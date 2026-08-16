@@ -176,8 +176,8 @@ public sealed class RejectCampusInstanceCommandHandler
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                 ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
-                MetadataJson: PEMS.Application.Notifications.Common.NotificationMessageKeys.BuildMetadata(
-                    PEMS.Application.Notifications.Common.NotificationMessageKeys.CampusRejected,
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.CampusRejected,
                     new { campusName, requestCode = visit.RequestCode, reason })
             ));
         }

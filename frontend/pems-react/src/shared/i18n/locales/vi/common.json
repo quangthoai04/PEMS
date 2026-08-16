@@ -23,6 +23,13 @@
     "retry": "Thử lại",
     "backHome": "Về trang chủ"
   },
+  "help": "Trợ giúp",
+  "visitEntryCta": {
+    "capabilityErrorMessage": "Không kiểm tra được chế độ đăng ký. Vui lòng thử lại.",
+    "retry": "Thử lại",
+    "capabilityDisabled": "Cấu hình hệ thống không hợp lệ (V2 bị tắt). Vui lòng liên hệ quản trị viên.",
+    "capabilityLoading": "Đang kiểm tra chế độ đăng ký…"
+  },
   "asyncState": {
     "loading": "Đang tải…",
     "retry": "Thử lại",

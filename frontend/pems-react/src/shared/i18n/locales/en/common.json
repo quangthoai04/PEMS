@@ -23,6 +23,13 @@
     "retry": "Try again",
     "backHome": "Back to home"
   },
+  "help": "Help",
+  "visitEntryCta": {
+    "capabilityErrorMessage": "Could not check the registration mode. Please try again.",
+    "retry": "Try again",
+    "capabilityDisabled": "Invalid system configuration (V2 is off). Please contact an administrator.",
+    "capabilityLoading": "Checking registration mode…"
+  },
   "asyncState": {
     "loading": "Loading…",
     "retry": "Try again",

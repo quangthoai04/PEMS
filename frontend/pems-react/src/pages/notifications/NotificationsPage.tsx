@@ -17,8 +17,8 @@ import {
   getVisibleNotificationFilters,
   type NotificationFilterKey,
 } from '../../features/notifications/constants/notificationFilters';
-import { resolveNotificationText } from '../../features/notifications/utils/resolveNotificationText';
-import { formatLocalizedRelativeTime, type UiLanguage } from '../../shared/utils/vietnamTime';
+import { resolveNotificationPresentation } from '../../features/notifications/utils/resolveNotificationPresentation';
+import type { UiLanguage } from '../../shared/utils/vietnamTime';
 
 type PaginatedResult<T> = { items: T[]; page: number; pageSize: number; totalItems: number; totalPages: number };
 
@@ -207,7 +207,11 @@ export function NotificationsPage() {
                     </p>
                   </button>
                 ) : (() => {
-                  const resolved = resolveNotificationText(item, language, t);
+                  const resolved = resolveNotificationPresentation(
+                    { metadataJson: item.metadataJson, createdAt: item.createdAt, legacyTitle: item.title, legacyMessage: item.message },
+                    language,
+                    t,
+                  );
                   return (
                     <button
                       key={item.notificationId}
@@ -229,7 +233,7 @@ export function NotificationsPage() {
                           )}
                         </span>
                         <span className="text-[10px] text-gray-400 shrink-0 mt-0.5 whitespace-nowrap">
-                          {formatLocalizedRelativeTime(item.createdAt, language, t)}
+                          {resolved.relativeTime}
                         </span>
                       </div>
                       {resolved.message && <p className="text-xs text-gray-500 line-clamp-2">{resolved.message}</p>}

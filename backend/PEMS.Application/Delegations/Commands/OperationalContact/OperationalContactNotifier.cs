@@ -110,7 +110,7 @@ internal static class OperationalContactNotifier
         {
             var items = new List<CreateNotificationRequest>();
 
-            void Add(ulong recipient, string title, string message, string messageKey) =>
+            void Add(ulong recipient, string title, string message, string eventKey) =>
                 items.Add(new CreateNotificationRequest(
                     RecipientUserId: recipient,
                     Title: title,
@@ -125,14 +125,14 @@ internal static class OperationalContactNotifier
                     VisitInstanceId: visitInstanceId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
-                    MetadataJson: Notifications.Common.NotificationMessageKeys.BuildMetadata(
-                        messageKey, new { campusLabel, requestCode })));
+                    MetadataJson: Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        eventKey, new { campusLabel, requestCode })));
 
             if (previousContactUserId is not null && previousContactUserId != newContactUserId)
                 Add(previousContactUserId.Value,
                     "Vai trò đầu mối vận hành đã được chuyển giao",
                     $"Vai trò đầu mối vận hành tại {campusLabel} của đơn {requestCode} đã chuyển cho người khác. Các cơ sở khác và tài khoản của bạn không bị ảnh hưởng.",
-                    Notifications.Common.NotificationMessageKeys.OperationalContactTransferredFrom);
+                    Notifications.Common.NotificationEventKeys.OperationalContactTransferredFrom);
 
             if (registrantUserId is not null
                 && registrantUserId != newContactUserId
@@ -140,7 +140,7 @@ internal static class OperationalContactNotifier
                 Add(registrantUserId.Value,
                     "Chuyển giao đầu mối vận hành đã hoàn tất",
                     $"Đầu mối vận hành mới tại {campusLabel} đã xác nhận cho đơn {requestCode}.",
-                    Notifications.Common.NotificationMessageKeys.OperationalContactTransferredTo);
+                    Notifications.Common.NotificationEventKeys.OperationalContactTransferredTo);
 
             if (items.Count > 0)
                 await notifications.CreateManyAsync(items, cancellationToken);
