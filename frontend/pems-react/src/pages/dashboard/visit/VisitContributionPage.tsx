@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User, ScrollText,
   Loader2, CalendarDays, MapPin, ClipboardList
@@ -21,6 +22,7 @@ import type {
   ContributionPage, ContributionLogisticsItem,
 } from '../../../features/delegations/types/delegations.types';
 import { toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+import { useAuth } from '../../../shared/hooks/useAuth';
 
 const INSTANCE_STATUS_LABELS: Record<string, string> = {
   WAITING_REQUEST_APPROVAL: 'Chờ xử lý tại cơ sở',
@@ -105,6 +107,13 @@ export function VisitContributionPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ContributionPage | null>(null);
 
+  const { effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('visitTasks');
+  // Deep content below is Host/participant/Department-contributor-only by design (see file doc
+  // comment); only the entry shell (loading/denied/error/breadcrumb) is genuinely Visitor-reachable.
+  const isVisitor = effectiveRole === 'VISITOR';
+  const tt = (key: string, options?: Record<string, unknown>) => t(key, { ...(options || {}), lng: isVisitor ? i18n.language : 'vi' });
+
   const loadData = React.useCallback(() => {
     let active = true;
     if (!visitInstanceId || Number.isNaN(Number(visitInstanceId))) {
@@ -122,7 +131,7 @@ export function VisitContributionPage() {
         const status = e?.response?.status;
         // The backend is the single gate: 403 (no relation) / 404 (no such instance) → Access Denied.
         if (status === 403 || status === 404) setDenied(true);
-        else setError('Không thể tải trang đóng góp kết quả. Vui lòng thử lại sau.');
+        else setError(tt('contribution.loadErrorGeneric'));
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -135,13 +144,13 @@ export function VisitContributionPage() {
 
   const Breadcrumb = (
     <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
-      <span>Dashboard</span>
+      <span>{tt('contribution.breadcrumb.dashboard')}</span>
       <span>/</span>
       <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate(returnUrl)}>
-        Quản lý tiếp khách
+        {tt('contribution.breadcrumb.management')}
       </span>
       <span>/</span>
-      <span className="text-[#004c91] font-bold">Đóng góp kết quả</span>
+      <span className="text-[#004c91] font-bold">{tt('contribution.breadcrumb.contribution')}</span>
     </div>
   );
 
@@ -151,7 +160,7 @@ export function VisitContributionPage() {
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center min-h-[320px] gap-3 text-slate-400">
           <Loader2 className="w-8 h-8 animate-spin text-[#004c91]" />
-          <p className="text-sm font-semibold">Đang tải trang đóng góp kết quả...</p>
+          <p className="text-sm font-semibold">{tt('contribution.loading')}</p>
         </div>
       </div>
     );
@@ -165,13 +174,13 @@ export function VisitContributionPage() {
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('contribution.noAccessTitle')}</h2>
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            Bạn không có quyền đóng góp kết quả cho chuyến thăm này.
+            {tt('contribution.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)}
             className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none flex items-center gap-2">
-            <ArrowLeft className="w-4 h-4" /> Về danh sách
+            <ArrowLeft className="w-4 h-4" /> {tt('contribution.backToList')}
           </button>
         </div>
       </div>
@@ -184,10 +193,10 @@ export function VisitContributionPage() {
         {Breadcrumb}
         <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm flex flex-col items-center justify-center min-h-[300px]">
           <AlertCircle className="w-12 h-12 text-orange-400 mb-4" />
-          <p className="text-slate-600 font-semibold mb-6">{error || 'Không có dữ liệu.'}</p>
+          <p className="text-slate-600 font-semibold mb-6">{error || tt('contribution.loadErrorFallback')}</p>
           <button onClick={() => navigate(0)}
             className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors">
-            Thử lại
+            {tt('contribution.retry')}
           </button>
         </div>
       </div>

@@ -1,0 +1,103 @@
+{
+  "requestDetail": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Quản lý tiếp khách",
+      "process": "Quy trình tiếp khách",
+      "detail": "Chi tiết yêu cầu"
+    },
+    "title": "Chi tiết yêu cầu",
+    "taskType": "Loại nhiệm vụ",
+    "status": {
+      "ASSIGNED": "Đã phân công",
+      "BEFORE_VISIT": "Trước tiếp khách",
+      "DURING_VISIT": "Đang tiếp khách",
+      "AFTER_VISIT": "Sau tiếp khách",
+      "CLOSED": "Đã đóng",
+      "CANCELLED": "Đã hủy"
+    },
+    "visitType": {
+      "CAMPUS_TOUR": "Tham quan cơ sở",
+      "MEETING": "Họp / làm việc",
+      "WORKSHOP": "Hội thảo / workshop",
+      "SIGNING_CEREMONY": "Lễ ký kết",
+      "EXCHANGE": "Giao lưu / trao đổi",
+      "OTHER": "Khác"
+    },
+    "workingLanguage": { "VI": "Tiếng Việt", "EN": "Tiếng Anh" },
+    "mediaConsent": { "AGREED": "Đồng ý", "DECLINED": "Không đồng ý" },
+    "fields": {
+      "sender": "Người gửi",
+      "delegation": "Đoàn khách",
+      "campus": "Cơ sở",
+      "status": "Trạng thái",
+      "plannedTime": "Thời gian dự kiến",
+      "senderJobTitle": "Chức danh người gửi",
+      "senderNationality": "Quốc tịch người gửi",
+      "senderEmail": "Email người gửi",
+      "senderPhone": "Điện thoại người gửi",
+      "visitType": "Loại hình",
+      "workingLanguage": "Ngôn ngữ làm việc",
+      "mediaConsent": "Đồng ý truyền thông",
+      "transportation": "Nhận diện phương tiện",
+      "transportationEmpty": "Chưa có thông tin",
+      "operationalContact": "Đầu mối phối hợp",
+      "purpose": "Mục đích",
+      "purposeEmpty": "Chưa có mục đích.",
+      "workingContent": "Nội dung làm việc",
+      "workingContentEmpty": "Chưa có nội dung làm việc.",
+      "notes": "Ghi chú gửi FPTU",
+      "notesEmpty": "Chưa có ghi chú.",
+      "guestMembersCount": "Thành viên đoàn ({{count}})",
+      "guestMembersEmpty": "Chưa có thành viên đoàn.",
+      "supportMembersCount": "Nhân sự hỗ trợ ({{count}})"
+    }
+  },
+  "processSummary": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Quản lý tiếp khách",
+      "summary": "Báo cáo tổng hợp"
+    },
+    "loading": "Đang tải báo cáo tổng hợp...",
+    "noAccessTitle": "Không có quyền truy cập",
+    "noAccessDesc": "Bạn không có quyền xem báo cáo tổng hợp của đoàn này, hoặc đoàn không tồn tại.",
+    "backToList": "Về danh sách"
+  },
+  "contribution": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Quản lý tiếp khách",
+      "contribution": "Đóng góp kết quả"
+    },
+    "loading": "Đang tải trang đóng góp kết quả...",
+    "noAccessTitle": "Không có quyền truy cập",
+    "noAccessDesc": "Bạn không có quyền đóng góp kết quả cho chuyến thăm này.",
+    "backToList": "Về danh sách",
+    "loadErrorFallback": "Không có dữ liệu.",
+    "loadErrorGeneric": "Không thể tải trang đóng góp kết quả. Vui lòng thử lại sau.",
+    "retry": "Thử lại"
+  },
+  "createEntry": {
+    "loading": "Đang tải…",
+    "capabilityError": "Không kiểm tra được chế độ đăng ký. Vui lòng thử lại.",
+    "retry": "Thử lại"
+  },
+  "process": {
+    "notFoundTitle": "Không tìm thấy thông tin chuyến thăm",
+    "noAccessTitle": "Không có quyền truy cập",
+    "notFoundDesc": "Bạn không có quyền xem chuyến thăm này hoặc đường dẫn không hợp lệ.",
+    "noAccessDesc": "Bạn không có quyền thao tác trang vận hành tiếp đón của đoàn này.",
+    "backToList": "Quay lại danh sách tiếp khách",
+    "album": {
+      "title": "3. Album ảnh",
+      "subtitle": "Thư viện hình ảnh của chuyến tham quan",
+      "linkText": "Xem toàn bộ Album ảnh trên thư mục Drive"
+    },
+    "news": {
+      "title": "4. Bài tin tức",
+      "subtitle": "Các bài đăng và tin tức sau chuyến tham quan",
+      "placeholderHeadline": "Trải nghiệm khó quên của học sinh tại FPTU"
+    }
+  }
+}

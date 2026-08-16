@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
   ChevronUp,
@@ -111,6 +112,12 @@ export function VisitProcess() {
   const isDept = roleCode === 'DEPARTMENT' || roleCode === 'DEPT' || roleCode === 'STUDENT' || roleCode === 'VISITOR';
   const isStudent = roleCode === 'STUDENT';
   const isVisitor = roleCode === 'VISITOR';
+
+  // The rest of this page is a Staff/Host operational tool (Vietnamese-only by design); only the
+  // two isVisitor-gated sections below (Album/News) and the generic access-denied shell are
+  // genuinely VISITOR-reachable, so only those go through `tt`.
+  const { t, i18n } = useTranslation('visitTasks');
+  const tt = (key: string) => t(key, { lng: isVisitor ? i18n.language : 'vi' });
 
   const [currentStatus, setCurrentStatus] = useState(() => {
     if (location.state?.status) return location.state.status;
@@ -1006,15 +1013,13 @@ export function VisitProcess() {
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">
-            {isReceptionDetail ? 'Không tìm thấy thông tin chuyến thăm' : 'Không có quyền truy cập'}
+            {isReceptionDetail ? tt('process.notFoundTitle') : tt('process.noAccessTitle')}
           </h2>
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            {isReceptionDetail
-              ? 'Bạn không có quyền xem chuyến thăm này hoặc đường dẫn không hợp lệ.'
-              : 'Bạn không có quyền thao tác trang vận hành tiếp đón của đoàn này.'}
+            {isReceptionDetail ? tt('process.notFoundDesc') : tt('process.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
-            Quay lại danh sách tiếp khách
+            {tt('process.backToList')}
           </button>
         </div>
       </div>
@@ -1887,8 +1892,8 @@ export function VisitProcess() {
             onClick={() => setIsAlbumExpanded(!isAlbumExpanded)}
           >
             <div>
-              <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">3. Album ảnh</h2>
-              <p className="text-sm font-medium text-green-100 mt-1 pl-4">Thư viện hình ảnh của chuyến tham quan</p>
+              <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">{tt('process.album.title')}</h2>
+              <p className="text-sm font-medium text-green-100 mt-1 pl-4">{tt('process.album.subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -1908,7 +1913,7 @@ export function VisitProcess() {
                 <div className="p-4 sm:p-6 md:p-8 bg-white">
                   <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center min-h-[160px] max-w-xl mx-auto bg-gray-50/50">
                     <p className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">
-                      Xem toàn bộ Album ảnh trên thư mục Drive
+                      {tt('process.album.linkText')}
                     </p>
                   </div>
                 </div>
@@ -1926,8 +1931,8 @@ export function VisitProcess() {
             onClick={() => setIsNewsExpanded(!isNewsExpanded)}
           >
             <div>
-              <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">4. Bài tin tức</h2>
-              <p className="text-sm font-medium text-indigo-100 mt-1 pl-4">Các bài đăng và tin tức sau chuyến tham quan</p>
+              <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">{tt('process.news.title')}</h2>
+              <p className="text-sm font-medium text-indigo-100 mt-1 pl-4">{tt('process.news.subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -1947,7 +1952,7 @@ export function VisitProcess() {
                 <div className="p-4 sm:p-6 md:p-8 bg-white">
                   <div className="p-6 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center min-h-[160px] max-w-xl mx-auto bg-gray-50/50">
                     <p className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">
-                      Trải nghiệm khó quên của học sinh tại FPTU
+                      {tt('process.news.placeholderHeadline')}
                     </p>
                   </div>
                 </div>

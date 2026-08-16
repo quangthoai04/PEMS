@@ -63,7 +63,7 @@ import { VisitRowActionMenu, type VisitRowMenuItem } from '../../../features/del
 import VisitHostTransferModal, { type HostTransferTarget } from '../../../features/visit-request/components/VisitHostTransferModal';
 import { isInstanceVersionConflict, INSTANCE_VERSION_CONFLICT_MESSAGE } from '../../../features/visit-request/utils/decisionConflict';
 import { getMyOperationalContactInvitations } from '../../../features/visit-request/api/visitRequestV2Api';
-import { formatVietnamDateTime, formatVietnamDate } from '../../../shared/utils/vietnamTime';
+import { formatLocalizedDate, formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted' | 'all';
 
@@ -223,6 +223,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // so that boundary lives in a single place instead of an `isVisitor` check at each call site.
   const tt = (key: string, options?: Record<string, unknown>) =>
     t(key, { ...(options || {}), lng: isVisitor ? i18next.language : 'vi' });
+  const language = (isVisitor ? i18next.language : 'vi') as UiLanguage;
 
   const canReceiveParticipantInvitations = isRegularStaff || isStaffLeader || isDept || isStudent;
   const canUseAttendingTab = canReceiveParticipantInvitations;
@@ -600,11 +601,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
   const formatDateOnly = (dateStr: string) => {
     if (!dateStr) return '';
-    return formatVietnamDate(dateStr, { fallback: '' });
+    return formatLocalizedDate(dateStr, language, { fallback: '' });
   };
   const formatDateTimeShort = (value?: string | null) => {
     if (!value) return '-';
-    return formatVietnamDateTime(value);
+    return formatLocalizedDateTime(value, language);
   };
 
   /**
@@ -614,8 +615,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
    */
   const formatSameDayRange = (start?: string | null, end?: string | null): string | null => {
     if (!start || !end) return null;
-    const startDT = formatVietnamDateTime(start);
-    const endDT = formatVietnamDateTime(end);
+    const startDT = formatLocalizedDateTime(start, language);
+    const endDT = formatLocalizedDateTime(end, language);
     if (startDT === '-' || endDT === '-') return null;
     // So sánh phần ngày (10 ký tự đầu "DD/MM/YYYY")
     if (startDT.slice(0, 10) === endDT.slice(0, 10)) {
@@ -798,7 +799,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         const mapped: Row[] = items.map((item) => ({
           ...item,
           id: item.visitInstanceId || item.visitRequestId,
-          name: item.delegationName || 'Không có tên',
+          name: item.delegationName || tt('visitRequestV2:list.row.untitledDelegation'),
           org: item.partnerName || '-',
           campus: item.campusName || '-',
           host: item.hostName || '',
@@ -1261,8 +1262,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const submitCancel = async () => {
     if (!cancel.row || !cancel.mode) return;
     const text = cancel.text.trim();
-    if (!text) { setCancel((s) => ({ ...s, error: 'Vui lòng nhập lý do hủy.' })); return; }
-    if (!cancel.confirmed) { setCancel((s) => ({ ...s, error: 'Vui lòng xác nhận rằng bạn hiểu thao tác hủy không thể hoàn tác.' })); return; }
+    if (!text) { setCancel((s) => ({ ...s, error: tt('visitRequestV2:list.cancelModal.reasonRequired') })); return; }
+    if (!cancel.confirmed) { setCancel((s) => ({ ...s, error: tt('visitRequestV2:list.cancelModal.confirmRequired') })); return; }
     setCancel((s) => ({ ...s, submitting: true, error: null }));
     try {
       const payload = { cancellationReason: text };
@@ -1275,13 +1276,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         await delegationsApi.cancelVisitRequest(cancel.row.visitRequestId, payload);
       }
       setCancel({ open: false, row: null, mode: null, instanceId: null, text: '', submitting: false, error: null, confirmed: false });
-      showSuccessToast('Đã hủy lịch thăm thành công.');
+      showSuccessToast(tt('visitRequestV2:list.cancelModal.success'));
       await loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     } catch (e: any) {
-      // Surface the backend's real business message (clean Vietnamese sentence such as
-      // "Không thể hủy lịch thăm. Đơn đang chờ duyệt..."); apiErrorMessage walks
-      // message → error → errors → title and only then a generic safe fallback.
-      setCancel((s) => ({ ...s, submitting: false, error: getApiErrorMessage(e, 'Không thể hủy lịch thăm. Vui lòng thử lại sau.') }));
+      // Backend's raw message is Vietnamese-only prose (e.g. "Đơn đang chờ duyệt..."); EN mode must
+      // not leak it — getApiErrorMessage already suppresses raw VI text when i18n.language is 'en'.
+      setCancel((s) => ({ ...s, submitting: false, error: getApiErrorMessage(e, tt('visitRequestV2:list.cancelModal.errorFallback')) }));
     }
   };
 

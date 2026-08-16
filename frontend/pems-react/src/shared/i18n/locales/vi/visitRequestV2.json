@@ -936,6 +936,7 @@
       "campusLabel": "Cơ sở:",
       "notAssignedYet": "Chưa được phân công",
       "assigning": "Đang phân công",
+      "untitledDelegation": "Không có tên",
       "viewCampuses": "Xem {{count}} cơ sở",
       "collapseCampuses": "Thu gọn cơ sở",
       "expandToggleAria": "Xem tiến trình theo từng cơ sở",
@@ -1100,7 +1101,11 @@
       "confirmPending": "Xác nhận hủy đơn",
       "confirmSingleCampus": "Xác nhận hủy lịch thăm",
       "confirmInstance": "Xác nhận hủy cơ sở này",
-      "confirmMultiCampus": "Xác nhận hủy toàn bộ"
+      "confirmMultiCampus": "Xác nhận hủy toàn bộ",
+      "reasonRequired": "Vui lòng nhập lý do hủy.",
+      "confirmRequired": "Vui lòng xác nhận rằng bạn hiểu thao tác hủy không thể hoàn tác.",
+      "success": "Đã hủy lịch thăm thành công.",
+      "errorFallback": "Không thể hủy lịch thăm. Vui lòng thử lại sau."
     }
   },
   "pendingCampusEdit": {

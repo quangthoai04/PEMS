@@ -936,6 +936,7 @@
       "campusLabel": "Campus:",
       "notAssignedYet": "Not assigned yet",
       "assigning": "Assigning",
+      "untitledDelegation": "Untitled delegation",
       "viewCampuses": "View {{count}} campuses",
       "collapseCampuses": "Collapse campuses",
       "expandToggleAria": "View progress by campus",
@@ -1100,7 +1101,11 @@
       "confirmPending": "Confirm cancellation",
       "confirmSingleCampus": "Confirm cancellation",
       "confirmInstance": "Confirm cancelling this campus",
-      "confirmMultiCampus": "Confirm cancelling all"
+      "confirmMultiCampus": "Confirm cancelling all",
+      "reasonRequired": "Please enter a cancellation reason.",
+      "confirmRequired": "Please confirm you understand this cancellation cannot be undone.",
+      "success": "Visit cancelled successfully.",
+      "errorFallback": "Could not cancel the visit. Please try again later."
     }
   },
   "pendingCampusEdit": {

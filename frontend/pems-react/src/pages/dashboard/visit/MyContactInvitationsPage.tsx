@@ -9,7 +9,7 @@ import {
   type MyOperationalContactInvitation,
 } from '../../../features/visit-request/api/visitRequestV2Api';
 import { errorCodeOf } from '../../../features/visit-request/utils/visitV2Actions';
-import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 
 /**
@@ -55,7 +55,8 @@ const SETTLED_CODES = new Set([
 ]);
 
 export function MyContactInvitationsPage() {
-  const { t } = useTranslation(['visitRequestV2']);
+  const { t, i18n } = useTranslation(['visitRequestV2']);
+  const language = i18n.language as UiLanguage;
   const navigate = useNavigate();
 
   const [items, setItems] = useState<MyOperationalContactInvitation[]>([]);
@@ -105,18 +106,24 @@ export function MyContactInvitationsPage() {
     if (submittingId !== null) return;
     setSubmittingId(invitation.identityChangeId);
     try {
-      const result = action === 'accept'
-        ? await acceptMyOperationalContactInvitation(invitation.identityChangeId)
-        : await declineMyOperationalContactInvitation(
-            invitation.identityChangeId, declineReason.trim() || undefined);
+      await (action === 'accept'
+        ? acceptMyOperationalContactInvitation(invitation.identityChangeId)
+        : declineMyOperationalContactInvitation(
+            invitation.identityChangeId, declineReason.trim() || undefined));
+
+      // Ignore the backend's raw message — Vietnamese-only prose, not a stable code — and use the
+      // same fixed, localized outcome text VisitContactInvitationPage uses for the identical action.
+      const outcomeMessage = action === 'accept'
+        ? t(invitation.kind === 'TRANSFER' ? 'visitRequestV2:contactInvitation.outcome.acceptSuccessTransfer' : 'visitRequestV2:contactInvitation.outcome.acceptSuccessClaim')
+        : t('visitRequestV2:contactInvitation.outcome.declineSuccess');
 
       markAnswered(invitation.identityChangeId, {
         status: action === 'accept' ? 'ACCEPTED' : 'DECLINED',
-        message: result.message,
+        message: outcomeMessage,
       });
       setDeclineFor(null);
       setDeclineReason('');
-      showSuccessToast(result.message);
+      showSuccessToast(outcomeMessage);
 
       // Accepting is what actually creates the relation, so anything derived from it — this list, and
       // whatever the visit screens show — has to be re-read from the server rather than guessed at.
@@ -211,7 +218,7 @@ export function MyContactInvitationsPage() {
                       </span>
                       <span className="flex items-center gap-1">
                         <CalendarDays className="h-3.5 w-3.5 text-gray-400" />
-                        {formatVietnamDateTime(invitation.plannedStartAt)} – {formatVietnamDateTime(invitation.plannedEndAt)}
+                        {formatLocalizedDateTime(invitation.plannedStartAt, language)} – {formatLocalizedDateTime(invitation.plannedEndAt, language)}
                       </span>
                     </div>
                     <dl className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
@@ -228,7 +235,7 @@ export function MyContactInvitationsPage() {
                       </div>
                       <div className="flex gap-2">
                         <dt className="text-gray-500">{t('visitRequestV2:myInvitations.expiresAt')}</dt>
-                        <dd className="font-medium text-gray-800">{formatVietnamDateTime(invitation.expiresAt)}</dd>
+                        <dd className="font-medium text-gray-800">{formatLocalizedDateTime(invitation.expiresAt, language)}</dd>
                       </div>
                     </dl>
                   </div>

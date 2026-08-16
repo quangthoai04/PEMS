@@ -1,0 +1,103 @@
+{
+  "requestDetail": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Visit Management",
+      "process": "Visit Process",
+      "detail": "Request Details"
+    },
+    "title": "Request Details",
+    "taskType": "Task type",
+    "status": {
+      "ASSIGNED": "Assigned",
+      "BEFORE_VISIT": "Before visit",
+      "DURING_VISIT": "During visit",
+      "AFTER_VISIT": "After visit",
+      "CLOSED": "Closed",
+      "CANCELLED": "Cancelled"
+    },
+    "visitType": {
+      "CAMPUS_TOUR": "Campus tour",
+      "MEETING": "Meeting / working session",
+      "WORKSHOP": "Workshop",
+      "SIGNING_CEREMONY": "Signing ceremony",
+      "EXCHANGE": "Exchange",
+      "OTHER": "Other"
+    },
+    "workingLanguage": { "VI": "Vietnamese", "EN": "English" },
+    "mediaConsent": { "AGREED": "Agreed", "DECLINED": "Declined" },
+    "fields": {
+      "sender": "Sender",
+      "delegation": "Delegation",
+      "campus": "Campus",
+      "status": "Status",
+      "plannedTime": "Planned time",
+      "senderJobTitle": "Sender's job title",
+      "senderNationality": "Sender's nationality",
+      "senderEmail": "Sender's email",
+      "senderPhone": "Sender's phone",
+      "visitType": "Visit type",
+      "workingLanguage": "Working language",
+      "mediaConsent": "Media consent",
+      "transportation": "Vehicle identification",
+      "transportationEmpty": "No information yet",
+      "operationalContact": "Coordination contact",
+      "purpose": "Purpose",
+      "purposeEmpty": "No purpose provided.",
+      "workingContent": "Working content",
+      "workingContentEmpty": "No working content provided.",
+      "notes": "Notes sent to FPTU",
+      "notesEmpty": "No notes.",
+      "guestMembersCount": "Delegation members ({{count}})",
+      "guestMembersEmpty": "No delegation members yet.",
+      "supportMembersCount": "Support staff ({{count}})"
+    }
+  },
+  "processSummary": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Visit Management",
+      "summary": "Summary Report"
+    },
+    "loading": "Loading summary report...",
+    "noAccessTitle": "Access denied",
+    "noAccessDesc": "You do not have permission to view this delegation's summary report, or it does not exist.",
+    "backToList": "Back to list"
+  },
+  "contribution": {
+    "breadcrumb": {
+      "dashboard": "Dashboard",
+      "management": "Visit Management",
+      "contribution": "Contribute Results"
+    },
+    "loading": "Loading contribution page...",
+    "noAccessTitle": "Access denied",
+    "noAccessDesc": "You do not have permission to contribute results for this visit.",
+    "backToList": "Back to list",
+    "loadErrorFallback": "No data available.",
+    "loadErrorGeneric": "Could not load the contribution page. Please try again later.",
+    "retry": "Try again"
+  },
+  "createEntry": {
+    "loading": "Loading…",
+    "capabilityError": "Could not check the registration mode. Please try again.",
+    "retry": "Try again"
+  },
+  "process": {
+    "notFoundTitle": "Visit not found",
+    "noAccessTitle": "Access denied",
+    "notFoundDesc": "You do not have permission to view this visit, or the link is invalid.",
+    "noAccessDesc": "You do not have permission to operate this delegation's reception workspace.",
+    "backToList": "Back to visit management",
+    "album": {
+      "title": "3. Photo Album",
+      "subtitle": "Photo library from the visit",
+      "linkText": "View the full photo album on the Drive folder"
+    },
+    "news": {
+      "title": "4. News Posts",
+      "subtitle": "Posts and news after the visit",
+      "placeholderHeadline": "An unforgettable experience for students at FPTU"
+    }
+  }
+}

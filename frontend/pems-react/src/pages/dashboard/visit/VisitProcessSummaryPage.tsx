@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   ChevronDown,
   ChevronUp,
@@ -23,6 +24,7 @@ import type { ProcessSummaryPage, ContributionSectionStatus } from '../../../fea
 import { RegistrantInfoReadOnly, DelegationInfoReadOnly } from '../../../features/delegations/components/RequestInfoReadOnly';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { formatVisitStatus } from '../../../shared/utils/domainLabels';
+import { useAuth } from '../../../shared/hooks/useAuth';
 
 const getStatusColor = (status: string) => {
   switch (status) {
@@ -115,7 +117,14 @@ export function VisitProcessSummaryPage() {
   const location = useLocation();
   const returnUrl = location.state?.returnTo ?? '/dashboard/visit';
   const { visitInstanceId } = useParams();
-  
+
+  const { effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('visitTasks');
+  // Deep report content below is HO/Staff-Leader-only by design (see banner further down); only the
+  // entry shell (loading/no-access/breadcrumb) is genuinely reachable by a VISITOR who hits this URL.
+  const isVisitor = effectiveRole === 'VISITOR';
+  const tt = (key: string, options?: Record<string, unknown>) => t(key, { ...(options || {}), lng: isVisitor ? i18n.language : 'vi' });
+
   const [data, setData] = useState<ProcessSummaryPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -157,7 +166,7 @@ export function VisitProcessSummaryPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-[#004c91] mb-4" />
-        <p className="text-sm font-bold text-slate-500">Đang tải báo cáo tổng hợp...</p>
+        <p className="text-sm font-bold text-slate-500">{tt('processSummary.loading')}</p>
       </div>
     );
   }
@@ -169,12 +178,12 @@ export function VisitProcessSummaryPage() {
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('processSummary.noAccessTitle')}</h2>
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            Bạn không có quyền xem báo cáo tổng hợp của đoàn này, hoặc đoàn không tồn tại.
+            {tt('processSummary.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
-            Về danh sách
+            {tt('processSummary.backToList')}
           </button>
         </div>
       </div>
@@ -190,12 +199,12 @@ export function VisitProcessSummaryPage() {
           <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mb-6">
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Không có quyền truy cập</h2>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('processSummary.noAccessTitle')}</h2>
           <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
-            Bạn không có quyền xem báo cáo tổng hợp của đoàn này, hoặc đoàn không tồn tại.
+            {tt('processSummary.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
-            Về danh sách
+            {tt('processSummary.backToList')}
           </button>
         </div>
       </div>
@@ -205,11 +214,11 @@ export function VisitProcessSummaryPage() {
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24">
       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
-        <span>Dashboard</span>
+        <span>{tt('processSummary.breadcrumb.dashboard')}</span>
         <span>/</span>
-        <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate(returnUrl)}>Quản lý tiếp khách</span>
+        <span className="cursor-pointer hover:text-[#004c91] transition-colors" onClick={() => navigate(returnUrl)}>{tt('processSummary.breadcrumb.management')}</span>
         <span>/</span>
-        <span className="text-[#004c91] font-bold">Báo cáo tổng hợp</span>
+        <span className="text-[#004c91] font-bold">{tt('processSummary.breadcrumb.summary')}</span>
       </div>
 
       <div className="mb-6 flex flex-col sm:flex-row sm:items-end justify-between gap-4">

@@ -10,42 +10,29 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Info, Clock, User, Users, Calendar, FileText, Building2, Mail, Phone,
   Languages, Camera, Car, StickyNote,
 } from 'lucide-react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import type { VisitProcessDetail } from '../../../features/delegations/types/delegations.types';
-import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { formatLocalizedDateTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 import { LoadingState, ErrorState } from '../../../shared/components/state';
-
-const INSTANCE_STATUS_LABEL: Record<string, string> = {
-  ASSIGNED: 'Đã phân công',
-  BEFORE_VISIT: 'Trước tiếp khách',
-  DURING_VISIT: 'Đang tiếp khách',
-  AFTER_VISIT: 'Sau tiếp khách',
-  CLOSED: 'Đã đóng',
-  CANCELLED: 'Đã hủy',
-};
-
-const VISIT_TYPE_LABEL: Record<string, string> = {
-  CAMPUS_TOUR: 'Tham quan cơ sở',
-  MEETING: 'Họp / làm việc',
-  WORKSHOP: 'Hội thảo / workshop',
-  SIGNING_CEREMONY: 'Lễ ký kết',
-  EXCHANGE: 'Giao lưu / trao đổi',
-  OTHER: 'Khác',
-};
-
-const WORKING_LANGUAGE_LABEL: Record<string, string> = { VI: 'Tiếng Việt', EN: 'Tiếng Anh' };
-
-const MEDIA_CONSENT_LABEL: Record<string, string> = { AGREED: 'Đồng ý', DECLINED: 'Không đồng ý' };
+import { useAuth } from '../../../shared/hooks/useAuth';
 
 export function VisitRequestDetail() {
   const navigate = useNavigate();
   const { id, type } = useParams();
   const location = useLocation();
   const returnUrl = (location.state as { returnTo?: string } | null)?.returnTo ?? '/dashboard/visit';
+
+  const { effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('visitTasks');
+  // Shared by every business role — same VISITOR-only bilingual boundary as Sidebar/Profile.
+  const isVisitor = effectiveRole === 'VISITOR';
+  const language = (isVisitor ? i18n.language : 'vi') as UiLanguage;
+  const tt = (key: string, options?: Record<string, unknown>) => t(key, { ...(options || {}), lng: language });
 
   const numericId = Number(id);
   const hasNumericId = Number.isFinite(numericId) && numericId > 0;
@@ -83,17 +70,17 @@ export function VisitRequestDetail() {
   const workingContent = summary?.workingContent?.trim() || '';
   const guests = summary?.guestMembers ?? [];
   const supportMembers = summary?.externalSupportMembers ?? [];
-  const statusLabel = detail ? (INSTANCE_STATUS_LABEL[detail.instanceStatus] ?? detail.instanceStatus) : '';
+  const statusLabel = detail ? tt(`requestDetail.status.${detail.instanceStatus}`, { defaultValue: detail.instanceStatus }) : '';
   const visitTypeLabel = summary?.visitType
     ? (summary.visitType === 'OTHER'
-        ? (summary.visitTypeOther?.trim() || VISIT_TYPE_LABEL.OTHER)
-        : (VISIT_TYPE_LABEL[summary.visitType] ?? summary.visitType))
+        ? (summary.visitTypeOther?.trim() || tt('requestDetail.visitType.OTHER'))
+        : tt(`requestDetail.visitType.${summary.visitType}`, { defaultValue: summary.visitType }))
     : null;
   const workingLanguageLabel = summary?.workingLanguage
-    ? (WORKING_LANGUAGE_LABEL[summary.workingLanguage] ?? summary.workingLanguage)
+    ? tt(`requestDetail.workingLanguage.${summary.workingLanguage}`, { defaultValue: summary.workingLanguage })
     : null;
   const mediaConsentLabel = summary?.mediaConsentStatus
-    ? (MEDIA_CONSENT_LABEL[summary.mediaConsentStatus] ?? summary.mediaConsentStatus)
+    ? tt(`requestDetail.mediaConsent.${summary.mediaConsentStatus}`, { defaultValue: summary.mediaConsentStatus })
     : null;
   const opContact = summary
     ? [summary.operationalContactFullName, summary.operationalContactJobTitle, summary.operationalContactOrganization]
@@ -108,13 +95,13 @@ export function VisitRequestDetail() {
     <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-24 relative animate-in fade-in duration-500">
       {/* Breadcrumb */}
       <div className="mb-4 flex items-center text-sm font-medium text-gray-500">
-        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">Dashboard</button>
+        <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none">{tt('requestDetail.breadcrumb.dashboard')}</button>
         <span className="mx-2">/</span>
-        <button onClick={() => navigate(returnUrl)} className="hover:text-[#004c91] transition-colors outline-none">Quản lý tiếp khách</button>
+        <button onClick={() => navigate(returnUrl)} className="hover:text-[#004c91] transition-colors outline-none">{tt('requestDetail.breadcrumb.management')}</button>
         <span className="mx-2">/</span>
-        <button onClick={() => navigate(`/dashboard/visit/process/${id}`)} className="hover:text-[#004c91] transition-colors outline-none">Quy trình tiếp khách</button>
+        <button onClick={() => navigate(`/dashboard/visit/process/${id}`)} className="hover:text-[#004c91] transition-colors outline-none">{tt('requestDetail.breadcrumb.process')}</button>
         <span className="mx-2">/</span>
-        <span className="text-[#004c91] font-bold">Chi tiết yêu cầu</span>
+        <span className="text-[#004c91] font-bold">{tt('requestDetail.breadcrumb.detail')}</span>
       </div>
 
       <div className="mb-8 flex items-center gap-5 bg-white p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-gray-100">
@@ -122,8 +109,8 @@ export function VisitRequestDetail() {
           <Info className="w-6 h-6" />
         </button>
         <div>
-          <h1 className="text-2xl lg:text-3xl font-black text-[#004c91] tracking-tight uppercase">Chi tiết yêu cầu</h1>
-          {type && <p className="text-sm font-medium text-gray-500 mt-1">Loại nhiệm vụ: {type}</p>}
+          <h1 className="text-2xl lg:text-3xl font-black text-[#004c91] tracking-tight uppercase">{tt('requestDetail.title')}</h1>
+          {type && <p className="text-sm font-medium text-gray-500 mt-1">{tt('requestDetail.taskType')}: {type}</p>}
         </div>
       </div>
 
@@ -150,23 +137,23 @@ export function VisitRequestDetail() {
 
             <div className="p-8 pt-6 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field icon={<User className="w-4 h-4" />} label="Người gửi">
+                <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.sender')}>
                   <span className="text-sm font-black text-[#004c91]">{senderName}</span>
                   {senderOrg && <span className="block text-xs font-medium text-gray-500 mt-0.5">{senderOrg}</span>}
                 </Field>
-                <Field icon={<Users className="w-4 h-4" />} label="Đoàn khách">
+                <Field icon={<Users className="w-4 h-4" />} label={tt('requestDetail.fields.delegation')}>
                   <span className="text-sm font-black text-[#004c91]">{detail.delegationName}</span>
                 </Field>
-                <Field icon={<Building2 className="w-4 h-4" />} label="Cơ sở">
+                <Field icon={<Building2 className="w-4 h-4" />} label={tt('requestDetail.fields.campus')}>
                   <span className="text-sm font-bold text-gray-800">{detail.campusName ?? '—'}</span>
                 </Field>
-                <Field icon={<Clock className="w-4 h-4" />} label="Trạng thái">
+                <Field icon={<Clock className="w-4 h-4" />} label={tt('requestDetail.fields.status')}>
                   <span className="text-sm font-bold text-gray-800">{statusLabel}</span>
                 </Field>
                 <div className="md:col-span-2">
-                  <Field icon={<Calendar className="w-4 h-4" />} label="Thời gian dự kiến">
+                  <Field icon={<Calendar className="w-4 h-4" />} label={tt('requestDetail.fields.plannedTime')}>
                     <span className="text-sm font-bold text-gray-800">
-                      {formatVietnamDateTime(detail.plannedStartAt)} — {formatVietnamDateTime(detail.plannedEndAt)}
+                      {formatLocalizedDateTime(detail.plannedStartAt, language)} — {formatLocalizedDateTime(detail.plannedEndAt, language)}
                     </span>
                   </Field>
                 </div>
@@ -176,22 +163,22 @@ export function VisitRequestDetail() {
                 || summary?.registrantJobTitle || summary?.registrantNationality) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {summary?.registrantJobTitle && (
-                    <Field icon={<User className="w-4 h-4" />} label="Chức danh người gửi">
+                    <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.senderJobTitle')}>
                       <span className="text-sm font-medium text-gray-800">{summary.registrantJobTitle}</span>
                     </Field>
                   )}
                   {summary?.registrantNationality && (
-                    <Field icon={<User className="w-4 h-4" />} label="Quốc tịch người gửi">
+                    <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.senderNationality')}>
                       <span className="text-sm font-medium text-gray-800">{summary.registrantNationality}</span>
                     </Field>
                   )}
                   {summary?.registrantEmail && (
-                    <Field icon={<Mail className="w-4 h-4" />} label="Email người gửi">
+                    <Field icon={<Mail className="w-4 h-4" />} label={tt('requestDetail.fields.senderEmail')}>
                       <span className="text-sm font-medium text-gray-800 break-all">{summary.registrantEmail}</span>
                     </Field>
                   )}
                   {summary?.registrantPhone && (
-                    <Field icon={<Phone className="w-4 h-4" />} label="Điện thoại người gửi">
+                    <Field icon={<Phone className="w-4 h-4" />} label={tt('requestDetail.fields.senderPhone')}>
                       <span className="text-sm font-medium text-gray-800">{summary.registrantPhone}</span>
                     </Field>
                   )}
@@ -201,28 +188,28 @@ export function VisitRequestDetail() {
               {/* Yêu cầu bổ sung — the same block the guest filled in on the form. */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {visitTypeLabel && (
-                  <Field icon={<Info className="w-4 h-4" />} label="Loại hình">
+                  <Field icon={<Info className="w-4 h-4" />} label={tt('requestDetail.fields.visitType')}>
                     <span className="text-sm font-bold text-gray-800">{visitTypeLabel}</span>
                   </Field>
                 )}
                 {workingLanguageLabel && (
-                  <Field icon={<Languages className="w-4 h-4" />} label="Ngôn ngữ làm việc">
+                  <Field icon={<Languages className="w-4 h-4" />} label={tt('requestDetail.fields.workingLanguage')}>
                     <span className="text-sm font-bold text-gray-800">{workingLanguageLabel}</span>
                   </Field>
                 )}
                 {mediaConsentLabel && (
-                  <Field icon={<Camera className="w-4 h-4" />} label="Đồng ý truyền thông">
+                  <Field icon={<Camera className="w-4 h-4" />} label={tt('requestDetail.fields.mediaConsent')}>
                     <span className="text-sm font-bold text-gray-800">{mediaConsentLabel}</span>
                   </Field>
                 )}
-                <Field icon={<Car className="w-4 h-4" />} label="Nhận diện phương tiện">
+                <Field icon={<Car className="w-4 h-4" />} label={tt('requestDetail.fields.transportation')}>
                   {summary?.transportationNote?.trim()
                     ? <span className="text-sm font-medium text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
-                    : <span className="text-sm italic text-gray-400">Chưa có thông tin</span>}
+                    : <span className="text-sm italic text-gray-400">{tt('requestDetail.fields.transportationEmpty')}</span>}
                 </Field>
                 {opContact && (
                   <div className="md:col-span-2">
-                    <Field icon={<User className="w-4 h-4" />} label="Đầu mối phối hợp">
+                    <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.operationalContact')}>
                       <span className="text-sm font-bold text-gray-800">{opContact}</span>
                       {opContactReach && (
                         <span className="block text-xs font-medium text-gray-500 mt-0.5 break-all">{opContactReach}</span>
@@ -236,20 +223,20 @@ export function VisitRequestDetail() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
                   <FileText className="w-4 h-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">Mục đích</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.purpose')}</span>
                 </div>
                 <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
-                  {purpose ? purpose : <span className="italic text-gray-400">Chưa có mục đích.</span>}
+                  {purpose ? purpose : <span className="italic text-gray-400">{tt('requestDetail.fields.purposeEmpty')}</span>}
                 </div>
               </div>
 
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
                   <FileText className="w-4 h-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung làm việc</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.workingContent')}</span>
                 </div>
                 <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
-                  {workingContent ? workingContent : <span className="italic text-gray-400">Chưa có nội dung làm việc.</span>}
+                  {workingContent ? workingContent : <span className="italic text-gray-400">{tt('requestDetail.fields.workingContentEmpty')}</span>}
                 </div>
               </div>
 
@@ -259,20 +246,20 @@ export function VisitRequestDetail() {
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
                   <StickyNote className="w-4 h-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.notes')}</span>
                 </div>
                 <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
-                  {summary?.notes?.trim() ? summary.notes : <span className="italic text-gray-400">Chưa có ghi chú.</span>}
+                  {summary?.notes?.trim() ? summary.notes : <span className="italic text-gray-400">{tt('requestDetail.fields.notesEmpty')}</span>}
                 </div>
               </div>
 
               <div className="flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-gray-400">
                   <Users className="w-4 h-4" />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">Thành viên đoàn ({guests.length})</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.guestMembersCount', { count: guests.length })}</span>
                 </div>
                 {guests.length === 0 ? (
-                  <p className="text-sm italic text-gray-400">Chưa có thành viên đoàn.</p>
+                  <p className="text-sm italic text-gray-400">{tt('requestDetail.fields.guestMembersEmpty')}</p>
                 ) : (
                   <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-200 overflow-hidden">
                     {guests.map((g) => (
@@ -296,7 +283,7 @@ export function VisitRequestDetail() {
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center gap-2 text-gray-400">
                     <Users className="w-4 h-4" />
-                    <span className="text-[11px] font-bold uppercase tracking-wider">Nhân sự hỗ trợ ({supportMembers.length})</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.supportMembersCount', { count: supportMembers.length })}</span>
                   </div>
                   <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-200 overflow-hidden">
                     {supportMembers.map((s) => (

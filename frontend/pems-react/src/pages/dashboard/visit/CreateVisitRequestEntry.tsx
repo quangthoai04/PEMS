@@ -1,6 +1,8 @@
 import { Navigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { usePerCampusV2Capability } from '../../../shared/features/perCampusV2Capability';
 import { V2_AUTHENTICATED_CREATE_PATH } from '../../../shared/features/perCampusV2Entry';
+import { useAuth } from '../../../shared/hooks/useAuth';
 
 /**
  * Compatibility entry for the legacy `/dashboard/visit/create` URL. The old prototype page here only
@@ -12,12 +14,16 @@ import { V2_AUTHENTICATED_CREATE_PATH } from '../../../shared/features/perCampus
  */
 export function CreateVisitRequestEntry() {
   const { status, enabled, retry } = usePerCampusV2Capability();
+  const { effectiveRole } = useAuth();
+  const { t, i18n } = useTranslation('visitTasks');
+  const isVisitor = effectiveRole === 'VISITOR';
+  const tt = (key: string) => t(key, { lng: isVisitor ? i18n.language : 'vi' });
 
   if (status === 'loading') {
     return (
       <div className="flex min-h-[40vh] items-center justify-center" role="status" aria-live="polite">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#004c91] border-t-transparent" />
-        <span className="sr-only">Đang tải…</span>
+        <span className="sr-only">{tt('createEntry.loading')}</span>
       </div>
     );
   }
@@ -26,14 +32,14 @@ export function CreateVisitRequestEntry() {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center" role="alert">
         <p className="text-sm font-semibold text-slate-700">
-          Không kiểm tra được chế độ đăng ký. Vui lòng thử lại.
+          {tt('createEntry.capabilityError')}
         </p>
         <button
           type="button"
           onClick={retry}
           className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white hover:bg-[#003a6f]"
         >
-          Thử lại
+          {tt('createEntry.retry')}
         </button>
       </div>
     );
