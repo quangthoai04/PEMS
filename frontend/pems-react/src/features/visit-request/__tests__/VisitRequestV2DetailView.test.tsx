@@ -234,9 +234,12 @@ describe('VisitRequestV2DetailView', () => {
       changes: [{ fieldPath: 'instance.purpose', changeClass: 'APPROVAL_SENSITIVE', oldValueJson: '"A"', newValueJson: '"B"' }],
     });
 
+    // English strings: src/test/setup.ts documents jsdom's navigator.language = en-US, so every
+    // test in this suite renders EN by default — VisitAmendmentPanel is now fully i18n'd (was
+    // 100% hardcoded Vietnamese before this session, immune to language; now correctly localized).
     const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
-    expect(await screen.findByText(/Đề xuất thay đổi #1/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Duyệt & áp dụng' })).toBeInTheDocument();
+    expect(await screen.findByText(/Change proposal #1/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Approve & apply' })).toBeInTheDocument();
     unmount();
 
     // Read-only HO: no per-instance actions → no decision panel even though an amendment exists.
@@ -250,7 +253,7 @@ describe('VisitRequestV2DetailView', () => {
     });
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Duyệt & áp dụng' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & apply' })).not.toBeInTheDocument();
   });
 
   it('mutation UI is driven ONLY by allowedActions (never relation/status)', async () => {

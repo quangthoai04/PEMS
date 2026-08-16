@@ -52,16 +52,23 @@ const load = (over: Partial<typeof invitation>) =>
     info(over) as unknown as Awaited<ReturnType<typeof getOperationalContactInvitationInfo>>,
   );
 
-/** Renders and waits for the anonymous GET to settle, so assertions never race the loader. */
+/**
+ * Renders and waits for the anonymous GET to settle, so assertions never race the loader.
+ *
+ * Asserts the ENGLISH strings: `src/test/setup.ts` documents that jsdom reports
+ * `navigator.language = en-US`, so every test in this suite renders EN by default (no VI
+ * override here) — matching how `VisitContactInvitationPage.tsx` actually renders under test.
+ */
 const renderLoaded = async () => {
   render(<VisitContactInvitationPage kind="claim" />);
-  await waitFor(() => expect(screen.queryByText('Đang tải lời mời…')).toBeNull());
+  await waitFor(() => expect(screen.queryByText('Loading invitation…')).toBeNull());
 };
 
-const acceptCta = () => screen.queryByRole('button', { name: /Đồng ý làm đầu mối/i });
-const declineCta = () => screen.queryByRole('button', { name: /Xác nhận từ chối/i });
-/** The old two-button page also offered a plain "Từ chối" toggle next to accept. */
-const declineToggle = () => screen.queryByRole('button', { name: /^Từ chối$/i });
+const acceptCta = () => screen.queryByRole('button', { name: /Accept the contact role/i });
+const declineCta = () => screen.queryByRole('button', { name: /Confirm decline/i });
+/** The old two-button page also offered a plain "Decline" toggle next to accept — it no longer
+ * exists (single mutationAction-driven button now), so this must always resolve to null. */
+const declineToggle = () => screen.queryByRole('button', { name: /^Decline$/i });
 
 /**
  * An invitation email carries ONE link per answer and each token is minted for exactly one of them,
@@ -126,6 +133,6 @@ describe('VisitContactInvitationPage — the link decides which action is offere
     expect(acceptCta()).toBeNull();
     expect(declineCta()).toBeNull();
     expect(declineToggle()).toBeNull();
-    expect(screen.getByRole('alert').textContent).toMatch(/không thực hiện được thao tác nào/i);
+    expect(screen.getByRole('alert').textContent).toMatch(/cannot perform any action right now/i);
   });
 });
