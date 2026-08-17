@@ -186,6 +186,28 @@ describe('EditPendingCampusV2Page', () => {
   });
 
   /**
+   * The 72-hour floor is applied with a manual `form.setError` AFTER the schema already passed —
+   * outside react-hook-form's own resolver-driven invalid path, so RHF's built-in auto-focus-on-error
+   * never fires for it. Without `focusFirstInvalidField`, the message rendered below the form was the
+   * only sign anything was wrong; the schedule row itself never got a red border or focus.
+   */
+  it('focuses the schedule field when a requester-side move is refused inside 72 hours', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const tomorrow = new Date(Date.now() + 24 * 3600_000);
+    const isoDate = `${tomorrow.getFullYear()}-${pad(tomorrow.getMonth() + 1)}-${pad(tomorrow.getDate())}`;
+    const startDateInput = screen.getByTestId('campus-0-start-date');
+    fireEvent.change(startDateInput, { target: { value: isoDate } });
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(startDateInput.closest('[data-field-error="true"]')).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(startDateInput));
+  });
+
+  /**
    * The leader-registrant's path — `canOverrideScheduleLeadTime` is the backend's verdict on exactly
    * that actor, never "is this user a Staff Leader". The client does NOT decide the override: it sends
    * the ordinary request, the backend answers "confirm this", and only then does the dialog appear.

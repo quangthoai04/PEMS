@@ -145,4 +145,63 @@ describe('v2 required-field contract', () => {
     expect(paths).toContain('campusVisits.1.workingContent');
     expect(paths).not.toContain('campusVisits.0.workingContent');
   });
+
+  // ── Existing campus: operational contact is a READ-ONLY REPLAY, not a fresh write ─────────
+  // A campus with a visitInstanceId already exists on the request (Whole Edit/Resubmit/Pending
+  // Campus Edit all hydrate it that way) — CampusVisitCard renders its contact read-only
+  // (`contactReadOnly`), so completeness must not be enforced here. Requiring it produced a
+  // phantom, unfixable "1 error" on an unrelated field edit whenever the campus's contact
+  // snapshot predated the Organization-required rule (a legacy NULL Organization reads back as
+  // "" — see PEMS_FULL_VISIT_V2_FIELD_CONTRACT_AUDIT_FIX.md §2.3/§6).
+  describe('existing campus operational contact (read-only replay)', () => {
+    const blankContact = { fullName: '', organization: '', jobTitle: '', phone: '', email: '' };
+
+    it('does not require operational contact completeness once the campus already exists', () => {
+      const values = validValues();
+      values.campusVisits = [{
+        ...validCampus(), visitInstanceId: 42, expectedRowVersion: 3, operationalContact: blankContact,
+      }];
+      expect(schema.safeParse(values).success).toBe(true);
+    });
+
+    it('still requires operational contact completeness for a campus newly added in the same edit', () => {
+      const values = validValues();
+      values.campusVisits = [{
+        ...validCampus(), visitInstanceId: null, operationalContact: blankContact,
+      }];
+      const result = schema.safeParse(values);
+      expect(result.success).toBe(false);
+      const paths = result.success ? [] : result.error.issues.map(i => i.path.join('.'));
+      expect(paths).toContain('campusVisits.0.operationalContact.organization');
+      expect(paths).toContain('campusVisits.0.operationalContact.fullName');
+      expect(paths).toContain('campusVisits.0.operationalContact.jobTitle');
+      expect(paths).toContain('campusVisits.0.operationalContact.email');
+    });
+
+    it('does not flag an oddly-formatted phone replay on an existing campus (format is only checked on a fresh write)', () => {
+      const values = validValues();
+      values.campusVisits = [{
+        ...validCampus(), visitInstanceId: 42, expectedRowVersion: 3,
+        operationalContact: { ...blankContact, fullName: 'X', organization: 'X', jobTitle: 'X', email: 'x@example.com', phone: '090abc123' },
+      }];
+      // Phone keeps its own format check regardless (buildPhoneSchema), independent of new/existing —
+      // this pins that the relaxation above did not also swallow the phone-format rule.
+      const result = schema.safeParse(values);
+      expect(result.success).toBe(false);
+      const paths = result.success ? [] : result.error.issues.map(i => i.path.join('.'));
+      expect(paths).toEqual(['campusVisits.0.operationalContact.phone']);
+    });
+
+    it('leaves unrelated fields fully validated on an existing campus', () => {
+      const values = validValues();
+      values.campusVisits = [{
+        ...validCampus(), visitInstanceId: 42, expectedRowVersion: 3,
+        operationalContact: blankContact, purpose: '',
+      }];
+      const result = schema.safeParse(values);
+      expect(result.success).toBe(false);
+      const paths = result.success ? [] : result.error.issues.map(i => i.path.join('.'));
+      expect(paths).toEqual(['campusVisits.0.purpose']);
+    });
+  });
 });

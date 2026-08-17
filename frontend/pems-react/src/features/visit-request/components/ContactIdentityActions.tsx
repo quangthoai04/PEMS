@@ -10,12 +10,15 @@ import {
   type OperationalContactState,
   type ResolvedOperationalContact,
 } from '../api/visitRequestV2Api';
-import { errorCodeOf, hasAction, VisitV2Action } from '../utils/visitV2Actions';
+import { errorCodeOf, fieldErrorsOf, firstFieldError, hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
 import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
+import { OrganizationCombobox } from './shared/OrganizationCombobox';
+import { PhoneField } from './shared/PhoneField';
+import { focusFirstInvalidField } from '../utils/formErrorNavigation';
 
 interface Props {
   visitRequestId: number;
@@ -61,6 +64,14 @@ interface ContactFormState {
 const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email: 150, reason: 500 } as const;
 
 /**
+ * Per-field errors for the FOUR fields that are not the address (plan PEMS_VALIDATION_UX §2). Email
+ * keeps its own dedicated `emailError` state below — it already carries identity-specific business
+ * refusals (account inactive, cannot be used for a visitor account) that this generic map has no
+ * concept of, and merging the two would either lose that nuance or duplicate it.
+ */
+type ContactFieldErrors = Partial<Record<'fullName' | 'organization' | 'jobTitle' | 'phone' | 'reason', string>>;
+
+/**
  * Mã lỗi ổn định của backend → câu i18n cụ thể.
  *
  * Chỉ những trường hợp NGHIỆP VỤ đã biết mới nằm ở đây; lỗi lạ vẫn đi qua đường generic để không
@@ -100,9 +111,11 @@ const CONTACT_EMAIL_ERROR_KEYS: Record<string, string> = {
 };
 
 const labelCls = 'block text-xs font-semibold text-slate-500';
-const fieldCls =
-  'mt-1 h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none ' +
-  'transition-colors focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]';
+const fieldCls = (hasError?: boolean) =>
+  'mt-1 h-10 w-full rounded-lg border bg-white px-3 text-sm outline-none transition-colors ' +
+  (hasError
+    ? 'border-red-500 focus:border-red-500 focus:ring-1 focus:ring-red-300'
+    : 'border-slate-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]');
 
 /**
  * The operational-contact management workflow for ONE campus, rendered INSIDE that campus's contact
@@ -158,6 +171,7 @@ export default function ContactIdentityActions({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ContactFormState | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ContactFieldErrors>({});
   // Hủy lời mời có HẬU QUẢ khác nhau tùy loại lời mời, và không hoàn tác được — nên hỏi trước,
   // với đúng câu mô tả hậu quả của loại đang chờ (approval-gate: không auto-pick im lặng).
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -196,6 +210,7 @@ export default function ContactIdentityActions({
       reason: '',
     });
     setEmailError(null);
+    setFieldErrors({});
     setShowForm(true);
   };
 
@@ -204,6 +219,7 @@ export default function ContactIdentityActions({
     setShowForm(false);
     setForm(null);
     setEmailError(null);
+    setFieldErrors({});
   };
 
   const run = async (fn: () => Promise<{ message: string }>) => {
@@ -216,6 +232,30 @@ export default function ContactIdentityActions({
       await refreshState();
       onChanged?.();
     } catch (err: unknown) {
+      // A stable per-field `errors` dict (FluentValidation, plan PEMS_VALIDATION_UX §2.3) beats any
+      // toast: it names exactly which control is wrong. Tried FIRST and only while the form is open —
+      // there is nowhere to attach a field error once it has closed.
+      if (showForm) {
+        const backendFields = fieldErrorsOf(err);
+        if (backendFields) {
+          const mapped: ContactFieldErrors = {};
+          (['fullName', 'organization', 'jobTitle', 'phone', 'reason'] as const).forEach(key => {
+            const msg = firstFieldError(backendFields, key);
+            if (msg) mapped[key] = msg;
+          });
+          const emailMsg = firstFieldError(backendFields, 'email');
+          if (Object.keys(mapped).length > 0 || emailMsg) {
+            setFieldErrors(mapped);
+            if (emailMsg) setEmailError(emailMsg);
+            window.setTimeout(() => focusFirstInvalidField(), 60);
+            return;
+          }
+          // A validation error whose fields we cannot map (e.g. `Reason` alone with a message this
+          // component has no slot for) still falls through to the generic branches below rather than
+          // being silently swallowed.
+        }
+      }
+
       // Các xung đột nghiệp vụ ĐÃ BIẾT phải nói đúng chuyện, không rơi về "Đã xảy ra lỗi. Vui lòng
       // thử lại." — câu đó vừa vô nghĩa (thử lại sẽ hỏng y hệt) vừa che mất việc thao tác có thể đã
       // thành công một phần. Map theo MÃ ổn định của backend, không parse message.
@@ -271,6 +311,30 @@ export default function ContactIdentityActions({
     && form.phone.trim() === (contact.phone ?? '').trim()
     && isSameEmailIdentity(form.email, contactEmail);
 
+  /**
+   * Client mirror of the backend's required/format rules (plan PEMS_VALIDATION_UX §2.2) — a UX aid
+   * only, never a second source of truth: the server re-validates every field regardless, and a value
+   * that slips past this still fails there. Phone stays optional here because it is optional on the
+   * command (`MaximumLength` only, no `NotEmpty`); Organization is required, matching Create/Pending
+   * Edit/Resubmit and the command's own `NotEmpty` rule.
+   */
+  const validateContactFields = (f: ContactFormState): { errors: ContactFieldErrors; email: string | null } => {
+    const errors: ContactFieldErrors = {};
+    if (!f.fullName.trim())
+      errors.fullName = t('validation:requiredField', { field: t('visitRequestV2:person.fullName') });
+    if (!f.organization.trim())
+      errors.organization = t('validation:requiredField', { field: t('visitRequestV2:person.organization') });
+    if (!f.jobTitle.trim())
+      errors.jobTitle = t('validation:requiredField', { field: t('visitRequestV2:person.jobTitle') });
+    let email: string | null = null;
+    if (!f.email.trim()) {
+      email = t('validation:requiredField', { field: t('visitRequestV2:card.email') });
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) {
+      email = t('validation:emailInvalidField', { field: t('visitRequestV2:card.email') });
+    }
+    return { errors, email };
+  };
+
   const submitForm = () => {
     if (!form) return;
     // Nothing moved → close, and send nothing. A request whose only possible answer is "you changed
@@ -279,11 +343,19 @@ export default function ContactIdentityActions({
       closeForm();
       return;
     }
+    const { errors: nextFieldErrors, email: nextEmailError } = validateContactFields(form);
+    if (Object.keys(nextFieldErrors).length > 0 || nextEmailError) {
+      setFieldErrors(nextFieldErrors);
+      setEmailError(nextEmailError);
+      window.setTimeout(() => focusFirstInvalidField(), 60);
+      return;
+    }
     if (identityChanging && !can.changeIdentity) {
       setEmailError(t('visitRequestV2:contact.identityChangeNotAllowed'));
       return;
     }
     setEmailError(null);
+    setFieldErrors({});
     void run(() =>
       saveOperationalContact(visitRequestId, visitInstanceId, {
         fullName: form.fullName,
@@ -302,42 +374,92 @@ export default function ContactIdentityActions({
     field: 'fullName' | 'organization' | 'jobTitle' | 'phone' | 'email',
     label: string,
     required: boolean,
-  ) => (
-    <div>
+  ) => {
+    // Email keeps its own dedicated state (identity-specific business refusals); the other four share
+    // the generic `fieldErrors` map. Same rendering contract either way.
+    const genericError = field === 'email' ? undefined : fieldErrors[field];
+    const hasError = field === 'email' ? !!emailError : !!genericError;
+    const errorId = field === 'email' ? 'ci-email-error' : `ci-${field}-error`;
+    // A change of value for a non-email field: shared by the plain `<input>` path below AND the two
+    // control-specific branches (Organization/Phone), so all three clear their own error the same way.
+    const commit = (value: string) => {
+      setForm(f => (f ? { ...f, [field]: value } : f));
+      if (genericError && value.trim()) {
+        setFieldErrors(prev => ({ ...prev, [field]: undefined }));
+      }
+    };
+    // Phone's own hint is PhoneField's built-in, focus-conditional one (below) — nothing here needs to
+    // point at it. Email keeps its static hint id, exactly as before.
+    const ariaDescribedBy = hasError ? errorId : field === 'email' ? 'ci-email-hint' : undefined;
+    return (
+    <div data-field-error={hasError ? 'true' : undefined}>
       <label htmlFor={`ci-${field}`} className={labelCls}>
         {label}
         {required && <span className="text-red-500"> *</span>}
       </label>
+      {field === 'organization' ? (
+        // Same shared control as Create/Manage's Operational Contact organization field
+        // (CampusVisitCard.tsx) — async search + free-solo text, REQUEST_FORM policy (the component's
+        // default). No `partnerId`: the Operational Contact snapshot has no partner-link column, so — like
+        // that same call site — the id half of the callback is simply not wired up.
+        <OrganizationCombobox
+          inputId={`ci-${field}`}
+          testId={`contact-field-${field}`}
+          ariaLabel={label}
+          placeholder={label}
+          value={form?.organization ?? ''}
+          hasError={hasError}
+          onChange={value => commit(value)}
+        />
+      ) : field === 'phone' ? (
+        // Same shared control as every other editable phone field in Visit V2 (Create/Edit registrant,
+        // per-campus operational contact) — same hint copy, same format rule.
+        <PhoneField
+          testId={`contact-field-${field}`}
+          hasError={hasError}
+          error={genericError}
+          field={{
+            id: `ci-${field}`,
+            value: form?.phone ?? '',
+            maxLength: MAX.phone,
+            onChange: e => commit(e.target.value),
+            'aria-invalid': hasError ? true : undefined,
+            'aria-describedby': ariaDescribedBy,
+          }}
+        />
+      ) : (
       <input
         id={`ci-${field}`}
         data-testid={`contact-field-${field}`}
-        type={field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}
-        inputMode={field === 'phone' ? 'tel' : undefined}
-        placeholder={field === 'phone' ? '0912345678' : undefined}
-        required={required}
+        // `type="text"` even for email: `type="email"` runs the browser's OWN native format
+        // check on submit — for exactly the same reason `required` was dropped above, a malformed
+        // address would be blocked by an unstyled native tooltip before this component's own message
+        // ever rendered. `inputMode` still gives mobile keyboards the right layout.
+        type="text"
+        inputMode={field === 'email' ? 'email' : undefined}
+        // Deliberately NOT the native `required` attribute: the browser's own constraint validation
+        // would intercept Submit before `validateContactFields`/the field-error state ever run,
+        // surfacing an unstyled, non-localized tooltip instead of the inline message below. The `*`
+        // marker still says the field is required; enforcement is entirely this component's own.
         maxLength={MAX[field]}
-        className={fieldCls}
+        className={fieldCls(hasError)}
         value={form?.[field] ?? ''}
         onChange={e => {
           const { value } = e.target;
-          setForm(f => (f ? { ...f, [field]: value } : f));
+          commit(value);
           if (field === 'email') setEmailError(null);
         }}
-        aria-invalid={field === 'email' && emailError ? true : undefined}
-        aria-describedby={
-          field === 'email' && emailError ? 'ci-email-error'
-            : field === 'email' ? 'ci-email-hint'
-              : field === 'phone' ? 'ci-phone-hint'
-                : undefined
-        }
+        aria-invalid={hasError ? true : undefined}
+        aria-describedby={ariaDescribedBy}
       />
-      {/* The accepted shapes, stated up front. This form is server-validated, so the alternative is
-          a round trip that comes back saying only "không hợp lệ" (plan §18). */}
-      {field === 'phone' && (
-        <p id="ci-phone-hint" className="mt-1 text-xs font-medium text-slate-500">
-          {t('validation:phoneHint')}
+      )}
+      {genericError && (
+        <p id={errorId} role="alert" className="mt-1 text-xs font-semibold text-red-600">
+          {genericError}
         </p>
       )}
+      {/* The accepted shapes, stated up front (plan §18) — PhoneField's own hint, shown while
+          focused and error-free, same copy every other Phone field in Visit V2 uses. */}
       {/* Says what the address DOES before it is changed, not after. Once the save has gone through,
           an invitation is already out and "did you mean to do that?" is too late to be useful. */}
       {field === 'email' && !emailError && (
@@ -351,7 +473,8 @@ export default function ContactIdentityActions({
         </p>
       )}
     </div>
-  );
+    );
+  };
 
   const contactForm = (
     <form
@@ -365,7 +488,7 @@ export default function ContactIdentityActions({
       {/* Two columns from the tablet breakpoint up, one below it — no horizontal scroll on mobile. */}
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2" data-testid="contact-form-grid">
         {textField('fullName', t('visitRequestV2:person.fullName'), true)}
-        {textField('organization', t('visitRequestV2:person.organization'), false)}
+        {textField('organization', t('visitRequestV2:person.organization'), true)}
         {textField('jobTitle', t('visitRequestV2:person.jobTitle'), true)}
         {textField('phone', t('visitRequestV2:card.phone'), false)}
         {textField('email', t('visitRequestV2:card.email'), true)}

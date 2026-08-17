@@ -58,8 +58,15 @@ public sealed class UpdatePendingVisitRequestV2CommandValidator : AbstractValida
                 campus.RuleFor(c => c.ExpectedRowVersion)
                     .NotNull().WithMessage("Thiếu phiên bản dữ liệu của lịch thăm hiện có (row version).")
                     .When(c => c.VisitInstanceId.HasValue);
-                // Content rules — identical to create-v2, via the shared projection.
-                campus.RuleFor(c => c.ToFormDto()).SetValidator(new CampusVisitFormDtoValidator());
+                // Content rules — identical to create-v2, via the shared projection. The operational
+                // contact is the one exception: a campus being ADDED here (VisitInstanceId == null) is a
+                // fresh write and must be complete, same bar as create; an EXISTING campus's contact is a
+                // read-only replay (its completeness, if any, belongs to Manage Contact) — requiring it
+                // again here is what turned an unrelated field edit into an unfixable "1 error" whenever
+                // the campus's contact snapshot predated the Organization-required rule.
+                campus.RuleFor(c => c.ToFormDto())
+                    .SetValidator(c => new CampusVisitFormDtoValidator(
+                        requireCompleteOperationalContact: !c.VisitInstanceId.HasValue));
             });
         });
     }

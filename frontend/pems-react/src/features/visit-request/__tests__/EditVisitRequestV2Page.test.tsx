@@ -342,6 +342,59 @@ describe('EditVisitRequestV2Page', () => {
     expect(screen.queryByTestId('campus-opcontact-use-registrant-0')).not.toBeInTheDocument();
   });
 
+  // ── Field-contract audit: Phone optional + legacy contact does not block unrelated edits ──────
+  // See PEMS_FULL_VISIT_V2_FIELD_CONTRACT_AUDIT_FIX.md.
+
+  it('does not mark the registrant Phone field as required, and a blank phone does not block Save (PHONE-02/05)', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form());
+    vi.mocked(updatePendingVisitRequestV2).mockResolvedValue({
+      visitRequestId: 5, status: 'PENDING_APPROVAL', visitScope: 'SINGLE_CAMPUS',
+      hasMixedCampusDetails: false, requestRowVersion: 8, instances: [], message: 'Đã cập nhật',
+    } as never);
+
+    renderAt('edit');
+    await screen.findByDisplayValue('Đoàn HN');
+
+    const phoneInput = screen.getByTestId('v2e-registrant-phone');
+    const fieldRoot = phoneInput.closest('.relative')?.parentElement;
+    expect(fieldRoot?.querySelector('label')?.textContent).not.toMatch(/\*/);
+
+    fireEvent.change(phoneInput, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    await waitFor(() => expect(updatePendingVisitRequestV2).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(updatePendingVisitRequestV2).mock.calls[0];
+    expect(payload.registrant.phone).toBeFalsy();
+  });
+
+  it('shows a legacy-incomplete contact as an informational notice, not a form error, and still saves an unrelated field change (LEGACY-CONTACT-01/02)', async () => {
+    const legacyCampus = campus(1, 'HN', 'FPTU Hà Nội', 4, 'Đoàn HN');
+    legacyCampus.operationalContact = { ...legacyCampus.operationalContact, organization: '' };
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ campusVisits: [legacyCampus] }));
+    vi.mocked(updatePendingVisitRequestV2).mockResolvedValue({
+      visitRequestId: 5, status: 'PENDING_APPROVAL', visitScope: 'SINGLE_CAMPUS',
+      hasMixedCampusDetails: false, requestRowVersion: 8, instances: [], message: 'Đã cập nhật',
+    } as never);
+
+    renderAt('edit');
+    await screen.findByDisplayValue('Đoàn HN');
+
+    // "—" placeholder and an amber notice, never a red validation error, for the field this screen
+    // cannot fix.
+    expect(screen.getByTestId('campus-opcontact-readonly-organization-0').textContent).toBe('—');
+    expect(screen.getByTestId('campus-opcontact-legacy-warning-0')).toBeInTheDocument();
+
+    // Editing an UNRELATED field (Purpose) and saving must not be blocked by the legacy gap.
+    const purposeField = screen.getByDisplayValue('Trao đổi');
+    fireEvent.change(purposeField, { target: { value: 'Trao đổi hợp tác' } });
+    fireEvent.click(screen.getByRole('button', { name: /Save changes/ }));
+
+    await waitFor(() => expect(updatePendingVisitRequestV2).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(updatePendingVisitRequestV2).mock.calls[0];
+    expect(payload.campusVisits[0].purpose).toBe('Trao đổi hợp tác');
+    expect(payload.campusVisits[0].operationalContact.organization).toBe('');
+  });
+
   // ── Success feedback (fix plan §6) ───────────────────────────────────────────────────────────
   // The form raises NO toast of its own: the message travels in router state and the detail screen is
   // its single owner. Two owners is exactly how one save produced two identical toasts.

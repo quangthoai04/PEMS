@@ -111,6 +111,7 @@
     "FACE_SCAN_RATE_LIMITED": "Bạn quét quá nhanh. Vui lòng thử lại sau ít phút.",
     "FACE_SCAN_QUOTA_EXCEEDED": "Đã hết hạn mức quét khuôn mặt trong tháng.",
     "IMMUTABLE_CONTACT_PROFILE": "Không sửa được thông tin đầu mối vận hành trong biểu mẫu đăng ký. Hãy dùng chức năng “Chỉnh sửa đầu mối” ở màn hình chi tiết đơn.",
-    "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Chưa có thay đổi nào để lưu cho đầu mối vận hành."
+    "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Chưa có thay đổi nào để lưu cho đầu mối vận hành.",
+    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "Lời mời này đang thiếu đơn vị công tác của đầu mối vận hành. Vui lòng đề nghị người đăng ký cập nhật thông tin đầu mối và gửi lại lời mời xác nhận."
   }
 }

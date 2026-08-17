@@ -138,8 +138,8 @@ public sealed class ReplaceOperationalContactCommandHandler
 
             // ── The campus's contact snapshot. Content only; it grants nothing. ──
             detail.OperationalContactFullName = request.FullName.Trim();
-            detail.OperationalContactOrganization =
-                string.IsNullOrWhiteSpace(request.Organization) ? null : request.Organization.Trim();
+            // Required by the validator like FullName/JobTitle — a blank value never reaches here.
+            detail.OperationalContactOrganization = request.Organization!.Trim();
             detail.OperationalContactJobTitle = request.JobTitle.Trim();
             detail.OperationalContactPhone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
             detail.OperationalContactEmail = newEmail;

@@ -6,6 +6,7 @@ import { delegationsApi } from '../../delegations/api/delegationsApi';
 import type { HostCandidate } from '../../delegations/types/delegations.types';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { focusFirstInvalidField } from '../utils/formErrorNavigation';
 
 /**
  * Only what the handover actually needs. It used to take the whole per-campus read DTO, which meant the
@@ -51,6 +52,10 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // No spam on open (plan PEMS_VALIDATION_UX §3) — required-field errors appear only after the first
+  // Submit click. Once shown, they clear themselves the instant the field becomes valid, because they
+  // are DERIVED from `submitAttempted` + the field's own state rather than a separately-set flag.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
 
   // Escape closes, focus starts inside the dialog, and focus returns to whatever opened it — the modal
   // is now reachable from a row menu, where being dropped back at the top of a 50-row list is a real cost.
@@ -85,10 +90,21 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
   // is a list of real options.
   const selectable = candidates.filter(c => c.userId !== campus.currentHostUserId);
   const selected = selectable.find(c => c.userId === selectedId) ?? null;
-  const canSubmit = selectedId !== null && reason.trim().length > 0 && !busy;
+  // The button stays enabled whenever there is something to submit — a disabled control with no
+  // explanation is a dead end (plan PEMS_VALIDATION_UX §3: "ưu tiên cách ít gây nút chết không lý
+  // do"). Missing selection/reason is judged, and said, at Submit instead of silently refusing clicks.
+  const canSubmit = !busy && !loading && !loadError && selectable.length > 0;
+  const hostError = submitAttempted && selectedId === null
+    ? t('visitRequestV2:hostTransfer.errSelectHost') : undefined;
+  const reasonError = submitAttempted && reason.trim().length === 0
+    ? t('visitRequestV2:hostTransfer.errReasonRequired') : undefined;
 
   const submit = async () => {
-    if (selectedId === null) return;
+    setSubmitAttempted(true);
+    if (selectedId === null || reason.trim().length === 0) {
+      window.setTimeout(() => focusFirstInvalidField(dialogRef.current ?? document), 60);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -193,10 +209,15 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
             {t('visitRequestV2:hostTransfer.noCandidates')}
           </p>
         ) : (
-          <fieldset className="mb-3">
+          <fieldset className="mb-3" data-field-error={hostError ? 'true' : undefined}>
             <legend className="mb-1 text-sm font-bold text-slate-700">
-              {t('visitRequestV2:hostTransfer.newHost')}
+              {t('visitRequestV2:hostTransfer.newHost')} <span className="text-red-500">*</span>
             </legend>
+            {hostError && (
+              <p role="alert" data-testid="host-transfer-error-host" className="mb-1.5 text-xs font-semibold text-red-600">
+                {hostError}
+              </p>
+            )}
             <div className="space-y-1.5">
               {selectable.map(c => (
                 <label
@@ -239,19 +260,29 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
           </fieldset>
         )}
 
-        <label className="mb-3 block text-sm">
+        <label className="mb-3 block text-sm" data-field-error={reasonError ? 'true' : undefined}>
           <span className="mb-1 block text-xs font-semibold text-slate-600">
-            {t('visitRequestV2:hostTransfer.reason')}
+            {t('visitRequestV2:hostTransfer.reason')} <span className="text-red-500">*</span>
           </span>
           <textarea
             data-testid="host-transfer-reason"
-            className={field}
+            className={reasonError
+              ? `${field} border-red-500 focus:border-red-500 focus:ring-2 focus:ring-red-200`
+              : field}
             rows={3}
             maxLength={500}
             value={reason}
             onChange={e => setReason(e.target.value)}
             placeholder={t('visitRequestV2:hostTransfer.reasonPlaceholder')}
+            aria-invalid={reasonError ? true : undefined}
+            aria-describedby={reasonError ? 'host-transfer-reason-error' : undefined}
           />
+          {reasonError && (
+            <p id="host-transfer-reason-error" role="alert" data-testid="host-transfer-error-reason"
+              className="mt-1 text-xs font-semibold text-red-600">
+              {reasonError}
+            </p>
+          )}
         </label>
 
         {selected?.hasScheduleConflict && (

@@ -3,29 +3,24 @@ import type { ResolvedVisitForm, SafeEditPayload } from '../api/visitRequestV2Ap
 /** The registrant fields the safe-edit form manages. */
 export interface SafeEditRegistrantDraft {
   fullName: string;
+  nationality: string;
   organization: string;
   jobTitle: string;
   phone: string;
+  /** Partner profile the organization was picked from, or null for free text. */
+  partnerId: number | null;
 }
 
 /**
- * The display half of ONE campus's operational-contact snapshot, as the safe-edit form manages it.
- * Email is deliberately absent: it is what an invitation binds to, so changing it is a replace or a
- * transfer — a re-confirmation, not a typo fix.
+ * One campus row in the safe-edit form.
+ *
+ * The operational-contact profile is deliberately ABSENT: it has exactly one door now — "Manage the
+ * contact role" — so this form never carries it (plan PEMS_CONTACT_ONE_DOOR).
  */
-export interface SafeEditContactDraft {
-  fullName: string;
-  organization: string;
-  phone: string;
-}
-
-/** One campus row in the safe-edit form. */
 export interface SafeEditInstanceDraft {
   visitInstanceId: number;
   expectedRowVersion: number;
   campusName: string;
-  /** This campus's own contact snapshot — never shared with a sibling campus. */
-  contact: SafeEditContactDraft;
   transportationNote: string;
   mediaConsentStatus: string;
   /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
@@ -64,18 +59,24 @@ export function buildChangedOnlyPayload(
   };
 
   // ── Registrant. Full name is required by the backend, so once ANY registrant field changed the
-  //    block carries the name too — otherwise the patch would look like a request to blank it. ──
+  //    block carries the name too — otherwise the patch would look like a request to blank it.
+  //    partnerId travels ATOMICALLY with organization — never sent independently — so the text and
+  //    the id it points at can never be applied as two separate patches. ──
   const registrantChanged =
     changed(form.registrant.fullName, registrant.fullName)
+    || changed(form.registrant.nationality, registrant.nationality)
     || changed(form.registrant.organization, registrant.organization)
     || changed(form.registrant.jobTitle, registrant.jobTitle)
-    || changed(form.registrant.phone, registrant.phone);
+    || changed(form.registrant.phone, registrant.phone)
+    || (form.partnerId ?? null) !== (registrant.partnerId ?? null);
   if (registrantChanged) {
     payload.registrant = {
       fullName: norm(registrant.fullName),
+      nationality: norm(registrant.nationality),
       organization: norm(registrant.organization) || null,
       jobTitle: norm(registrant.jobTitle) || null,
       phone: norm(registrant.phone) || null,
+      partnerId: registrant.partnerId,
     };
   }
 
@@ -94,20 +95,6 @@ export function buildChangedOnlyPayload(
       // "" rather than null: null means "not part of this edit", so clearing a field has to be an
       // explicit empty string.
       patch.transportationNote = norm(draft.transportationNote);
-      touched = true;
-    }
-    // Contact: name and phone are both required by the backend, so once ANY of the three changed
-    // the block carries all of them — a partial patch would read as a request to blank the rest.
-    const contactChanged =
-      changed(current.operationalContact.fullName, draft.contact.fullName)
-      || changed(current.operationalContact.organization, draft.contact.organization)
-      || changed(current.operationalContact.phone, draft.contact.phone);
-    if (contactChanged) {
-      patch.operationalContact = {
-        fullName: norm(draft.contact.fullName),
-        organization: norm(draft.contact.organization) || null,
-        phone: norm(draft.contact.phone),
-      };
       touched = true;
     }
     if (changed(current.notes, draft.notes)) {

@@ -84,6 +84,41 @@ public sealed class OperationalContactV2Validator : AbstractValidator<ContactPoi
     }
 }
 
+/// <summary>
+/// Structural rules for an EXISTING campus's operational-contact snapshot being REPLAYED through an
+/// edit, resubmit or amendment payload — never for a fresh write. The snapshot is read-only in every
+/// one of those flows: the caller echoes back whatever the read model handed it, which may itself be a
+/// legacy row that predates <see cref="OperationalContactV2Validator"/>'s completeness rule and
+/// therefore holds blanks (a NULL Organization on the DB row reads back as "").
+///
+/// <para>
+/// Rejecting a blank here would block an edit to an UNRELATED field purely because of data this flow
+/// has no way to fix — that door is Manage Contact / the OperationalContact commands, which still run
+/// the full <see cref="OperationalContactV2Validator"/>. Completeness is therefore NOT enforced here;
+/// length ceilings still are, as a defence against oversized payloads.
+/// </para>
+///
+/// <para>
+/// Whether the snapshot actually CHANGED is enforced separately and unconditionally inside the
+/// transaction (edit: <c>EnsureContactSnapshotUnchanged</c>; amendment: <c>BuildChangeRows</c>'s
+/// contact-profile guard) — this validator's job ends at "well-formed", not "identical". A client that
+/// tries to redescribe the contact through one of these paths is refused there, with a clear
+/// IMMUTABLE_CONTACT_PROFILE / ContactProfileNotAmendable business error — not with a misleading
+/// "Organization is required" that a read-only field can never satisfy.
+/// </para>
+/// </summary>
+public sealed class OperationalContactReplayV2Validator : AbstractValidator<ContactPointDto>
+{
+    public OperationalContactReplayV2Validator()
+    {
+        RuleFor(x => x.FullName).MaximumLength(150).WithMessage(TooLong("Họ tên đầu mối phối hợp", 150));
+        RuleFor(x => x.Organization).MaximumLength(200).WithMessage(TooLong("Đơn vị công tác đầu mối phối hợp", 200));
+        RuleFor(x => x.JobTitle).MaximumLength(150).WithMessage(TooLong("Chức vụ đầu mối phối hợp", 150));
+        RuleFor(x => x.Phone).MaximumLength(50).WithMessage(TooLong("Số điện thoại đầu mối phối hợp", 50));
+        RuleFor(x => x.Email).MaximumLength(150).WithMessage(TooLong("Email đầu mối phối hợp", 150));
+    }
+}
+
 /// <summary>One guest row — every column required, shared by create-v2 and the amendment path.</summary>
 public sealed class VisitorV2Validator : AbstractValidator<VisitorDto>
 {

@@ -29,7 +29,12 @@ public sealed class UpdatePendingVisitInstanceV2CommandValidator
             // expected version a stale form would silently overwrite whatever arrived in between.
             RuleFor(x => x.Content.ExpectedRowVersion)
                 .NotNull().WithMessage("Thiếu phiên bản dữ liệu của lịch thăm (row version).");
-            RuleFor(x => x.Content.ToFormDto()).SetValidator(new CampusVisitFormDtoValidator());
+            // This command always targets an EXISTING instance (VisitInstanceId is a required route
+            // param above), so its operational contact is always a read-only replay, never a fresh
+            // write — Create-level completeness does not apply (see
+            // CampusVisitFormDtoValidator.requireCompleteOperationalContact).
+            RuleFor(x => x.Content.ToFormDto())
+                .SetValidator(new CampusVisitFormDtoValidator(requireCompleteOperationalContact: false));
         });
 
         // Approving without naming a Host is not a thing that exists (§8): an ASSIGNED campus with no

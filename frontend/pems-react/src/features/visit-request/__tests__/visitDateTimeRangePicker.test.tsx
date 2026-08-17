@@ -191,6 +191,31 @@ describe('VisitDateTimeRangePicker', () => {
     expect(screen.getByTestId('t-end-date')).toHaveValue(d2);
   });
 
+  /**
+   * The start/end inputs are wired through react-hook-form's `Controller` render prop, which never
+   * registers a DOM ref for them — so RHF's own auto-focus-on-error has nothing to `.focus()`. The
+   * `data-field-error` wrapper is what lets the shared `focusFirstInvalidField()` helper find and
+   * scroll to this control instead (PEMS_PROMPT_FIX_VALIDATION_UX_PLURALIZATION §6 verification).
+   */
+  it('marks the field as erroring and wires aria-invalid when a submit-time error is passed', () => {
+    const date = futureDate();
+    render(
+      <VisitDateTimeRangePicker
+        idPrefix="t"
+        minAdvanceHours={72}
+        startValue={`${date}T08:00`}
+        endValue={`${date}T09:00`}
+        onChange={() => {}}
+        startError="Không hợp lệ"
+      />,
+    );
+    const startInput = screen.getByTestId('t-start-date');
+    expect(startInput.closest('[data-field-error="true"]')).not.toBeNull();
+    expect(startInput).toHaveAttribute('aria-invalid', 'true');
+    expect(startInput).toHaveAttribute('aria-describedby', expect.stringContaining('start-error'));
+    expect(screen.getByTestId('t-start-error')).toHaveAttribute('role', 'alert');
+  });
+
   it('applies the advance rule it was given, not a hardcoded one', async () => {
     const soon = new Date(Date.now() + 30 * 60 * 1000);
     const pad = (n: number) => String(n).padStart(2, '0');

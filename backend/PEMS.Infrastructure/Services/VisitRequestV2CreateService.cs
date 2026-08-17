@@ -262,9 +262,10 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     Purpose = cv.Purpose,
                     WorkingContent = cv.WorkingContent,
                     OperationalContactFullName = cv.OperationalContact.FullName,
-                    // Organization + email are OPTIONAL (validator/frontend allow blank); the DB CHECKs
-                    // reject an empty string, so normalize blank → NULL (which the CHECKs and the now-nullable
-                    // columns accept). Name + phone stay required upstream.
+                    // Organization, job title and email are REQUIRED upstream (OperationalContactV2Validator's
+                    // NotEmpty), so Clean() here never actually has a blank to normalize — it stays for
+                    // symmetry with Phone, the one field that IS optional and whose blank does normalize to
+                    // NULL (PhoneNumber.NormalizeOrNull below).
                     OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
                     OperationalContactJobTitle = Clean(cv.OperationalContact.JobTitle),
                     OperationalContactPhone = PhoneNumber.NormalizeOrNull(cv.OperationalContact.Phone),

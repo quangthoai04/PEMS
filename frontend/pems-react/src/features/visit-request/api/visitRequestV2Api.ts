@@ -212,7 +212,10 @@ export interface ResolvedOperationalContact {
   fullName: string;
   organization: string;
   jobTitle: string;
-  phone: string;
+  /** Genuinely nullable at runtime (VisitFormReadService.ResolveAsync passes the DB column through
+   *  unnormalized) — unlike fullName/organization/jobTitle/email, which the backend coalesces to "".
+   *  Phone is optional everywhere in this feature, so a null here is ordinary, not a data gap. */
+  phone: string | null;
   email: string;
   /** PENDING | CONFIRMED | DECLINED | EXPIRED | TRANSFER_PENDING. */
   confirmationStatus: string;
@@ -838,16 +841,18 @@ export const cancelOperationalContactChange = (
  */
 export interface SafeEditPayload {
   expectedRequestRowVersion: number;
-  registrant?: { fullName: string; organization?: string | null; jobTitle?: string | null; phone?: string | null } | null;
+  registrant?: {
+    fullName: string;
+    nationality: string;
+    organization?: string | null;
+    jobTitle?: string | null;
+    phone?: string | null;
+    /** Partner profile the organization was picked from, or null for free text (mirrors V2VisitorDto). */
+    partnerId: number | null;
+  } | null;
   instances?: Array<{
     visitInstanceId: number;
     expectedRowVersion: number;
-    /**
-     * The DISPLAY half of this campus's contact snapshot. Email is absent on purpose: it is what an
-     * invitation binds to, so changing it is a replace/transfer, never a quick typo fix. Per campus,
-     * because correcting one campus's contact name must not rewrite its siblings'.
-     */
-    operationalContact?: { fullName: string; organization?: string | null; phone: string } | null;
     transportationNote?: string | null;
     /** AGREED | DECLINED, or omitted when unchanged. DECLINED applies even inside the cutoff. */
     mediaConsentStatus?: string | null;
@@ -911,6 +916,8 @@ export interface AmendmentProposalPayload {
   externalSupportMembers: V2SupportMemberDto[];
   plannedStartAt: string;
   plannedEndAt: string;
+  /** @see V2CampusVisitForm.operationalContactClientMemberKey — same durable-reference convention (NP-03). */
+  operationalContactClientMemberKey?: string | null;
 }
 
 export interface AmendmentChange {

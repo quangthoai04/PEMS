@@ -1,7 +1,7 @@
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import AsyncCreatableSelect from 'react-select/async-creatable';
-import type { StylesConfig, SingleValue } from 'react-select';
+import { components as SelectComponents, type StylesConfig, type SingleValue, type InputProps } from 'react-select';
 import { visitRequestApi } from '../../api/visitRequestApi';
 
 /**
@@ -199,6 +199,16 @@ export const OrganizationCombobox: React.FC<Props> = ({
     ? { value, label: value, partnerId: partnerId ?? null }
     : null;
 
+  // react-select's own Input never sets `aria-invalid` — a required field left empty gave a screen
+  // reader no signal at all, unlike every plain `<input>` field beside it. This overrides ONLY that one
+  // attribute; autosize, keyboard handling and ref plumbing stay the library's own default Input.
+  const InputWithAria = useCallback(
+    (props: InputProps<OrgOption>) => (
+      <SelectComponents.Input {...props} aria-invalid={hasError ? true : undefined} />
+    ),
+    [hasError],
+  );
+
   return (
     <div data-testid={testId}>
       <AsyncCreatableSelect<OrgOption>
@@ -212,6 +222,7 @@ export const OrganizationCombobox: React.FC<Props> = ({
         inputValue={inputValue}
         inputId={inputId}
         aria-label={ariaLabel}
+        components={{ Input: InputWithAria }}
         onInputChange={(val, { action }) => {
           if (action === 'input-change') {
             setInputValue(val);

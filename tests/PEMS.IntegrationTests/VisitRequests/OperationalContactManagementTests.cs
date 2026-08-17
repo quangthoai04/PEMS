@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -818,6 +819,176 @@ public sealed class OperationalContactManagementTests
             var after = await CampusStateAsync(requestId);
             Assert.Equal(VisitInstanceStatuses.BeforeVisit, after.Status);
             Assert.Equal(contactId, after.ContactUserId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Organization is required on every write path, not just Create/Pending Edit/Resubmit ──────────
+    //
+    // These pin the SAME rule the unit-level validator tests pin, but through the real handlers and a
+    // committed database, proving a blank Organization does not silently reach a write anywhere along
+    // the fork — and that a legitimate Organization correction is written AND audited like every other
+    // field. Validation itself runs through the SAME FluentValidation validator class the production
+    // MediatR pipeline (`ValidationBehaviour<TRequest,TResponse>`) resolves and runs before Handle is
+    // ever reached — this harness dispatches straight to handlers (see `InProcessSender` above) for
+    // every test in this file, so the validator is invoked explicitly here to prove the identical
+    // refusal a real HTTP call would get, and that nothing downstream depends on it being skipped.
+
+    /// <summary>ORG-INT-01. A blank Organization on a same-address save is refused before anything moves.</summary>
+    [Fact]
+    public async Task Blank_organization_on_a_profile_correction_is_refused_before_any_write()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var changesBefore = await ChangesAsync(requestId);
+
+            var blankOrgSave = SaveOf(requestId, before.InstanceId, detail,
+                organization: "   ", phone: "+84900000003");
+
+            var result = new SaveOperationalContactCommandValidator().Validate(blankOrgSave);
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(SaveOperationalContactCommand.Organization));
+
+            // Nothing about the campus moved — same as production, where ValidationBehaviour throws
+            // BEFORE the handler (and therefore this save) ever runs.
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal(detail.OperationalContactOrganization, after.OperationalContactOrganization);
+            Assert.Equal(detail.OperationalContactPhone, after.OperationalContactPhone);
+            Assert.Equal(changesBefore.Count, (await ChangesAsync(requestId)).Count);
+            using (var db = NewContext())
+                Assert.False(await db.AuditLogs.AsNoTracking()
+                    .AnyAsync(a => a.VisitRequestId == requestId
+                                   && a.Action == "OPERATIONAL_CONTACT_PROFILE_UPDATED"));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>ORG-INT-02. A real Organization correction writes the column AND lands in the audit trail.</summary>
+    [Fact]
+    public async Task Valid_organization_correction_persists_and_is_audited()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var oldOrganization = detail.OperationalContactOrganization;
+
+            using (var db = NewContext())
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, organization: "Đơn vị mới"),
+                    CancellationToken.None);
+
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal("Đơn vị mới", after.OperationalContactOrganization);
+
+            using (var db = NewContext())
+            {
+                var audit = await db.AuditLogs.AsNoTracking().Include(x => x.Changes)
+                    .Where(x => x.VisitRequestId == requestId && x.Action == "OPERATIONAL_CONTACT_PROFILE_UPDATED")
+                    .SingleAsync();
+                var change = Assert.Single(audit.Changes, c => c.FieldName == "operational_contact_organization");
+                Assert.Equal(oldOrganization, change.OldValueText);
+                Assert.Equal("Đơn vị mới", change.NewValueText);
+            }
+
+            // No identity change, no invitation, no status move — a metadata correction, same as every
+            // other field on this branch.
+            Assert.Single(await ChangesAsync(requestId));
+            var campus = await CampusStateAsync(requestId);
+            Assert.Equal(before.Status, campus.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>ORG-INT-03. A blank Organization on a pre-decision replace never reaches the invitation.</summary>
+    [Fact]
+    public async Task Blank_organization_on_replace_is_refused_before_the_invitation_is_raised()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var changesBefore = await ChangesAsync(requestId);
+            var successor = "oc-blank-org-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var replace = new ReplaceOperationalContactCommand(
+                requestId, before.InstanceId, "Người kế nhiệm", "  ", "Trưởng phòng", null, successor);
+
+            var result = new ReplaceOperationalContactCommandValidator().Validate(replace);
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(ReplaceOperationalContactCommand.Organization));
+
+            // The campus keeps its current contact snapshot and invitation — REFUSED, not half-applied.
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal(detail.OperationalContactEmail, after.OperationalContactEmail);
+            Assert.Equal(detail.OperationalContactOrganization, after.OperationalContactOrganization);
+            Assert.Equal(changesBefore.Count, (await ChangesAsync(requestId)).Count);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>ORG-INT-04. A blank Organization on a post-decision transfer leaves the current contact untouched.</summary>
+    [Fact]
+    public async Task Blank_organization_on_transfer_is_refused_and_current_contact_is_unchanged()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            string token;
+            using (var db = NewContext())
+                token = await IssueInvitationAsync(db, mail, invitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+
+            await DriveToBeforeVisitAsync(created.InstanceId);
+            var decided = await CampusStateAsync(requestId);
+            var changesBefore = await ChangesAsync(requestId);
+            var successor = "oc-blank-org-take-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var transfer = new InitiateOperationalContactTransferCommand(
+                requestId, decided.InstanceId, "Người nhận bàn giao", "", "Trưởng phòng", null, successor,
+                "Bàn giao");
+
+            var result = new InitiateOperationalContactTransferCommandValidator().Validate(transfer);
+            Assert.False(result.IsValid);
+            Assert.Contains(
+                result.Errors, e => e.PropertyName == nameof(InitiateOperationalContactTransferCommand.Organization));
+
+            Assert.Equal(changesBefore.Count, (await ChangesAsync(requestId)).Count); // no TRANSFER raised
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(contactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.BeforeVisit, after.Status);
         }
         finally { await CleanupAsync(requestId); }
     }

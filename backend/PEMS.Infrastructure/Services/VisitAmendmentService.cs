@@ -5,6 +5,7 @@ using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
@@ -86,6 +87,31 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             throw new ConflictException(
                 "Cơ sở này đang có một đề xuất thay đổi chờ duyệt. Vui lòng chờ quyết định hoặc rút đề xuất cũ.",
                 VisitFormV2ErrorCodes.AmendmentAlreadyPending);
+
+        // ── Per-MEMBER organization identity, validated as a SET, once, before the proposal is even
+        //    diffed. An amendment re-sends the whole member list like every other v2 write path, so it
+        //    can smuggle in a partner id the editor was never offered just as easily as create/edit
+        //    could; both of those already run this same check before saving. ──
+        await GuestOrganizationPartnerPolicy.EnsureRequestFormSelectableAsync(
+            _db,
+            proposal.Visitors.Select(v => v.OrganizationPartnerId)
+                .Concat(proposal.ExternalSupportMembers.Select(m => m.OrganizationPartnerId))
+                .Where(id => id.HasValue).Select(id => id!.Value),
+            ct);
+
+        // ── Durable contact-member reference (NP-03) — structural half of the rule only: the payload
+        //    must NAME exactly one of its own rows, and no two rows may share a key. Whether that row
+        //    may actually hold the role is decided on approve, inside the transaction, by
+        //    OperationalContactLink — the ids do not exist yet at this point. ──
+        if (!MemberKeysAreDistinct(proposal))
+            throw new BusinessRuleException(
+                "Danh sách thành viên có định danh trùng nhau. Vui lòng tải lại biểu mẫu.",
+                VisitFormV2ErrorCodes.AmendmentNotEditable);
+        if (!string.IsNullOrWhiteSpace(proposal.OperationalContactClientMemberKey)
+            && !ContactKeyNamesAMember(proposal))
+            throw new BusinessRuleException(
+                OperationalContactMessages.MemberNotInDelegation,
+                VisitFormV2ErrorCodes.AmendmentNotEditable);
 
         // ── Diff the proposal vs the ACTIVE state → immutable change rows (fail closed via classifier) ──
         var changes = BuildChangeRows(request, instance, detail, proposal, now);
@@ -230,6 +256,10 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
 
         // ── 2. Apply the change rows target-only ──
         List<VisitGuestMember>? stagedMembers = null;
+        // Hoisted (rather than local to the Visitors/SupportMembers case) so the durable contact-member
+        // reference below can zip them against `stagedMembers` in the same order they were staged in.
+        List<VisitorDto>? proposedVisitors = null;
+        List<SupportTeamMemberDto>? proposedSupport = null;
         foreach (var change in amendment.Changes.OrderBy(c => c.DisplayOrder))
         {
             switch (change.FieldPath)
@@ -255,13 +285,17 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                     // Member replacement is applied ONCE from the pair of member rows (copy-on-write).
                     if (stagedMembers is null)
                     {
-                        var visitors = FindMemberProposal<List<VisitorDto>>(amendment, VisitFieldClassifier.Visitors)
+                        proposedVisitors = FindMemberProposal<List<VisitorDto>>(amendment, VisitFieldClassifier.Visitors)
                             ?? V2CanonicalRefresh.ToFormDto(request, instance, "X").Visitors.ToList();
-                        var support = FindMemberProposal<List<SupportTeamMemberDto>>(amendment, VisitFieldClassifier.SupportMembers)
+                        proposedSupport = FindMemberProposal<List<SupportTeamMemberDto>>(amendment, VisitFieldClassifier.SupportMembers)
                             ?? V2CanonicalRefresh.ToFormDto(request, instance, "X").ExternalSupportMembers.ToList();
                         stagedMembers = VisitRequestV2EditOps.StageReplaceMembers(
-                            _db, request, instance, visitors, support, now, actorId);
+                            _db, request, instance, proposedVisitors, proposedSupport, now, actorId);
                     }
+                    break;
+                // Metadata only — applied below, alongside `stagedMembers`, not through a direct
+                // assignment onto `detail` like the cases above.
+                case VisitFieldClassifier.OperationalContactMemberKey:
                     break;
                 default:
                     throw new BusinessRuleException(
@@ -288,7 +322,18 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // ── 3. Flush #1 resolves any staged member ids; then link + post-apply revision snapshot ──
         await _db.SaveChangesAsync(ct);
         if (stagedMembers is not null)
-            VisitRequestV2EditOps.LinkMembers(_db, request, instance, stagedMembers, now, actorId);
+        {
+            // Durable contact-member reference (NP-03) — the SAME mechanism create/edit use
+            // (VisitRequestV2EditOps.LinkMembers + OperationalContactLink), reused here rather than
+            // reinvented: the keys are index-aligned with `stagedMembers` in the exact order
+            // StageReplaceMembers built it (visitors, then support — see VisitRequestV2EditOps.MemberKeys).
+            var clientMemberKeys = (proposedVisitors ?? new List<VisitorDto>()).Select(v => v.ClientMemberKey)
+                .Concat((proposedSupport ?? new List<SupportTeamMemberDto>()).Select(m => m.ClientMemberKey))
+                .ToList();
+            var pickedKey = FindProposedContactMemberKey(amendment);
+            VisitRequestV2EditOps.LinkMembers(
+                _db, request, instance, stagedMembers, now, actorId, clientMemberKeys, pickedKey);
+        }
 
         var membersAfter = stagedMembers ?? membersBefore;
         _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
@@ -506,12 +551,28 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.Purpose, detail.Purpose, p.Purpose?.Trim());
         Add(VisitFieldClassifier.WorkingContent, detail.WorkingContent, Clean(p.WorkingContent));
         Add(VisitFieldClassifier.WorkingLanguage, detail.WorkingLanguage, p.WorkingLanguage?.Trim());
-        Add(VisitFieldClassifier.OperationalContactFullName, detail.OperationalContactFullName, Clean(p.OperationalContact?.FullName));
-        Add(VisitFieldClassifier.OperationalContactOrganization, detail.OperationalContactOrganization, Clean(p.OperationalContact?.Organization));
-        Add(VisitFieldClassifier.OperationalContactJobTitle, detail.OperationalContactJobTitle, Clean(p.OperationalContact?.JobTitle));
-        Add(VisitFieldClassifier.OperationalContactPhone,
-            PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
-            p.OperationalContact?.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null);
+        // The contact PROFILE (name/organization/job title/phone/email) is not amendable at all any
+        // more (plan PEMS_CONTACT_ONE_DOOR) — it has exactly one door, "Manage the contact role". The
+        // modal sends the whole contact block back UNCHANGED (it is read-only there now), so the normal
+        // case never trips this; a handcrafted request that tries to redescribe the contact is refused
+        // here rather than silently applied on approval or silently dropped.
+        //
+        // WHO the contact IS remains amendable — see OperationalContactClientMemberKey below — because
+        // naming a different existing delegation member is not the same act as redescribing this one.
+        if (p.OperationalContact is { } proposedContact)
+        {
+            var changed =
+                !string.Equals(Clean(detail.OperationalContactFullName), Clean(proposedContact.FullName), StringComparison.Ordinal)
+                || !string.Equals(Clean(detail.OperationalContactOrganization), Clean(proposedContact.Organization), StringComparison.Ordinal)
+                || !string.Equals(Clean(detail.OperationalContactJobTitle), Clean(proposedContact.JobTitle), StringComparison.Ordinal)
+                || !string.Equals(PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
+                    proposedContact.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null, StringComparison.Ordinal);
+            if (changed)
+                throw new BusinessRuleException(
+                    "Không thể sửa thông tin đầu mối (họ tên/tổ chức/chức danh/điện thoại) qua đề xuất thay đổi. " +
+                    "Hãy dùng chức năng \"Chỉnh sửa đầu mối\" của cơ sở.",
+                    VisitFormV2ErrorCodes.ContactProfileNotAmendable);
+        }
         // The ADDRESS is not amendable — it decides WHO holds the campus, and that only moves through
         // the contact workflow, where the new person has to accept and the old one keeps their rights
         // until they do. A proposal carrying the unchanged address is fine and common (the modal sends
@@ -528,8 +589,49 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         Add(VisitFieldClassifier.PlannedEndAt, instance.PlannedEndAt, p.PlannedEndAt);
 
         var current = V2CanonicalRefresh.ToFormDto(request, instance, "X");
-        Add(VisitFieldClassifier.Visitors, current.Visitors, p.Visitors);
-        Add(VisitFieldClassifier.SupportMembers, current.ExternalSupportMembers, p.ExternalSupportMembers);
+
+        // Member lists compare on BUSINESS content only — ClientMemberKey is a per-submission session
+        // tag (NP-03), freshly minted every time the modal opens, never persisted. Comparing it like an
+        // ordinary field would make every amendment "change" the member lists even when nothing the
+        // user can see was touched, since the active snapshot never carries a key to match against.
+        string VisitorsFingerprint(IEnumerable<VisitorDto> vs) => JsonSerializer.Serialize(
+            vs.Select(v => new { v.FullName, v.Nationality, v.JobTitle, v.Organization, v.OrganizationPartnerId }), Json);
+        string SupportFingerprint(IEnumerable<SupportTeamMemberDto> ms) => JsonSerializer.Serialize(
+            ms.Select(m => new { m.FullName, m.JobTitle, m.Organization, m.Nationality, m.OrganizationPartnerId }), Json);
+
+        void AddMembers(string path, object? oldValue, object? newValue, bool changed)
+        {
+            if (!changed) return;
+            if (!VisitFieldClassifier.IsAmendable(path))
+                throw new BusinessRuleException(
+                    $"Trường '{path}' không thể thay đổi qua đề xuất. Hãy dùng sửa nhanh hoặc quy trình phù hợp.",
+                    VisitFormV2ErrorCodes.AmendmentNotEditable);
+            var oldJson = ToJson(oldValue);
+            var newJson = ToJson(newValue);
+            rows.Add(new VisitInstanceAmendmentChange
+            {
+                FieldPath = path,
+                ChangeClass = VisitFieldClassifier.ClassifyChange(path, oldJson, newJson)!,
+                OldValueJson = oldJson,
+                NewValueJson = newJson,
+                IsSensitive = true,
+                DisplayOrder = order++,
+                CreatedAt = now,
+            });
+        }
+
+        var visitorsChanged = VisitorsFingerprint(current.Visitors) != VisitorsFingerprint(p.Visitors);
+        var supportChanged = SupportFingerprint(current.ExternalSupportMembers) != SupportFingerprint(p.ExternalSupportMembers);
+        AddMembers(VisitFieldClassifier.Visitors, current.Visitors, p.Visitors, visitorsChanged);
+        AddMembers(VisitFieldClassifier.SupportMembers, current.ExternalSupportMembers, p.ExternalSupportMembers, supportChanged);
+        // Only recorded when the member lists themselves changed — an unchanged delegation needs no
+        // re-link, and the existing contact relation is left alone (plan §16: no member-list change
+        // means the current link is not touched at all).
+        if (visitorsChanged || supportChanged)
+            AddMembers(
+                VisitFieldClassifier.OperationalContactMemberKey, null,
+                string.IsNullOrWhiteSpace(p.OperationalContactClientMemberKey) ? null : p.OperationalContactClientMemberKey,
+                true);
 
         return rows;
     }
@@ -546,6 +648,32 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         var row = amendment.Changes.FirstOrDefault(c => c.FieldPath == path);
         return row?.NewValueJson is null ? null : JsonSerializer.Deserialize<T>(row.NewValueJson, Json);
     }
+
+    /// <summary>The proposed contact-member key, or null when this amendment does not touch it.</summary>
+    private static string? FindProposedContactMemberKey(VisitInstanceAmendment amendment)
+    {
+        var row = amendment.Changes.FirstOrDefault(c => c.FieldPath == VisitFieldClassifier.OperationalContactMemberKey);
+        return row?.NewValueJson is null ? null : JsonSerializer.Deserialize<string>(row.NewValueJson, Json);
+    }
+
+    /// <summary>Every non-empty member key in ONE proposal, visitors and support together.</summary>
+    private static IEnumerable<string> MemberKeysOf(VisitAmendmentProposalDto p) =>
+        p.Visitors.Select(v => v.ClientMemberKey)
+            .Concat(p.ExternalSupportMembers.Select(m => m.ClientMemberKey))
+            .Where(k => !string.IsNullOrWhiteSpace(k))
+            .Select(k => k!);
+
+    /// <summary>Mirrors CreateVisitRequestV2CommandValidator.MemberKeysAreDistinct — a key appearing
+    /// twice is not an identity, and the contact would resolve to whichever row was enumerated first.</summary>
+    private static bool MemberKeysAreDistinct(VisitAmendmentProposalDto p)
+    {
+        var keys = MemberKeysOf(p).ToList();
+        return keys.Count == keys.Distinct(StringComparer.Ordinal).Count();
+    }
+
+    /// <summary>Mirrors CreateVisitRequestV2CommandValidator.ContactKeyNamesAMember.</summary>
+    private static bool ContactKeyNamesAMember(VisitAmendmentProposalDto p) =>
+        MemberKeysOf(p).Count(k => string.Equals(k, p.OperationalContactClientMemberKey, StringComparison.Ordinal)) == 1;
 
     private static string? ToJson(object? value)
         => value is null ? null : JsonSerializer.Serialize(value, Json);

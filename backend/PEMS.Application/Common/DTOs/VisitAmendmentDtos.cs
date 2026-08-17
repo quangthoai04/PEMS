@@ -31,7 +31,15 @@ public sealed record VisitAmendmentProposalDto(
 
     // structural (decided-campus schedule change rides the amendment, plan §16.6)
     DateTime PlannedStartAt,
-    DateTime PlannedEndAt);
+    DateTime PlannedEndAt,
+
+    /// <summary>
+    /// Durable "who in the delegation the operational contact IS" reference (NP-03), mirroring
+    /// <c>CampusVisitFormDto.OperationalContactClientMemberKey</c> used by create/edit. Names one of
+    /// <see cref="Visitors"/>/<see cref="ExternalSupportMembers"/>' own <c>ClientMemberKey</c> values —
+    /// null/absent means "outside the delegation". Never a fallback string-match target.
+    /// </summary>
+    string? OperationalContactClientMemberKey = null);
 
 public sealed record VisitAmendmentChangeDto(
     string FieldPath,

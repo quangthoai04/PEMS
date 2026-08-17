@@ -13,6 +13,7 @@ using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
+using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Policies;
 using PEMS.Domain.Enums;
@@ -277,7 +278,7 @@ public sealed class VisitSafeEditV2Tests
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(
                         reqV,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999"), // phone changed
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999", "VN"), // phone changed
                         new List<SafeInstancePatchDto>
                         {
                             // Only the transport note is sent — the sparse patch carries what changed
@@ -332,7 +333,7 @@ public sealed class VisitSafeEditV2Tests
             var (reqV, instV) = await VersionsAsync(requestId);
             var instance = instV.Keys.Single();
             var patch = new VisitRequestSafeEditDto(reqV,
-                new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84000001"), null);
+                new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84000001", "VN"), null);
 
             // Unrelated visitor → 403.
             using (var db = NewContext())
@@ -444,6 +445,237 @@ public sealed class VisitSafeEditV2Tests
                 Assert.NotEqual("DECLINED", detail.MediaConsentStatus);
             }
             Assert.Empty(notifications.Sent);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Registrant nationality + partner identity (PEMS_PATCH_SAFE_EDIT_AMENDMENT_PARTNER_SEARCH) ──
+
+    [Fact]
+    public async Task Registrant_nationality_can_be_changed_via_safe_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+            {
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "JP"), null)),
+                    CancellationToken.None);
+                Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantNationality);
+            }
+            using (var db = NewContext())
+                Assert.Equal("JP", (await db.VisitRequests.AsNoTracking()
+                    .SingleAsync(v => v.VisitRequestId == requestId)).RegistrantNationality);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Blank_registrant_nationality_is_refused()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using var db = NewContext();
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "   "), null)),
+                    CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Selecting_an_existing_partner_persists_canonical_organization_and_id_with_audit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        // ACTIVE + APPROVED + PUBLIC seed fixture — selectable on a registration form (see
+        // RequestFormPartnerSelectableTests.ApprovedPublic).
+        const ulong approvedPublicPartnerId = 103;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+
+            string expectedOrg;
+            using (var db = NewContext())
+            {
+                var partner = await db.Partners.AsNoTracking().SingleAsync(p => p.PartnerId == approvedPublicPartnerId);
+                expectedOrg = string.IsNullOrWhiteSpace(partner.ShortName)
+                    ? partner.Name : $"{partner.Name} ({partner.ShortName})";
+            }
+
+            using (var db = NewContext())
+            {
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Văn bản người dùng gõ tay — phải bị bỏ qua",
+                            "Job", "+8491", "VN", approvedPublicPartnerId), null)),
+                    CancellationToken.None);
+                Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPartnerId);
+                Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantOrganization);
+            }
+            using (var db = NewContext())
+            {
+                var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.Equal(approvedPublicPartnerId, visit.PartnerId);
+                // Canonical text resolved server-side — NOT the client-supplied text next to the id.
+                Assert.Equal(expectedOrg, visit.RegistrantOrganization);
+                var audit = await db.AuditLogs.AsNoTracking().Include(x => x.Changes)
+                    .Where(x => x.VisitRequestId == requestId && x.Action == "VISIT_SAFE_FIELDS_UPDATED")
+                    .SingleAsync();
+                Assert.Contains(audit.Changes, c => c.FieldName == VisitFieldClassifier.RegistrantPartnerId);
+                Assert.Contains(audit.Changes, c => c.FieldName == VisitFieldClassifier.RegistrantOrganization);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Editing_organization_to_free_text_after_selecting_a_partner_clears_the_partner_id()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        const ulong approvedPublicPartnerId = 103;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV1, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV1,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "VN", approvedPublicPartnerId), null)),
+                    CancellationToken.None);
+
+            var (reqV2, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+            {
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV2,
+                        new SafeRegistrantPatchDto("Registrant", "Tổ chức tự nhập", "Job", "+8491", "VN", null), null)),
+                    CancellationToken.None);
+                Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPartnerId);
+            }
+            using (var db = NewContext())
+            {
+                var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.Null(visit.PartnerId);
+                Assert.Equal("Tổ chức tự nhập", visit.RegistrantOrganization);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Contact profile has exactly one door now — "Manage the contact role" (PEMS_CONTACT_ONE_DOOR) ──
+    // SE-NEW-01/02/03: a handcrafted request that still tries to patch the contact's fullName,
+    // organization or phone through Safe Edit is refused outright, not silently applied or dropped —
+    // the guard trips on the block being present at all, regardless of which sub-field it carries.
+
+    [Fact]
+    public async Task Contact_profile_patch_is_refused_on_safe_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance],
+                                new SafeContactPatchDto("Tên mới", "Org mới", null, "+8499999999"),
+                                null, null, null),
+                        })), CancellationToken.None));
+                Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+            }
+            using (var db = NewContext())
+            {
+                // Refused means nothing applied — not even the sibling fields (nothing else was sent).
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.NotEqual("Tên mới", detail.OperationalContactFullName);
+                Assert.NotEqual("Org mới", detail.OperationalContactOrganization);
+                Assert.NotEqual("+8499999999", detail.OperationalContactPhone);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // SE-NEW-04: registrant safe fields still apply normally, even in the same request as a campus that
+    // sends nothing else — the contact guard above is scoped to the contact block only.
+    [Fact]
+    public async Task Registrant_safe_fields_still_apply_when_no_contact_patch_is_sent()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+            {
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+8491000000", "VN"), null)),
+                    CancellationToken.None);
+                Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantFullName);
+            }
+            using (var db = NewContext())
+                Assert.Equal("Registrant Mới", (await db.VisitRequests.AsNoTracking()
+                    .SingleAsync(v => v.VisitRequestId == requestId)).RegistrantFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Non_selectable_partner_id_is_refused()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        // PENDING_APPROVAL, own-campus visible only — not selectable on a registration form (see
+        // RequestFormPartnerSelectableTests.PendingOwnCampus).
+        const ulong pendingPartnerId = 120;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV,
+                            new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "VN", pendingPartnerId), null)),
+                        CancellationToken.None));
+                Assert.Equal(GuestOrganizationPartnerPolicy.NotSelectableCode, ex.ErrorCode);
+            }
+            using (var db = NewContext())
+            {
+                var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.Null(visit.PartnerId);
+            }
         }
         finally { await CleanupAsync(requestId); }
     }

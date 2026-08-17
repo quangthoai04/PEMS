@@ -311,7 +311,8 @@
       "invalidFileType": "Only .xlsx or .xls files are supported",
       "noData": "The Excel file contains no data.",
       "headerOnly": "The file has no data rows (header only, or empty).",
-      "missingColumns": "Missing required column(s): {{missing}}. The file must contain: {{required}}.",
+      "missingColumns_one": "Missing required column: {{missing}}. The file must contain: {{required}}.",
+      "missingColumns_other": "Missing required columns: {{missing}}. The file must contain: {{required}}.",
       "requiredCell": "Row {{row}}: column \"{{column}}\" must not be empty.",
       "cellRequired": "Must not be empty",
       "cellMaxLength": "Longer than {{max}} characters (currently {{length}})"

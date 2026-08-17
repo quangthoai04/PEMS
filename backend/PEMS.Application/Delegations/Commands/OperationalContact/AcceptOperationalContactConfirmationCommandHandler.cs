@@ -314,22 +314,36 @@ public sealed class AcceptOperationalContactConfirmationCommandHandler
                 "Bạn đã là đầu mối vận hành của cơ sở này.",
                 OperationalContactErrorCodes.AlreadyConfirmed);
 
+        // ── Organization is required on every path that can raise a TRANSFER today (Save/Replace/
+        //    Transfer's own validators), but this invitation may predate that rule. Checked BEFORE any
+        //    mutation below — including instance.OperationalContactUserId — so a legacy snapshot with a
+        //    blank or unreadable Organization is refused outright rather than partially applied: no
+        //    relation moves, no campus/request status changes, and (since this refusal happens inside
+        //    the caller's transaction, before its SaveChangesAsync) nothing reaches the database. ──
+        var snapshot = PendingContactSnapshot.Read(change.PendingSnapshotJson);
+        if (string.IsNullOrWhiteSpace(snapshot?.ResolvedOrganization))
+            throw new BusinessRuleException(
+                "Đơn vị công tác của đầu mối vận hành đang thiếu. Vui lòng cập nhật thông tin đầu mối và " +
+                "gửi lời mời xác nhận lại.",
+                OperationalContactErrorCodes.OrganizationRequired);
+
         instance.OperationalContactUserId = actorId;
         instance.OperationalContactConfirmedAt = now;
         instance.OperationalContactConfirmationSource = OperationalContactSources.Transfer;
 
         // The proposed person's details replace the campus snapshot. The campus lifecycle does NOT
         // move: a decided campus stays decided, with its host and schedule intact.
-        var snapshot = PendingContactSnapshot.Read(change.PendingSnapshotJson);
         var detail = instance.FormDetail;
         if (detail is not null)
         {
-            detail.OperationalContactFullName = snapshot?.ResolvedFullName ?? actor.FullName;
-            detail.OperationalContactOrganization = snapshot?.ResolvedOrganization;
-            // Keep whatever the campus already had when the snapshot is unreadable: the columns are
-            // NOT NULL, and an accepted transfer must not fail on a field nobody disputed.
-            detail.OperationalContactJobTitle = snapshot?.ResolvedJobTitle ?? detail.OperationalContactJobTitle;
-            detail.OperationalContactPhone = snapshot?.ResolvedPhone ?? detail.OperationalContactPhone;
+            detail.OperationalContactFullName = snapshot.ResolvedFullName ?? actor.FullName;
+            detail.OperationalContactOrganization = snapshot.ResolvedOrganization;
+            // Keep whatever the campus already had when a field OTHER than Organization is unreadable:
+            // the columns are NOT NULL, and an accepted transfer must not fail on a field nobody
+            // disputed. Organization itself can no longer be unreadable here — the guard above refused
+            // the transfer before this point if it were.
+            detail.OperationalContactJobTitle = snapshot.ResolvedJobTitle ?? detail.OperationalContactJobTitle;
+            detail.OperationalContactPhone = snapshot.ResolvedPhone ?? detail.OperationalContactPhone;
             detail.OperationalContactEmail = change.NewEmailNormalized!;
 
             // The role has moved to somebody else, so the link that said WHICH delegation member held

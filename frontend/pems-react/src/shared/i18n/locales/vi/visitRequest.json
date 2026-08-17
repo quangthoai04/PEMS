@@ -311,7 +311,8 @@
       "invalidFileType": "Chỉ chấp nhận file .xlsx hoặc .xls",
       "noData": "File Excel không có dữ liệu.",
       "headerOnly": "File không có dữ liệu (chỉ có header hoặc rỗng).",
-      "missingColumns": "Thiếu cột bắt buộc: {{missing}}. File phải có các cột: {{required}}.",
+      "missingColumns_one": "Thiếu cột bắt buộc: {{missing}}. File phải có các cột: {{required}}.",
+      "missingColumns_other": "Thiếu cột bắt buộc: {{missing}}. File phải có các cột: {{required}}.",
       "requiredCell": "Dòng {{row}}: Cột \"{{column}}\" không được để trống.",
       "cellRequired": "Không được để trống",
       "cellMaxLength": "Vượt quá {{max}} ký tự (đang có {{length}})"

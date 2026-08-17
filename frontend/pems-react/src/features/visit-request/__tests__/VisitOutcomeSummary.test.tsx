@@ -72,7 +72,7 @@ describe('VisitOutcomeSummary', () => {
       ],
     })} />);
 
-    expect(within(summary()).getByText('Waiting for 2 campus(es) to respond.')).toBeInTheDocument();
+    expect(within(summary()).getByText('Waiting for 2 campuses to respond.')).toBeInTheDocument();
   });
 
   it('breaks a partial outcome down instead of hiding it behind one request status', () => {
@@ -85,8 +85,8 @@ describe('VisitOutcomeSummary', () => {
     })} />);
 
     const text = summary().textContent ?? '';
-    expect(text).toContain('1 campus(es) accepted');
-    expect(text).toContain('1 campus(es) awaiting response');
+    expect(text).toContain('1 campus accepted');
+    expect(text).toContain('1 campus awaiting response');
     // More than one outcome in play → point the reader at the per-campus cards.
     expect(text).toContain('See each campus below');
   });
@@ -192,8 +192,8 @@ describe('VisitOutcomeSummary', () => {
     })} />);
 
     const text = summary().textContent ?? '';
-    expect(text).toContain('1 campus(es) accepted');
-    expect(text).not.toMatch(/[23] campus\(es\)/);
+    expect(text).toContain('1 campus accepted');
+    expect(text).not.toMatch(/[23] campuses?/);
     expect(text).not.toContain('rejected');
     expect(text).not.toContain('awaiting');
   });
@@ -255,9 +255,9 @@ describe('VisitOutcomeSummary', () => {
     })} />);
 
     const text = summary().textContent ?? '';
-    expect(text).toContain('3 campus(es) accepted');
-    expect(text).toContain('1 campus(es) rejected');
-    expect(text).not.toContain('2 campus(es) accepted');
+    expect(text).toContain('3 campuses accepted');
+    expect(text).toContain('1 campus rejected');
+    expect(text).not.toContain('2 campuses accepted');
   });
 
   it('withholds the request-level cancellation detail from a scoped reader', () => {
@@ -295,7 +295,7 @@ describe('VisitOutcomeSummary', () => {
     const text = summary().textContent ?? '';
     expect(text).not.toContain('DURING_VISIT');
     expect(text).not.toContain('CLOSED');
-    expect(text).toContain('1 campus(es) in progress');
-    expect(text).toContain('1 campus(es) closed');
+    expect(text).toContain('1 campus in progress');
+    expect(text).toContain('1 campus closed');
   });
 });

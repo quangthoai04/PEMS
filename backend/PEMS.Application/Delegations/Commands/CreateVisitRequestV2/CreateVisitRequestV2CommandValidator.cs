@@ -89,7 +89,18 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
         "CAMPUS_TOUR", "MEETING", "WORKSHOP", "SIGNING_CEREMONY", "EXCHANGE", "OTHER",
     };
 
-    public CampusVisitFormDtoValidator()
+    /// <param name="requireCompleteOperationalContact">
+    /// True (the default, and always true for create) for a campus whose operational contact is a
+    /// FRESH write — completeness is enforced via <see cref="OperationalContactV2Validator"/>, same as
+    /// every other create-time field. False for an EXISTING campus being replayed through an edit,
+    /// resubmit or amendment payload — its contact is read-only there, so only
+    /// <see cref="OperationalContactReplayV2Validator"/>'s shape/length rules apply, and the caller is
+    /// responsible for enforcing that the snapshot did not actually change (see that validator's doc
+    /// comment). The caller decides which applies per campus, from whether it already has a
+    /// VisitInstanceId — that field does not survive the projection into this DTO, so it cannot be
+    /// decided in here.
+    /// </param>
+    public CampusVisitFormDtoValidator(bool requireCompleteOperationalContact = true)
     {
         RuleFor(c => c.CampusId).NotEmpty().WithMessage("Vui lòng chọn cơ sở.").MaximumLength(50);
 
@@ -121,7 +132,10 @@ public sealed class CampusVisitFormDtoValidator : AbstractValidator<CampusVisitF
 
         // ── Per-campus operational (working) contact — a snapshot, never a login ──
         RuleFor(c => c.OperationalContact).NotNull().WithMessage("Thiếu đầu mối phối hợp của cơ sở.");
-        RuleFor(c => c.OperationalContact!).SetValidator(new OperationalContactV2Validator())
+        RuleFor(c => c.OperationalContact!)
+            .SetValidator(requireCompleteOperationalContact
+                ? new OperationalContactV2Validator()
+                : new OperationalContactReplayV2Validator())
             .When(c => c.OperationalContact is not null);
 
         // ── Additional per-campus requirements ──
