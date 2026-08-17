@@ -23,6 +23,15 @@ export function useAuthenticatedImage(path: string | null | undefined): string |
       return;
     }
 
+    // An absolute URL (e.g. a Google account picture backfilled onto avatar_url) is a public
+    // image on someone else's origin — fetching it through httpClient would attach our Bearer
+    // token and trip CORS preflight for a header the remote host never expects. It needs no auth
+    // at all, so it's used directly as an <img src> instead of going through the blob fetch below.
+    if (/^https?:\/\//i.test(path)) {
+      setObjectUrl(path);
+      return;
+    }
+
     let cancelled = false;
     let created: string | null = null;
 
