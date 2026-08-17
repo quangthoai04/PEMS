@@ -7,6 +7,8 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Minutes;
+using PEMS.Domain.Constants;
 using PEMS.Shared;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
@@ -38,6 +40,9 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
 
     public async Task<byte[]> Handle(ExportMinutesPdfQuery request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+            throw new ForbiddenException();
+
         var minute = await _db.Minutes
             .Include(m => m.Participants)
             .Include(m => m.ActionItems)
@@ -46,14 +51,25 @@ public class ExportMinutesPdfQueryHandler : IRequestHandler<ExportMinutesPdfQuer
 
         var vrc = await _db.VisitRequestCampuses
             .Include(v => v.VisitRequest)
-            .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
+            .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", minute.VisitInstanceId);
 
-        var campusName = vrc != null ? await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken) : null;
+        var campusName = await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken);
 
-        // Security check
-        if (_currentUser.PrimaryCampusId != null && vrc?.CampusId != _currentUser.PrimaryCampusId)
+        // SEC-10: this used to be a bare campus-id comparison, SKIPPED ENTIRELY when the caller had
+        // no PrimaryCampusId (any Visitor, not just HO) — no relationship check, no role check. Now
+        // shares the same canonical policy every other Minutes surface uses.
+        var acceptedRole = _currentUser.UserId is { } exportUserId
+            ? await _db.VisitParticipants
+                .Where(p => p.VisitInstanceId == minute.VisitInstanceId && p.UserId == exportUserId
+                    && p.Status == ParticipantStatuses.Accepted && !p.IsHost)
+                .Select(p => p.ParticipantRole)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+        var (inScope, _) = MinuteAccess.Evaluate(vrc, vrc.VisitRequest, _currentUser, acceptedRole);
+        if (!inScope)
         {
-            throw new ForbiddenException("Không có quyền tải PDF của campus này");
+            throw new ForbiddenException("Bạn không có quyền tải PDF biên bản của chuyến thăm này.");
         }
 
         // Per-campus v2: this export is INSTANCE-scoped → a MIXED request uses THIS instance's detail.

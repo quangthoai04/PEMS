@@ -35,6 +35,18 @@ public sealed class ViewAccountStatisticsQueryHandler
         var roleCode = _currentUser.RoleCode!;
         var campusId = _currentUser.PrimaryCampusId;
 
+        // SEC-04: same missing-gate pattern as ViewAccountDetails/AccountListQueryExecutor — every
+        // other authenticated same-campus caller (Student, Department, Department Lead) used to fall
+        // into the final "else" and get account counts scoped to their own campus, a surface that
+        // belongs to Admin/HO/Staff Leader only.
+        if (roleCode != RoleCodes.Admin
+            && roleCode != RoleCodes.Ho
+            && !(roleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader))
+        {
+            throw new AuthBusinessException(
+                AccountErrorCodes.AccountListForbidden, "Bạn không có quyền xem thống kê tài khoản.", 403);
+        }
+
         IQueryable<User> query = _db.Users.AsNoTracking();
 
         if (roleCode == RoleCodes.Admin)
@@ -47,20 +59,15 @@ public sealed class ViewAccountStatisticsQueryHandler
                 u.Role.RoleCode == RoleCodes.Ho ||
                 (u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader));
         }
-        else if (roleCode == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader)
+        else
         {
+            // Staff Leader — the only remaining possibility once the gate above has run.
             query = campusId is null
                 ? query.Where(_ => false)
                 : query.Where(u => u.PrimaryCampusId == campusId &&
                     (u.Role.RoleCode == RoleCodes.Staff ||
                      (u.Role.RoleCode == RoleCodes.Department && u.SubRole == UserSubRoles.Leader) ||
                      u.Role.RoleCode == RoleCodes.Student));
-        }
-        else
-        {
-            query = campusId is null
-                ? query.Where(_ => false)
-                : query.Where(u => u.PrimaryCampusId == campusId);
         }
 
         var total = await query.CountAsync(cancellationToken);

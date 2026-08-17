@@ -58,6 +58,12 @@ public static class DependencyInjection
         services.AddScoped<PEMS.Application.DepartmentLeaderPersonnel.Common.IDepartmentLeaderPersonnelScopeService,
             PEMS.Application.DepartmentLeaderPersonnel.Common.DepartmentLeaderPersonnelScopeService>();
 
+        // SEC-09: the transactional core shared by the self-service leadership transfer and the
+        // legacy third-party /departments/reassigndepartmentlead — one lock/re-verify/write/audit/
+        // notify implementation instead of two flows that could silently drift apart.
+        services.AddScoped<PEMS.Application.DepartmentLeaderPersonnel.Common.IDepartmentLeadershipTransferService,
+            PEMS.Application.DepartmentLeaderPersonnel.Common.DepartmentLeadershipTransferService>();
+
         // visit_requests.status aggregate (campus-independent approval) — mirrors the DB triggers.
         services.AddScoped<PEMS.Application.Delegations.Services.IVisitRequestAggregateStatusService, PEMS.Application.Delegations.Services.VisitRequestAggregateStatusService>();
         services.AddScoped<PEMS.Application.Delegations.Services.IProposedHostActivationService, PEMS.Application.Delegations.Services.ProposedHostActivationService>();

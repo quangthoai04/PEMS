@@ -16,9 +16,12 @@ namespace PEMS.Api.Controllers
         private readonly IMediator _mediator;
         public AccountsController(IMediator mediator) => _mediator = mediator;
 
+        // SEC-02/03: no role gate at all — any authenticated user could list/search every account's
+        // PII. Allowed set mirrors IRoleAccessPolicy.CanAccessAccountManagement; the handler (via
+        // AccountListQueryExecutor) is the authoritative, campus-scoped layer underneath.
         [HttpGet("viewaccountlist")]
         [EnableRateLimiting("accounts-read")]
-
+        [RoleAuthorize(EffectiveRole.Admin, EffectiveRole.Ho, EffectiveRole.StaffLeader)]
         public async Task<IActionResult> ViewAccountList([FromQuery] PEMS.Application.Accounts.Queries.ViewAccountList.ViewAccountListQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -68,25 +71,31 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // SEC-02: same missing-gate pattern as viewaccountlist.
         [HttpGet("viewaccountdetails")]
-
+        [RoleAuthorize(EffectiveRole.Admin, EffectiveRole.Ho, EffectiveRole.StaffLeader)]
         public async Task<IActionResult> ViewAccountDetails([FromQuery] PEMS.Application.Accounts.Queries.ViewAccountDetails.ViewAccountDetailsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
+        // SEC-03: same missing-gate pattern as viewaccountlist.
         [HttpGet("searchandfilteraccounts")]
         [EnableRateLimiting("accounts-read")]
-
+        [RoleAuthorize(EffectiveRole.Admin, EffectiveRole.Ho, EffectiveRole.StaffLeader)]
         public async Task<IActionResult> SearchandFilterAccounts([FromQuery] PEMS.Application.Accounts.Queries.SearchandFilterAccounts.SearchandFilterAccountsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
             return Ok(result);
         }
 
+        // SEC-01: this action had no coarse role gate at all — any authenticated user (Student,
+        // Department, Visitor, ...) could reach the handler. The allowed set here mirrors
+        // IRoleAccessPolicy.CanAccessAccountManagement (Admin/HO/StaffLeader); the handler itself
+        // still refuses Admin for role edits specifically and enforces every finer-grained rule.
         [HttpPost("updateaccountrole")]
-
+        [RoleAuthorize(EffectiveRole.Admin, EffectiveRole.Ho, EffectiveRole.StaffLeader)]
         public async Task<IActionResult> UpdateAccountRole([FromBody] PEMS.Application.Accounts.Commands.UpdateAccountRole.UpdateAccountRoleCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -103,8 +112,10 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // SEC-04: same missing-gate pattern as viewaccountlist.
         [HttpGet("statistics")]
         [EnableRateLimiting("accounts-read")]
+        [RoleAuthorize(EffectiveRole.Admin, EffectiveRole.Ho, EffectiveRole.StaffLeader)]
         public async Task<IActionResult> GetStatistics(CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(new PEMS.Application.Accounts.Queries.ViewAccountStatistics.ViewAccountStatisticsQuery(), cancellationToken);

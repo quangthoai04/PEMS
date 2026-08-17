@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,14 @@ namespace PEMS.Application.Partners.VisitLinks.Common;
 public static class VisitLinkSupport
 {
     /// <summary>
-    /// Host of the instance, any ACCEPTED/ASSIGNED participant, the campus Staff Leader,
-    /// HO and Admin may see/manage partner links of the visit.
+    /// SEC-18: ADMIN used to be hardcoded into the allow expression. Fixed with an explicit,
+    /// unconditional early-deny BEFORE any relationship check — not merely removing it from the
+    /// allow-list, since Admin could otherwise still pass via an unrelated branch (e.g. being a
+    /// historical CurrentHostUserId or holding a VisitParticipants row). Host of the instance, any
+    /// ACCEPTED/ASSIGNED participant, the campus Staff Leader, and HO may see/manage partner links
+    /// of the visit. The public Homepage partner directory is a separate, unauthenticated endpoint
+    /// and is untouched by this — Admin has no internal Partner permission but still sees Public
+    /// Partner on the Homepage.
     /// </summary>
     public static async Task<VisitRequestCampus> LoadInstanceWithAccessAsync(
         IApplicationDbContext db, ICurrentUserService user, ulong visitInstanceId, CancellationToken ct)
@@ -26,10 +33,21 @@ public static class VisitLinkSupport
         if (user.UserId is not { } userId)
             throw new ForbiddenException();
 
-        var effective = EffectiveRole.Resolve(user.RoleCode ?? string.Empty, user.SubRole);
+        string effective;
+        try
+        {
+            effective = EffectiveRole.Resolve(user.RoleCode ?? string.Empty, user.SubRole);
+        }
+        catch (InvalidOperationException)
+        {
+            throw new ForbiddenException("Bạn không có quyền thao tác liên kết đối tác của chuyến thăm này.");
+        }
+
+        if (effective == EffectiveRole.Admin)
+            throw new ForbiddenException("Bạn không có quyền thao tác liên kết đối tác của chuyến thăm này.");
+
         var allowed =
-            effective == EffectiveRole.Admin
-            || effective == EffectiveRole.Ho
+            effective == EffectiveRole.Ho
             || instance.CurrentHostUserId == userId
             || (effective == EffectiveRole.StaffLeader && user.PrimaryCampusId == instance.CampusId)
             || await db.VisitParticipants.AnyAsync(

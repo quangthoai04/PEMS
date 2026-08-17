@@ -21,7 +21,7 @@ public class TransferDepartmentLeadershipCommandTests
     private const ulong SuccessorId = 901;
 
     private static TransferDepartmentLeadershipCommandHandler Handler(DepartmentLeaderTestHarness h)
-        => new(h.Db, h.Scope, h.Locks, h.Sessions, h.Dispatcher, h.Clock);
+        => new(h.Scope, new DepartmentLeadershipTransferService(h.Db, h.Locks, h.Sessions, h.Dispatcher, h.Clock));
 
     private static Task<TransferDepartmentLeadershipResponse> Run(
         DepartmentLeaderTestHarness h, ulong newLeaderUserId = SuccessorId)

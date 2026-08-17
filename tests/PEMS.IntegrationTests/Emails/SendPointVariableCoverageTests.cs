@@ -119,10 +119,14 @@ public sealed class SendPointVariableCoverageTests
             App + "DepartmentLeaderPersonnel/Commands/ChangePersonnelStatus/ChangePersonnelStatusCommandHandler.cs"),
         new(SystemEmailTemplates.DeptPersonnelAccountEnabled, "ChangePersonnelStatus (enable)",
             App + "DepartmentLeaderPersonnel/Commands/ChangePersonnelStatus/ChangePersonnelStatusCommandHandler.cs"),
+        // SEC-09: the variable-building code (SendTransferMailsAsync) moved out of the handler and
+        // into the shared IDepartmentLeadershipTransferService — now used by both this canonical
+        // self-service flow AND the legacy third-party ReassignDepartmentLeadCommandHandler, so both
+        // send points are backed by the exact same implementation.
         new(SystemEmailTemplates.DeptLeadershipGranted, "TransferDepartmentLeadership (successor)",
-            App + "DepartmentLeaderPersonnel/Commands/TransferDepartmentLeadership/TransferDepartmentLeadershipCommandHandler.cs"),
+            App + "DepartmentLeaderPersonnel/Common/DepartmentLeadershipTransferService.cs"),
         new(SystemEmailTemplates.DeptLeadershipHandedOver, "TransferDepartmentLeadership (predecessor)",
-            App + "DepartmentLeaderPersonnel/Commands/TransferDepartmentLeadership/TransferDepartmentLeadershipCommandHandler.cs"),
+            App + "DepartmentLeaderPersonnel/Common/DepartmentLeadershipTransferService.cs"),
 
         // ── AUTH / OTP ───────────────────────────────────────────────────────
         new(SystemEmailTemplates.AuthPasswordResetOtp, "ForgotPassword",

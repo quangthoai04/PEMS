@@ -271,6 +271,33 @@ public class AssignDepartmentStaffCommandHandlerTests
         Assert.Empty(db.EmailActionTokens);
     }
 
+    /// <summary>
+    /// SEC-13: the missing ownership check. Before the fix, only the ROLE (Department Leader) and
+    /// the DEPARTMENT of the participant row's owner were checked — never that the row belongs to
+    /// the caller themselves. A real Department Leader could pass a participant id belonging to a
+    /// different member of their own department (here, a plain Staff member's row) and the handler
+    /// would mutate THAT row's status/assignment history as if it were the caller's own delegation.
+    /// </summary>
+    [Fact]
+    public async Task A_leader_may_not_use_a_participant_row_that_is_not_their_own()
+    {
+        var (db, handler, user, _, _, _locks) = CreateSut();
+        const ulong someoneElsesParticipantId = 601;
+        db.VisitParticipants.Add(DelegationsTestData.CreateParticipant(
+            someoneElsesParticipantId, StaffId, ParticipantRoles.DeptSupport, ParticipantStatuses.Invited));
+        db.SaveChanges();
+
+        var command = new AssignDepartmentStaffCommand(someoneElsesParticipantId, StaffId, "Nhờ em hỗ trợ", null);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(command, default));
+
+        Assert.Empty(db.SentEmails);
+        Assert.Empty(db.EmailActionTokens);
+        // The row that was wrongly targeted must stay exactly as it was.
+        var untouched = db.VisitParticipants.Single(p => p.ParticipantId == someoneElsesParticipantId);
+        Assert.Equal(ParticipantStatuses.Invited, untouched.Status);
+    }
+
     [Theory]
     [InlineData(UserStatuses.Inactive)]
     [InlineData(UserStatuses.Locked)]

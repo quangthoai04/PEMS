@@ -75,6 +75,12 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
                 "ADMIN chỉ được xem tài khoản và xử lý khóa bảo mật; không được chỉnh sửa thông tin hoặc vai trò tài khoản.",
                 403);
 
+        // ── SEC-01: no actor may change their own role through this endpoint — HO included.
+        //    Refused BEFORE the transaction and the row lock, same principle as the Admin check
+        //    above: a denied request must never take a lock or read the target. ──
+        if (actorId is not null && request.UserId == actorId.Value)
+            throw new ForbiddenException("Bạn không thể tự thay đổi vai trò của chính mình.");
+
         await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
 
         // ── Lock FIRST, read after. A concurrent assign-host / invite-participant / assign-logistics
@@ -110,12 +116,11 @@ public sealed class UpdateAccountRoleCommandHandler : IRequestHandler<UpdateAcco
         var oldFullName = user.FullName;
         var oldEmail = user.Email;
 
-        // ── UC-100-SL: a Staff Leader cannot change their own role and cannot touch a LOCKED
-        //    account; the manageable target/role set is enforced right after. ──
+        // ── UC-100-SL: a Staff Leader cannot touch a LOCKED account; the manageable
+        //    target/role set is enforced right after. (Self-targeting is already refused
+        //    universally, above, before this handler even took a lock.) ──
         if (isStaffLeaderCaller)
         {
-            if (actorId is not null && user.UserId == actorId.Value)
-                throw new ForbiddenException("Bạn không thể thay đổi vai trò của chính mình.");
             if (user.Status == UserStatuses.Locked)
                 throw new BusinessRuleException(
                     "Tài khoản đang bị khóa vì lý do bảo mật và không thể cập nhật vai trò tại đây.");

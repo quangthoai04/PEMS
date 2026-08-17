@@ -105,15 +105,24 @@ public sealed class SubmittedVisitRequestFormDetailV2Tests
         CreatedAt = DateTime.Now,
     };
 
-    // perCampus=false → identical content for every campus (a non-mixed v2 request).
+    // perCampus=false → identical content for every campus (a non-mixed v2 request). The operational
+    // contact is part of what the canonical mixedness definition compares
+    // (VisitRequestV2Canonical.CanonicalContent), so it must be tag-invariant here too when
+    // perCampus=false — varying it by tag while claiming "non-mixed" was a latent fixture bug,
+    // invisible while GetSubmittedVisitRequestFormDetailQueryHandler only trusted the stored
+    // HasMixedCampusDetails flag, and surfaced once SEC-12 made it recompute mixedness from the
+    // actual visible content instead (never trusting a flag that could reflect a hidden sibling).
     private static VisitInstanceFormDetail NewDetail(string tag, bool perCampus) => new()
     {
         DelegationName = perCampus ? $"DELEG-{tag}" : "V2-DELEG",
         VisitType = "MEETING",
         Purpose = perCampus ? $"PURPOSE-{tag}" : "V2-PURPOSE",
         WorkingContent = perCampus ? $"CONTENT-{tag}" : "V2-CONTENT",
-        OperationalContactFullName = $"Op-{tag}", OperationalContactOrganization = $"OpOrg-{tag}", OperationalContactJobTitle = "Trưởng phòng Hợp tác",
-        OperationalContactPhone = "+8410", OperationalContactEmail = $"op-{tag}@example.com",
+        OperationalContactFullName = perCampus ? $"Op-{tag}" : "V2-OP",
+        OperationalContactOrganization = perCampus ? $"OpOrg-{tag}" : "V2-OPORG",
+        OperationalContactJobTitle = "Trưởng phòng Hợp tác",
+        OperationalContactPhone = "+8410",
+        OperationalContactEmail = perCampus ? $"op-{tag}@example.com" : "v2-op@example.com",
         WorkingLanguage = perCampus && tag == "B" ? "VI" : "EN", MediaConsentStatus = "AGREED",
         FormRevision = 1, ApprovalRevision = 1, CreatedAt = DateTime.Now,
     };

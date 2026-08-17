@@ -12,11 +12,12 @@ using PEMS.UnitTests.TestInfrastructure;
 namespace PEMS.UnitTests.Delegations.VisitPhotos;
 
 /// <summary>
-/// Upload scope + pipeline: an ACTIVE user may upload when they are the instance's Host, hold role
-/// ADMIN/STAFF (regular Staff or Staff Leader), or hold an ACCEPTED/ASSIGNED participation in the
-/// exact instance; all files are policy-validated BEFORE any Drive call; every visit_photos row
-/// links the server-resolved request/instance/folder; a failed link compensates the committed
-/// Drive/files upload.
+/// Upload scope + pipeline (SEC-14): an ACTIVE, non-Admin user may upload when they are the
+/// instance's Host or hold an ACCEPTED participation in the exact instance — nothing else. The
+/// former blanket ADMIN/STAFF bypass and the ASSIGNED (not-yet-accepted) allowance are both gone.
+/// All files are policy-validated BEFORE any Drive call; every visit_photos row links the
+/// server-resolved request/instance/folder; a failed link compensates the committed Drive/files
+/// upload.
 /// </summary>
 public class UploadVisitInstancePhotosCommandHandlerTests
 {
@@ -148,6 +149,9 @@ public class UploadVisitInstancePhotosCommandHandlerTests
     [InlineData(ParticipantStatuses.Invited)]
     [InlineData(ParticipantStatuses.Declined)]
     [InlineData(ParticipantStatuses.Removed)]
+    // SEC-14 (chốt): ASSIGNED has not yet accepted, so it belongs in this forbidden set too — the
+    // former "ACCEPTED or ASSIGNED" allowance is gone, deliberately, per the fixed business rule.
+    [InlineData(ParticipantStatuses.Assigned)]
     public async Task NonAcceptedParticipantStatus_IsForbidden(string status)
     {
         var sut = CreateSut(participantStatus: status);
@@ -209,39 +213,17 @@ public class UploadVisitInstancePhotosCommandHandlerTests
     }
 
     [Fact]
-    public async Task StaffLeader_UnrelatedToInstance_CanUploadPhotos()
+    public async Task StaffLeader_UnrelatedToInstance_IsForbidden()
     {
+        // SEC-14: the blanket "role STAFF/ADMIN passes regardless of relationship" bypass is gone.
+        // Not the Host and never added as a participant of this instance — a Staff Leader with no
+        // relationship to THIS instance must now be refused, same as anyone else.
         const ulong leaderUserId = 300;
         var db = DelegationsTestDbContext.Create();
         DelegationsTestData.SeedBase(db, "AFTER_VISIT");
         db.Users.Add(DelegationsTestData.CreateUser(leaderUserId, DelegationsTestData.StaffRoleId, UserSubRoles.Leader, null));
         db.SaveChanges();
-        var folder = VisitPhotoTestSeed.AddFolder(db);
 
-        var fileUpload = new Mock<IFileUploadService>(MockBehavior.Strict);
-        fileUpload
-            .Setup(f => f.UploadBusinessFileAsync(
-                It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<long>(),
-                FilePurpose.VisitRequestPhoto, (long)leaderUserId, CampusFolderId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new UploadedFileDto
-            {
-                FileId = UploadedFileId,
-                FileUrl = $"/api/files/{UploadedFileId}/content",
-                ExternalFileId = $"drv-file-{UploadedFileId}",
-                MimeType = "image/jpeg",
-                ChecksumSha256 = "00",
-                ObjectKey = $"visit-photos/{UploadedFileId}.jpg",
-            });
-
-        var folderService = new Mock<IVisitPhotoFolderService>();
-        folderService
-            .Setup(s => s.EnsureUploadTargetAsync(
-                It.IsAny<PEMS.Domain.Entities.Delegations.VisitRequestCampus>(), "C1",
-                leaderUserId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new VisitPhotoUploadTarget { Folder = folder, PhotoFolderExternalId = CampusFolderId });
-
-        // Not the Host and never added as a participant of this instance — universal Staff/Admin
-        // access is the only reason this succeeds.
         var currentUser = new FakeDelegationsCurrentUser
         {
             UserId = leaderUserId,
@@ -251,13 +233,11 @@ public class UploadVisitInstancePhotosCommandHandlerTests
         };
 
         var handler = new UploadVisitInstancePhotosCommandHandler(
-            db, currentUser, fileUpload.Object, new FileValidationPolicy(),
-            folderService.Object, Mock.Of<IGoogleDriveStorageService>(),
+            db, currentUser, Mock.Of<IFileUploadService>(), new FileValidationPolicy(),
+            Mock.Of<IVisitPhotoFolderService>(), Mock.Of<IGoogleDriveStorageService>(),
             NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
 
-        var response = await handler.Handle(Command(JpegFile()), default);
-
-        Assert.Single(response.Photos);
+        await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(Command(JpegFile()), default));
     }
 
     [Fact]
@@ -269,13 +249,56 @@ public class UploadVisitInstancePhotosCommandHandlerTests
         db.Users.Add(DelegationsTestData.CreateUser(deptUserId, DelegationsTestData.DepartmentRoleId, null, null));
         db.SaveChanges();
 
-        // Neither Host, nor Admin/Staff, nor a participant of this instance — must stay forbidden.
+        // Neither Host nor a participant of this instance — must stay forbidden.
         var currentUser = new FakeDelegationsCurrentUser
         {
             UserId = deptUserId,
             RoleId = DelegationsTestData.DepartmentRoleId,
             RoleCode = RoleCodes.Department,
             SubRole = null,
+        };
+
+        var handler = new UploadVisitInstancePhotosCommandHandler(
+            db, currentUser, Mock.Of<IFileUploadService>(), new FileValidationPolicy(),
+            Mock.Of<IVisitPhotoFolderService>(), Mock.Of<IGoogleDriveStorageService>(),
+            NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(Command(JpegFile()), default));
+    }
+
+    [Fact]
+    public async Task Admin_WithNoRelationship_IsForbidden()
+    {
+        const ulong adminId = 302;
+        var db = DelegationsTestDbContext.Create();
+        DelegationsTestData.SeedBase(db, "AFTER_VISIT");
+        db.Users.Add(DelegationsTestData.CreateUser(adminId, DelegationsTestData.StaffRoleId, null, null));
+        db.SaveChanges();
+
+        var currentUser = new FakeDelegationsCurrentUser
+        {
+            UserId = adminId, RoleId = DelegationsTestData.StaffRoleId, RoleCode = RoleCodes.Admin, SubRole = null,
+        };
+
+        var handler = new UploadVisitInstancePhotosCommandHandler(
+            db, currentUser, Mock.Of<IFileUploadService>(), new FileValidationPolicy(),
+            Mock.Of<IVisitPhotoFolderService>(), Mock.Of<IGoogleDriveStorageService>(),
+            NullLogger<UploadVisitInstancePhotosCommandHandler>.Instance);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => handler.Handle(Command(JpegFile()), default));
+    }
+
+    [Fact]
+    public async Task Admin_WhoIsTheHistoricalHost_IsStillForbidden()
+    {
+        // The account that is recorded as CurrentHostUserId later became Admin — the explicit,
+        // unconditional Admin early-deny must still refuse it, not let the Host relationship win.
+        var db = DelegationsTestDbContext.Create();
+        var (_, host) = DelegationsTestData.SeedBase(db, "AFTER_VISIT");
+
+        var currentUser = new FakeDelegationsCurrentUser
+        {
+            UserId = DelegationsTestData.HostUserId, RoleId = host.RoleId, RoleCode = RoleCodes.Admin, SubRole = null,
         };
 
         var handler = new UploadVisitInstancePhotosCommandHandler(

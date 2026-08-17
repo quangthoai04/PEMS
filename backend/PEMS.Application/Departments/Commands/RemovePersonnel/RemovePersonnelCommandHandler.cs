@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Departments.Common;
 
 using PEMS.Application.Common;
 namespace PEMS.Application.Departments.Commands.RemovePersonnel;
@@ -21,6 +22,10 @@ public sealed class RemovePersonnelCommandHandler : IRequestHandler<RemovePerson
 
     public async Task<RemovePersonnelResponse> Handle(RemovePersonnelCommand request, CancellationToken cancellationToken)
     {
+        // SEC-08: departmentId was client-supplied with no scope check at all.
+        await DepartmentPersonnelManagementScope.EnsureDepartmentInScopeAsync(
+            _context, _currentUserService, request.DepartmentId, cancellationToken);
+
         var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == request.UserId && u.DepartmentId == request.DepartmentId, cancellationToken);
         if (user == null) return new RemovePersonnelResponse { Success = false, Message = "Không tìm thấy nhân sự." };
 

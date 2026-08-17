@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Domain.Constants;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Delegations.Minutes;
 using PEMS.Shared;
 using System;
 
@@ -31,14 +32,6 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
         }
 
         var isHo = _currentUser.RoleCode == "HO";
-        // HO manages every campus (no fixed PrimaryCampusId) — everyone else is scoped to
-        // exactly one campus and must have it set, otherwise they see nothing meaningful here.
-        if (!isHo && _currentUser.PrimaryCampusId is null)
-        {
-            throw new ForbiddenException();
-        }
-
-        var campusId = _currentUser.PrimaryCampusId;
 
         var joined = _db.Minutes
             .Join(_db.VisitRequestCampuses,
@@ -46,18 +39,19 @@ public sealed class SearchAndFilterMinutesQueryHandler : IRequestHandler<SearchA
                   vrc => vrc.VisitInstanceId,
                   (m, vrc) => new { m, vrc });
 
-        // Base query: non-HO roles are always scoped to their own campus (server never trusts
-        // the client for this). HO instead may optionally self-filter via request.CampusId.
-        if (!isHo)
-        {
-            joined = joined.Where(x => x.vrc.CampusId == campusId);
-        }
-        else if (request.CampusId.HasValue)
+        // HO may optionally self-filter to one campus; every other role's actual visibility is
+        // decided below by MinuteAccess.WhereAuthorizedFor, not by campus membership alone — the
+        // removed "!isHo && PrimaryCampusId == null => Forbidden" guard used to block a legitimate
+        // registrant/operational-contact (guest-side) caller who may have no PrimaryCampusId at all.
+        if (isHo && request.CampusId.HasValue)
         {
             joined = joined.Where(x => x.vrc.CampusId == request.CampusId.Value);
         }
 
-        var query = joined.Select(x => x.m).AsQueryable();
+        // SEC-11: authorization MUST run before Count/Skip/Take below — applying it after pagination
+        // would produce a wrong TotalCount/page and could leak "this many exist" through the summary
+        // counts even when individual rows are filtered out.
+        var query = MinuteAccess.WhereAuthorizedFor(joined.Select(x => x.m), _db, _currentUser);
 
         // Summary queries before pagination but after scope filtering
         var totalMinutes = await query.CountAsync(cancellationToken);

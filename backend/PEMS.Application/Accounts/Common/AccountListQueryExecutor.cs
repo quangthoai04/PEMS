@@ -46,6 +46,17 @@ internal static class AccountListQueryExecutor
                 "BÃ¡ÂºÂ¡n khÃƒÂ´ng cÃƒÂ³ quyÃ¡Â»Ân xem danh sÃƒÂ¡ch tÃƒÂ i khoÃ¡ÂºÂ£n.", 403);
         }
 
+        // SEC-03: accessPolicy was injected but never used as a gate. Every authenticated caller
+        // outside Admin/HO/StaffLeader used to fall into the "other campus-scoped roles" branch
+        // below and receive full PII (email, phone, StudentCode, provider types) for every account
+        // sharing their campus — a Student or Department caller had no business seeing any of it.
+        if (!accessPolicy.CanAccessAccountManagement(currentUser))
+        {
+            throw new AuthBusinessException(
+                AccountErrorCodes.AccountListForbidden,
+                "Bạn không có quyền xem danh sách tài khoản.", 403);
+        }
+
         var roleCode = currentUser.RoleCode!;
         var myCampusId = currentUser.PrimaryCampusId;
         var privileged = AccountProvisioningRules.IsPrivileged(roleCode);   // ADMIN / HO
@@ -87,24 +98,15 @@ internal static class AccountListQueryExecutor
                     "Bạn không có quyền xem tài khoản ở cơ sở này.", 403);
             }
 
-            if (isStaffLeader)
-            {
-                // Staff Leader: own campus, plus Visitor accounts ONLY when searching
-                // (never dump all campus-less visitors). Prefer exact email keyword.
-                if (!myCampusId.HasValue)
-                    query = hasKeyword ? query.Where(u => u.Role.RoleCode == RoleCodes.Visitor) : query.Where(u => false);
-                else if (hasKeyword)
-                    query = query.Where(u => u.PrimaryCampusId == myCampusId || u.Role.RoleCode == RoleCodes.Visitor);
-                else
-                    query = query.Where(u => u.PrimaryCampusId == myCampusId);
-            }
+            // Staff Leader is the only non-privileged role that can reach this point (SEC-03's gate
+            // above refuses every other role before any query is built): own campus, plus Visitor
+            // accounts ONLY when searching (never dump all campus-less visitors).
+            if (!myCampusId.HasValue)
+                query = hasKeyword ? query.Where(u => u.Role.RoleCode == RoleCodes.Visitor) : query.Where(u => false);
+            else if (hasKeyword)
+                query = query.Where(u => u.PrimaryCampusId == myCampusId || u.Role.RoleCode == RoleCodes.Visitor);
             else
-            {
-                // Other campus-scoped roles: strictly own campus, no visitor dump.
-                query = !myCampusId.HasValue
-                    ? query.Where(u => false)
-                    : query.Where(u => u.PrimaryCampusId == myCampusId);
-            }
+                query = query.Where(u => u.PrimaryCampusId == myCampusId);
         }
 
         // ── Keyword search (safe fields only) ──

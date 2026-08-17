@@ -1,3 +1,4 @@
+using System.Linq;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -26,6 +27,12 @@ internal static class MinuteAccess
     public static (bool InScope, bool CanEdit) Evaluate(
         VisitRequestCampus instance, VisitRequest visit, ICurrentUserService user, string? acceptedParticipantRole)
     {
+        // SEC-10/11/Admin-gap: ADMIN is excluded from the whole Visit/Delegation domain
+        // (IRoleAccessPolicy.CanAccessVisitManagement), Minutes included. Checked first, before any
+        // relationship branch, so a historical Host/accepted-participant row on an account that later
+        // became ADMIN can never pass through it.
+        if (user.RoleCode == RoleCodes.Admin) return (false, false);
+
         var userId = user.UserId!.Value;
         bool isHost = instance.CurrentHostUserId == userId;
         bool isStaffLeaderOfCampus = user.RoleCode == RoleCodes.Staff
@@ -42,6 +49,40 @@ internal static class MinuteAccess
             && visit.Status != VisitRequestStatuses.Cancelled;
         bool canEdit = (isHost || (isAccepted && !isAcceptedDepartment)) && isLive;
         return (inScope, canEdit);
+    }
+
+    /// <summary>
+    /// SEC-10/11: the EF-translatable counterpart of <see cref="Evaluate"/>'s InScope test, for the
+    /// list (SearchAndFilterMinutes) and export (PDF/Excel) consumers, which used to apply only a
+    /// campus filter — or, for HO, none at all — with no relationship check whatsoever. Must run
+    /// BEFORE Count/Skip/Take, never after, so pagination reflects only what the caller may see.
+    ///
+    /// <para>
+    /// Every component reduces to a scalar-field comparison or a nullary-parameter <c>Any()</c>
+    /// subquery — both reliably SQL-translatable via Pomelo without needing a pre-built
+    /// <c>Expression&lt;Func&lt;&gt;&gt;</c> spliced into the join (which would need LINQKit,
+    /// deliberately not added as a dependency here).
+    /// </para>
+    /// </summary>
+    public static IQueryable<Minute> WhereAuthorizedFor(
+        IQueryable<Minute> minutes, IApplicationDbContext db, ICurrentUserService user)
+    {
+        if (!user.IsAuthenticated || user.UserId is not { } uid) return minutes.Where(_ => false);
+        if (user.RoleCode == RoleCodes.Admin) return minutes.Where(_ => false); // same principle, same place as Evaluate
+        if (user.RoleCode == RoleCodes.Ho) return minutes;
+
+        var isStaffLeader = user.RoleCode == RoleCodes.Staff
+            && string.Equals(user.SubRole, UserSubRoles.Leader, StringComparison.OrdinalIgnoreCase);
+        var staffLeaderCampusId = isStaffLeader ? user.PrimaryCampusId : null;
+
+        return minutes.Where(m =>
+            db.VisitRequestCampuses.Any(vrc => vrc.VisitInstanceId == m.VisitInstanceId
+                && (vrc.CurrentHostUserId == uid
+                    || (staffLeaderCampusId != null && vrc.CampusId == staffLeaderCampusId)
+                    || vrc.VisitRequest.RegistrantUserId == uid
+                    || vrc.OperationalContactUserId == uid))
+            || db.VisitParticipants.Any(p => p.VisitInstanceId == m.VisitInstanceId
+                && p.UserId == uid && p.Status == ParticipantStatuses.Accepted && !p.IsHost));
     }
 
     /// <summary>True when <paramref name="minute"/> currently has a non-expired edit lock.</summary>

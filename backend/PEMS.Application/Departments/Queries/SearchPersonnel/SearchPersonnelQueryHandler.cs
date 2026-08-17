@@ -4,20 +4,27 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Departments.Common;
 
 namespace PEMS.Application.Departments.Queries.SearchPersonnel;
 
 public sealed class SearchPersonnelQueryHandler : IRequestHandler<SearchPersonnelQuery, SearchPersonnelResult>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICurrentUserService _currentUser;
 
-    public SearchPersonnelQueryHandler(IApplicationDbContext context)
+    public SearchPersonnelQueryHandler(IApplicationDbContext context, ICurrentUserService currentUser)
     {
         _context = context;
+        _currentUser = currentUser;
     }
 
     public async Task<SearchPersonnelResult> Handle(SearchPersonnelQuery request, CancellationToken cancellationToken)
     {
+        // SEC-05/06: departmentId was client-supplied with no scope check at all.
+        await DepartmentPersonnelManagementScope.EnsureDepartmentInScopeAsync(
+            _context, _currentUser, request.DepartmentId, cancellationToken);
+
         var query = _context.Users
             .Include(u => u.Role)
             .Include(u => u.PrimaryCampus)

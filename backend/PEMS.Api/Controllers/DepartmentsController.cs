@@ -113,7 +113,12 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // SEC-05/06: no role gate at all — any authenticated user could search/view any department's
+        // personnel by supplying an arbitrary departmentId. The allowed set mirrors
+        // DepartmentPersonnelManagementScope (HO global, Staff Leader own campus, Department Lead own
+        // department verified as the actual HeadUserId) — the handler is the authoritative layer.
         [HttpGet("viewpersonneldetails")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Ho, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> ViewPersonnelDetails([FromQuery] PEMS.Application.Departments.Queries.ViewPersonnelDetails.ViewPersonnelDetailsQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -121,6 +126,7 @@ namespace PEMS.Api.Controllers
         }
 
         [HttpGet("searchpersonnel")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Ho, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> SearchPersonnel([FromQuery] PEMS.Application.Departments.Queries.SearchPersonnel.SearchPersonnelQuery query, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(query, cancellationToken);
@@ -134,13 +140,6 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
-        [HttpPost("assigntasks")]
-        public async Task<IActionResult> AssignTasks([FromBody] PEMS.Application.Departments.Commands.AssignTasks.AssignTasksCommand command, CancellationToken cancellationToken)
-        {
-            var result = await _mediator.Send(command, cancellationToken);
-            return Ok(result);
-        }
-
         [HttpPost("signtheservicedeliveryreport")]
         public async Task<IActionResult> SignTheServiceDeliveryReport([FromBody] PEMS.Application.Departments.Commands.SignTheServiceDeliveryReport.SignTheServiceDeliveryReportCommand command, CancellationToken cancellationToken)
         {
@@ -148,7 +147,9 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // SEC-08: same missing-gate pattern as viewpersonneldetails/searchpersonnel.
         [HttpPost("removepersonnel")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Ho, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> RemovePersonnel([FromBody] PEMS.Application.Departments.Commands.RemovePersonnel.RemovePersonnelCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
@@ -169,14 +170,22 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // SEC-09: same missing-gate pattern, plus the handler previously trusted departmentId/
+        // newLeaderUserId with no candidate validation and swallowed unexpected exceptions into a
+        // Success=false 200 (SEC-20) — see ReassignDepartmentLeadCommandHandler. Department Lead is
+        // deliberately excluded here: self-service transfer has its own canonical route at
+        // /api/department-leader/transfer-leadership.
         [HttpPost("reassigndepartmentlead")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.Ho, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> ReassignDepartmentLead([FromBody] PEMS.Application.Departments.Commands.ReassignDepartmentLead.ReassignDepartmentLeadCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);
             return Ok(result);
         }
 
+        // SEC-07: same missing-gate pattern as viewpersonneldetails/searchpersonnel.
         [HttpPut("updatedepartmentpersonnel")]
+        [RoleAuthorize(EffectiveRole.StaffLeader, EffectiveRole.DepartmentLead, EffectiveRole.Ho, ErrorCode = ManagementForbidden, Message = ManagementForbiddenMessage)]
         public async Task<IActionResult> UpdateDepartmentPersonnel([FromBody] PEMS.Application.Departments.Commands.UpdateDepartmentPersonnel.UpdateDepartmentPersonnelCommand command, CancellationToken cancellationToken)
         {
             var result = await _mediator.Send(command, cancellationToken);

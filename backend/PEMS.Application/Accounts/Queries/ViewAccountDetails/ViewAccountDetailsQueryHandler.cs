@@ -149,9 +149,12 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
     }
 
     /// <summary>
-    /// ADMIN may view any account. HO may view only HO and Staff-Leader accounts.
-    /// Any other (campus-scoped) caller is limited to their own campus.
-    /// A forbidden target is reported as Not Found so existence is not leaked.
+    /// ADMIN may view any account. HO may view only HO and Staff-Leader accounts. Staff Leader is
+    /// limited to their own campus. Everyone else — Department Lead, Department staff, IC Staff,
+    /// Student, Visitor — has no account-management surface at all here (SEC-02): the "campus-scoped
+    /// caller" branch used to fall through to any authenticated same-campus user, which handed full
+    /// PII (email, phone, StudentCode, security-provider types) to anyone sharing a campus with the
+    /// target. A forbidden target is reported as Not Found so existence is not leaked.
     /// </summary>
     private void EnforceScope(string targetRoleCode, string? targetSubRole, ulong? targetCampusId)
     {
@@ -169,8 +172,8 @@ public sealed class ViewAccountDetailsQueryHandler : IRequestHandler<ViewAccount
             return;
         }
 
-        // Campus-scoped caller (e.g. Staff Leader).
-        if (_currentUser.PrimaryCampusId is null || targetCampusId != _currentUser.PrimaryCampusId)
+        var isStaffLeader = callerRole == RoleCodes.Staff && _currentUser.SubRole == UserSubRoles.Leader;
+        if (!isStaffLeader || _currentUser.PrimaryCampusId is null || targetCampusId != _currentUser.PrimaryCampusId)
             throw new NotFoundException("Account", _currentUser.UserId ?? 0);
     }
 }

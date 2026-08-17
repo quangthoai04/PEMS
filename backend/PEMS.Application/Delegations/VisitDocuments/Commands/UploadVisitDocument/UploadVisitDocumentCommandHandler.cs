@@ -5,6 +5,7 @@ using PEMS.Application.Common;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Files;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.VisitDocuments.Common;
 using PEMS.Application.Delegations.VisitPhotos;
 using PEMS.Application.Partners.Commands.CreatePartner;
 using PEMS.Application.Partners.Common;
@@ -52,7 +53,9 @@ public sealed class UploadVisitDocumentCommandHandler
     public async Task<UploadVisitDocumentResponse> Handle(
         UploadVisitDocumentCommand request, CancellationToken cancellationToken)
     {
-        var scope = await VisitInstanceMediaAccessScope.ResolveAsync(
+        // SEC-17: this used to share the broad, view-only VisitInstanceMediaAccessScope. Chốt rule
+        // is narrower — Host of that exact instance only.
+        var scope = await VisitDocumentAccess.ResolveUploadAsync(
             _db, _currentUser, request.VisitInstanceId, cancellationToken);
 
         if (!scope.CanUpload)

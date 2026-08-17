@@ -105,14 +105,14 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 .Where(l => instanceIds.Contains(l.VisitInstanceId) && l.AssignedToUserId == userId)
                 .Select(l => l.VisitInstanceId)
                 .ToListAsync(cancellationToken);
-            var participantInstanceIds = await _context.VisitParticipants
+            var assignedParticipantInstanceIds = await _context.VisitParticipants
                 .Where(p => instanceIds.Contains(p.VisitInstanceId)
                     && p.UserId == userId
                     && p.AssignedBy != null
                     && p.Status != ParticipantStatuses.Removed)
                 .Select(p => p.VisitInstanceId)
                 .ToListAsync(cancellationToken);
-            departmentStaffAssignedInstanceIds = logisticsInstanceIds.Concat(participantInstanceIds).ToHashSet();
+            departmentStaffAssignedInstanceIds = logisticsInstanceIds.Concat(assignedParticipantInstanceIds).ToHashSet();
         }
 
         // The Staff Leader's own-campus instance (if any). Used for both scope checks and flags.
@@ -126,14 +126,20 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         var hostedInstances = visitRequest.CampusInstances.Where(c => c.CurrentHostUserId == userId).ToList();
         var isHost = !isStaffLeader && hostedInstances.Count > 0;
 
-        var isParticipant = await _context.VisitParticipants
-            .AnyAsync(p => instanceIds.Contains(p.VisitInstanceId)
+        // SEC-12: fetched as the actual set of instance ids (not just a boolean) — the union-based
+        // visibility computation below needs to know WHICH campuses this participation covers, not
+        // merely whether one exists anywhere on the request.
+        var participantInstanceIds = await _context.VisitParticipants
+            .Where(p => instanceIds.Contains(p.VisitInstanceId)
                         && p.UserId == userId
                         && (p.Status == ParticipantStatuses.Invited
                             || p.Status == ParticipantStatuses.Accepted
                             || p.Status == ParticipantStatuses.Assigned
-                            || p.Status == ParticipantStatuses.Declined),
-                      cancellationToken);
+                            || p.Status == ParticipantStatuses.Declined))
+            .Select(p => p.VisitInstanceId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var isParticipant = participantInstanceIds.Count > 0;
 
         // ── Scope enforcement ──
         if (isHo)
@@ -156,9 +162,15 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             // The registrant, or somebody who confirmed at least one campus of this request.
             // Holding one campus is enough to open the request; WHICH campuses they then see is
             // decided by the visible-instance scoping below.
+            //
+            // SEC-12: CreatedBy is NOT a request-level ownership signal — RegistrantUserId is the
+            // ONLY one. VisitRequestV2CreateService happens to set both to the same value at
+            // creation time, but that is a creation-time coincidence, not a declared business
+            // relationship, and must never be read as one here. A legacy row where CreatedBy is set
+            // but RegistrantUserId is null/different fails closed (denied) rather than being trusted
+            // — see the data-quality note in the remediation plan for the recommended follow-up audit.
             var owns = isRegistrant
-                || VisitRequestOwnership.IsOperationalContactOfAny(visitRequest, userId)
-                || visitRequest.CreatedBy == userId;
+                || VisitRequestOwnership.IsOperationalContactOfAny(visitRequest, userId);
             if (!owns)
                 throw new ForbiddenException("Bạn chỉ được xem đơn của chính mình.");
         }
@@ -194,27 +206,73 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
                 .Select(c => new { c.CampusId, c.CampusCode, c.Name })
                 .ToDictionaryAsync(c => c.CampusId, c => (Code: c.CampusCode, Name: c.Name), cancellationToken);
 
-        // For a Staff Leader on a MULTI_CAMPUS request we only surface their own campus instance
-        // (they have no business with the other campuses). HO sees every campus; Visitor (owner)
-        // sees all; Staff Leader on SINGLE_CAMPUS sees the single instance.
-        // A registrant sees every campus they submitted (public-safe progress); a non-registrant
-        // Staff Leader on a multi-campus request still only sees their own campus instance.
-        var visibleInstances = (isStaffLeader && isMulti && !isRegistrant)
-            ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId).ToList()
-            : isHost
-                ? hostedInstances
-                : isDepartmentStaff && !isParticipant
-                    ? visitRequest.CampusInstances.Where(c => departmentStaffAssignedInstanceIds.Contains(c.VisitInstanceId)).ToList()
-                    : visitRequest.CampusInstances.ToList();
+        // SEC-12: replaced the previous nested-ternary (which fell through to "every campus instance"
+        // for any caller that was none of StaffLeader/Host/DepartmentStaff — including a plain
+        // Participant or Operational Contact confirmed on only ONE campus, leaking every sibling) with
+        // a union of independently-computed relationship sets.
+        //
+        // isHo / isRegistrant see everything — the only two "sees the whole request" relations.
+        // Staff Leader is its OWN exclusive branch, evaluated next: campus jurisdiction is a
+        // structural/organizational scope, not a personal relationship like Host or Participant, so it
+        // is deliberately never unioned with those — a Staff Leader who happens to also be Host or a
+        // participant on a sibling campus must not see that sibling through this account. (A Staff
+        // Leader who is ALSO the registrant already took the isRegistrant branch above and is
+        // unaffected by this narrowing.) Everyone else's visibility is the union of every relationship
+        // they actually hold — Host, Department-Staff assignment, Operational Contact, Participant —
+        // so a caller with more than one simultaneous relationship never loses one to branch ordering.
+        List<Domain.Entities.Delegations.VisitRequestCampus> visibleInstances;
+        if (isHo || isRegistrant)
+        {
+            visibleInstances = visitRequest.CampusInstances.ToList();
+        }
+        else if (isStaffLeader)
+        {
+            visibleInstances = primaryCampusId.HasValue
+                ? visitRequest.CampusInstances.Where(c => c.CampusId == primaryCampusId.Value).ToList()
+                : new List<Domain.Entities.Delegations.VisitRequestCampus>();
+
+            if (visibleInstances.Count == 0)
+                throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
+        }
+        else
+        {
+            var unionIds = new HashSet<ulong>();
+
+            unionIds.UnionWith(visitRequest.CampusInstances
+                .Where(c => c.CurrentHostUserId == userId).Select(c => c.VisitInstanceId));
+
+            if (isDepartmentStaff)
+                unionIds.UnionWith(departmentStaffAssignedInstanceIds);
+
+            unionIds.UnionWith(visitRequest.CampusInstances
+                .Where(c => c.OperationalContactUserId == userId).Select(c => c.VisitInstanceId));
+
+            unionIds.UnionWith(participantInstanceIds);
+
+            if (unionIds.Count == 0)
+                throw new ForbiddenException("Bạn không có quyền xem chi tiết đơn này.");
+
+            visibleInstances = visitRequest.CampusInstances
+                .Where(c => unionIds.Contains(c.VisitInstanceId)).ToList();
+        }
 
         // ── Pure V2 — scope is already applied above, so this never reads a hidden campus. Decision /
         // schedule / cancellation metadata below lives on the instance/request rows; only the FORM
         // CONTENT comes from the per-campus detail. ──
+        var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
+        var content = await _formReadService.ResolveCampusFormContentAsync(
+            visitRequest, visibleIds, cancellationToken);
 
-        // A request whose campuses hold DIFFERENT form content cannot be represented by this flat,
-        // single-snapshot DTO. The client must switch to the per-campus detail endpoint. Returned
-        // only after authorization so mixed-ness is never revealed to someone who may not see the request.
-        if (visitRequest.HasMixedCampusDetails)
+        // SEC-12: mixedness is judged ONLY across what the caller can actually see. The request-wide
+        // visitRequest.HasMixedCampusDetails flag compares EVERY campus of the request, so a partial
+        // viewer (e.g. a Staff Leader confined to their own campus) could be told "this request has
+        // mixed content" — or refused outright — based on the existence and divergence of a sibling
+        // campus they are not authorized to know about at all. A request whose VISIBLE campuses hold
+        // different content cannot be represented by this flat, single-snapshot DTO; the client must
+        // switch to the per-campus detail endpoint. Checked only after authorization and only against
+        // the already-scoped visible set, so mixed-ness (or its absence) never reveals anything about a
+        // hidden campus.
+        if (HasMixedVisibleContent(content, visibleIds))
         {
             throw new ConflictException(
                 "Đơn này có nội dung khác nhau theo từng cơ sở; vui lòng dùng màn hình chi tiết theo cơ sở.",
@@ -224,9 +282,6 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
         // Not mixed (guarded above) ⇒ every VISIBLE campus holds identical content, so a representative
         // visible instance's detail IS the flat value — scope was applied above, so this can never pick a
         // campus the caller may not see. A missing detail throws VISIT_FORM_DETAIL_MISSING (no fallback).
-        var visibleIds = visibleInstances.Select(c => c.VisitInstanceId).ToList();
-        var content = await _formReadService.ResolveCampusFormContentAsync(
-            visitRequest, visibleIds, cancellationToken);
         if (!content.TryGetValue(visibleInstances[0].VisitInstanceId, out var rep))
             throw new InvalidOperationException("VISIT_FORM_DETAIL_MISSING");
 
@@ -495,5 +550,59 @@ public sealed class GetSubmittedVisitRequestFormDetailQueryHandler
             ConfirmedAt = instance.OperationalContactConfirmedAt,
             ConfirmationSource = instance.OperationalContactConfirmationSource,
         };
+    }
+
+    /// <summary>
+    /// SEC-12: the visible-scoped counterpart of the write-side canonical mixedness check
+    /// (<c>VisitRequestV2Canonical.ComputeHasMixed</c>, in PEMS.Infrastructure — unreachable from
+    /// this Application-layer handler by design, since Application never references Infrastructure).
+    /// Compares every field the flat DTO actually exposes across only the caller's VISIBLE instances,
+    /// so a hidden sibling campus can never influence — or even be proven to exist via — the answer.
+    /// A single visible instance is never mixed.
+    /// </summary>
+    private static bool HasMixedVisibleContent(
+        IReadOnlyDictionary<ulong, VisitCampusFormContent> content, IReadOnlyList<ulong> visibleIds)
+    {
+        if (visibleIds.Count <= 1) return false;
+
+        VisitCampusFormContent? first = null;
+        foreach (var id in visibleIds)
+        {
+            if (!content.TryGetValue(id, out var current)) continue; // a missing detail is reported separately, not here
+            if (first is null) { first = current; continue; }
+            if (!ContentEquals(first, current)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Deliberately narrower than the write-side <c>CanonicalContent</c> fingerprint: member lists
+    /// (Visitors/SupportMembers) are NOT compared here. This endpoint's own established contract
+    /// (<c>StaffLeader_v2_sees_only_own_campus_no_aggregate_or_member_leak</c>) already treats
+    /// per-campus member divergence as an orthogonal, accepted fact about this flat DTO — it shows
+    /// one representative instance's members, scoped by the same visibility rule as everything else,
+    /// and per-campus member differences alone have never been grounds for the 409 upgrade-required
+    /// response. Only the scalar FORM content fields the flat DTO's top-level properties actually
+    /// promise to represent as ONE value are compared.
+    /// </summary>
+    private static bool ContentEquals(VisitCampusFormContent a, VisitCampusFormContent b)
+    {
+        static string N(string? s) => (s ?? string.Empty).Trim();
+        static bool TextEqual(string? x, string? y) => string.Equals(N(x), N(y), StringComparison.OrdinalIgnoreCase);
+
+        return TextEqual(a.DelegationName, b.DelegationName)
+            && TextEqual(a.VisitType, b.VisitType)
+            && TextEqual(a.VisitTypeOther, b.VisitTypeOther)
+            && TextEqual(a.Purpose, b.Purpose)
+            && TextEqual(a.WorkingContent, b.WorkingContent)
+            && TextEqual(a.WorkingLanguage, b.WorkingLanguage)
+            && TextEqual(a.MediaConsentStatus, b.MediaConsentStatus)
+            && TextEqual(a.Notes, b.Notes)
+            && TextEqual(a.TransportationNote, b.TransportationNote)
+            && TextEqual(a.OperationalContact.FullName, b.OperationalContact.FullName)
+            && TextEqual(a.OperationalContact.Organization, b.OperationalContact.Organization)
+            && TextEqual(a.OperationalContact.JobTitle, b.OperationalContact.JobTitle)
+            && TextEqual(a.OperationalContact.Phone, b.OperationalContact.Phone)
+            && TextEqual(a.OperationalContact.Email, b.OperationalContact.Email);
     }
 }

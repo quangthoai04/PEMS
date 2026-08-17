@@ -109,6 +109,14 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (_currentUser.RoleCode != RoleCodes.Department || _currentUser.SubRole != UserSubRoles.Leader)
             throw new ForbiddenException("Chỉ Department Leader mới được giao việc xuống Staff.");
 
+        // SEC-13: ownership — mirrors VisitInvitationResponse.ApplyAsync's own pattern. Without this,
+        // any Department Leader could pass ANY participant id belonging to their department (not
+        // necessarily their own row — e.g. a different member's, or a stale row from before a
+        // leadership handover) and mutate ITS status/assignment history as if it were the caller's
+        // own delegation.
+        if (leaderParticipant.UserId != userId)
+            throw new ForbiddenException("Bạn chỉ có thể giao việc từ lời mời của chính mình.");
+
         var participantUser = await _db.Users.FirstOrDefaultAsync(u => u.UserId == leaderParticipant.UserId, cancellationToken);
         if (participantUser?.DepartmentId != _currentUser.DepartmentId)
             throw new ForbiddenException("Bạn chỉ có thể giao nhiệm vụ thuộc phòng ban của mình.");

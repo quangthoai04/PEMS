@@ -342,6 +342,46 @@ public class UpdateAccountRoleCommandHandlerTests
     }
 
     [Fact]
+    public async Task Ho_CannotChangeOwnRole()
+    {
+        // SEC-01: the self-escalation guard used to live only inside the StaffLeader branch — HO
+        // (and any other caller) had no such check at all, so an HO could promote themselves to
+        // ADMIN. The guard is now universal and runs before the target is even loaded.
+        var h = CreateHarness();
+        h.Actor.RoleCode = RoleCodes.Ho;
+        h.Actor.SubRole = null;
+        h.Db.Users.Add(Uc106TestData.CreateUser(h.Actor.UserId!.Value, Uc106TestData.StaffRoleId, UserSubRoles.Staff, IcDeptId));
+        h.Db.SaveChanges();
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = h.Actor.UserId!.Value,
+            NewRoleCode = RoleCodes.Admin,
+        }));
+
+        var user = await h.Db.Users.SingleAsync(u => u.UserId == h.Actor.UserId!.Value);
+        Assert.Equal(Uc106TestData.StaffRoleId, user.RoleId); // untouched
+        h.AssertNoSideEffects();
+    }
+
+    [Fact]
+    public async Task SelfEscalationGuard_RunsBeforeAnyLockOrRead()
+    {
+        // The guard must refuse a self-targeted request even when the target row does not exist at
+        // all in the database — proof it runs before the target is loaded, mirroring the Admin
+        // check's own "refused before the transaction and the row lock" placement.
+        var h = new Harness(); // deliberately no Users/Roles/Campus seeded
+        h.Actor.RoleCode = RoleCodes.Ho;
+        h.Actor.SubRole = null;
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => h.Run(new UpdateAccountRoleCommand
+        {
+            UserId = h.Actor.UserId!.Value,
+            NewRoleCode = RoleCodes.Admin,
+        }));
+    }
+
+    [Fact]
     public async Task StaffLeader_CannotEditTargetInAnotherCampus()
     {
         var h = CreateHarness();

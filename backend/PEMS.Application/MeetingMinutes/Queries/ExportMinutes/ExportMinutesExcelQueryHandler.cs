@@ -8,6 +8,8 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Minutes;
+using PEMS.Domain.Constants;
 using PEMS.Shared;
 
 namespace PEMS.Application.MeetingMinutes.Queries.ExportMinutes;
@@ -25,6 +27,9 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
 
     public async Task<byte[]> Handle(ExportMinutesExcelQuery request, CancellationToken cancellationToken)
     {
+        if (!_currentUser.IsAuthenticated || _currentUser.UserId is null)
+            throw new ForbiddenException();
+
         var minute = await _db.Minutes
             .Include(m => m.Participants)
             .Include(m => m.ActionItems)
@@ -33,20 +38,27 @@ public class ExportMinutesExcelQueryHandler : IRequestHandler<ExportMinutesExcel
 
         var vrc = await _db.VisitRequestCampuses
             .Include(v => v.VisitRequest)
-            .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken);
+            .FirstOrDefaultAsync(v => v.VisitInstanceId == minute.VisitInstanceId, cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", minute.VisitInstanceId);
 
-        var campusName = vrc != null ? await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken) : null;
+        var campusName = await _db.Campuses.Where(c => c.CampusId == vrc.CampusId).Select(c => c.Name).FirstOrDefaultAsync(cancellationToken);
 
         // Per-campus v2: this export is INSTANCE-scoped → a MIXED request uses THIS instance's detail.
-        var effectiveDelegationName = vrc is null
-            ? null
-            : (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+        var effectiveDelegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
                 .ForInstancesAsync(_db, new[] { vrc.VisitInstanceId }, cancellationToken))
                 .GetValueOrDefault(vrc.VisitInstanceId);
 
-        if (_currentUser.PrimaryCampusId != null && vrc?.CampusId != _currentUser.PrimaryCampusId)
+        // SEC-10: same fix as the PDF export — was a bare campus-id comparison, skipped entirely for
+        // any caller with no PrimaryCampusId, with no relationship or role check at all.
+        var acceptedRole = await _db.VisitParticipants
+            .Where(p => p.VisitInstanceId == minute.VisitInstanceId && p.UserId == _currentUser.UserId.Value
+                && p.Status == ParticipantStatuses.Accepted && !p.IsHost)
+            .Select(p => p.ParticipantRole)
+            .FirstOrDefaultAsync(cancellationToken);
+        var (inScope, _) = MinuteAccess.Evaluate(vrc, vrc.VisitRequest, _currentUser, acceptedRole);
+        if (!inScope)
         {
-            throw new ForbiddenException("Không có quyền tải Excel của campus này");
+            throw new ForbiddenException("Bạn không có quyền tải Excel biên bản của chuyến thăm này.");
         }
 
         using var workbook = new XLWorkbook();

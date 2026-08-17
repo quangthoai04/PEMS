@@ -7,9 +7,9 @@ using PEMS.Domain.Entities.Delegations;
 namespace PEMS.Application.Delegations.VisitPhotos;
 
 /// <summary>
-/// Resolved authorization context for the visit-photo upload feature: the caller is an ACTIVE user
-/// who is the instance's Host, an ADMIN/STAFF (regular Staff or Staff Leader), or holds an
-/// ACCEPTED/ASSIGNED participation in the exact campus instance.
+/// Resolved authorization context for the visit-photo upload feature: the caller is an ACTIVE,
+/// non-Admin user who is the instance's Host or holds an ACCEPTED participation in the exact campus
+/// instance.
 /// </summary>
 public sealed class VisitPhotoStudentContext
 {
@@ -33,12 +33,18 @@ public static class VisitPhotoStudentScope
     /// <summary>
     /// Resolves the instance scope and enforces the uploader rule.
     ///
+    /// SEC-14 (chốt business rule): Photo Upload = Host OR an ACCEPTED-status participant of that
+    /// EXACT visit instance — nothing else. ASSIGNED is excluded on purpose: that participant has not
+    /// yet accepted, so they may not upload. The former blanket "role ADMIN or STAFF" bypass is
+    /// removed entirely, and ADMIN is now explicitly, unconditionally denied FIRST — before any
+    /// relationship check — consistent with <c>IRoleAccessPolicy.CanAccessVisitManagement</c>
+    /// excluding ADMIN from the whole Visit/Delegation domain; an account that is ADMIN today but was
+    /// once recorded as this instance's Host must not pass through that historical relationship.
+    ///
     /// This must stay byte-for-byte equivalent to the database guard
-    /// <c>trg_visit_photos_validate_bi</c>: an ACTIVE user may upload a visit photo when they are the
-    /// instance's current Host, hold role ADMIN or STAFF (covers both regular Staff and Staff Leader —
-    /// sub_role is not checked), or hold an ACCEPTED/ASSIGNED participation in that exact instance.
-    /// Keep both layers in sync — a caller the application approves but the trigger rejects surfaces
-    /// as a 500 (SIGNAL 45000) instead of a clean 403.
+    /// <c>trg_visit_photos_validate_bi</c> — a caller the application approves but the trigger
+    /// rejects (or the reverse) surfaces as a raw 500 (SIGNAL 45000) instead of a clean 403, or as a
+    /// silent over-permission the app-layer fix alone would not close. Keep both layers in sync.
     /// </summary>
     public static async Task<VisitPhotoStudentContext> ResolveAcceptedStudentAsync(
         IApplicationDbContext db,
@@ -48,6 +54,10 @@ public static class VisitPhotoStudentScope
     {
         if (!currentUser.IsAuthenticated || currentUser.UserId is not { } userId)
             throw new ForbiddenException();
+
+        if (currentUser.RoleCode == RoleCodes.Admin)
+            throw new ForbiddenException(
+                "Bạn chỉ có thể tải ảnh cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia.");
 
         var instance = await db.VisitRequestCampuses
             .Include(c => c.VisitRequest)
@@ -59,21 +69,19 @@ public static class VisitPhotoStudentScope
         if (!isActiveAccount)
             throw new ForbiddenException("Tài khoản không hợp lệ hoặc đã bị khóa.");
 
-        var roleCode = currentUser.RoleCode ?? string.Empty;
         var isHost = instance.CurrentHostUserId == userId;
-        var isStaffOrAdmin = roleCode == RoleCodes.Admin || roleCode == RoleCodes.Staff;
 
-        if (!isHost && !isStaffOrAdmin)
+        if (!isHost)
         {
-            var hasAcceptedOrAssignedParticipation = await db.VisitParticipants
+            var hasAcceptedParticipation = await db.VisitParticipants
                 .AnyAsync(vp =>
                     vp.VisitInstanceId == visitInstanceId &&
                     vp.UserId == userId &&
-                    (vp.Status == ParticipantStatuses.Accepted || vp.Status == ParticipantStatuses.Assigned),
+                    vp.Status == ParticipantStatuses.Accepted,
                     cancellationToken);
-            if (!hasAcceptedOrAssignedParticipation)
+            if (!hasAcceptedParticipation)
                 throw new ForbiddenException(
-                    "Bạn chỉ có thể tải ảnh cho chuyến tiếp khách mà bạn là Host, Staff/Admin, hoặc đã xác nhận/được phân công tham gia.");
+                    "Bạn chỉ có thể tải ảnh cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia.");
         }
 
         var campusCode = await db.Campuses
