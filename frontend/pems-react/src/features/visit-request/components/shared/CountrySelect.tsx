@@ -130,6 +130,8 @@ interface CountrySelectProps {
   /** Quy ước NGÔN NGỮ LƯU của form (mặc định 'en' — visit request lưu tên tiếng Anh;
    *  form đối tác truyền 'vi'). Label hiển thị luôn theo ngôn ngữ UI hiện tại. */
   storeLang?: CountryLang;
+  /** Accessible name for the search input — react-select does not accept a `<label htmlFor>`. */
+  ariaLabel?: string;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -141,6 +143,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   isCell,
   disabled,
   storeLang = 'en',
+  ariaLabel,
 }) => {
   const { t, i18n } = useTranslation(['visitRequest']);
   const displayLang: CountryLang = i18n.language?.toLowerCase().startsWith('vi') ? 'vi' : 'en';
@@ -179,6 +182,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
       onChange={(opt: SingleValue<CountryOption>) => onChange(opt?.value ?? '')}
       onCreateOption={(inputValue) => onChange(inputValue)}
       onBlur={onBlur}
+      aria-label={ariaLabel}
       placeholder={placeholder ?? t('visitRequest:select.countryPlaceholder')}
       styles={styles}
       isClearable

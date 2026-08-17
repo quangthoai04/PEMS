@@ -111,6 +111,7 @@
     "FACE_SCAN_RATE_LIMITED": "You're scanning too quickly. Please try again in a few minutes.",
     "FACE_SCAN_QUOTA_EXCEEDED": "The monthly face-scan quota has been reached.",
     "IMMUTABLE_CONTACT_PROFILE": "Operational-contact details cannot be edited in the registration form. Use “Edit the contact” on the request detail screen.",
-    "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Nothing has changed in the operational contact, so there is nothing to save."
+    "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Nothing has changed in the operational contact, so there is nothing to save.",
+    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "This invitation is missing the operational contact's organization. Please ask the registrant to update the contact's details and send a new confirmation invitation."
   }
 }

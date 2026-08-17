@@ -94,7 +94,8 @@ public sealed class UpdateOperationalContactProfileCommandHandler
                 VisitRequestErrorCodes.InstanceVersionConflict);
 
         var newFullName = request.FullName.Trim();
-        var newOrganization = string.IsNullOrWhiteSpace(request.Organization) ? null : request.Organization.Trim();
+        // Required by the validator like FullName/JobTitle — a blank value never reaches here.
+        var newOrganization = request.Organization!.Trim();
         var newJobTitle = request.JobTitle.Trim();
         var newPhone = string.IsNullOrWhiteSpace(request.Phone)
             ? null

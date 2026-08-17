@@ -262,7 +262,7 @@ public sealed class VisitMultiCampusMutationScopeTests
                 var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
                     SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                         new VisitRequestSafeEditDto(reqV,
-                            new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999"),
+                            new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999", "VN"),
                             new List<SafeInstancePatchDto>())), CancellationToken.None));
                 Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex.ErrorCode);
             }
@@ -336,7 +336,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             var ex = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
                 SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84777777"),
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84777777", "VN"),
                         new List<SafeInstancePatchDto>())), CancellationToken.None));
             Assert.Equal(VisitRequestErrorCodes.VisitRequestNotEditable, ex.ErrorCode);
         }
@@ -360,7 +360,7 @@ public sealed class VisitMultiCampusMutationScopeTests
             var ex = await Assert.ThrowsAsync<VisitMutationRefusedException>(() =>
                 SafeEdit(db).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84555555"),
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84555555", "VN"),
                         new List<SafeInstancePatchDto>())), CancellationToken.None));
             Assert.Equal(VisitMutationErrorCodes.CutoffReached, ex.ErrorCode);
             Assert.NotNull(ex.CampusName);

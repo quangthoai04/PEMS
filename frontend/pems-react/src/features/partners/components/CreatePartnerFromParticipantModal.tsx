@@ -25,7 +25,29 @@ import {
 } from '../types/partners.types';
 import { formatVietnamDate } from '../../../shared/utils/vietnamTime';
 import { CountrySelect } from '../../visit-request/components/shared/CountrySelect';
+import { fieldErrorsOf, firstFieldError } from '../../visit-request/utils/visitV2Actions';
+import { focusFirstInvalidField } from '../../visit-request/utils/formErrorNavigation';
 import { CitySelect } from './CitySelect';
+
+type CreatePartnerFieldKey = 'name' | 'websiteUrl';
+type CreatePartnerFieldErrors = Partial<Record<CreatePartnerFieldKey, string>>;
+/** Tên property C# đúng như `CreatePartnerCommandValidator` trả về trong `errors` dict. */
+const CREATE_PARTNER_FIELD_BACKEND_MAP: Record<CreatePartnerFieldKey, string> = {
+  name: 'Name', websiteUrl: 'WebsiteUrl',
+};
+
+/** Mirror đúng rule backend (`Uri.TryCreate`, thêm https:// nếu chưa có scheme) — chỉ để UX. */
+function isValidWebsiteUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed) return true;
+  try {
+    // eslint-disable-next-line no-new
+    new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface Prefill {
   /** Ưu tiên làm tên đối tác. */
@@ -262,6 +284,7 @@ export function CreatePartnerFromParticipantModal({
   const [match, setMatch] = useState<PartnerMatchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<CreatePartnerFieldErrors>({});
   // Xem chi tiết candidate (inline expand). Chỉ mở 1 panel/lần cho gọn.
   const [detailOpenId, setDetailOpenId] = useState<number | null>(null);
   const [detailCache, setDetailCache] = useState<Record<number, PartnerDetail>>({});
@@ -302,6 +325,7 @@ export function CreatePartnerFromParticipantModal({
     setDescription(prefill?.sourceLabel ? `Tạo từ ${prefill.sourceLabel}` : '');
     setError(null);
     setConflict(false);
+    setFieldErrors({});
     setBusy(false);
     setLinkingId(null);
     setMatch(null);
@@ -370,11 +394,30 @@ export function CreatePartnerFromParticipantModal({
     }
   };
 
+  /** Mirror phía client của rule backend (`CreatePartnerCommandValidator`) — chỉ để UX. */
+  const validateCreateForm = (): CreatePartnerFieldErrors => {
+    const errors: CreatePartnerFieldErrors = {};
+    if (!trimmedName) errors.name = 'Vui lòng nhập tên đối tác.';
+    if (websiteUrl.trim() && !isValidWebsiteUrl(websiteUrl)) errors.websiteUrl = 'Website không hợp lệ.';
+    return errors;
+  };
+
+  /** Xoá lỗi của MỘT field ngay khi nó hợp lệ trở lại — không đợi submit lại. */
+  const clearFieldError = (key: CreatePartnerFieldKey, value: string) => {
+    if (!fieldErrors[key]) return;
+    if (key === 'name' && !value.trim()) return;
+    if (key === 'websiteUrl' && value.trim() && !isValidWebsiteUrl(value)) return;
+    setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
   const submit = async () => {
-    if (!trimmedName) {
-      setError('Vui lòng nhập tên đối tác.');
+    const clientErrors = validateCreateForm();
+    if (Object.keys(clientErrors).length > 0) {
+      setFieldErrors(clientErrors);
+      window.setTimeout(() => focusFirstInvalidField(), 60);
       return;
     }
+    setFieldErrors({});
     setBusy(true);
     setError(null);
     setConflict(false);
@@ -408,6 +451,22 @@ export function CreatePartnerFromParticipantModal({
         setBusy(false);
         // Đưa người dùng lên khu vực gợi ý liên kết.
         setTimeout(() => candidatesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+        return;
+      }
+      // Lỗi field ổn định (FluentValidation) đi kèm form — chỉ dùng toast cho lỗi chung/mạng/conflict.
+      const backendFields = fieldErrorsOf(e);
+      const mapped: CreatePartnerFieldErrors = {};
+      if (backendFields) {
+        (Object.keys(CREATE_PARTNER_FIELD_BACKEND_MAP) as CreatePartnerFieldKey[]).forEach((key) => {
+          const msg = firstFieldError(backendFields, CREATE_PARTNER_FIELD_BACKEND_MAP[key]);
+          if (msg) mapped[key] = msg;
+        });
+      }
+      if (Object.keys(mapped).length > 0) {
+        setFieldErrors(mapped);
+        dismissToast(toastId);
+        setBusy(false);
+        window.setTimeout(() => focusFirstInvalidField(), 60);
         return;
       }
       const message = getApiErrorMessage(
@@ -576,17 +635,29 @@ export function CreatePartnerFromParticipantModal({
               </p>
             )}
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">
+            <div data-field-error={fieldErrors.name ? 'true' : undefined}>
+              <label htmlFor="cpfp-name" className="block text-sm font-semibold text-gray-700 mb-1">
                 Tên đối tác <span className="text-red-500">*</span>
               </label>
               <input
+                id="cpfp-name"
+                data-testid="create-partner-field-name"
                 value={name}
-                onChange={(e) => { setName(e.target.value); setConflict(false); }}
+                onChange={(e) => { setName(e.target.value); setConflict(false); clearFieldError('name', e.target.value); }}
                 onBlur={() => { if (name.trim()) void runMatch(name, prefill?.contactEmail); }}
                 placeholder="VD: Đại học Quốc gia Singapore"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700"
+                maxLength={200}
+                aria-invalid={fieldErrors.name ? true : undefined}
+                aria-describedby={fieldErrors.name ? 'cpfp-name-error' : undefined}
+                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 text-gray-700 ${
+                  fieldErrors.name
+                    ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+                    : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91]'
+                }`}
               />
+              {fieldErrors.name && (
+                <p id="cpfp-name-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{fieldErrors.name}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -621,14 +692,24 @@ export function CreatePartnerFromParticipantModal({
                   placeholder="Chọn hoặc nhập thành phố..."
                 />
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Website</label>
+              <div data-field-error={fieldErrors.websiteUrl ? 'true' : undefined}>
+                <label htmlFor="cpfp-website" className="block text-sm font-semibold text-gray-700 mb-1">Website</label>
                 <input
+                  id="cpfp-website"
+                  data-testid="create-partner-field-websiteUrl"
                   value={websiteUrl}
-                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  onChange={(e) => { setWebsiteUrl(e.target.value); clearFieldError('websiteUrl', e.target.value); }}
                   placeholder="https://..."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] text-gray-700"
+                  maxLength={500}
+                  aria-invalid={fieldErrors.websiteUrl ? true : undefined}
+                  aria-describedby={fieldErrors.websiteUrl ? 'cpfp-website-error' : undefined}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none text-gray-700 ${
+                    fieldErrors.websiteUrl ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'
+                  }`}
                 />
+                {fieldErrors.websiteUrl && (
+                  <p id="cpfp-website-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{fieldErrors.websiteUrl}</p>
+                )}
               </div>
             </div>
 
@@ -637,6 +718,7 @@ export function CreatePartnerFromParticipantModal({
               <input
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
+                maxLength={500}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] text-gray-700"
               />
             </div>
@@ -678,7 +760,7 @@ export function CreatePartnerFromParticipantModal({
           </button>
           <button
             onClick={() => void submit()}
-            disabled={!trimmedName || anyBusy}
+            disabled={anyBusy}
             className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-[#f37021] hover:bg-[#d9621a] transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
           >
             {busy && <Loader2 className="w-4 h-4 animate-spin" />}

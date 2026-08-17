@@ -3,6 +3,7 @@ using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
@@ -55,10 +56,33 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             if (string.IsNullOrWhiteSpace(reg.FullName))
                 throw new BusinessRuleException("Họ tên người đăng ký không được để trống.",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+            if (string.IsNullOrWhiteSpace(reg.Nationality))
+                throw new BusinessRuleException("Quốc tịch người đăng ký không được để trống.",
+                    VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+
+            // Partner identity travels ATOMICALLY with the organization text: the client sends only an
+            // id, and the canonical display name is ALWAYS resolved here, server-side — never trusted
+            // from client-supplied text sitting next to a client-supplied id (plan §3.3/§7.4).
+            var registrantOrg = Clean(reg.Organization);
+            if (reg.PartnerId.HasValue)
+            {
+                await GuestOrganizationPartnerPolicy.EnsureRequestFormSelectableAsync(
+                    _db, new[] { reg.PartnerId.Value }, ct);
+                var partner = await _db.Partners.AsNoTracking()
+                    .FirstAsync(p => p.PartnerId == reg.PartnerId.Value, ct);
+                registrantOrg = string.IsNullOrWhiteSpace(partner.ShortName)
+                    ? partner.Name : $"{partner.Name} ({partner.ShortName})";
+            }
+
             Diff(changes, VisitFieldClassifier.RegistrantFullName, null,
                 request.RegistrantFullName, reg.FullName.Trim(), v => request.RegistrantFullName = v!);
+            Diff(changes, VisitFieldClassifier.RegistrantNationality, null,
+                request.RegistrantNationality, reg.Nationality.Trim(), v => request.RegistrantNationality = v!);
             Diff(changes, VisitFieldClassifier.RegistrantOrganization, null,
-                request.RegistrantOrganization, Clean(reg.Organization), v => request.RegistrantOrganization = v);
+                request.RegistrantOrganization, registrantOrg, v => request.RegistrantOrganization = v);
+            Diff(changes, VisitFieldClassifier.RegistrantPartnerId, null,
+                request.PartnerId?.ToString(), reg.PartnerId?.ToString(),
+                v => request.PartnerId = v is null ? (ulong?)null : ulong.Parse(v));
             Diff(changes, VisitFieldClassifier.RegistrantJobTitle, null,
                 request.RegistrantJobTitle, Clean(reg.JobTitle), v => request.RegistrantJobTitle = v);
             Diff(changes, VisitFieldClassifier.RegistrantPhone, null,
@@ -107,27 +131,15 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             if (ip.TransportationNote is not null)
                 Diff(changes, VisitFieldClassifier.TransportationNote, instance.VisitInstanceId,
                     detail.TransportationNote, Clean(ip.TransportationNote), v => detail.TransportationNote = v);
-            if (ip.OperationalContact is { } contact)
-            {
-                if (string.IsNullOrWhiteSpace(contact.FullName) || string.IsNullOrWhiteSpace(contact.Phone))
-                    throw new BusinessRuleException("Họ tên/điện thoại đầu mối vận hành không được để trống.",
-                        VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
-                // Display fields only. The email is what an invitation binds to, so changing it is a
-                // replace/transfer that needs a fresh confirmation — never a safe edit.
-                Diff(changes, VisitFieldClassifier.ContactFullName, instance.VisitInstanceId,
-                    detail.OperationalContactFullName, contact.FullName.Trim(),
-                    v => detail.OperationalContactFullName = v!);
-                Diff(changes, VisitFieldClassifier.ContactOrganization, instance.VisitInstanceId,
-                    detail.OperationalContactOrganization, Clean(contact.Organization),
-                    v => detail.OperationalContactOrganization = v);
-                if (!string.IsNullOrWhiteSpace(contact.JobTitle))
-                    Diff(changes, VisitFieldClassifier.OperationalContactJobTitle, instance.VisitInstanceId,
-                        detail.OperationalContactJobTitle, contact.JobTitle.Trim(),
-                        v => detail.OperationalContactJobTitle = v!);
-                Diff(changes, VisitFieldClassifier.ContactPhone, instance.VisitInstanceId,
-                    detail.OperationalContactPhone, contact.Phone.Trim(),
-                    v => detail.OperationalContactPhone = v!);
-            }
+            // RETIRED (plan PEMS_CONTACT_ONE_DOOR): the contact profile has exactly one door now —
+            // "Manage the contact role". The current client never sends this; an old/handcrafted
+            // client that still does is refused outright rather than applied or silently dropped, so a
+            // stale caller finds out immediately instead of believing a correction went through.
+            if (ip.OperationalContact is not null)
+                throw new BusinessRuleException(
+                    "Thông tin đầu mối vận hành (họ tên/tổ chức/chức danh/điện thoại) không thể sửa qua Sửa nhanh. " +
+                    "Hãy dùng chức năng \"Chỉnh sửa đầu mối\" của cơ sở.",
+                    VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
             if (ip.Notes is not null)
                 Diff(changes, VisitFieldClassifier.Notes, instance.VisitInstanceId,
                     detail.Notes, Clean(ip.Notes), v => detail.Notes = v);
@@ -338,9 +350,11 @@ internal static class V2CanonicalRefresh
             campusCode, instance.PlannedStartAt, instance.PlannedEndAt,
             d.DelegationName, d.VisitType ?? string.Empty, d.VisitTypeOther, d.Purpose ?? string.Empty, d.WorkingContent,
             members.Where(m => m.MemberType == "GUEST")
-                .Select(m => new VisitorDto(m.FullName, m.Nationality ?? string.Empty, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty)).ToList(),
+                .Select(m => new VisitorDto(m.FullName, m.Nationality ?? string.Empty, m.JobTitle ?? string.Empty,
+                    m.Organization ?? string.Empty, m.OrganizationPartnerId)).ToList(),
             members.Where(m => m.MemberType == "EXTERNAL_SUPPORT")
-                .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty, m.Nationality ?? string.Empty)).ToList(),
+                .Select(m => new SupportTeamMemberDto(m.FullName, m.JobTitle ?? string.Empty, m.Organization ?? string.Empty,
+                    m.Nationality ?? string.Empty, m.OrganizationPartnerId)).ToList(),
             new ContactPointDto(
                 d.OperationalContactFullName, d.OperationalContactOrganization ?? string.Empty,
                 d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),

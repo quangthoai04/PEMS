@@ -140,7 +140,8 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                 PendingSnapshotJson = JsonSerializer.Serialize(new
                 {
                     fullName = request.FullName.Trim(),
-                    organization = string.IsNullOrWhiteSpace(request.Organization) ? null : request.Organization.Trim(),
+                    // Required by the validator like FullName/JobTitle — a blank value never reaches here.
+                    organization = request.Organization!.Trim(),
                     jobTitle = request.JobTitle.Trim(),
                     phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
                     email = newEmail,

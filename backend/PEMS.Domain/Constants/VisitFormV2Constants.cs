@@ -131,6 +131,17 @@ public static class VisitFormV2ErrorCodes
     /// the address directly was a second, silent way to hand the campus over.
     /// </summary>
     public const string ContactEmailNotAmendable = "CONTACT_EMAIL_NOT_AMENDABLE";
+
+    /// <summary>
+    /// An amendment tried to change the contact's NAME/ORGANIZATION/JOB TITLE/PHONE. That describes a
+    /// person, and only ONE workflow may redescribe them: "Manage the contact role" (plan
+    /// PEMS_CONTACT_ONE_DOOR). Quick Edit and Amendment used to offer a second and third way to write
+    /// the same columns, none of them agreeing on validation or audit — this is the fail-closed guard
+    /// that keeps a handcrafted request from reopening either door. A proposal may still say WHICH
+    /// delegation member the contact IS (<see cref="VisitFieldClassifier.OperationalContactMemberKey"/>);
+    /// it may not redescribe the contact itself.
+    /// </summary>
+    public const string ContactProfileNotAmendable = "CONTACT_PROFILE_NOT_AMENDABLE";
 }
 
 /// <summary>
@@ -165,6 +176,13 @@ public static class OperationalContactErrorCodes
     public const string MustBeExternal = "OPERATIONAL_CONTACT_MUST_BE_EXTERNAL";
     /// <summary>A metadata-only save that would write exactly what is already stored.</summary>
     public const string ProfileNoChanges = "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES";
+    /// <summary>
+    /// 422 — a TRANSFER invitation's stored snapshot has no Organization. Every write path that raises
+    /// a transfer now requires Organization (Save/Replace/Transfer's own validators), but an invitation
+    /// minted before that rule may still carry a blank one; accepting it is refused rather than let a
+    /// legacy snapshot write a live NULL through a door the validators no longer allow.
+    /// </summary>
+    public const string OrganizationRequired = "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED";
 
     // ── Which MEMBER of the delegation the contact is (NP-03 stable identity) ──
     // Separate from the codes above, which are all about the confirmation workflow. These three are

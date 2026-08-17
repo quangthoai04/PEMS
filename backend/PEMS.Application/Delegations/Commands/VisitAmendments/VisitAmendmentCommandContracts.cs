@@ -25,16 +25,16 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
         });
         RuleForEach(x => x.Patch.Instances).ChildRules(i =>
         {
-            // The contact snapshot is validated per campus, because that is where it lives now. A
-            // patch may leave it out entirely (null = untouched); when present, all three display
-            // fields must be usable — the email is deliberately not here, since changing it is a
-            // re-confirmation rather than a safe edit.
-            i.When(p => p.OperationalContact is not null, () =>
-            {
-                i.RuleFor(p => p.OperationalContact!.FullName).NotEmpty().MaximumLength(150);
-                i.RuleFor(p => p.OperationalContact!.Organization).MaximumLength(200);
-                i.RuleFor(p => p.OperationalContact!.Phone).NotEmpty().MaximumLength(50);
-            });
+            // RETIRED (plan PEMS_CONTACT_ONE_DOOR): the contact profile has exactly one door now —
+            // "Manage the contact role". There used to be per-field rules here (FullName/Organization/
+            // Phone), but they were dead weight that actively lied about the contract: the handler
+            // (VisitSafeEditService.ApplySafeEditAsync) now refuses ANY non-null OperationalContact
+            // outright, before those rules could matter for a well-formed payload — and for a
+            // payload that also failed one of them (e.g. a blank Phone), FluentValidation would have
+            // reported "Phone is required", which is false everywhere else in this feature (phone is
+            // always optional) and would have hidden the real, correct refusal behind a misleading
+            // message. Nothing here validates OperationalContact any more; an old/handcrafted client
+            // that still sends it is refused by the handler with SafeEditFieldNotAllowed.
             i.RuleFor(p => p.TransportationNote)
                 .MaximumLength(2000)
                 .Must(n => string.IsNullOrEmpty(n) || (!n.Contains('<') && !n.Contains('>')))
@@ -69,15 +69,21 @@ public sealed class SubmitVisitAmendmentCommandValidator : AbstractValidator<Sub
                 .NotEmpty().MaximumLength(200)
                 .When(x => x.Proposal.VisitType == "OTHER");
             RuleFor(x => x.Proposal.Purpose).NotEmpty().MaximumLength(2000);
-            // Same per-campus content contract as create-v2: working content is required, the
-            // operational contact must be complete, and every member row must be filled in. An
-            // amendment REPLACES a campus's content, so it cannot be looser than the original create.
+            // Same per-campus content contract as create-v2: working content is required and every
+            // member row must be filled in. An amendment REPLACES a campus's content, so it cannot be
+            // looser than the original create — EXCEPT the operational contact, which an amendment
+            // always targets against an ALREADY-EXISTING campus and can never redescribe (the profile
+            // has exactly one door, "Manage the contact role" — see BuildChangeRows'
+            // ContactProfileNotAmendable guard). The proposal carries the contact only so an unchanged
+            // snapshot round-trips; requiring Create-level completeness on that replay would refuse an
+            // amendment to an unrelated field purely because the campus's contact snapshot predates the
+            // Organization-required rule — the same trap the edit/resubmit paths had.
             RuleFor(x => x.Proposal.WorkingContent)
                 .NotEmpty().WithMessage("Nội dung làm việc không được để trống.").MaximumLength(4000);
             RuleFor(x => x.Proposal.WorkingLanguage).Must(l => l is "EN" or "VI");
             RuleFor(x => x.Proposal.OperationalContact).NotNull();
             RuleFor(x => x.Proposal.OperationalContact!)
-                .SetValidator(new CreateVisitRequestV2.OperationalContactV2Validator())
+                .SetValidator(new CreateVisitRequestV2.OperationalContactReplayV2Validator())
                 .When(x => x.Proposal.OperationalContact is not null);
             RuleFor(x => x.Proposal.Reason).MaximumLength(500);
             // An approved amendment REPLACES the campus's guest list, so accepting an empty one here

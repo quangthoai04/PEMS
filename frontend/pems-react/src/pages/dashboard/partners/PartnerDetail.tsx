@@ -36,7 +36,10 @@ import {
   showLoadingToast,
   updateToastSuccess,
   updateToastError,
+  dismissToast,
 } from '../../../shared/utils/toast';
+import { fieldErrorsOf, firstFieldError } from '../../../features/visit-request/utils/visitV2Actions';
+import { focusFirstInvalidField } from '../../../features/visit-request/utils/formErrorNavigation';
 
 // Cover placeholder restored from the original PartnerDetail UI — shown until the partner's own
 // coverFileId resolves (or when it has none, or the fetch/render fails).
@@ -44,6 +47,22 @@ import coverImage from '../../../assets/images/banner_partner.png';
 
 const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
+
+/** Người liên hệ: 5 field mirror đúng rule backend (`CreatePartnerContactCommandValidator` /
+ * `UpdatePartnerContactCommandValidator`) — chỉ Họ tên bắt buộc, Email đúng định dạng nếu có nhập. */
+type ContactFieldKey = 'fullName' | 'email' | 'phone' | 'jobTitle' | 'departmentName';
+type ContactFieldErrors = Partial<Record<ContactFieldKey, string>>;
+/** Tên property C# đúng như FluentValidation trả về trong `errors` dict — case-insensitive lookup. */
+const CONTACT_FIELD_BACKEND_MAP: Record<ContactFieldKey, string> = {
+  fullName: 'FullName', email: 'Email', phone: 'Phone', jobTitle: 'JobTitle', departmentName: 'DepartmentName',
+};
+const CONTACT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const contactInputCls = (hasError?: boolean) =>
+  `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 bg-white ${
+    hasError
+      ? 'border-red-400 focus:border-red-500 focus:ring-red-300'
+      : 'border-gray-300 focus:border-[#004c91] focus:ring-[#004c91]'
+  }`;
 
 const VISIT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
   DRAFT: { label: 'Bản nháp', bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200' },
@@ -132,6 +151,7 @@ export function PartnerDetail() {
   const [cDepartment, setCDepartment] = useState('');
   const [cNote, setCNote] = useState('');
   const [cPrimary, setCPrimary] = useState(false);
+  const [contactFieldErrors, setContactFieldErrors] = useState<ContactFieldErrors>({});
 
   // Contacts Pagination & Search
   const [contactSearch, setContactSearch] = useState('');
@@ -287,11 +307,41 @@ export function PartnerDetail() {
     setCDepartment(contact?.departmentName ?? '');
     setCNote(contact?.note ?? '');
     setCPrimary(contact?.isPrimary ?? false);
+    setContactFieldErrors({});
     setContactFormOpen(true);
   };
 
+  const closeContactForm = () => {
+    setContactFormOpen(false);
+    setContactFieldErrors({});
+  };
+
+  /** Mirror phía client của rule backend — chỉ để UX, backend vẫn validate lại toàn bộ. */
+  const validateContactForm = (): ContactFieldErrors => {
+    const errors: ContactFieldErrors = {};
+    if (!cName.trim()) errors.fullName = 'Họ tên người liên hệ là bắt buộc.';
+    const email = cEmail.trim();
+    if (email && !CONTACT_EMAIL_RE.test(email)) errors.email = 'Email không hợp lệ.';
+    return errors;
+  };
+
+  /** Xoá lỗi của MỘT field ngay khi nó hợp lệ trở lại — không đợi submit lại. */
+  const clearContactFieldError = (key: ContactFieldKey, value: string) => {
+    if (!contactFieldErrors[key]) return;
+    if (key === 'fullName' && !value.trim()) return;
+    if (key === 'email' && value.trim() && !CONTACT_EMAIL_RE.test(value.trim())) return;
+    setContactFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+  };
+
   const saveContact = async () => {
-    if (!id || !cName.trim()) return;
+    if (!id) return;
+    const clientErrors = validateContactForm();
+    if (Object.keys(clientErrors).length > 0) {
+      setContactFieldErrors(clientErrors);
+      window.setTimeout(() => focusFirstInvalidField(), 60);
+      return;
+    }
+    setContactFieldErrors({});
     setBusy(true);
     const isEdit = !!editingContact;
     const toastId = showLoadingToast('Đang lưu người liên hệ...', 'partner-contact-save');
@@ -317,10 +367,26 @@ export function PartnerDetail() {
         });
       }
       setContactFormOpen(false);
+      setContactFieldErrors({});
       await loadContacts();
       updateToastSuccess(toastId, isEdit ? 'Đã cập nhật người liên hệ.' : 'Đã thêm người liên hệ.');
     } catch (e: any) {
-      updateToastError(toastId, e, 'Không thể lưu người liên hệ.');
+      // Lỗi field ổn định (FluentValidation) đi kèm form — chỉ dùng toast cho lỗi chung/mạng/conflict.
+      const backendFields = fieldErrorsOf(e);
+      const mapped: ContactFieldErrors = {};
+      if (backendFields) {
+        (Object.keys(CONTACT_FIELD_BACKEND_MAP) as ContactFieldKey[]).forEach((key) => {
+          const msg = firstFieldError(backendFields, CONTACT_FIELD_BACKEND_MAP[key]);
+          if (msg) mapped[key] = msg;
+        });
+      }
+      if (Object.keys(mapped).length > 0) {
+        setContactFieldErrors(mapped);
+        dismissToast(toastId);
+        window.setTimeout(() => focusFirstInvalidField(), 60);
+      } else {
+        updateToastError(toastId, e, 'Không thể lưu người liên hệ.');
+      }
     } finally { setBusy(false); }
   };
 
@@ -1076,7 +1142,7 @@ export function PartnerDetail() {
                 {editingContact ? 'Chỉnh sửa người liên hệ' : 'Thêm người liên hệ'}
               </h3>
               <button
-                onClick={() => setContactFormOpen(false)}
+                onClick={closeContactForm}
                 className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors outline-none cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -1084,29 +1150,92 @@ export function PartnerDetail() {
             </div>
             <div className="p-6 bg-gray-50/50">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2" data-field-error={contactFieldErrors.fullName ? 'true' : undefined}>
+                  <label htmlFor="pc-fullName" className="block text-xs font-bold text-gray-500 uppercase mb-1">Họ tên *</label>
+                  <input
+                    id="pc-fullName"
+                    data-testid="partner-contact-field-fullName"
+                    className={contactInputCls(!!contactFieldErrors.fullName)}
+                    value={cName}
+                    onChange={(e) => { setCName(e.target.value); clearContactFieldError('fullName', e.target.value); }}
+                    maxLength={150}
+                    aria-invalid={contactFieldErrors.fullName ? true : undefined}
+                    aria-describedby={contactFieldErrors.fullName ? 'pc-fullName-error' : undefined}
+                  />
+                  {contactFieldErrors.fullName && (
+                    <p id="pc-fullName-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.fullName}</p>
+                  )}
+                </div>
+                <div data-field-error={contactFieldErrors.email ? 'true' : undefined}>
+                  <label htmlFor="pc-email" className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
+                  <input
+                    id="pc-email"
+                    data-testid="partner-contact-field-email"
+                    className={contactInputCls(!!contactFieldErrors.email)}
+                    type="text"
+                    inputMode="email"
+                    value={cEmail}
+                    onChange={(e) => { setCEmail(e.target.value); clearContactFieldError('email', e.target.value); }}
+                    maxLength={150}
+                    aria-invalid={contactFieldErrors.email ? true : undefined}
+                    aria-describedby={contactFieldErrors.email ? 'pc-email-error' : undefined}
+                  />
+                  {contactFieldErrors.email && (
+                    <p id="pc-email-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.email}</p>
+                  )}
+                </div>
+                <div data-field-error={contactFieldErrors.phone ? 'true' : undefined}>
+                  <label htmlFor="pc-phone" className="block text-xs font-bold text-gray-500 uppercase mb-1">Số điện thoại</label>
+                  <input
+                    id="pc-phone"
+                    data-testid="partner-contact-field-phone"
+                    className={contactInputCls(!!contactFieldErrors.phone)}
+                    value={cPhone}
+                    onChange={(e) => { setCPhone(e.target.value); clearContactFieldError('phone', e.target.value); }}
+                    maxLength={50}
+                    aria-invalid={contactFieldErrors.phone ? true : undefined}
+                    aria-describedby={contactFieldErrors.phone ? 'pc-phone-error' : undefined}
+                  />
+                  {contactFieldErrors.phone && (
+                    <p id="pc-phone-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.phone}</p>
+                  )}
+                </div>
+                <div data-field-error={contactFieldErrors.jobTitle ? 'true' : undefined}>
+                  <label htmlFor="pc-jobTitle" className="block text-xs font-bold text-gray-500 uppercase mb-1">Chức danh</label>
+                  <input
+                    id="pc-jobTitle"
+                    data-testid="partner-contact-field-jobTitle"
+                    className={contactInputCls(!!contactFieldErrors.jobTitle)}
+                    value={cTitle}
+                    onChange={(e) => { setCTitle(e.target.value); clearContactFieldError('jobTitle', e.target.value); }}
+                    maxLength={150}
+                    aria-invalid={contactFieldErrors.jobTitle ? true : undefined}
+                    aria-describedby={contactFieldErrors.jobTitle ? 'pc-jobTitle-error' : undefined}
+                  />
+                  {contactFieldErrors.jobTitle && (
+                    <p id="pc-jobTitle-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.jobTitle}</p>
+                  )}
+                </div>
+                <div data-field-error={contactFieldErrors.departmentName ? 'true' : undefined}>
+                  <label htmlFor="pc-department" className="block text-xs font-bold text-gray-500 uppercase mb-1">Phòng ban</label>
+                  <input
+                    id="pc-department"
+                    data-testid="partner-contact-field-departmentName"
+                    className={contactInputCls(!!contactFieldErrors.departmentName)}
+                    value={cDepartment}
+                    onChange={(e) => { setCDepartment(e.target.value); clearContactFieldError('departmentName', e.target.value); }}
+                    maxLength={150}
+                    aria-invalid={contactFieldErrors.departmentName ? true : undefined}
+                    aria-describedby={contactFieldErrors.departmentName ? 'pc-department-error' : undefined}
+                  />
+                  {contactFieldErrors.departmentName && (
+                    <p id="pc-department-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.departmentName}</p>
+                  )}
+                </div>
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Họ tên *</label>
-                  <input className={`${inputCls} bg-white`} value={cName} onChange={(e) => setCName(e.target.value)} maxLength={150} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Email</label>
-                  <input className={`${inputCls} bg-white`} type="email" value={cEmail} onChange={(e) => setCEmail(e.target.value)} maxLength={150} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Số điện thoại</label>
-                  <input className={`${inputCls} bg-white`} value={cPhone} onChange={(e) => setCPhone(e.target.value)} maxLength={50} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Chức danh</label>
-                  <input className={`${inputCls} bg-white`} value={cTitle} onChange={(e) => setCTitle(e.target.value)} maxLength={150} />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phòng ban</label>
-                  <input className={`${inputCls} bg-white`} value={cDepartment} onChange={(e) => setCDepartment(e.target.value)} maxLength={150} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ghi chú</label>
+                  <label htmlFor="pc-note" className="block text-xs font-bold text-gray-500 uppercase mb-1">Ghi chú</label>
                   <textarea
+                    id="pc-note"
                     className={`${inputCls} bg-white`}
                     rows={2}
                     value={cNote}
@@ -1123,11 +1252,11 @@ export function PartnerDetail() {
               </div>
             </div>
             <div className="p-4 border-t border-gray-100 bg-white flex justify-end gap-3">
-              <button onClick={() => setContactFormOpen(false)} disabled={busy}
+              <button onClick={closeContactForm} disabled={busy}
                 className="px-4 py-2 bg-white hover:bg-gray-100 text-gray-700 font-bold rounded-xl transition-colors border border-gray-200 outline-none cursor-pointer">
                 Hủy
               </button>
-              <button onClick={() => void saveContact()} disabled={!cName.trim() || busy}
+              <button onClick={() => void saveContact()} disabled={busy}
                 className="px-4 py-2 bg-[#004c91] hover:bg-[#003a70] text-white font-bold rounded-xl transition-colors outline-none cursor-pointer disabled:opacity-50">
                 {busy ? 'Đang lưu...' : 'Lưu'}
               </button>

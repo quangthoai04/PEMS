@@ -9,6 +9,15 @@ vi.mock('../api/visitRequestV2Api', () => ({
   cancelOperationalContactChange: vi.fn(),
 }));
 
+// Organization is the shared search combobox (react-select); it calls this on every keystroke, so an
+// unmocked call would hang the async loadOptions promise. No test here exercises the dropdown itself —
+// that behavior is covered where the SAME component is exercised at Create time
+// (operationalContactQuickFill.test.tsx) — this mock only keeps the field's free-text/required
+// behavior testable in isolation.
+vi.mock('../api/visitRequestApi', () => ({
+  visitRequestApi: { searchOrganizations: vi.fn().mockResolvedValue([]) },
+}));
+
 const showSuccessToast = vi.fn();
 const showErrorToast = vi.fn();
 const showMessageErrorToast = vi.fn();
@@ -85,6 +94,10 @@ const renderActions = (props: Partial<React.ComponentProps<typeof ContactIdentit
   );
 
 const emailField = () => screen.getByTestId('contact-field-email') as HTMLInputElement;
+/** Organization is react-select (OrganizationCombobox) — reached through its wrapper, like every
+ *  other test of this shared control (see operationalContactQuickFill.test.tsx). */
+const orgWrapper = () => screen.getByTestId('contact-field-organization');
+const orgInput = () => orgWrapper().querySelector('input')!;
 
 describe('ContactIdentityActions', () => {
   beforeEach(() => {
@@ -125,7 +138,7 @@ describe('ContactIdentityActions', () => {
     fireEvent.click(await screen.findByTestId('contact-edit-open'));
 
     expect((screen.getByTestId('contact-field-fullName') as HTMLInputElement).value).toBe('Nguyễn Văn A');
-    expect((screen.getByTestId('contact-field-organization') as HTMLInputElement).value).toBe('Công ty ABC');
+    expect(orgWrapper().textContent).toContain('Công ty ABC');
     expect((screen.getByTestId('contact-field-jobTitle') as HTMLInputElement).value).toBe('Trưởng phòng');
     expect((screen.getByTestId('contact-field-phone') as HTMLInputElement).value).toBe('+84912345678');
     expect(emailField().value).toBe('owner@example.com');
@@ -219,6 +232,262 @@ describe('ContactIdentityActions', () => {
     expect(saveOperationalContact).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeInTheDocument();   // inline, next to the field
     expect(showErrorToast).not.toHaveBeenCalled();            // a field problem is not a toast
+  });
+
+  // ── Field-level validation (plan PEMS_VALIDATION_UX §2) — required fields must highlight, not
+  //    just refuse silently or via a generic toast. ──
+
+  it('blocks submit and highlights Full name when it is cleared client-side', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(screen.getByTestId('contact-field-fullName'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(saveOperationalContact).not.toHaveBeenCalled();
+    const fullNameInput = screen.getByTestId('contact-field-fullName');
+    expect(fullNameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(fullNameInput.closest('[data-field-error="true"]')).not.toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent(/full name/i);
+  });
+
+  it('blocks submit and highlights Job title when it is cleared client-side', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(screen.getByTestId('contact-field-jobTitle'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(saveOperationalContact).not.toHaveBeenCalled();
+    const jobTitleInput = screen.getByTestId('contact-field-jobTitle');
+    expect(jobTitleInput).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert')).toHaveTextContent(/job title/i);
+  });
+
+  it('clears the full-name error the moment a value is typed, without a second Submit', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(screen.getByTestId('contact-field-fullName'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+    expect(screen.getByTestId('contact-field-fullName')).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(screen.getByTestId('contact-field-fullName'), { target: { value: 'Người mới' } });
+    expect(screen.getByTestId('contact-field-fullName')).not.toHaveAttribute('aria-invalid');
+  });
+
+  // ── Organization is required, same as Create/Pending Edit/Resubmit (FE-ORG) ──────────────────────
+
+  it('FE-ORG-01: blocks submit and focuses Organization when it is cleared client-side', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    // react-select fires onChange('input value', null) on every keystroke of the search box — no
+    // blur/selection needed to commit it into form state.
+    fireEvent.change(orgInput(), { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(saveOperationalContact).not.toHaveBeenCalled();
+    expect(orgInput()).toHaveAttribute('aria-invalid', 'true');
+    expect(orgWrapper().closest('[data-field-error="true"]')).not.toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent(/organization/i);
+    await waitFor(() => expect(document.activeElement).toBe(orgInput()));
+  });
+
+  it('FE-ORG-02: clears the organization error the moment a value is typed', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    // Whitespace, not '': the search box's own tracked value already starts at '' (independent of
+    // the prefilled selected value), so "changing" it to '' again is a same-value no-op React never
+    // fires an event for — the same reason FE-ORG-01 above uses '   '.
+    fireEvent.change(orgInput(), { target: { value: '   ' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+    expect(orgInput()).toHaveAttribute('aria-invalid', 'true');
+
+    fireEvent.change(orgInput(), { target: { value: 'Đơn vị mới' } });
+    expect(orgInput()).not.toHaveAttribute('aria-invalid');
+  });
+
+  it('FE-ORG-03: maps a backend Organization validation error onto the field, not a generic toast', async () => {
+    vi.mocked(saveOperationalContact).mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          success: false, errorCode: 'VALIDATION_ERROR',
+          message: 'One or more validation failures have occurred.',
+          errors: { Organization: ['Đơn vị công tác đầu mối vận hành không được để trống.'] },
+        },
+      },
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(screen.getByTestId('contact-field-phone'), { target: { value: '+84900000000' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalled());
+    await waitFor(() => expect(orgInput()).toHaveAttribute('aria-invalid', 'true'));
+    expect(orgWrapper().closest('[data-field-error="true"]')).not.toBeNull();
+    expect(showErrorToast).not.toHaveBeenCalled();
+    expect(showMessageErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('FE-ORG-04: saves a valid organization change exactly once', async () => {
+    vi.mocked(saveOperationalContact).mockResolvedValue({
+      ...noPending, requestStatus: 'PENDING_APPROVAL', message: 'Đã cập nhật thông tin đầu mối.',
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(orgInput(), { target: { value: 'Đơn vị mới' } });
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalledTimes(1));
+    expect(saveOperationalContact).toHaveBeenCalledWith(1, 10, expect.objectContaining({
+      organization: 'Đơn vị mới',
+    }));
+  });
+
+  it('FE-ORG-05: opens without crashing on legacy null organization, but still requires it to save', async () => {
+    renderActions({ contact: { ...contact, organization: null as unknown as string } });
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    expect(orgInput().value).toBe('');
+
+    fireEvent.change(screen.getByTestId('contact-field-phone'), { target: { value: '+84900000000' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(saveOperationalContact).not.toHaveBeenCalled();
+    expect(orgInput()).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  // ── Organization uses the SAME shared search control as Create/Guest/Support (plan
+  //    PEMS_UI_CONTROL_CONSISTENCY §4/§17) ────────────────────────────────────────────────────────
+
+  it('ORG-UI-01: renders the shared search combobox, not a plain text input', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    // react-select's own input carries role="combobox" — a plain <input type="text"> never does.
+    expect(orgInput()).toHaveAttribute('role', 'combobox');
+  });
+
+  it('ORG-UI-02/03: picking a search result sets Organization to the exact match, no partnerId required to save', async () => {
+    const { visitRequestApi } = await import('../api/visitRequestApi');
+    vi.mocked(visitRequestApi.searchOrganizations).mockResolvedValue([
+      {
+        partnerId: 7, name: 'SeoulTech Global Engagement Center', shortName: null,
+        country: 'KR', city: 'Seoul', partnerType: 'UNIVERSITY',
+        displayName: 'SeoulTech Global Engagement Center',
+      },
+    ]);
+    vi.mocked(saveOperationalContact).mockResolvedValue({
+      ...noPending, requestStatus: 'PENDING_APPROVAL', message: 'Đã cập nhật thông tin đầu mối.',
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    fireEvent.change(orgInput(), { target: { value: 'SeoulTech' } });
+    // loadOptions debounces 300ms before calling the API.
+    await waitFor(() => expect(visitRequestApi.searchOrganizations).toHaveBeenCalled(), { timeout: 3000 });
+    const option = await screen.findByText('SeoulTech Global Engagement Center', {}, { timeout: 3000 });
+    fireEvent.click(option);
+    await waitFor(() => expect(orgWrapper().textContent).toContain('SeoulTech Global Engagement Center'));
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalledTimes(1));
+    // Operational Contact has no partner-link column — the save payload is text only.
+    const [, , payload] = vi.mocked(saveOperationalContact).mock.calls[0];
+    expect(payload).toMatchObject({ organization: 'SeoulTech Global Engagement Center' });
+    expect(payload).not.toHaveProperty('organizationPartnerId');
+    expect(payload).not.toHaveProperty('partnerId');
+  });
+
+  it('ORG-UI-04: an organization not on file is still accepted as free text', async () => {
+    vi.mocked(saveOperationalContact).mockResolvedValue({
+      ...noPending, requestStatus: 'PENDING_APPROVAL', message: 'Đã cập nhật thông tin đầu mối.',
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    fireEvent.change(orgInput(), { target: { value: 'Custom Research Center' } });
+    fireEvent.blur(orgInput());
+    await waitFor(() => expect(orgWrapper().textContent).toContain('Custom Research Center'));
+
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalledTimes(1));
+    expect(saveOperationalContact).toHaveBeenCalledWith(1, 10, expect.objectContaining({
+      organization: 'Custom Research Center',
+    }));
+  });
+
+  it('ORG-UI (search policy): searches REQUEST_FORM, never PARTNER_MANAGEMENT, from this form', async () => {
+    const { visitRequestApi } = await import('../api/visitRequestApi');
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    fireEvent.change(orgInput(), { target: { value: 'ĐH' } });
+    await waitFor(() => expect(visitRequestApi.searchOrganizations).toHaveBeenCalled());
+    // OrganizationCombobox's own default is REQUEST_FORM; this call site passes no searchMode
+    // override, so the second (internal/PARTNER_MANAGEMENT) argument must stay falsy.
+    const [, useInternal] = vi.mocked(visitRequestApi.searchOrganizations).mock.calls[0];
+    expect(useInternal).toBeFalsy();
+  });
+
+  it('ORG-UI-06: Phone stays optional alongside a valid Organization', async () => {
+    vi.mocked(saveOperationalContact).mockResolvedValue({
+      ...noPending, requestStatus: 'PENDING_APPROVAL', message: 'Đã cập nhật thông tin đầu mối.',
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    fireEvent.change(screen.getByTestId('contact-field-phone'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    expect(screen.getByTestId('contact-field-phone')).not.toHaveAttribute('aria-invalid');
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalledTimes(1));
+    expect(saveOperationalContact).toHaveBeenCalledWith(1, 10, expect.objectContaining({ phone: '' }));
+  });
+
+  it('maps a backend FullName validation error onto the field, not a generic toast', async () => {
+    vi.mocked(saveOperationalContact).mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          success: false, errorCode: 'VALIDATION_ERROR',
+          message: 'One or more validation failures have occurred.',
+          errors: { FullName: ['Họ tên đầu mối vận hành không được để trống.'] },
+        },
+      },
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    // Some OTHER field changes so the save is not short-circuited as "unchanged" before it reaches the API.
+    fireEvent.change(screen.getByTestId('contact-field-phone'), { target: { value: '+84900000000' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalled());
+    const fullNameInput = await screen.findByTestId('contact-field-fullName');
+    expect(fullNameInput).toHaveAttribute('aria-invalid', 'true');
+    expect(fullNameInput.closest('[data-field-error="true"]')).not.toBeNull();
+    expect(showErrorToast).not.toHaveBeenCalled();
+    expect(showMessageErrorToast).not.toHaveBeenCalled();
+  });
+
+  it('maps a backend Email validation error onto the email field through the existing state', async () => {
+    vi.mocked(saveOperationalContact).mockRejectedValue({
+      response: {
+        status: 400,
+        data: {
+          success: false, errorCode: 'VALIDATION_ERROR',
+          message: 'One or more validation failures have occurred.',
+          errors: { Email: ['Email đầu mối vận hành không đúng định dạng.'] },
+        },
+      },
+    });
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+    fireEvent.change(screen.getByTestId('contact-field-phone'), { target: { value: '+84900000000' } });
+    fireEvent.click(screen.getByTestId('contact-form-submit'));
+
+    await waitFor(() => expect(saveOperationalContact).toHaveBeenCalled());
+    expect(await screen.findByRole('alert')).toHaveTextContent(/định dạng/i);
+    expect(showErrorToast).not.toHaveBeenCalled();
   });
 
   it('closes the form on cancel without saving, and reopens from the stored values', async () => {

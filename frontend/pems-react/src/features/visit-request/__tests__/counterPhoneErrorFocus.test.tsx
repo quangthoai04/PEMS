@@ -324,7 +324,10 @@ describe('a failed submit on the real form', () => {
 
   it('says how many fields are left rather than repeating a generic sentence', async () => {
     await submitEmpty();
-    const banner = screen.getByRole('alert');
+    // Every invalid field's own inline message is ALSO `role="alert"` now (P1 accessibility fix,
+    // PEMS_PROMPT_FIX_VALIDATION_UX_PLURALIZATION §6) — the summary banner is targeted by its own
+    // stable testid rather than by role, which now matches many elements on a failed submit.
+    const banner = screen.getByTestId('v2-error-summary');
     expect(banner.textContent).toMatch(/\d+ fields? still needs? attention\./);
   });
 

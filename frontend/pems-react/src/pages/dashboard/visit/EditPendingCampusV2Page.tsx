@@ -35,6 +35,7 @@ import {
   VisitV2Action,
 } from '../../../features/visit-request/utils/visitV2Actions';
 import AssignHostPicker from '../../../features/visit-request/components/v2/AssignHostPicker';
+import { focusFirstInvalidField } from '../../../features/visit-request/utils/formErrorNavigation';
 
 /**
  * Edits ONE campus that is still waiting for its decision.
@@ -260,7 +261,12 @@ export default function EditPendingCampusV2Page() {
       const leadTimeError = scheduleLeadTimeError();
       if (leadTimeError) {
         setShowErrors(true);
+        // `setError` here runs OUTSIDE the resolver's own invalid path (the schema already passed —
+        // this floor is enforced after it, deliberately, see the comment above), so react-hook-form's
+        // own auto-focus-on-error never engages for it. Without this, the red message rendered below
+        // the form was the only sign anything was wrong.
         form.setError('campusVisits.0.startDatetime', { type: 'manual', message: leadTimeError });
+        window.setTimeout(() => focusFirstInvalidField(), 60);
         return;
       }
       await send({});

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 
 interface FormFieldProps {
@@ -26,29 +26,47 @@ export const FormField: React.FC<FormFieldProps> = ({
   showValidIcon = true,
   children,
   className = '',
-}) => (
-  <div className={`flex flex-col gap-2 ${className}`} data-field-error={error ? 'true' : undefined}>
-    <div>
-      <label className="flex flex-wrap items-baseline justify-between gap-2 text-sm font-bold text-slate-900">
-        <span>{label} {required && <span className="text-red-500">*</span>}</span>
-        {subtitle && <span className="text-xs font-medium text-slate-500">{subtitle}</span>}
-      </label>
-    </div>
-    <div className="relative">
-      {children}
-      {showValidIcon && isValid && !error && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
-          <CheckCircle2 className="w-5 h-5 text-green-500" />
-        </div>
+}) => {
+  const reactId = useId();
+  const errorId = `${reactId}-error`;
+  // Wires aria-invalid/aria-describedby onto the field's own control without every call site having
+  // to repeat it — every consumer already passes exactly one control as children (input/select/
+  // textarea, or a custom widget like PhoneField/CountrySelect). A custom widget that does not forward
+  // unknown props onto its underlying DOM node simply ignores these — never a crash, and never worse
+  // than the previous state.
+  const child = error && React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<Record<string, unknown>>, {
+        'aria-invalid': true,
+        'aria-describedby':
+          [(children.props as Record<string, unknown>)?.['aria-describedby'], errorId]
+            .filter(Boolean).join(' ') || errorId,
+      })
+    : children;
+
+  return (
+    <div className={`flex flex-col gap-2 ${className}`} data-field-error={error ? 'true' : undefined}>
+      <div>
+        <label className="flex flex-wrap items-baseline justify-between gap-2 text-sm font-bold text-slate-900">
+          <span>{label} {required && <span className="text-red-500">*</span>}</span>
+          {subtitle && <span className="text-xs font-medium text-slate-500">{subtitle}</span>}
+        </label>
+      </div>
+      <div className="relative">
+        {child}
+        {showValidIcon && isValid && !error && (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
+            <CheckCircle2 className="w-5 h-5 text-green-500" />
+          </div>
+        )}
+      </div>
+      {error && (
+        <p id={errorId} role="alert" className="text-xs font-semibold text-red-600">
+          {error}
+        </p>
       )}
     </div>
-    {error && (
-      <p className="text-xs font-semibold text-red-600">
-        {error}
-      </p>
-    )}
-  </div>
-);
+  );
+};
 
 export const inputCls = (hasError?: boolean, hasValue?: boolean, hasIcon: boolean = true) =>
   [

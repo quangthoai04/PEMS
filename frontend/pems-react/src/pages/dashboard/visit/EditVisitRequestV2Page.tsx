@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useForm, useFieldArray, type FieldPath } from 'react-hook-form';
+import { Controller, useForm, useFieldArray, type FieldPath } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { AlertCircle, ArrowLeft, Loader2, RefreshCw, Send } from 'lucide-react';
 import axios from 'axios';
@@ -30,9 +30,11 @@ import { ContactLinkPromptDialog } from '../../../features/visit-request/compone
 import { useContactLinkPrompt } from '../../../features/visit-request/hooks/useContactLinkPrompt';
 import { FormField, inputCls } from '../../../features/visit-request/components/shared/FormField';
 import { PhoneField } from '../../../features/visit-request/components/shared/PhoneField';
+import { PartnerOrgCombobox } from '../../../features/visit-request/components/shared/PartnerOrgCombobox';
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
+import { commitFieldValue } from '../../../shared/utils/formRevalidate';
 
 type Mode = 'edit' | 'resubmit';
 
@@ -321,8 +323,34 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
             <FormField label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
               <input {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
             </FormField>
+            {/* Same shared control as Create — free-solo partner/organization search. PartnerId stays
+                IMMUTABLE on edit (backend: IMMUTABLE_REGISTRANT_PARTNER), but the ORGANIZATION TEXT is
+                still a correctable snapshot (see `Registrant_snapshot_fields_are_editable_and_do_not_
+                touch_the_account`). A plain `<input>` here used to edit that text with zero connection
+                to `partnerId` — so retyping it while an existing partner link stayed on the request
+                silently left the two out of sync (text says one organization, partnerId still points at
+                another). This control keeps them atomic: typing free text clears partnerId, exactly as
+                Create does, and the backend still refuses the request outright if partnerId itself ends
+                up different from what the request already has. */}
             <FormField label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
-              <input {...register('registerInfo.organization')} className={inputCls(!!regErr?.organization, false, false)} />
+              <Controller
+                name="registerInfo.organization"
+                control={form.control}
+                render={({ field }) => (
+                  <PartnerOrgCombobox
+                    organization={field.value ?? ''}
+                    partnerId={form.watch('partnerId') ?? null}
+                    hasError={!!regErr?.organization}
+                    onBlur={field.onBlur}
+                    onChange={next => {
+                      commitFieldValue(
+                        form, 'registerInfo.organization', next.organization, field.onChange);
+                      form.setValue('partnerId', next.partnerId, { shouldDirty: true });
+                      form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
+                    }}
+                  />
+                )}
+              />
             </FormField>
             <FormField label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
               <input {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
@@ -330,7 +358,9 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
             <FormField label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
               <input {...register('registerInfo.nationality')} className={inputCls(!!regErr?.nationality, false, false)} />
             </FormField>
-            <FormField label={t('visitRequestV2:card.phone')} required error={regErr?.phone?.message} showValidIcon={false}>
+            {/* Phone is OPTIONAL — matches Create and Safe Edit. Blank passes registerInfo.schema's
+                buildPhoneSchema(); this field must never carry the `required` marker. */}
+            <FormField label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
               <PhoneField
                 field={register('registerInfo.phone')}
                 hasError={!!regErr?.phone}

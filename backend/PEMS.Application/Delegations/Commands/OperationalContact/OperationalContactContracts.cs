@@ -373,7 +373,9 @@ public sealed class ReplaceOperationalContactCommandValidator
     {
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.Organization)
+            .NotEmpty().WithMessage("Đơn vị công tác đầu mối vận hành không được để trống.")
+            .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
         // Phone is OPTIONAL — an email is what an invitation binds to.
@@ -393,7 +395,9 @@ public sealed class UpdateOperationalContactProfileCommandValidator
     {
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.Organization)
+            .NotEmpty().WithMessage("Đơn vị công tác đầu mối vận hành không được để trống.")
+            .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
         RuleFor(x => x.Phone).MaximumLength(50);
@@ -416,7 +420,9 @@ public sealed class SaveOperationalContactCommandValidator
     {
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.Organization)
+            .NotEmpty().WithMessage("Đơn vị công tác đầu mối vận hành không được để trống.")
+            .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
         RuleFor(x => x.Phone).MaximumLength(50);
@@ -435,7 +441,9 @@ public sealed class InitiateOperationalContactTransferCommandValidator
     {
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên đầu mối vận hành mới không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Organization).MaximumLength(200);
+        RuleFor(x => x.Organization)
+            .NotEmpty().WithMessage("Đơn vị công tác đầu mối vận hành mới không được để trống.")
+            .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành mới không được để trống.").MaximumLength(150);
         // Phone is OPTIONAL — an email is what an invitation binds to.

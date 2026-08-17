@@ -101,6 +101,7 @@ const parseSheet = (
   if (missing.length > 0) {
     return {
       error: t('visitRequest:excel.errors.missingColumns', {
+        count: missing.length,
         missing: missing.map((id) => columnLabel(t, id)).join(', '),
         required: REQUIRED_COLUMNS.map((id) => columnLabel(t, id)).join(', '),
       }),

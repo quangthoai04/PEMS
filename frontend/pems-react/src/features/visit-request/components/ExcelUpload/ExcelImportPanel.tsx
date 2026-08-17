@@ -149,7 +149,7 @@ export const ExcelImportPanel: React.FC<Props> = ({
           {report.overLimitRows > 0 && (
             <p className="mt-2 rounded-lg bg-red-100 px-2.5 py-2 text-xs font-semibold text-red-800">
               {t('visitRequestV2:excel.report.overLimitHint', {
-                remaining: report.remainingSlots, max: EXCEL_MAX_MEMBERS,
+                count: report.remainingSlots, remaining: report.remainingSlots, max: EXCEL_MAX_MEMBERS,
               })}
             </p>
           )}

@@ -111,19 +111,55 @@ public class VisitRequestV2WritePathParityTests
     public void Amendment_requires_working_content(string? value)
         => Assert.Contains(AmendErrors(Proposal(workingContent: value)), p => p.Contains("WorkingContent"));
 
-    // ── Operational contact must be complete everywhere ──────────────────────
+    // ── Operational contact: NEW write vs EXISTING replay ────────────────────
+    //
+    // The contact rules are NOT uniform across every write path — that was the bug. A campus with no
+    // VisitInstanceId is being ADDED right now (pending-edit only): its contact is a FRESH write and
+    // must be complete, same bar as create. A campus that already has a VisitInstanceId — every
+    // pending-edit campus that isn't newly added, every resubmit campus (the campus set is fixed), and
+    // every amendment (always against an already-decided instance) — has a contact that is READ-ONLY
+    // there: the caller can only replay it unchanged, so requiring Create-level completeness on it
+    // would refuse an edit to an UNRELATED field purely because the campus's contact snapshot predates
+    // the Organization-required rule (a legacy NULL Organization reads back as ""). Whether the replay
+    // actually differs from what's stored is enforced separately, inside the transaction
+    // (EnsureContactSnapshotUnchanged / BuildChangeRows' ContactProfileNotAmendable guard) — these
+    // structural tests only cover the validator layer, which runs before either of those.
 
     [Fact]
-    public void Pending_edit_requires_a_complete_operational_contact()
-        => Assert.NotEmpty(EditErrors(PendingEdit, Edit(EditCampus(op: Op(org: "", email: "")))));
+    public void Pending_edit_requires_a_complete_operational_contact_for_a_newly_added_campus()
+        => Assert.NotEmpty(EditErrors(PendingEdit,
+            Edit(EditCampus(instanceId: null, rowVersion: null, op: Op(org: "", email: "")))));
 
     [Fact]
-    public void Amendment_requires_a_complete_operational_contact()
-        => Assert.NotEmpty(AmendErrors(Proposal(op: Op(org: ""))));
+    public void Pending_edit_rejects_a_non_phone_operational_contact_for_a_newly_added_campus()
+        => Assert.Contains(
+            EditErrors(PendingEdit, Edit(EditCampus(instanceId: null, rowVersion: null, op: Op(phone: "090abc123")))),
+            p => p.Contains("Phone"));
 
     [Fact]
-    public void Amendment_rejects_a_non_phone_operational_contact()
-        => Assert.Contains(AmendErrors(Proposal(op: Op(phone: "090abc123"))), p => p.Contains("Phone"));
+    public void Pending_edit_allows_an_unchanged_legacy_blank_operational_contact_on_an_existing_campus()
+        => Assert.True(PendingEdit.Validate(new UpdatePendingVisitRequestV2Command(
+            1, Edit(EditCampus(op: Op(org: "", email: ""))))).IsValid);
+
+    [Fact]
+    public void Pending_edit_does_not_structurally_reject_an_odd_phone_replay_on_an_existing_campus()
+        => Assert.True(PendingEdit.Validate(new UpdatePendingVisitRequestV2Command(
+            1, Edit(EditCampus(op: Op(phone: "090abc123"))))).IsValid);
+
+    [Fact]
+    public void Resubmit_allows_an_unchanged_legacy_blank_operational_contact_organization()
+        // Every resubmit campus already exists (the campus set is fixed — see the baseline above), so
+        // its contact can only ever be a replay, never a fresh write.
+        => Assert.True(Resubmit.Validate(new ResubmitRejectedVisitRequestV2Command(
+            1, Edit(EditCampus(op: Op(org: ""))))).IsValid);
+
+    [Fact]
+    public void Amendment_allows_a_blank_or_oddly_formatted_legacy_operational_contact_replay()
+        // An amendment always targets an already-decided instance, so its OperationalContact is always
+        // a replay too — never a fresh write. That door is Manage Contact, which still runs the full,
+        // complete-and-format-checked validator.
+        => Assert.True(Amendment.Validate(new SubmitVisitAmendmentCommand(
+            1, 1, Proposal(op: Op(org: "", phone: "090abc123")))).IsValid);
 
     // ── Registrant / primary contact required on edit + resubmit ─────────────
 
@@ -138,22 +174,6 @@ public class VisitRequestV2WritePathParityTests
         => Assert.Contains(
             ResubmitErrors(Edit(registrant: new RegistrantInputV2("Người ĐK", "", "ĐH X", "TP", "+84912345678", "reg@example.com"))),
             p => p.Contains("Nationality"));
-
-    /// <summary>
-    /// The contact rules now belong to each campus, so both edit paths must enforce them THERE. A
-    /// request-level check would have passed a payload whose campus named an unusable contact.
-    /// </summary>
-    [Fact]
-    public void Resubmit_requires_an_operational_contact_organization()
-        => Assert.Contains(
-            ResubmitErrors(Edit(EditCampus(op: Op(org: "")))),
-            p => p.Contains("Organization"));
-
-    [Fact]
-    public void Pending_edit_rejects_a_non_phone_operational_contact()
-        => Assert.Contains(
-            EditErrors(PendingEdit, Edit(EditCampus(op: Op(phone: "090abc123")))),
-            p => p.Contains("Phone"));
 
     // ── At least one guest per campus, on EVERY write path ───────────────────
     // Create is covered by CreateVisitRequestV2CommandValidatorTests against the same shared

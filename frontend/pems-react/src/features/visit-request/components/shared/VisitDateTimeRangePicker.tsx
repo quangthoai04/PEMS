@@ -14,11 +14,10 @@ import {
 } from './visitDateTime';
 import { FormField } from './FormField';
 import { HelpTooltip } from './HelpTooltip';
+import { V2_MIN_DURATION_MINUTES as MIN_DURATION_MINUTES } from '../../schema/visitRequestV2.schema';
 
 /** Suggested granularity of the time lists. The user may still type any minute. */
 const STEP_MINUTES = 15;
-/** Mirrors V2_MIN_DURATION_MINUTES / CampusVisitFormDtoValidator.MinDurationMinutes. */
-const MIN_DURATION_MINUTES = 30;
 /** What a fresh end time is offered as when the start moves (plan §12). */
 const DEFAULT_DURATION_MINUTES = 60;
 
@@ -225,6 +224,9 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
     </span>
   );
 
+  const startErrorId = `${prefix}-start-error`;
+  const endErrorId = `${prefix}-end-error`;
+
   return (
     <div className="flex flex-col">
       <div className="mb-4">
@@ -259,8 +261,13 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
         {/* Inputs: BẮT ĐẦU → KẾT THÚC, no box wrapper */}
         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap min-w-0">
           
-          {/* Start Section */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          {/* Start Section. `data-field-error` here (not on the outer wrapper) is what lets
+              `focusFirstInvalidField()` find and scroll to THIS control specifically — the outer
+              wrapper also contains the multi-day checkbox, which sits earlier in DOM order and would
+              otherwise be the "first focusable" match instead of the actual invalid date field. The
+              start/end inputs are wired through react-hook-form's `Controller` render prop, which never
+              registers a DOM ref for them, so RHF's own auto-focus-on-error has nothing to `.focus()` on. */}
+          <div className="flex items-center gap-2 min-w-0 flex-1" data-field-error={showStartError ? 'true' : undefined}>
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap shrink-0">
               {t('visitRequestV2:schedule.startTime', 'Bắt đầu')}
             </span>
@@ -276,6 +283,8 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
                   onChange={e => setStartDate(e.target.value)}
                   className={dateCls(!!showStartError)}
                   data-testid={`${idPrefix}-start-date`}
+                  aria-invalid={showStartError ? true : undefined}
+                  aria-describedby={showStartError ? startErrorId : undefined}
                 />
               </div>
               <div className="w-28 shrink-0">
@@ -299,7 +308,7 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
           </div>
 
           {/* End Section */}
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="flex items-center gap-2 min-w-0 flex-1" data-field-error={showEndError ? 'true' : undefined}>
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap shrink-0">
               {t('visitRequestV2:schedule.endTime', 'Kết thúc')}
             </span>
@@ -316,6 +325,8 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
                     onChange={e => setEndDate(e.target.value)}
                     className={dateCls(!!showEndError)}
                     data-testid={`${idPrefix}-end-date`}
+                    aria-invalid={showEndError ? true : undefined}
+                    aria-describedby={showEndError ? endErrorId : undefined}
                   />
                 </div>
               )}
@@ -340,12 +351,12 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
         {(showStartError || showEndError) && (
           <div className="mt-3 space-y-1">
             {showStartError && (
-              <p data-testid={`${idPrefix}-start-error`} className="text-xs font-semibold text-red-600">
+              <p id={startErrorId} role="alert" data-testid={`${idPrefix}-start-error`} className="text-xs font-semibold text-red-600">
                 {showStartError}
               </p>
             )}
             {showEndError && showEndError !== showStartError && (
-              <p data-testid={`${idPrefix}-end-error`} className="text-xs font-semibold text-red-600">
+              <p id={endErrorId} role="alert" data-testid={`${idPrefix}-end-error`} className="text-xs font-semibold text-red-600">
                 {showEndError}
               </p>
             )}

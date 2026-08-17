@@ -142,8 +142,15 @@ export const AmendmentErrorCode = {
   FormConcurrencyConflict: 'VISIT_FORM_CONCURRENCY_CONFLICT',
   /** The proposal tried to change the contact's email; that moves only through the contact workflow. */
   ContactEmailNotAmendable: 'CONTACT_EMAIL_NOT_AMENDABLE',
+  /**
+   * The proposal tried to redescribe the contact (name/organization/job title/phone). That profile has
+   * exactly one door now — "Manage the contact role" — never Safe Edit or Amendment.
+   */
+  ContactProfileNotAmendable: 'CONTACT_PROFILE_NOT_AMENDABLE',
   InvalidVisitTime: 'INVALID_VISIT_TIME',
   ValidationError: 'VALIDATION_ERROR',
+  /** A visitor/support member's organizationPartnerId no longer names a request-form-selectable partner. */
+  PartnerNotSelectable: 'PARTNER_NOT_SELECTABLE',
 } as const;
 
 export type AmendmentErrorCodeValue = (typeof AmendmentErrorCode)[keyof typeof AmendmentErrorCode];
@@ -152,4 +159,32 @@ export type AmendmentErrorCodeValue = (typeof AmendmentErrorCode)[keyof typeof A
 export const errorCodeOf = (error: unknown): string | null => {
   const data = (error as { response?: { data?: { errorCode?: unknown } } } | undefined)?.response?.data;
   return typeof data?.errorCode === 'string' ? data.errorCode : null;
+};
+
+/**
+ * Extracts the FluentValidation `errors` dictionary a `ValidationException` 400 carries
+ * (`ExceptionHandlingMiddleware.HandleAsync` — `{ success, errorCode, message, errors, traceId }`),
+ * keyed by the C# property name exactly as FluentValidation wrote it (e.g. `"FullName"`).
+ *
+ * Returns `null` when the response carries no such dictionary — a plain `errorCode` refusal (business
+ * rule, conflict, permission) is NOT a validation error and must not be misread as one.
+ */
+export const fieldErrorsOf = (error: unknown): Record<string, string[]> | null => {
+  const data = (error as { response?: { data?: { errors?: unknown } } } | undefined)?.response?.data;
+  const errors = data?.errors;
+  if (!errors || typeof errors !== 'object' || Array.isArray(errors)) return null;
+  return errors as Record<string, string[]>;
+};
+
+/**
+ * Looks up ONE field's first message from a `fieldErrorsOf` dictionary, matching the backend's
+ * property name case-INsensitively (FluentValidation's exact casing is an implementation detail this
+ * frontend should not have to track) and case-normalizes it back so a caller keyed lowercase never has
+ * to special-case `"FullName"` vs `"fullName"`.
+ */
+export const firstFieldError = (errors: Record<string, string[]> | null, field: string): string | undefined => {
+  if (!errors) return undefined;
+  const key = Object.keys(errors).find(k => k.toLowerCase() === field.toLowerCase());
+  const messages = key ? errors[key] : undefined;
+  return Array.isArray(messages) && messages.length > 0 ? messages[0] : undefined;
 };

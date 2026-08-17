@@ -1291,4 +1291,245 @@ public sealed class OperationalContactConfirmationWorkflowTests
         }
         finally { await CleanupAsync(requestId); }
     }
+
+    // ── Legacy pending TRANSFER snapshots predating the Organization-required patch ────────────────
+    //
+    // Every write path that can raise a TRANSFER today (Save/Replace/Transfer's own FluentValidation
+    // rules) now refuses a blank Organization. But a transfer invitation minted BEFORE that rule could
+    // still carry `organization: null` in its pending_snapshot_json, and until now Accept applied it to
+    // the live campus unconditionally — a legacy row bypassing a rule the write side no longer allows.
+    // These three pin the fix: two REFUSE (null, blank) and one confirms a valid legacy snapshot still
+    // accepts exactly as before (no regression).
+
+    /// <summary>
+    /// ASSIGNED, not BEFORE_VISIT: <c>EnsureTransferWindowOpen</c> accepts either, and ASSIGNED needs
+    /// one fewer trigger-satisfying update. Mirrors the pattern <c>OperationalContactManagementTests
+    /// .DriveToBeforeVisitAsync</c> uses to reach BEFORE_VISIT, stopped one step earlier.
+    /// </summary>
+    private static async Task DriveToAssignedAsync(ulong instanceId)
+    {
+        using var db = NewContext();
+        var campusId = await db.VisitRequestCampuses.AsNoTracking()
+            .Where(c => c.VisitInstanceId == instanceId).Select(c => c.CampusId).FirstAsync();
+
+        var leaderId = await db.Users.AsNoTracking()
+            .Where(u => u.Role.RoleCode == RoleCodes.Staff
+                        && u.SubRole == UserSubRoles.Leader
+                        && u.Status == UserStatuses.Active
+                        && u.PrimaryCampusId == campusId)
+            .OrderBy(u => u.UserId).Select(u => (ulong?)u.UserId).FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException(
+                $"Campus {campusId} has no ACTIVE Staff Leader, so no request could have been registered against it.");
+
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE visit_request_campuses SET status = 'ASSIGNED', decided_by = {1}, decided_at = {2}, " +
+            "decision_actor_role = 'STAFF_LEADER', decision_note = 'test approval', " +
+            "current_host_user_id = {1}, host_assigned_by = {1}, host_assigned_at = {2} " +
+            "WHERE visit_instance_id = {0}",
+            instanceId, leaderId, Now);
+    }
+
+    /// <summary>
+    /// Confirms the current contact, drives the campus to ASSIGNED, then writes a PENDING transfer
+    /// directly — exactly the row <c>InitiateOperationalContactTransferCommandHandler</c> would have
+    /// produced before the Organization-required patch, using whatever <paramref name="organizationJson"/>
+    /// literal the caller wants baked into <c>pending_snapshot_json</c>.
+    /// </summary>
+    private static async Task<(ulong InstanceId, ulong ContactId, string ContactEmail,
+        ulong SuccessorId, string SuccessorEmail, ulong TransferId, string AcceptToken)>
+        SeedLegacyTransferAsync(ulong requestId, string organizationJson)
+    {
+        using var seed = NewContext();
+        var (contactId, contactEmail) = await VisitorUserAsync(seed);
+        var (successorId, successorEmail) = await VisitorUserAsync(seed, contactId);
+
+        var (instanceId, changeId) = await PendingInvitationAsync(requestId);
+        var acceptToken0 = await MintTokenAsync(changeId);
+        using (var db = NewContext())
+            await Accept(db, contactId, contactEmail).Handle(
+                new AcceptOperationalContactConfirmationCommand(acceptToken0), CancellationToken.None);
+
+        await DriveToAssignedAsync(instanceId);
+
+        var newEmail = VisitRequestFingerprintBuilder.NormalizeEmail(successorEmail);
+        ulong transferId;
+        using (var db = NewContext())
+        {
+            var instance = await db.VisitRequestCampuses.AsNoTracking()
+                .FirstAsync(c => c.VisitInstanceId == instanceId);
+            var transfer = new PEMS.Domain.Entities.Delegations.VisitRequestIdentityChange
+            {
+                VisitRequestId = requestId,
+                VisitInstanceId = instanceId,
+                ChangeKind = IdentityChangeKinds.Transfer,
+                TokenVersion = 1,
+                ConfirmationMethod = IdentityConfirmationMethods.GoogleSso,
+                OldUserId = contactId,
+                OldEmailNormalized = VisitRequestFingerprintBuilder.NormalizeEmail(contactEmail),
+                NewUserId = null,
+                NewEmailNormalized = newEmail,
+                NewEmailMasked = VisitRequestFingerprintBuilder.MaskEmail(newEmail),
+                PendingSnapshotJson =
+                    "{\"fullName\":\"Người Nhận Bàn Giao\",\"organization\":" + organizationJson + "," +
+                    "\"jobTitle\":\"Trưởng phòng\",\"phone\":\"+8493\",\"email\":\"" + newEmail + "\"}",
+                Status = IdentityChangeStatuses.Pending,
+                ExpectedRequestRowVersion = (uint)instance.RowVersion,
+                RequestedBy = contactId,
+                RequestedAt = Now,
+                ExpiresAt = Now.AddDays(3),
+                ResendCount = 0,
+                CreatedAt = Now,
+            };
+            db.VisitRequestIdentityChanges.Add(transfer);
+            await db.SaveChangesAsync();
+            transferId = transfer.IdentityChangeId;
+        }
+
+        var acceptToken = await MintTokenAsync(transferId);
+        return (instanceId, contactId, contactEmail, successorId, successorEmail, transferId, acceptToken);
+    }
+
+    /// <summary>LEGACY-ORG-01. A transfer snapshot with `organization: null` cannot be Accepted.</summary>
+    [Fact]
+    public async Task LEGACY_ORG_01_null_organization_snapshot_is_refused_at_accept()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var seed = NewContext()) (_, contactEmail) = await VisitorUserAsync(seed);
+            requestId = await CreateAsync(Form(Campus("HN", contactEmail, 0)));
+
+            var (instanceId, contactId, _, successorId, successorEmail, transferId, acceptToken) =
+                await SeedLegacyTransferAsync(requestId, "null");
+
+            var before = await InstanceAsync(instanceId);
+            var detailBefore = await FormDetailAsync(instanceId);
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Accept(db, successorId, successorEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.OrganizationRequired, ex.ErrorCode);
+
+            await AssertLegacyTransferRefusedAsync(
+                requestId, instanceId, transferId, contactId, before, detailBefore);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>LEGACY-ORG-02. A transfer snapshot with `organization: "   "` cannot be Accepted either.</summary>
+    [Fact]
+    public async Task LEGACY_ORG_02_blank_organization_snapshot_is_refused_at_accept()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var seed = NewContext()) (_, contactEmail) = await VisitorUserAsync(seed);
+            requestId = await CreateAsync(Form(Campus("HN", contactEmail, 0)));
+
+            var (instanceId, contactId, _, successorId, successorEmail, transferId, acceptToken) =
+                await SeedLegacyTransferAsync(requestId, "\"   \"");
+
+            var before = await InstanceAsync(instanceId);
+            var detailBefore = await FormDetailAsync(instanceId);
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Accept(db, successorId, successorEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.OrganizationRequired, ex.ErrorCode);
+
+            await AssertLegacyTransferRefusedAsync(
+                requestId, instanceId, transferId, contactId, before, detailBefore);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// LEGACY-ORG-03 (regression). A legacy snapshot that DOES carry a valid Organization still Accepts
+    /// exactly as it always has — the new guard only refuses what was already missing.
+    /// </summary>
+    [Fact]
+    public async Task LEGACY_ORG_03_valid_organization_snapshot_still_accepts()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var seed = NewContext()) (_, contactEmail) = await VisitorUserAsync(seed);
+            requestId = await CreateAsync(Form(Campus("HN", contactEmail, 0)));
+
+            var (instanceId, contactId, _, successorId, successorEmail, transferId, acceptToken) =
+                await SeedLegacyTransferAsync(requestId, "\"SeoulTech Global Engagement Center\"");
+
+            using (var db = NewContext())
+                await Accept(db, successorId, successorEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var after = await InstanceAsync(instanceId);
+            Assert.Equal(successorId, after.OperationalContactUserId);
+            Assert.Equal(OperationalContactSources.Transfer, after.OperationalContactConfirmationSource);
+
+            var detailAfter = await FormDetailAsync(instanceId);
+            Assert.Equal("SeoulTech Global Engagement Center", detailAfter.OperationalContactOrganization);
+            Assert.Equal("Người Nhận Bàn Giao", detailAfter.OperationalContactFullName);
+
+            using var check = NewContext();
+            var change = await check.VisitRequestIdentityChanges.AsNoTracking()
+                .FirstAsync(c => c.IdentityChangeId == transferId);
+            Assert.Equal(IdentityChangeStatuses.Applied, change.Status);
+            Assert.Equal(successorId, change.NewUserId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    private static async Task<PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail> FormDetailAsync(
+        ulong instanceId)
+    {
+        using var db = NewContext();
+        return await db.VisitInstanceFormDetails.AsNoTracking().FirstAsync(d => d.VisitInstanceId == instanceId);
+    }
+
+    /// <summary>
+    /// Everything a refused legacy transfer must NOT have done: no relation move, no snapshot write, no
+    /// status change, invitation still PENDING (not fake-APPLIED), its token still unconsumed, and no
+    /// success audit — the refusal happened before any of it, inside the accept's own transaction.
+    /// </summary>
+    private static async Task AssertLegacyTransferRefusedAsync(
+        ulong requestId, ulong instanceId, ulong transferId, ulong contactId,
+        PEMS.Domain.Entities.Delegations.VisitRequestCampus before,
+        PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail detailBefore)
+    {
+        var after = await InstanceAsync(instanceId);
+        Assert.Equal(contactId, after.OperationalContactUserId);        // still the ORIGINAL contact
+        Assert.Equal(before.Status, after.Status);                       // ASSIGNED, unchanged
+        Assert.Equal(before.OperationalContactConfirmedAt, after.OperationalContactConfirmedAt);
+        Assert.Equal(before.OperationalContactConfirmationSource, after.OperationalContactConfirmationSource);
+
+        var detailAfter = await FormDetailAsync(instanceId);
+        Assert.Equal(detailBefore.OperationalContactOrganization, detailAfter.OperationalContactOrganization);
+        Assert.Equal(detailBefore.OperationalContactEmail, detailAfter.OperationalContactEmail);
+        Assert.Equal(detailBefore.OperationalContactFullName, detailAfter.OperationalContactFullName);
+
+        using var check = NewContext();
+        var change = await check.VisitRequestIdentityChanges.AsNoTracking()
+            .FirstAsync(c => c.IdentityChangeId == transferId);
+        Assert.Equal(IdentityChangeStatuses.Pending, change.Status);     // never marked Applied
+        Assert.Null(change.NewUserId);
+        Assert.Null(change.AppliedAt);
+
+        Assert.Equal(LinksPerInvitation, await LiveTokenCountAsync(transferId)); // token still unconsumed
+
+        Assert.False(await check.AuditLogs.AsNoTracking()
+            .AnyAsync(a => a.VisitRequestId == requestId && a.Action == "OPERATIONAL_CONTACT_TRANSFER_APPLIED"));
+    }
 }

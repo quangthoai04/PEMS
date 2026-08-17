@@ -47,7 +47,14 @@ public sealed class ResubmitRejectedVisitRequestV2CommandValidator
                 campus.RuleFor(c => c.ExpectedRowVersion)
                     .NotNull().WithMessage("Thiếu phiên bản dữ liệu của lịch thăm (row version).")
                     .When(c => c.VisitInstanceId.HasValue);
-                campus.RuleFor(c => c.ToFormDto()).SetValidator(new CampusVisitFormDtoValidator());
+                // Every slot is required to reference an existing instance (rule above), so the
+                // operational contact is always a read-only replay here — never a fresh write. Requiring
+                // Create-level completeness on it would refuse a resubmit purely because a legacy
+                // snapshot predates the Organization-required rule, even though resubmit has no way to
+                // fix that field (see CampusVisitFormDtoValidator.requireCompleteOperationalContact).
+                campus.RuleFor(c => c.ToFormDto())
+                    .SetValidator(c => new CampusVisitFormDtoValidator(
+                        requireCompleteOperationalContact: !c.VisitInstanceId.HasValue));
             });
         });
     }

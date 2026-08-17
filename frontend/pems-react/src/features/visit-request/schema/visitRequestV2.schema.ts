@@ -183,23 +183,21 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       .array(buildPersonSchema(t, 'support'))
       .max(V2_MAX_MEMBERS_PER_CAMPUS, t('maxMembers', { max: V2_MAX_MEMBERS_PER_CAMPUS })),
 
-    // Every field is required: this is the person a campus actually calls on the day, and all four
-    // columns are relied on downstream.
+    // Completeness (name/organization/job title/email required, phone optional) is enforced below in
+    // the per-campus superRefine, and ONLY for a campus being ADDED here (visitInstanceId is
+    // null/undefined). For an EXISTING campus the contact is a read-only replay — CampusVisitCard
+    // renders it via `contactReadOnly` and refuses every one of these fields — so the base object
+    // stays permissive (length-bounded only) and is never itself the source of a "required" error.
+    // Requiring completeness unconditionally here is what turned an unrelated field edit (e.g.
+    // Purpose) into a phantom, unfixable "1 error" whenever the campus's contact snapshot predated
+    // this rule (a legacy NULL Organization reads back as "").
     operationalContact: z.object({
-      fullName: bounded(
-        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalFullName') })),
-        150, t('fields.operationalFullName'), t),
-      organization: bounded(
-        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalOrganization') })),
-        200, t('fields.operationalOrganization'), t),
-      // Required, like the rest. It tells the campus whether the person answering the phone can
-      // settle a schedule or has to go and ask, and the detail screens have always reserved a row
-      // for it — a row that was blank on every request, because the form never asked.
-      jobTitle: bounded(
-        z.string().trim().min(1, t('requiredField', { field: t('fields.operationalJobTitle') })),
-        150, t('fields.operationalJobTitle'), t),
+      fullName: bounded(z.string().trim(), 150, t('fields.operationalFullName'), t),
+      organization: bounded(z.string().trim(), 200, t('fields.operationalOrganization'), t),
+      jobTitle: bounded(z.string().trim(), 150, t('fields.operationalJobTitle'), t),
+      // Phone is OPTIONAL everywhere — never required, on a new campus or an existing one.
       phone: buildPhoneSchema(t, 'operationalPhone'),
-      email: buildEmailSchema(t, 'operationalEmail'),
+      email: bounded(z.string().trim(), 150, t('fields.operationalEmail'), t),
     }),
 
     /**
@@ -237,6 +235,58 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
         path: ['visitTypeOther'],
         message: t('visitTypeOtherRequired'),
       });
+    }
+
+    // Operational contact completeness — a NEW-write bar, not a replay bar. Mirrors the backend's
+    // CampusVisitFormDtoValidator(requireCompleteOperationalContact): a campus with no visitInstanceId
+    // is being ADDED right now, so its contact is a fresh write and must be complete, same as create.
+    // A campus that already has a visitInstanceId is EXISTING — its contact is read-only here (see
+    // `contactReadOnly` on CampusVisitCard) and is never validated for completeness by this form;
+    // fixing an incomplete legacy snapshot belongs to "Manage the contact role".
+    const isNewCampus = data.visitInstanceId === null || data.visitInstanceId === undefined;
+    if (isNewCampus) {
+      const oc = data.operationalContact;
+      if (!oc.fullName || oc.fullName.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'fullName'],
+          message: t('requiredField', { field: t('fields.operationalFullName') }),
+        });
+      }
+      if (!oc.organization || oc.organization.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'organization'],
+          message: t('requiredField', { field: t('fields.operationalOrganization') }),
+        });
+      }
+      if (!oc.jobTitle || oc.jobTitle.trim() === '') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'jobTitle'],
+          message: t('requiredField', { field: t('fields.operationalJobTitle') }),
+        });
+      }
+      const email = oc.email?.trim() ?? '';
+      if (!email) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'email'],
+          message: t('requiredField', { field: t('fields.operationalEmail') }),
+        });
+      } else if (!z.string().email().safeParse(email).success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'email'],
+          message: t('emailInvalidField', { field: t('fields.operationalEmail') }),
+        });
+      } else if (email.length > 150) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'email'],
+          message: maxLenMessage(t, t('fields.operationalEmail'), 150),
+        });
+      }
     }
 
     if (!data.startDatetime || !data.endDatetime) return;

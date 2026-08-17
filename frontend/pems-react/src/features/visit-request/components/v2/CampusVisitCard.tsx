@@ -518,6 +518,19 @@ export const CampusVisitCard: React.FC<Props> = ({
   const watchedSupport = watch(`${base}.supportTeam`) ?? [];
   const contactMemberKey = watch(`${base}.operationalContactClientMemberKey`) ?? null;
   const watchedContact = watch(`${base}.operationalContact`);
+  /**
+   * True when a READ-ONLY (existing) campus's contact snapshot is missing one of the fields Manage
+   * Contact now requires — a legacy row written before that rule existed. Phone is excluded: it has
+   * always been optional. Drives an informational warning only; this form never validates these
+   * fields for an existing campus (see the schema's per-campus superRefine), so it must never be
+   * confused with a real validation error.
+   */
+  const legacyContactIncomplete = contactReadOnly && (
+    !(watchedContact?.fullName ?? '').trim()
+    || !(watchedContact?.organization ?? '').trim()
+    || !(watchedContact?.jobTitle ?? '').trim()
+    || !(watchedContact?.email ?? '').trim()
+  );
 
   type MemberKind = 'visitors' | 'supportTeam';
   interface EligibleMember {
@@ -1714,6 +1727,20 @@ export const CampusVisitCard: React.FC<Props> = ({
                   </div>
                 ))}
               </dl>
+              {/* Informational, non-blocking (plan §12). A legacy snapshot predating the
+                  Organization-required rule can hold blanks here; that is never this form's error to
+                  raise — Phone is excluded because it has always been optional — and it must not count
+                  toward the card's validation-error badge (see countFieldErrors: this block produces no
+                  RHF error, only this notice). */}
+              {legacyContactIncomplete && (
+                <p
+                  data-testid={`campus-opcontact-legacy-warning-${index}`}
+                  role="status"
+                  className="mt-2 text-xs font-medium text-amber-700"
+                >
+                  {t('visitRequestV2:card.legacyContactIncomplete')}
+                </p>
+              )}
             </div>
           ) : (
           <>
@@ -1911,9 +1938,10 @@ export const CampusVisitCard: React.FC<Props> = ({
               />
             </FormField>
             )}
-            {/* Required like the rest: it is what tells the campus whether the person on the other
-                end of the phone can settle a schedule or has to go and ask. Every detail screen has
-                always had a row for it, and the row was blank on every request because this field
+            {/* Required, like fullName/organization/email — Phone (right below) is the one exception
+                in this block and stays optional. Job title tells the campus whether the person on the
+                other end of the phone can settle a schedule or has to go and ask; every detail screen
+                has always had a row for it, and the row was blank on every request because this field
                 did not exist. */}
             {pickedMember ? (
               <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required showValidIcon={false}>

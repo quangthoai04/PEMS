@@ -21,8 +21,9 @@ public sealed class UpdateRegistrantInfoCommandValidator
         RuleFor(x => x.JobTitle)
             .MaximumLength(255).WithMessage("Chức danh quá dài.");
 
+        // Phone is OPTIONAL, same as every other Registrant/Operational-Contact phone field in this
+        // feature (see RegistrantInputV2Validator/OperationalContactV2Validator) — blank submits.
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Số điện thoại không được để trống.")
             .MaximumLength(30).WithMessage("Số điện thoại quá dài.");
 
         RuleFor(x => x.Email)

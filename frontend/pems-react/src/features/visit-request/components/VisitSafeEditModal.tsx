@@ -9,6 +9,12 @@ import {
 import { buildChangedOnlyPayload } from '../utils/safeEditDiff';
 import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { PartnerOrgCombobox } from './shared/PartnerOrgCombobox';
+import { CountrySelect } from './shared/CountrySelect';
+import { PhoneField } from './shared/PhoneField';
+import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
+
+const NOTES_MAX_LENGTH = 2000;
 
 interface Props {
   form: ResolvedVisitForm;
@@ -27,9 +33,11 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
 
   const [registrant, setRegistrant] = useState({
     fullName: form.registrant.fullName,
+    nationality: form.registrant.nationality,
     organization: form.registrant.organization,
     jobTitle: form.registrant.jobTitle,
     phone: form.registrant.phone,
+    partnerId: form.partnerId,
   });
   // ONLY the campuses the backend says are editable right now. A campus that is under way, finished,
   // or inside its window used to appear here as a normal editable block — the user would type into it
@@ -49,11 +57,6 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
       visitInstanceId: c.visitInstanceId,
       expectedRowVersion: c.rowVersion,
       campusName: c.campusName,
-      contact: {
-        fullName: c.operationalContact.fullName,
-        organization: c.operationalContact.organization,
-        phone: c.operationalContact.phone,
-      },
       transportationNote: c.transportationNote ?? '',
       mediaConsentStatus: c.mediaConsentStatus,
       notes: c.notes ?? '',
@@ -132,10 +135,43 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
             <fieldset className="mb-3" disabled={!canEditShared} data-testid="safe-edit-shared-fields">
               <legend className="mb-1 text-sm font-bold text-slate-700">{t('visitRequestV2:summary.registrant')}</legend>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <input className={field} value={registrant.fullName} onChange={e => setRegistrant({ ...registrant, fullName: e.target.value })} />
-                <input className={field} value={registrant.phone} onChange={e => setRegistrant({ ...registrant, phone: e.target.value })} />
-                <input className={field} value={registrant.organization} onChange={e => setRegistrant({ ...registrant, organization: e.target.value })} />
-                <input className={field} value={registrant.jobTitle} onChange={e => setRegistrant({ ...registrant, jobTitle: e.target.value })} />
+                <label className="block text-sm" data-testid="safe-edit-registrant-fullName">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:registrant.fullName')}</span>
+                  <input className={field} value={registrant.fullName} onChange={e => setRegistrant({ ...registrant, fullName: e.target.value })} />
+                </label>
+                <label className="block text-sm" data-testid="safe-edit-registrant-nationality">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:registrant.nationality')}</span>
+                  <CountrySelect
+                    value={registrant.nationality}
+                    ariaLabel={t('visitRequestV2:registrant.nationality')}
+                    onChange={value => setRegistrant({ ...registrant, nationality: value })}
+                  />
+                </label>
+                <label className="block text-sm sm:col-span-2" data-testid="safe-edit-registrant-organization">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:registrant.organization')}</span>
+                  <PartnerOrgCombobox
+                    organization={registrant.organization}
+                    partnerId={registrant.partnerId}
+                    onChange={next => setRegistrant({ ...registrant, organization: next.organization, partnerId: next.partnerId })}
+                  />
+                </label>
+                <label className="block text-sm" data-testid="safe-edit-registrant-jobTitle">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:registrant.jobTitle')}</span>
+                  <input className={field} value={registrant.jobTitle} onChange={e => setRegistrant({ ...registrant, jobTitle: e.target.value })} />
+                </label>
+                {/* Same shared control as every other editable phone field in Visit V2 — same format
+                    hint, same "tel" type/inputMode, instead of a bare text input reimplementing (and
+                    silently drifting from) that behavior. */}
+                <label className="block text-sm" data-testid="safe-edit-registrant-phone">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:card.phone')}</span>
+                  <PhoneField
+                    className={field}
+                    field={{
+                      value: registrant.phone,
+                      onChange: e => setRegistrant({ ...registrant, phone: e.target.value }),
+                    }}
+                  />
+                </label>
               </div>
             </fieldset>
             {!canEditShared && (
@@ -153,40 +189,32 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.transportation')}</span>
                   <input data-testid={`safe-edit-transportation-${i.visitInstanceId}`} className={field} value={i.transportationNote} onChange={e => setInstance(i.visitInstanceId, { transportationNote: e.target.value })} />
                 </label>
-                {/* The contact belongs to THIS campus. It used to live in the shared block above,
-                    which meant correcting one campus's contact name rewrote every sibling's. */}
-                <div className="mt-3 rounded-lg bg-slate-50 p-2">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">
-                    {t('visitRequestV2:operationalContact.title')}
-                  </span>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <input
-                      data-testid={`safe-edit-contact-name-${i.visitInstanceId}`}
-                      className={field}
-                      value={i.contact.fullName}
-                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, fullName: e.target.value } })}
-                    />
-                    <input
-                      data-testid={`safe-edit-contact-phone-${i.visitInstanceId}`}
-                      className={field}
-                      value={i.contact.phone}
-                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, phone: e.target.value } })}
-                    />
-                    <input
-                      data-testid={`safe-edit-contact-org-${i.visitInstanceId}`}
-                      className={field}
-                      value={i.contact.organization}
-                      onChange={e => setInstance(i.visitInstanceId, { contact: { ...i.contact, organization: e.target.value } })}
-                    />
-                  </div>
-                  <p className="mt-1 text-[11px] text-slate-500">{t('visitRequestV2:safeEdit.emailImmutable')}</p>
-                </div>
+                {/* The contact profile has exactly one door now — "Manage the contact role" on the
+                    campus's own detail screen (plan PEMS_CONTACT_ONE_DOOR). Quick Edit no longer offers
+                    a second one: correcting a typo here used to be indistinguishable, at the database
+                    level, from the deeper edits that workflow gates behind invitation/confirmation. */}
+                <p
+                  data-testid={`safe-edit-contact-managed-elsewhere-${i.visitInstanceId}`}
+                  className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"
+                >
+                  {t('visitRequestV2:safeEdit.contactManagedElsewhere')}
+                </p>
                 <label className="mt-2 block text-sm">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.mediaConsent')}</span>
                   <select data-testid={`safe-edit-media-${i.visitInstanceId}`} className={field} value={i.mediaConsentStatus} onChange={e => setInstance(i.visitInstanceId, { mediaConsentStatus: e.target.value })}>
                     <option value="AGREED">{t('visitRequestV2:summary.mediaAgreed')}</option>
                     <option value="DECLINED">{t('visitRequestV2:summary.mediaDeclined')}</option>
                   </select>
+                </label>
+                <label className="mt-2 block text-sm">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:summary.campusNote')}</span>
+                  <AutoGrowTextarea
+                    data-testid={`safe-edit-notes-${i.visitInstanceId}`}
+                    value={i.notes}
+                    onChange={value => setInstance(i.visitInstanceId, { notes: value })}
+                    maxLength={NOTES_MAX_LENGTH}
+                    minRows={2}
+                  />
                 </label>
               </fieldset>
             ))}

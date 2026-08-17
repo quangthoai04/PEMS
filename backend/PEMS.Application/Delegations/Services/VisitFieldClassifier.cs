@@ -9,9 +9,10 @@ namespace PEMS.Application.Delegations.Services;
 /// only shows predictions; every mutation route consults this table. Field paths are stable dotted
 /// identifiers used in amendment change rows and audit diffs.
 ///
-///   • SAFE                — applies immediately (safe-edit endpoint): registrant name/org/job/phone,
-///                           primary-contact name/org/phone (NEVER the email — identity workflow),
-///                           transportation note, note to FPTU, media-consent note.
+///   • SAFE                — applies immediately (safe-edit endpoint): registrant name/nationality/
+///                           org/partner/job/phone, transportation note, note to FPTU, media-consent
+///                           note. The operational contact's PROFILE (name/org/job/phone/email) is not
+///                           in this list at all — "Manage the contact role" is its only door.
 ///   • PRIVACY_URGENT      — <c>instance.mediaConsentStatus → DECLINED</c>: applies immediately EVEN
 ///                           inside the 24h cutoff, with HIGH/URGENT notification.
 ///   • APPROVAL_SENSITIVE  — per-campus amendment (PENDING_APPROVAL until the campus Staff Leader decides):
@@ -27,11 +28,15 @@ public static class VisitFieldClassifier
     // ── Stable field paths ──
     public const string RegistrantFullName = "request.registrant.fullName";
     public const string RegistrantOrganization = "request.registrant.organization";
+    public const string RegistrantNationality = "request.registrant.nationality";
+    /// <summary>
+    /// The partner profile <see cref="RegistrantOrganization"/> was picked from, or null for free
+    /// text. A path OF ITS OWN — rather than folded silently into RegistrantOrganization — so it gets
+    /// its own audit-trail row; it is still applied atomically alongside Organization by the service.
+    /// </summary>
+    public const string RegistrantPartnerId = "request.registrant.partnerId";
     public const string RegistrantJobTitle = "request.registrant.jobTitle";
     public const string RegistrantPhone = "request.registrant.phone";
-    public const string ContactFullName = "request.contact.fullName";
-    public const string ContactOrganization = "request.contact.organization";
-    public const string ContactPhone = "request.contact.phone";
 
     public const string TransportationNote = "instance.transportationNote";
     public const string Notes = "instance.notes";
@@ -43,6 +48,13 @@ public static class VisitFieldClassifier
     public const string Purpose = "instance.purpose";
     public const string WorkingContent = "instance.workingContent";
     public const string WorkingLanguage = "instance.workingLanguage";
+    /// <summary>
+    /// LEGACY paths only (plan PEMS_CONTACT_ONE_DOOR). Kept in the table so a proposal already sitting
+    /// in PENDING_APPROVAL from before the contact profile became single-door is still approvable — see
+    /// the switch in <c>VisitAmendmentService.ApproveAsync</c>. <c>VisitAmendmentService.BuildChangeRows</c>
+    /// never writes a NEW row on any of these four paths any more; the only door left for the contact's
+    /// name/organisation/job title/phone is "Manage the contact role".
+    /// </summary>
     public const string OperationalContactFullName = "instance.operationalContact.fullName";
     public const string OperationalContactOrganization = "instance.operationalContact.organization";
     public const string OperationalContactJobTitle = "instance.operationalContact.jobTitle";
@@ -50,6 +62,12 @@ public static class VisitFieldClassifier
     public const string OperationalContactEmail = "instance.operationalContact.email";
     public const string Visitors = "instance.members.visitors";
     public const string SupportMembers = "instance.members.externalSupport";
+    /// <summary>
+    /// Durable "who in the delegation the operational contact IS" reference (NP-03), amendment-only.
+    /// Carried alongside a member-list change so the backend can re-point the contact link at the
+    /// right NEW member row after a replace, instead of falling back to a name/org/title guess.
+    /// </summary>
+    public const string OperationalContactMemberKey = "instance.operationalContact.clientMemberKey";
 
     public const string PlannedStartAt = "instance.plannedStartAt";
     public const string PlannedEndAt = "instance.plannedEndAt";
@@ -58,11 +76,10 @@ public static class VisitFieldClassifier
     {
         [RegistrantFullName] = AmendmentChangeClasses.Safe,
         [RegistrantOrganization] = AmendmentChangeClasses.Safe,
+        [RegistrantNationality] = AmendmentChangeClasses.Safe,
+        [RegistrantPartnerId] = AmendmentChangeClasses.Safe,
         [RegistrantJobTitle] = AmendmentChangeClasses.Safe,
         [RegistrantPhone] = AmendmentChangeClasses.Safe,
-        [ContactFullName] = AmendmentChangeClasses.Safe,
-        [ContactOrganization] = AmendmentChangeClasses.Safe,
-        [ContactPhone] = AmendmentChangeClasses.Safe,
 
         [TransportationNote] = AmendmentChangeClasses.Safe,
         [Notes] = AmendmentChangeClasses.Safe,
@@ -82,6 +99,7 @@ public static class VisitFieldClassifier
         // OperationalContactEmail is deliberately ABSENT — see IsIdentityManaged below.
         [Visitors] = AmendmentChangeClasses.ApprovalSensitive,
         [SupportMembers] = AmendmentChangeClasses.ApprovalSensitive,
+        [OperationalContactMemberKey] = AmendmentChangeClasses.ApprovalSensitive,
 
         [PlannedStartAt] = AmendmentChangeClasses.Structural,
         [PlannedEndAt] = AmendmentChangeClasses.Structural,
