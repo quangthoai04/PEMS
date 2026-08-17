@@ -269,12 +269,6 @@ export function AccountManagement() {
   // create button, role filter) is switched off while it is on.
   const isVisitorMode = isStaffLeader && accountTypeFilter === 'VISITOR';
 
-  // Says WHOSE accounts the current mode lists, so the two very different lists are not mistaken
-  // for one another. Copy is the project owner's — do not reword without asking.
-  const accountManagementSubtitle = isVisitorMode
-    ? 'Danh sách tài khoản khách có yêu cầu tham quan liên quan đến cơ sở'
-    : 'Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở';
-
   // ADMIN = Global Read + Security Control. The subtitle has to say that, because the screen looks
   // like a personnel console and is not one: ADMIN observes every account and acts only on their
   // access. Wording that promises "tạo và quản lý nhân sự" would describe HO / Staff Leader's job.
@@ -1713,11 +1707,6 @@ export function AccountManagement() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài khoản</h1>
-          {isStaffLeader && (
-            <p className="mt-1 max-w-3xl text-sm text-gray-500" aria-live="polite">
-              {accountManagementSubtitle}
-            </p>
-          )}
           {isRealAdmin && (
             <p className="mt-1 max-w-3xl text-sm text-gray-500">{adminSubtitle}</p>
           )}

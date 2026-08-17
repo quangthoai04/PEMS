@@ -24,13 +24,12 @@ import { AccountManagement } from '../../../pages/dashboard/accounts/AccountMana
 
 const api = accountManagementApi as unknown as Record<string, ReturnType<typeof vi.fn>>;
 
-const INTERNAL_SUBTITLE =
-  'Quản lý tài khoản của nhân sự phòng IC, trưởng phòng của các phòng ban khác và sinh viên trong cơ sở';
-
-// Visitor mode no longer shows a subtitle of its own: commit bc1e7340 replaced that whole surface
-// with <RelatedVisitorsTab>, which brings its own filter bar. The nationality filter is the marker
-// used below — it exists only in the Visitor tab, so it proves the swap the same way the removed
-// subtitle did, and it will not drift with copy edits the way a sentence does.
+// Neither mode shows a subtitle any more (the internal one was dropped as unnecessary chrome, and
+// Visitor mode never had its own — commit bc1e7340 replaced that whole surface with
+// <RelatedVisitorsTab>, which brings its own filter bar). So presence is checked via markers that
+// are unique to each surface instead of copy that can be edited or removed independently:
+// the internal stat tiles only render in internal mode, and the nationality filter only in Visitor.
+const INTERNAL_ONLY_MARKER = 'Tổng số tài khoản';
 const VISITOR_ONLY_FILTER = 'Quốc tịch';
 
 function signInAsStaffLeader() {
@@ -71,17 +70,17 @@ describe('AccountManagement — Staff Leader account type filter', () => {
   it('opens on the internal view and swaps the whole surface when the mode changes', async () => {
     renderPage();
 
-    expect(await screen.findByText(INTERNAL_SUBTITLE)).toBeInTheDocument();
+    expect(await screen.findByText(INTERNAL_ONLY_MARKER)).toBeInTheDocument();
     expect(screen.queryByLabelText(VISITOR_ONLY_FILTER)).toBeNull();
 
     await userEvent.selectOptions(accountTypeSelect(), 'VISITOR');
 
     // The internal surface is gone, not merely re-captioned, and the Visitor tab is mounted.
     expect(await screen.findByLabelText(VISITOR_ONLY_FILTER)).toBeInTheDocument();
-    expect(screen.queryByText(INTERNAL_SUBTITLE)).toBeNull();
+    expect(screen.queryByText(INTERNAL_ONLY_MARKER)).toBeNull();
 
     await userEvent.selectOptions(accountTypeSelect(), 'INTERNAL');
-    expect(await screen.findByText(INTERNAL_SUBTITLE)).toBeInTheDocument();
+    expect(await screen.findByText(INTERNAL_ONLY_MARKER)).toBeInTheDocument();
     expect(screen.queryByLabelText(VISITOR_ONLY_FILTER)).toBeNull();
   });
 });
