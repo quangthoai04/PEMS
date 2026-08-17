@@ -181,7 +181,7 @@ export function PartnerManagement() {
         <select
           value={countryFilter}
           onChange={(e) => { setCountryFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả quốc gia</option>
           {countries.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -190,7 +190,7 @@ export function PartnerManagement() {
         <select
           value={campusFilter}
           onChange={(e) => { setCampusFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả cơ sở</option>
           {campuses.map((c) => (
@@ -201,7 +201,7 @@ export function PartnerManagement() {
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); if (notificationPartnerId) clearNotificationFilter(); }}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm cursor-pointer min-w-[150px]"
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm cursor-pointer min-w-[150px]"
         >
           <option value="">Tất cả trạng thái</option>
           <option value="PENDING_APPROVAL">Chờ duyệt</option>

@@ -182,17 +182,17 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
               value={filter.search}
               onChange={e => onFilterChange({ search: e.target.value, page: 1 })}
               placeholder="Tìm kiếm nhiệm vụ, đoàn khách..."
-              className="w-full pl-9 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm font-semibold text-white placeholder:text-white/60 outline-none focus:bg-white/20"
+              className="w-full pl-9 pr-4 py-2 bg-white/10 border border-white/20 rounded-xl text-sm font-normal text-white placeholder:text-white/60 outline-none focus:bg-white/20"
             />
           </div>
           <select value={filter.itemType} onChange={e => onFilterChange({ itemType: e.target.value, page: 1 })}
-            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-normal text-slate-800">
             <option value="ALL">Tất cả loại</option>
             <option value="INVITATION">Thư mời</option>
             <option value="REQUEST">Đơn yêu cầu</option>
           </select>
           <select value={filter.status} onChange={e => onFilterChange({ status: e.target.value as TaskStatusFilter, page: 1 })}
-            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800">
+            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-normal text-slate-800">
             {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <input type="date" value={filter.fromDate} max={filter.toDate || undefined}
@@ -202,7 +202,7 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
                 ? { fromDate: value, toDate: value, page: 1 }
                 : { fromDate: value, page: 1 });
             }}
-            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
+            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-normal text-slate-800" />
           <span className="text-white font-black">-</span>
           <input type="date" value={filter.toDate} min={filter.fromDate || undefined}
             onChange={e => {
@@ -211,7 +211,7 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
                 ? { fromDate: value, toDate: value, page: 1 }
                 : { toDate: value, page: 1 });
             }}
-            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-bold text-slate-800" />
+            className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-normal text-slate-800" />
           <button onClick={() => onFilterChange({ sortDirection: filter.sortDirection === 'ASC' ? 'DESC' : 'ASC' })}
             className="px-3 py-2 bg-white border border-white/20 rounded-xl text-sm font-black text-[#004c91] hover:bg-blue-50">
             {filter.sortDirection === 'DESC' ? '↓ Mới nhất' : '↑ Cũ nhất'}
@@ -337,7 +337,7 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
             <select
               value={filter.pageSize}
               onChange={e => onFilterChange({ pageSize: Number(e.target.value), page: 1 })}
-              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-bold text-slate-700 outline-none hover:bg-slate-100"
+              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-normal text-slate-700 outline-none hover:bg-slate-100"
             >
               <option value={5}>5</option>
               <option value={10}>10</option>

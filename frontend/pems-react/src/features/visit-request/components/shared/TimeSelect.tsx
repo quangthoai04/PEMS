@@ -237,7 +237,7 @@ export const TimeSelect: React.FC<Props> = ({
         onClick={openList}
         onBlur={e => commitRaw(e.currentTarget.value)}
         onKeyDown={onKeyDown}
-        className={`h-11 w-full min-w-0 rounded-xl border bg-white pl-4 pr-9 text-sm font-semibold text-slate-800 outline-none transition-colors disabled:bg-slate-100 ${
+        className={`h-11 w-full min-w-0 rounded-xl border bg-white pl-4 pr-9 text-sm font-normal text-slate-800 outline-none transition-colors disabled:bg-slate-100 ${
           hasError
             ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
             : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10'

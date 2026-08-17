@@ -88,7 +88,7 @@ export function NationalitySearchableDropdown({ value, onChange, disabled }: Pro
         type="button"
         disabled={disabled}
         onClick={toggle}
-        className="flex w-full items-center justify-between rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 text-left font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91] disabled:cursor-not-allowed disabled:bg-gray-50"
+        className="flex w-full items-center justify-between rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 text-left font-normal text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91] disabled:cursor-not-allowed disabled:bg-gray-50"
       >
         <span className={value ? '' : 'text-gray-400'}>
           {value ? nationalityLabel(value) : 'Chọn quốc tịch'}

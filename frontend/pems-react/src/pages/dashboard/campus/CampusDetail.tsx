@@ -324,7 +324,7 @@ export function CampusDetail() {
                   aria-label="Tên campus"
                   aria-invalid={!!errors.name}
                   aria-describedby={errors.name ? 'edit-name-error' : undefined}
-                  className={`w-full text-2xl md:text-3xl font-bold text-white bg-transparent border focus:bg-white/10 p-3 rounded-2xl outline-none transition-all placeholder:text-white/50 ${errors.name ? 'border-red-300' : 'border-white/30 focus:border-white'}`}
+                  className={`w-full text-2xl md:text-3xl font-normal text-white bg-transparent border focus:bg-white/10 p-3 rounded-2xl outline-none transition-all placeholder:text-white/50 ${errors.name ? 'border-red-300' : 'border-white/30 focus:border-white'}`}
                   placeholder="Nhập tên campus..."
                 />
                 {errors.name && <p id="edit-name-error" className="text-xs text-red-200 font-medium mt-1">{errors.name}</p>}
@@ -537,7 +537,7 @@ export function CampusDetail() {
 }
 
 const inputCls = (hasError: boolean) =>
-  `w-full text-gray-900 text-[15px] p-3 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all font-medium ${hasError ? 'border-red-400' : 'border-[#004c91]/30'}`;
+  `w-full text-gray-900 text-[15px] p-3 bg-white border rounded-xl outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] transition-all font-normal ${hasError ? 'border-red-400' : 'border-[#004c91]/30'}`;
 
 /**
  * One labelled field of the edit form. The error node carries the id referenced by the input's

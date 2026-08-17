@@ -605,7 +605,7 @@ export function GalleryUpsertModal({
                 onChange={(e) => { setYoutubeInput(e.target.value); setYoutubeError(null); }}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addYoutube(); } }}
                 placeholder="https://www.youtube.com/watch?v=..."
-                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 focus:border-red-400 focus:ring-1 focus:ring-red-400 outline-none text-xs font-medium"
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-slate-200 focus:border-red-400 focus:ring-1 focus:ring-red-400 outline-none text-xs font-normal"
               />
               <button
                 type="button"
@@ -719,7 +719,7 @@ export function GalleryUpsertModal({
                 value={titleField.vi}
                 maxLength={255}
                 onChange={(e) => titleField.setVi(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all"
                 placeholder="Nhập tiêu đề..."
               />
               <div>
@@ -747,7 +747,7 @@ export function GalleryUpsertModal({
                   maxLength={500}
                   onChange={(e) => titleField.setEnManual(e.target.value)}
                   disabled={translatingTitle}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all disabled:opacity-60"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all disabled:opacity-60"
                   placeholder="English title..."
                 />
                 <EnFieldHint field={titleField} />
@@ -760,7 +760,7 @@ export function GalleryUpsertModal({
                 <select
                   value={areaId === '' ? '' : String(areaId)}
                   onChange={(e) => { setAreaId(e.target.value === '' ? '' : Number(e.target.value)); setLocationId(''); }}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white"
                 >
                   <option value="">-- Chọn khu vực --</option>
                   {activeAreas.map((a) => <option key={a.areaId} value={a.areaId}>{a.areaName}</option>)}
@@ -773,7 +773,7 @@ export function GalleryUpsertModal({
                   value={locationId === '' ? '' : String(locationId)}
                   onChange={(e) => setLocationId(e.target.value === '' ? '' : Number(e.target.value))}
                   disabled={areaId === ''}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white disabled:opacity-50"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white disabled:opacity-50"
                 >
                   <option value="">-- Chọn vị trí --</option>
                   {locations.map((l) => <option key={l.locationId} value={l.locationId}>{l.locationName}</option>)}
@@ -785,7 +785,7 @@ export function GalleryUpsertModal({
                 <select
                   value={itemType}
                   onChange={(e) => setItemType(e.target.value as GalleryItemType)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white"
                 >
                   <option value="MEDIA">Media</option>
                   <option value="VISIT_DELEGATION">Đoàn khách</option>
@@ -821,7 +821,7 @@ export function GalleryUpsertModal({
                       rows={5}
                       value={descriptionVi}
                       onChange={(e) => setDescriptionVi(e.target.value)}
-                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
+                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all resize-y"
                       placeholder="Nhập mô tả tiếng Việt..."
                     />
                     <span className="text-xs text-slate-400 font-medium">
@@ -849,7 +849,7 @@ export function GalleryUpsertModal({
                       rows={5}
                       value={descriptionEn}
                       onChange={(e) => setDescriptionEn(e.target.value)}
-                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-y"
+                      className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all resize-y"
                       placeholder="Enter the English description..."
                     />
                     <span className="text-xs text-slate-400 font-medium">

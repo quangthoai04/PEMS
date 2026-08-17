@@ -149,7 +149,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
           className={`flex h-full items-center gap-1.5 pl-4 pr-2 bg-slate-50 border-r border-slate-200 transition-colors shrink-0 ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:bg-slate-100'}`}
         >
           <span className="text-base leading-none">{selectedOpt.flag}</span>
-          <span className="text-sm font-semibold text-gray-700">+{selectedOpt.dialCode}</span>
+          <span className="text-sm font-normal text-gray-700">+{selectedOpt.dialCode}</span>
           <ChevronDown
             className={`w-3.5 h-3.5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
           />
@@ -164,7 +164,7 @@ export const PhoneInput: React.FC<PhoneInputProps> = ({ value, onChange, onBlur,
           placeholder="912 345 678"
           disabled={disabled}
           readOnly={disabled}
-          className={`flex-1 px-4 h-full outline-none text-sm font-semibold min-w-0 ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-800'}`}
+          className={`flex-1 px-4 h-full outline-none text-sm font-normal min-w-0 ${disabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white text-slate-800'}`}
         />
       </div>
 

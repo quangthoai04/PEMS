@@ -307,7 +307,7 @@ export function FAQDetail() {
                   <textarea
                     value={editForm.question}
                     onChange={(e) => setEditForm({ ...editForm, question: e.target.value })}
-                    className="w-full text-2xl md:text-3xl font-bold text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
+                    className="w-full text-2xl md:text-3xl font-normal text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
                     rows={2}
                     maxLength={500}
                     placeholder="Nhập câu hỏi..."
@@ -322,7 +322,7 @@ export function FAQDetail() {
                 <textarea
                   value={englishQuestion}
                   onChange={(e) => { setEnglishQuestion(e.target.value); setEnglishQuestionTouched(true); }}
-                  className="w-full text-2xl md:text-3xl font-bold text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
+                  className="w-full text-2xl md:text-3xl font-normal text-white bg-transparent border border-white/30 focus:border-white focus:bg-white/10 p-3 rounded-2xl outline-none transition-all resize-none placeholder:text-white/50"
                   rows={2}
                   maxLength={500}
                   placeholder="Question (English)..."

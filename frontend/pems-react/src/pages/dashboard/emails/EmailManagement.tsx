@@ -198,7 +198,7 @@ export function EmailManagement() {
             <select 
               value={mailboxFilter}
               onChange={(e) => { setMailboxFilter(e.target.value); setPageSent(1); }}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm transition-colors cursor-pointer outline-none"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm transition-colors cursor-pointer outline-none"
             >
               <option value="all">Tất cả email</option>
               <option value="sent">Đã gửi</option>
@@ -208,7 +208,7 @@ export function EmailManagement() {
             <select 
               value={relatedTypeFilter}
               onChange={(e) => { setRelatedTypeFilter(e.target.value); setPageSent(1); }}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm transition-colors cursor-pointer outline-none"
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm transition-colors cursor-pointer outline-none"
             >
               <option value="">Tất cả phân loại</option>
               <option value="VISIT_REQUEST">Tiếp khách</option>

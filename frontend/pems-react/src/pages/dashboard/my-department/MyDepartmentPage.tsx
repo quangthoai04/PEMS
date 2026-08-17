@@ -403,7 +403,7 @@ export function MyDepartmentPage() {
             <select
               value={list.status}
               onChange={(e) => list.setStatus(e.target.value as PersonnelStatusFilter)}
-              className="w-full appearance-none rounded-2xl border-none bg-white/10 py-2.5 pl-4 pr-10 text-sm font-medium text-white shadow-inner outline-none transition focus:bg-white/20 focus:ring-2 focus:ring-white/50"
+              className="w-full appearance-none rounded-2xl border-none bg-white/10 py-2.5 pl-4 pr-10 text-sm font-normal text-white shadow-inner outline-none transition focus:bg-white/20 focus:ring-2 focus:ring-white/50"
             >
               {STATUS_FILTER_OPTIONS.map((option) => (
                 // Native option lists render on the OS surface, so they need their own dark text.
@@ -559,7 +559,7 @@ export function MyDepartmentPage() {
                 <select
                   value={list.pageSize}
                   onChange={(e) => list.setPageSize(Number(e.target.value))}
-                  className="appearance-none rounded-lg border border-gray-200 bg-white px-3 py-1.5 pr-8 font-bold text-gray-700 outline-none focus:ring-2 focus:ring-[#004c91]/20"
+                  className="appearance-none rounded-lg border border-gray-200 bg-white px-3 py-1.5 pr-8 font-normal text-gray-700 outline-none focus:ring-2 focus:ring-[#004c91]/20"
                 >
                   {PAGE_SIZE_OPTIONS.map((size) => (
                     <option key={size} value={size}>

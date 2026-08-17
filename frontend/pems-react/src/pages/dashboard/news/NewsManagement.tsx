@@ -224,7 +224,7 @@ export function NewsManagement() {
         <select
           value={selectedStatus}
           onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); if (notificationNewsId) clearNotificationFilter(); }}
-          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-medium shadow-sm transition-colors cursor-pointer outline-none"
+          className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none hover:border-[#004c91] hover:text-[#004c91] focus:border-[#004c91] text-gray-600 bg-white font-normal shadow-sm transition-colors cursor-pointer outline-none"
         >
           {statusOptions.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>

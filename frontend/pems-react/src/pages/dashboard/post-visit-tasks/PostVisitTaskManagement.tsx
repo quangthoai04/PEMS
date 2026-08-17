@@ -149,11 +149,11 @@ export function PostVisitTaskManagement() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5 group-focus-within:text-[#004c91] transition-colors pointer-events-none" />
             <input type="text" placeholder="Tìm theo nội dung công việc, tên đoàn khách..."
               value={searchInput} onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-medium text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm" />
+              className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-normal text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm" />
           </div>
           <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto pb-2 lg:pb-0">
             <select value={filters.status || 'ALL'} onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]">
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]">
               <option value="ALL">Tất cả trạng thái</option>
               <option value="TODO">Chưa làm</option>
               <option value="DONE">Hoàn thành</option>
@@ -283,7 +283,7 @@ export function PostVisitTaskManagement() {
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <span>Hiển thị</span>
               <select value={pageSize} onChange={(e) => handleFilterChange('pageSize', Number(e.target.value))}
-                className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-medium">
+                className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-normal">
                 <option value={5}>5</option>
                 <option value={10}>10</option>
                 <option value={20}>20</option>

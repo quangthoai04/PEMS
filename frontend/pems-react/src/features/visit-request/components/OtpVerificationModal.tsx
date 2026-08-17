@@ -311,7 +311,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   placeholder="______"
                   className={[
-                    'w-full text-center text-3xl font-bold tracking-[0.5em] px-4 py-4 rounded-xl border-2 outline-none transition-all',
+                    'w-full text-center text-3xl font-normal tracking-[0.5em] px-4 py-4 rounded-xl border-2 outline-none transition-all',
                     'placeholder:text-gray-200 placeholder:tracking-[0.5em]',
                     otpError
                       ? 'border-red-400 bg-red-50 focus:border-red-500 focus:ring-2 focus:ring-red-200'

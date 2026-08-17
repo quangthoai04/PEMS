@@ -1328,14 +1328,14 @@ export function VisitProcess() {
                                       type="datetime-local"
                                       value={plannedStartDraft}
                                       onChange={(e) => setPlannedStartDraft(e.target.value)}
-                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#004c91]"
+                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91]"
                                     />
                                     <span className="text-xs font-bold text-slate-400">→</span>
                                     <input
                                       type="datetime-local"
                                       value={plannedEndDraft}
                                       onChange={(e) => setPlannedEndDraft(e.target.value)}
-                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-semibold text-slate-700 outline-none focus:border-[#004c91]"
+                                      className="h-7 rounded border border-slate-200 px-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91]"
                                     />
                                     <button type="button" onClick={() => setIsEditingPlannedTime(false)}
                                       className="px-1 text-xs font-bold text-emerald-600 hover:underline">Xong</button>
@@ -1460,7 +1460,7 @@ export function VisitProcess() {
                                                     const newStart = timeVal ? `${dateVal}T${timeVal}` : it.startLocal;
                                                     setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: newStart } : p));
                                                   }}
-                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-normal text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
                                                 />
                                               </div>
                                               <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
@@ -1483,7 +1483,7 @@ export function VisitProcess() {
                                                     const newEnd = timeVal ? `${dateVal}T${timeVal}` : it.endLocal;
                                                     setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: newEnd } : p));
                                                   }}
-                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                  className="w-[74px] border-none bg-transparent p-0 text-sm font-normal text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
                                                 />
                                               </div>
                                             </div>
@@ -1522,7 +1522,7 @@ export function VisitProcess() {
                                                             )
                                                           );
                                                         }}
-                                                        className="h-6 min-w-0 border-none bg-transparent p-0 text-xs font-bold text-slate-700 outline-none cursor-pointer disabled:cursor-not-allowed"
+                                                        className="h-6 min-w-0 border-none bg-transparent p-0 text-xs font-normal text-slate-700 outline-none cursor-pointer disabled:cursor-not-allowed"
                                                       />
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
@@ -1544,7 +1544,7 @@ export function VisitProcess() {
                                                             const newStart = timeVal ? `${startDate}T${timeVal}` : it.startLocal;
                                                             setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, startLocal: newStart } : p));
                                                           }}
-                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-normal text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
                                                         />
                                                       </div>
                                                       <span className="text-slate-400 font-bold text-xs shrink-0">→</span>
@@ -1566,7 +1566,7 @@ export function VisitProcess() {
                                                             const newEnd = timeVal ? `${endDate}T${timeVal}` : it.endLocal;
                                                             setAgendaItems((prev) => prev.map((p, i) => i === idx ? { ...p, endLocal: newEnd } : p));
                                                           }}
-                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-semibold text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
+                                                          className="w-[74px] border-none bg-transparent p-0 text-sm font-normal text-slate-800 outline-none cursor-pointer disabled:cursor-not-allowed [&::-webkit-calendar-picker-indicator]:hidden"
                                                         />
                                                       </div>
                                                     </div>
@@ -1718,12 +1718,12 @@ export function VisitProcess() {
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 font-medium pt-2 border-t border-gray-100">
                         <input disabled={!canConfigurePrep || !row.enabled} type="number" min="0" max="31"
-                          className="w-12 px-1.5 py-1.5 text-center text-xs font-bold rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
+                          className="w-12 px-1.5 py-1.5 text-center text-xs font-normal rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
                           value={row.days}
                           onChange={(e) => setReminder(cfg.key, { days: Math.max(0, Math.min(31, parseInt(e.target.value) || 0)) })} />
                         <span>ngày trước, vào lúc</span>
                         <input disabled={!canConfigurePrep || !row.enabled} type="time"
-                          className="px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none bg-white disabled:opacity-50 font-semibold text-gray-800"
+                          className="px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none bg-white disabled:opacity-50 font-normal text-gray-800"
                           value={row.time}
                           onChange={(e) => setReminder(cfg.key, { time: e.target.value })} />
                       </div>
@@ -1776,7 +1776,7 @@ export function VisitProcess() {
                             rows={1}
                             maxLength={5000}
                             placeholder="Ghi chú chuẩn bị nội bộ cho chuyến tiếp khách..."
-                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-medium text-sm leading-relaxed min-h-[48px] resize-none overflow-hidden focus:bg-white focus:border-[#004c91] outline-none transition-all"
+                            className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50/50 text-gray-800 font-normal text-sm leading-relaxed min-h-[48px] resize-none overflow-hidden focus:bg-white focus:border-[#004c91] outline-none transition-all"
                             value={preparationNote}
                             onChange={(e) => {
                               setPreparationNote(e.target.value);

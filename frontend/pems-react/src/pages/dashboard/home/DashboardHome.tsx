@@ -539,7 +539,7 @@ export function DashboardHome() {
                         placeholder="VD: Làm việc với trường Swinburne"
                         value={formTitle}
                         onChange={e => setFormTitle(e.target.value)}
-                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-medium transition-all"
+                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-normal transition-all"
                       />
                     </div>
 
@@ -551,7 +551,7 @@ export function DashboardHome() {
                           placeholder="VD: 09:00 - 11:30"
                           value={formTime}
                           onChange={e => setFormTime(e.target.value)}
-                          className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-medium transition-all"
+                          className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-normal transition-all"
                         />
                       </div>
                       <div>
@@ -559,7 +559,7 @@ export function DashboardHome() {
                         <select
                           value={formCategory}
                           onChange={e => setFormCategory(e.target.value as EventItem["category"])}
-                          className="w-full text-xs px-2 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/50 rounded-xl outline-none text-slate-800 font-bold tracking-wide transition-all cursor-pointer"
+                          className="w-full text-xs px-2 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/50 rounded-xl outline-none text-slate-800 font-normal tracking-wide transition-all cursor-pointer"
                         >
                           <option value="Inbound Guest">Inbound Guest</option>
                           <option value="Meeting">Meeting (Họp)</option>
@@ -577,7 +577,7 @@ export function DashboardHome() {
                         placeholder="Nội dung tóm tắt buổi gặp mặt..."
                         value={formDescription}
                         onChange={e => setFormDescription(e.target.value)}
-                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-medium resize-none transition-all"
+                        className="w-full text-xs px-3.5 py-2.5 border border-slate-200 focus:border-[#f37021] focus:ring-2 focus:ring-orange-100 bg-slate-50/40 rounded-xl outline-none text-slate-800 placeholder-slate-400 font-normal resize-none transition-all"
                       />
                     </div>
                   </div>
@@ -635,7 +635,7 @@ export function DashboardHome() {
                     id="category-filter-select"
                     value={categoryFilter}
                     onChange={e => setCategoryFilter(e.target.value)}
-                    className="text-xs font-bold text-slate-700 bg-transparent pl-1.5 pr-7 py-1 border-none outline-none focus:ring-0 focus:outline-none cursor-pointer tracking-wide appearance-none relative z-10"
+                    className="text-xs font-normal text-slate-700 bg-transparent pl-1.5 pr-7 py-1 border-none outline-none focus:ring-0 focus:outline-none cursor-pointer tracking-wide appearance-none relative z-10"
                   >
                     {categoriesList.map(cat => (
                       <option key={cat} value={cat} className="font-bold text-slate-700 bg-white">

@@ -1590,15 +1590,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             value={assignmentSearch}
             onChange={e => setAssignmentSearch(e.target.value)}
             placeholder="Tìm kiếm nhiệm vụ..."
-            className="flex-1 min-w-[200px] w-full lg:w-auto px-4 py-2 bg-white/10 border border-white/15 rounded-xl text-xs font-semibold text-white placeholder:text-white/70 outline-none focus:bg-white/20 focus:border-white/30 transition-all shadow-inner"
+            className="flex-1 min-w-[200px] w-full lg:w-auto px-4 py-2 bg-white/10 border border-white/15 rounded-xl text-xs font-normal text-white placeholder:text-white/70 outline-none focus:bg-white/20 focus:border-white/30 transition-all shadow-inner"
           />
           <div className="flex flex-wrap items-center gap-2.5 shrink-0 ml-auto">
-            <select value={assignmentItemType} onChange={e => setAssignmentItemType(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-bold text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
+            <select value={assignmentItemType} onChange={e => setAssignmentItemType(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-normal text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
               <option value="ALL">Tất cả loại</option>
               <option value="INVITATION">Thư mời</option>
               <option value="REQUEST">Đơn yêu cầu</option>
             </select>
-            <select value={assignmentStatus} onChange={e => setAssignmentStatus(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-bold text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
+            <select value={assignmentStatus} onChange={e => setAssignmentStatus(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-normal text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
               <option value="ALL">Tất cả trạng thái</option>
               <option value="REQUESTED">Chưa phân công</option>
               <option value="ASSIGNED">Đã giao</option>
@@ -1610,7 +1610,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <option value="EXPIRED">Hết hạn / Không phản hồi</option>
               <option value="CANCELLED">Đã hủy</option>
             </select>
-            <select value={assignmentOwnerScope} onChange={e => setAssignmentOwnerScope(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-bold text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
+            <select value={assignmentOwnerScope} onChange={e => setAssignmentOwnerScope(e.target.value)} className="px-3 py-2 bg-white rounded-xl text-xs font-normal text-slate-800 outline-none shadow-sm cursor-pointer hover:bg-slate-50">
               <option value="DEPARTMENT">Văn phòng</option>
               <option value="ME">Tôi</option>
             </select>
@@ -1621,7 +1621,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   setAssignmentFromDate(value);
                   if (assignmentToDate && value > assignmentToDate) setAssignmentToDate(value);
                 }}
-                className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
+                className="bg-transparent font-normal text-slate-800 outline-none cursor-pointer" />
               <span className="text-slate-400 font-bold">-</span>
               <input type="date" value={assignmentToDate} min={assignmentFromDate || undefined}
                 onChange={e => {
@@ -1629,7 +1629,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   setAssignmentToDate(value);
                   if (assignmentFromDate && value < assignmentFromDate) setAssignmentFromDate(value);
                 }}
-                className="bg-transparent font-bold text-slate-800 outline-none cursor-pointer" />
+                className="bg-transparent font-normal text-slate-800 outline-none cursor-pointer" />
             </div>
             <button
               type="button"
@@ -1776,7 +1776,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 setAssignmentPageSize(Number(e.target.value));
                 setAssignmentPage(1);
               }}
-              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-bold text-slate-700 outline-none hover:bg-slate-100"
+              className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-normal text-slate-700 outline-none hover:bg-slate-100"
             >
               <option value={5}>5</option>
               <option value={10}>10</option>
@@ -2932,7 +2932,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     disabled={!personalEventModal.isEditing || personalEventModal.submitting}
                     value={personalEventModal.title}
                     onChange={(e) => setPersonalEventModal((s) => ({ ...s, title: e.target.value }))}
-                    className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700 font-bold"
+                    className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700 font-normal"
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -3693,7 +3693,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 step={1}
                                 value={proposalQuantity}
                                 onChange={(e) => setProposalQuantity(e.target.value)}
-                                className={`w-full text-sm px-3 py-2 border rounded-lg outline-none bg-white font-bold text-slate-800 ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-orange-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200'}`}
+                                className={`w-full text-sm px-3 py-2 border rounded-lg outline-none bg-white font-normal text-slate-800 ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-orange-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200'}`}
                               />
                               {quantityTooHigh && (
                                 <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({activeEventDetail.quantity}).</p>
@@ -3707,14 +3707,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   type={isMultiDay ? 'datetime-local' : 'time'}
                                   value={proposalStartTime}
                                   onChange={(e) => setProposalStartTime(e.target.value)}
-                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-normal text-slate-800"
                                 />
                                 <span className="text-[#de703b] font-black shrink-0">-</span>
                                 <input
                                   type={isMultiDay ? 'datetime-local' : 'time'}
                                   value={proposalEndTime}
                                   onChange={(e) => setProposalEndTime(e.target.value)}
-                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-bold text-slate-800"
+                                  className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none bg-white font-normal text-slate-800"
                                 />
                               </div>
                             </div>
@@ -3729,7 +3729,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   }
                                 }}
                                 rows={1}
-                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-normal text-slate-800 placeholder:font-normal placeholder:text-gray-400"
                                 placeholder="Nhập nội dung công việc đề xuất (nếu có thay đổi)..."
                                 value={proposalContent}
                                 onChange={(e) => {
@@ -3750,7 +3750,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   }
                                 }}
                                 rows={1}
-                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-medium text-slate-800 placeholder:font-normal placeholder:text-gray-400"
+                                className="w-full text-sm px-3 py-2 border border-orange-200 rounded-lg focus:border-orange-500 focus:ring-1 focus:ring-orange-200 outline-none resize-none overflow-hidden bg-white font-normal text-slate-800 placeholder:font-normal placeholder:text-gray-400"
                                 placeholder="Lý do đề xuất thay đổi..."
                                 value={proposalNote}
                                 onChange={(e) => {

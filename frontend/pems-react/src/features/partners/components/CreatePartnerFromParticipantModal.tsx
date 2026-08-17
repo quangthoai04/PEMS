@@ -656,7 +656,7 @@ export function CreatePartnerFromParticipantModal({
                 }`}
               />
               {fieldErrors.name && (
-                <p id="cpfp-name-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{fieldErrors.name}</p>
+                <p id="cpfp-name-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{fieldErrors.name}</p>
               )}
             </div>
 
@@ -708,7 +708,7 @@ export function CreatePartnerFromParticipantModal({
                   }`}
                 />
                 {fieldErrors.websiteUrl && (
-                  <p id="cpfp-website-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{fieldErrors.websiteUrl}</p>
+                  <p id="cpfp-website-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{fieldErrors.websiteUrl}</p>
                 )}
               </div>
             </div>

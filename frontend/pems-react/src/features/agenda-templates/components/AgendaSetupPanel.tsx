@@ -233,7 +233,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
               value={selectedId == null ? '' : String(selectedId)}
               onChange={(e) => setSelectedId(e.target.value === '' ? null : Number(e.target.value))}
               disabled={disabled}
-              className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 disabled:opacity-60"
+              className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 disabled:opacity-60"
             >
               {setup.selectableTemplates.map((t) => (
                 <option key={t.agendaTemplateId} value={t.agendaTemplateId}>

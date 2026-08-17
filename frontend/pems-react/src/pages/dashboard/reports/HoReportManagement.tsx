@@ -550,7 +550,7 @@ export function HoReportManagement() {
                   <select
                     value={partnerPageSize}
                     onChange={(e) => setPartnerPageSize(Number(e.target.value))}
-                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-700 outline-none focus:border-[#004c91] cursor-pointer"
+                    className="border border-slate-200 rounded-lg px-2 py-1 text-xs font-normal text-slate-700 outline-none focus:border-[#004c91] cursor-pointer"
                   >
                     {[5, 10, 20, 50].map((n) => (
                       <option key={n} value={n}>{n}</option>

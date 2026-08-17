@@ -172,7 +172,7 @@ export function LocationManagementStaffLeader() {
               placeholder="Tìm kiếm theo khu vực, vị trí..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-medium bg-white/10 text-white placeholder:text-white/60"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-normal bg-white/10 text-white placeholder:text-white/60"
             />
           </div>
 
@@ -198,7 +198,7 @@ export function LocationManagementStaffLeader() {
                   setStatus(e.target.value as GalleryLocationStatus | '');
                   setPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Trạng thái</option>
                 <option value="ACTIVE" className="text-slate-800">Hoạt động</option>
@@ -316,7 +316,7 @@ export function LocationManagementStaffLeader() {
                 <select
                   value={pageSize}
                   onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>

@@ -379,7 +379,7 @@ export default function EditPendingCampusV2Page() {
         )}
 
         {submitError && (
-          <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+          <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-normal text-red-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
               <p data-testid="pending-campus-edit-error">{submitError}</p>
@@ -392,7 +392,7 @@ export default function EditPendingCampusV2Page() {
           </div>
         )}
         {errors.campusVisits?.[0]?.startDatetime?.message && (
-          <p role="alert" data-testid="pending-campus-leadtime-error" className="text-sm font-semibold text-red-700">
+          <p role="alert" data-testid="pending-campus-leadtime-error" className="text-sm font-normal text-red-700">
             {errors.campusVisits[0]?.startDatetime?.message}
           </p>
         )}

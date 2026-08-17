@@ -98,7 +98,7 @@ export function EditEmail() {
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
                 placeholder="Nhập tên mẫu email..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-medium"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-normal"
               />
             </div>
 
@@ -147,7 +147,7 @@ export function EditEmail() {
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
                 placeholder="Nhập tiêu đề email..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-medium"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-normal"
               />
             </div>
             
@@ -159,7 +159,7 @@ export function EditEmail() {
                 <select
                   value={campus}
                   onChange={(e) => setCampus(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-medium bg-white"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-normal bg-white"
                 >
                   <option value="" disabled>Chọn cơ sở</option>
                   <option value="Hà Nội">Hà Nội</option>
@@ -180,7 +180,7 @@ export function EditEmail() {
                 value={desc}
                 onChange={(e) => setDesc(e.target.value)}
                 placeholder="Nói ngắn gọn về mục đích sử dụng..."
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-medium"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-700 font-normal"
               />
             </div>
           </div>

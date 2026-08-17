@@ -793,7 +793,7 @@ export function PartnerDetail() {
                   <input
                     type="file"
                     onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
-                    className="text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-[#e6eff7] file:text-[#004c91] file:text-sm file:font-bold file:cursor-pointer"
+                    className="text-sm text-gray-600 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-[#e6eff7] file:text-[#004c91] file:text-sm file:font-semibold file:cursor-pointer"
                   />
                 </div>
                 <button
@@ -1163,7 +1163,7 @@ export function PartnerDetail() {
                     aria-describedby={contactFieldErrors.fullName ? 'pc-fullName-error' : undefined}
                   />
                   {contactFieldErrors.fullName && (
-                    <p id="pc-fullName-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.fullName}</p>
+                    <p id="pc-fullName-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{contactFieldErrors.fullName}</p>
                   )}
                 </div>
                 <div data-field-error={contactFieldErrors.email ? 'true' : undefined}>
@@ -1181,7 +1181,7 @@ export function PartnerDetail() {
                     aria-describedby={contactFieldErrors.email ? 'pc-email-error' : undefined}
                   />
                   {contactFieldErrors.email && (
-                    <p id="pc-email-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.email}</p>
+                    <p id="pc-email-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{contactFieldErrors.email}</p>
                   )}
                 </div>
                 <div data-field-error={contactFieldErrors.phone ? 'true' : undefined}>
@@ -1197,7 +1197,7 @@ export function PartnerDetail() {
                     aria-describedby={contactFieldErrors.phone ? 'pc-phone-error' : undefined}
                   />
                   {contactFieldErrors.phone && (
-                    <p id="pc-phone-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.phone}</p>
+                    <p id="pc-phone-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{contactFieldErrors.phone}</p>
                   )}
                 </div>
                 <div data-field-error={contactFieldErrors.jobTitle ? 'true' : undefined}>
@@ -1213,7 +1213,7 @@ export function PartnerDetail() {
                     aria-describedby={contactFieldErrors.jobTitle ? 'pc-jobTitle-error' : undefined}
                   />
                   {contactFieldErrors.jobTitle && (
-                    <p id="pc-jobTitle-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.jobTitle}</p>
+                    <p id="pc-jobTitle-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{contactFieldErrors.jobTitle}</p>
                   )}
                 </div>
                 <div data-field-error={contactFieldErrors.departmentName ? 'true' : undefined}>
@@ -1229,7 +1229,7 @@ export function PartnerDetail() {
                     aria-describedby={contactFieldErrors.departmentName ? 'pc-department-error' : undefined}
                   />
                   {contactFieldErrors.departmentName && (
-                    <p id="pc-department-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">{contactFieldErrors.departmentName}</p>
+                    <p id="pc-department-error" role="alert" className="mt-1 text-xs font-normal text-red-600">{contactFieldErrors.departmentName}</p>
                   )}
                 </div>
                 <div className="md:col-span-2">

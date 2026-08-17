@@ -1851,7 +1851,7 @@ export function AccountManagement() {
                 value={campusFilter}
                 aria-label="Cơ sở"
                 onChange={(e) => setCampusFilter(e.target.value)}
-                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
               >
                 <option className="text-gray-900" value="">Toàn quốc</option>
                 {campusOptions.map(c => <option className="text-gray-900" key={c.campusId} value={c.campusName}>{c.campusName}</option>)}
@@ -1875,7 +1875,7 @@ export function AccountManagement() {
               // control.
               onChange={(e) => setAccountTypeFilter(e.target.value)}
               aria-label="Loại tài khoản"
-              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               {!isStaffLeader && <option className="text-gray-900" value="ALL">Tất cả tài khoản</option>}
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
@@ -1896,7 +1896,7 @@ export function AccountManagement() {
               // Sets the role and nothing else — the account-type filter beside it keeps whatever
               // the operator chose. See setRoleFilter.
               onChange={(e) => setRoleFilter(e.target.value)}
-              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               <option className="text-gray-900" value="">Tất cả Vai trò</option>
               {ROLES.filter(r => {
@@ -1931,7 +1931,7 @@ export function AccountManagement() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
               >
                 <option className="text-gray-900" value="">Tất cả trạng thái</option>
                 <option className="text-gray-900" value="Active">Hoạt động</option>
@@ -1947,7 +1947,7 @@ export function AccountManagement() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+                className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[140px] bg-white/10 text-white shadow-inner appearance-none custom-select"
               >
                 <option className="text-gray-900" value="">Tất cả trạng thái</option>
                 <option className="text-gray-900" value="Pending Approved">Chờ duyệt</option>
@@ -2190,7 +2190,7 @@ export function AccountManagement() {
                       setPageSize(Number(e.target.value));
                       setCurrentPage(1);
                     }}
-                    className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                    className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
                   >
                     <option value={5}>5</option>
                     <option value={10}>10</option>
@@ -2453,7 +2453,7 @@ export function AccountManagement() {
                       : [{ value: 'ADMIN', label: 'ADMIN' }, { value: 'HO', label: 'HO (Head Office)' }, { value: 'STAFF', label: 'STAFF' }, { value: 'STUDENT', label: 'STUDENT' }, { value: 'VISITOR', label: 'VISITOR' }];
 
                   const selectClass = (disabled = false) =>
-                    `px-3 py-2 pr-8 border rounded-lg text-sm font-medium focus:outline-none transition-all appearance-none w-full ${
+                    `px-3 py-2 pr-8 border rounded-lg text-sm font-normal focus:outline-none transition-all appearance-none w-full ${
                       disabled ? `${LOCKED_FIELD} cursor-not-allowed` : `${EDITABLE_FIELD} text-gray-900`
                     }`;
 
@@ -2466,7 +2466,7 @@ export function AccountManagement() {
 
                   // Red border while the field has a validation error (identity spec §7.4).
                   const identityInputClass = (disabled: boolean, hasError = false) =>
-                    `px-3 py-2 border rounded-lg text-sm font-medium focus:outline-none transition-all w-full ${
+                    `px-3 py-2 border rounded-lg text-sm font-normal focus:outline-none transition-all w-full ${
                       disabled
                         ? `${LOCKED_FIELD} cursor-not-allowed`
                         : hasError
@@ -2657,7 +2657,7 @@ export function AccountManagement() {
                             placeholder="Nhập mã số sinh viên"
                             // Same editable chrome as every other open field; the brand-bold value is
                             // what marks it as the key identifier, not a different background.
-                            className={`px-3 py-2 border rounded-lg text-sm font-black text-[#004c91] focus:outline-none transition-all w-full ${EDITABLE_FIELD}`}
+                            className={`px-3 py-2 border rounded-lg text-sm font-normal text-[#004c91] focus:outline-none transition-all w-full ${EDITABLE_FIELD}`}
                           />
                         </div>
                       )}
@@ -3539,7 +3539,7 @@ export function AccountManagement() {
                     value={lockReasonPreset}
                     onChange={(e) => { setLockReasonPreset(e.target.value); setLockError(null); }}
                     disabled={lockSaving}
-                    className="w-full appearance-none px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all disabled:opacity-60"
+                    className="w-full appearance-none px-3 py-2 pr-8 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all disabled:opacity-60"
                   >
                     <option value="">-- Chọn lý do --</option>
                     {(isUnlockAction ? SECURITY_UNLOCK_REASONS : SECURITY_LOCK_REASONS).map((r) => (
@@ -3557,13 +3557,13 @@ export function AccountManagement() {
                     disabled={lockSaving}
                     aria-label="Mô tả lý do"
                     placeholder="Mô tả lý do..."
-                    className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all resize-none disabled:opacity-60"
+                    className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-normal text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#004c91] bg-gray-50 focus:bg-white transition-all resize-none disabled:opacity-60"
                   />
                 )}
               </div>
 
               {lockError && (
-                <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
                   {lockError}
                 </div>
               )}

@@ -246,7 +246,7 @@ export function LocationCreateModal({
                     value={areaId === '' ? '' : String(areaId)}
                     onChange={(e) => setAreaId(e.target.value === '' ? '' : Number(e.target.value))}
                     disabled={areasLoading || activeAreas.length === 0}
-                    className="w-full px-4 py-2.5 pr-10 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400"
+                    className="w-full px-4 py-2.5 pr-10 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal appearance-none bg-white disabled:bg-slate-50 disabled:text-slate-400"
                   >
                     {activeAreas.length === 0 ? (
                       <option value="">Chưa có khu vực hoạt động</option>

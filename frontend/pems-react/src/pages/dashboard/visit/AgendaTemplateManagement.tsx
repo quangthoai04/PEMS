@@ -341,7 +341,7 @@ export function AgendaTemplateManagement() {
             <select
               value={filterVisitType}
               onChange={(e) => setFilterVisitType(e.target.value as VisitType | '')}
-              className="px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm"
+              className="px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm"
             >
               <option value="">Tất cả loại hình</option>
               {VISIT_TYPES.map((vt) => <option key={vt} value={vt}>{VISIT_TYPE_LABELS[vt]}</option>)}
@@ -534,14 +534,14 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1.5">Loại hình visit <span className="text-red-500">*</span></label>
               <select value={editor.visitType} onChange={(e) => onPatch({ visitType: e.target.value as VisitType })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm">
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm">
                 {VISIT_TYPES.map((vt) => <option key={vt} value={vt}>{VISIT_TYPE_LABELS[vt]}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1.5">Phạm vi</label>
               <select value={editor.campusId == null ? '' : String(editor.campusId)} onChange={(e) => onPatch({ campusId: e.target.value === '' ? null : Number(e.target.value) })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm">
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm">
                 <option value="">Toàn hệ thống (GLOBAL)</option>
                 {campuses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -552,12 +552,12 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-gray-700 mb-1.5">Tên mẫu <span className="text-red-500">*</span></label>
               <input type="text" value={editor.name} onChange={(e) => onPatch({ name: e.target.value })} maxLength={150}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm" />
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1.5">Trạng thái</label>
               <select value={editor.status} onChange={(e) => onPatch({ status: e.target.value as AgendaTemplateStatus })}
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm">
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm">
                 <option value="ACTIVE">ACTIVE</option>
                 <option value="INACTIVE">INACTIVE</option>
               </select>
@@ -567,7 +567,7 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1.5">Mô tả</label>
             <textarea value={editor.description} onChange={(e) => onPatch({ description: e.target.value })}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-medium text-gray-900 bg-white shadow-sm min-h-[72px]" />
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-300 focus:border-[#004c91] outline-none font-normal text-gray-900 bg-white shadow-sm min-h-[72px]" />
           </div>
 
           <div className="pt-4 border-t border-gray-100">
@@ -588,19 +588,19 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                       <input type="text" inputMode="numeric" value={item.startOffsetMinutes}
                         onChange={(e) => onPatchItem(item.uid, { startOffsetMinutes: sanitizeDigits(e.target.value) })}
                         onBlur={(e) => onPatchItem(item.uid, { startOffsetMinutes: normalizeNonNegativeInteger(e.target.value) })}
-                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
                       <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Thời lượng (phút)</label>
                       <input type="text" inputMode="numeric" value={item.durationMinutes}
                         onChange={(e) => onPatchItem(item.uid, { durationMinutes: sanitizeDigits(e.target.value) })}
                         onBlur={(e) => onPatchItem(item.uid, { durationMinutes: normalizeNonNegativeInteger(e.target.value) })}
-                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
                       <label className="mb-1.5 block min-h-[32px] text-xs font-bold leading-tight text-slate-500">Tiêu đề <span className="text-red-500">*</span></label>
                       <input type="text" value={item.title} onChange={(e) => onPatchItem(item.uid, { title: e.target.value })} maxLength={255}
-                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div className="flex justify-end lg:block">
                       <button type="button" onClick={() => onRemoveItem(item.uid)} className="lg:mt-[38px] inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50">
@@ -612,20 +612,20 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                   <div className="mt-4">
                     <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Mô tả</label>
                     <input type="text" value={item.description} onChange={(e) => onPatchItem(item.uid, { description: e.target.value })}
-                      className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                      className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                   </div>
 
                   <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Địa điểm</label>
                       <input type="text" value={item.location} onChange={(e) => onPatchItem(item.uid, { location: e.target.value })} maxLength={255}
-                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                     </div>
                     <div>
                       <label className="mb-1.5 block min-h-[16px] text-xs font-bold leading-tight text-slate-500">Vai trò phụ trách gợi ý</label>
                       <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
                         placeholder="VD: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ"
-                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
+                        className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
                       <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
                     </div>
                   </div>

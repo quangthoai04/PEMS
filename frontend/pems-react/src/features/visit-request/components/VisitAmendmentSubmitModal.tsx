@@ -443,7 +443,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
   /** The message for one top-level field, rendered directly under the input it belongs to. */
   const fieldError = (key: keyof FieldErrors) =>
     fieldErrors[key] ? (
-      <p role="alert" data-testid={`amendment-error-${key}`} className="mt-1 text-xs font-semibold text-red-600">
+      <p role="alert" data-testid={`amendment-error-${key}`} className="mt-1 text-xs font-normal text-red-600">
         {fieldErrors[key]}
       </p>
     ) : null;
@@ -451,7 +451,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
   /** Same, for one FIELD of one MEMBER ROW — `data-field-error` is what `focusFirstInvalidField` scans for. */
   const memberFieldError = (kind: 'visitors' | 'support', rowKey: string, field: MemberFieldKey, msg: string | undefined) =>
     msg ? (
-      <p role="alert" data-testid={`amendment-${kind}-${field}-error-${rowKey}`} className="mt-1 text-xs font-semibold text-red-600">
+      <p role="alert" data-testid={`amendment-${kind}-${field}-error-${rowKey}`} className="mt-1 text-xs font-normal text-red-600">
         {msg}
       </p>
     ) : null;

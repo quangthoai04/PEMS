@@ -48,14 +48,14 @@ export function FeedbackFilterBar({
           placeholder="Tìm theo tên đoàn, người đánh giá, đối tượng được đánh giá..."
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium"
+          className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal"
         />
       </div>
 
       <select
         value={ratingLevel}
         onChange={(e) => onRatingLevelChange(e.target.value)}
-        className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
       >
         <option value="">Tất cả mức độ</option>
         <option value="LOW">Cảnh báo 1-2 sao</option>
@@ -66,7 +66,7 @@ export function FeedbackFilterBar({
       <select
         value={timeRange}
         onChange={(e) => onTimeRangeChange(e.target.value as TimeRangeFilter)}
-        className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+        className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
       >
         <option value="">Tất cả thời gian</option>
         <option value="7d">7 ngày gần nhất</option>
@@ -78,7 +78,7 @@ export function FeedbackFilterBar({
         <select
           value={campusFilter || ''}
           onChange={(e) => onCampusFilterChange?.(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+          className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
         >
           <option value="">Tất cả cơ sở</option>
           {campusOptions.map((c) => (
@@ -93,7 +93,7 @@ export function FeedbackFilterBar({
             type="date"
             value={fromDate}
             onChange={(e) => onFromDateChange(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
             title="Từ ngày"
           />
           <span className="text-slate-400">-</span>
@@ -101,7 +101,7 @@ export function FeedbackFilterBar({
             type="date"
             value={toDate}
             onChange={(e) => onToDateChange(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-medium outline-none"
+            className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
             title="Đến ngày"
           />
           {dateError && <span className="text-red-500 text-xs absolute -bottom-5 left-0 whitespace-nowrap font-medium">{dateError}</span>}

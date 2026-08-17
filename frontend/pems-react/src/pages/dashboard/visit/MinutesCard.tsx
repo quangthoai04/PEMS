@@ -641,7 +641,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                         onChange={(e) => { setDraftTitle(e.target.value); setTitleError(null); }}
                         readOnly={!editing}
                         placeholder="Nhập tên biên bản..."
-                        className={`px-4 py-2.5 rounded-xl font-bold border outline-none w-full transition-all ${
+                        className={`px-4 py-2.5 rounded-xl font-normal border outline-none w-full transition-all ${
                           editing
                             ? (titleError
                                 ? 'bg-red-50 text-red-900 border-red-300 focus:ring-2 focus:ring-red-200 focus:border-red-500'
@@ -735,7 +735,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         value={p.fullNameSnapshot}
                                         onChange={(e) => updateParticipant(p._key, { fullNameSnapshot: e.target.value })}
                                         placeholder="Nhập họ tên..."
-                                        className="w-full text-sm font-semibold rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
+                                        className="w-full text-sm font-normal rounded-lg border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91]"
                                       />
                                     ) : (
                                       <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
@@ -971,7 +971,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     <div className="flex-1">
                                       <input value={a.title} onChange={(e) => { updateActionItem(a._key, { title: e.target.value }); clearActionError(a._key); }}
                                         placeholder="Nội dung công việc..."
-                                        className={`w-full bg-transparent text-sm font-medium rounded-lg border px-3 py-2 outline-none ${actionErrors[a._key] ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'} ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
+                                        className={`w-full bg-transparent text-sm font-normal rounded-lg border px-3 py-2 outline-none ${actionErrors[a._key] ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'} ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
                                       {actionErrors[a._key] && (
                                         <p className="mt-1 text-xs font-semibold text-red-600">{actionErrors[a._key]}</p>
                                       )}
@@ -984,7 +984,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                     {editing ? (
                                       <select value={a.assignedToUserId ?? ''}
                                         onChange={(e) => updateActionItem(a._key, { assignedToUserId: e.target.value ? Number(e.target.value) : null })}
-                                        className="text-xs font-bold rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white max-w-[190px]">
+                                        className="text-xs font-normal rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white max-w-[190px]">
                                         <option value="">Chưa chọn người phụ trách</option>
                                         {responsibleCandidates.map((c) => (
                                           <option key={c.userId} value={c.userId}>{c.fullName} — {c.displayRole}</option>
@@ -1006,7 +1006,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                       {editing ? (
                                         <input type="datetime-local" value={a.dueDate} min={vietnamNowDateTimeLocal()}
                                           onChange={(e) => { updateActionItem(a._key, { dueDate: e.target.value }); clearActionDateError(a._key); }}
-                                          className={`text-xs font-bold px-2 py-1.5 rounded-md border outline-none ${actionDateErrors[a._key] ? 'text-red-700 bg-red-50 border-red-400 focus:border-red-500' : 'text-orange-700 bg-orange-50 border-orange-200 hover:border-orange-300'}`} />
+                                          className={`text-xs font-normal px-2 py-1.5 rounded-md border outline-none ${actionDateErrors[a._key] ? 'text-red-700 bg-red-50 border-red-400 focus:border-red-500' : 'text-orange-700 bg-orange-50 border-orange-200 hover:border-orange-300'}`} />
                                       ) : (
                                         <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
                                       )}
@@ -1017,7 +1017,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                   </div>
                                   {editing ? (
                                     <select value={a.status} onChange={(e) => updateActionItem(a._key, { status: e.target.value })}
-                                      className="text-xs font-bold rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white">
+                                      className="text-xs font-normal rounded-md border border-gray-300 px-2 py-1.5 outline-none focus:border-[#004c91] bg-white">
                                       {ACTION_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                     </select>
                                   ) : (
@@ -1191,7 +1191,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                               updateActionItem(previewEmailItem._key, { title: val });
                             }}
                             placeholder="Nhập/chỉnh sửa nội dung công việc..."
-                            className="w-full font-bold text-xs text-[#004c91] p-2 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white shadow-xs"
+                            className="w-full font-normal text-xs text-[#004c91] p-2 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white shadow-xs"
                           />
                         ) : (
                           <span className="font-bold text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>

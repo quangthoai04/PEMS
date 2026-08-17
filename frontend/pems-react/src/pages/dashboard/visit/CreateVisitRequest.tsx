@@ -182,7 +182,7 @@ export function CreateVisitRequest() {
                   <select
                     value={visitMode}
                     onChange={(e) => setVisitMode(e.target.value as 'single' | 'multiple')}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white appearance-none"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-normal bg-white appearance-none"
                   >
                     <option value="single">Chỉ một cơ sở</option>
                     <option value="multiple">Liên cơ sở</option>
@@ -217,7 +217,7 @@ export function CreateVisitRequest() {
                             newVisits[index].campus = e.target.value;
                             setVisits(newVisits);
                           }}
-                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm appearance-none pr-8"
+                          className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-normal bg-white shadow-sm appearance-none pr-8"
                         >
                           {campusOptions.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
@@ -232,7 +232,7 @@ export function CreateVisitRequest() {
                           const newVisits = [...visits];
                           newVisits[index].date = e.target.value;
                           setVisits(newVisits);
-                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
+                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-normal bg-white shadow-sm" required />
                         <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                       </div>
                     </div>
@@ -242,7 +242,7 @@ export function CreateVisitRequest() {
                       <div className="relative">
                         <input type="time" value={visit.startTime} onChange={(e) => {
                           const newV = [...visits]; newV[index].startTime = e.target.value; setVisits(newV);
-                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
+                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-normal bg-white shadow-sm" required />
                         <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                       </div>
                     </div>
@@ -252,7 +252,7 @@ export function CreateVisitRequest() {
                       <div className="relative">
                         <input type="time" value={visit.endTime} onChange={(e) => {
                           const newV = [...visits]; newV[index].endTime = e.target.value; setVisits(newV);
-                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-medium bg-white shadow-sm" required />
+                        }} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 focus:border-[#f37021] focus:ring-1 focus:ring-[#f37021] outline-none text-sm font-normal bg-white shadow-sm" required />
                         <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                       </div>
                     </div>
@@ -354,7 +354,7 @@ export function CreateVisitRequest() {
                               newAgenda[index].startTime = e.target.value;
                               setAgendaItems(newAgenda);
                             }}
-                            className="w-[124px] px-2 py-1.5 focus:text-[#004c91] outline-none text-sm bg-transparent font-medium" 
+                            className="w-[124px] px-2 py-1.5 focus:text-[#004c91] outline-none text-sm bg-transparent font-normal"
                           />
                         </div>
                       </div>
@@ -370,7 +370,7 @@ export function CreateVisitRequest() {
                               newAgenda[index].endTime = e.target.value;
                               setAgendaItems(newAgenda);
                             }}
-                            className="w-[124px] px-2 py-1.5 focus:text-[#004c91] outline-none text-sm bg-transparent font-medium" 
+                            className="w-[124px] px-2 py-1.5 focus:text-[#004c91] outline-none text-sm bg-transparent font-normal"
                           />
                         </div>
                       </div>
@@ -759,7 +759,7 @@ export function CreateVisitRequest() {
                   <p className="text-xs text-gray-500 mb-3 ml-10">Thông báo trên hệ thống</p>
                   <div className="flex flex-wrap items-center gap-2 ml-10">
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
+                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-normal outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
                     </div>
                     <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
                     <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
@@ -777,7 +777,7 @@ export function CreateVisitRequest() {
                   <p className="text-xs text-gray-500 mb-3 ml-10">Gửi email nhắc nhở host</p>
                   <div className="flex flex-wrap items-center gap-2 ml-10">
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
-                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-bold outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
+                      <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-normal outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
                     </div>
                     <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
                     <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />

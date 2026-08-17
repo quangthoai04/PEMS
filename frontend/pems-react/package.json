@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "test:unit": "vitest run --config vitest.config.ts",
     "audit:dark": "node scripts/audit-dark-mode.mjs",
+    "audit:form-typography": "node scripts/audit-form-typography.mjs",
     "test:e2e": "playwright test",
     "test:e2e:realstack": "node scripts/run-realstack-e2e.mjs"
   },

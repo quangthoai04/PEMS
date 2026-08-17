@@ -703,12 +703,12 @@ export function DepartmentDetailDashboard() {
 
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">Phòng ban</label>
-                <input type="text" disabled value="Phòng ban IT" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-medium cursor-not-allowed" />
+                <input type="text" disabled value="Phòng ban IT" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-normal cursor-not-allowed" />
               </div>
 
               <div>
                 <label className="block text-sm font-bold text-[#004c91] mb-1.5">Chức vụ</label>
-                <input type="text" disabled value="Nhân viên" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-medium cursor-not-allowed" />
+                <input type="text" disabled value="Nhân viên" className="w-full px-4 py-2 bg-gray-100 border border-gray-200 rounded-xl text-gray-500 text-sm font-normal cursor-not-allowed" />
               </div>
             </div>
 
@@ -820,7 +820,7 @@ export function DepartmentDetailDashboard() {
                       type="text"
                       value={editingMemberData.name}
                       onChange={(e) => setEditingMemberData({ ...editingMemberData, name: e.target.value })}
-                      className="text-xl md:text-2xl font-black text-[#004c91] tracking-tight bg-white border border-gray-300 focus:border-[#004c91] rounded-xl px-3 py-1 w-full outline-none text-center"
+                      className="text-xl md:text-2xl font-normal text-[#004c91] tracking-tight bg-white border border-gray-300 focus:border-[#004c91] rounded-xl px-3 py-1 w-full outline-none text-center"
                     />
                   ) : (
                     <h3 className="text-xl md:text-2xl font-black text-[#004c91] tracking-tight">{selectedMember.name}</h3>
@@ -847,7 +847,7 @@ export function DepartmentDetailDashboard() {
                         type="email"
                         value={editingMemberData.email}
                         onChange={(e) => setEditingMemberData({ ...editingMemberData, email: e.target.value })}
-                        className="text-[15px] font-bold text-gray-800 bg-white border border-gray-300 focus:border-[#004c91] rounded-lg px-2 py-1 w-full outline-none"
+                        className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-[#004c91] rounded-lg px-2 py-1 w-full outline-none"
                       />
                     ) : (
                       <p className="text-[15px] font-bold text-gray-800 truncate">{selectedMember.email}</p>
@@ -866,7 +866,7 @@ export function DepartmentDetailDashboard() {
                         type="text"
                         value={editingMemberData.phone}
                         onChange={(e) => setEditingMemberData({ ...editingMemberData, phone: e.target.value })}
-                        className="text-[15px] font-bold text-gray-800 bg-white border border-gray-300 focus:border-[#f37021] rounded-lg px-2 py-1 w-full outline-none"
+                        className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-[#f37021] rounded-lg px-2 py-1 w-full outline-none"
                       />
                     ) : (
                       <p className="text-[15px] font-bold text-gray-800">{selectedMember.phone}</p>
@@ -881,7 +881,7 @@ export function DepartmentDetailDashboard() {
                       <select
                         value={editingMemberData.gender}
                         onChange={(e) => setEditingMemberData({ ...editingMemberData, gender: e.target.value })}
-                        className="text-[15px] font-bold text-gray-800 bg-white border border-gray-300 focus:border-gray-400 rounded-lg px-2 py-1 outline-none w-full"
+                        className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-gray-400 rounded-lg px-2 py-1 outline-none w-full"
                       >
                         <option value="Nam">Nam</option>
                         <option value="Nữ">Nữ</option>
@@ -899,7 +899,7 @@ export function DepartmentDetailDashboard() {
                         type="text"
                         disabled
                         value={`Campus ${selectedMember.campus}`}
-                        className="text-[15px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
+                        className="text-[15px] font-normal text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
                       />
                     ) : (
                       <p className="text-[15px] font-bold text-gray-800">Campus {selectedMember.campus}</p>
@@ -914,7 +914,7 @@ export function DepartmentDetailDashboard() {
                       type="text"
                       disabled
                       value={departmentInfo.name}
-                      className="text-[15px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
+                      className="text-[15px] font-normal text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
                     />
                   ) : (
                     <p className="text-[15px] font-bold text-gray-800">{departmentInfo.name}</p>

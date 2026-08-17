@@ -220,7 +220,7 @@ export function EmailTableDialog({ initial, variables, onCancel, onApply }: Emai
                           rows={2}
                           aria-label={`Ô hàng ${r + 1} cột ${c + 1}`}
                           className={`w-full min-w-[7rem] resize-y rounded-md border border-transparent px-1.5 py-1 text-xs outline-none focus:border-[#004c91]
-                            ${model.headerRow && r === 0 ? 'bg-gray-50 font-semibold' : ''}`}
+                            ${model.headerRow && r === 0 ? 'bg-gray-50 font-normal' : ''}`}
                           value={cell.text}
                           onChange={(e) => { setCell(r, c, e.target.value); remember(r, c)(e); }}
                           onFocus={remember(r, c)}
