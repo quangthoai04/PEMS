@@ -1142,7 +1142,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 </span>
                 <select
                   id={`copy-src-${clientKey}`}
-                  className="h-8 rounded-lg border border-indigo-200 bg-white px-2 py-0 pl-2 pr-7 text-xs font-semibold text-indigo-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="h-8 rounded-lg border border-indigo-200 bg-white px-2 py-0 pl-2 pr-7 text-xs font-normal text-indigo-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   value={selectedSource}
                   onChange={e => {
                     const val = e.target.value;

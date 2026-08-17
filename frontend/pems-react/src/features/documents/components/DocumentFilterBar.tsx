@@ -52,14 +52,14 @@ export function DocumentFilterBar({
           placeholder="Tìm kiếm tài liệu, filename..."
           value={searchQuery}
           onChange={(e) => onSearchQueryChange(e.target.value)}
-          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white text-sm font-medium text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400"
+          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg bg-white text-sm font-normal text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400"
         />
       </div>
 
       <select
         value={ownerTypeFilter}
         onChange={(e) => onOwnerTypeFilterChange(e.target.value as DocumentOwnerType | 'All')}
-        className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
+        className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white"
       >
         <option value="All">Tất cả loại</option>
         {OWNER_TYPE_OPTIONS.map((type) => (
@@ -70,7 +70,7 @@ export function DocumentFilterBar({
       <select
         value={statusFilter}
         onChange={(e) => onStatusFilterChange(e.target.value as DocumentStatus | 'All')}
-        className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
+        className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white"
       >
         <option value="All">Tất cả trạng thái</option>
         {STATUS_OPTIONS.map((status) => (
@@ -82,7 +82,7 @@ export function DocumentFilterBar({
         <select
           value={campusFilter || ''}
           onChange={(e) => onCampusFilterChange?.(e.target.value)}
-          className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white"
+          className="px-3 py-2 border border-slate-200 rounded-lg text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white"
         >
           <option value="">Tất cả cơ sở</option>
           {campusOptions.map((c) => (

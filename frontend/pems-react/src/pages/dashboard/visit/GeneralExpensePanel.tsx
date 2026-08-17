@@ -400,7 +400,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         value={it.itemOrigin}
                         onChange={(e) => handleUpdateItem(idx, 'itemOrigin', e.target.value)}
                         disabled={readonly}
-                        className="w-full bg-transparent border-none text-xs font-medium text-slate-700 outline-none focus:ring-0 disabled:opacity-70 disabled:bg-transparent"
+                        className="w-full bg-transparent border-none text-xs font-normal text-slate-700 outline-none focus:ring-0 disabled:opacity-70 disabled:bg-transparent"
                       >
                         {originOptionsFor(it.itemOrigin).map(k => (
                           <option key={k} value={k}>{ORIGIN_LABELS[k] || k}</option>
@@ -411,13 +411,13 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                       <input type="text" value={it.itemName}
                         onChange={(e) => handleUpdateItem(idx, 'itemName', e.target.value)}
                         disabled={readonly} placeholder="Nhập tên..."
-                        className="w-full bg-transparent border-none text-xs font-semibold text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent" />
+                        className="w-full bg-transparent border-none text-xs font-normal text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent" />
                     </td>
                     <td className="px-2.5 py-1">
                       <input type="number" min="0" step="1" value={Math.floor(it.quantity || 0)}
                         onChange={(e) => handleUpdateItem(idx, 'quantity', Math.max(0, parseInt(e.target.value, 10) || 0))}
                         disabled={readonly}
-                        className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent" />
+                        className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent" />
                     </td>
                     <td className="px-2.5 py-1">
                       <input type="text" value={it.unitName || ''}
@@ -431,7 +431,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         onChange={(val) => handleUpdateItem(idx, 'unitPrice', val)}
                         disabled={readonly}
                         step={1000}
-                        className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                        className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                       />
                     </td>
                     <td className="px-2.5 py-1 text-right font-black text-[#004c91]">

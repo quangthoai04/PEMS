@@ -249,7 +249,7 @@ function GalleryManagementMock() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-medium bg-white/10 text-white placeholder:text-white/60"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-normal bg-white/10 text-white placeholder:text-white/60"
             />
           </div>
           
@@ -262,7 +262,7 @@ function GalleryManagementMock() {
                   setFilterDetail('');
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Tất cả khu vực</option>
                 {Object.keys(LOCATIONS).map(cat => <option key={cat} value={cat} className="text-slate-800">{cat}</option>)}
@@ -278,7 +278,7 @@ function GalleryManagementMock() {
                   setCurrentPage(1);
                 }}
                 disabled={!filterCategory}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="" className="text-slate-800">Tất cả vị trí cụ thể</option>
                 {(LOCATIONS[filterCategory] || []).map(det => <option key={det} value={det} className="text-slate-800">{det}</option>)}
@@ -293,7 +293,7 @@ function GalleryManagementMock() {
                   setFilterType(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Loại</option>
                 <option value="Hình ảnh" className="text-slate-800">Hình ảnh</option>
@@ -309,7 +309,7 @@ function GalleryManagementMock() {
                   setFilterStatus(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Trạng thái</option>
                 <option value="PUBLISHED" className="text-slate-800">Hiển thị</option>
@@ -427,7 +427,7 @@ function GalleryManagementMock() {
                   setPageSize(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
@@ -619,7 +619,7 @@ function GalleryManagementMock() {
                       required
                       value={formData.title}
                       onChange={(e) => setFormData({...formData, title: e.target.value})}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all"
                       placeholder="Nhập tiêu đề..."
                     />
                   </div>
@@ -637,7 +637,7 @@ function GalleryManagementMock() {
                             locationDetail: LOCATIONS[newCat]?.[0] || ''
                           })
                         }}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white"
                       >
                         {Object.keys(LOCATIONS).map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
@@ -650,7 +650,7 @@ function GalleryManagementMock() {
                       <select 
                         value={formData.locationDetail}
                         onChange={(e) => setFormData({...formData, locationDetail: e.target.value})}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white"
                       >
                         {(LOCATIONS[formData.locationCategory] || []).map(det => (
                           <option key={det} value={det}>{det}</option>
@@ -663,7 +663,7 @@ function GalleryManagementMock() {
                       <select 
                         value={formData.type}
                         onChange={(e) => setFormData({...formData, type: e.target.value})}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all appearance-none bg-slate-50 focus:bg-white"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all appearance-none bg-slate-50 focus:bg-white"
                       >
                         <option value="Hình ảnh">Hình ảnh</option>
                         <option value="Video">Video</option>
@@ -677,7 +677,7 @@ function GalleryManagementMock() {
                       rows={3}
                       value={formData.description}
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium transition-all resize-none"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all resize-none"
                       placeholder="Nhập mô tả về tài nguyên..."
                     ></textarea>
                   </div>

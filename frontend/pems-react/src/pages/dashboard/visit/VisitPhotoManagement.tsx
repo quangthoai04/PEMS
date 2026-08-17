@@ -315,7 +315,7 @@ export function VisitPhotoManagement() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Tìm theo tên khách, tên đoàn..."
-              className="w-full text-xs font-semibold rounded-xl border border-gray-300 pl-8 pr-7 py-2 outline-none focus:border-[#004c91] bg-white shadow-sm"
+              className="w-full text-xs font-normal rounded-xl border border-gray-300 pl-8 pr-7 py-2 outline-none focus:border-[#004c91] bg-white shadow-sm"
             />
             {searchInput && (
               <button
@@ -355,7 +355,7 @@ export function VisitPhotoManagement() {
                 value={fromDate}
                 title="Từ ngày"
                 onChange={(e) => { setFromDate(e.target.value); setPage(1); }}
-                className="text-xs font-semibold rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent"
+                className="text-xs font-normal rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent"
               />
               <span className="text-gray-400 text-xs">-</span>
               <input
@@ -363,7 +363,7 @@ export function VisitPhotoManagement() {
                 value={toDate}
                 title="Đến ngày"
                 onChange={(e) => { setToDate(e.target.value); setPage(1); }}
-                className="text-xs font-semibold rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent pr-2"
+                className="text-xs font-normal rounded-lg px-2 py-1 outline-none text-gray-700 bg-transparent pr-2"
               />
               {(fromDate || toDate) && (
                 <button
@@ -380,7 +380,7 @@ export function VisitPhotoManagement() {
             <select
               value={sortDirection}
               onChange={(e) => { setSortDirection(e.target.value); setPage(1); }}
-              className="text-xs font-bold rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer shadow-sm shrink-0"
+              className="text-xs font-normal rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-[#004c91] bg-white cursor-pointer shadow-sm shrink-0"
             >
               <option value="DESC">Mới nhất trước</option>
               <option value="ASC">Cũ nhất trước</option>
@@ -625,7 +625,7 @@ export function VisitPhotoManagement() {
                 <select
                   value={pageSize}
                   onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  className="text-xs font-bold rounded-lg border border-slate-300 px-2.5 py-1 bg-white outline-none focus:border-[#004c91] cursor-pointer shadow-sm"
+                  className="text-xs font-normal rounded-lg border border-slate-300 px-2.5 py-1 bg-white outline-none focus:border-[#004c91] cursor-pointer shadow-sm"
                 >
                   <option value={5}>5 / trang</option>
                   <option value={10}>10 / trang</option>

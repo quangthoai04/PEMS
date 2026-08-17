@@ -628,35 +628,35 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                        <div className="space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><User className="w-3.5 h-3.5" /> Họ tên người</label>
-                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#f37021] outline-none" value={scannedInfo.name} onChange={e => setScannedInfo({...scannedInfo, name: e.target.value})} />
+                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#f37021] outline-none" value={scannedInfo.name} onChange={e => setScannedInfo({...scannedInfo, name: e.target.value})} />
                        </div>
                        <div className="space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Briefcase className="w-3.5 h-3.5" /> Chức danh, phòng ban</label>
-                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#f37021] outline-none" value={scannedInfo.title} onChange={e => setScannedInfo({...scannedInfo, title: e.target.value})} />
+                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#f37021] outline-none" value={scannedInfo.title} onChange={e => setScannedInfo({...scannedInfo, title: e.target.value})} />
                        </div>
                        <div className="sm:col-span-2 space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Building2 className="w-3.5 h-3.5" /> Tên đối tác, công ty</label>
-                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#f37021] outline-none" value={scannedInfo.company} onChange={e => setScannedInfo({...scannedInfo, company: e.target.value})} />
+                         <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#f37021] outline-none" value={scannedInfo.company} onChange={e => setScannedInfo({...scannedInfo, company: e.target.value})} />
                        </div>
                        <div className="space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Phone className="w-3.5 h-3.5" /> SĐT</label>
-                         <input type="tel" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#f37021] outline-none" value={scannedInfo.phone} onChange={e => setScannedInfo({...scannedInfo, phone: e.target.value})} />
+                         <input type="tel" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#f37021] outline-none" value={scannedInfo.phone} onChange={e => setScannedInfo({...scannedInfo, phone: e.target.value})} />
                        </div>
                        <div className="space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Mail className="w-3.5 h-3.5" /> Email</label>
-                         <input type="email" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#004c91] outline-none" value={scannedInfo.email} onChange={e => setScannedInfo({...scannedInfo, email: e.target.value})} />
+                         <input type="email" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.email} onChange={e => setScannedInfo({...scannedInfo, email: e.target.value})} />
                         </div>
                         
                         {/* New Website field */}
                         <div className="space-y-1.5 font-sans">
                           <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><Link2 className="w-3.5 h-3.5" /> Link website</label>
-                          <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#004c91] outline-none" value={scannedInfo.website || ''} onChange={e => setScannedInfo({...scannedInfo, website: e.target.value})} />
+                          <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.website || ''} onChange={e => setScannedInfo({...scannedInfo, website: e.target.value})} />
                         </div>
 
                         {/* New Address field */}
                         <div className="space-y-1.5 font-sans">
                           <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><MapPin className="w-3.5 h-3.5" /> Địa chỉ</label>
-                          <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-medium focus:border-[#004c91] outline-none" value={scannedInfo.address || ''} onChange={e => setScannedInfo({...scannedInfo, address: e.target.value})} />
+                          <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.address || ''} onChange={e => setScannedInfo({...scannedInfo, address: e.target.value})} />
                         </div>
 
 
@@ -672,7 +672,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                               setSelectedPartnerForContact(e.target.value);
                               setContactSaveSuccess(false);
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-medium outline-none bg-white focus:border-[#004c91]"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs font-normal outline-none bg-white focus:border-[#004c91]"
                           >
                             <option value="">-- Chọn đối tác lưu trữ --</option>
                             <optgroup label="Đối tác Draft (tạo ở trên)">

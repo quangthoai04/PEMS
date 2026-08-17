@@ -498,7 +498,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                       <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">Số lượng mới</label>
                       <input type="number" min={0} max={detail?.quantity != null ? detail.quantity - 1 : undefined} step={1}
                         value={proposalQuantity} onChange={e => setProposalQuantity(e.target.value)}
-                        className={`w-full px-3 py-2 rounded-lg border text-sm font-bold outline-none ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-slate-200 focus:border-[#e85c0d]'}`} />
+                        className={`w-full px-3 py-2 rounded-lg border text-sm font-normal outline-none ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-slate-200 focus:border-[#e85c0d]'}`} />
                       {quantityTooHigh && (
                         <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({detail.quantity}).</p>
                       )}
@@ -509,14 +509,14 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                           {isMultiDay ? 'Ngày giờ bắt đầu mới' : 'Giờ bắt đầu mới'}
                         </label>
                         <input type={isMultiDay ? 'datetime-local' : 'time'} value={proposalStartTime} onChange={e => setProposalStartTime(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold outline-none focus:border-[#e85c0d]" />
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-normal outline-none focus:border-[#e85c0d]" />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
                           {isMultiDay ? 'Ngày giờ kết thúc mới' : 'Giờ kết thúc mới'}
                         </label>
                         <input type={isMultiDay ? 'datetime-local' : 'time'} value={proposalEndTime} onChange={e => setProposalEndTime(e.target.value)}
-                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-bold outline-none focus:border-[#e85c0d]" />
+                          className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm font-normal outline-none focus:border-[#e85c0d]" />
                       </div>
                     </div>
                     <textarea

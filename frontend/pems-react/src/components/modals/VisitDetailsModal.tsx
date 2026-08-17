@@ -140,7 +140,7 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                               <select
                                 disabled
                                 value={displayCampus(guest.campus).includes(',') ? 'multiple' : 'single'}
-                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 bg-gray-50 shadow-sm appearance-none outline-none cursor-not-allowed"
+                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-normal text-gray-900 bg-gray-50 shadow-sm appearance-none outline-none cursor-not-allowed"
                               >
                                 <option value="single">Chỉ một cơ sở</option>
                                 <option value="multiple">Liên cơ sở</option>
@@ -161,7 +161,7 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                                     <select
                                       disabled
                                       value={campusItem.trim()}
-                                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 bg-gray-50 shadow-sm appearance-none pr-8 cursor-not-allowed"
+                                      className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-normal text-gray-900 bg-gray-50 shadow-sm appearance-none pr-8 cursor-not-allowed"
                                     >
                                       <option value={campusItem.trim()}>{campusItem.trim()}</option>
                                     </select>
@@ -171,21 +171,21 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                                 <div className="flex-[1.5] w-full xl:w-auto relative">
                                   {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">Ngày bắt đầu</label>}
                                   <div className="relative">
-                                    <input type="text" disabled value={guest.date || "2023-10-20"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
+                                    <input type="text" disabled value={guest.date || "2023-10-20"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-normal text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
                                     <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                                   </div>
                                 </div>
                                 <div className="flex-1 w-full xl:w-auto relative">
                                   {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">TG Bắt đầu</label>}
                                   <div className="relative">
-                                    <input type="time" disabled value={guest.time ? guest.time.split(' - ')[0] : "08:00"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
+                                    <input type="time" disabled value={guest.time ? guest.time.split(' - ')[0] : "08:00"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-normal text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
                                     <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                                   </div>
                                 </div>
                                 <div className="flex-1 w-full xl:w-auto relative">
                                   {index === 0 && <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wider">TG Kết thúc</label>}
                                   <div className="relative">
-                                    <input type="time" disabled value={guest.time ? guest.time.split(' - ')[1] : "16:30"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-bold text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
+                                    <input type="time" disabled value={guest.time ? guest.time.split(' - ')[1] : "16:30"} className="w-full px-4 py-2.5 pl-10 rounded-xl border border-gray-200 text-sm font-normal text-gray-900 bg-gray-50 shadow-sm cursor-not-allowed" />
                                     <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#004c91]" />
                                   </div>
                                 </div>

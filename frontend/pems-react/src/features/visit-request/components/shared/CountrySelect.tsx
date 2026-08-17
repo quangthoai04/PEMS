@@ -65,7 +65,7 @@ export const buildSelectStyles = (hasError?: boolean, isCell?: boolean): StylesC
     '&:hover': { borderColor: isCell ? (hasError ? '#f87171' : '#bfdbfe') : (hasError ? '#f87171' : '#004c91') },
     minHeight: '44px',
     fontSize: '0.875rem',
-    fontWeight: '500',
+    fontWeight: '400',
     backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : 'white',
     padding: isCell ? '0 4px' : '0',
     cursor: 'text',
@@ -104,7 +104,7 @@ export const buildSelectStyles = (hasError?: boolean, isCell?: boolean): StylesC
   singleValue: (base) => ({
     ...base,
     color: '#111827',
-    fontWeight: '500',
+    fontWeight: '400',
   }),
   clearIndicator: (base) => ({
     ...base,

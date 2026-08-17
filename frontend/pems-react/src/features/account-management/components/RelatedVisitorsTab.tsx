@@ -174,7 +174,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
               value={accountTypeFilter}
               onChange={(e) => onAccountTypeChange(e.target.value as StaffLeaderAccountType)}
               aria-label="Loại tài khoản"
-              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
+              className="px-4 py-3 pr-10 rounded-2xl border-none text-sm font-normal focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all min-w-[170px] bg-white/10 text-white shadow-inner appearance-none custom-select"
             >
               <option className="text-gray-900" value="INTERNAL">Tài khoản nội bộ</option>
               <option className="text-gray-900" value="VISITOR">Tài khoản khách</option>
@@ -318,7 +318,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
               <select
                 value={pageSize}
                 onChange={(e) => setPageSize(Number(e.target.value))}
-                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>

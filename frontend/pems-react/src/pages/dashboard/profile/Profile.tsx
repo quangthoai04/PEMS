@@ -386,7 +386,7 @@ export function Profile() {
                       type="text"
                       value={form.fullName}
                       onChange={(e) => setForm({ ...form, fullName: e.target.value })}
-                      className="w-full rounded-xl border-2 border-[#b6d4f0] bg-[#f0f7fc] px-4 py-2 text-3xl font-bold tracking-tight text-gray-900 shadow-sm transition-all focus:border-[#004c91] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#004c91]/20"
+                      className="w-full rounded-xl border-2 border-[#b6d4f0] bg-[#f0f7fc] px-4 py-2 text-3xl font-normal tracking-tight text-gray-900 shadow-sm transition-all focus:border-[#004c91] focus:bg-white focus:outline-none focus:ring-4 focus:ring-[#004c91]/20"
                     />
                     {fieldErrors.fullName && <p className="mt-1 text-sm text-red-600">{fieldErrors.fullName}</p>}
                   </div>
@@ -411,7 +411,7 @@ export function Profile() {
                       <select
                         value={form.gender}
                         onChange={(e) => setForm({ ...form, gender: e.target.value as GenderValue | '' })}
-                        className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
+                        className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-normal text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
                       >
                         <option value="" disabled hidden>{tt('fields.genderPlaceholder')}</option>
                         <option value="MALE">{tt('gender.MALE')}</option>
@@ -432,7 +432,7 @@ export function Profile() {
                           value={form.phone}
                           onChange={(e) => setForm({ ...form, phone: e.target.value })}
                           placeholder={tt('fields.phonePlaceholder')}
-                          className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-medium text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
+                          className="w-full rounded-lg border border-[#b6d4f0] bg-white px-3 py-1.5 font-normal text-gray-900 focus:border-[#004c91] focus:outline-none focus:ring-1 focus:ring-[#004c91]"
                         />
                         {fieldErrors.phone && <p className="mt-1 text-sm text-red-600">{fieldErrors.phone}</p>}
                       </>

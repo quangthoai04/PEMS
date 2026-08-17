@@ -290,7 +290,7 @@ export function FAQManagement() {
           <select
             value={selectedType}
             onChange={(e) => { setSelectedType(e.target.value); setPage(1); }}
-            className="w-full md:w-[180px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-600 shadow-sm"
+            className="w-full md:w-[180px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-600 shadow-sm"
           >
             {FAQ_TYPE_OPTIONS.map(o => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -300,7 +300,7 @@ export function FAQManagement() {
           <select
             value={selectedStatus}
             onChange={(e) => { setSelectedStatus(e.target.value); setPage(1); }}
-            className="w-full md:w-[160px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-600 shadow-sm"
+            className="w-full md:w-[160px] px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-normal focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 focus:border-[#004c91] text-gray-600 shadow-sm"
           >
             <option value="">Tất cả trạng thái</option>
             <option value="PUBLISHED">Hiển thị</option>
@@ -426,7 +426,7 @@ export function FAQManagement() {
           <div className="flex items-center gap-2 text-sm text-gray-600">
             <span>Hiển thị</span>
             <select
-              className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-medium"
+              className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-normal"
               value={itemsPerPage}
               onChange={(e) => { setItemsPerPage(Number(e.target.value)); setPage(1); }}
             >

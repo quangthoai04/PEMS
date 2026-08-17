@@ -211,7 +211,7 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
   const showEndError = endError ?? liveEndError;
 
   const dateCls = (hasError?: boolean) =>
-    `h-11 w-full min-w-0 rounded-xl border bg-white px-4 text-sm font-semibold text-slate-800 outline-none transition-colors disabled:bg-slate-100 ${
+    `h-11 w-full min-w-0 rounded-xl border bg-white px-4 text-sm font-normal text-slate-800 outline-none transition-colors disabled:bg-slate-100 ${
       hasError
         ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
         : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10'
@@ -351,12 +351,12 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
         {(showStartError || showEndError) && (
           <div className="mt-3 space-y-1">
             {showStartError && (
-              <p id={startErrorId} role="alert" data-testid={`${idPrefix}-start-error`} className="text-xs font-semibold text-red-600">
+              <p id={startErrorId} role="alert" data-testid={`${idPrefix}-start-error`} className="text-xs font-normal text-red-600">
                 {showStartError}
               </p>
             )}
             {showEndError && showEndError !== showStartError && (
-              <p id={endErrorId} role="alert" data-testid={`${idPrefix}-end-error`} className="text-xs font-semibold text-red-600">
+              <p id={endErrorId} role="alert" data-testid={`${idPrefix}-end-error`} className="text-xs font-normal text-red-600">
                 {showEndError}
               </p>
             )}

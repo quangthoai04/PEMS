@@ -60,7 +60,7 @@ export const FormField: React.FC<FormFieldProps> = ({
         )}
       </div>
       {error && (
-        <p id={errorId} role="alert" className="text-xs font-semibold text-red-600">
+        <p id={errorId} role="alert" className="text-xs font-normal text-red-600">
           {error}
         </p>
       )}
@@ -70,7 +70,7 @@ export const FormField: React.FC<FormFieldProps> = ({
 
 export const inputCls = (hasError?: boolean, hasValue?: boolean, hasIcon: boolean = true) =>
   [
-    `flex h-11 w-full min-w-0 items-center rounded-xl border bg-white pl-4 ${hasIcon ? 'pr-10' : 'pr-4'} text-sm font-semibold text-slate-800 outline-none transition-colors`,
+    `flex h-11 w-full min-w-0 items-center rounded-xl border bg-white pl-4 ${hasIcon ? 'pr-10' : 'pr-4'} text-sm font-normal text-slate-800 outline-none transition-colors`,
     hasError
       ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
       : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',
@@ -79,7 +79,7 @@ export const inputCls = (hasError?: boolean, hasValue?: boolean, hasIcon: boolea
 /** Textarea variant of the standard control: same border/focus, no shadow. */
 export const textareaCls = (hasError?: boolean) =>
   [
-    'w-full min-w-0 rounded-xl border bg-white px-4 py-3 text-sm font-medium text-slate-800 outline-none transition-colors resize-none',
+    'w-full min-w-0 rounded-xl border bg-white px-4 py-3 text-sm font-normal text-slate-800 outline-none transition-colors resize-none',
     hasError
       ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
       : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',
@@ -88,7 +88,7 @@ export const textareaCls = (hasError?: boolean) =>
 /** Select variant: chevron space on the right, no shadow. */
 export const selectCls = (hasError?: boolean) =>
   [
-    'h-11 w-full min-w-0 appearance-none rounded-xl border bg-white pl-4 pr-9 text-sm font-medium text-slate-800 outline-none transition-colors',
+    'h-11 w-full min-w-0 appearance-none rounded-xl border bg-white pl-4 pr-9 text-sm font-normal text-slate-800 outline-none transition-colors',
     hasError
       ? 'border-red-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/10'
       : 'border-slate-300 focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10',

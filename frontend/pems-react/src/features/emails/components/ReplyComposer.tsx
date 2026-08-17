@@ -216,7 +216,7 @@ export function ReplyComposer({ originalEmailId, resolvedTo, onCancel, onReplied
           </div>
 
           {recipientErrors.TO && (
-            <p role="alert" className="text-[13px] font-medium text-red-600">{recipientErrors.TO}</p>
+            <p role="alert" className="text-[13px] font-normal text-red-600">{recipientErrors.TO}</p>
           )}
         </div>
 
@@ -233,7 +233,7 @@ export function ReplyComposer({ originalEmailId, resolvedTo, onCancel, onReplied
         </div>
 
         {formError && (
-          <p role="alert" className="px-4 py-2 text-[13px] font-medium text-red-600">{formError}</p>
+          <p role="alert" className="px-4 py-2 text-[13px] font-normal text-red-600">{formError}</p>
         )}
 
         <div className="bg-white px-4 py-3 flex justify-end gap-3 rounded-b-xl border-t border-gray-100">

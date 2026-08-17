@@ -307,7 +307,7 @@ export function SessionManagement() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none appearance-none"
+                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none appearance-none"
                 >
                   {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>

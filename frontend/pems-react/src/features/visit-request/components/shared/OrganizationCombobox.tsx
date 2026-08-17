@@ -55,7 +55,7 @@ const buildStyles = (hasError?: boolean, isCell?: boolean): StylesConfig<OrgOpti
     // clipped to an ellipsis the user cannot read back (plan §21.3).
     height: 'auto',
     fontSize: '0.875rem',
-    fontWeight: isCell ? '500' : '400',
+    fontWeight: '400',
     backgroundColor: isCell ? (hasError ? 'rgba(254, 226, 226, 0.2)' : 'transparent') : (state.isDisabled ? '#f1f5f9' : 'white'),
     padding: isCell ? '0 4px' : '0',
     cursor: state.isDisabled ? 'not-allowed' : 'text',

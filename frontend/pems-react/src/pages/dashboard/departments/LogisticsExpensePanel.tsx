@@ -176,7 +176,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                       onChange={(e) => handleUpdateItem(idx, 'itemName', e.target.value)}
                       disabled={locked || it.itemOrigin === 'REQUEST_ITEM'}
                       placeholder="Nhập tên..."
-                      className="w-full bg-transparent border-none text-xs font-semibold text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                      className="w-full bg-transparent border-none text-xs font-normal text-slate-800 placeholder-slate-300 outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
                   </td>
                   <td className="px-2.5 py-1">
@@ -185,7 +185,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                       value={Math.floor(it.quantity || 0)}
                       onChange={(e) => handleUpdateItem(idx, 'quantity', Math.max(0, parseInt(e.target.value, 10) || 0))}
                       disabled={locked}
-                      className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                      className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
                   </td>
                   <td className="px-2.5 py-1">
@@ -204,7 +204,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                       onChange={(val) => handleUpdateItem(idx, 'unitPrice', val)}
                       disabled={locked}
                       step={1000}
-                      className="w-full bg-transparent border-none text-xs font-bold text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
+                      className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
                   </td>
                   <td className="px-2.5 py-1 text-right font-black text-[#004c91]">

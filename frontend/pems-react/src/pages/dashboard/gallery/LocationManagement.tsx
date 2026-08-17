@@ -156,7 +156,7 @@ function LocationManagementMock() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-medium bg-white/10 text-white placeholder:text-white/60"
+              className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-white/20 focus:border-white focus:ring-1 focus:ring-white outline-none text-sm transition-all font-normal bg-white/10 text-white placeholder:text-white/60"
             />
           </div>
 
@@ -168,7 +168,7 @@ function LocationManagementMock() {
                   setFilterCategory(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Tất cả khu vực</option>
                 {uniqueCategories.map(cat => <option key={cat} value={cat} className="text-slate-800">{cat}</option>)}
@@ -183,7 +183,7 @@ function LocationManagementMock() {
                   setFilterStatus(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-medium appearance-none"
+                className="w-full px-3 py-2.5 pr-8 rounded-xl border border-white/20 bg-white/10 text-white outline-none text-sm font-normal appearance-none"
               >
                 <option value="" className="text-slate-800">Trạng thái</option>
                 <option value="Hoạt động" className="text-slate-800">Hoạt động</option>
@@ -288,7 +288,7 @@ function LocationManagementMock() {
                   setPageSize(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
+                className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-[#004c91]/20 appearance-none min-w-[70px] text-left"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
@@ -391,7 +391,7 @@ function LocationManagementMock() {
                         <select
                           value={formData.category}
                           onChange={(e) => setFormData({...formData, category: e.target.value})}
-                          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium appearance-none bg-white max-h-48 overflow-y-auto"
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal appearance-none bg-white max-h-48 overflow-y-auto"
                         >
                           {uniqueCategories.map(cat => (
                             <option key={cat} value={cat}>{cat}</option>
@@ -405,7 +405,7 @@ function LocationManagementMock() {
                         required
                         value={formData.category}
                         onChange={(e) => setFormData({...formData, category: e.target.value})}
-                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal"
                         placeholder="Nhập tên khu vực mới (VD: TÒA DELTA)"
                       />
                     )}
@@ -417,7 +417,7 @@ function LocationManagementMock() {
                       required
                       value={formData.detail}
                       onChange={(e) => setFormData({...formData, detail: e.target.value})}
-                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-medium"
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal"
                       placeholder="VD: Sảnh chính"
                     />
                   </div>

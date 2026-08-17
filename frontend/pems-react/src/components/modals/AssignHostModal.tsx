@@ -173,7 +173,7 @@ export function AssignHostModal({
               placeholder="Tìm nhân sự theo tên, email, đơn vị..."
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              className="w-full pl-9 pr-3 h-10 bg-white border border-slate-300 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10"
+              className="w-full pl-9 pr-3 h-10 bg-white border border-slate-300 rounded-xl text-sm font-normal text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10"
             />
           </div>
 

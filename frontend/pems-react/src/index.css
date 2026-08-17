@@ -39,6 +39,18 @@ body {
   color: #1e293b;
 }
 
+/* Form Control Typography baseline (docs/CanhIter3FixBug/GopYCQuyen/…_Plan.md §7).
+   A value the user types or selects should read as normal weight by default; bold is for
+   headings, labels, buttons and badges. This is a low-specificity type-selector baseline (no
+   `!important`) — any component with a real reason to override it still can. */
+@layer base {
+  input:not([type="button"]):not([type="submit"]):not([type="reset"]),
+  textarea,
+  select {
+    font-weight: 400;
+  }
+}
+
 .ql-editor {
   min-height: 250px;
 }

@@ -22,7 +22,7 @@ const buildStyles = (hasError?: boolean): StylesConfig<PartnerOption> => ({
     '&:hover': { borderColor: hasError ? '#f87171' : '#004c91' },
     minHeight: '48px',
     fontSize: '0.875rem',
-    fontWeight: '500',
+    fontWeight: '400',
     backgroundColor: 'white',
   }),
   option: (base, state) => ({
@@ -40,7 +40,7 @@ const buildStyles = (hasError?: boolean): StylesConfig<PartnerOption> => ({
     boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
   }),
   placeholder: (base) => ({ ...base, color: '#9ca3af', fontWeight: '400' }),
-  singleValue: (base) => ({ ...base, color: '#111827', fontWeight: '500' }),
+  singleValue: (base) => ({ ...base, color: '#111827', fontWeight: '400' }),
   indicatorSeparator: () => ({ display: 'none' }),
 });
 

@@ -214,7 +214,7 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
               {t('visitRequestV2:hostTransfer.newHost')} <span className="text-red-500">*</span>
             </legend>
             {hostError && (
-              <p role="alert" data-testid="host-transfer-error-host" className="mb-1.5 text-xs font-semibold text-red-600">
+              <p role="alert" data-testid="host-transfer-error-host" className="mb-1.5 text-xs font-normal text-red-600">
                 {hostError}
               </p>
             )}

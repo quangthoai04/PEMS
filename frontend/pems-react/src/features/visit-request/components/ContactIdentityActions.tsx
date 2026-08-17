@@ -454,7 +454,7 @@ export default function ContactIdentityActions({
       />
       )}
       {genericError && (
-        <p id={errorId} role="alert" className="mt-1 text-xs font-semibold text-red-600">
+        <p id={errorId} role="alert" className="mt-1 text-xs font-normal text-red-600">
           {genericError}
         </p>
       )}
@@ -468,7 +468,7 @@ export default function ContactIdentityActions({
         </p>
       )}
       {field === 'email' && emailError && (
-        <p id="ci-email-error" role="alert" className="mt-1 text-xs font-semibold text-red-600">
+        <p id="ci-email-error" role="alert" className="mt-1 text-xs font-normal text-red-600">
           {emailError}
         </p>
       )}

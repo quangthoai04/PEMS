@@ -2287,7 +2287,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   const val = e.target.value;
                   setDraftFilters({ ...draftFilters, keyword: val });
                 }}
-                className="w-full pl-10 pr-4 h-11 bg-white border border-slate-300 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 transition-colors min-w-0" />
+                className="w-full pl-10 pr-4 h-11 bg-white border border-slate-300 rounded-xl text-sm font-normal text-slate-700 outline-none focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10 transition-colors min-w-0" />
             </div>
           </div>
 
@@ -2443,11 +2443,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                   <div className="flex flex-col gap-3">
                     <div className="w-full space-y-1">
                       <label className="block text-xs font-bold text-slate-500">{tt('visitRequestV2:list.fromDateLabel')}</label>
-                      <input type="date" value={draftFilters.fromDate} onChange={(e) => setDraftFilters({ ...draftFilters, fromDate: e.target.value })} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91]" />
+                      <input type="date" value={draftFilters.fromDate} onChange={(e) => setDraftFilters({ ...draftFilters, fromDate: e.target.value })} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-[#004c91]" />
                     </div>
                     <div className="w-full space-y-1">
                       <label className="block text-xs font-bold text-slate-500">{tt('visitRequestV2:list.toDateLabel')}</label>
-                      <input type="date" value={draftFilters.toDate} onChange={(e) => setDraftFilters({ ...draftFilters, toDate: e.target.value })} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-[#004c91]" />
+                      <input type="date" value={draftFilters.toDate} onChange={(e) => setDraftFilters({ ...draftFilters, toDate: e.target.value })} className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-700 outline-none focus:border-[#004c91]" />
                     </div>
                     <button onClick={() => { setIsDateFilterOpen(false); applyFilterChange({}); }} className="mt-2 h-9 w-full rounded-lg bg-slate-100 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors">{tt('visitRequestV2:list.close')}</button>
                   </div>
@@ -2684,7 +2684,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-gray-500">{tt('visitRequestV2:list.pagination.showing')}</span>
               <div className="relative">
-                <select value={pageSize} onChange={(e) => { const newSize = Number(e.target.value); setPageSize(newSize); setCurrentPage(1); updateUrlParams(activeTab, 1, newSize, appliedFilters, sortOrder); loadDelegations(activeTab, 1, newSize, appliedFilters, sortOrder); }} className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none appearance-none min-w-[70px] text-left">
+                <select value={pageSize} onChange={(e) => { const newSize = Number(e.target.value); setPageSize(newSize); setCurrentPage(1); updateUrlParams(activeTab, 1, newSize, appliedFilters, sortOrder); loadDelegations(activeTab, 1, newSize, appliedFilters, sortOrder); }} className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none appearance-none min-w-[70px] text-left">
                   <option value={5}>5</option><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option>
                 </select>
                 <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />

@@ -168,7 +168,7 @@ export function MinuteManagement() {
               placeholder="Tìm theo tên biên bản, nội dung, đoàn khách, người tham gia, đầu việc..." 
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-medium text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm"
+              className="w-full pl-11 pr-4 py-2.5 border border-slate-200 rounded-xl bg-white text-sm font-normal text-slate-800 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] transition-all placeholder:text-slate-400 shadow-sm"
             />
           </div>
           
@@ -176,7 +176,7 @@ export function MinuteManagement() {
             <select 
               value={filters.status || ''} 
               onChange={e => handleFilterChange('status', e.target.value)}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
             >
               <option value="">Tất cả trạng thái</option>
               <option value="DRAFT">{formatMinutesStatus('DRAFT')}</option>
@@ -186,7 +186,7 @@ export function MinuteManagement() {
             <select 
               value={filters.attendanceStatus || ''} 
               onChange={e => handleFilterChange('attendanceStatus', e.target.value)}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]"
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white min-w-[160px]"
             >
               <option value="">Tất cả điểm danh</option>
               <option value="PRESENT">{formatAttendanceStatus('PRESENT')}</option>
@@ -197,7 +197,7 @@ export function MinuteManagement() {
             <select 
               value={filters.actionItemStatus || ''} 
               onChange={e => handleFilterChange('actionItemStatus', e.target.value)}
-              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+              className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
             >
               <option value="">Tất cả đầu việc</option>
               <option value="TODO">{formatActionItemStatus('TODO')}</option>
@@ -210,7 +210,7 @@ export function MinuteManagement() {
               <select
                 value={filters.campusId || ''}
                 onChange={e => handleFilterChange('campusId', e.target.value ? Number(e.target.value) : undefined)}
-                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
+                className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-normal focus:outline-none focus:border-[#004c91] bg-white min-w-[150px]"
               >
                 <option value="">Tất cả cơ sở</option>
                 {campusFilterOptions?.campuses.map((c) => (
@@ -420,7 +420,7 @@ export function MinuteManagement() {
               <select 
                 value={filters.pageSize}
                 onChange={handlePageSizeChange}
-                className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-medium"
+                className="border border-gray-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-[#004c91] font-normal"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>

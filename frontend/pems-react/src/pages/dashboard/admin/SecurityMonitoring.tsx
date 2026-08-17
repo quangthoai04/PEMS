@@ -181,7 +181,7 @@ export function SecurityMonitoring() {
                 type="date"
                 value={filters.fromDate}
                 onChange={(e) => setFilter('fromDate')(e.target.value)}
-                className="px-1.5 py-1 rounded-lg border-none text-sm font-medium focus:outline-none bg-transparent text-white shadow-none [color-scheme:dark]"
+                className="px-1.5 py-1 rounded-lg border-none text-sm font-normal focus:outline-none bg-transparent text-white shadow-none [color-scheme:dark]"
                 title="Từ ngày"
               />
               <span className="text-blue-200 text-xs">đến</span>
@@ -189,7 +189,7 @@ export function SecurityMonitoring() {
                 type="date"
                 value={filters.toDate}
                 onChange={(e) => setFilter('toDate')(e.target.value)}
-                className="px-1.5 py-1 rounded-lg border-none text-sm font-medium focus:outline-none bg-transparent text-white shadow-none [color-scheme:dark]"
+                className="px-1.5 py-1 rounded-lg border-none text-sm font-normal focus:outline-none bg-transparent text-white shadow-none [color-scheme:dark]"
                 title="Đến ngày"
               />
             </div>
@@ -321,7 +321,7 @@ export function SecurityMonitoring() {
                 <select
                   value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-bold text-gray-700 bg-white focus:outline-none appearance-none"
+                  className="px-3 py-1.5 pr-8 rounded-lg border border-gray-200 text-sm font-normal text-gray-700 bg-white focus:outline-none appearance-none"
                 >
                   {[10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
