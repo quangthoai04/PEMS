@@ -14,6 +14,7 @@ using PEMS.Application.Galleries.Commands.BackfillGalleryTranslations;
 using PEMS.Application.Galleries.Commands.ChangeGalleryItemStatus;
 using PEMS.Application.Galleries.Commands.ChangeGalleryLocationStatus;
 using PEMS.Application.Galleries.Commands.CreateGalleryLocation;
+using PEMS.Application.Galleries.Commands.DeleteGalleryItem;
 using PEMS.Application.Galleries.Commands.PreviewGalleryItemTranslation;
 using PEMS.Application.Galleries.Commands.PreviewGalleryLocationTranslation;
 using PEMS.Application.Galleries.Commands.RetryGalleryTranslation;
@@ -46,7 +47,7 @@ namespace PEMS.Api.Controllers
     [Route("api/[controller]")]
     public class GalleriesController : ControllerBase
     {
-        // Headroom for up to 20 media files (mix of images ≤5MB and videos ≤100MB) in one request.
+        // Headroom for up to 20 media files (mix of images ≤20MB and videos ≤100MB) in one request.
         private const long GalleryUploadByteLimit = 1024L * 1024 * 1024; // 1 GB
 
         private readonly IMediator _mediator;
@@ -157,6 +158,12 @@ namespace PEMS.Api.Controllers
         // UC-GAL-05 Enable / UC-GAL-06 Disable.
         [HttpPost("changegalleryitemstatus")]
         public async Task<IActionResult> ChangeGalleryItemStatus([FromBody] ChangeGalleryItemStatusCommand command, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(command, cancellationToken));
+
+        // Xóa nội dung Gallery — SOFT delete, distinct from Hide (which stays reversible). Verb route to
+        // match the rest of this controller; the handler re-checks the campus scope.
+        [HttpPost("deletegalleryitem")]
+        public async Task<IActionResult> DeleteGalleryItem([FromBody] DeleteGalleryItemCommand command, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(command, cancellationToken));
 
         // ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──

@@ -373,7 +373,7 @@ export function GalleryUpsertModal({
         flagError(`${file.name}: Chỉ chấp nhận ảnh khi tải từ máy. Vui lòng thêm video qua liên kết YouTube.`);
         continue;
       }
-      const asImage = validateFile(file, 'GALLERY_IMAGE');
+      const asImage = validateFile(file, 'GALLERY_ITEM_IMAGE');
       if (!asImage.ok) {
         flagError(`${file.name}: ${asImage.message}`);
         continue;
@@ -588,7 +588,7 @@ export function GalleryUpsertModal({
               {slotsLeft > 0 ? 'Click để chọn ảnh' : `Đã đủ ${MAX_FILES} media`}
             </p>
             <p className="text-xs text-slate-400 mt-1 text-center">
-              Chỉ ảnh (JPG/PNG/WEBP ≤5MB) · tối đa {MAX_FILES} media · video thêm qua YouTube bên dưới
+              Chỉ ảnh (JPG/PNG/WEBP ≤20MB) · tối đa {MAX_FILES} media · video thêm qua YouTube bên dưới
             </p>
             <input type="file" multiple accept={MEDIA_ACCEPT} className="hidden" onChange={handleAddFiles} disabled={slotsLeft <= 0} />
           </label>

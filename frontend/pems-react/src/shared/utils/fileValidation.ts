@@ -6,7 +6,10 @@
 
 export type FilePurpose =
   | 'USER_AVATAR'
+  /** Generic 5 MB gallery image — area/location COVERS. Not for gallery item media. */
   | 'GALLERY_IMAGE'
+  /** Gallery ITEM media image (MEDIA + VISIT_DELEGATION). 20 MB — mirrors FileValidationPolicy. */
+  | 'GALLERY_ITEM_IMAGE'
   | 'GALLERY_VIDEO'
   | 'NEWS_IMAGE'
   | 'NEWS_ATTACHMENT'
@@ -47,6 +50,11 @@ export function getFileValidationRule(purpose: FilePurpose): FileValidationRule 
     case 'PARTNER_LOGO':
     case 'PARTNER_COVER':
       return { maxSizeBytes: 5 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
+    case 'GALLERY_ITEM_IMAGE':
+      // Gallery item media only — MUST match the backend rule (FileValidationPolicy.GalleryItemImage /
+      // GalleryDelegationImage): same formats as every other image purpose, 20 MB instead of 5 MB.
+      // Area/location covers deliberately stay on 'GALLERY_IMAGE' (5 MB).
+      return { maxSizeBytes: 20 * MB, allowedMimeTypes: IMAGE_MIMES, allowedExtensions: IMAGE_EXTS };
     case 'VISIT_REQUEST_PHOTO':
       // Canonical visit-photo contract — MUST match the backend rule
       // (FileValidationPolicy.VisitRequestPhoto): images only, 5 MB/file, no video, no PDF.

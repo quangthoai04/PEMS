@@ -1,10 +1,8 @@
-using System;
-
 namespace PEMS.Application.Galleries.Commands.DeleteGalleryItem;
 
+/// <summary>Minimal result of a delete — enough for the list to drop the row and toast.</summary>
 public sealed class DeleteGalleryItemResponse
 {
-    public Guid? Id { get; init; }
-    public string Status { get; init; } = "Scaffolded";
-    public string Message { get; init; } = "Use case scaffolded. Business logic is not implemented yet.";
+    public ulong GalleryItemId { get; init; }
+    public string Message { get; init; } = string.Empty;
 }

@@ -50,11 +50,22 @@ public sealed class FileValidationPolicy : IFileValidationPolicy
 
         FilePurpose.GalleryImage or FilePurpose.NewsImage
             or FilePurpose.GalleryAreaCover or FilePurpose.GalleryLocationCover
-            or FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage
             or FilePurpose.VisitRequestPhoto
             or FilePurpose.PartnerLogo or FilePurpose.PartnerCover => new FileValidationRule
         {
             MaxSizeBytes = 5 * Mb,
+            AllowedMimeTypes = ImageMimes,
+            AllowedExtensions = ImageExts,
+            RequireImageMagicBytes = true,
+        },
+
+        // Gallery ITEM media images (both MEDIA and VISIT_DELEGATION items). Split out of the shared
+        // 5 MB image rule because real gallery photos routinely exceed it — the cap is 20 MB here and
+        // ONLY here; area/location covers, news, partner and visit photos keep the 5 MB rule above.
+        // Format/magic-byte checks are unchanged (JPG/JPEG/PNG/WEBP only, never SVG/GIF/PDF/MP4).
+        FilePurpose.GalleryItemImage or FilePurpose.GalleryDelegationImage => new FileValidationRule
+        {
+            MaxSizeBytes = 20 * Mb,
             AllowedMimeTypes = ImageMimes,
             AllowedExtensions = ImageExts,
             RequireImageMagicBytes = true,

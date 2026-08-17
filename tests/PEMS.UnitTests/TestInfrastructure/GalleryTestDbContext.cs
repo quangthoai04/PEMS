@@ -22,10 +22,11 @@ namespace PEMS.UnitTests.TestInfrastructure;
 
 /// <summary>
 /// EF Core InMemory stand-in for <see cref="IApplicationDbContext"/> used by the gallery translation
-/// preview handler tests. Same pruning approach as <see cref="CampusTestDbContext"/>: only the three
-/// gallery aggregates the preview reads (area → campus scope, location, item) are PUBLIC DbSet
-/// properties; every type reachable from them but outside the slice is explicitly Ignored so it never
-/// enters the model, and everything else is an explicit interface implementation only.
+/// preview handler tests AND the gallery write handlers (delete item, update location). Same pruning
+/// approach as <see cref="CampusTestDbContext"/>: only the gallery aggregates those handlers touch
+/// (area → campus scope, location, item, media, files, audit) are PUBLIC DbSet properties; every type
+/// reachable from them but outside the slice is explicitly Ignored so it never enters the model, and
+/// everything else is an explicit interface implementation only.
 /// </summary>
 public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
 {
@@ -41,6 +42,13 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     public DbSet<GalleryArea> GalleryAreas => Set<GalleryArea>();
     public DbSet<GalleryLocation> GalleryLocations => Set<GalleryLocation>();
     public DbSet<GalleryItem> GalleryItems => Set<GalleryItem>();
+
+    // Also mapped for the WRITE slice (delete item / update location): the media rows a delete
+    // soft-deletes, the file rows a cover swap points at, and the audit trail every write emits.
+    // AuditLogChange enters the model through AuditLog.Changes.
+    public DbSet<GalleryItemMedia> GalleryItemMedias => Set<GalleryItemMedia>();
+    public DbSet<UploadedFile> UploadedFiles => Set<UploadedFile>();
+    public DbSet<AuditLog> AuditLogEntries => Set<AuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -61,7 +69,6 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<PartnerContact>();
         modelBuilder.Ignore<PartnerAlias>();
         modelBuilder.Ignore<VisitGuestPartnerLink>();
-        modelBuilder.Ignore<UploadedFile>();
         modelBuilder.Ignore<Document>();
         modelBuilder.Ignore<VisitRequest>();
         modelBuilder.Ignore<VisitRequestCampus>();
@@ -97,7 +104,6 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<NewsSectionFile>();
         modelBuilder.Ignore<Faq>();
         modelBuilder.Ignore<FaqTranslation>();
-        modelBuilder.Ignore<GalleryItemMedia>();
         modelBuilder.Ignore<GalleryItemContent>();
         modelBuilder.Ignore<PhotoFaceTag>();
         modelBuilder.Ignore<EmailTemplate>();
@@ -118,7 +124,6 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<AgendaTemplate>();
         modelBuilder.Ignore<AgendaTemplateItem>();
         modelBuilder.Ignore<AgendaTemplateDefault>();
-        modelBuilder.Ignore<AuditLog>();
     }
 
     // ── Aggregates the gallery preview slice never touches (NOT discovered by EF) ──────
@@ -136,7 +141,6 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     DbSet<PartnerContact> IApplicationDbContext.PartnerContacts => Set<PartnerContact>();
     DbSet<PartnerAlias> IApplicationDbContext.PartnerAliases => Set<PartnerAlias>();
     DbSet<VisitGuestPartnerLink> IApplicationDbContext.VisitGuestPartnerLinks => Set<VisitGuestPartnerLink>();
-    DbSet<UploadedFile> IApplicationDbContext.Files => Set<UploadedFile>();
     DbSet<Document> IApplicationDbContext.Documents => Set<Document>();
     DbSet<VisitRequest> IApplicationDbContext.VisitRequests => Set<VisitRequest>();
     DbSet<VisitRequestCampus> IApplicationDbContext.VisitRequestCampuses => Set<VisitRequestCampus>();
@@ -173,7 +177,6 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     DbSet<Faq> IApplicationDbContext.Faqs => Set<Faq>();
     DbSet<FaqTranslation> IApplicationDbContext.FaqTranslations => Set<FaqTranslation>();
     DbSet<GalleryItemContent> IApplicationDbContext.GalleryItemContents => Set<GalleryItemContent>();
-    DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => Set<GalleryItemMedia>();
     DbSet<PhotoFaceTag> IApplicationDbContext.PhotoFaceTags => Set<PhotoFaceTag>();
     DbSet<EmailTemplate> IApplicationDbContext.EmailTemplates => Set<EmailTemplate>();
     DbSet<SentEmail> IApplicationDbContext.SentEmails => Set<SentEmail>();
@@ -193,7 +196,11 @@ public sealed class GalleryTestDbContext : DbContext, IApplicationDbContext
     DbSet<AgendaTemplate> IApplicationDbContext.AgendaTemplates => Set<AgendaTemplate>();
     DbSet<AgendaTemplateItem> IApplicationDbContext.AgendaTemplateItems => Set<AgendaTemplateItem>();
     DbSet<AgendaTemplateDefault> IApplicationDbContext.AgendaTemplateDefaults => Set<AgendaTemplateDefault>();
-    DbSet<AuditLog> IApplicationDbContext.AuditLogs => Set<AuditLog>();
+
+    // Interface members backed by the mapped write-slice sets above.
+    DbSet<UploadedFile> IApplicationDbContext.Files => UploadedFiles;
+    DbSet<GalleryItemMedia> IApplicationDbContext.GalleryItemMedia => GalleryItemMedias;
+    DbSet<AuditLog> IApplicationDbContext.AuditLogs => AuditLogEntries;
 
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)

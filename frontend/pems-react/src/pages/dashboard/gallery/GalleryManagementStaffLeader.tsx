@@ -209,6 +209,25 @@ export function GalleryManagementStaffLeader() {
     }
   };
 
+  // ── Delete (soft delete — permanent from the user's point of view, unlike Hide) ──
+  const [deleteTarget, setDeleteTarget] = useState<GalleryListItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await galleryManagementApi.deleteGalleryItem({ galleryItemId: deleteTarget.galleryItemId });
+      setDeleteTarget(null);
+      setToast({ type: 'success', message: 'Xóa nội dung Gallery thành công.' });
+      refetch();
+    } catch (err) {
+      // The row stays put — the record is never hidden on a failed delete.
+      setToast({ type: 'error', message: getGalleryErrorMessage(err) });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // ── Detail (UC-GAL-03) ──
   const openDetail = async (galleryItemId: number) => {
     setDetailLoading(true);
@@ -431,6 +450,13 @@ export function GalleryManagementStaffLeader() {
                         >
                           <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${item.status === 'PUBLISHED' ? 'translate-x-2' : '-translate-x-2'}`} />
                         </button>
+                        <button
+                          onClick={() => setDeleteTarget(item)}
+                          className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 flex items-center justify-center transition-colors outline-none"
+                          title="Xóa"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -532,6 +558,60 @@ export function GalleryManagementStaffLeader() {
             onUpdated={onUpdated}
             onError={(m) => setToast({ type: 'error', message: m })}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation — never delete straight from the icon click. */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-sans">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="gallery-delete-title"
+              className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl"
+            >
+              <div className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 shrink-0 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center">
+                    <Trash2 className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 id="gallery-delete-title" className="text-lg font-black text-slate-800">Xóa nội dung Gallery?</h3>
+                    <p className="mt-1 text-sm font-semibold text-[#004c91] line-clamp-2">{deleteTarget.title}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2 text-sm text-slate-600 font-medium">
+                  <p>Nội dung này sẽ không còn xuất hiện trong Quản lý Gallery và VisitFPTU.</p>
+                  <p>Xóa khác với Ẩn nội dung và không thể bật lại bằng nút Hiện/Ẩn.</p>
+                  <p className="text-red-600 font-semibold">Bạn sẽ không thể khôi phục nội dung này từ giao diện hiện tại.</p>
+                </div>
+
+                <div className="mt-6 flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(null)}
+                    disabled={deleting}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-bold hover:bg-slate-50 transition-colors outline-none disabled:opacity-60"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void confirmDelete()}
+                    disabled={deleting}
+                    className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-bold shadow-sm transition-colors outline-none disabled:opacity-60 inline-flex items-center gap-2"
+                  >
+                    {deleting && <Loader2 className="w-4 h-4 animate-spin" />} Xóa
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
