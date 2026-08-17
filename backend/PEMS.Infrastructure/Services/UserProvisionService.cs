@@ -22,17 +22,18 @@ public sealed class UserProvisionService : IUserProvisionService
         string email,
         string fullName,
         string? phone,
+        string? nationality,
         DateTime utcNow,
         CancellationToken cancellationToken = default)
     {
         var normalized = email.Trim().ToLowerInvariant();
 
         // Look up the existing account together with its role + status so we can decide
-        // whether it may be linked as the visitor — never modifying it here.
-        var existing = await _db.Users.AsNoTracking()
-            .Where(u => u.Email == normalized)
-            .Select(u => new { u.UserId, RoleCode = u.Role.RoleCode, u.Status })
-            .FirstOrDefaultAsync(cancellationToken);
+        // whether it may be linked as the visitor. Tracked (not AsNoTracking): a submission may
+        // still need to BACKFILL phone/nationality below when the account is missing them.
+        var existing = await _db.Users
+            .Include(u => u.Role)
+            .FirstOrDefaultAsync(u => u.Email == normalized, cancellationToken);
 
         if (existing is not null)
         {
@@ -41,10 +42,31 @@ public sealed class UserProvisionService : IUserProvisionService
             // registrant — not with the contact's code, which used to be thrown from this backstop and
             // would have pointed the form at the wrong input.
             EnsureUsableAsVisitor(
-                existing.RoleCode,
+                existing.Role.RoleCode,
                 existing.Status,
                 VisitRequestErrorMessages.RegistrantEmailNotEligible,
                 VisitRequestErrorCodes.RegistrantEmailBelongsToInternalAccount);
+
+            // Backfill only what the account is missing — a value the person already has on file
+            // (a prior submission, a later self-service profile edit, or a Google login that ran
+            // in between) is never overwritten by this snapshot.
+            var backfilled = false;
+            if (string.IsNullOrWhiteSpace(existing.Phone) && !string.IsNullOrWhiteSpace(phone))
+            {
+                existing.Phone = phone!.Trim();
+                backfilled = true;
+            }
+            if (string.IsNullOrWhiteSpace(existing.Nationality) && !string.IsNullOrWhiteSpace(nationality))
+            {
+                existing.Nationality = nationality!.Trim();
+                backfilled = true;
+            }
+            if (backfilled)
+            {
+                existing.UpdatedAt = utcNow;
+                await _db.SaveChangesAsync(cancellationToken);
+            }
+
             return existing.UserId;
         }
 
@@ -60,6 +82,7 @@ public sealed class UserProvisionService : IUserProvisionService
             FullName    = fullName.Trim(),
             Email       = normalized,
             Phone       = phone?.Trim(),
+            Nationality = string.IsNullOrWhiteSpace(nationality) ? null : nationality.Trim(),
             RoleId      = role.RoleId,
             Status      = UserStatuses.Active,
             CreatedVia  = CreatedViaValues.VisitorForm,

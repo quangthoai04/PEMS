@@ -39,7 +39,6 @@ import {
   ScrollText,
   Camera,
   ListChecks,
-  Star,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import logo from "../../assets/images/2021-FPTU-Eng.png";
@@ -245,10 +244,6 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                 {Icon ? <Icon className="w-5 h-5 flex-shrink-0" /> : null}
                 <span className="flex items-center gap-1.5">
                   {label}
-                  {/* Trang chính của sản phẩm — đánh dấu để không lẫn với các mục còn lại. */}
-                  {item.key === 'VISIT_LIST' && (
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 flex-shrink-0" />
-                  )}
                 </span>
               </NavLink>
             );

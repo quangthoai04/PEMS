@@ -216,7 +216,8 @@ public sealed class VerifyAndCreateVisitRequestV2CommandHandler
             // ── 4. Provision ONLY the registrant account (from the BOUND snapshot). ──
             await _userProvisionService.ValidateRegistrantEmailUsableForPublicFlowAsync(boundEmail, cancellationToken);
             var registrantUserId = await _userProvisionService.EnsureVisitorAccountAsync(
-                boundEmail, boundForm.Registrant.FullName, boundForm.Registrant.Phone, now, cancellationToken);
+                boundEmail, boundForm.Registrant.FullName, boundForm.Registrant.Phone,
+                boundForm.Registrant.Nationality, now, cancellationToken);
 
             // ── 5. Build the whole v2 aggregate FROM THE BOUND SNAPSHOT in this transaction. ──
             created = await _createService.CreateV2Async(

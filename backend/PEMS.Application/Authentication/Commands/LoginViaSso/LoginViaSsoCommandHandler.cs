@@ -90,6 +90,11 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
 
         await EnsureActiveAsync(user, email, portal, request, cancellationToken);
 
+        // Backfill the avatar from Google when the account doesn't have one yet — never overwrite
+        // a photo the person already set (self-service upload, or a value from an earlier login).
+        if (string.IsNullOrWhiteSpace(user.AvatarUrl) && !string.IsNullOrWhiteSpace(info.Picture))
+            user.AvatarUrl = info.Picture.Trim();
+
         var provider = await EnsureGoogleProviderLinkedAsync(user, info, now, email, portal, request, cancellationToken);
         return await IssueAndAuditAsync(user, portal, provider, email, now, request, cancellationToken);
     }
@@ -109,6 +114,7 @@ public sealed class LoginviaSSOCommandHandler : IRequestHandler<LoginviaSSOComma
         {
             FullName = string.IsNullOrWhiteSpace(info.Name) ? email : info.Name!.Trim(),
             Email = email,
+            AvatarUrl = string.IsNullOrWhiteSpace(info.Picture) ? null : info.Picture.Trim(),
             RoleId = role.RoleId,
             Status = UserStatuses.Active,
             CreatedVia = CreatedViaValues.SsoAutoProvision,

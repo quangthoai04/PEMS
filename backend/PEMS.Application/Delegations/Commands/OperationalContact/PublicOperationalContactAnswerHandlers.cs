@@ -98,6 +98,7 @@ public sealed class PublicAcceptOperationalContactConfirmationCommandHandler
                     ? change.NewEmailMasked ?? "Đầu mối vận hành"
                     : snapshot!.ResolvedFullName!,
                 snapshot?.ResolvedPhone,
+                nationality: null, // operational-contact snapshots never carry nationality
                 _clock.VietnamNow,
                 cancellationToken);
         }

@@ -18,11 +18,19 @@ public interface IUserProvisionService
     /// contact's code used to come out of this backstop, which would have pointed a client at the
     /// wrong input. If it belongs to a VISITOR account that is not ACTIVE a
     /// <c>BusinessRuleException</c> (VISITOR_ACCOUNT_INACTIVE) is thrown.
+    ///
+    /// <para>
+    /// When the account already exists, <paramref name="phone"/> and <paramref name="nationality"/>
+    /// only ever BACKFILL a currently-empty field — a value the account already has (typed by the
+    /// person themselves, e.g. via a later profile edit or an earlier submission) is never
+    /// overwritten by a new form snapshot.
+    /// </para>
     /// </remarks>
     Task<ulong> EnsureVisitorAccountAsync(
         string email,
         string fullName,
         string? phone,
+        string? nationality,
         DateTime utcNow,
         CancellationToken cancellationToken = default);
 
