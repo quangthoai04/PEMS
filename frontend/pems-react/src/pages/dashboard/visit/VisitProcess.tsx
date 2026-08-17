@@ -75,7 +75,7 @@ const STAGE_CONFIRM: Record<'before' | 'during' | 'after', {
 }> = {
   before: {
     title: 'Xác nhận chuyển sang “Trong tiếp khách”?',
-    notice: 'Sau khi xác nhận, thông tin ở tab Trước tiếp khách sẽ được khóa và quy trình chuyển sang giai đoạn Trong tiếp khách.',
+    notice: 'Sau khi xác nhận, thông tin ở tab này sẽ khóa và chuyển sang bước Trong tiếp khách.',
     consequence:
       'Sau khi chuyển giai đoạn, toàn bộ thông tin trong tab “Trước tiếp khách” sẽ chỉ còn chế độ xem. '
       + 'Bạn sẽ không thể tạo, sửa hoặc xóa lịch trình, thành phần tham gia, hậu cần, cảnh báo và ghi chú chuẩn bị.',
@@ -845,28 +845,11 @@ export function VisitProcess() {
       : opts.stage === 'during'
         ? 'Sau khi xác nhận, quy trình sẽ chuyển sang giai đoạn Sau tiếp khách.'
         : 'Sau khi đóng đoàn, toàn bộ quy trình sẽ chuyển sang chế độ chỉ xem.';
-    // ── T-6h: KHUYẾN NGHỊ, không phải điều kiện ────────────────────────────────────────────────
-    // Nút không bao giờ bị khóa vì đồng hồ (NP-05): backend chấp nhận chuyển sớm, capability cũng
-    // vậy. Chưa tới mốc thì chỉ thêm một dòng ghi chú mốc dự kiến — đúng nghĩa gợi ý, không phải
-    // lời từ chối như bản cũ ("Có thể chuyển ... từ ...") vốn nói ngược với hành vi thật.
-    const earlyNotice = opts.stage === 'before'
-      && perm.isBeforeRecommendedStartWindow
-      && perm.recommendedStartVisitAt
-      ? `Thông thường bước này được thực hiện từ ${formatVietnamDateTime(perm.recommendedStartVisitAt)} `
-        + '(6 giờ trước giờ bắt đầu dự kiến). Bạn vẫn có thể chuyển sớm nếu đoàn đến trước.'
-      : null;
     return (
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm font-medium text-slate-500 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0 mt-0.5" />
-          <span>
-            {stageNotice}
-            {earlyNotice && (
-              <span data-testid="stage-before-early-notice" className="mt-1 block text-slate-400">
-                {earlyNotice}
-              </span>
-            )}
-          </span>
+          <span>{stageNotice}</span>
         </div>
         <button
           type="button"

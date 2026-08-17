@@ -8,7 +8,8 @@
  *
  * What is pinned now:
  *   • `canStartVisit` is true throughout BEFORE_VISIT — the button is offered, never time-locked.
- *   • Starting early only changes the WORDS (an advisory line, and an extra note in the dialog).
+ *   • Starting early only changes the WORDS — an extra note inside the confirm dialog (the banner
+ *     itself stays a single line).
  *   • Every transition goes through a confirmation that states the read-only consequence.
  *   • Cancel calls nothing; confirm sends exactly one request; a failure leaves the dialog's own
  *     screen state alone rather than pretending the stage moved.
@@ -120,16 +121,11 @@ const openConfirm = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 
 describe('BEFORE → DURING: T-6h is advice, and the transition is confirmed', () => {
-  it('offers the transition before the recommended window, with an advisory note', async () => {
+  it('offers the transition before the recommended window, unconditionally', async () => {
     render(<VisitProcess />);
 
     const button = await screen.findByTestId('stage-advance-before');
     expect(button).not.toBeDisabled();
-
-    // Advice, not refusal: it says what is usual and that going early is allowed.
-    const note = screen.getByTestId('stage-before-early-notice');
-    expect(note).toHaveTextContent(/Thông thường bước này được thực hiện từ/);
-    expect(note).toHaveTextContent(/vẫn có thể chuyển sớm/);
   });
 
   it('asks for confirmation and names the read-only consequence before calling anything', async () => {
