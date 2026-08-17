@@ -5,6 +5,8 @@ import type {
   ChangeGalleryStatusInput,
   CreateGalleryItemInput,
   CreateGalleryLocationInput,
+  DeleteGalleryItemInput,
+  DeleteGalleryItemResult,
   GalleryFilterOptions,
   GalleryItemDetail,
   GalleryItemTranslationPreview,
@@ -141,6 +143,12 @@ export const galleryManagementApi = {
   /** UC-GAL-05 / UC-GAL-06 — enable/disable (toggle status only). */
   async changeStatus(input: ChangeGalleryStatusInput): Promise<{ galleryItemId: number; status: string; message: string }> {
     const { data } = await httpClient.post(API_ENDPOINTS.gallery.changeStatus, input);
+    return data;
+  },
+
+  /** "Xóa nội dung Gallery" — permanent for the user (server-side soft delete). Not reversible in UI. */
+  async deleteGalleryItem(input: DeleteGalleryItemInput): Promise<DeleteGalleryItemResult> {
+    const { data } = await httpClient.post<DeleteGalleryItemResult>(API_ENDPOINTS.gallery.deleteItem, input);
     return data;
   },
 

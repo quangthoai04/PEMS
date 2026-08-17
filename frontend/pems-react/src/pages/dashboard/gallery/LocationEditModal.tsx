@@ -270,9 +270,11 @@ export function LocationEditModal({
                 hint="Để trống nếu muốn giữ video/ảnh khu vực hiện tại. Chỉ MP4, tối đa 100 MB và 120 giây (2 phút)."
               />
 
-              <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 font-medium">
-                Thay đổi tên hoặc video đại diện khu vực sẽ áp dụng cho tất cả vị trí thuộc khu vực này.
-              </p>
+              <div className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 font-medium space-y-1">
+                <p>Đổi tên khu vực chỉ áp dụng cho vị trí đang chỉnh sửa.</p>
+                <p>Nếu chỉ thay video đại diện mà không đổi tên khu vực, video mới sẽ áp dụng cho tất cả vị trí thuộc khu vực hiện tại.</p>
+                <p>Nếu đổi tên khu vực, vị trí hiện tại sẽ được tách sang khu vực mới. Video mới (nếu chọn) sẽ thuộc khu vực mới đó.</p>
+              </div>
 
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Vị trí cụ thể (VI) <span className="text-red-500">*</span></label>

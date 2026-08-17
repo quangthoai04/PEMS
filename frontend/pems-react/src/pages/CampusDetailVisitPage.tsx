@@ -863,11 +863,13 @@ function GalleryItemDetailModal({
             <div className="w-24 h-1.5 bg-gradient-to-r from-fpt-orange to-transparent rounded-full opacity-80 relative z-10" />
           </div>
 
-          <div className="bg-white/80 dark:bg-white/10 backdrop-blur-3xl border border-white/40 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] grow flex flex-col overflow-hidden relative min-h-0">
+          {/* Same glass surface as the title card above (bg / border / blur / shadow kept in sync on
+              purpose) — this card was previously a light panel, so its contents are white-on-glass. */}
+          <div className="bg-white/15 dark:bg-black/20 backdrop-blur-2xl border border-white/30 rounded-[1.5rem] sm:rounded-[2rem] p-5 sm:p-6 shadow-[0_8px_32px_rgba(0,0,0,0.1)] grow flex flex-col overflow-hidden relative min-h-0">
             {/* Language toggle + speaker — both languages are always available (both are mandatory). */}
             {detail && !notFound && !isLoading && (
               <div className="flex items-center justify-between gap-2 mb-3 shrink-0">
-                <div className="inline-flex items-center rounded-full bg-black/5 dark:bg-white/10 p-1 gap-1" title={t('visitFptu:gallery.actions.switchLanguage')}>
+                <div className="inline-flex items-center rounded-full bg-white/10 border border-white/15 p-1 gap-1" title={t('visitFptu:gallery.actions.switchLanguage')}>
                   {(["vi", "en"] as GalleryLanguage[]).map((lng) => {
                     const active = selectedLanguage === lng;
                     return (
@@ -875,7 +877,7 @@ function GalleryItemDetailModal({
                         key={lng}
                         onClick={() => changeLanguage(lng)}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                          active ? "bg-fpt-orange text-white shadow" : "text-gray-600 dark:text-gray-300 hover:text-fpt-orange"
+                          active ? "bg-fpt-orange text-white shadow" : "text-white/70 hover:text-fpt-orange"
                         }`}
                       >
                         <Languages className="w-3.5 h-3.5" />
@@ -895,7 +897,7 @@ function GalleryItemDetailModal({
                   className={`flex items-center justify-center w-11 h-11 rounded-full transition-all duration-300 hover:scale-110 hover:shadow-[0_0_15px_rgba(243,112,33,0.4)] disabled:opacity-40 disabled:cursor-not-allowed ${
                     audioState === "playing"
                       ? "bg-fpt-orange text-white animate-pulse"
-                      : "bg-fpt-orange/10 text-fpt-orange hover:bg-fpt-orange hover:text-white"
+                      : "bg-fpt-orange/20 text-fpt-orange hover:bg-fpt-orange hover:text-white"
                   }`}
                 >
                   {audioState === "loading" ? (
@@ -909,19 +911,19 @@ function GalleryItemDetailModal({
               </div>
             )}
             {audioState === "error" && (
-              <span className="text-[11px] leading-snug text-red-500 dark:text-red-400 mb-2 shrink-0">
+              <span className="text-[11px] leading-snug text-red-300 mb-2 shrink-0">
                 {t('visitFptu:gallery.errors.narrationFailed')}
               </span>
             )}
 
             {/* Description — the ONLY scrolling element (flex-col grow so it's height-bounded). */}
-            <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-black dark:text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-black/5 dark:[&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
+            <div className="grow min-h-0 overflow-y-auto pr-2 mb-4 prose prose-base text-white font-light leading-relaxed [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-white/10 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-fpt-orange/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb:hover]:bg-fpt-orange/80 [scrollbar-width:thin] [scrollbar-color:rgba(243,112,33,0.55)_transparent]">
               {isLoading ? (
-                <p className="text-gray-600 dark:text-gray-300">{t('visitFptu:gallery.labels.loadingDescription')}</p>
+                <p className="text-white/70">{t('visitFptu:gallery.labels.loadingDescription')}</p>
               ) : notFound ? (
-                <p className="text-red-600 dark:text-red-400 font-medium">{t('visitFptu:gallery.errors.contentHidden')}</p>
+                <p className="text-red-300 font-medium">{t('visitFptu:gallery.errors.contentHidden')}</p>
               ) : (
-                <p className="text-black dark:text-gray-100 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
+                <p className="text-white/90 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
                   {activeContent?.description}
                 </p>
               )}
@@ -929,16 +931,16 @@ function GalleryItemDetailModal({
 
             {/* Prev / next item footer — fixed at the card bottom, never scrolls away */}
             {hasNav && (
-              <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-white/10 shrink-0">
+              <div className="flex items-center justify-between pt-4 border-t border-white/15 shrink-0">
                 <button
                   onClick={onPrev}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-white/80 hover:text-fpt-orange hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
                 >
                   <ChevronLeft className="w-5 h-5" /> {t('visitFptu:gallery.actions.previous')}
                 </button>
                 <button
                   onClick={onNext}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-gray-700 dark:text-gray-200 hover:text-fpt-orange dark:hover:text-fpt-orange hover:bg-fpt-orange/10 dark:hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-bold text-white/80 hover:text-fpt-orange hover:bg-fpt-orange/20 rounded-xl transition-all hover:scale-105 active:scale-95"
                 >
                   {t('visitFptu:gallery.actions.next')} <ChevronRight className="w-5 h-5" />
                 </button>

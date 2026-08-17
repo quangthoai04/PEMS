@@ -105,6 +105,8 @@ export const API_ENDPOINTS = {
     create: '/galleries/addgalleryitem',
     update: '/galleries/updategalleryitem',
     changeStatus: '/galleries/changegalleryitemstatus',
+    // "Xóa nội dung Gallery" — soft delete (deleted_at/deleted_by), NOT the Hide toggle above.
+    deleteItem: '/galleries/deletegalleryitem',
     // UC-LOC-01..09 — area/location management ("Quản lý khu vực").
     locationList: '/galleries/viewgallerylocationlist',
     locationCreate: '/galleries/creategallerylocation',

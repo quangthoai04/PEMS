@@ -205,6 +205,16 @@ export interface ChangeGalleryStatusInput {
   status: GalleryStatus;
 }
 
+/** "Xóa nội dung Gallery" — soft delete on the server, distinct from the reversible Hide toggle. */
+export interface DeleteGalleryItemInput {
+  galleryItemId: number;
+}
+
+export interface DeleteGalleryItemResult {
+  galleryItemId: number;
+  message: string;
+}
+
 // ── Quản lý khu vực (area/location management, UC-LOC-01..09) ──
 
 export type GalleryLocationStatus = 'ACTIVE' | 'INACTIVE';

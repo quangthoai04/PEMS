@@ -15,6 +15,7 @@ export const GALLERY_ERROR_MESSAGES: Record<string, string> = {
   GALLERY_NO_CAMPUS_ASSIGNED: 'Tài khoản chưa được gán cơ sở nên không thể quản lý gallery.',
   GALLERY_ITEM_NOT_FOUND: 'Không tìm thấy gallery item.',
   GALLERY_SCOPE_FORBIDDEN: 'Bạn không có quyền thao tác với gallery item này.',
+  GALLERY_ITEM_ALREADY_DELETED: 'Nội dung Gallery này đã được xóa trước đó.',
   GALLERY_LOCATION_NOT_FOUND: 'Không tìm thấy vị trí.',
   GALLERY_LOCATION_SCOPE_FORBIDDEN: 'Bạn không có quyền thêm media vào vị trí này.',
   GALLERY_LOCATION_INACTIVE: 'Vị trí này đang ngừng hoạt động, không thể upload media mới.',

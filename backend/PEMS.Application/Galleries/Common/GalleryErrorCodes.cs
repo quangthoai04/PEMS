@@ -19,6 +19,9 @@ public static class GalleryErrorCodes
     /// <summary>The gallery item exists but belongs to another campus. → 403.</summary>
     public const string GalleryScopeForbidden = "GALLERY_SCOPE_FORBIDDEN";
 
+    /// <summary>The gallery item was already soft-deleted by an earlier delete. → 409.</summary>
+    public const string GalleryItemAlreadyDeleted = "GALLERY_ITEM_ALREADY_DELETED";
+
     /// <summary>The target location does not exist. → 404.</summary>
     public const string LocationNotFound = "GALLERY_LOCATION_NOT_FOUND";
 

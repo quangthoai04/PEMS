@@ -6,6 +6,6 @@ public sealed class DeleteGalleryItemCommandValidator : AbstractValidator<Delete
 {
     public DeleteGalleryItemCommandValidator()
     {
-        // TODO: Add validation rules after UC specification is completed.
+        RuleFor(x => x.GalleryItemId).GreaterThan(0);
     }
 }
