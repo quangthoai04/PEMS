@@ -84,7 +84,7 @@ function PanelState({ state, onRetry, children }: {
   if (state.error) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-10 text-center">
-        <p className="text-sm font-semibold text-red-500 mb-2">{state.error}</p>
+        <p className="text-sm font-normal text-red-500 mb-2">{state.error}</p>
         <button
           onClick={onRetry}
           className="text-xs font-bold text-[#004c91] hover:underline flex items-center gap-1 cursor-pointer"
@@ -184,7 +184,7 @@ export function AdminDashboardView() {
                   <div className="min-w-0">
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{card.label}</p>
                     <p className="text-2xl font-black text-slate-800 leading-tight">{card.value}</p>
-                    {card.sub && <p className="text-xs text-slate-400 font-medium mt-0.5 truncate" title={card.sub}>{card.sub}</p>}
+                    {card.sub && <p className="text-xs text-slate-400 font-normal mt-0.5 truncate" title={card.sub}>{card.sub}</p>}
                   </div>
                 </Link>
               );
@@ -196,7 +196,7 @@ export function AdminDashboardView() {
       {/* Hạ tầng: backend chưa có telemetry → không hiển thị số liệu bịa */}
       <div className="bg-slate-50 border border-dashed border-slate-300 rounded-2xl p-4 flex items-center gap-3">
         <ServerOff className="w-5 h-5 text-slate-400 shrink-0" />
-        <p className="text-sm text-slate-500 font-medium">
+        <p className="text-sm text-slate-500 font-normal">
           Chưa cấu hình giám sát hạ tầng (uptime, CPU, RAM, dung lượng). Số liệu sẽ hiển thị khi backend có nguồn telemetry thật.
         </p>
       </div>
@@ -206,7 +206,7 @@ export function AdminDashboardView() {
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[340px]">
           <div className="mb-4">
             <h3 className="text-lg font-bold text-slate-800">Đăng nhập theo ngày (7 ngày)</h3>
-            <p className="text-xs font-semibold text-slate-500 mt-1">Số lượt SUCCESS / FAILED từ login_logs</p>
+            <p className="text-xs font-normal text-slate-500 mt-1">Số lượt SUCCESS / FAILED từ login_logs</p>
           </div>
           <PanelState state={loginActivity} onRetry={reloadLogins}>
             {hasLoginData ? (
@@ -234,7 +234,7 @@ export function AdminDashboardView() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-medium">
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-normal">
                 Chưa có lượt đăng nhập nào trong 7 ngày qua.
               </div>
             )}
@@ -245,7 +245,7 @@ export function AdminDashboardView() {
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[340px]">
           <div className="mb-4">
             <h3 className="text-lg font-bold text-slate-800">API request theo ngày (7 ngày)</h3>
-            <p className="text-xs font-semibold text-slate-500 mt-1">Số request SUCCESS / FAILED từ api_request_logs</p>
+            <p className="text-xs font-normal text-slate-500 mt-1">Số request SUCCESS / FAILED từ api_request_logs</p>
           </div>
           <PanelState state={apiActivity} onRetry={reloadApi}>
             {hasApiData ? (
@@ -265,7 +265,7 @@ export function AdminDashboardView() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-medium">
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-normal">
                 Chưa có request API nào trong 7 ngày qua.
               </div>
             )}
@@ -278,7 +278,7 @@ export function AdminDashboardView() {
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[300px]">
           <div className="mb-4">
             <h3 className="text-lg font-bold text-slate-800">Thời gian phản hồi API trung bình (ms)</h3>
-            <p className="text-xs font-semibold text-slate-500 mt-1">Trung bình theo ngày, 7 ngày gần nhất</p>
+            <p className="text-xs font-normal text-slate-500 mt-1">Trung bình theo ngày, 7 ngày gần nhất</p>
           </div>
           <PanelState state={apiActivity} onRetry={reloadApi}>
             {latencyData.length > 0 ? (
@@ -297,7 +297,7 @@ export function AdminDashboardView() {
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-medium">
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-normal">
                 Chưa có dữ liệu response time.
               </div>
             )}
@@ -309,7 +309,7 @@ export function AdminDashboardView() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-slate-800">Security event mức cao</h3>
-              <p className="text-xs font-semibold text-slate-500 mt-1">HIGH / CRITICAL gần nhất</p>
+              <p className="text-xs font-normal text-slate-500 mt-1">HIGH / CRITICAL gần nhất</p>
             </div>
             <Link to="/dashboard/admin/security" className="text-xs font-bold text-[#004c91] hover:underline px-3 py-1.5 bg-blue-50 rounded-lg">
               Xem tất cả
@@ -337,7 +337,7 @@ export function AdminDashboardView() {
                 ))}
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-medium">
+              <div className="flex-1 flex items-center justify-center text-sm text-slate-400 font-normal">
                 Không có security event mức HIGH/CRITICAL.
               </div>
             )}
@@ -352,7 +352,7 @@ export function AdminDashboardView() {
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
               <ScrollText className="w-4 h-4 text-[#004c91]" /> Nhật ký kiểm toán gần nhất
             </h3>
-            <p className="text-xs text-slate-500 font-medium mt-1">Các thao tác quản trị mới nhất từ audit_logs</p>
+            <p className="text-xs text-slate-500 font-normal mt-1">Các thao tác quản trị mới nhất từ audit_logs</p>
           </div>
           <Link to="/dashboard/admin/audit-logs" className="text-xs font-bold text-[#004c91] hover:underline px-3 py-1.5 bg-blue-50 rounded-lg">
             Xem tất cả
@@ -367,7 +367,7 @@ export function AdminDashboardView() {
                     <Activity className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">
+                    <p className="text-sm font-normal text-slate-800 truncate">
                       <span className="font-bold text-[#004c91]">{log.actorName || log.actorEmail || 'Hệ thống'}</span>
                       {' '}· {log.action} · {log.entityType}{log.entityId ? ` #${log.entityId}` : ''}
                     </p>
@@ -381,7 +381,7 @@ export function AdminDashboardView() {
               ))}
             </div>
           ) : (
-            <div className="py-10 text-center text-sm text-slate-400 font-medium">Chưa có bản ghi kiểm toán nào.</div>
+            <div className="py-10 text-center text-sm text-slate-400 font-normal">Chưa có bản ghi kiểm toán nào.</div>
           )}
         </PanelState>
       </div>

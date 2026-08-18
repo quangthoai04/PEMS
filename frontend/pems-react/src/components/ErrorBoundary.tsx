@@ -60,7 +60,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             ⚠️
           </div>
           <h1 className="text-2xl font-black text-[#004c91] mb-2">Đã xảy ra lỗi khi hiển thị màn hình</h1>
-          <p className="text-gray-700 font-semibold mb-1">Đây không phải lỗi đăng nhập.</p>
+          <p className="text-gray-700 font-normal mb-1">Đây không phải lỗi đăng nhập.</p>
           <p className="text-gray-500 text-sm mb-6">
             Bạn có thể quay lại trang chính, đăng xuất hoặc tải lại trang để tiếp tục.
           </p>

@@ -207,7 +207,7 @@ export function LogisticsExpensePanel({ logisticsItemId, readOnly = false }: Pro
                       className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                     />
                   </td>
-                  <td className="px-2.5 py-1 text-right font-black text-[#004c91]">
+                  <td className="px-2.5 py-1 text-right font-normal text-[#004c91]">
                     {((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')} ₫
                   </td>
                   {!locked && (

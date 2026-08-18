@@ -232,23 +232,23 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
             </thead>
             <tbody className="divide-y divide-slate-100">
               {tasksLoading && (
-                <tr><td colSpan={5} className="py-10 text-center text-sm text-slate-400 font-semibold">Đang tải dữ liệu...</td></tr>
+                <tr><td colSpan={5} className="py-10 text-center text-sm text-slate-400 font-normal">Đang tải dữ liệu...</td></tr>
               )}
               {!tasksLoading && tasks.length === 0 && (
-                <tr><td colSpan={5} className="py-10 text-center text-sm text-slate-400 font-semibold">Không có dữ liệu phù hợp</td></tr>
+                <tr><td colSpan={5} className="py-10 text-center text-sm text-slate-400 font-normal">Không có dữ liệu phù hợp</td></tr>
               )}
               {!tasksLoading && tasks.map((item, i) => (
                 <tr key={`${item.itemType}_${item.itemId}`} className="hover:bg-slate-50/80 transition-colors">
                   <td className="px-4 py-3 text-sm font-black text-slate-500">{(filter.page - 1) * PAGE_SIZE + i + 1}</td>
                   <td className="px-4 py-3">
                     <p className="text-sm font-black text-slate-900 line-clamp-2">{item.title}</p>
-                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                    <p className="text-[11px] text-slate-500 font-normal mt-0.5">
                       {item.delegationName} · {item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'}
                       {item.requestCode ? ` · ${item.requestCode}` : ''}
                       {item.organizationName ? ` · ${item.organizationName}` : ''}
                     </p>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 font-semibold whitespace-nowrap">
+                  <td className="px-4 py-3 text-xs text-slate-600 font-normal whitespace-nowrap">
                     {fmtSchedule(item.startAt, item.endAt)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
@@ -331,7 +331,7 @@ export function StaffTasksTab({ tasks, totalTasks, tasksLoading, attentionItems,
         </div>
 
         {/* Pagination & Page Size */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 text-xs font-bold text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-100 text-xs font-normal text-slate-500">
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-500 font-semibold">Hiển thị:</span>
             <select

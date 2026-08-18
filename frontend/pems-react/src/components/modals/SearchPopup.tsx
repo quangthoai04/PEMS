@@ -220,7 +220,7 @@ function ContactFooter() {
                 className="flex items-center gap-1.5 text-[12px] text-slate-600 hover:text-[#f37021] transition-colors"
               >
                 <Phone className="w-3.5 h-3.5 shrink-0 text-[#f37021]/70" />
-                <span className="font-medium">{campus.hotline}</span>
+                <span className="font-normal">{campus.hotline}</span>
               </a>
               <a
                 href={`mailto:${campus.email}`}
@@ -496,14 +496,14 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                   <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-slate-200/70 flex items-center justify-center">
                     <SearchX className="w-6 h-6 text-slate-500" />
                   </div>
-                  <p className="text-sm font-semibold text-slate-700 mb-1">
+                  <p className="text-sm font-normal text-slate-700 mb-1">
                     {t('search:noResult', { keyword: debouncedKeyword })}
                   </p>
                   <p className="text-sm text-slate-500">{t('search:noResultHint')}</p>
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <p className="text-xs font-medium text-slate-500">
+                  <p className="text-xs font-normal text-slate-500">
                     {t('search:resultCount', { count: result!.totalCount, keyword: debouncedKeyword })}
                   </p>
 
@@ -623,7 +623,7 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
                                   <span className="text-emerald-400">·</span>
                                   <span>{g.areaName}</span>
                                   <span className="text-emerald-400">·</span>
-                                  <span className="font-medium text-emerald-700">{g.locationName}</span>
+                                  <span className="font-normal text-emerald-700">{g.locationName}</span>
                                 </span>
                               </span>
                             </span>

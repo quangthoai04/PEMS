@@ -164,7 +164,7 @@ export function PartnerDetailPage() {
 
                 <h1 className="text-xl font-bold text-slate-900 leading-tight mb-1.5">{partner.name}</h1>
                 {partner.shortName && (
-                  <p className="text-sm text-slate-400 font-medium mb-3">{partner.shortName}</p>
+                  <p className="text-sm text-slate-400 font-normal mb-3">{partner.shortName}</p>
                 )}
 
                 {location && (
@@ -234,19 +234,19 @@ export function PartnerDetailPage() {
                 {partner.country && (
                   <div>
                     <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.country')}</dt>
-                    <dd className="text-slate-700 font-semibold">{translatedCountry}</dd>
+                    <dd className="text-slate-700 font-normal">{translatedCountry}</dd>
                   </div>
                 )}
                 {partner.city && (
                   <div>
                     <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.city')}</dt>
-                    <dd className="text-slate-700 font-semibold">{partner.city}</dd>
+                    <dd className="text-slate-700 font-normal">{partner.city}</dd>
                   </div>
                 )}
                 {partner.address && (
                   <div className="sm:col-span-2">
                     <dt className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">{t('partners:detail.address')}</dt>
-                    <dd className="text-slate-700 font-semibold leading-relaxed">{partner.address}</dd>
+                    <dd className="text-slate-700 font-normal leading-relaxed">{partner.address}</dd>
                   </div>
                 )}
                 {!partner.country && !partner.city && !partner.address && (

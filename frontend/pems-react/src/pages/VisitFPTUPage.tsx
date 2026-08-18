@@ -142,7 +142,7 @@ export function VisitFPTUPage() {
                     <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center shrink-0 group-hover:bg-fpt-orange transition-colors">
                       <Sparkles className="w-4 h-4 text-fpt-orange group-hover:text-white transition-colors" />
                     </div>
-                    <span className="text-gray-700 font-medium">{item}</span>
+                    <span className="text-gray-700 font-normal">{item}</span>
                   </li>
                 ))}
               </ul>

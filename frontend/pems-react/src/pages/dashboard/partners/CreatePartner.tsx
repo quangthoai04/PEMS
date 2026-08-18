@@ -356,7 +356,7 @@ export function CreatePartner() {
                 <>
                   <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
                   {duplicateHint && (
-                    <p className="mt-1.5 text-xs font-medium text-amber-600 flex items-center gap-1">
+                    <p className="mt-1.5 text-xs font-normal text-amber-600 flex items-center gap-1">
                       <AlertTriangle className="w-3.5 h-3.5" />
                       Có thể trùng với đối tác đã tồn tại: <b>{duplicateHint.partnerName}</b> ({duplicateHint.reason})
                     </p>

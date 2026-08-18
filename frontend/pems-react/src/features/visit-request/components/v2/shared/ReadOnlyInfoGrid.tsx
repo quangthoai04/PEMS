@@ -32,7 +32,7 @@ export const ReadOnlyInfoGrid: React.FC<Props> = ({ rows, emptyText = '—', cla
         <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
         <dd
           className={`mt-0.5 break-words text-sm text-slate-800 ${multiline ? 'whitespace-pre-wrap' : ''} ${
-            isEmpty(value) ? 'italic text-slate-400' : 'font-medium'
+            isEmpty(value) ? 'italic text-slate-400' : 'font-normal'
           }`}
         >
           {isEmpty(value) ? emptyText : value}

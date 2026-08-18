@@ -190,7 +190,7 @@ export function FeedbackManagement() {
 
       {/* Pagination */}
       <div className="p-4 mt-4 border border-slate-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50">
-        <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+        <div className="flex items-center gap-2 text-sm text-slate-500 font-normal">
           <span>Hiển thị</span>
           <select
             value={pageSize}
@@ -215,7 +215,7 @@ export function FeedbackManagement() {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="text-sm font-bold text-slate-700">
+          <div className="text-sm font-normal text-slate-700">
             Trang {currentPage} / {Math.max(1, summaries?.totalPages || 1)}
           </div>
           <button

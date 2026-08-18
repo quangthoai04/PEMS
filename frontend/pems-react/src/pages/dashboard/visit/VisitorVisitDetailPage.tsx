@@ -36,7 +36,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-500 font-medium">{t('loading')}</p>
+        <p className="text-gray-500 font-normal">{t('loading')}</p>
       </div>
     );
   }
@@ -135,14 +135,14 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
 const KV = ({ label, value }: { label: string; value?: React.ReactNode }) => (
   <div className="flex gap-2 py-0.5 text-[13px] leading-5">
     <span className="w-40 shrink-0 text-slate-500">{label}:</span>
-    <span className="min-w-0 font-medium text-slate-800 break-words">{value || '-'}</span>
+    <span className="min-w-0 font-normal text-slate-800 break-words">{value || '-'}</span>
   </div>
 );
 
 const KVBlock = ({ label, value }: { label: string; value?: string | null }) => (
   <div className="py-0.5 text-[13px] leading-5">
     <span className="text-slate-500">{label}:</span>
-    <p className="mt-0.5 font-medium text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
+    <p className="mt-0.5 font-normal text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
   </div>
 );
 
@@ -198,7 +198,7 @@ function VisitorContactStrip({ detail }: { detail: VisitProcessDetail }) {
   if (!host) {
     return (
       <section className="rounded-3xl bg-white border border-slate-200 shadow-sm p-6 text-center">
-        <p className="text-slate-500 font-medium italic">{t('hostSection.waitingHost')}</p>
+        <p className="text-slate-500 font-normal italic">{t('hostSection.waitingHost')}</p>
       </section>
     );
   }
@@ -241,7 +241,7 @@ function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
       </div>
       <div>
         <h3 className="text-[14px] font-bold text-[#004c91] mb-1">{t('nextStep.title')}</h3>
-        <p className="text-[13px] text-slate-700 font-medium leading-relaxed">{text}</p>
+        <p className="text-[13px] text-slate-700 font-normal leading-relaxed">{text}</p>
       </div>
     </div>
   );
@@ -273,10 +273,10 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
               {agenda.map((it, idx) => (
                 <tr key={idx}>
                   <td className="px-3 py-2 text-slate-600 whitespace-nowrap align-top">
-                    <span className="font-medium text-[#004c91]">{formatTime(it.startTime)} {it.endTime ? `- ${formatTime(it.endTime)}` : ''}</span>
+                    <span className="font-normal text-[#004c91]">{formatTime(it.startTime)} {it.endTime ? `- ${formatTime(it.endTime)}` : ''}</span>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <p className="font-medium text-slate-800">{it.title}</p>
+                    <p className="font-normal text-slate-800">{it.title}</p>
                     {it.description && <p className="text-slate-500 mt-1 whitespace-pre-wrap">{it.description}</p>}
                   </td>
                   <td className="px-3 py-2 text-slate-600 align-top">{it.location || '-'}</td>
@@ -438,7 +438,7 @@ function VisitorCampusInfoSection({ campusName }: { campusName?: string | null }
         </div>
         <div>
           <h3 className="text-[13px] font-bold text-slate-900">{campusName}</h3>
-          <p className="text-[12px] text-slate-500 font-medium">FPT University</p>
+          <p className="text-[12px] text-slate-500 font-normal">FPT University</p>
         </div>
       </div>
     </section>
@@ -464,10 +464,10 @@ function VisitorFeedbackCard({ visitInstanceId, status, isCancelled }: { visitIn
         </div>
         <h3 className="text-[15px] font-bold text-slate-900 mb-1">{t('feedbackCard.title')}</h3>
         {submitted ? (
-          <p className="text-[13px] text-emerald-600 font-bold">{t('feedbackCard.thanks')}</p>
+          <p className="text-[13px] text-emerald-600 font-normal">{t('feedbackCard.thanks')}</p>
         ) : (
           <>
-            <p className="text-[13px] text-slate-600 font-medium max-w-lg mx-auto mb-4">
+            <p className="text-[13px] text-slate-600 font-normal max-w-lg mx-auto mb-4">
               {t('feedbackCard.prompt')}
             </p>
             <button
@@ -501,7 +501,7 @@ function VisitorCancelledBanner() {
         </div>
         <div>
           <h3 className="text-[14px] font-bold text-rose-800 mb-1">{t('cancelledBanner.title')}</h3>
-          <p className="text-rose-700 text-[13px] font-medium">
+          <p className="text-rose-700 text-[13px] font-normal">
             {t('cancelledBanner.desc')}
           </p>
         </div>
@@ -543,7 +543,7 @@ function VisitorNotificationsSection({ notifications }: { notifications: Visitor
               {resolved.message && (
                 <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">{resolved.message}</p>
               )}
-              <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+              <p className="mt-1.5 text-[11px] font-normal text-slate-400">
                 {formatDateTime(item.createdAt)}
               </p>
             </div>
@@ -603,7 +603,7 @@ function VisitorPublicNewsSection({
                   {item.summary}
                 </p>
               )}
-              <div className="mt-2 text-[11px] font-medium text-slate-400 mt-auto pt-2">
+              <div className="mt-2 text-[11px] font-normal text-slate-400 mt-auto pt-2">
                 {item.publishedAt ? formatDateTime(item.publishedAt) : ''}
                 {item.authorName ? ` · ${item.authorName}` : ''}
               </div>

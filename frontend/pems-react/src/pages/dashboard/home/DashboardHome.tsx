@@ -334,7 +334,7 @@ export function DashboardHome() {
             </div>
             <div>
               <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Thời gian hệ thống</p>
-              <p className="font-extrabold text-[#004c91] text-xs md:text-sm tracking-wide mt-0.5">
+              <p className="font-normal text-[#004c91] text-xs md:text-sm tracking-wide mt-0.5">
                 {formatVietnamDateTimeLocale(currentSystemTime, 'vi-VN', { day: '2-digit', month: 'long', year: 'numeric' })} - {formatVietnamTime(currentSystemTime)}
               </p>
             </div>
@@ -367,7 +367,7 @@ export function DashboardHome() {
           </div>
           <div>
             <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Cơ sở hiện tại</p>
-            <p className="text-lg font-extrabold text-slate-800">Campus {user.campus}</p>
+            <p className="text-lg font-normal text-slate-800">Campus {user.campus}</p>
           </div>
         </div>
 
@@ -391,7 +391,7 @@ export function DashboardHome() {
           </div>
           <div>
             <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-1">Quyền lực vai trò</p>
-            <p className="text-lg font-extrabold text-[#0aa14f] uppercase tracking-wider">{user.role}</p>
+            <p className="text-lg font-normal text-[#0aa14f] uppercase tracking-wider">{user.role}</p>
           </div>
         </div>
 
@@ -525,7 +525,7 @@ export function DashboardHome() {
                   </h4>
 
                   {formError && (
-                    <p className="text-[11px] text-red-600 bg-red-50 p-2 rounded-lg border border-red-100 font-bold leading-relaxed">
+                    <p className="text-[11px] text-red-600 bg-red-50 p-2 rounded-lg border border-red-100 font-normal leading-relaxed">
                       ⚠️ {formError}
                     </p>
                   )}
@@ -663,7 +663,7 @@ export function DashboardHome() {
                       
                       <div className="flex-1 space-y-2.5 pl-3 min-w-0">
                         <div className="flex flex-wrap items-center gap-2.5">
-                          <span className="text-xs font-bold text-slate-500 flex items-center gap-1 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl">
+                          <span className="text-xs font-normal text-slate-500 flex items-center gap-1 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-xl">
                             <Clock className="w-3.5 h-3.5 text-[#f37021]" />
                             {ev.time}
                           </span>
@@ -676,7 +676,7 @@ export function DashboardHome() {
                           {ev.title}
                         </h4>
                         
-                        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-2xl">
+                        <p className="text-xs text-slate-500 font-normal leading-relaxed max-w-2xl">
                           {ev.description}
                         </p>
                       </div>
@@ -699,7 +699,7 @@ export function DashboardHome() {
                   <h4 className="text-sm font-extrabold text-slate-700 mb-1">
                     {categoryFilter !== "All" ? "Không có lịch lọc phù hợp" : "Khung thời gian trống"}
                   </h4>
-                  <p className="text-xs text-slate-450 max-w-xs leading-relaxed font-semibold">
+                  <p className="text-xs text-slate-450 max-w-xs leading-relaxed font-normal">
                     {categoryFilter !== "All" 
                       ? `Không tìm thấy chương trình nào phù hợp với bộ lọc "${categoryFilter}" cho ngày được chọn.`
                       : "Không có cuộc họp hay phái đoàn nào được ghi nhận vào ngày này. Hãy lên lịch trình mới ngay."

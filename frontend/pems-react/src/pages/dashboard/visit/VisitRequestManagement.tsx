@@ -2063,13 +2063,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 <div className="lg:py-1 lg:pl-10 lg:pr-4 w-full flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 min-w-0">
                   <div className="text-xs font-bold text-[#004c91] truncate sm:min-w-[160px]">
                     {item.campusName || '-'}
-                    {item.campusCode ? <span className="ml-1 text-[10px] font-medium text-slate-400">({item.campusCode})</span> : null}
+                    {item.campusCode ? <span className="ml-1 text-[10px] font-normal text-slate-400">({item.campusCode})</span> : null}
                   </div>
                   <div className="text-[11px] text-slate-500 truncate">
                     {item.instanceStatus === 'REJECTED' ? (
-                      <><span className="text-slate-400">{tt('visitRequestV2:list.row.rejectReasonLabel')}</span> <span className="font-semibold text-red-700">{item.decisionNote || '-'}</span></>
+                      <><span className="text-slate-400">{tt('visitRequestV2:list.row.rejectReasonLabel')}</span> <span className="font-normal text-red-700">{item.decisionNote || '-'}</span></>
                     ) : (
-                      <><span className="text-slate-400">{tt('visitRequestV2:list.row.hostLabel')}</span> <span className="font-semibold text-slate-700">{item.hostName || (item.instanceStatus === 'WAITING_REQUEST_APPROVAL' ? tt('visitRequestV2:list.row.notAssignedYet') : '-')}</span></>
+                      <><span className="text-slate-400">{tt('visitRequestV2:list.row.hostLabel')}</span> <span className="font-normal text-slate-700">{item.hostName || (item.instanceStatus === 'WAITING_REQUEST_APPROVAL' ? tt('visitRequestV2:list.row.notAssignedYet') : '-')}</span></>
                     )}
                   </div>
                 </div>
@@ -2477,12 +2477,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </button>
           </div>
         </div>
-        {filterError && <div className="text-red-500 text-sm font-medium mt-2"><AlertCircle className="w-4 h-4 inline-block mr-1" />{filterError}</div>}
+        {filterError && <div className="text-red-500 text-sm font-normal mt-2"><AlertCircle className="w-4 h-4 inline-block mr-1" />{filterError}</div>}
       </div>
 
       {notificationVisitRequestId && (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
-          <span className="font-medium text-blue-800">
+          <span className="font-normal text-blue-800">
             {tt('visitRequestV2:list.notificationFilterActive')}
           </span>
           <button
@@ -2522,9 +2522,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           </div>
           <div className="flex flex-col">
             {isLoading ? (
-              <div className="py-12 text-center text-slate-500 font-medium">{tt('visitRequestV2:list.row.loading')}</div>
+              <div className="py-12 text-center text-slate-500 font-normal">{tt('visitRequestV2:list.row.loading')}</div>
             ) : listError ? (
-              <div className="py-12 text-center text-red-500 font-medium"><AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" /><p>{listError}</p></div>
+              <div className="py-12 text-center text-red-500 font-normal"><AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" /><p>{listError}</p></div>
             ) : rows.length > 0 ? rows.map((row, index) => {
               const isExpanded = expandedRequestId === row.visitRequestId;
               return (
@@ -2548,14 +2548,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     </div>
                     <div className="py-3 px-3 min-w-0 flex flex-col justify-center pr-4">
                       <p className="text-sm font-bold text-[#004c91] line-clamp-2 break-words" title={row.name}>{row.name}</p>
-                      <p className="text-xs font-medium text-slate-500 truncate" title={row.org}>{row.org}</p>
+                      <p className="text-xs font-normal text-slate-500 truncate" title={row.org}>{row.org}</p>
                       {/* A row that IS one campus always names its own reception host and campus.
                           Suppressing that for every MULTI_CAMPUS request also took it away from the
                           campus actors whose row it is — a Staff Leader's row is a single instance
                           even when the request spans three campuses. Only the request-level SUMMARY
                           row (no instance of its own) has no single host or campus to name. */}
                       {!isHO && (row.visitInstanceId != null || row.visitScope !== 'MULTI_CAMPUS') && rowTab(row) !== 'attending' && (
-                        <p className="text-xs font-medium text-slate-600 mt-0.5 truncate">
+                        <p className="text-xs font-normal text-slate-600 mt-0.5 truncate">
                           <span className="text-slate-400">{tt('visitRequestV2:list.row.hostLabel')}</span> {row.host || (row.campusStatus === 'WAITING_REQUEST_APPROVAL' ? tt('visitRequestV2:list.row.notAssignedYet') : '-')}
                           <span className="mx-1 text-slate-300">|</span>
                           <span className="text-slate-400">{tt('visitRequestV2:list.row.campusLabel')}</span> {row.campus || '-'}
@@ -2581,12 +2581,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       {(() => {
                         const sameDay = formatSameDayRange(row.plannedStartAt, row.plannedEndAt);
                         if (sameDay) {
-                          return <div className="font-semibold text-slate-800 whitespace-nowrap">{sameDay}</div>;
+                          return <div className="font-normal text-slate-800 whitespace-nowrap">{sameDay}</div>;
                         }
                         return (
                           <>
-                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">{tt('visitRequestV2:list.row.from')}</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
-                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">{tt('visitRequestV2:list.row.to')}</span><span className="font-semibold text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
+                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">{tt('visitRequestV2:list.row.from')}</span><span className="font-normal text-slate-800">{formatDateTimeShort(row.plannedStartAt)}</span></div>
+                            <div className="flex items-center gap-2 whitespace-nowrap"><span className="w-9 text-slate-400 font-medium">{tt('visitRequestV2:list.row.to')}</span><span className="font-normal text-slate-800">{formatDateTimeShort(row.plannedEndAt)}</span></div>
                           </>
                         );
                       })()}
@@ -2598,7 +2598,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                 </Fragment>
               );
             }) : (
-              <div className="py-12 text-center text-slate-500 font-medium flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
+              <div className="py-12 text-center text-slate-500 font-normal flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
             )}
           </div>
         </div>
@@ -2606,7 +2606,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         {/* Mobile / tablet */}
         <div data-testid="visit-list-mobile" className="lg:hidden w-full p-4 space-y-4 bg-slate-50/50">
           {isLoading ? (
-            <div className="py-10 text-center text-slate-500 font-medium">{tt('visitRequestV2:list.row.loading')}</div>
+            <div className="py-10 text-center text-slate-500 font-normal">{tt('visitRequestV2:list.row.loading')}</div>
           ) : rows.length > 0 ? rows.map((row) => {
             const isExpanded = expandedRequestId === row.visitRequestId;
             return (
@@ -2674,7 +2674,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               </Fragment>
             );
           }) : (
-            <div className="py-10 text-center text-slate-500 font-medium flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
+            <div className="py-10 text-center text-slate-500 font-normal flex flex-col items-center justify-center"><Users className="w-12 h-12 text-slate-300 mb-3" /><p>{emptyText}</p></div>
           )}
         </div>
 
@@ -2800,7 +2800,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             </div>
             <div className="p-6 space-y-4">
               <div>
-                <p className="text-sm font-semibold text-gray-800 mb-1">
+                <p className="text-sm font-normal text-gray-800 mb-1">
                   {cancel.row.requestStatus === 'PENDING_APPROVAL' ? tt('visitRequestV2:list.cancelModal.bodyPending')
                     : cancel.row.visitScope === 'SINGLE_CAMPUS' ? tt('visitRequestV2:list.cancelModal.bodySingleCampus')
                       : cancel.instanceId ? tt('visitRequestV2:list.cancelModal.bodyInstance', { campus: cancel.row.campus })
@@ -2815,7 +2815,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               </div>
 
               {cancel.mode === 'host' && (
-                <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-normal text-red-700">
                   {tt('visitRequestV2:list.cancelModal.hostCancelNotice')}
                 </p>
               )}

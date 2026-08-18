@@ -110,7 +110,7 @@ export function VisitRequestDetail() {
         </button>
         <div>
           <h1 className="text-2xl lg:text-3xl font-black text-[#004c91] tracking-tight uppercase">{tt('requestDetail.title')}</h1>
-          {type && <p className="text-sm font-medium text-gray-500 mt-1">{tt('requestDetail.taskType')}: {type}</p>}
+          {type && <p className="text-sm font-normal text-gray-500 mt-1">{tt('requestDetail.taskType')}: {type}</p>}
         </div>
       </div>
 
@@ -129,7 +129,7 @@ export function VisitRequestDetail() {
               <div className="p-3 bg-white/10 text-white rounded-2xl shadow-inner border border-white/20"><Info className="w-7 h-7" /></div>
               <div>
                 <h2 className="text-2xl font-black text-white tracking-tight">{detail.delegationName}</h2>
-                <p className="text-sm font-medium text-blue-100 mt-1">
+                <p className="text-sm font-normal text-blue-100 mt-1">
                   {detail.campusName ? `${detail.campusName} · ` : ''}{statusLabel}
                 </p>
               </div>
@@ -139,20 +139,20 @@ export function VisitRequestDetail() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.sender')}>
                   <span className="text-sm font-black text-[#004c91]">{senderName}</span>
-                  {senderOrg && <span className="block text-xs font-medium text-gray-500 mt-0.5">{senderOrg}</span>}
+                  {senderOrg && <span className="block text-xs font-normal text-gray-500 mt-0.5">{senderOrg}</span>}
                 </Field>
                 <Field icon={<Users className="w-4 h-4" />} label={tt('requestDetail.fields.delegation')}>
                   <span className="text-sm font-black text-[#004c91]">{detail.delegationName}</span>
                 </Field>
                 <Field icon={<Building2 className="w-4 h-4" />} label={tt('requestDetail.fields.campus')}>
-                  <span className="text-sm font-bold text-gray-800">{detail.campusName ?? '—'}</span>
+                  <span className="text-sm font-normal text-gray-800">{detail.campusName ?? '—'}</span>
                 </Field>
                 <Field icon={<Clock className="w-4 h-4" />} label={tt('requestDetail.fields.status')}>
-                  <span className="text-sm font-bold text-gray-800">{statusLabel}</span>
+                  <span className="text-sm font-normal text-gray-800">{statusLabel}</span>
                 </Field>
                 <div className="md:col-span-2">
                   <Field icon={<Calendar className="w-4 h-4" />} label={tt('requestDetail.fields.plannedTime')}>
-                    <span className="text-sm font-bold text-gray-800">
+                    <span className="text-sm font-normal text-gray-800">
                       {formatLocalizedDateTime(detail.plannedStartAt, language)} — {formatLocalizedDateTime(detail.plannedEndAt, language)}
                     </span>
                   </Field>
@@ -164,22 +164,22 @@ export function VisitRequestDetail() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {summary?.registrantJobTitle && (
                     <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.senderJobTitle')}>
-                      <span className="text-sm font-medium text-gray-800">{summary.registrantJobTitle}</span>
+                      <span className="text-sm font-normal text-gray-800">{summary.registrantJobTitle}</span>
                     </Field>
                   )}
                   {summary?.registrantNationality && (
                     <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.senderNationality')}>
-                      <span className="text-sm font-medium text-gray-800">{summary.registrantNationality}</span>
+                      <span className="text-sm font-normal text-gray-800">{summary.registrantNationality}</span>
                     </Field>
                   )}
                   {summary?.registrantEmail && (
                     <Field icon={<Mail className="w-4 h-4" />} label={tt('requestDetail.fields.senderEmail')}>
-                      <span className="text-sm font-medium text-gray-800 break-all">{summary.registrantEmail}</span>
+                      <span className="text-sm font-normal text-gray-800 break-all">{summary.registrantEmail}</span>
                     </Field>
                   )}
                   {summary?.registrantPhone && (
                     <Field icon={<Phone className="w-4 h-4" />} label={tt('requestDetail.fields.senderPhone')}>
-                      <span className="text-sm font-medium text-gray-800">{summary.registrantPhone}</span>
+                      <span className="text-sm font-normal text-gray-800">{summary.registrantPhone}</span>
                     </Field>
                   )}
                 </div>
@@ -189,30 +189,30 @@ export function VisitRequestDetail() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {visitTypeLabel && (
                   <Field icon={<Info className="w-4 h-4" />} label={tt('requestDetail.fields.visitType')}>
-                    <span className="text-sm font-bold text-gray-800">{visitTypeLabel}</span>
+                    <span className="text-sm font-normal text-gray-800">{visitTypeLabel}</span>
                   </Field>
                 )}
                 {workingLanguageLabel && (
                   <Field icon={<Languages className="w-4 h-4" />} label={tt('requestDetail.fields.workingLanguage')}>
-                    <span className="text-sm font-bold text-gray-800">{workingLanguageLabel}</span>
+                    <span className="text-sm font-normal text-gray-800">{workingLanguageLabel}</span>
                   </Field>
                 )}
                 {mediaConsentLabel && (
                   <Field icon={<Camera className="w-4 h-4" />} label={tt('requestDetail.fields.mediaConsent')}>
-                    <span className="text-sm font-bold text-gray-800">{mediaConsentLabel}</span>
+                    <span className="text-sm font-normal text-gray-800">{mediaConsentLabel}</span>
                   </Field>
                 )}
                 <Field icon={<Car className="w-4 h-4" />} label={tt('requestDetail.fields.transportation')}>
                   {summary?.transportationNote?.trim()
-                    ? <span className="text-sm font-medium text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
+                    ? <span className="text-sm font-normal text-gray-800 whitespace-pre-line">{summary.transportationNote}</span>
                     : <span className="text-sm italic text-gray-400">{tt('requestDetail.fields.transportationEmpty')}</span>}
                 </Field>
                 {opContact && (
                   <div className="md:col-span-2">
                     <Field icon={<User className="w-4 h-4" />} label={tt('requestDetail.fields.operationalContact')}>
-                      <span className="text-sm font-bold text-gray-800">{opContact}</span>
+                      <span className="text-sm font-normal text-gray-800">{opContact}</span>
                       {opContactReach && (
-                        <span className="block text-xs font-medium text-gray-500 mt-0.5 break-all">{opContactReach}</span>
+                        <span className="block text-xs font-normal text-gray-500 mt-0.5 break-all">{opContactReach}</span>
                       )}
                     </Field>
                   </div>
@@ -225,7 +225,7 @@ export function VisitRequestDetail() {
                   <FileText className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.purpose')}</span>
                 </div>
-                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-normal text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
                   {purpose ? purpose : <span className="italic text-gray-400">{tt('requestDetail.fields.purposeEmpty')}</span>}
                 </div>
               </div>
@@ -235,7 +235,7 @@ export function VisitRequestDetail() {
                   <FileText className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.workingContent')}</span>
                 </div>
-                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-normal text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
                   {workingContent ? workingContent : <span className="italic text-gray-400">{tt('requestDetail.fields.workingContentEmpty')}</span>}
                 </div>
               </div>
@@ -248,7 +248,7 @@ export function VisitRequestDetail() {
                   <StickyNote className="w-4 h-4" />
                   <span className="text-[11px] font-bold uppercase tracking-wider">{tt('requestDetail.fields.notes')}</span>
                 </div>
-                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-medium text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
+                <div className="p-6 bg-gradient-to-br from-[#f8fafc] to-[#f1f5f9] rounded-2xl text-[15px] font-normal text-gray-700 leading-relaxed border border-gray-200 whitespace-pre-line">
                   {summary?.notes?.trim() ? summary.notes : <span className="italic text-gray-400">{tt('requestDetail.fields.notesEmpty')}</span>}
                 </div>
               </div>

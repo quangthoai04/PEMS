@@ -131,7 +131,7 @@ export const VisitOutcomeSummary: React.FC<Props> = ({ form }) => {
           {detailRows.map(row => (
             <div key={row.label} className="flex flex-wrap gap-x-2">
               <dt className="text-slate-500">{row.label}:</dt>
-              <dd className="min-w-0 break-words font-medium text-slate-800">{row.value}</dd>
+              <dd className="min-w-0 break-words font-normal text-slate-800">{row.value}</dd>
             </div>
           ))}
         </dl>

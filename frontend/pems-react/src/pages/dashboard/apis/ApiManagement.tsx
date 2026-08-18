@@ -284,7 +284,7 @@ export function ApiManagement() {
         </div>
       ) : loadError ? (
         <div className="py-20 text-center">
-          <p className="text-red-500 text-sm font-medium">{loadError}</p>
+          <p className="text-red-500 text-sm font-normal">{loadError}</p>
           <button onClick={() => void load()} className="mt-3 text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
         </div>
       ) : (
@@ -362,7 +362,7 @@ export function ApiManagement() {
                   </div>
                   <div>
                     <h3 className="text-base font-bold text-gray-800">{config.name}</h3>
-                    <p className="text-xs text-gray-400 font-medium">
+                    <p className="text-xs text-gray-400 font-normal">
                       {config.providerName || '—'} · {isGoogleDrive ? 'GOOGLE_DRIVE_STORAGE' : config.purpose || '—'}
                     </p>
                   </div>
@@ -392,7 +392,7 @@ export function ApiManagement() {
 
               {driveNeedsReconnect && (
                 <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                  <p className="text-sm font-bold text-amber-700">Kết nối Google Drive cần được cấp lại</p>
+                  <p className="text-sm font-normal text-amber-700">Kết nối Google Drive cần được cấp lại</p>
                   <p className="text-xs text-amber-600 mt-0.5">
                     Tài khoản Google dùng chung cần được cấp quyền lại. Trong lúc đó, các thao tác tải
                     ảnh/tài liệu lên Drive sẽ không thực hiện được.
@@ -427,7 +427,7 @@ export function ApiManagement() {
                 )}
                 <div><dt className="text-xs text-gray-400 font-bold uppercase">Credential</dt>
                   {isGoogleDrive ? (
-                    <dd className={`font-bold ${
+                    <dd className={`font-normal ${
                       config.credentialStatus === 'CONNECTED' ? 'text-green-600'
                         : config.credentialStatus === 'ERROR' ? 'text-amber-600' : 'text-red-500'
                     }`}>
@@ -439,7 +439,7 @@ export function ApiManagement() {
                       </span>
                     </dd>
                   ) : (
-                    <dd className={`font-bold ${config.hasCredential || config.secretRef ? 'text-green-600' : 'text-red-500'}`}>
+                    <dd className={`font-normal ${config.hasCredential || config.secretRef ? 'text-green-600' : 'text-red-500'}`}>
                       <span className="inline-flex items-center gap-1">
                         <KeyRound className="w-3.5 h-3.5" />
                         {config.hasCredential ? 'Đã cấu hình (DB, mã hoá)' : config.secretRef ? `Secret ref: ${config.secretRef}` : 'Chưa có'}
@@ -557,7 +557,7 @@ export function ApiManagement() {
                   <Activity className="w-4 h-4" /> {isGoogleDrive ? 'Nhật ký' : 'Hạn mức & Nhật ký'}
                 </button>
                 {!config.canEdit && !config.canTest && !config.canToggleStatus && !config.canConnectOAuth && (
-                  <span className="text-xs text-gray-400 font-medium">
+                  <span className="text-xs text-gray-400 font-normal">
                     Cấu hình này được quản lý qua environment — chỉ xem trạng thái.
                   </span>
                 )}
@@ -639,7 +639,7 @@ export function ApiManagement() {
                     </button>
                   </div>
                 ) : (
-                  <p className="mb-4 text-xs text-gray-400 font-medium">
+                  <p className="mb-4 text-xs text-gray-400 font-normal">
                     Hạn mức của cấu hình này chỉ xem — không chỉnh sửa tại đây.
                   </p>
                 )}
@@ -660,7 +660,7 @@ export function ApiManagement() {
                       <tr key={q.apiUsageQuotaId}>
                         <td className="px-4 py-2.5 text-sm font-bold text-gray-700">{q.periodYyyymm}</td>
                         <td className="px-4 py-2.5 text-sm text-gray-600">{q.campusScopeKey}</td>
-                        <td className="px-4 py-2.5 text-sm text-right font-bold text-[#004c91]">{q.usedCount}</td>
+                        <td className="px-4 py-2.5 text-sm text-right font-normal text-[#004c91]">{q.usedCount}</td>
                         <td className="px-4 py-2.5 text-sm text-right text-gray-600">{q.monthlyLimit}</td>
                         <td className="px-4 py-2.5 text-xs text-gray-400">
                           {q.lastUsedAt ? formatVietnamDateTime(q.lastUsedAt) : '—'}
@@ -695,8 +695,8 @@ export function ApiManagement() {
                         </td>
                         <td className="px-4 py-2.5 text-center">
                           {log.success
-                            ? <span className="text-green-600 text-xs font-bold">OK</span>
-                            : <span className="text-red-500 text-xs font-bold" title={log.errorMessage || undefined}>
+                            ? <span className="text-green-600 text-xs font-normal">OK</span>
+                            : <span className="text-red-500 text-xs font-normal" title={log.errorMessage || undefined}>
                                 {log.errorCode || 'FAILED'}
                               </span>}
                         </td>

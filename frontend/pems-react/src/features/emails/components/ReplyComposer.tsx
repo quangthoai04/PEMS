@@ -167,7 +167,7 @@ export function ReplyComposer({ originalEmailId, resolvedTo, onCancel, onReplied
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 space-y-2">
           <div className="flex items-center gap-2 text-[14px]">
             <span className="text-gray-500 w-10 shrink-0">Tới:</span>
-            <span className="font-semibold text-gray-800">{resolvedTo?.name || 'Người gửi email gốc'}</span>
+            <span className="font-normal text-gray-800">{resolvedTo?.name || 'Người gửi email gốc'}</span>
             <span className="text-gray-500">&lt;{resolvedTo?.email ?? '—'}&gt;</span>
             <span className="ml-1 rounded bg-gray-200 px-1.5 py-0.5 text-[11px] font-medium text-gray-600">
               hệ thống xác định

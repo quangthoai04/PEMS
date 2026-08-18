@@ -104,7 +104,7 @@ export function FeedbackFilterBar({
             className="px-3 py-2 rounded-xl border border-slate-200 text-sm font-normal outline-none"
             title="Đến ngày"
           />
-          {dateError && <span className="text-red-500 text-xs absolute -bottom-5 left-0 whitespace-nowrap font-medium">{dateError}</span>}
+          {dateError && <span className="text-red-500 text-xs absolute -bottom-5 left-0 whitespace-nowrap font-normal">{dateError}</span>}
         </div>
       )}
 

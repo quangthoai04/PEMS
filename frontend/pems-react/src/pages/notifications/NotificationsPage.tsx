@@ -157,7 +157,7 @@ export function NotificationsPage() {
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>
             <h1 className="text-3xl font-bold text-[#004c91] tracking-tight">{t('notifications:page.title')}</h1>
-            <p className="text-gray-500 mt-1 font-medium">{t('notifications:page.subtitle')}</p>
+            <p className="text-gray-500 mt-1 font-normal">{t('notifications:page.subtitle')}</p>
           </div>
           {unreadCount > 0 && (
             <button
@@ -181,7 +181,7 @@ export function NotificationsPage() {
             </div>
           ) : displayItems.length === 0 ? (
             <div className="py-16 text-center text-gray-500">
-              <p className="text-sm font-medium">{t('notifications:empty.title')}</p>
+              <p className="text-sm font-normal">{t('notifications:empty.title')}</p>
               <p className="text-xs mt-1">{t('notifications:empty.description')}</p>
             </div>
           ) : (
@@ -221,7 +221,7 @@ export function NotificationsPage() {
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                        <span className={`text-sm ${!item.isRead ? 'font-medium text-gray-900' : 'font-normal text-gray-600'}`}>
                           {!item.isRead && (
                             <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
                           )}
@@ -246,7 +246,7 @@ export function NotificationsPage() {
         </div>
 
         <div className="p-4 mt-4 border border-slate-200 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 bg-slate-50">
-          <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+          <div className="flex items-center gap-2 text-sm text-slate-500 font-normal">
             <span>{t('notifications:pagination.showing')}</span>
             <select
               value={pageSize}
@@ -268,7 +268,7 @@ export function NotificationsPage() {
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <div className="text-sm font-bold text-slate-700">
+            <div className="text-sm font-normal text-slate-700">
               {t('notifications:pagination.page')} {currentPage} {t('notifications:pagination.of')} {Math.max(1, result?.totalPages || 1)}
             </div>
             <button

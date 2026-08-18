@@ -117,7 +117,7 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   return (
     <div className="flex gap-3 py-1.5">
       <span className="w-28 shrink-0 text-[11px] font-bold uppercase tracking-wide text-slate-400 pt-0.5">{label}</span>
-      <div className="min-w-0 flex-1 text-sm font-semibold text-slate-800">{children}</div>
+      <div className="min-w-0 flex-1 text-sm font-normal text-slate-800">{children}</div>
     </div>
   );
 }
@@ -401,7 +401,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                 <h3 className="text-base font-black leading-tight truncate">
                   {isRequest ? 'Chi tiết nhiệm vụ được giao' : 'Chi tiết thư mời tham gia'}
                 </h3>
-                <p className="text-[11px] text-white/75 font-semibold truncate">{delegationName || detailTitle}</p>
+                <p className="text-[11px] text-white/75 font-normal truncate">{delegationName || detailTitle}</p>
               </div>
             </div>
             <button onClick={onClose} className="p-1.5 hover:bg-white/10 rounded-full text-white shrink-0">
@@ -440,7 +440,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
               </div>
             )}
             {loadingDetail ? (
-              <div className="py-14 text-center text-sm font-semibold text-slate-400">Đang tải chi tiết...</div>
+              <div className="py-14 text-center text-sm font-normal text-slate-400">Đang tải chi tiết...</div>
             ) : (
               <>
                 {/* Thông tin key-value compact */}
@@ -500,7 +500,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                         value={proposalQuantity} onChange={e => setProposalQuantity(e.target.value)}
                         className={`w-full px-3 py-2 rounded-lg border text-sm font-normal outline-none ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-slate-200 focus:border-[#e85c0d]'}`} />
                       {quantityTooHigh && (
-                        <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({detail.quantity}).</p>
+                        <p className="mt-1 text-[11px] font-normal text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({detail.quantity}).</p>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -557,13 +557,13 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                           : `${formatTime(detail?.proposedUsageStartAt)} - ${formatTime(detail?.proposedUsageEndAt)}`}
                       </InfoRow>
                       <InfoRow label="Nội dung">
-                        <span className="whitespace-pre-line font-medium">{detail?.proposedDescription || 'Không thay đổi nội dung công việc.'}</span>
+                        <span className="whitespace-pre-line font-normal">{detail?.proposedDescription || 'Không thay đổi nội dung công việc.'}</span>
                       </InfoRow>
                       <InfoRow label="Lý do">
-                        <span className="whitespace-pre-line font-medium">{detail?.proposalNote || 'Không có ghi chú.'}</span>
+                        <span className="whitespace-pre-line font-normal">{detail?.proposalNote || 'Không có ghi chú.'}</span>
                       </InfoRow>
                     </div>
-                    <p className="mt-1 text-[11px] font-semibold text-amber-800">
+                    <p className="mt-1 text-[11px] font-normal text-amber-800">
                       {detail?.proposedByName || 'Nhân sự phụ trách'} đã gửi đề xuất lúc {formatDateTime(detail?.proposedAt) || 'chưa ghi nhận thời gian'}.
                     </p>
                   </div>
@@ -573,7 +573,7 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
                 {detail?.rejectReason && (
                   <div className="mt-3 pt-3 border-t border-slate-100 flex gap-2">
                     <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                    <p className="text-sm text-rose-700 font-medium">{detail.rejectReason}</p>
+                    <p className="text-sm text-rose-700 font-normal">{detail.rejectReason}</p>
                   </div>
                 )}
 
@@ -581,11 +581,11 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
 
                 {/* Phản hồi thư mời */}
                 {!isRequest && ['ACCEPTED', 'DECLINED', 'REJECTED', 'DONE', 'IN_PROGRESS'].includes(effectiveStatus) && (
-                  <div className="mt-3 pt-3 border-t border-slate-100 text-xs font-semibold text-slate-700">
-                    <span className="font-black text-[#004c91]">{detail?.assigneeName || detail?.responderName || 'Nhân sự phụ trách'}</span>
+                  <div className="mt-3 pt-3 border-t border-slate-100 text-xs font-normal text-slate-700">
+                    <span className="font-normal text-[#004c91]">{detail?.assigneeName || detail?.responderName || 'Nhân sự phụ trách'}</span>
                     {effectiveStatus === 'DECLINED' || effectiveStatus === 'REJECTED'
-                      ? <> đã từ chối lúc <span className="font-black">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>{detail?.rejectReason ? <> với lý do: <span className="text-rose-600 font-black">{detail.rejectReason}</span></> : '.'}</>
-                      : <> đã chấp nhận lúc <span className="font-black">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>.</>}
+                      ? <> đã từ chối lúc <span className="font-normal">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>{detail?.rejectReason ? <> với lý do: <span className="text-rose-600 font-normal">{detail.rejectReason}</span></> : '.'}</>
+                      : <> đã chấp nhận lúc <span className="font-normal">{detail?.actionTime || 'chưa ghi nhận thời gian'}</span>.</>}
                   </div>
                 )}
 

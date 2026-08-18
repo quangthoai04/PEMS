@@ -674,9 +674,9 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
             && (l.key !== 'PROCESSED' || calendarType === 'office')
             && (l.key !== 'PERSONAL' || calendarType === 'mine'),
           ).map((l) => (
-            <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+            <span key={l.key} className="flex items-center gap-1.5 text-[11px] font-normal text-slate-600">
               <span className={`w-2.5 h-2.5 rounded-full ${l.dot}`} />
-              <span className={l.key === 'CANCELLED' ? 'line-through text-slate-500 font-semibold' : ''}>
+              <span className={l.key === 'CANCELLED' ? 'line-through text-slate-500 font-normal' : ''}>
                 {l.key === 'MINE' && calendarType === 'office' ? 'Lịch của tôi' : l.label}
               </span>
             </span>
@@ -691,7 +691,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         {error ? (
           <div className="py-14 text-center">
             <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" />
-            <p className="text-sm font-medium text-red-600 mb-3">{error}</p>
+            <p className="text-sm font-normal text-red-600 mb-3">{error}</p>
             <button
               onClick={fetchCalendar}
               className="text-xs font-bold text-[#004c91] bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-xl inline-flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -761,7 +761,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
               })}
             </div>
             {!loading && items.length === 0 && (
-              <p className="text-center text-sm text-slate-400 font-medium py-4">
+              <p className="text-center text-sm text-slate-400 font-normal py-4">
                 Không có yêu cầu đến thăm trong khoảng thời gian này.
               </p>
             )}
@@ -772,7 +772,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
               {Array.from({ length: 7 }, (_, i) => addDays(gridStart, i)).map((d) => renderDayColumn(d, true))}
             </div>
             {!loading && items.length === 0 && (
-              <p className="text-center text-sm text-slate-400 font-medium py-4">
+              <p className="text-center text-sm text-slate-400 font-normal py-4">
                 Không có yêu cầu đến thăm trong khoảng thời gian này.
               </p>
             )}
@@ -863,7 +863,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
               </button>
             </div>
             {(eventsByDay[toDateKey(anchorDate)] || []).length === 0 && !loading ? (
-              <p className="text-center text-sm text-slate-400 font-medium py-8">
+              <p className="text-center text-sm text-slate-400 font-normal py-8">
                 Không có yêu cầu đến thăm trong khoảng thời gian này.
               </p>
             ) : (
@@ -1142,7 +1142,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                   className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
                 />
               </div>
-              {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+              {personalEventModal.error && <p className="text-red-500 text-xs font-normal">{personalEventModal.error}</p>}
               <div className="flex justify-between items-center pt-3 border-t border-slate-100">
                 <button
                   type="button"

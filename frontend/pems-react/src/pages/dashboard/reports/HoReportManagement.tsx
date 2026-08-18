@@ -68,7 +68,7 @@ function StatTile({ label, value, sub, tone = 'blue', icon }: {
         {icon}
       </div>
       <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
-      {sub && <p className="text-[10px] font-medium opacity-75">{sub}</p>}
+      {sub && <p className="text-[10px] font-normal opacity-75">{sub}</p>}
     </div>
   );
 }
@@ -348,7 +348,7 @@ export function HoReportManagement() {
       {loading && !data ? (
         <div className="py-24 text-center text-slate-500">
           <Loader2 className="w-7 h-7 mx-auto mb-3 animate-spin text-[#004c91]" />
-          <p className="text-sm font-medium">Đang tổng hợp báo cáo hệ thống...</p>
+          <p className="text-sm font-normal">Đang tổng hợp báo cáo hệ thống...</p>
         </div>
       ) : data && (
         <>
@@ -530,7 +530,7 @@ export function HoReportManagement() {
                         <span className="block text-[11px] font-normal text-slate-400">{PARTNER_TYPE_LABELS[row.partnerType] ?? row.partnerType}</span>
                       </td>
                       <td className={`${tdClass} whitespace-nowrap`}>{row.country || '—'}</td>
-                      <td className={`${tdClass} whitespace-nowrap font-bold text-slate-700`}>{row.visitCount}</td>
+                      <td className={`${tdClass} whitespace-nowrap font-normal text-slate-700`}>{row.visitCount}</td>
                       <td className={`${tdClass} whitespace-nowrap`}>
                         {row.feedbackAverage != null
                           ? <span className="font-bold text-slate-700">{row.feedbackAverage.toFixed(1)}★ <span className="text-[11px] font-normal text-slate-400">({row.feedbackCount} lượt)</span></span>
@@ -567,7 +567,7 @@ export function HoReportManagement() {
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <span className="text-xs font-bold text-slate-600 px-1">Trang {partnerPage}/{partnerTotalPages}</span>
+                  <span className="text-xs font-normal text-slate-600 px-1">Trang {partnerPage}/{partnerTotalPages}</span>
                   <button
                     type="button"
                     onClick={() => setPartnerPage((p2) => Math.min(partnerTotalPages, p2 + 1))}
@@ -630,15 +630,15 @@ export function HoReportManagement() {
                   <div className="grid grid-cols-1 gap-2 text-xs">
                     <div>
                       <span className="font-semibold text-gray-500">Người gửi: </span>
-                      <span className="font-medium text-gray-800">Ban Quản trị Head Office &lt;ho-reports@mail.pems-fpt.site&gt;</span>
+                      <span className="font-normal text-gray-800">Ban Quản trị Head Office &lt;ho-reports@mail.pems-fpt.site&gt;</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Người nhận: </span>
-                      <span className="font-bold text-[#004c91]">Staff Leader — {previewCampusRow.name}</span>
+                      <span className="font-normal text-[#004c91]">Staff Leader — {previewCampusRow.name}</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Tiêu đề: </span>
-                      <span className="font-bold text-gray-900">
+                      <span className="font-normal text-gray-900">
                         [PEMS] Báo cáo hoạt động tiếp khách đợt công tác — {previewCampusRow.name}
                       </span>
                     </div>
@@ -652,7 +652,7 @@ export function HoReportManagement() {
                     <span className="text-xs font-normal opacity-80">Cơ sở: {previewCampusRow.name}</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">
+                    <p className="font-normal">
                       Kính gửi <strong className="text-gray-900">Ban quản lý Staff Leader — {previewCampusRow.name}</strong>,
                     </p>
                     <p className="text-sm leading-relaxed">
@@ -662,15 +662,15 @@ export function HoReportManagement() {
                     <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
                       <div className="flex justify-between border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">TỔNG SỐ ĐOÀN KHÁCH:</span>
-                        <span className="font-bold text-sm text-[#004c91]">{previewCampusRow.totalVisits} đoàn</span>
+                        <span className="font-normal text-sm text-[#004c91]">{previewCampusRow.totalVisits} đoàn</span>
                       </div>
                       <div className="flex justify-between border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">TỔNG SỐ ĐỐI TÁC:</span>
-                        <span className="font-bold text-gray-800">{previewCampusRow.totalPartners} đối tác</span>
+                        <span className="font-normal text-gray-800">{previewCampusRow.totalPartners} đối tác</span>
                       </div>
                       <div className="flex justify-between border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span>
-                        <span className="font-bold text-amber-600">
+                        <span className="font-normal text-amber-600">
                           {previewCampusRow.feedbackAverage ? `${previewCampusRow.feedbackAverage.toFixed(1)} ★ (${previewCampusRow.feedbackCount} lượt)` : 'Chưa có'}
                         </span>
                       </div>

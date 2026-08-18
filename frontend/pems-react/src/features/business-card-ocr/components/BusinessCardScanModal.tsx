@@ -275,7 +275,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
           <div className="flex items-center gap-2">
             <ScanLine className="w-5 h-5 text-[#004c91]" />
             <h3 className="text-lg font-bold text-[#004c91]">Quét danh thiếp</h3>
-            <span className="text-xs text-gray-400 font-medium ml-2">
+            <span className="text-xs text-gray-400 font-normal ml-2">
               Provider: Google Document AI
             </span>
           </div>
@@ -307,7 +307,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                 className="border-2 border-dashed border-gray-300 hover:border-[#004c91] rounded-2xl p-10 text-center cursor-pointer transition-colors"
               >
                 <UploadCloud className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                <p className="text-sm font-medium text-gray-600">
+                <p className="text-sm font-normal text-gray-600">
                   Kéo thả hoặc bấm để chọn ảnh danh thiếp
                 </p>
                 <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP, PDF — tối đa 10 MB</p>
@@ -348,7 +348,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
           {step === 'PROCESSING' && (
             <div className="py-16 text-center">
               <Loader2 className="w-10 h-10 text-[#004c91] mx-auto animate-spin mb-4" />
-              <p className="text-sm font-medium text-gray-600">
+              <p className="text-sm font-normal text-gray-600">
                 Đang xử lý bằng Google Document AI...
               </p>
               <p className="text-xs text-gray-400 mt-1">Vui lòng không đóng cửa sổ này.</p>
@@ -415,8 +415,8 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                 {(websiteOcr || addressOcr) && (
                   <div className="bg-slate-50 border border-gray-100 rounded-lg px-3 py-2.5 text-xs text-gray-500 space-y-1">
                     <p className="font-bold text-gray-400 uppercase tracking-wide">Thông tin OCR khác (chưa lưu vào hồ sơ)</p>
-                    {websiteOcr && <p>Website: <span className="font-medium text-gray-600">{websiteOcr}</span></p>}
-                    {addressOcr && <p>Địa chỉ: <span className="font-medium text-gray-600">{addressOcr}</span></p>}
+                    {websiteOcr && <p>Website: <span className="font-normal text-gray-600">{websiteOcr}</span></p>}
+                    {addressOcr && <p>Địa chỉ: <span className="font-normal text-gray-600">{addressOcr}</span></p>}
                   </div>
                 )}
 

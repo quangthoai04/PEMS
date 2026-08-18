@@ -136,7 +136,7 @@ function HostFeedbackModalInner({ visitInstanceId, onClose }: { visitInstanceId:
                           {f.ratingItems.map((ri) => (
                             <div key={ri.criterionCode} className="flex items-center justify-between text-xs text-slate-500">
                               <span>{ri.criterionLabel}</span>
-                              <span className="font-medium text-slate-700">{ri.rating}/5</span>
+                              <span className="font-normal text-slate-700">{ri.rating}/5</span>
                             </div>
                           ))}
                         </div>

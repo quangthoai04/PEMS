@@ -257,7 +257,7 @@ function CandidateDetailPanel({
             {linking ? 'Đang liên kết...' : 'Liên kết đối tác này'}
           </button>
         ) : (
-          <span className="text-[11px] font-semibold text-amber-700 max-w-[22rem] text-right">
+          <span className="text-[11px] font-normal text-amber-700 max-w-[22rem] text-right">
             {candidate.blockedReason
               ? PARTNER_LINK_BLOCKED_LABELS[candidate.blockedReason]
               : 'Bạn không có quyền liên kết đối tác này.'}
@@ -498,7 +498,7 @@ export function CreatePartnerFromParticipantModal({
         <div className="px-6 py-5 space-y-4 overflow-y-auto">
           {prefill?.contactName && (
             <p className="text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-              Người đại diện: <span className="font-semibold text-gray-700">{prefill.contactName}</span>
+              Người đại diện: <span className="font-normal text-gray-700">{prefill.contactName}</span>
               {prefill.jobTitle ? ` — ${prefill.jobTitle}` : ''}
               {prefill.contactEmail ? ` · ${prefill.contactEmail}` : ''}
             </p>
@@ -553,7 +553,7 @@ export function CreatePartnerFromParticipantModal({
                           {/* Why this candidate is here but cannot be linked. Shown on the ROW, where
                               the decision is made — not hidden behind "Chi tiết". */}
                           {!c.canLink && c.blockedReason && (
-                            <div className="mt-1 text-[11px] font-semibold text-amber-700">
+                            <div className="mt-1 text-[11px] font-normal text-amber-700">
                               {PARTNER_LINK_BLOCKED_LABELS[c.blockedReason]}
                               {c.reviewNote?.trim() && (
                                 <span className="block font-normal text-amber-800">
@@ -630,7 +630,7 @@ export function CreatePartnerFromParticipantModal({
           {/* Form tạo mới */}
           <div className="space-y-4 pt-1">
             {candidates.length > 0 && (
-              <p className="text-xs font-semibold text-gray-500 border-t border-gray-100 pt-3">
+              <p className="text-xs font-normal text-gray-500 border-t border-gray-100 pt-3">
                 Hoặc tạo một đối tác mới (chỉ khi đây là tổ chức khác với các gợi ý ở trên):
               </p>
             )}

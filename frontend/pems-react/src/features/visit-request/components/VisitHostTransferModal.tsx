@@ -279,7 +279,7 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
           />
           {reasonError && (
             <p id="host-transfer-reason-error" role="alert" data-testid="host-transfer-error-reason"
-              className="mt-1 text-xs font-semibold text-red-600">
+              className="mt-1 text-xs font-normal text-red-600">
               {reasonError}
             </p>
           )}

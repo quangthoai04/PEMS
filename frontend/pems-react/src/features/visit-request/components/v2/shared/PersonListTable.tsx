@@ -43,7 +43,7 @@ export const PersonListTable: React.FC<Props> = ({
     <div data-testid={rest['data-testid']}>
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-200 pb-1">
         <p className="text-xs font-bold uppercase tracking-wide text-[#004c91]">{title}</p>
-        <span className="text-xs font-semibold text-slate-500">
+        <span className="text-xs font-normal text-slate-500">
           {t('visitRequestV2:person.count', { count: rows.length })}
         </span>
       </div>

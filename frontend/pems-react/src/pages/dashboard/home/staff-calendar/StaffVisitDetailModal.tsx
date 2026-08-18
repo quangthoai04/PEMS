@@ -91,7 +91,7 @@ function InfoRow({ icon, label, value }: { icon?: React.ReactNode; label: string
         {icon}
         {label}
       </span>
-      <span className="text-sm text-slate-700 font-medium min-w-0 break-words">{value}</span>
+      <span className="text-sm text-slate-700 font-normal min-w-0 break-words">{value}</span>
     </div>
   );
 }
@@ -176,7 +176,7 @@ export function StaffVisitDetailModal({
                 </span>
               )}
             </div>
-            <div className="mt-1 flex items-center gap-4 text-xs text-white/85 font-medium flex-wrap">
+            <div className="mt-1 flex items-center gap-4 text-xs text-white/85 font-normal flex-wrap">
               {detail?.requestCode && <span>{detail.requestCode}</span>}
               {detail && (
                 <span className="flex items-center gap-1">
@@ -210,7 +210,7 @@ export function StaffVisitDetailModal({
           ) : error ? (
             <div className="py-14 text-center">
               <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-400" />
-              <p className="text-sm font-medium text-red-600">{error}</p>
+              <p className="text-sm font-normal text-red-600">{error}</p>
             </div>
           ) : detail ? (
             <div className="space-y-5">
@@ -381,7 +381,7 @@ export function StaffVisitDetailModal({
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-slate-700 truncate">
                               {p.fullName}
-                              <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase">{PARTICIPANT_ROLE_LABELS[p.participantRole] || p.participantRole}</span>
+                              <span className="ml-2 text-[10px] font-normal text-slate-400 uppercase">{PARTICIPANT_ROLE_LABELS[p.participantRole] || p.participantRole}</span>
                             </p>
                             {p.status === 'DECLINED' && p.note && (
                               <p className="text-xs text-rose-600 mt-0.5">Lý do từ chối: {p.note}</p>

@@ -271,10 +271,10 @@ export function AuditLogManagement() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] cursor-pointer">Dashboard</button>
         <span>/</span>
-        <span className="text-[#004c91]">Nhật ký kiểm toán</span>
+        <span className="text-[#004c91] font-medium">Nhật ký kiểm toán</span>
       </div>
 
       <div className="flex items-center justify-between mb-8">
@@ -341,16 +341,16 @@ export function AuditLogManagement() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-normal">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải nhật ký...
                 </td></tr>
               ) : error ? (
                 <tr><td colSpan={8} className="py-16 text-center">
-                  <p className="text-sm font-bold text-red-500 mb-2">{error}</p>
+                  <p className="text-sm font-normal text-red-500 mb-2">{error}</p>
                   <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
                 </td></tr>
               ) : (data?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-normal">
                   Không có bản ghi nào phù hợp bộ lọc
                 </td></tr>
               ) : data!.items.map((log, idx) => (
@@ -392,7 +392,7 @@ export function AuditLogManagement() {
         {/* Pagination */}
         {(data?.totalItems ?? 0) > 0 && !loading && !error && (
           <div className="p-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+            <div className="flex items-center gap-2 text-sm font-normal text-gray-500">
               <span>Hiển thị</span>
               <div className="relative">
                 <select
@@ -414,7 +414,7 @@ export function AuditLogManagement() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-bold text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
+              <span className="text-sm font-normal text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
@@ -439,12 +439,12 @@ export function AuditLogManagement() {
             </div>
 
             {detailLoading ? (
-              <div className="py-12 text-center text-gray-400 text-sm font-medium">
+              <div className="py-12 text-center text-gray-400 text-sm font-normal">
                 <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải chi tiết...
               </div>
             ) : detailError ? (
               <div className="py-12 text-center">
-                <p className="text-sm font-bold text-red-500 mb-2">{detailError}</p>
+                <p className="text-sm font-normal text-red-500 mb-2">{detailError}</p>
                 <button onClick={() => openDetail(detailId)} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
               </div>
             ) : detail && (
@@ -452,7 +452,7 @@ export function AuditLogManagement() {
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm mb-6">
                   <div>
                     <dt className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Người thực hiện</dt>
-                    <dd className="font-bold text-gray-800">
+                    <dd className="font-normal text-gray-800">
                       {detail.actorName || 'Hệ thống'}
                       {detail.actorRoleCode ? <span className="ml-1.5 text-[10px] font-black text-[#004c91] bg-blue-50 px-1.5 py-0.5 rounded uppercase">{ROLE_LABEL[detail.actorRoleCode] ?? detail.actorRoleCode}</span> : null}
                     </dd>
@@ -460,7 +460,7 @@ export function AuditLogManagement() {
                   </div>
                   <div>
                     <dt className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hành động</dt>
-                    <dd className="font-bold text-gray-800" title={detail.action}>{ACTION_LABEL[detail.action] ?? humanizeCode(detail.action)}</dd>
+                    <dd className="font-normal text-gray-800" title={detail.action}>{ACTION_LABEL[detail.action] ?? humanizeCode(detail.action)}</dd>
                   </div>
                   <div>
                     <dt className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Đối tượng</dt>
@@ -490,7 +490,7 @@ export function AuditLogManagement() {
                   Thay đổi trước / sau ({detail.changes.length})
                 </h4>
                 {detail.changes.length === 0 ? (
-                  <p className="text-sm text-gray-400 font-medium py-4 text-center">Bản ghi này không kèm thay đổi dữ liệu.</p>
+                  <p className="text-sm text-gray-400 font-normal py-4 text-center">Bản ghi này không kèm thay đổi dữ liệu.</p>
                 ) : (
                   <div className="space-y-4">
                     {detail.changes.map((change) => (

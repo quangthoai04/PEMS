@@ -241,7 +241,7 @@ export function Profile() {
       {toast && (
         <div className="fixed top-6 right-6 z-50">
           <div
-            className={`flex items-center gap-2 rounded-xl border px-4 py-3 shadow-md text-sm font-medium ${
+            className={`flex items-center gap-2 rounded-xl border px-4 py-3 shadow-md text-sm font-normal ${
               toast.type === 'success'
                 ? 'bg-green-50 border-green-200 text-green-700'
                 : 'bg-red-50 border-red-200 text-red-700'
@@ -268,7 +268,7 @@ export function Profile() {
       ) : error || !profile ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
           <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-500" />
-          <p className="font-medium text-red-700">{getAuthErrorMessage(error, tt('loadError'))}</p>
+          <p className="font-normal text-red-700">{getAuthErrorMessage(error, tt('loadError'))}</p>
         </div>
       ) : (
         <div className="relative overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
@@ -398,7 +398,7 @@ export function Profile() {
 
                 {/* Cơ sở — không hiển thị cho VISITOR; không hardcode theo role */}
                 {!isVisitor && (
-                  <div className="mt-2 flex items-center gap-2 font-semibold text-[#f37021]">
+                  <div className="mt-2 flex items-center gap-2 font-normal text-[#f37021]">
                     <School className="h-5 w-5" />
                     <span>{tt('fields.campus')}: {profile.displayCampusName ?? tt('fields.campusNotConfigured')}</span>
                   </div>
@@ -507,7 +507,7 @@ function InfoCard({
 }
 
 function ValueText({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <p className={`font-medium text-gray-900 ${className}`}>{children}</p>;
+  return <p className={`font-normal text-gray-900 ${className}`}>{children}</p>;
 }
 
 function ProfileSkeleton() {

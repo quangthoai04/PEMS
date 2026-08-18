@@ -580,7 +580,7 @@ export function EditNews() {
                       Tiêu đề tin tức <span className="text-red-500">*</span>
                       {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
                       {title.length}/150
                     </span>
                   </div>
@@ -606,7 +606,7 @@ export function EditNews() {
                       Title <span className="text-red-500">*</span>
                       <LanguageColumnLabel>EN</LanguageColumnLabel>
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
                       {englishTitle.length}/150
                     </span>
                   </div>
@@ -636,7 +636,7 @@ export function EditNews() {
                       Mô tả ngắn <span className="text-red-500">*</span>
                       {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
                       {summary.length}/500
                     </span>
                   </div>
@@ -662,7 +662,7 @@ export function EditNews() {
                       Summary
                       <LanguageColumnLabel>EN</LanguageColumnLabel>
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
                       {englishSummary.length}/500
                     </span>
                   </div>
@@ -792,7 +792,7 @@ export function EditNews() {
                             Tiêu đề mục
                             {showEnglishColumn && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                           </label>
-                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                          <span className={`text-xs font-normal shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
                             {section.sectionTitle.length}/255
                           </span>
                         </div>
@@ -818,7 +818,7 @@ export function EditNews() {
                             Section title
                             <LanguageColumnLabel>EN</LanguageColumnLabel>
                           </label>
-                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                          <span className={`text-xs font-normal shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
                             {section.englishSectionTitle.length}/255
                           </span>
                         </div>

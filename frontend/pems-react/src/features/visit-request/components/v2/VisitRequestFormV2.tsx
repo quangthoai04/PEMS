@@ -376,7 +376,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
       </AnimatePresence>
 
       {vm.migratedFromGlobalDraft && (
-        <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-800">
+        <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-normal text-blue-800">
           {t('visitRequestV2:draft.migrated')}
         </div>
       )}
@@ -451,7 +451,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             {t('visitRequestV2:draft.pendingOtpBody', { email: vm.pendingOtp.maskedEmail })}
           </p>
           {resumeFailed && (
-            <p className="mt-1 font-medium" role="alert">
+            <p className="mt-1 font-normal" role="alert">
               {t('visitRequestV2:draft.resumeOtpUnavailable')}
             </p>
           )}
@@ -501,7 +501,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           <div
             role="status"
             data-testid={isSelfRegistrant ? 'v2-registrant-self' : 'v2-registrant-delegated'}
-            className={`mb-4 flex items-start gap-2 rounded-xl border p-3 text-sm font-medium ${
+            className={`mb-4 flex items-start gap-2 rounded-xl border p-3 text-sm font-normal ${
               isSelfRegistrant
                 ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                 : 'border-amber-200 bg-amber-50 text-amber-800'
@@ -590,7 +590,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         description={t('visitRequestV2:sections.campusesDesc')}
       >
         {typeof errors.campusVisits?.message === 'string' && (
-          <p className="mb-3 text-sm font-semibold text-red-600" role="alert">{errors.campusVisits.message}</p>
+          <p className="mb-3 text-sm font-normal text-red-600" role="alert">{errors.campusVisits.message}</p>
         )}
         <div className="space-y-4">
           {campusVisitFields.fields.map((field, index) => {
@@ -672,14 +672,14 @@ export const VisitRequestFormV2: React.FC<Props> = ({
             <div
               role="alert"
               data-testid="v2-error-summary"
-              className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700"
+              className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-normal text-red-700"
             >
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{t('validation:fixErrorsCount', { count: vm.validationErrorCount })}</span>
             </div>
           )}
           <div className="flex flex-col-reverse items-center justify-between gap-4 pt-2 sm:flex-row sm:pt-4">
-            <p className="text-xs font-medium text-slate-500">
+            <p className="text-xs font-normal text-slate-500">
               <span className="font-bold text-red-500">*</span> {t('visitRequestV2:schedule.rulesHint', { hours: vm.minAdvanceHours, minutes: 30 })}
             </p>
             <button

@@ -162,15 +162,15 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
         {/* Body */}
         <div className="p-6 overflow-y-auto space-y-5">
           {loading ? (
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-500 py-8 justify-center">
+            <div className="flex items-center gap-2 text-sm font-normal text-gray-500 py-8 justify-center">
               <RefreshCw className="w-5 h-5 animate-spin" /> Đang tải dữ liệu...
             </div>
           ) : loadError ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{loadError}</div>
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-normal text-red-700">{loadError}</div>
           ) : preview && !preview.canReplace ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-start gap-2">
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
-              <p className="font-bold leading-snug">{preview.message}</p>
+              <p className="font-normal leading-snug">{preview.message}</p>
             </div>
           ) : preview ? (
             <>
@@ -251,7 +251,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                       ))}
                     </select>
                     {fieldErrors.candidate && (
-                      <p id="replace-candidate-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.candidate}</p>
+                      <p id="replace-candidate-error" className="mt-1.5 text-sm text-red-600 font-normal">{fieldErrors.candidate}</p>
                     )}
                     {candidates.length === 0 && (
                       <p className="mt-1.5 text-xs text-gray-500">Phòng IC của cơ sở chưa có nhân sự IC Staff phù hợp. Bạn có thể tạo tài khoản mới.</p>
@@ -275,7 +275,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                         className={fieldClass(!!fieldErrors.fullName)}
                       />
                       {fieldErrors.fullName && (
-                        <p id="replace-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.fullName}</p>
+                        <p id="replace-full-name-error" className="mt-1.5 text-sm text-red-600 font-normal">{fieldErrors.fullName}</p>
                       )}
                     </div>
                     <div>
@@ -295,7 +295,7 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                         className={fieldClass(!!fieldErrors.email)}
                       />
                       {fieldErrors.email ? (
-                        <p id="replace-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.email}</p>
+                        <p id="replace-email-error" className="mt-1.5 text-sm text-red-600 font-normal">{fieldErrors.email}</p>
                       ) : (
                         <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
                       )}
@@ -320,14 +320,14 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                   className={`${fieldClass(!!fieldErrors.reason)} resize-none`}
                 />
                 {fieldErrors.reason ? (
-                  <p id="replace-reason-error" className="mt-1.5 text-sm text-red-600 font-medium">{fieldErrors.reason}</p>
+                  <p id="replace-reason-error" className="mt-1.5 text-sm text-red-600 font-normal">{fieldErrors.reason}</p>
                 ) : (
                   <p className="mt-1.5 text-xs text-gray-500">Tối thiểu 10 ký tự, tối đa 500 ký tự.</p>
                 )}
               </div>
 
               {submitError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">{submitError}</div>
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">{submitError}</div>
               )}
             </>
           ) : null}
@@ -363,13 +363,13 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
               <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 space-y-2">
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Cơ sở / Phòng ban</p>
-                  <p className="font-bold text-gray-800">
+                  <p className="font-normal text-gray-800">
                     {headerCampus} — {preview?.icDepartmentName ?? 'Phòng Hợp tác Quốc tế'}
                   </p>
                 </div>
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Người hiện tại</p>
-                  <p className="font-bold text-gray-800">{current.fullName} — {current.email}</p>
+                  <p className="font-normal text-gray-800">{current.fullName} — {current.email}</p>
                 </div>
                 <div className="flex justify-center text-gray-400"><ArrowRight className="w-4 h-4 rotate-90" /></div>
                 <div>
@@ -382,14 +382,14 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
                 </div>
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Lý do thay thế</p>
-                  <p className="font-medium text-gray-700 break-words">{normalizeReplacementReason(reason)}</p>
+                  <p className="font-normal text-gray-700 break-words">{normalizeReplacementReason(reason)}</p>
                 </div>
               </div>
               <p className="text-xs text-amber-700">
                 Sau khi xác nhận, người hiện tại sẽ được chuyển về vai trò Staff (STAFF/STAFF) và các phiên đăng nhập liên quan sẽ bị thu hồi.
               </p>
               {submitError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">{submitError}</div>
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">{submitError}</div>
               )}
             </div>
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">

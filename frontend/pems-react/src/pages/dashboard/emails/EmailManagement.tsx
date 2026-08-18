@@ -286,7 +286,7 @@ export function EmailManagement() {
                       <td className="p-3 align-middle text-gray-800 text-[14px] text-left pl-6 transition-colors font-medium">
                         <div className="line-clamp-2">{item.subject}</div>
                       </td>
-                      <td className="p-3 align-middle whitespace-nowrap text-center text-[13px] text-gray-500 font-medium">
+                      <td className="p-3 align-middle whitespace-nowrap text-center text-[13px] text-gray-500 font-normal">
                           {item.sentAt
                              ? formatVietnamDateTime(item.sentAt)
                              : (item.createdAt ? formatVietnamDateTime(item.createdAt) : '')}
@@ -431,7 +431,7 @@ export function EmailManagement() {
                   </div>
                   <div className="pt-4 border-t border-gray-200">
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Tiêu đề (Tiếng Việt)</label>
-                    <div className="text-[14px] font-medium text-gray-800 mb-4">{selectedTemplate.subjectVi || selectedTemplate.subject}</div>
+                    <div className="text-[14px] font-normal text-gray-800 mb-4">{selectedTemplate.subjectVi || selectedTemplate.subject}</div>
                     
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nội dung mẫu (Preview)</label>
                     <div className="bg-white p-4 border border-gray-200 rounded min-h-[200px] text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTemplate.bodyVi || selectedTemplate.content || '') }} />
@@ -523,7 +523,7 @@ export function EmailManagement() {
                 {/* Pagination for Template List */}
                 {totalTemplates > 0 && (
                   <div className="flex items-center justify-between border-t border-slate-200 pt-4 mt-4 shrink-0">
-                    <p className="text-sm font-medium text-slate-500">
+                    <p className="text-sm font-normal text-slate-500">
                       Hiển thị {(page - 1) * itemsPerPage + 1}-{Math.min(page * itemsPerPage, totalTemplates)} / {totalTemplates} mẫu
                     </p>
                     <div className="flex items-center gap-1.5">

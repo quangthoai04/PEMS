@@ -139,7 +139,7 @@ export function VisitProcess() {
         <Clock className="w-10 h-10 text-slate-400 stroke-[1.5]" />
       </div>
       <h2 className="text-xl font-bold text-slate-800 mb-2 font-sans tracking-tight">Chưa đến giai đoạn này</h2>
-      <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm">
+      <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm">
         Giai đoạn này sẽ được mở khóa sau khi hoàn tất các bước trước đó trong quy trình tiếp khách.
       </p>
     </div>
@@ -847,7 +847,7 @@ export function VisitProcess() {
         : 'Sau khi đóng đoàn, toàn bộ quy trình sẽ chuyển sang chế độ chỉ xem.';
     return (
       <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-medium text-slate-500 flex items-start gap-2">
+        <div className="text-sm font-normal text-slate-500 flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-[#f37021] shrink-0 mt-0.5" />
           <span>{stageNotice}</span>
         </div>
@@ -977,7 +977,7 @@ export function VisitProcess() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-[#004c91] mb-4" />
-        <p className="text-sm font-bold text-slate-500">
+        <p className="text-sm font-normal text-slate-500">
           {isLoadingPerm ? 'Đang tải phân quyền...' : 'Đang tải thông tin...'}
         </p>
       </div>
@@ -998,7 +998,7 @@ export function VisitProcess() {
           <h2 className="text-xl font-bold text-slate-800 mb-2">
             {isReceptionDetail ? tt('process.notFoundTitle') : tt('process.noAccessTitle')}
           </h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+          <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm mb-6">
             {isReceptionDetail ? tt('process.notFoundDesc') : tt('process.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
@@ -1021,7 +1021,7 @@ export function VisitProcess() {
             <AlertCircle className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Không tìm thấy thông tin chuyến thăm</h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+          <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm mb-6">
             Bạn không có quyền xem chuyến thăm này.
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
@@ -1053,14 +1053,14 @@ export function VisitProcess() {
       {(isCancelledView || perm?.instanceStatus === 'CANCELLED') && !isReceptionDetail ? (
         <div className="mb-8 bg-rose-50 border-l-4 border-rose-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
-          <p className="text-sm font-bold text-rose-700">
+          <p className="text-sm font-normal text-rose-700">
             Campus này đã bị hủy. Các thông tin chuẩn bị trước đó chỉ được hiển thị để tham khảo/lưu vết và không thể chỉnh sửa.
           </p>
         </div>
       ) : isClosed && !isReceptionDetail && (
         <div className="mb-8 bg-slate-100 border-l-4 border-slate-500 p-5 rounded-2xl flex items-center gap-3 text-left shadow-sm">
           <AlertCircle className="w-5 h-5 text-slate-600 shrink-0" />
-          <p className="text-sm font-bold text-slate-700">
+          <p className="text-sm font-normal text-slate-700">
             {(currentStatus === 'Đã đóng đoàn' || currentStatus === 'Đã kết thúc')
               ? 'Hồ sơ lưu trữ: Đoàn khách này đã hoàn thành quy trình tiếp đón và đóng hồ sơ lịch sử. Dữ liệu đang hiển thị ở chế độ xem (Chỉ đọc).'
               : 'Chỉ người phụ trách tiếp đón mới có thể chỉnh sửa thông tin'
@@ -1154,7 +1154,7 @@ export function VisitProcess() {
               className="rounded-[2rem] border border-slate-200 bg-slate-50 p-5 flex items-start gap-3"
             >
               <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
-              <p className="text-sm font-medium text-slate-600">
+              <p className="text-sm font-normal text-slate-600">
                 Giai đoạn chuẩn bị đã kết thúc — tab “Trước tiếp khách” hiện chỉ còn chế độ xem.
                 Bạn vẫn xem được lịch trình, thành phần tham gia, hậu cần, cảnh báo và ghi chú đã lưu.
               </p>
@@ -1699,7 +1699,7 @@ export function VisitProcess() {
                           Bật cảnh báo này
                         </label>
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 font-medium pt-2 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 font-normal pt-2 border-t border-gray-100">
                         <input disabled={!canConfigurePrep || !row.enabled} type="number" min="0" max="31"
                           className="w-12 px-1.5 py-1.5 text-center text-xs font-normal rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
                           value={row.days}
@@ -1876,7 +1876,7 @@ export function VisitProcess() {
           >
             <div>
               <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">{tt('process.album.title')}</h2>
-              <p className="text-sm font-medium text-green-100 mt-1 pl-4">{tt('process.album.subtitle')}</p>
+              <p className="text-sm font-normal text-green-100 mt-1 pl-4">{tt('process.album.subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -1915,7 +1915,7 @@ export function VisitProcess() {
           >
             <div>
               <h2 className="text-xl font-bold text-white border-l-4 border-white pl-3">{tt('process.news.title')}</h2>
-              <p className="text-sm font-medium text-indigo-100 mt-1 pl-4">{tt('process.news.subtitle')}</p>
+              <p className="text-sm font-normal text-indigo-100 mt-1 pl-4">{tt('process.news.subtitle')}</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
@@ -2163,7 +2163,7 @@ export function VisitProcess() {
                     className="w-4 h-4 rounded border-gray-300 text-[#004c91] focus:ring-[#004c91]/30 disabled:opacity-50"
                   />
                   <span className="text-sm font-bold text-gray-700">Tiếng Anh</span>
-                  <span className="text-xs text-gray-400 font-medium">— hệ thống tự động dịch toàn bộ báo cáo</span>
+                  <span className="text-xs text-gray-400 font-normal">— hệ thống tự động dịch toàn bộ báo cáo</span>
                 </label>
               </div>
 
@@ -2171,7 +2171,7 @@ export function VisitProcess() {
                 {scheduleReportModal.loading && (
                   <div className="h-full flex flex-col items-center justify-center gap-3 text-gray-500">
                     <Loader2 className="w-6 h-6 animate-spin" />
-                    <p className="text-sm font-semibold">
+                    <p className="text-sm font-normal">
                       {scheduleReportModal.english ? 'Đang dịch và tạo báo cáo...' : 'Đang tạo báo cáo...'}
                     </p>
                   </div>
@@ -2179,7 +2179,7 @@ export function VisitProcess() {
                 {!scheduleReportModal.loading && scheduleReportModal.error && (
                   <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6">
                     <AlertCircle className="w-6 h-6 text-red-500" />
-                    <p className="text-sm font-semibold text-red-600">{scheduleReportModal.error}</p>
+                    <p className="text-sm font-normal text-red-600">{scheduleReportModal.error}</p>
                     <button
                       onClick={() => fetchScheduleReport(scheduleReportModal.english)}
                       className="px-4 py-2 rounded-lg font-bold text-sm text-[#004c91] bg-white border border-[#004c91] hover:bg-[#004c91]/5 transition-colors"
@@ -2380,7 +2380,7 @@ export function VisitProcess() {
             {pendingStage === 'before' && perm?.isBeforeRecommendedStartWindow && perm?.recommendedStartVisitAt && (
               <p
                 data-testid="stage-confirm-early"
-                className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800"
+                className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-normal text-amber-800"
               >
                 Bạn đang chuyển sớm hơn mốc thường lệ
                 {` (${formatVietnamDateTime(perm.recommendedStartVisitAt)}, 6 giờ trước giờ bắt đầu dự kiến).`}

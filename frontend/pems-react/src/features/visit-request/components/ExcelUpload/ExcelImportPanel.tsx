@@ -34,7 +34,7 @@ interface Props {
 const Row: React.FC<{ label: string; value: React.ReactNode; strong?: boolean }> = ({ label, value, strong }) => (
   <div className="flex items-baseline justify-between gap-3">
     <span className="text-slate-600">{label}</span>
-    <span className={strong ? 'font-bold text-slate-900' : 'font-semibold text-slate-800'}>{value}</span>
+    <span className={strong ? 'font-bold text-slate-900' : 'font-normal text-slate-800'}>{value}</span>
   </div>
 );
 
@@ -57,7 +57,7 @@ export const ExcelImportPanel: React.FC<Props> = ({
       <div
         data-testid={`${testId}-loading`}
         role="status"
-        className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700"
+        className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-normal text-slate-700"
       >
         <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#004c91]" />
         {t('visitRequestV2:excel.checking', { fileName: state.loadingFileName })}
@@ -132,7 +132,7 @@ export const ExcelImportPanel: React.FC<Props> = ({
       </div>
 
       {report.fatalMessage ? (
-        <p className="text-sm font-semibold text-red-700">{report.fatalMessage}</p>
+        <p className="text-sm font-normal text-red-700">{report.fatalMessage}</p>
       ) : (
         <>
           <div className="space-y-1 text-sm">
@@ -183,7 +183,7 @@ export const ExcelImportPanel: React.FC<Props> = ({
             </div>
           )}
 
-          <p className="mt-2 text-xs font-semibold text-red-700">
+          <p className="mt-2 text-xs font-normal text-red-700">
             {t('visitRequestV2:excel.report.formUnchanged')}
           </p>
         </>

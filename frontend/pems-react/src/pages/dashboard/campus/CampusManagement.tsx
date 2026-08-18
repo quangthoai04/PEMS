@@ -367,7 +367,7 @@ export function CampusManagement() {
             <tbody className="divide-y divide-gray-100">
               {loading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-medium">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-normal">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2 text-[#004c91]" />
                     Đang tải danh sách campus...
                   </td>
@@ -379,7 +379,7 @@ export function CampusManagement() {
                   <td colSpan={8} className="px-4 py-12 text-center">
                     <div className="flex flex-col items-center gap-2 text-red-600">
                       <AlertTriangle className="w-6 h-6" />
-                      <span className="font-medium">{error}</span>
+                      <span className="font-normal">{error}</span>
                       <button
                         onClick={() => refetch()}
                         className="mt-2 px-4 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91]/30 rounded-lg hover:bg-[#e6eff7] transition-colors"
@@ -405,11 +405,11 @@ export function CampusManagement() {
                     <div className="text-sm font-bold text-gray-900">{item.name}</div>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    <div className="text-sm text-gray-600 font-medium">{item.city || '—'}</div>
+                    <div className="text-sm text-gray-600 font-normal">{item.city || '—'}</div>
                   </td>
                   <td className="px-4 py-3 text-center">
                     {item.icHeadName ? (
-                      <div className="text-sm font-bold text-[#004c91]">{item.icHeadName}</div>
+                      <div className="text-sm font-normal text-[#004c91]">{item.icHeadName}</div>
                     ) : (
                       <span className="text-sm text-gray-400 italic">Chưa phân công</span>
                     )}
@@ -474,7 +474,7 @@ export function CampusManagement() {
 
               {!loading && !error && campuses.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-medium">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-500 font-normal">
                     {hasActiveFilter ? 'Không tìm thấy campus phù hợp.' : 'Chưa có campus nào.'}
                   </td>
                 </tr>
@@ -680,14 +680,14 @@ export function CampusManagement() {
 
             <div className="p-6 text-sm text-gray-700 leading-relaxed space-y-3 overflow-y-auto">
               {impactLoading && (
-                <div className="flex items-center gap-2 text-gray-500 font-medium">
+                <div className="flex items-center gap-2 text-gray-500 font-normal">
                   <Loader2 className="w-4 h-4 animate-spin text-[#004c91]" />
                   Đang kiểm tra các chuyến thăm liên quan...
                 </div>
               )}
 
               {!impactLoading && impactError && (
-                <div className="text-red-600 font-medium">{impactError}</div>
+                <div className="text-red-600 font-normal">{impactError}</div>
               )}
 
               {!impactLoading && !impactError && impact && impact.canChange && (
@@ -775,7 +775,7 @@ export function CampusManagement() {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-sm ${
+            className={`px-4 py-3 rounded-xl shadow-lg text-sm font-normal max-w-sm ${
               t.type === 'success'
                 ? 'bg-[#0aa14f] text-white'
                 : t.type === 'warning'
@@ -811,7 +811,7 @@ function CreateField({ label, field, error, children }: {
       </label>
       {children}
       {error && (
-        <p id={`create-${field}-error`} className="text-xs text-red-500 font-medium">{error}</p>
+        <p id={`create-${field}-error`} className="text-xs text-red-500 font-normal">{error}</p>
       )}
     </div>
   );

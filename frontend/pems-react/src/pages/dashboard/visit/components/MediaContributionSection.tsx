@@ -62,7 +62,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
             </div>
             <div className="flex-1">
               <h2 className="text-base font-black text-[#004c91]">Ảnh / Media</h2>
-              <p className="text-xs font-semibold text-slate-500">
+              <p className="text-xs font-normal text-slate-500">
                 {data.uploadedCount} / tối thiểu {data.requiredMinimumCount} file
               </p>
             </div>
@@ -74,7 +74,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
           </div>
           <div className="space-y-4">
             {data.items.length === 0 ? (
-              <p className="text-sm font-semibold text-slate-400">Chưa có file media nào được tải lên.</p>
+              <p className="text-sm font-normal text-slate-400">Chưa có file media nào được tải lên.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                 {data.items.map(m => (
@@ -82,7 +82,7 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
                     {m.fileType.startsWith('image/') ? (
                       <img src={m.thumbnailUrl || m.url} alt={m.fileName} className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 font-bold text-xs p-2 text-center break-all">
+                      <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-400 font-normal text-xs p-2 text-center break-all">
                         {m.fileName}
                       </div>
                     )}

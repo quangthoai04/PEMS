@@ -76,7 +76,7 @@ export function HoVisitProcessDetail() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="bg-[#004c91] px-6 py-4 md:px-8 border-b border-[#003366]">
             <h2 className="text-xl font-bold text-white mb-1">{guest?.name || 'Đoàn khách Đại học Monash'}</h2>
-            <p className="text-white/80 text-sm font-medium">{guest?.org || 'Monash University'}</p>
+            <p className="text-white/80 text-sm font-normal">{guest?.org || 'Monash University'}</p>
           </div>
           
           <div className="p-6 md:p-8 space-y-8">
@@ -118,12 +118,12 @@ export function HoVisitProcessDetail() {
                         <div className="space-y-3 text-sm text-gray-700 mt-2 flex-grow">
                           <div className="flex items-start gap-2">
                             <span className="font-bold min-w-[70px] text-gray-500 shrink-0">Thời gian:</span>
-                            <span className="font-medium bg-white px-2 py-0.5 rounded border border-gray-100 break-words">{campus.time}</span>
+                            <span className="font-normal bg-white px-2 py-0.5 rounded border border-gray-100 break-words">{campus.time}</span>
                           </div>
                           
                           <div className="flex items-start gap-2">
                             <span className="font-bold min-w-[70px] text-gray-500 shrink-0">Người phụ trách:</span>
-                            <span className="font-bold text-[#004c91]">{campus.person}</span>
+                            <span className="font-normal text-[#004c91]">{campus.person}</span>
                           </div>
 
                           {campus.rejectReason && (

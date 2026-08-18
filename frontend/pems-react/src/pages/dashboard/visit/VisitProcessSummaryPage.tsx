@@ -102,7 +102,7 @@ const EmptyState = ({ message = 'Chưa có dữ liệu cho phần này.' }) => (
     <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3">
       <Clock className="w-6 h-6 text-slate-300" />
     </div>
-    <p className="text-sm font-medium text-slate-500">{message}</p>
+    <p className="text-sm font-normal text-slate-500">{message}</p>
   </div>
 );
 
@@ -166,7 +166,7 @@ export function VisitProcessSummaryPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-[#004c91] mb-4" />
-        <p className="text-sm font-bold text-slate-500">{tt('processSummary.loading')}</p>
+        <p className="text-sm font-normal text-slate-500">{tt('processSummary.loading')}</p>
       </div>
     );
   }
@@ -179,7 +179,7 @@ export function VisitProcessSummaryPage() {
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('processSummary.noAccessTitle')}</h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+          <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm mb-6">
             {tt('processSummary.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
@@ -200,7 +200,7 @@ export function VisitProcessSummaryPage() {
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('processSummary.noAccessTitle')}</h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+          <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm mb-6">
             {tt('processSummary.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)} className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors outline-none">
@@ -243,7 +243,7 @@ export function VisitProcessSummaryPage() {
 
       <div className="bg-blue-50 border-l-4 border-[#004c91] p-4 rounded-xl flex items-start gap-3 shadow-sm mb-8">
         <AlertCircle className="w-5 h-5 text-[#004c91] shrink-0 mt-0.5" />
-        <p className="text-sm font-medium text-blue-900">
+        <p className="text-sm font-normal text-blue-900">
           Đây là màn hình <strong>Báo cáo tổng hợp (Chỉ đọc)</strong> dành cho {perm.relation === 'HO' ? 'Head Office' : 'Staff Leader'} giám sát quá trình tiếp khách. Mọi chức năng thao tác, cập nhật đều bị khóa.
         </p>
       </div>
@@ -276,13 +276,13 @@ export function VisitProcessSummaryPage() {
               {data.agendaSummary?.map((item, idx) => (
                 <div key={idx} className="p-4 rounded-xl border border-gray-200 bg-slate-50 flex flex-col gap-2">
                   <div className="flex justify-between items-start">
-                    <h3 className="font-bold text-[#004c91]">{item.title}</h3>
+                    <h3 className="font-normal text-[#004c91]">{item.title}</h3>
                     <span className="text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded-md border border-slate-200">
                       {formatVietnamDateTime(item.startTime)} - {item.endTime ? formatVietnamDateTime(item.endTime) : ''}
                     </span>
                   </div>
                   {item.description && <p className="text-sm text-gray-600">{item.description}</p>}
-                  <div className="flex items-center gap-4 text-xs font-medium text-gray-500 mt-2">
+                  <div className="flex items-center gap-4 text-xs font-normal text-gray-500 mt-2">
                     <span className="flex items-center gap-1"><Info className="w-3 h-3" /> {item.location || 'Chưa cập nhật địa điểm'}</span>
                     <span className="flex items-center gap-1"><Users className="w-3 h-3" /> Phụ trách: {item.responsibleName || 'Chưa phân công'}</span>
                   </div>

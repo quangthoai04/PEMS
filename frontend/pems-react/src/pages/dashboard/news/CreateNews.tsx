@@ -516,7 +516,7 @@ export function CreateNews() {
             )}
 
             {presetError && !loadingVisits && (
-              <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm font-semibold text-amber-800" role="alert">
+              <div className="mb-4 p-4 bg-amber-50 border border-amber-300 rounded-xl text-sm font-normal text-amber-800" role="alert">
                 {presetError}
                 {/* Đã có bài của chính mình → dẫn thẳng tới bài đó thay vì để người dùng đi tìm. */}
                 {presetExistingNewsId !== null && (
@@ -562,7 +562,7 @@ export function CreateNews() {
 
             {skippedVisit && !presetVisitInstanceId && (
               <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-xl flex items-center justify-between gap-4">
-                <span className="text-sm font-semibold text-gray-600">Tin tức này sẽ không gắn với chuyến tiếp khách nào.</span>
+                <span className="text-sm font-normal text-gray-600">Tin tức này sẽ không gắn với chuyến tiếp khách nào.</span>
                 <button
                   onClick={handleChangeVisit}
                   className="flex-shrink-0 px-3 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91] rounded-lg hover:bg-[#004c91] hover:text-white transition-colors"
@@ -581,7 +581,7 @@ export function CreateNews() {
                   </div>
                 ) : eligibleVisits.length === 0 ? (
                   <div className="py-10 text-center">
-                    <p className="text-gray-700 font-bold mb-2">Bạn chưa có chuyến tiếp khách nào ở giai đoạn Sau tiếp khách để viết tin tức.</p>
+                    <p className="text-gray-700 font-normal mb-2">Bạn chưa có chuyến tiếp khách nào ở giai đoạn Sau tiếp khách để viết tin tức.</p>
                     <p className="text-gray-500 text-sm">Bạn chỉ có thể tạo tin tức cho chuyến tiếp khách mà bạn là Host hoặc đã xác nhận tham gia, từ giai đoạn Sau tiếp khách trở đi.</p>
                     {!visitRequired && (
                       <button
@@ -635,7 +635,7 @@ export function CreateNews() {
             )}
 
             {!selectedVisit && !skippedVisit && !loadingVisits && !presetError && visitRequired && (
-              <p className="mt-4 text-sm text-amber-600 font-medium">
+              <p className="mt-4 text-sm text-amber-600 font-normal">
                 ⚠ Vui lòng chọn chuyến tiếp khách trước khi tạo tin tức.
               </p>
             )}
@@ -683,7 +683,7 @@ export function CreateNews() {
                       Tiêu đề tin tức <span className="text-red-500">*</span>
                       {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${title.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
                       {title.length}/150
                     </span>
                   </div>
@@ -710,7 +710,7 @@ export function CreateNews() {
                       Title <span className="text-red-500">*</span>
                       <LanguageColumnLabel>EN</LanguageColumnLabel>
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${englishTitle.length > 150 ? 'text-red-500' : 'text-gray-400'}`}>
                       {englishTitle.length}/150
                     </span>
                   </div>
@@ -741,7 +741,7 @@ export function CreateNews() {
                       Mô tả ngắn <span className="text-red-500">*</span>
                       {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${summary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
                       {summary.length}/500
                     </span>
                   </div>
@@ -768,7 +768,7 @@ export function CreateNews() {
                       Summary
                       <LanguageColumnLabel>EN</LanguageColumnLabel>
                     </label>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
+                    <span className={`text-xs font-normal shrink-0 ml-2 ${englishSummary.length > 500 ? 'text-red-500' : 'text-gray-400'}`}>
                       {englishSummary.length}/500
                     </span>
                   </div>
@@ -802,7 +802,7 @@ export function CreateNews() {
                     <SmartImage src={imagePreview} alt="Preview" className="w-full max-h-[360px] object-contain rounded-lg" />
                     {coverUploading && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-                        <div className="flex items-center gap-2 text-white font-bold text-sm">
+                        <div className="flex items-center gap-2 text-white font-normal text-sm">
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                           Đang tải lên...
                         </div>
@@ -888,7 +888,7 @@ export function CreateNews() {
                             Tiêu đề mục
                             {bilingual && <LanguageColumnLabel>VI</LanguageColumnLabel>}
                           </label>
-                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                          <span className={`text-xs font-normal shrink-0 ml-2 ${section.sectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
                             {section.sectionTitle.length}/255
                           </span>
                         </div>
@@ -914,7 +914,7 @@ export function CreateNews() {
                             Section title
                             <LanguageColumnLabel>EN</LanguageColumnLabel>
                           </label>
-                          <span className={`text-xs font-medium shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
+                          <span className={`text-xs font-normal shrink-0 ml-2 ${section.englishSectionTitle.length > 255 ? 'text-red-500' : 'text-gray-400'}`}>
                             {section.englishSectionTitle.length}/255
                           </span>
                         </div>

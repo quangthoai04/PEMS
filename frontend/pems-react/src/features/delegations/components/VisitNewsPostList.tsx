@@ -101,7 +101,7 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
 
   return (
     <div className="space-y-4">
-      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
+      {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-normal text-red-700">{error}</div>}
 
       {/* Tạo bài — điều hướng sang form News Management (không có form thứ hai) */}
       {list?.canCreate && !createBlocked && (
@@ -114,11 +114,11 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
       )}
 
       {loading ? (
-        <div className="py-8 text-center text-slate-500 font-medium">Đang tải tin tức...</div>
+        <div className="py-8 text-center text-slate-500 font-normal">Đang tải tin tức...</div>
       ) : items.length === 0 ? (
         <div className="py-8 text-center">
           <Newspaper className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-600 font-medium">{emptyText ?? 'Chưa có bài tin tức nào cho chuyến thăm này.'}</p>
+          <p className="text-slate-600 font-normal">{emptyText ?? 'Chưa có bài tin tức nào cho chuyến thăm này.'}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -142,9 +142,9 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
                   </div>
                   <span className={`inline-flex shrink-0 justify-center whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${meta.cls}`}>{meta.label}</span>
                 </div>
-                {n.summary && <p className="mt-2 text-sm font-medium text-slate-700">{n.summary}</p>}
+                {n.summary && <p className="mt-2 text-sm font-normal text-slate-700">{n.summary}</p>}
                 {n.status === 'REJECTED' && n.reviewNote && (
-                  <p className="mt-2 text-xs font-medium text-red-600">Lý do từ chối: {n.reviewNote}</p>
+                  <p className="mt-2 text-xs font-normal text-red-600">Lý do từ chối: {n.reviewNote}</p>
                 )}
 
                 {(n.canEdit || n.canApprove || n.canReject) && (

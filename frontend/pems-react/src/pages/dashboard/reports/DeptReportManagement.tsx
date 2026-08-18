@@ -103,7 +103,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-t border-slate-200">
-      <span className="text-[11px] font-medium text-slate-400">
+      <span className="text-[11px] font-normal text-slate-400">
         {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total} dòng
       </span>
       <div className="flex items-center gap-1">
@@ -116,7 +116,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <span className="text-xs font-bold text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
+        <span className="text-xs font-normal text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
         <button
           type="button"
           onClick={() => onChange(page + 1)}
@@ -149,7 +149,7 @@ function StatTile({ label, value, sub, tone = 'blue', icon }: {
         {icon}
       </div>
       <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
-      {sub && <p className="text-[10px] font-medium opacity-75">{sub}</p>}
+      {sub && <p className="text-[10px] font-normal opacity-75">{sub}</p>}
     </div>
   );
 }
@@ -540,7 +540,7 @@ export function DeptReportManagement() {
       {loading && !data ? (
         <div className="py-24 text-center text-slate-500">
           <Loader2 className="w-7 h-7 mx-auto mb-3 animate-spin text-[#004c91]" />
-          <p className="text-sm font-medium">Đang tổng hợp báo cáo...</p>
+          <p className="text-sm font-normal">Đang tổng hợp báo cáo...</p>
         </div>
       ) : data && (
         <>
@@ -792,7 +792,7 @@ export function DeptReportManagement() {
                                 <td className={`${tdClass} whitespace-nowrap`}>
                                   {it.noExpense
                                     ? <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded px-1.5 py-0.5">Không có chi phí</span>
-                                    : <span className="font-bold text-emerald-700">{vnMoney(it.totalExpense)}</span>}
+                                    : <span className="font-normal text-emerald-700">{vnMoney(it.totalExpense)}</span>}
                                 </td>
                                 <td className={`${tdClass} whitespace-nowrap`}>
                                   <button
@@ -882,9 +882,9 @@ export function DeptReportManagement() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-xs">
-                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-medium text-gray-800">Department Leader Office &lt;deptleader-reports@mail.pems-fpt.site&gt;</span></div>
-                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-bold text-[#004c91]">{previewMemberRow.fullName} ({previewMemberRow.role})</span></div>
-                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-bold text-gray-900">[PEMS] Báo cáo hiệu suất công việc phòng ban — {previewMemberRow.fullName}</span></div>
+                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-normal text-gray-800">Department Leader Office &lt;deptleader-reports@mail.pems-fpt.site&gt;</span></div>
+                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-normal text-[#004c91]">{previewMemberRow.fullName} ({previewMemberRow.role})</span></div>
+                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-normal text-gray-900">[PEMS] Báo cáo hiệu suất công việc phòng ban — {previewMemberRow.fullName}</span></div>
                   </div>
                 </div>
 
@@ -894,12 +894,12 @@ export function DeptReportManagement() {
                     <span className="text-xs font-normal opacity-80">{previewMemberRow.role}</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">Kính gửi <strong className="text-gray-900">{previewMemberRow.fullName}</strong>,</p>
+                    <p className="font-normal">Kính gửi <strong className="text-gray-900">{previewMemberRow.fullName}</strong>,</p>
                     <p className="text-sm leading-relaxed">Trưởng phòng gửi đến bạn tổng hợp hiệu suất xử lý yêu cầu và nhiệm vụ hỗ trợ đợt công tác trong kỳ:</p>
                     <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN YÊU CẦU ĐÃ XỬ LÝ:</span><span className="font-bold text-[#004c91]">{previewMemberRow.taskCount} đơn</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ LÀM VIỆC:</span><span className="font-bold text-gray-800">{previewMemberRow.totalHours.toFixed(1)} giờ</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-bold text-amber-600">{previewMemberRow.feedbackAverage ? `${previewMemberRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN YÊU CẦU ĐÃ XỬ LÝ:</span><span className="font-normal text-[#004c91]">{previewMemberRow.taskCount} đơn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ LÀM VIỆC:</span><span className="font-normal text-gray-800">{previewMemberRow.totalHours.toFixed(1)} giờ</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-normal text-amber-600">{previewMemberRow.feedbackAverage ? `${previewMemberRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
                       <div className="pt-1">
                         <span className="font-bold text-gray-500 block mb-1">GHI CHÚ ĐÁNH GIÁ (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
                         {!sentMemberMap[previewMemberRow.userId] ? (

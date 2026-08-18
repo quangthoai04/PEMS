@@ -141,10 +141,10 @@ export function SecurityMonitoring() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] cursor-pointer">Dashboard</button>
         <span>/</span>
-        <span className="text-[#004c91]">Bảo mật</span>
+        <span className="text-[#004c91] font-medium">Bảo mật</span>
       </div>
 
       <div className="flex items-center justify-between mb-8">
@@ -237,12 +237,12 @@ export function SecurityMonitoring() {
         {/* Table */}
         <div className="overflow-x-auto">
           {loading ? (
-            <div className="py-16 text-center text-gray-400 text-sm font-medium">
+            <div className="py-16 text-center text-gray-400 text-sm font-normal">
               <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải dữ liệu...
             </div>
           ) : error ? (
             <div className="py-16 text-center">
-              <p className="text-sm font-bold text-red-500 mb-2">{error}</p>
+              <p className="text-sm font-normal text-red-500 mb-2">{error}</p>
               <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
             </div>
           ) : (
@@ -260,7 +260,7 @@ export function SecurityMonitoring() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {(events?.items.length ?? 0) === 0 ? (
-                  <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-medium">Không có sự kiện nào phù hợp bộ lọc</td></tr>
+                  <tr><td colSpan={7} className="py-16 text-center text-gray-400 text-sm font-normal">Không có sự kiện nào phù hợp bộ lọc</td></tr>
                 ) : events!.items.map((ev, idx) => (
                   <tr key={ev.securityEventId} className="hover:bg-blue-50/30 transition-colors">
                     <td className="p-3 pl-4 text-center text-xs font-bold text-gray-400">{(page - 1) * pageSize + idx + 1}</td>
@@ -278,13 +278,13 @@ export function SecurityMonitoring() {
                     </td>
                     <td className="p-3 text-xs text-gray-500 break-words">{ev.email || '—'}</td>
                     <td className="p-3 text-[13px] text-gray-600 break-words">
-                      <p className="font-bold text-gray-700">{ev.loginPortal ? (PORTAL_LABEL[ev.loginPortal] ?? ev.loginPortal) : '—'}</p>
+                      <p className="font-normal text-gray-700">{ev.loginPortal ? (PORTAL_LABEL[ev.loginPortal] ?? ev.loginPortal) : '—'}</p>
                       {ev.providerType && (
                         <p className="text-xs text-gray-400">{PROVIDER_LABEL[ev.providerType] ?? ev.providerType}</p>
                       )}
                     </td>
                     <td className="p-3 pr-4 text-xs text-gray-500 break-words">
-                      <p className="font-bold text-gray-600 break-all">{ev.ipAddress || '—'}</p>
+                      <p className="font-normal text-gray-600 break-all">{ev.ipAddress || '—'}</p>
                       {ev.detailText && (
                         <div className="mt-1 flex items-center gap-1 min-w-0">
                           <button
@@ -315,7 +315,7 @@ export function SecurityMonitoring() {
         {/* Pagination */}
         {(events?.totalItems ?? 0) > 0 && !loading && !error && (
           <div className="p-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+            <div className="flex items-center gap-2 text-sm font-normal text-gray-500">
               <span>Hiển thị</span>
               <div className="relative">
                 <select
@@ -337,7 +337,7 @@ export function SecurityMonitoring() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-bold text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
+              <span className="text-sm font-normal text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}

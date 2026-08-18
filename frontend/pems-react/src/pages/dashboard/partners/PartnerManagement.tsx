@@ -222,7 +222,7 @@ export function PartnerManagement() {
 
       {notificationPartnerId && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm mb-4">
-          <span className="font-medium text-blue-800">
+          <span className="font-normal text-blue-800">
             Đang hiển thị đúng đối tác từ thông báo bạn vừa bấm.
           </span>
           <button
@@ -262,7 +262,7 @@ export function PartnerManagement() {
               ) : loadError ? (
                 <tr>
                   <td colSpan={9} className="py-14 text-center">
-                    <p className="text-red-500 text-sm font-medium">{loadError}</p>
+                    <p className="text-red-500 text-sm font-normal">{loadError}</p>
                     <button onClick={() => void load()} className="mt-3 text-sm font-bold text-[#004c91] hover:underline cursor-pointer">
                       Thử lại
                     </button>
@@ -291,11 +291,11 @@ export function PartnerManagement() {
                     <td className="p-3 align-middle text-sm text-gray-600 whitespace-nowrap">
                       {item.ownerCampusName}
                     </td>
-                    <td className="p-3 align-middle text-sm font-bold text-[#004c91] whitespace-nowrap">
+                    <td className="p-3 align-middle text-sm font-normal text-gray-700 whitespace-nowrap">
                       {item.creatorName || '—'}
                     </td>
                     <td className="p-3 align-middle"><StatusBadge status={item.profileStatus} /></td>
-                    <td className="p-3 align-middle text-xs font-medium text-gray-500">
+                    <td className="p-3 align-middle text-xs font-normal text-gray-500">
                       {VISIBILITY_LABELS[item.visibility] ?? item.visibility}
                     </td>
                     <td className="p-3 align-middle">
@@ -345,7 +345,7 @@ export function PartnerManagement() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between mt-6">
-        <div className="flex items-center gap-3 text-sm text-gray-600 font-medium">
+        <div className="flex items-center gap-3 text-sm text-gray-600 font-normal">
           <span>Hiển thị</span>
           <select
             value={pageSize}
@@ -365,7 +365,7 @@ export function PartnerManagement() {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="px-3 text-sm font-bold text-gray-600">{page} / {totalPages}</span>
+          <span className="px-3 text-sm font-normal text-gray-600">{page} / {totalPages}</span>
           <button
             className="p-2 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-[#004c91] transition-colors disabled:opacity-50 bg-white shadow-sm cursor-pointer"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}

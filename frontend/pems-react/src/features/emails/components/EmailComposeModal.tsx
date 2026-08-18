@@ -795,7 +795,7 @@ export function EmailComposeModal({
 
               <div>
                 <label className="text-xs font-bold text-gray-500 uppercase">Tiêu đề:</label>
-                <div className="mt-1 text-sm font-medium text-gray-900">{preview.subject}</div>
+                <div className="mt-1 text-sm font-normal text-gray-900">{preview.subject}</div>
               </div>
 
               {preview.attachments.length > 0 && (
@@ -866,7 +866,7 @@ export function EmailComposeModal({
               {activeNotices.length > 0 && (
                 <div data-testid="compose-notices" className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1">
                   {activeNotices.map((notice, i) => (
-                    <p key={i} className="text-xs font-medium text-amber-800">{notice}</p>
+                    <p key={i} className="text-xs font-normal text-amber-800">{notice}</p>
                   ))}
                 </div>
               )}
@@ -938,7 +938,7 @@ export function EmailComposeModal({
                       data-testid="recipient-counter"
                       className={
                         isUsableLimit(recipientLimit) && recipientCount > recipientLimit
-                          ? 'font-medium text-red-600'
+                          ? 'font-normal text-red-600'
                           : 'text-gray-500'
                       }
                     >

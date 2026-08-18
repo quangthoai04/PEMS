@@ -170,7 +170,7 @@ export function MyContactInvitationsPage() {
           <span>{t('visitRequestV2:myInvitations.loading')}</span>
         </div>
       ) : loadFailed ? (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-semibold text-amber-800" role="alert">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-normal text-amber-800" role="alert">
           {t('visitRequestV2:myInvitations.loadFailed')}
           <button
             type="button"
@@ -183,7 +183,7 @@ export function MyContactInvitationsPage() {
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-gray-200 bg-white py-16 text-center">
           <Mail className="mx-auto mb-3 h-10 w-10 text-gray-300" />
-          <p className="font-semibold text-gray-700">{t('visitRequestV2:myInvitations.empty')}</p>
+          <p className="font-normal text-gray-700">{t('visitRequestV2:myInvitations.empty')}</p>
           <p className="mt-1 text-sm text-gray-500">{t('visitRequestV2:myInvitations.emptyHint')}</p>
         </div>
       ) : (
@@ -224,18 +224,18 @@ export function MyContactInvitationsPage() {
                     <dl className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
                       <div className="flex gap-2">
                         <dt className="text-gray-500">{t('visitRequestV2:myInvitations.requestCode')}</dt>
-                        <dd className="font-medium text-gray-800">{invitation.requestCode ?? '—'}</dd>
+                        <dd className="font-normal text-gray-800">{invitation.requestCode ?? '—'}</dd>
                       </div>
                       <div className="flex gap-2">
                         <dt className="text-gray-500">{t('visitRequestV2:myInvitations.registrant')}</dt>
-                        <dd className="font-medium text-gray-800">
+                        <dd className="font-normal text-gray-800">
                           {invitation.registrantFullName ?? '—'}
                           {invitation.registrantOrganization ? ` — ${invitation.registrantOrganization}` : ''}
                         </dd>
                       </div>
                       <div className="flex gap-2">
                         <dt className="text-gray-500">{t('visitRequestV2:myInvitations.expiresAt')}</dt>
-                        <dd className="font-medium text-gray-800">{formatLocalizedDateTime(invitation.expiresAt, language)}</dd>
+                        <dd className="font-normal text-gray-800">{formatLocalizedDateTime(invitation.expiresAt, language)}</dd>
                       </div>
                     </dl>
                   </div>

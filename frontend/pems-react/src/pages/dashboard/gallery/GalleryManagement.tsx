@@ -206,7 +206,7 @@ function GalleryManagementMock() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-500 font-sans">
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-2">
+      <div className="flex items-center gap-2 text-sm font-normal text-slate-500 mb-2">
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-[#004c91] font-bold">Quản lý Gallery Hà Nội</span>
@@ -357,10 +357,10 @@ function GalleryManagementMock() {
                     <td className="p-4 font-bold text-slate-500 text-center whitespace-nowrap">
                       {(currentPage - 1) * pageSize + index + 1}
                     </td>
-                    <td className="p-4 font-semibold text-slate-800 whitespace-nowrap">
+                    <td className="p-4 font-normal text-slate-800 whitespace-nowrap">
                       {item.locationCategory}
                     </td>
-                    <td className="p-4 font-medium text-slate-600 whitespace-nowrap">
+                    <td className="p-4 font-normal text-slate-600 whitespace-nowrap">
                       {item.locationDetail}
                     </td>
                     <td className="p-4">
@@ -380,7 +380,7 @@ function GalleryManagementMock() {
                         {item.status === 'PUBLISHED' ? 'Hiển thị' : 'Đang ẩn'}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">
+                    <td className="p-4 text-slate-600 font-normal whitespace-nowrap text-center">
                       {item.date}
                     </td>
                     <td className="p-4">
@@ -406,7 +406,7 @@ function GalleryManagementMock() {
                   <tr className="bg-slate-50/50">
                     <td colSpan={8} className="px-6 py-16 text-center text-slate-500">
                       <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                      <p className="font-medium text-slate-600 mb-1">Không tìm thấy tài nguyên nào</p>
+                      <p className="font-normal text-slate-600 mb-1">Không tìm thấy tài nguyên nào</p>
                       <p className="text-xs">Vui lòng thử từ khoá tìm kiếm hoặc đổi bộ lọc.</p>
                     </td>
                   </tr>
@@ -514,7 +514,7 @@ function GalleryManagementMock() {
                 </div>
 
                 <h3 className="text-2xl font-black text-gray-900 mb-2 leading-tight">{selectedItem.title}</h3>
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 mb-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-1.5 text-sm font-normal text-slate-600 mb-4 border-b border-slate-100 pb-4">
                    <span className="text-[#004c91]">{selectedItem.locationCategory}</span> <ChevronRight className="w-4 h-4 text-slate-300" /> <span>{selectedItem.locationDetail}</span>
                 </div>
                 <p className="text-sm text-slate-500 mb-6 leading-relaxed">{selectedItem.description || 'Chưa có mô tả'}</p>
@@ -522,7 +522,7 @@ function GalleryManagementMock() {
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-4">
                   <div>
                     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày tải lên</span>
-                    <span className="text-sm font-bold text-gray-800">{selectedItem.date}</span>
+                    <span className="text-sm font-normal text-gray-800">{selectedItem.date}</span>
                   </div>
                 </div>
 
@@ -574,7 +574,7 @@ function GalleryManagementMock() {
                     <div className="w-16 h-16 bg-[#ebf5ff] text-[#004c91] rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                       <Upload className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-bold text-gray-700 text-center">Click để chọn files</p>
+                    <p className="text-sm font-normal text-gray-700 text-center">Click để chọn files</p>
                     <p className="text-xs text-slate-400 mt-1 text-center">Hỗ trợ JPG, PNG, MP4. (Tối đa 5 file, mỗi file max 50MB)</p>
                     <input type="file" multiple accept="image/*,video/mp4" className="hidden" onChange={handleFileUpload} />
                   </label>
@@ -589,7 +589,7 @@ function GalleryManagementMock() {
                               </div>
                               <div>
                                 <p className="text-xs font-bold text-gray-700">media_file_{idx+1}.jpg</p>
-                                <p className="text-[10px] text-green-600 font-semibold mt-0.5 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Đã tải lên</p>
+                                <p className="text-[10px] text-green-600 font-normal mt-0.5 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Đã tải lên</p>
                               </div>
                            </div>
                            <button type="button" onClick={() => removeFile(idx)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
@@ -718,7 +718,7 @@ function GalleryManagementMock() {
                 <Trash2 className="w-8 h-8" />
               </div>
               <h3 className="text-xl font-black text-gray-900 mb-2">Xóa thư viện này?</h3>
-              <p className="text-sm font-medium text-slate-500 mb-8">
+              <p className="text-sm font-normal text-slate-500 mb-8">
                 Bạn có chắc chắn muốn xóa <span className="font-bold text-gray-800">"{selectedItem.title}"</span>? Quá trình này sẽ xóa tất cả các hình ảnh liên quan.
               </p>
               

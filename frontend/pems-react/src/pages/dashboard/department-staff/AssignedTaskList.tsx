@@ -43,7 +43,7 @@ export function AssignedTaskRow({ item, busyKey, onAccept, onDecline, onPropose,
         <p className="text-[13px] font-bold text-slate-800 truncate">
           {item.delegationName ? `${item.delegationName} — ` : ''}{item.title}
         </p>
-        <p className="text-[11px] font-semibold text-slate-500">
+        <p className="text-[11px] font-normal text-slate-500">
           {typeLabel(item)}{time ? ` · ${time}` : ''}
         </p>
       </div>

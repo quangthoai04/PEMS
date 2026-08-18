@@ -44,7 +44,7 @@ const instanceStatusBadge = (status?: string | null): { label: string; cls: stri
 const KV = ({ label, value }: { label: string; value?: string | null }) => (
   <div className="flex gap-2 py-0.5 text-[13px] leading-5">
     <span className="w-36 shrink-0 text-slate-500">{label}:</span>
-    <span className="min-w-0 font-medium text-slate-800 break-words">{value?.trim() || '-'}</span>
+    <span className="min-w-0 font-normal text-slate-800 break-words">{value?.trim() || '-'}</span>
   </div>
 );
 
@@ -52,7 +52,7 @@ const KV = ({ label, value }: { label: string; value?: string | null }) => (
 const KVBlock = ({ label, value }: { label: string; value?: string | null }) => (
   <div className="py-0.5 text-[13px] leading-5">
     <span className="text-slate-500">{label}:</span>
-    <p className="mt-0.5 font-medium text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
+    <p className="mt-0.5 font-normal text-slate-800 whitespace-pre-wrap break-words">{value?.trim() || '-'}</p>
   </div>
 );
 

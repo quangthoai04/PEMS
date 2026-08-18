@@ -100,7 +100,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
   if (totalPages <= 1) return null;
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-50 border-t border-slate-200">
-      <span className="text-[11px] font-medium text-slate-400">
+      <span className="text-[11px] font-normal text-slate-400">
         {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} / {total} dòng
       </span>
       <div className="flex items-center gap-1">
@@ -113,7 +113,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <span className="text-xs font-bold text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
+        <span className="text-xs font-normal text-slate-600 px-2 whitespace-nowrap">{page}/{totalPages}</span>
         <button
           type="button"
           onClick={() => onChange(page + 1)}
@@ -147,7 +147,7 @@ function StatTile({ label, value, sub, tone = 'blue', icon }: {
         {icon}
       </div>
       <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
-      {sub && <p className="text-[10px] font-medium opacity-75">{sub}</p>}
+      {sub && <p className="text-[10px] font-normal opacity-75">{sub}</p>}
     </div>
   );
 }
@@ -585,7 +585,7 @@ export function StaffLeaderReportManagement() {
       {loading && !data ? (
         <div className="py-24 text-center text-slate-500">
           <Loader2 className="w-7 h-7 mx-auto mb-3 animate-spin text-[#004c91]" />
-          <p className="text-sm font-medium">Đang tổng hợp báo cáo...</p>
+          <p className="text-sm font-normal">Đang tổng hợp báo cáo...</p>
         </div>
       ) : data && (
         <>
@@ -662,7 +662,7 @@ export function StaffLeaderReportManagement() {
                   <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4 text-[#004c91]" /> Tiến độ hợp tác với đối tác
                   </h3>
-                  <span className="text-[11px] font-medium text-slate-400">
+                  <span className="text-[11px] font-normal text-slate-400">
                     Theo {{ YEAR: 'năm', MONTH: 'tháng', WEEK: 'tuần', DAY: 'ngày', HOUR: 'giờ' }[pt?.trendGranularity ?? 'MONTH'] ?? 'tháng'}
                   </span>
                 </div>
@@ -774,8 +774,8 @@ export function StaffLeaderReportManagement() {
                                 {row.cooperationStatus}
                               </span>
                             </td>
-                            <td className={`${tdClass} whitespace-nowrap font-bold text-[#004c91]`}>{row.visitCount} chuyến</td>
-                            <td className={`${tdClass} whitespace-nowrap font-semibold text-slate-700`}>{row.guestCount} khách</td>
+                            <td className={`${tdClass} whitespace-nowrap font-normal text-[#004c91]`}>{row.visitCount} chuyến</td>
+                            <td className={`${tdClass} whitespace-nowrap font-normal text-slate-700`}>{row.guestCount} khách</td>
                           </tr>
                         ))
                       )}
@@ -970,8 +970,8 @@ export function StaffLeaderReportManagement() {
                         <td className={`${tdClass} whitespace-nowrap`}>{(deptPage - 1) * PAGE_SIZE + idx + 1}</td>
                         <td className={`${tdClass} font-semibold text-slate-800`}>{row.name}</td>
                         <td className={`${tdClass} whitespace-nowrap`}>{row.totalRequests}</td>
-                        <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-semibold`}>{row.completed}</td>
-                        <td className={`${tdClass} whitespace-nowrap text-rose-600 font-semibold`}>{row.rejected}</td>
+                        <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-normal`}>{row.completed}</td>
+                        <td className={`${tdClass} whitespace-nowrap text-rose-600 font-normal`}>{row.rejected}</td>
                         <td className={`${tdClass} whitespace-nowrap`}>
                           {row.feedbackAverage != null ? (
                             <span className={`inline-flex items-center gap-1 font-bold ${lowFeedback ? 'text-rose-600' : 'text-slate-700'}`}>
@@ -1083,7 +1083,7 @@ export function StaffLeaderReportManagement() {
                                 <span className="block text-[11px] font-normal text-slate-400">{row.requestCode}</span>
                               </td>
                               <td className={`${tdClass} whitespace-nowrap`}>{fmtDateTime(row.visitDate)}</td>
-                              <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-bold`}>{vnMoney(row.totalExpense)}</td>
+                              <td className={`${tdClass} whitespace-nowrap text-emerald-700 font-normal`}>{vnMoney(row.totalExpense)}</td>
                               <td className={`${tdClass} whitespace-nowrap`}>
                                 <button
                                   type="button"
@@ -1129,7 +1129,7 @@ export function StaffLeaderReportManagement() {
             <div className="px-5 py-3.5 bg-[#004c91] text-white flex items-center justify-between gap-3">
               <h3 className="text-sm font-black truncate">
                 Ghi chú chi phí — {viewExpenseVisit.delegationName}
-                <span className="block text-[11px] font-medium opacity-75">
+                <span className="block text-[11px] font-normal opacity-75">
                   {viewExpenseVisit.requestCode} · {fmtDateTime(viewExpenseVisit.visitDate)}
                 </span>
               </h3>
@@ -1166,7 +1166,7 @@ export function StaffLeaderReportManagement() {
                               {it.quantity}{it.unitName ? ` ${it.unitName}` : ''}
                             </td>
                             <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-24">{it.unitPrice.toLocaleString('vi-VN')}</td>
-                            <td className="pl-2 pr-3 py-1 text-right font-bold text-slate-700 whitespace-nowrap w-28">{vnMoney(it.totalAmount)}</td>
+                            <td className="pl-2 pr-3 py-1 text-right font-normal text-slate-700 whitespace-nowrap w-28">{vnMoney(it.totalAmount)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1226,9 +1226,9 @@ export function StaffLeaderReportManagement() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-xs">
-                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-medium text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
-                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-bold text-[#004c91]">{previewStaffRow.fullName} ({previewStaffRow.role})</span></div>
-                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-bold text-gray-900">[PEMS] Báo cáo hiệu suất cá nhân trong kỳ — {previewStaffRow.fullName}</span></div>
+                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-normal text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
+                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-normal text-[#004c91]">{previewStaffRow.fullName} ({previewStaffRow.role})</span></div>
+                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-normal text-gray-900">[PEMS] Báo cáo hiệu suất cá nhân trong kỳ — {previewStaffRow.fullName}</span></div>
                   </div>
                 </div>
 
@@ -1238,12 +1238,12 @@ export function StaffLeaderReportManagement() {
                     <span className="text-xs font-normal opacity-80">{previewStaffRow.role}</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">Kính gửi <strong className="text-gray-900">{previewStaffRow.fullName}</strong>,</p>
+                    <p className="font-normal">Kính gửi <strong className="text-gray-900">{previewStaffRow.fullName}</strong>,</p>
                     <p className="text-sm leading-relaxed">Staff Leader gửi đến bạn tổng hợp chỉ số hiệu suất công việc tiếp đón và phục vụ đoàn trong kỳ:</p>
                     <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">SỐ CHUYẾN THĂM THAM GIA:</span><span className="font-bold text-[#004c91]">{previewStaffRow.visitCount} đoàn</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ PHỤC VỤ:</span><span className="font-bold text-gray-800">{previewStaffRow.totalHours.toFixed(1)} giờ</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ TRUNG BÌNH:</span><span className="font-bold text-amber-600">{previewStaffRow.feedbackAverage ? `${previewStaffRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">SỐ CHUYẾN THĂM THAM GIA:</span><span className="font-normal text-[#004c91]">{previewStaffRow.visitCount} đoàn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG GIỜ PHỤC VỤ:</span><span className="font-normal text-gray-800">{previewStaffRow.totalHours.toFixed(1)} giờ</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ TRUNG BÌNH:</span><span className="font-normal text-amber-600">{previewStaffRow.feedbackAverage ? `${previewStaffRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
                       <div className="pt-1">
                         <span className="font-bold text-gray-500 block mb-1">GHI CHÚ ĐÁNH GIÁ (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
                         {!sentStaffMap[previewStaffRow.userId] ? (
@@ -1326,9 +1326,9 @@ export function StaffLeaderReportManagement() {
                     )}
                   </div>
                   <div className="grid grid-cols-1 gap-2 text-xs">
-                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-medium text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
-                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-bold text-[#004c91]">Trưởng phòng — {previewDeptRow.name}</span></div>
-                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-bold text-gray-900">[PEMS] Báo cáo phối hợp hỗ trợ tiếp khách — {previewDeptRow.name}</span></div>
+                    <div><span className="font-semibold text-gray-500">Người gửi: </span><span className="font-normal text-gray-800">Staff Leader Office &lt;staffleader-reports@mail.pems-fpt.site&gt;</span></div>
+                    <div><span className="font-semibold text-gray-500">Người nhận: </span><span className="font-normal text-[#004c91]">Trưởng phòng — {previewDeptRow.name}</span></div>
+                    <div><span className="font-semibold text-gray-500">Tiêu đề: </span><span className="font-normal text-gray-900">[PEMS] Báo cáo phối hợp hỗ trợ tiếp khách — {previewDeptRow.name}</span></div>
                   </div>
                 </div>
 
@@ -1338,12 +1338,12 @@ export function StaffLeaderReportManagement() {
                     <span className="text-xs font-normal opacity-80">{previewDeptRow.name}</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">Kính gửi <strong className="text-gray-900">Ban Trưởng phòng — {previewDeptRow.name}</strong>,</p>
+                    <p className="font-normal">Kính gửi <strong className="text-gray-900">Ban Trưởng phòng — {previewDeptRow.name}</strong>,</p>
                     <p className="text-sm leading-relaxed">Staff Leader xin gửi báo cáo tổng hợp tình hình phối hợp xử lý đơn yêu cầu hậu cần và thư mời hỗ trợ đợt công tác:</p>
                     <div className="bg-blue-50/60 rounded-xl p-4 border border-blue-100 space-y-2 text-xs">
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG ĐƠN ĐÃ GỬI TỚI:</span><span className="font-bold text-[#004c91]">{previewDeptRow.totalRequests} đơn</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN ĐÃ HOÀN THÀNH:</span><span className="font-bold text-green-700">{previewDeptRow.completed} đơn</span></div>
-                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-bold text-amber-600">{previewDeptRow.feedbackAverage ? `${previewDeptRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">TỔNG ĐƠN ĐÃ GỬI TỚI:</span><span className="font-normal text-[#004c91]">{previewDeptRow.totalRequests} đơn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐƠN ĐÃ HOÀN THÀNH:</span><span className="font-normal text-green-700">{previewDeptRow.completed} đơn</span></div>
+                      <div className="flex justify-between border-b border-blue-100 pb-2"><span className="font-bold text-gray-500">ĐÁNH GIÁ FEEDBACK:</span><span className="font-normal text-amber-600">{previewDeptRow.feedbackAverage ? `${previewDeptRow.feedbackAverage.toFixed(1)} ★` : 'Chưa có'}</span></div>
                       <div className="pt-1">
                         <span className="font-bold text-gray-500 block mb-1">GHI CHÚ GỬI TRƯỞNG PHÒNG (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>
                         {!sentDeptMap[previewDeptRow.departmentId] ? (

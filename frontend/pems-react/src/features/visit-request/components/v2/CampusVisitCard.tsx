@@ -770,7 +770,7 @@ export const CampusVisitCard: React.FC<Props> = ({
   const bodyId = `campus-card-body-${clientKey}`;
 
   const cellError = (msg?: string) =>
-    msg ? <p className="px-2 pb-1 text-xs font-semibold text-red-600">{msg}</p> : null;
+    msg ? <p className="px-2 pb-1 text-xs font-normal text-red-600">{msg}</p> : null;
 
   /**
    * Name / job title are plain text; organization and nationality reuse the SAME searchable
@@ -945,7 +945,7 @@ export const CampusVisitCard: React.FC<Props> = ({
     if (rows.length === 0 && kind === 'supportTeam') {
       return (
         <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 text-center">
-          <p className="text-sm font-semibold text-slate-500">
+          <p className="text-sm font-normal text-slate-500">
             {t('visitRequestV2:person.noSupportTeam')}
           </p>
           {onAddRow && (
@@ -1096,7 +1096,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               {t('visitRequestV2:card.cardN', { n: index + 1 })} {campusCode ? `- ${headerLabel}` : ''}
             </span>
             {!open && watch(`${base}.startDatetime`) && watch(`${base}.endDatetime`) && (
-              <span className="truncate text-xs font-medium text-slate-500">
+              <span className="truncate text-xs font-normal text-slate-500">
                 {(() => {
                   const start = watch(`${base}.startDatetime`);
                   const end = watch(`${base}.endDatetime`);
@@ -1436,7 +1436,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           <div
             role="alert"
             data-testid={`campus-contact-lost-${index}`}
-            className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900"
+            className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-normal text-amber-900"
           >
             {t('visitRequestV2:card.contactLostAfterReplace')}
           </div>
@@ -1446,7 +1446,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         <fieldset>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.visitors')} <span className="text-red-500">*</span>
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs font-normal text-slate-400">
               {t('visitRequestV2:card.memberCount', { count: visitorFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
             </span>
             <span className="ml-auto flex items-center gap-2">
@@ -1481,7 +1481,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             }}
           />
           {fieldError('visitors') && (
-            <p className="mb-2 text-xs font-semibold text-red-600">{fieldError('visitors')}</p>
+            <p className="mb-2 text-xs font-normal text-red-600">{fieldError('visitors')}</p>
           )}
           <ExcelImportPanel
             testId="v2-excel-visitors"
@@ -1523,7 +1523,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         <fieldset>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.supportTeam')}
-            <span className="text-xs font-medium text-slate-400">
+            <span className="text-xs font-normal text-slate-400">
               {t('visitRequestV2:card.memberCount', { count: supportFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
             </span>
             <span className="ml-auto flex items-center gap-2">
@@ -1612,7 +1612,7 @@ export const CampusVisitCard: React.FC<Props> = ({
             <ul className="mt-2 space-y-3">
               {memberDuplicates.map(pair => (
                 <li key={pair.id} className="rounded-lg border border-amber-200 bg-white p-2.5">
-                  <p className="text-xs font-semibold text-amber-900">
+                  <p className="text-xs font-normal text-amber-900">
                     {t(pair.crossList
                       ? 'visitRequestV2:card.duplicateMemberCross'
                       : 'visitRequestV2:card.duplicateMemberSameList', {
@@ -1719,7 +1719,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                   <div key={field} className="min-w-0">
                     <dt className="text-xs font-medium text-slate-500">{label}</dt>
                     <dd
-                      className="break-words text-sm font-semibold text-slate-900"
+                      className="break-words text-sm font-normal text-slate-900"
                       data-testid={`campus-opcontact-readonly-${field}-${index}`}
                     >
                       {watch(`${base}.operationalContact.${field}`) || '—'}
@@ -1736,7 +1736,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 <p
                   data-testid={`campus-opcontact-legacy-warning-${index}`}
                   role="status"
-                  className="mt-2 text-xs font-medium text-amber-700"
+                  className="mt-2 text-xs font-normal text-amber-700"
                 >
                   {t('visitRequestV2:card.legacyContactIncomplete')}
                 </p>
@@ -1745,7 +1745,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           ) : (
           <>
           {quickFilledFrom && (
-            <p data-testid={`campus-opcontact-copied-${index}`} className="mb-2 text-xs font-medium text-slate-500">
+            <p data-testid={`campus-opcontact-copied-${index}`} className="mb-2 text-xs font-normal text-slate-500">
               {t(quickFilledFrom === 'registrant'
                 ? 'visitRequestV2:card.quickFillCopiedRegistrant'
                 : 'visitRequestV2:card.quickFillCopiedContact')}{' '}
@@ -1858,7 +1858,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 data-testid={`campus-opcontact-not-in-delegation-${index}`}
                 className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
               >
-                <p className="text-xs font-medium text-amber-900">
+                <p className="text-xs font-normal text-amber-900">
                   {t('visitRequestV2:card.contactNotInDelegation')}
                 </p>
                 <button
@@ -1884,7 +1884,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 "Sửa thông tin thành viên" above. */}
             {pickedMember ? (
               <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required showValidIcon={false}>
-                <p data-testid="campus-opcontact-name-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                <p data-testid="campus-opcontact-name-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
                   {watchedContact?.fullName || '—'}
                 </p>
               </FormField>
@@ -1915,7 +1915,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 contradictable copy. */}
             {pickedMember ? (
               <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required showValidIcon={false}>
-                <p data-testid="campus-opcontact-org-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                <p data-testid="campus-opcontact-org-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
                   {watchedContact?.organization || '—'}
                 </p>
               </FormField>
@@ -1945,7 +1945,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 did not exist. */}
             {pickedMember ? (
               <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required showValidIcon={false}>
-                <p data-testid="campus-opcontact-jobtitle-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                <p data-testid="campus-opcontact-jobtitle-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
                   {watchedContact?.jobTitle || '—'}
                 </p>
               </FormField>

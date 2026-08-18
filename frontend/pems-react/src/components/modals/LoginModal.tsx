@@ -57,7 +57,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               <h2 className="text-[#004c91] text-2xl font-black text-center leading-tight tracking-tight">
                 {t('loginModal:title')}
               </h2>
-              <p className="text-gray-500 text-[13px] text-center mb-6 font-medium mt-1">
+              <p className="text-gray-500 text-[13px] text-center mb-6 font-normal mt-1">
                 {t('loginModal:subtitle')}
               </p>
 

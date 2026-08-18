@@ -20,7 +20,7 @@ const ReadOnlyField = ({ label, value }: { label: string, value: string }) => (
     <label className="block text-sm font-bold text-gray-500 mb-1">
       {label}
     </label>
-    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-sm font-bold text-gray-900 shadow-sm">
+    <div className="w-full px-4 py-2.5 rounded-xl border border-gray-100 bg-gray-50 text-sm font-normal text-gray-900 shadow-sm">
       {value || '-'}
     </div>
   </div>
@@ -74,7 +74,7 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
             <div className="flex-none px-6 py-5 sm:px-10 flex flex-col sm:flex-row items-start sm:items-center justify-between text-white relative z-10 overflow-hidden bg-[#004c91]">
               <div className="relative z-10 pr-8">
                 <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-1 text-white">ĐƠN YÊU CẦU THAM QUAN</h2>
-                <p className="text-white/80 font-medium text-xs sm:text-sm max-w-2xl">
+                <p className="text-white/80 font-normal text-xs sm:text-sm max-w-2xl">
                   Thông tin chi tiết về đoàn khách
                 </p>
               </div>
@@ -190,7 +190,7 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                                   </div>
                                 </div>
                                 <div className="flex-[0.8] w-full xl:w-auto flex items-center justify-center h-[44px] px-3 bg-white rounded-xl border border-gray-200 select-none cursor-default">
-                                  <span className="text-[#004c91] text-sm font-bold whitespace-nowrap">VN (GMT+7)</span>
+                                  <span className="text-[#004c91] text-sm font-normal whitespace-nowrap">VN (GMT+7)</span>
                                 </div>
                               </div>
                             ))}
@@ -200,13 +200,13 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                         <div className="space-y-6">
                           <div>
                             <label className="block text-sm font-bold text-gray-500 mb-2">Mục đích thăm FPTU</label>
-                            <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-medium text-gray-900 min-h-[80px]">
+                            <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-normal text-gray-900 min-h-[80px]">
                               Tham quan và tìm hiểu môi trường học tập
                             </div>
                           </div>
                           <div>
                             <label className="block text-sm font-bold text-gray-500 mb-2">Nội dung làm việc tại FPTU</label>
-                            <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-medium text-gray-900 min-h-[80px]">
+                            <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-normal text-gray-900 min-h-[80px]">
                               Tham quan campus, trao đổi với bộ phận tuyển sinh
                             </div>
                           </div>
@@ -240,16 +240,16 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                                 <tr className="border-b border-gray-100 hover:bg-orange-50/50 transition-colors">
                                   <td className="p-3 text-center font-bold text-slate-400">1</td>
                                   <td className="p-3 border-l border-gray-100 font-medium">Nguyễn Văn A</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">-</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">{guest.org}</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">Việt Nam</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">-</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">{guest.org}</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">Việt Nam</td>
                                 </tr>
                                 <tr className="border-b border-gray-100 hover:bg-orange-50/50 transition-colors">
                                   <td className="p-3 text-center font-bold text-slate-400">2</td>
                                   <td className="p-3 border-l border-gray-100 font-medium">Trần Thị B</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">-</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">{guest.org}</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">Việt Nam</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">-</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">{guest.org}</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">Việt Nam</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -258,7 +258,7 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
 
                         <div>
                           <label className="block text-sm font-bold text-gray-500 mb-2">Danh sách team hỗ trợ khách</label>
-                          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm p-4 text-center font-medium text-gray-500">
+                          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto shadow-sm p-4 text-center font-normal text-gray-500">
                             Không có
                           </div>
                         </div>
@@ -278,9 +278,9 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                               <tbody>
                                 <tr className="hover:bg-orange-50/50 transition-colors">
                                   <td className="p-3 font-medium">{guest.host}</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">{guest.org}</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">0987654321</td>
-                                  <td className="p-3 border-l border-gray-100 font-medium">contact@example.com</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">{guest.org}</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">0987654321</td>
+                                  <td className="p-3 border-l border-gray-100 font-normal">contact@example.com</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -310,13 +310,13 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-6 mt-6 border-t border-gray-200">
                         <div>
                           <label className="block text-sm font-bold text-gray-500 mb-2">Nhận diện phương tiện di chuyển tới FPTU</label>
-                          <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-medium text-gray-900 min-h-[80px]">
+                          <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-normal text-gray-900 min-h-[80px]">
                             Xe khách 45 chỗ, biển số 29A-12345
                           </div>
                         </div>
                         <div>
                           <label className="block text-sm font-bold text-gray-500 mb-2">Ghi chú cho FPTU</label>
-                          <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-medium text-gray-900 min-h-[80px]">
+                          <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-sm shadow-sm font-normal text-gray-900 min-h-[80px]">
                             Không có ghi chú gì thêm
                           </div>
                         </div>

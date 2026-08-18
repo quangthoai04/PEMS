@@ -264,7 +264,7 @@ export function GalleryManagementStaffLeader() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-500 font-sans">
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
+      <div className="flex items-center gap-2 text-sm font-normal text-slate-500 mb-6">
         <span>Dashboard</span>
         <span>/</span>
         <span className="text-[#004c91] font-bold">Quản lý Gallery</span>
@@ -273,7 +273,7 @@ export function GalleryManagementStaffLeader() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-[#004c91] tracking-tight">VisitFPTU Gallery</h1>
-          <p className="text-gray-500 mt-1 font-medium">Quản lý tài nguyên hình ảnh và video</p>
+          <p className="text-gray-500 mt-1 font-normal">Quản lý tài nguyên hình ảnh và video</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -405,14 +405,14 @@ export function GalleryManagementStaffLeader() {
                 <tr>
                   <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                     <Loader2 className="w-8 h-8 text-[#004c91] mx-auto mb-3 animate-spin" />
-                    <p className="font-medium text-slate-600">Đang tải dữ liệu...</p>
+                    <p className="font-normal text-slate-600">Đang tải dữ liệu...</p>
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
                   <td colSpan={9} className="px-6 py-16 text-center text-red-500">
                     <AlertCircle className="w-10 h-10 mx-auto mb-3" />
-                    <p className="font-semibold mb-3">{error}</p>
+                    <p className="font-normal mb-3">{error}</p>
                     <button onClick={refetch} className="px-4 py-2 rounded-lg bg-[#004c91] text-white text-sm font-bold">Thử lại</button>
                   </td>
                 </tr>
@@ -422,8 +422,8 @@ export function GalleryManagementStaffLeader() {
                     <td className="p-4 font-bold text-slate-500 text-center whitespace-nowrap">
                       {(page - 1) * pageSize + index + 1}
                     </td>
-                    <td className="p-4 font-semibold text-slate-800 whitespace-nowrap">{item.areaName}</td>
-                    <td className="p-4 font-medium text-slate-600 whitespace-nowrap">{item.locationName}</td>
+                    <td className="p-4 font-normal text-slate-800 whitespace-nowrap">{item.areaName}</td>
+                    <td className="p-4 font-normal text-slate-600 whitespace-nowrap">{item.locationName}</td>
                     <td className="p-4 text-center"><ItemTypeBadge itemType={item.itemType} label={item.itemTypeLabel} /></td>
                     <td className="p-4">
                       <div className="text-sm font-semibold text-[#004c91] group-hover:text-blue-800 transition-colors line-clamp-2 max-w-[260px]">
@@ -432,7 +432,7 @@ export function GalleryManagementStaffLeader() {
                     </td>
                     <td className="p-4 text-center"><KindBadge kind={item.mediaKind} /></td>
                     <td className="p-4 text-center"><StatusBadge status={item.status} /></td>
-                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">{formatDate(item.createdAt)}</td>
+                    <td className="p-4 text-slate-600 font-normal whitespace-nowrap text-center">{formatDate(item.createdAt)}</td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
@@ -465,7 +465,7 @@ export function GalleryManagementStaffLeader() {
                 <tr className="bg-slate-50/50">
                   <td colSpan={9} className="px-6 py-16 text-center text-slate-500">
                     <ImageIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="font-medium text-slate-600 mb-1">
+                    <p className="font-normal text-slate-600 mb-1">
                       {hasAnyFilter ? 'Không tìm thấy media phù hợp.' : 'Chưa có media nào trong cơ sở này.'}
                     </p>
                     <p className="text-xs">
@@ -496,7 +496,7 @@ export function GalleryManagementStaffLeader() {
                 </select>
                 <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
               </div>
-              <span className="text-sm font-medium text-gray-500">/ {data.totalItems} bản ghi</span>
+              <span className="text-sm font-normal text-gray-500">/ {data.totalItems} bản ghi</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -507,7 +507,7 @@ export function GalleryManagementStaffLeader() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-bold text-gray-600 px-2">Trang {page} / {Math.max(1, totalPages)}</span>
+              <span className="text-sm font-normal text-gray-600 px-2">Trang {page} / {Math.max(1, totalPages)}</span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
@@ -585,10 +585,10 @@ export function GalleryManagementStaffLeader() {
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2 text-sm text-slate-600 font-medium">
+                <div className="mt-4 space-y-2 text-sm text-slate-600 font-normal">
                   <p>Nội dung này sẽ không còn xuất hiện trong Quản lý Gallery và VisitFPTU.</p>
                   <p>Xóa khác với Ẩn nội dung và không thể bật lại bằng nút Hiện/Ẩn.</p>
-                  <p className="text-red-600 font-semibold">Bạn sẽ không thể khôi phục nội dung này từ giao diện hiện tại.</p>
+                  <p className="text-red-600 font-normal">Bạn sẽ không thể khôi phục nội dung này từ giao diện hiện tại.</p>
                 </div>
 
                 <div className="mt-6 flex items-center justify-end gap-3">

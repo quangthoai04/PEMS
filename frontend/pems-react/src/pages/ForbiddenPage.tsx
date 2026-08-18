@@ -23,7 +23,7 @@ export function ForbiddenPage() {
           <ShieldAlert className="w-8 h-8" />
         </div>
         <h1 className="text-3xl font-black text-[#004c91] mb-2">403</h1>
-        <p className="text-gray-700 font-semibold mb-1">{t('errors:403.title', 'Bạn không có quyền truy cập chức năng này.')}</p>
+        <p className="text-gray-700 font-normal mb-1">{t('errors:403.title', 'Bạn không có quyền truy cập chức năng này.')}</p>
         <p className="text-gray-500 text-sm mb-6">
           {t('errors:403.message', 'Nếu bạn cho rằng đây là nhầm lẫn, vui lòng liên hệ quản trị viên hệ thống.')}
         </p>

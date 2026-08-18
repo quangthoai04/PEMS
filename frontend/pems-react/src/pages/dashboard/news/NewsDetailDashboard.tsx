@@ -441,7 +441,7 @@ export function NewsDetailDashboard() {
   if (error || !news) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <p className="text-red-500 font-semibold">{error ?? 'Không tìm thấy bài viết.'}</p>
+        <p className="text-red-500 font-normal">{error ?? 'Không tìm thấy bài viết.'}</p>
         <button onClick={() => navigate('/dashboard/news')} className="text-[#004c91] hover:underline font-semibold">
           ← Quay lại danh sách
         </button>
@@ -596,16 +596,16 @@ export function NewsDetailDashboard() {
 
           {/* Meta Info */}
           <div className="flex items-center flex-wrap gap-2.5 mb-6">
-            <div className="flex items-center gap-1 text-gray-500 text-[14px] font-medium">
+            <div className="flex items-center gap-1 text-gray-500 text-[14px] font-normal">
               <Calendar className="w-4 h-4" />
               <span>{formatDate(news.createdAt)}</span>
             </div>
-            <div className="flex items-center gap-1 text-gray-500 text-[14px] font-medium">
+            <div className="flex items-center gap-1 text-gray-500 text-[14px] font-normal">
               <User className="w-4 h-4" />
               <span>{news.authorName}</span>
             </div>
             {news.campusName && (
-              <div className="text-gray-500 text-[14px] font-medium">
+              <div className="text-gray-500 text-[14px] font-normal">
                 Campus: {news.campusName}
               </div>
             )}
@@ -631,7 +631,7 @@ export function NewsDetailDashboard() {
             {news.updatedAt && !isStaffLeader && news.updatedAt !== news.reviewedAt && (
               <>
                 <span className="text-gray-300">|</span>
-                <div className="flex items-center gap-1 text-gray-500 text-[14px] font-medium italic">
+                <div className="flex items-center gap-1 text-gray-500 text-[14px] font-normal italic">
                   <Clock className="w-4 h-4" />
                   <span>Cập nhật: {formatDateTime(news.updatedAt)}</span>
                 </div>

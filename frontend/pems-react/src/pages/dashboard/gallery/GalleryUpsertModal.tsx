@@ -179,7 +179,7 @@ function YoutubeCard({
 function ExistingAudioPlayer({ url }: { url: string }) {
   const { url: blobUrl, status } = useAuthenticatedMedia(url);
   if (status === 'error') {
-    return <p className="text-[11px] text-amber-600 font-medium">Không tải được bản ghi âm hiện tại.</p>;
+    return <p className="text-[11px] text-amber-600 font-normal">Không tải được bản ghi âm hiện tại.</p>;
   }
   if (!blobUrl) {
     return <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />;
@@ -234,7 +234,7 @@ function AudioPicker({
             <span className="flex items-center gap-1.5 text-xs font-bold text-[#004c91] truncate">
               <Music className="w-4 h-4 shrink-0" /> <span className="truncate">{newFile.name}</span>
             </span>
-            <span className="text-[11px] text-slate-400 font-medium shrink-0">{formatBytes(newFile.size)}</span>
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">{formatBytes(newFile.size)}</span>
           </div>
           {previewUrl && <audio controls src={previewUrl} className="w-full h-9" />}
           <div className="flex items-center gap-2">
@@ -252,7 +252,7 @@ function AudioPicker({
             <span className="flex items-center gap-1.5 text-xs font-bold text-slate-600 truncate">
               <Music className="w-4 h-4 shrink-0" /> <span className="truncate">{existingAudio.fileName}</span>
             </span>
-            <span className="text-[11px] text-slate-400 font-medium shrink-0">{formatBytes(existingAudio.fileSize)}</span>
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">{formatBytes(existingAudio.fileSize)}</span>
           </div>
           <ExistingAudioPlayer url={existingAudio.url} />
           <button type="button" onClick={() => inputRef.current?.click()} className="inline-flex items-center gap-1 text-[11px] font-bold text-[#004c91] hover:underline">
@@ -584,7 +584,7 @@ export function GalleryUpsertModal({
             <div className="w-14 h-14 bg-[#ebf5ff] text-[#004c91] rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
               <Upload className="w-6 h-6" />
             </div>
-            <p className="text-sm font-bold text-gray-700 text-center">
+            <p className="text-sm font-normal text-gray-700 text-center">
               {slotsLeft > 0 ? 'Click để chọn ảnh' : `Đã đủ ${MAX_FILES} media`}
             </p>
             <p className="text-xs text-slate-400 mt-1 text-center">
@@ -616,7 +616,7 @@ export function GalleryUpsertModal({
                 <Plus className="w-3.5 h-3.5" /> Thêm
               </button>
             </div>
-            {youtubeError && <p className="mt-1.5 text-[11px] text-red-600 font-medium">{youtubeError}</p>}
+            {youtubeError && <p className="mt-1.5 text-[11px] text-red-600 font-normal">{youtubeError}</p>}
           </div>
 
           {/* Existing media (edit) */}
@@ -706,7 +706,7 @@ export function GalleryUpsertModal({
 
           <form onSubmit={handleSubmit} className="space-y-5 flex-1 flex flex-col">
             {formError && (
-              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-normal">
                 <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                 <span>{formError}</span>
               </div>
@@ -824,7 +824,7 @@ export function GalleryUpsertModal({
                       className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all resize-y"
                       placeholder="Nhập mô tả tiếng Việt..."
                     />
-                    <span className="text-xs text-slate-400 font-medium">
+                    <span className="text-xs text-slate-400 font-normal">
                       {descriptionVi.length} ký tự
                     </span>
                   </div>
@@ -852,7 +852,7 @@ export function GalleryUpsertModal({
                       className="min-h-[120px] w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none text-sm font-normal transition-all resize-y"
                       placeholder="Enter the English description..."
                     />
-                    <span className="text-xs text-slate-400 font-medium">
+                    <span className="text-xs text-slate-400 font-normal">
                       {descriptionEn.length} characters
                     </span>
                   </div>

@@ -310,15 +310,15 @@ function EmailChangeConfirmation({
       <dl className="space-y-2 text-sm">
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Email hiện tại</dt>
-          <dd className="break-all text-right font-medium text-gray-900">{currentEmail}</dd>
+          <dd className="break-all text-right font-normal text-gray-900">{currentEmail}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Email mới</dt>
-          <dd className="break-all text-right font-bold text-[#004c91]">{newEmail}</dd>
+          <dd className="break-all text-right font-normal text-[#004c91]">{newEmail}</dd>
         </div>
         <div className="flex justify-between gap-4">
           <dt className="text-gray-500">Trạng thái tài khoản</dt>
-          <dd className="text-right font-medium text-gray-900">{PERSONNEL_STATUS_LABELS[status]}</dd>
+          <dd className="text-right font-normal text-gray-900">{PERSONNEL_STATUS_LABELS[status]}</dd>
         </div>
       </dl>
 

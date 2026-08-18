@@ -97,7 +97,7 @@ function Field({
   return (
     <div className={className}>
       <span className="block text-[13px] font-bold text-[#004c91] uppercase tracking-wider mb-1.5">{label}</span>
-      <div className="text-[15px] font-medium text-gray-900 flex items-center gap-2">
+      <div className="text-[15px] font-normal text-gray-900 flex items-center gap-2">
         {icon}
         <span className="break-words">{value}</span>
       </div>
@@ -478,7 +478,7 @@ export function PartnerDetail() {
   if (error || !partner) {
     return (
       <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full py-24 text-center">
-        <p className="text-red-500 font-medium">{error || 'Không tìm thấy đối tác.'}</p>
+        <p className="text-red-500 font-normal">{error || 'Không tìm thấy đối tác.'}</p>
         <button
           onClick={() => navigate('/dashboard/partners')}
           className="mt-4 px-5 py-2 bg-[#004c91] text-white rounded-lg text-sm font-bold cursor-pointer"
@@ -607,7 +607,7 @@ export function PartnerDetail() {
             <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight drop-shadow-md truncate">
               {displayLang === 'en' ? (partner.englishName || partner.name) : partner.name}
             </h1>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 opacity-90 font-medium text-xs sm:text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 opacity-90 font-normal text-xs sm:text-sm">
               {partner.partnerCode && <span>Mã: {partner.partnerCode}</span>}
               {partner.country && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{partner.country}</span>}
               {partner.websiteUrl && <span className="flex items-center gap-1 truncate max-w-[220px]"><Globe className="w-3.5 h-3.5 flex-shrink-0" />{partner.websiteUrl}</span>}
@@ -680,7 +680,7 @@ export function PartnerDetail() {
             <span className="block text-[13px] font-bold text-[#004c91] uppercase tracking-wider mb-2">
               Mô tả chung {displayLang === 'en' ? '(English)' : '(Tiếng Việt)'}
             </span>
-            <div className="text-[15px] font-medium text-gray-700 leading-relaxed whitespace-pre-line">
+            <div className="text-[15px] font-normal text-gray-700 leading-relaxed whitespace-pre-line">
               {(displayLang === 'en' ? (partner.englishDescription || partner.description) : partner.description) || 'Chưa có mô tả.'}
             </div>
           </div>
@@ -705,7 +705,7 @@ export function PartnerDetail() {
           </div>
           <div className="p-6 flex-1 bg-white flex flex-col">
             {loadingHistory ? (
-              <div className="flex items-center justify-center py-12 text-slate-400 gap-2 font-medium text-sm">
+              <div className="flex items-center justify-center py-12 text-slate-400 gap-2 font-normal text-sm">
                 <Loader2 className="w-5 h-5 animate-spin text-[#004c91]" />
                 Đang tải lịch sử tiếp đón...
               </div>
@@ -714,7 +714,7 @@ export function PartnerDetail() {
                 <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-300 border border-slate-100 mb-1">
                   <History className="w-6 h-6" />
                 </div>
-                <p className="text-sm font-bold text-slate-600">Chưa có dữ liệu lịch sử hợp tác</p>
+                <p className="text-sm font-normal text-slate-600">Chưa có dữ liệu lịch sử hợp tác</p>
                 <p className="text-xs text-slate-400 max-w-xs">
                   Các chuyến thăm và đoàn tiếp đón thuộc đối tác này sẽ được tự động ghi nhận tại đây.
                 </p>
@@ -740,11 +740,11 @@ export function PartnerDetail() {
                             {item.delegationName}
                           </h4>
                           <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500">
-                            <span className="flex items-center gap-1 font-semibold text-slate-600">
+                            <span className="flex items-center gap-1 font-normal text-slate-600">
                               <MapPin className="w-3.5 h-3.5 text-[#f37021]" /> {item.campusName}
                             </span>
                             <span>•</span>
-                            <span className="flex items-center gap-1 font-medium">
+                            <span className="flex items-center gap-1 font-normal">
                               <Users className="w-3.5 h-3.5 text-blue-500" /> {item.guestCount} thành viên
                             </span>
                           </div>
@@ -758,7 +758,7 @@ export function PartnerDetail() {
                       </div>
 
                       <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100/80 text-slate-500">
-                        <span className="font-medium text-slate-500">
+                        <span className="font-normal text-slate-500">
                           {formatVietnamDate(item.plannedStartAt)}
                         </span>
                         {item.hostName && (
@@ -820,7 +820,7 @@ export function PartnerDetail() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
-                      <div className="text-xs text-gray-500 font-medium mt-0.5 truncate">
+                      <div className="text-xs text-gray-500 font-normal mt-0.5 truncate">
                         {d.originalFilename || '—'}
                         {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
                         {d.creatorName ? ` • ${d.creatorName}` : ''}
@@ -901,7 +901,7 @@ export function PartnerDetail() {
                   if (contactsLoading) {
                     return (
                       <tr>
-                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-400 font-medium bg-gray-50/50">
+                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-400 font-normal bg-gray-50/50">
                           <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Đang tải...
                         </td>
                       </tr>
@@ -917,7 +917,7 @@ export function PartnerDetail() {
                   if (filteredContacts.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-500 font-medium bg-gray-50/50">
+                        <td colSpan={7} className="p-4 sm:p-6 md:p-8 text-center text-gray-500 font-normal bg-gray-50/50">
                           {contactSearch ? 'Không tìm thấy người liên hệ nào khớp với tìm kiếm.' : 'Danh sách trống'}
                         </td>
                       </tr>
@@ -1027,7 +1027,7 @@ export function PartnerDetail() {
                   >
                     Trước
                   </button>
-                  <span className="px-3 py-1.5 text-sm font-medium text-gray-700">
+                  <span className="px-3 py-1.5 text-sm font-normal text-gray-700">
                     Trang {contactPage} / {totalPages}
                   </span>
                   <button
@@ -1286,7 +1286,7 @@ export function PartnerDetail() {
                 </div>
                 <div className="min-w-0">
                   <h4 className="font-black text-gray-900 text-xl tracking-tight truncate">{viewContact.fullName}</h4>
-                  <p className="text-sm font-bold text-[#00a651] uppercase tracking-wide mt-1 truncate">
+                  <p className="text-sm font-normal text-[#00a651] uppercase tracking-wide mt-1 truncate">
                     {[viewContact.jobTitle, viewContact.departmentName].filter(Boolean).join(' - ') || 'Chưa cập nhật chức vụ'}
                   </p>
                 </div>
@@ -1295,29 +1295,29 @@ export function PartnerDetail() {
               <div className="grid grid-cols-2 gap-5 bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Email</label>
-                  <p className="text-[15px] font-bold text-[#004c91] truncate">{viewContact.email || 'Chưa cập nhật'}</p>
+                  <p className="text-[15px] font-normal text-[#004c91] truncate">{viewContact.email || 'Chưa cập nhật'}</p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">SĐT</label>
-                  <p className="text-[15px] font-bold text-gray-800">{viewContact.phone || 'Chưa cập nhật'}</p>
+                  <p className="text-[15px] font-normal text-gray-800">{viewContact.phone || 'Chưa cập nhật'}</p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Nguồn</label>
-                  <p className="text-[15px] font-medium text-gray-800">
+                  <p className="text-[15px] font-normal text-gray-800">
                     {viewContact.sourceType === 'BUSINESS_CARD_OCR' ? 'Quét danh thiếp (OCR)' : viewContact.sourceType === 'IMPORT' ? 'Import' : 'Nhập tay'}
                     {viewContact.ocrConfidence != null && ` • Độ tin cậy ${viewContact.ocrConfidence > 90 ? 'Cao' : viewContact.ocrConfidence >= 60 ? 'Trung bình' : 'Thấp'}`}
                   </p>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Trạng thái</label>
-                  <p className="text-[15px] font-medium text-gray-800">
+                  <p className="text-[15px] font-normal text-gray-800">
                     {viewContact.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'}
                     {viewContact.isPrimary ? ' • Liên hệ chính' : ''}
                   </p>
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Ghi chú</label>
-                  <p className="text-[15px] font-medium text-gray-800">{viewContact.note || 'Không có ghi chú'}</p>
+                  <p className="text-[15px] font-normal text-gray-800">{viewContact.note || 'Không có ghi chú'}</p>
                 </div>
               </div>
 

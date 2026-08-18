@@ -337,13 +337,13 @@ export function EmailPreviewModal({
               <Loader2 className="w-4 h-4 animate-spin" /> Đang tải bản xem trước...
             </div>
           ) : error ? (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-600">
               <AlertCircle className="w-4 h-4 shrink-0" /> {error}
             </div>
           ) : (
             <>
               {stageError && (
-                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-600">
                   <AlertCircle className="w-4 h-4 shrink-0" /> {stageError}
                 </div>
               )}
@@ -356,13 +356,13 @@ export function EmailPreviewModal({
                   </div>
                   <div className="mt-1 text-sm font-bold text-gray-800">{recipient.name || 'Chưa có thông tin'}</div>
                   <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600">
-                    <span>{recipient.email ? recipient.email : <span className="font-semibold text-red-500">Chưa có email</span>}</span>
-                    {recipient.roleLabel && <span>Vai trò: <b>{recipient.roleLabel}</b></span>}
-                    {recipient.departmentName && <span>Phòng ban: <b>{recipient.departmentName}</b></span>}
-                    {recipient.campusName && <span>Cơ sở: <b>{recipient.campusName}</b></span>}
+                    <span>{recipient.email ? recipient.email : <span className="font-normal text-red-500">Chưa có email</span>}</span>
+                    {recipient.roleLabel && <span>Vai trò: <b className="font-normal">{recipient.roleLabel}</b></span>}
+                    {recipient.departmentName && <span>Phòng ban: <b className="font-normal">{recipient.departmentName}</b></span>}
+                    {recipient.campusName && <span>Cơ sở: <b className="font-normal">{recipient.campusName}</b></span>}
                   </div>
                   {!recipient.email && (
-                    <div className="mt-1.5 flex items-center gap-1 text-[11px] font-semibold text-red-500">
+                    <div className="mt-1.5 flex items-center gap-1 text-[11px] font-normal text-red-500">
                       <AlertCircle className="w-3 h-3" /> Người nhận chưa có email — không thể gửi email.
                     </div>
                   )}
@@ -373,7 +373,7 @@ export function EmailPreviewModal({
                 <>
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Tiêu đề</label>
-                    <p className="mt-1 rounded-xl bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{subject}</p>
+                    <p className="mt-1 rounded-xl bg-gray-50 px-3 py-2 text-sm font-normal text-gray-800">{subject}</p>
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -426,7 +426,7 @@ export function EmailPreviewModal({
                 <>
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-400">Tiêu đề</label>
-                    <p className="mt-1 rounded-xl bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-800">{subject}</p>
+                    <p className="mt-1 rounded-xl bg-gray-50 px-3 py-2 text-sm font-normal text-gray-800">{subject}</p>
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase tracking-wide text-gray-400">
@@ -487,7 +487,7 @@ export function EmailPreviewModal({
                 <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-gray-400">Trả lời email</div>
                   <p className="mt-1 text-xs text-gray-600">
-                    Khi người nhận bấm “Trả lời”, email sẽ gửi tới <b className="text-gray-800">{replyToEmail}</b>.
+                    Khi người nhận bấm “Trả lời”, email sẽ gửi tới <b className="font-normal text-gray-800">{replyToEmail}</b>.
                   </p>
                 </div>
               )}

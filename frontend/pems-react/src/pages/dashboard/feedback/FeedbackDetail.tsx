@@ -91,7 +91,7 @@ export function FeedbackDetail() {
                </span>
             )}
           </div>
-          <p className="text-gray-500 mt-1 font-medium">{visitTitle} (REQ #{id})</p>
+          <p className="text-gray-500 mt-1 font-normal">{visitTitle} (REQ #{id})</p>
         </div>
       </div>
 

@@ -282,7 +282,7 @@ export const OrganizationCombobox: React.FC<Props> = ({
       {pickedFromList && !isCell && (
         <p
           data-testid={testId ? `${testId}-known` : undefined}
-          className="mt-1 text-xs font-medium text-green-700"
+          className="mt-1 text-xs font-normal text-green-700"
         >
           {t('visitRequest:select.orgKnown')}
         </p>

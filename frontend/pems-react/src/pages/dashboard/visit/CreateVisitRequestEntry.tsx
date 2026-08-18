@@ -31,7 +31,7 @@ export function CreateVisitRequestEntry() {
   if (status === 'error') {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center" role="alert">
-        <p className="text-sm font-semibold text-slate-700">
+        <p className="text-sm font-normal text-slate-700">
           {tt('createEntry.capabilityError')}
         </p>
         <button

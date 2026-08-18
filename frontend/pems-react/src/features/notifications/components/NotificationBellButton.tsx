@@ -293,7 +293,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <span className={`text-sm font-medium ${!item.isRead ? 'text-gray-900' : 'text-gray-600'}`}>
+                            <span className={`text-sm ${!item.isRead ? 'font-medium text-gray-900' : 'font-normal text-gray-600'}`}>
                               {!item.isRead && (
                                 <span className="inline-block w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5 mb-0.5 align-middle" />
                               )}

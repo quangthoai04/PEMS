@@ -201,7 +201,7 @@ function CountryFlagShowcase({
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          <span className="text-xs font-semibold text-slate-400">
+          <span className="text-xs font-normal text-slate-400">
             {pageIndex + 1} / {totalPages}
           </span>
           <button
@@ -517,7 +517,7 @@ export function PartnersPage() {
 
             {hasActiveFilter && (
               <div className="mt-4 flex items-center justify-between flex-wrap gap-3 bg-orange-50/60 border border-orange-100 rounded-xl px-4 py-3">
-                <span className="text-xs font-semibold text-slate-700">
+                <span className="text-xs font-normal text-slate-700">
                   <Trans
                     i18nKey="partners:list.foundMatches"
                     count={totalCount}

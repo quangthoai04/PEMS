@@ -391,7 +391,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
             </div>
 
             {searchGuestKeyword && (
-              <div className="bg-yellow-50 px-5 py-2 border-b border-yellow-100 text-xs font-semibold text-yellow-900 flex items-center gap-2">
+              <div className="bg-yellow-50 px-5 py-2 border-b border-yellow-100 text-xs font-normal text-yellow-900 flex items-center gap-2">
                 <Tag className="w-3.5 h-3.5 text-[#f37021]" />
                 <span>{t('search.filteringFor')} <strong className="text-[#004c91]">"{searchGuestKeyword}"</strong></span>
                 <button onClick={() => setSearchGuestKeyword('')} className="ml-auto underline hover:text-[#004c91] text-gray-500 font-bold">
@@ -553,7 +553,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
               {(scanning || isScanBusy) && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white p-6 bg-slate-900/60 z-10">
                   <div className="animate-spin rounded-full h-8 w-8 border-2 border-t-transparent border-white mb-2"></div>
-                  <p className="text-sm font-bold tracking-wide">{t('scan.scanning')}</p>
+                  <p className="text-sm font-normal tracking-wide">{t('scan.scanning')}</p>
                 </div>
               )}
 
@@ -607,7 +607,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
 
                   if (identifiedDetections.length === 0) {
                     return (
-                      <p className="text-xs font-semibold text-gray-400 italic py-1">
+                      <p className="text-xs font-normal text-gray-400 italic py-1">
                         Chưa có khuôn mặt nào được định danh trong hình này. Nhấp chọn từng khuôn mặt trên hình để gán tên tương ứng.
                       </p>
                     );
@@ -693,7 +693,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
               <FolderOpen className="w-8 h-8" />
             </div>
             <div>
-              <p className="text-base font-bold text-gray-800">Chưa chọn ảnh để quét và gán tên khuôn mặt</p>
+              <p className="text-base font-normal text-gray-800">Chưa chọn ảnh để quét và gán tên khuôn mặt</p>
               <p className="text-xs text-gray-500 mt-1 max-w-md">
                 Tải ảnh mới lên hoặc chọn ảnh sẵn có trong thư mục Google Drive của đoàn để tiến hành quét nhận diện.
               </p>
@@ -789,7 +789,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
                 {photos.length === 0 ? (
                   <div className="py-12 text-center text-gray-400 space-y-3">
                     <FolderOpen className="w-12 h-12 text-gray-300 mx-auto" />
-                    <p className="text-sm font-bold text-gray-700">Chưa có ảnh nào trong thư mục đoàn.</p>
+                    <p className="text-sm font-normal text-gray-700">Chưa có ảnh nào trong thư mục đoàn.</p>
                     <p className="text-xs text-gray-400 max-w-md mx-auto">
                       Bạn có thể dùng nút "Tải lên ảnh chụp thực tế" ngoài màn hình chính để tải ảnh trực tiếp vào thư mục Google Drive của đoàn.
                     </p>
@@ -831,7 +831,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-medium">
+              <div className="px-6 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 font-normal">
                 <span>Tổng cộng: <strong>{photos.length}</strong> ảnh trong thư mục đoàn.</span>
                 <button
                   type="button"
@@ -864,7 +864,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
               </div>
               <div>
                 <p className="font-bold text-gray-800 text-sm">{croppedAvatarModal.guestName}</p>
-                <p className="text-xs text-gray-400 font-medium">Đã tự động trích xuất tỷ lệ 1:1 từ vị trí khuôn mặt</p>
+                <p className="text-xs text-gray-400 font-normal">Đã tự động trích xuất tỷ lệ 1:1 từ vị trí khuôn mặt</p>
               </div>
             </div>
             <div className="pt-2 flex items-center gap-2">

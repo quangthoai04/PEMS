@@ -122,7 +122,7 @@ function FaceScanModalContent({
             <h3 className="text-base font-extrabold text-[#004c91] truncate flex items-center gap-2">
               Quét mặt & Gán danh tính khuôn mặt
             </h3>
-            <p className="text-xs text-slate-500 font-medium truncate">
+            <p className="text-xs text-slate-500 font-normal truncate">
               {item.delegationName} · {item.campusName}
             </p>
           </div>
@@ -167,7 +167,7 @@ function FaceScanModalContent({
         {loadingPhotos ? (
           <div className="py-20 text-center flex flex-col items-center justify-center gap-2">
             <RefreshCw className="w-6 h-6 animate-spin text-[#004c91]" />
-            <span className="text-xs font-bold text-gray-600">Đang tải công cụ định danh khuôn mặt...</span>
+            <span className="text-xs font-normal text-gray-600">Đang tải công cụ định danh khuôn mặt...</span>
           </div>
         ) : (
           <FaceScanPanel
@@ -400,7 +400,7 @@ export function VisitPhotoManagement() {
                   <h3 className="font-extrabold text-[#004c91] text-sm flex items-center gap-2">
                     Bài viết tin tức liên quan đến từ khóa "{search}"
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium">
+                  <p className="text-xs text-slate-500 font-normal">
                     Các bài tin tức có sử dụng ảnh hoặc liên quan đến đối tác/khách được gán tên
                   </p>
                 </div>
@@ -430,7 +430,7 @@ export function VisitPhotoManagement() {
                           {news.statusLabel || news.status}
                         </span>
                         {news.campusName && (
-                          <span className="text-[10px] text-slate-500 font-semibold truncate">
+                          <span className="text-[10px] text-slate-500 font-normal truncate">
                             {news.campusName}
                           </span>
                         )}
@@ -439,12 +439,12 @@ export function VisitPhotoManagement() {
                         {news.title}
                       </h4>
                       {news.description && (
-                        <p className="text-[11px] text-slate-500 line-clamp-2 font-medium">
+                        <p className="text-[11px] text-slate-500 line-clamp-2 font-normal">
                           {news.description}
                         </p>
                       )}
                     </div>
-                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                    <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-normal">
                       <span>Tác giả: {news.authorName}</span>
                       <span className="text-[#004c91] font-bold flex items-center gap-1 group-hover:underline">
                         Xem bài viết →
@@ -459,16 +459,16 @@ export function VisitPhotoManagement() {
 
         {/* Content Body */}
         {loading ? (
-          <div className="py-20 text-center text-slate-500 font-medium flex flex-col items-center justify-center gap-2">
+          <div className="py-20 text-center text-slate-500 font-normal flex flex-col items-center justify-center gap-2">
             <RefreshCw className="w-6 h-6 animate-spin text-[#004c91]" />
-            <span className="text-xs font-bold text-gray-600">Đang tải dữ liệu ảnh đoàn khách...</span>
+            <span className="text-xs font-normal text-gray-600">Đang tải dữ liệu ảnh đoàn khách...</span>
           </div>
         ) : error ? (
-          <div className="py-16 text-center text-slate-500 font-medium px-4">{error}</div>
+          <div className="py-16 text-center text-slate-500 font-normal px-4">{error}</div>
         ) : items.length === 0 ? (
           <div className="py-20 text-center px-4">
             <Camera className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-            <p className="text-slate-700 font-bold text-sm">
+            <p className="text-slate-700 font-normal text-sm">
               {search ? `Không tìm thấy kết quả phù hợp với từ khóa "${search}".` : 'Chưa có dữ liệu ảnh đoàn khách nào.'}
             </p>
             <p className="text-xs text-slate-400 mt-1">
@@ -501,13 +501,13 @@ export function VisitPhotoManagement() {
                           {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
                         </span>
                         {item.plannedStartAt && (
-                          <span className="text-[11px] text-gray-400 font-medium">
+                          <span className="text-[11px] text-gray-400 font-normal">
                             {formatVietnamDate(item.plannedStartAt)}
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-4 font-semibold text-slate-700">
+                    <td className="px-4 py-4 font-normal text-slate-700">
                       <div className="flex items-center gap-1.5">
                         <Folder className="w-4 h-4 text-amber-500 shrink-0" />
                         <span className="truncate max-w-[200px]" title={item.folderName || ''}>
@@ -574,7 +574,7 @@ export function VisitPhotoManagement() {
                           {INSTANCE_STATUS_LABELS[item.instanceStatus] || item.instanceStatus}
                         </span>
                       </h4>
-                      <p className="text-xs text-slate-500 font-medium">
+                      <p className="text-xs text-slate-500 font-normal">
                         {item.campusName || 'Cơ sở'} · {formatVietnamDate(item.plannedStartAt)} · {item.activePhotoCount} bức ảnh
                       </p>
                     </div>
@@ -617,7 +617,7 @@ export function VisitPhotoManagement() {
         {!loading && !error && (
           <div className="px-6 py-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
             <div className="flex items-center gap-4 flex-wrap">
-              <p className="text-xs font-bold text-slate-500">
+              <p className="text-xs font-normal text-slate-500">
                 Trang {page}/{Math.max(1, totalPages)} · Tổng cộng {data?.totalCount ?? 0} đoàn khách
               </p>
               <div className="flex items-center gap-2">
@@ -671,7 +671,7 @@ export function VisitPhotoManagement() {
                   <h3 className="text-base font-extrabold text-[#004c91] truncate">
                     {photoModalItem.delegationName}
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium truncate">
+                  <p className="text-xs text-slate-500 font-normal truncate">
                     {photoModalItem.campusName} · {photoModalItem.activePhotoCount} bức ảnh
                   </p>
                 </div>

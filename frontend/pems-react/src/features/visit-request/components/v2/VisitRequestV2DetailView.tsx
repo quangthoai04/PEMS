@@ -298,7 +298,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
             what can I do" — who the people are is the sections' job. */}
         <p className="mt-3 text-sm text-slate-500">
           {t('visitRequestV2:detail.submittedAt')}:{' '}
-          <span className="font-medium text-slate-700">{formatVietnamDateTime(data.submittedAt)}</span>
+          <span className="font-normal text-slate-700">{formatVietnamDateTime(data.submittedAt)}</span>
         </p>
 
         <div className="mt-3">

@@ -139,7 +139,7 @@ export function SentEmailsModal({ open, title, subtitle, targetKey, load, onClos
               <Loader2 className="w-4 h-4 animate-spin" /> Đang tải lịch sử email...
             </div>
           ) : error ? (
-            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-normal text-red-600">
               <AlertCircle className="w-4 h-4 shrink-0" /> {error}
             </div>
           ) : items.length === 0 ? (
@@ -276,7 +276,7 @@ function SentEmailCard({
               ) : (
                 // HTML: sanitized + neutralized action tokens + inline cid images resolved to blob URLs.
                 <div className="relative">
-                  <div className="mb-2 rounded bg-blue-50 px-2 py-1 text-[11px] font-medium text-[#004c91] border border-blue-100 flex items-center gap-1.5">
+                  <div className="mb-2 rounded bg-blue-50 px-2 py-1 text-[11px] font-normal text-[#004c91] border border-blue-100 flex items-center gap-1.5">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
                   </div>
                   <div className="pems-email-body select-text pointer-events-none" dangerouslySetInnerHTML={{ __html: renderedBody }} />

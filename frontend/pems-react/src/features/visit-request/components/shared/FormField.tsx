@@ -48,7 +48,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       <div>
         <label className="flex flex-wrap items-baseline justify-between gap-2 text-sm font-bold text-slate-900">
           <span>{label} {required && <span className="text-red-500">*</span>}</span>
-          {subtitle && <span className="text-xs font-medium text-slate-500">{subtitle}</span>}
+          {subtitle && <span className="text-xs font-normal text-slate-500">{subtitle}</span>}
         </label>
       </div>
       <div className="relative">

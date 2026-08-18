@@ -56,7 +56,7 @@ export function PendingEmailEditConfirmModal({
             <h2 className="text-lg font-black leading-snug text-gray-800">
               Xác nhận thay đổi email chờ kích hoạt
             </h2>
-            <p className="mt-0.5 text-xs font-medium text-gray-500">
+            <p className="mt-0.5 text-xs font-normal text-gray-500">
               Tài khoản chưa xác nhận email
             </p>
           </div>
@@ -90,7 +90,7 @@ export function PendingEmailEditConfirmModal({
           </ul>
 
           {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
               {error}
             </div>
           )}

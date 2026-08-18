@@ -33,7 +33,7 @@ export function NewsContributionSection({ visitInstanceId, data, canView, isRead
         </div>
         <div className="flex-1">
           <h2 className="text-base font-black text-[#004c91]">Tin tức</h2>
-          <p className="text-xs font-semibold text-slate-500">
+          <p className="text-xs font-normal text-slate-500">
             Bài viết sau tiếp khách — mọi bài đều chờ Staff Leader duyệt trước khi đăng.
           </p>
         </div>
@@ -41,13 +41,13 @@ export function NewsContributionSection({ visitInstanceId, data, canView, isRead
 
       <div className="space-y-4">
         {data.newsNotRequired && (
-          <p className="text-sm font-semibold text-slate-500 italic">
+          <p className="text-sm font-normal text-slate-500 italic">
             Chuyến thăm này không yêu cầu bài tin tức (theo xác nhận của người phụ trách tiếp đón).
           </p>
         )}
 
         {!data.mediaConsentAllowed && (
-          <p className="text-sm font-semibold text-rose-500 italic">
+          <p className="text-sm font-normal text-rose-500 italic">
             Khách không đồng ý truyền thông, không thể tạo bài tin.
           </p>
         )}

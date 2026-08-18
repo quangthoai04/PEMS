@@ -81,11 +81,11 @@ export function SentEmailDetail() {
   };
 
   if (isLoading) {
-    return <div className="p-8 text-center text-gray-500 font-medium">Đang tải chi tiết email...</div>;
+    return <div className="p-8 text-center text-gray-500 font-normal">Đang tải chi tiết email...</div>;
   }
 
   if (!emailData) {
-    return <div className="p-8 text-center text-red-500 font-medium">Không tìm thấy email</div>;
+    return <div className="p-8 text-center text-red-500 font-normal">Không tìm thấy email</div>;
   }
 
   return (
@@ -155,13 +155,13 @@ export function SentEmailDetail() {
                 {emailData.sender?.fullName ? emailData.sender.fullName.charAt(0).toUpperCase() : '?'}
               </div>
               <div className="mt-0.5">
-                <div className="font-bold text-gray-900 text-[15px]">{emailData.sender?.fullName || 'Hệ thống'} <span className="text-gray-500 font-normal">&lt;{emailData.sender?.email || 'N/A'}&gt;</span></div>
-                <div className="text-sm text-gray-500 mt-1">Đến: <span className="text-gray-700 font-medium">{emailData.recipients?.filter((r: any) => r.recipientType === 'TO').map((r: any) => r.recipientEmail).join(', ') || 'N/A'}</span></div>
+                <div className="font-normal text-gray-900 text-[15px]">{emailData.sender?.fullName || 'Hệ thống'} <span className="text-gray-500 font-normal">&lt;{emailData.sender?.email || 'N/A'}&gt;</span></div>
+                <div className="text-sm text-gray-500 mt-1">Đến: <span className="text-gray-700 font-normal">{emailData.recipients?.filter((r: any) => r.recipientType === 'TO').map((r: any) => r.recipientEmail).join(', ') || 'N/A'}</span></div>
                 {emailData.recipients?.some((r: any) => r.recipientType === 'CC') && (
-                  <div className="text-sm text-gray-500">CC: <span className="text-gray-700 font-medium">{emailData.recipients.filter((r: any) => r.recipientType === 'CC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
+                  <div className="text-sm text-gray-500">CC: <span className="text-gray-700 font-normal">{emailData.recipients.filter((r: any) => r.recipientType === 'CC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
                 )}
                 {emailData.recipients?.some((r: any) => r.recipientType === 'BCC') && (
-                  <div className="text-sm text-gray-500">BCC: <span className="text-gray-700 font-medium">{emailData.recipients.filter((r: any) => r.recipientType === 'BCC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
+                  <div className="text-sm text-gray-500">BCC: <span className="text-gray-700 font-normal">{emailData.recipients.filter((r: any) => r.recipientType === 'BCC').map((r: any) => r.recipientEmail).join(', ')}</span></div>
                 )}
               </div>
             </div>
@@ -172,7 +172,7 @@ export function SentEmailDetail() {
           </div>
 
           <div className="relative mb-6">
-            <div className="mb-2 rounded bg-blue-50 px-3 py-2 text-sm font-medium text-[#004c91] border border-blue-100 flex items-center gap-2">
+            <div className="mb-2 rounded bg-blue-50 px-3 py-2 text-sm font-normal text-[#004c91] border border-blue-100 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" /> Đây là bản xem lại email đã gửi. Các nút thao tác đã bị vô hiệu hóa trong chế độ xem trước.
             </div>
             {/* `whitespace-pre-wrap` used to sit here. On an HTML body it turned every newline in the
@@ -189,7 +189,7 @@ export function SentEmailDetail() {
           </div>
 
           {emailData.errorMessage && (
-            <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+            <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-normal">
               <span className="font-bold block mb-1">Lỗi hệ thống:</span>
               {emailData.errorMessage}
             </div>
@@ -202,7 +202,7 @@ export function SentEmailDetail() {
                 {emailData.recipients.map((r: any, idx: number) => (
                   <div key={idx} className="flex items-center justify-between bg-gray-50 rounded-lg p-3 text-sm border border-gray-100">
                     <div>
-                      <span className="font-semibold text-gray-800">{r.recipientEmail}</span>
+                      <span className="font-normal text-gray-800">{r.recipientEmail}</span>
                       <span className="ml-2 text-xs text-gray-500">({r.recipientType})</span>
                     </div>
                     <div className="flex items-center gap-4">

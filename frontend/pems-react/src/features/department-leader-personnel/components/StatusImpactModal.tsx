@@ -87,7 +87,7 @@ export function StatusImpactModal({
                 <dt className="text-[10px] font-bold uppercase tracking-wider text-[#004c91]/70">
                   Trạng thái hiện tại
                 </dt>
-                <dd className="font-bold text-gray-900">
+                <dd className="font-normal text-gray-900">
                   {PERSONNEL_STATUS_LABELS[impact.currentStatus]}
                 </dd>
               </div>
@@ -95,7 +95,7 @@ export function StatusImpactModal({
                 <dt className="text-[10px] font-bold uppercase tracking-wider text-[#004c91]/70">
                   Trạng thái sau thay đổi
                 </dt>
-                <dd className="font-bold text-[#004c91]">
+                <dd className="font-normal text-[#004c91]">
                   {PERSONNEL_STATUS_LABELS[impact.targetStatus]}
                 </dd>
               </div>
@@ -103,7 +103,7 @@ export function StatusImpactModal({
 
             {impact.blockers.length > 0 && (
               <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-sm font-medium text-red-800">
+                <p className="mb-2 flex items-center gap-2 text-sm font-normal text-red-800">
                   <ShieldAlert className="h-4 w-4" />
                   Không thể thực hiện thay đổi này
                 </p>
@@ -117,7 +117,7 @@ export function StatusImpactModal({
 
             {impact.warnings.length > 0 && (
               <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="mb-2 flex items-center gap-2 text-sm font-medium text-amber-900">
+                <p className="mb-2 flex items-center gap-2 text-sm font-normal text-amber-900">
                   <AlertTriangle className="h-4 w-4" />
                   Lưu ý
                 </p>

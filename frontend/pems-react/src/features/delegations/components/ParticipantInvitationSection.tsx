@@ -426,7 +426,7 @@ export function ParticipantInvitationSection({
                 </span>
               )}
               {host.departmentName && (
-                <span className="text-xs text-gray-500 font-medium truncate">
+                <span className="text-xs text-gray-500 font-normal truncate">
                   • {host.departmentName}
                 </span>
               )}
@@ -436,14 +436,14 @@ export function ParticipantInvitationSection({
             </span>
           </div>
         ) : (
-          <div className="flex items-center gap-2 text-xs font-semibold text-amber-700">
+          <div className="flex items-center gap-2 text-xs font-normal text-amber-700">
             <AlertCircle className="w-4 h-4 shrink-0" /> Chưa xác định Host chính cho cơ sở này.
           </div>
         )}
       </div>
 
       {!canManage && (
-        <p className="text-xs font-medium text-slate-500">
+        <p className="text-xs font-normal text-slate-500">
           Chỉ Host phụ trách mới có thể mời thành phần tham gia. Danh sách dưới đây ở chế độ xem.
         </p>
       )}
@@ -537,7 +537,7 @@ export function ParticipantInvitationSection({
                       {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                     </div>
                     {!canInviteDept && (
-                      <div className="mt-0.5 text-[11px] font-medium text-amber-600">{blockedReason}</div>
+                      <div className="mt-0.5 text-[11px] font-normal text-amber-600">{blockedReason}</div>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
@@ -600,7 +600,7 @@ export function ParticipantInvitationSection({
                 </div>
                 {p.departmentAssignment?.assignedStaffName && (
                   <div className="mt-2 rounded-lg bg-blue-50/70 px-3 py-1.5 text-xs font-medium text-[#004c91]">
-                    Nhân sự xử lý: <span className="font-bold">{p.departmentAssignment.assignedStaffName}</span>
+                    Nhân sự xử lý: <span className="font-normal">{p.departmentAssignment.assignedStaffName}</span>
                   </div>
                 )}
                 {p.status === 'DECLINED' && p.note && (
@@ -699,7 +699,7 @@ function CandidateRow({
             allPrivate={candidate.hasPrivateConflict && candidate.conflictCount > 0}
           />
           {!hasEmail && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-500">
+            <span className="inline-flex items-center gap-1 text-[11px] font-normal text-red-500">
               <AlertCircle className="w-3 h-3" /> Chưa có email
             </span>
           )}

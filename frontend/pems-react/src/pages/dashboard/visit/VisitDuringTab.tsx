@@ -330,11 +330,11 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                         {partnerDocFile ? (
                           <div className="space-y-1">
                             <p className="text-xs font-bold text-green-700 break-all">{partnerDocFile.name}</p>
-                            <p className="text-[10px] text-gray-500 font-semibold">{partnerDocFile.size}</p>
+                            <p className="text-[10px] text-gray-500 font-normal">{partnerDocFile.size}</p>
                           </div>
                         ) : (
                           <div className="space-y-1">
-                            <p className="text-xs font-bold text-gray-700">Kéo thả hoặc nhấp để chọn tệp tin</p>
+                            <p className="text-xs font-normal text-gray-700">Kéo thả hoặc nhấp để chọn tệp tin</p>
                             <p className="text-[10px] text-gray-400">Chấp nhận ảnh (png, jpg), file văn bản (pdf, docx, xlsx)</p>
                           </div>
                         )}
@@ -386,7 +386,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                     </div>
 
                     {docError && (
-                      <p className="text-red-500 text-xs font-bold flex items-center gap-1 font-sans">
+                      <p className="text-red-500 text-xs font-normal flex items-center gap-1 font-sans">
                         <AlertCircle className="w-3.5 h-3.5" /> {docError}
                       </p>
                     )}
@@ -426,7 +426,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                                 <FileText className="w-4 h-4 text-orange-500 shrink-0" />
                                 {doc.fileName}
                               </div>
-                              <div className="text-[10px] text-gray-500 font-medium">
+                              <div className="text-[10px] text-gray-500 font-normal">
                                 {doc.partners.length > 0 ? (
                                   <>Đối tác: <span className="font-bold text-[#004c91]">{doc.partners.join(', ')}</span></>
                                 ) : (
@@ -594,7 +594,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                  </div>
                  
                  {matchedPartnerFromEmail && (
-                    <div className="mt-4 p-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold flex items-start gap-2.5 font-sans shadow-sm">
+                    <div className="mt-4 p-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-normal flex items-start gap-2.5 font-sans shadow-sm">
                       <span className="flex items-center justify-center w-6 h-6 bg-indigo-600 rounded-full text-white shrink-0 shadow-sm shadow-indigo-200 mt-0.5">
                         <CheckCircle2 className="w-4 h-4" />
                       </span>
@@ -690,7 +690,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                      </div>
                      
                      {contactSaveSuccess && (
-                       <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-xs font-bold flex items-center gap-2 mt-3 font-sans shadow-sm leading-relaxed">
+                       <div className="p-3.5 bg-green-50 border border-green-200 text-green-700 rounded-xl text-xs font-normal flex items-center gap-2 mt-3 font-sans shadow-sm leading-relaxed">
                          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
                          <span>Đã liên kết thành công Card Visit của <b>{scannedInfo.name}</b> vào đối tác <b>{selectedPartnerForContact}</b>!</span>
                        </div>
@@ -764,7 +764,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
               </button>
             </div>
             <div className="p-6 bg-amber-50/30">
-              <p className="text-sm text-gray-800 leading-relaxed mb-5 font-medium">
+              <p className="text-sm text-gray-800 leading-relaxed mb-5 font-normal">
                 Nếu thông tin liên hệ của người đưa card visit đã thuộc 1 đối tác có trên hệ thống thì chia ra 2 TH:
               </p>
               <div className="space-y-4">

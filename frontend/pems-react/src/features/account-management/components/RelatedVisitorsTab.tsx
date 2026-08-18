@@ -216,7 +216,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
                   retry of its own. */}
               {!nationalitiesLoading && nationalitiesError && (
                 <div className="px-4 py-2.5 text-sm text-red-600">
-                  <p className="mb-1 font-medium">{nationalitiesError}</p>
+                  <p className="mb-1 font-normal">{nationalitiesError}</p>
                   <button type="button" onClick={retryNationalities} className="text-xs underline hover:no-underline">
                     Thử lại
                   </button>
@@ -249,7 +249,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
 
       {/* Error */}
       {error && (
-        <div className="m-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 flex items-center justify-between gap-3">
+        <div className="m-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-normal text-red-700 flex items-center justify-between gap-3">
           <span className="flex items-center gap-3"><XCircle className="w-5 h-5 shrink-0" />{error}</span>
           <button onClick={refetch} className="text-xs underline hover:no-underline">Thử lại</button>
         </div>
@@ -270,7 +270,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
           <tbody className="divide-y divide-gray-100">
             {loading && (
               <tr>
-                <td colSpan={5} className="py-16 text-center text-gray-400 font-medium text-sm">
+                <td colSpan={5} className="py-16 text-center text-gray-400 font-normal text-sm">
                   Đang tải danh sách...
                 </td>
               </tr>
@@ -278,7 +278,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
 
             {!loading && !error && visitors.length === 0 && (
               <tr>
-                <td colSpan={5} className="py-16 text-center text-gray-400 font-medium text-sm">
+                <td colSpan={5} className="py-16 text-center text-gray-400 font-normal text-sm">
                   Chưa có tài khoản khách nào liên quan đến cơ sở của bạn.
                 </td>
               </tr>
@@ -290,7 +290,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
                 <td className="p-5 text-center">
                   <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{v.fullName}</p>
                 </td>
-                <td className="p-5 text-[13px] font-medium text-gray-600 truncate max-w-[200px] text-center">{v.email}</td>
+                <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-center">{v.email}</td>
                 <td className="p-5 text-center"><StatusBadge status={v.status} /></td>
                 <td className="p-5 pr-8 text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -313,7 +313,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
       {totalItems > 0 && (
         <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-500">Hiển thị</span>
+            <span className="text-sm font-normal text-gray-500">Hiển thị</span>
             <div className="relative">
               <select
                 value={pageSize}
@@ -327,7 +327,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
               </select>
               <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
             </div>
-            <span className="text-sm font-medium text-gray-500">tài khoản / trang</span>
+            <span className="text-sm font-normal text-gray-500">tài khoản / trang</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -407,7 +407,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
               )}
 
               {detailError && (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 flex items-center gap-3">
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-normal text-red-700 flex items-center gap-3">
                   <XCircle className="w-5 h-5 shrink-0" />{detailError}
                 </div>
               )}
@@ -428,7 +428,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
                   <div className="flex items-center gap-2 mt-8 mb-4">
                     <FileText className="w-5 h-5 text-[#004c91]" />
                     <h4 className="font-bold text-gray-900">Đơn liên quan đến cơ sở của bạn</h4>
-                    <span className="ml-auto text-xs font-bold text-gray-400">{detail.relatedRequests.length} đơn</span>
+                    <span className="ml-auto text-xs font-normal text-gray-400">{detail.relatedRequests.length} đơn</span>
                   </div>
 
                   {detail.relatedRequests.length === 0 ? (
@@ -464,7 +464,7 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div className="flex flex-col">
       <span className="block text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-500">{label}</span>
-      <span className="block text-sm font-bold text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value}</span>
+      <span className="block text-sm font-normal text-gray-900 bg-gray-50/50 p-2.5 rounded-lg border border-gray-100 break-words">{value}</span>
     </div>
   );
 }

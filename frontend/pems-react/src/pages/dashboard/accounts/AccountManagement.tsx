@@ -1698,10 +1698,10 @@ export function AccountManagement() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-2">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
         <span>Dashboard</span>
         <span>/</span>
-        <span className="text-[#004c91]">Quản lý tài khoản</span>
+        <span className="text-[#004c91] font-medium">Quản lý tài khoản</span>
       </div>
 
       <div className="flex items-center justify-between mb-4">
@@ -1779,7 +1779,7 @@ export function AccountManagement() {
       )}
 
       {isServerTab && !isVisitorMode && accountsError && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 flex items-center gap-3">
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-normal text-red-700 flex items-center gap-3">
           <XCircle className="w-5 h-5 shrink-0" />
           <span>{accountsError}</span>
         </div>
@@ -1954,8 +1954,8 @@ export function AccountManagement() {
                 <thead className="bg-[#f8fafc] text-gray-500 border-b border-gray-200">
                   <tr>
                     <th className="p-5 pl-8 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">STT</th>
-                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Họ và Tên</th>
-                    <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Tên đăng nhập (Email)</th>
+                    <th className="p-5 text-[11px] font-black text-left uppercase tracking-widest whitespace-nowrap">Họ và Tên</th>
+                    <th className="p-5 text-[11px] font-black text-left uppercase tracking-widest whitespace-nowrap">Tên đăng nhập (Email)</th>
                     {!isStaff && <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Cơ sở</th>}
                     <th className="p-5 text-[11px] font-black text-center uppercase tracking-widest whitespace-nowrap">Vai trò</th>
                     {!isHO && !isStaffLeader && (
@@ -1982,20 +1982,20 @@ export function AccountManagement() {
                   {paginatedAccounts.length > 0 ? paginatedAccounts.map((acc, idx) => (
                     <tr key={acc.id} className="hover:bg-blue-50/30 transition-colors group">
                       <td className="p-5 pl-8 text-sm font-bold text-[#004c91] text-center">{(currentPage - 1) * pageSize + idx + 1}</td>
-                      <td className="p-5 text-center">
+                      <td className="p-5 text-left">
                         <div>
                           <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{acc.name}</p>
                         </div>
                       </td>
-                      <td className="p-5 text-[13px] font-medium text-gray-600 truncate max-w-[200px] text-center">{acc.email}</td>
+                      <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-left">{acc.email}</td>
                       {/* A VISITOR belongs to no campus by design (AccountProvisioningRules gives the
                           role no primary_campus_id), so this cell is legitimately empty for every
                           guest row. An empty cell reads as missing data; the dash says "none", which
                           is the actual answer. Keyed off the value rather than the role so any other
                           campus-less row gets the same treatment. */}
                       {!isStaff && (
-                        <td className="p-5 text-[13px] font-bold text-gray-700 text-center">
-                          {acc.campus || <span className="text-gray-400 font-black text-lg leading-none">—</span>}
+                        <td className="p-5 text-[13px] font-normal text-gray-700 text-center">
+                          {acc.campus || <span className="text-gray-400 font-normal text-lg leading-none">—</span>}
                         </td>
                       )}
                       <td className="p-5 text-center">
@@ -2006,9 +2006,9 @@ export function AccountManagement() {
                       {!isHO && !isStaffLeader && (
                         <td className="p-5 text-center">
                           {activeTab === 'pending' ? (
-                            <span className="text-[13px] font-bold text-gray-600 whitespace-nowrap tracking-wide">{acc.createdAt?.split('-').reverse().join('-')}</span>
+                            <span className="text-[13px] font-normal text-gray-600 whitespace-nowrap tracking-wide">{acc.createdAt?.split('-').reverse().join('-')}</span>
                           ) : (
-                            <span className={`text-[11px] font-bold uppercase tracking-wider ${acc.loginStatus === 'Đã đăng nhập' ? 'text-[#0aa14f]' : 'text-gray-400'}`}>
+                            <span className={`text-[11px] font-normal uppercase tracking-wider ${acc.loginStatus === 'Đã đăng nhập' ? 'text-[#0aa14f]' : 'text-gray-400'}`}>
                               {acc.loginStatus}
                             </span>
                           )}
@@ -2158,7 +2158,7 @@ export function AccountManagement() {
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={8} className="py-16 text-center text-gray-400 font-medium text-sm">
+                      <td colSpan={8} className="py-16 text-center text-gray-400 font-normal text-sm">
                         {isServerTab && accountsLoading ? 'Đang tải danh sách tài khoản...' : 'Không tìm thấy tài khoản nào phù hợp'}
                       </td>
                     </tr>
@@ -2171,7 +2171,7 @@ export function AccountManagement() {
             {totalItems > 0 && (
             <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-gray-500">Hiển thị</span>
+                <span className="text-sm font-normal text-gray-500">Hiển thị</span>
                 <div className="relative">
                   <select
                     value={pageSize}
@@ -2188,7 +2188,7 @@ export function AccountManagement() {
                   </select>
                   <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
                 </div>
-                <span className="text-sm font-medium text-gray-500">tài khoản / trang</span>
+                <span className="text-sm font-normal text-gray-500">tài khoản / trang</span>
               </div>
 
               <div className="flex items-center gap-2">
@@ -2279,7 +2279,7 @@ export function AccountManagement() {
                       Dùng khi người nhận chưa nhận được email kích hoạt tài khoản.
                     </p>
                     {resendError && (
-                      <p className="mt-1.5 text-[11px] font-bold leading-snug text-red-200">{resendError}</p>
+                      <p className="mt-1.5 text-[11px] font-normal leading-snug text-red-200">{resendError}</p>
                     )}
                     {lastResendCount !== null && !resendError && (() => {
                       const summary = resendResultSummary(lastDeliveryStatus, lastResendCount);
@@ -2289,7 +2289,7 @@ export function AccountManagement() {
                         : 'text-amber-200';
                       return (
                         <div className="mt-2 rounded-lg bg-white/10 px-2.5 py-2 text-left">
-                          <p className={`text-[11px] font-bold leading-snug ${headlineClass}`}>
+                          <p className={`text-[11px] font-normal leading-snug ${headlineClass}`}>
                             {summary.headline}
                           </p>
                           {summary.detail && (
@@ -2403,7 +2403,7 @@ export function AccountManagement() {
                     <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
                       <span className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${highlight ? 'text-[#004c91]/80' : 'text-gray-500'}`}>{label}</span>
                       <div className={`flex items-center gap-2 rounded-lg border px-2.5 py-2.5 ${LOCKED_FIELD}`}>
-                        <span className="min-w-0 flex-1 break-words text-sm font-semibold">
+                        <span className="min-w-0 flex-1 break-words text-sm font-normal">
                           {value === null || value === undefined || value === '' ? '-' : value}
                         </span>
                         <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-hidden="true" />
@@ -2495,7 +2495,7 @@ export function AccountManagement() {
                           className={identityInputClass(identityDisabled, !!editFieldErrors.fullName)}
                         />
                         {editFieldErrors.fullName && (
-                          <p id="edit-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{editFieldErrors.fullName}</p>
+                          <p id="edit-full-name-error" className="mt-1.5 text-sm text-red-600 font-normal">{editFieldErrors.fullName}</p>
                         )}
                       </div>
                       <div className="flex flex-col min-w-0">
@@ -2523,7 +2523,7 @@ export function AccountManagement() {
                           className={identityInputClass(identityDisabled, !!editFieldErrors.email)}
                         />
                         {editFieldErrors.email && (
-                          <p id="edit-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{editFieldErrors.email}</p>
+                          <p id="edit-email-error" className="mt-1.5 text-sm text-red-600 font-normal">{editFieldErrors.email}</p>
                         )}
                         {canEditIdentity && !editFieldErrors.email && (
                           <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
@@ -2588,7 +2588,7 @@ export function AccountManagement() {
                       )}
 
                       {roleOptionsError && (
-                        <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                        <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
                           {roleOptionsError}
                         </div>
                       )}
@@ -2734,7 +2734,7 @@ export function AccountManagement() {
                     ) : (
                       <div className={`flex flex-col min-w-0 ${colSpan ? 'md:col-span-2' : ''}`}>
                         <span className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${highlight ? 'text-[#004c91]/80' : 'text-gray-500'}`}>{label}</span>
-                        <span className={`block text-sm p-2.5 rounded-lg border break-words ${highlight ? 'font-black text-[#004c91] bg-blue-50/30 border-blue-100' : 'font-bold text-gray-900 bg-gray-50/50 border-gray-100'}`}>
+                        <span className={`block text-sm p-2.5 rounded-lg border break-words ${highlight ? 'font-normal text-[#004c91] bg-blue-50/30 border-blue-100' : 'font-normal text-gray-900 bg-gray-50/50 border-gray-100'}`}>
                           {value === null || value === undefined || value === '' ? '-' : value}
                         </span>
                       </div>
@@ -2849,7 +2849,7 @@ export function AccountManagement() {
                           <Shield className="w-3.5 h-3.5" /> Xem nhật ký bảo mật
                         </button>
                         <p className="w-full text-[11px] leading-snug text-gray-400">
-                          Mở module quản trị tương ứng, đã lọc sẵn theo <span className="font-bold text-gray-500">{data.email}</span>.
+                          Mở module quản trị tương ứng, đã lọc sẵn theo <span className="font-normal text-gray-500">{data.email}</span>.
                         </p>
                       </div>
                     </div>
@@ -2863,7 +2863,7 @@ export function AccountManagement() {
                       {isEditingProfile && (
                         <div className="mt-4 pt-6 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2 duration-300">
                           {roleError && (
-                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 whitespace-pre-line">
+                            <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700 whitespace-pre-line">
                               {roleError}
                             </div>
                           )}
@@ -2913,7 +2913,7 @@ export function AccountManagement() {
               <p>Hệ thống sẽ phát hành một liên kết xác nhận mới và gửi đến:</p>
               {/* Read-only on purpose: correcting a wrong address is the edit-pending-email flow,
                   not something to slip into a resend. */}
-              <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-bold text-[#004c91] break-all">
+              <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 font-normal text-[#004c91] break-all">
                 {selectedAccount.email}
               </p>
               <p>
@@ -2921,7 +2921,7 @@ export function AccountManagement() {
                 cho đến khi người nhận hoàn tất xác nhận email.
               </p>
               {resendError && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
                   {resendError}
                 </div>
               )}
@@ -3087,7 +3087,7 @@ export function AccountManagement() {
                   {((isHO && manualForm.role === 'STAFF') || (isRealAdmin && manualForm.role === 'STAFF' && createStaffSubRole === 'LEADER')) && createCampus && (
                     <div>
                       {slAvailabilityLoading ? (
-                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
+                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-normal text-gray-500">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           Đang kiểm tra Trưởng phòng IC của cơ sở...
                         </div>
@@ -3095,7 +3095,7 @@ export function AccountManagement() {
                         <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                           <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
                           <div>
-                            <p className="font-bold">Cơ sở này chưa có Trưởng phòng IC.</p>
+                            <p className="font-normal">Cơ sở này chưa có Trưởng phòng IC.</p>
                             {slAvailability.icDepartmentName && (
                               <p className="text-emerald-700 mt-0.5">Phòng ban: {slAvailability.icDepartmentName} — tự động gán.</p>
                             )}
@@ -3105,10 +3105,10 @@ export function AccountManagement() {
                         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                           <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
                           <div>
-                            <p className="font-bold leading-snug">{slAvailability.message}</p>
+                            <p className="font-normal leading-snug">{slAvailability.message}</p>
                             {slAvailability.existingLeader && (
                               <p className="mt-1 text-amber-700">
-                                <span className="font-bold">{slAvailability.existingLeader.fullName}</span>
+                                <span className="font-normal">{slAvailability.existingLeader.fullName}</span>
                                 {' — '}{slAvailability.existingLeader.email}
                                 <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">
                                   {slAvailability.existingLeader.status === 'ACTIVE' ? 'Đang hoạt động'
@@ -3128,23 +3128,23 @@ export function AccountManagement() {
                   {(isHO || isRealAdmin) && manualForm.role === 'HO' && createCampus && (
                     <div>
                       {hoCampusCheckLoading ? (
-                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-500">
+                        <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-normal text-gray-500">
                           <RefreshCw className="w-4 h-4 animate-spin" />
                           Đang kiểm tra tài khoản HO của cơ sở...
                         </div>
                       ) : hoCampusCheck && hoCampusCheck.canCreateHo ? (
                         <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                           <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                          <p className="font-bold">Cơ sở này chưa có tài khoản HO. Có thể tiếp tục tạo.</p>
+                          <p className="font-normal">Cơ sở này chưa có tài khoản HO. Có thể tiếp tục tạo.</p>
                         </div>
                       ) : hoCampusCheck ? (
                         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                           <XCircle className="w-5 h-5 shrink-0 mt-0.5 text-amber-600" />
                           <div>
-                            <p className="font-bold leading-snug">{hoCampusCheck.message}</p>
+                            <p className="font-normal leading-snug">{hoCampusCheck.message}</p>
                             {hoCampusCheck.existingHo && (
                               <p className="mt-1 text-amber-700">
-                                <span className="font-bold">{hoCampusCheck.existingHo.fullName}</span>
+                                <span className="font-normal">{hoCampusCheck.existingHo.fullName}</span>
                                 {' — '}{hoCampusCheck.existingHo.email}
                                 <span className="ml-2 inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">
                                   {hoCampusCheck.existingHo.status === 'ACTIVE' ? 'Đang hoạt động'
@@ -3226,7 +3226,7 @@ export function AccountManagement() {
                         className={createInputClass(!!createFieldErrors.fullName)}
                       />
                       {createFieldErrors.fullName && (
-                        <p id="create-full-name-error" className="mt-1.5 text-sm text-red-600 font-medium">{createFieldErrors.fullName}</p>
+                        <p id="create-full-name-error" className="mt-1.5 text-sm text-red-600 font-normal">{createFieldErrors.fullName}</p>
                       )}
                     </div>
                     <div>
@@ -3253,7 +3253,7 @@ export function AccountManagement() {
                         className={createInputClass(!!createFieldErrors.email)}
                       />
                       {createFieldErrors.email && (
-                        <p id="create-email-error" className="mt-1.5 text-sm text-red-600 font-medium">{createFieldErrors.email}</p>
+                        <p id="create-email-error" className="mt-1.5 text-sm text-red-600 font-normal">{createFieldErrors.email}</p>
                       )}
                       <p className="mt-1.5 text-xs text-gray-500">Chỉ chấp nhận @gmail.com và @fpt.edu.vn.</p>
                     </div>
@@ -3274,7 +3274,7 @@ export function AccountManagement() {
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] outline-none transition-shadow text-sm bg-white placeholder:text-slate-400 disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-not-allowed"
                         />
                         {createStudentCodeError && (
-                          <p className="mt-1.5 text-sm text-red-600 font-medium">{createStudentCodeError}</p>
+                          <p className="mt-1.5 text-sm text-red-600 font-normal">{createStudentCodeError}</p>
                         )}
                       </div>
                     )}
@@ -3285,7 +3285,7 @@ export function AccountManagement() {
             {/* Footer */}
             <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
               {createError && (
-                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+                <div className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
                   {createError}
                 </div>
               )}
@@ -3349,34 +3349,34 @@ export function AccountManagement() {
               <dl className="space-y-3 text-sm">
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Họ và tên</dt>
-                  <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.fullName}</dd>
+                  <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.fullName}</dd>
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Vai trò</dt>
-                  <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.roleDisplayName}</dd>
+                  <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.roleDisplayName}</dd>
                 </div>
                 {pendingCreateSummary.campusDisplayName && (
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Cơ sở</dt>
-                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.campusDisplayName}</dd>
+                    <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.campusDisplayName}</dd>
                   </div>
                 )}
                 {pendingCreateSummary.departmentDisplayName && (
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Phòng ban</dt>
-                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.departmentDisplayName}</dd>
+                    <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.departmentDisplayName}</dd>
                   </div>
                 )}
                 {pendingCreateSummary.studentCode && (
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Mã số sinh viên</dt>
-                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.studentCode}</dd>
+                    <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.studentCode}</dd>
                   </div>
                 )}
                 {pendingCreateSummary.phone && (
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-bold uppercase tracking-wide text-slate-500">Số điện thoại</dt>
-                    <dd className="text-slate-900 font-semibold break-words">{pendingCreateSummary.phone}</dd>
+                    <dd className="text-slate-900 font-normal break-words">{pendingCreateSummary.phone}</dd>
                   </div>
                 )}
               </dl>
@@ -3385,7 +3385,7 @@ export function AccountManagement() {
                   wraps safely, and carries a check-your-email reminder (not color alone). */}
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
                 <p className="text-xs font-black uppercase tracking-wide text-amber-700">Email đăng nhập</p>
-                <p className="mt-1.5 text-base font-bold text-[#004c91] break-words">{pendingCreateSummary.email}</p>
+                <p className="mt-1.5 text-base font-normal text-[#004c91] break-words">{pendingCreateSummary.email}</p>
                 <p className="mt-2 text-xs text-slate-600 leading-relaxed">
                   Hãy kiểm tra kỹ địa chỉ email này. Thông báo tài khoản và quyền đăng nhập sẽ được gửi tới địa chỉ trên.
                 </p>
@@ -3499,19 +3499,19 @@ export function AccountManagement() {
               <dl className="mt-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
                 <div className="flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-gray-500">Họ tên</dt>
-                  <dd className="min-w-0 break-words font-bold text-[#004c91]">{lockTarget.name || '-'}</dd>
+                  <dd className="min-w-0 break-words font-normal text-[#004c91]">{lockTarget.name || '-'}</dd>
                 </div>
                 <div className="mt-1.5 flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-gray-500">Email</dt>
-                  <dd className="min-w-0 break-all font-bold text-[#004c91]">{lockTarget.email || '-'}</dd>
+                  <dd className="min-w-0 break-all font-normal text-[#004c91]">{lockTarget.email || '-'}</dd>
                 </div>
                 <div className="mt-1.5 flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-gray-500">Vai trò</dt>
-                  <dd className="min-w-0 break-words font-medium text-gray-800">{lockTarget.roleName || lockTarget.role || '-'}</dd>
+                  <dd className="min-w-0 break-words font-normal text-gray-800">{lockTarget.roleName || lockTarget.role || '-'}</dd>
                 </div>
                 <div className="mt-1.5 flex gap-2">
                   <dt className="w-20 shrink-0 font-bold text-gray-500">Cơ sở</dt>
-                  <dd className="min-w-0 break-words font-medium text-gray-800">{lockTarget.campus || '-'}</dd>
+                  <dd className="min-w-0 break-words font-normal text-gray-800">{lockTarget.campus || '-'}</dd>
                 </div>
               </dl>
 
@@ -3591,7 +3591,7 @@ export function AccountManagement() {
               }`}
             >
               {t.type === 'success' ? <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" /> : <XCircle className="w-5 h-5 shrink-0 mt-0.5" />}
-              <span className="text-sm font-bold leading-snug">{t.msg}</span>
+              <span className="text-sm font-normal leading-snug">{t.msg}</span>
               <button
                 onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
                 className="ml-auto opacity-60 hover:opacity-100 transition-opacity outline-none"

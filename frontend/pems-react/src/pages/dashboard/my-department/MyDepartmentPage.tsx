@@ -306,10 +306,10 @@ export function MyDepartmentPage() {
           {list.isLoadingDepartment ? (
             <div className="flex items-center gap-2 text-blue-100">
               <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm font-medium">Đang tải thông tin phòng ban...</span>
+              <span className="text-sm font-normal">Đang tải thông tin phòng ban...</span>
             </div>
           ) : list.departmentError ? (
-            <p className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-red-700">
+            <p className="rounded-xl bg-white px-4 py-3 text-sm font-normal text-red-700">
               {list.departmentError}
             </p>
           ) : (
@@ -323,7 +323,7 @@ export function MyDepartmentPage() {
                       </span>
                       {department.departmentName}
                     </h1>
-                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-sm font-medium text-blue-100">
+                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1.5 text-sm font-normal text-blue-100">
                       <span className="flex items-center gap-1.5">
                         <MapPin className="h-4 w-4 text-blue-200" />
                         {department.campusName}
@@ -499,7 +499,7 @@ export function MyDepartmentPage() {
                     <td className="px-4 py-3.5">
                       <PersonnelStatusBadge status={row.status} />
                     </td>
-                    <td className="px-4 py-3.5 font-medium text-gray-600">{row.position}</td>
+                    <td className="px-4 py-3.5 font-normal text-gray-600">{row.position}</td>
                     <td className="px-4 py-3.5 pr-6">
                       <div className="flex items-center justify-end gap-2">
                         {row.canView && (
@@ -553,7 +553,7 @@ export function MyDepartmentPage() {
         {/* Pagination */}
         {page && page.totalItems > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/60 px-6 py-4 text-sm">
-            <div className="flex items-center gap-2 font-medium text-gray-500">
+            <div className="flex items-center gap-2 font-normal text-gray-500">
               <span>Hiển thị</span>
               <div className="relative">
                 <select
@@ -570,8 +570,8 @@ export function MyDepartmentPage() {
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               </div>
               <span>
-                / <strong className="font-bold text-[#004c91]">{page.totalItems}</strong> nhân sự — trang{' '}
-                <strong className="font-bold text-[#004c91]">{page.page}</strong>/{page.totalPages}
+                / <strong className="font-normal text-[#004c91]">{page.totalItems}</strong> nhân sự — trang{' '}
+                <strong className="font-normal text-[#004c91]">{page.page}</strong>/{page.totalPages}
               </span>
             </div>
 

@@ -146,7 +146,7 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
     const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
       <div className="flex gap-1.5 text-sm">
         <dt className="text-slate-500 shrink-0">{label}:</dt>
-        <dd className="font-semibold text-slate-800 min-w-0 break-words">{value}</dd>
+        <dd className="font-normal text-slate-800 min-w-0 break-words">{value}</dd>
       </div>
     );
 
@@ -243,12 +243,12 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             {isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center">
                 <Loader2 className="w-10 h-10 text-[#004c91] animate-spin mb-4" />
-                <p className="text-slate-500 font-medium">Đang tải chi tiết tài liệu...</p>
+                <p className="text-slate-500 font-normal">Đang tải chi tiết tài liệu...</p>
               </div>
             ) : isError || !detail ? (
               <div className="flex-1 flex flex-col items-center justify-center">
                 <FileText className="w-12 h-12 text-slate-300 mb-4" />
-                <p className="text-red-500 font-medium">Không thể tải chi tiết tài liệu hoặc không có quyền truy cập.</p>
+                <p className="text-red-500 font-normal">Không thể tải chi tiết tài liệu hoặc không có quyền truy cập.</p>
                 <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-100 rounded-lg text-slate-700 font-medium hover:bg-slate-200">Đóng</button>
               </div>
             ) : (
@@ -295,16 +295,16 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Thông tin tài liệu</p>
                         <dl className="space-y-1 text-sm">
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tên tài liệu:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.document.title}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Loại:</dt><dd className="font-semibold text-slate-800">{formatDocumentType(detail.document.ownerType)}{detail.document.documentCategory ? ` · ${detail.document.documentCategory}` : ''}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{formatDocumentStatus(detail.document.status)}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">File:</dt><dd className="font-semibold text-slate-800 min-w-0 break-words">{detail.file.originalFilename}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Dung lượng:</dt><dd className="font-semibold text-slate-800">{detail.file.fileSize ? formatFileSize(detail.file.fileSize) : 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Google Drive:</dt><dd className="font-semibold text-slate-800">{previewUrl ? 'Có liên kết hợp lệ' : 'Chưa có liên kết hợp lệ'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Loại:</dt><dd className="font-normal text-slate-800">{formatDocumentType(detail.document.ownerType)}{detail.document.documentCategory ? ` · ${detail.document.documentCategory}` : ''}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-normal text-slate-800">{formatDocumentStatus(detail.document.status)}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">File:</dt><dd className="font-normal text-slate-800 min-w-0 break-words">{detail.file.originalFilename}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Dung lượng:</dt><dd className="font-normal text-slate-800">{detail.file.fileSize ? formatFileSize(detail.file.fileSize) : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Google Drive:</dt><dd className="font-normal text-slate-800">{previewUrl ? 'Có liên kết hợp lệ' : 'Chưa có liên kết hợp lệ'}</dd></div>
                           {detail.document.description && (
                             <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Mô tả:</dt><dd className="text-slate-700 min-w-0 break-words">{detail.document.description}</dd></div>
                           )}
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tạo bởi:</dt><dd className="font-semibold text-slate-800">{detail.createdByUser?.fullName || 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Cập nhật:</dt><dd className="font-semibold text-slate-800">{detail.document.updatedAt ? formatVietnamDateTime(detail.document.updatedAt) : 'Chưa cập nhật'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Tạo bởi:</dt><dd className="font-normal text-slate-800">{detail.createdByUser?.fullName || 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Cập nhật:</dt><dd className="font-normal text-slate-800">{detail.document.updatedAt ? formatVietnamDateTime(detail.document.updatedAt) : 'Chưa cập nhật'}</dd></div>
                         </dl>
                       </div>
 

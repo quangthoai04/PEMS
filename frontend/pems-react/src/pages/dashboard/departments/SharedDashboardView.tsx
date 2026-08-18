@@ -188,7 +188,7 @@ function InfoLine({ icon: Icon, label, value, emphasize }: { icon: React.Element
       <Icon className="w-3.5 h-3.5 text-gray-400 mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block leading-none mb-0.5">{label}</span>
-        <span className={emphasize ? 'text-sm font-black text-[#004c91]' : 'text-sm font-semibold text-gray-800'}>{value}</span>
+        <span className={emphasize ? 'text-sm font-black text-[#004c91]' : 'text-sm font-normal text-gray-800'}>{value}</span>
       </div>
     </div>
   );
@@ -1547,7 +1547,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
     <div className="space-y-5">
       {focusVisitRequestId && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3">
-          <p className="text-sm font-bold text-[#004c91]">
+          <p className="text-sm font-normal text-[#004c91]">
             Đang lọc theo đơn/thư vừa chọn từ thông báo ({assignmentItems.length} mục).
           </p>
           <button
@@ -1570,7 +1570,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               <div key={`${item.itemType}_${item.itemId}`} className="flex items-center justify-between gap-3 bg-white/80 border border-orange-100 rounded-xl px-3 py-2">
                 <div className="min-w-0">
                   <p className="text-xs font-black text-slate-850 truncate">{item.delegationName} - {item.title}</p>
-                  <p className="text-[11px] text-orange-700 font-semibold">{item.attentionReason || item.statusLabel}</p>
+                  <p className="text-[11px] text-orange-700 font-normal">{item.attentionReason || item.statusLabel}</p>
                 </div>
                 <button
                   type="button"
@@ -1656,7 +1656,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             <tbody className="divide-y divide-slate-100">
               {assignmentItems.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-semibold text-slate-400">Không có dữ liệu phù hợp</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm font-normal text-slate-400">Không có dữ liệu phù hợp</td>
                 </tr>
               )}
               {assignmentItems.map((item, index) => (
@@ -1664,12 +1664,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   <td className="px-4 py-5 text-center text-xs font-extrabold text-slate-500">{index + 1}</td>
                   <td className="px-7 py-5">
                     <p className="text-sm font-black text-slate-900 line-clamp-2">{item.delegationName}</p>
-                    <p className="text-[11px] text-slate-450 font-semibold">{item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'} {item.requestCode ? `• ${item.requestCode}` : ''}</p>
+                    <p className="text-[11px] text-slate-450 font-normal">{item.itemType === 'INVITATION' ? 'Thư mời' : 'Đơn yêu cầu'} {item.requestCode ? `• ${item.requestCode}` : ''}</p>
                   </td>
                   <td className="px-5 py-5 max-w-[280px]">
-                    <p className="text-sm font-bold text-slate-800 line-clamp-2" title={item.title}>{item.title}</p>
+                    <p className="text-sm font-normal text-slate-800 line-clamp-2" title={item.title}>{item.title}</p>
                   </td>
-                  <td className="px-5 py-5 text-xs text-slate-600 font-semibold whitespace-nowrap">
+                  <td className="px-5 py-5 text-xs text-slate-600 font-normal whitespace-nowrap">
                     {(() => {
                       const sd = item.startAt ? toVietnamCalendarDate(item.startAt) : null;
                       const ed = item.endAt ? toVietnamCalendarDate(item.endAt) : null;
@@ -1689,18 +1689,18 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   <td className="px-5 py-5 text-sm text-[#004c91] text-center">
                     {item.currentResponsibleName ? (
                       <div>
-                        <p className="font-black">{item.currentResponsibleName}</p>
-                        {item.currentResponsibleRole && <p className="text-[11px] font-semibold text-slate-500">{item.currentResponsibleRole}</p>}
+                        <p className="font-normal">{item.currentResponsibleName}</p>
+                        {item.currentResponsibleRole && <p className="text-[11px] font-normal text-slate-500">{item.currentResponsibleRole}</p>}
                       </div>
                     ) : (item.uiStatus === 'DECLINED' || item.uiStatus === 'REJECTED') ? (
                       <div>
-                        <p className="font-black text-rose-600">{item.latestDeclinedByName || (item.isActedByCurrentUser ? user?.name : 'Trưởng phòng')}</p>
-                        <p className="text-[11px] font-semibold text-rose-500">{item.latestDeclinedByName ? 'Nhân viên' : 'Trưởng phòng'}</p>
+                        <p className="font-normal text-rose-600">{item.latestDeclinedByName || (item.isActedByCurrentUser ? user?.name : 'Trưởng phòng')}</p>
+                        <p className="text-[11px] font-normal text-rose-500">{item.latestDeclinedByName ? 'Nhân viên' : 'Trưởng phòng'}</p>
                       </div>
                     ) : (
                       item.uiStatus === 'REQUESTED'
-                        ? <span className="text-slate-400 font-semibold text-xs">Chưa phân công</span>
-                        : <span className="text-rose-400 font-semibold text-xs">—</span>
+                        ? <span className="text-slate-400 font-normal text-xs">Chưa phân công</span>
+                        : <span className="text-rose-400 font-normal text-xs">—</span>
                     )}
                     {canShowChangeResponsible(item) && (
                       <button
@@ -1727,7 +1727,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   </td>
                   <td className="px-5 py-5 text-center">
                     {item.uiStatus === 'CANCELLED' ? (
-                      <span className="text-[11px] font-bold text-slate-500">
+                      <span className="text-[11px] font-normal text-slate-500">
                         Đơn đã hủy vì đoàn khách đã hủy{item.cancelReason ? `: ${item.cancelReason}` : ''}
                       </span>
                     ) : (
@@ -1767,7 +1767,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             </tbody>
           </table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 text-xs font-bold text-slate-500">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 text-xs font-normal text-slate-500">
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-500 font-semibold">Hiển thị:</span>
             <select
@@ -1794,7 +1794,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             >
               Trước
             </button>
-            <span className="px-3 py-2 rounded-xl bg-[#004c91] text-white">
+            <span className="px-3 py-2 rounded-xl bg-[#004c91] text-white font-semibold">
               {assignmentPage} / {Math.max(1, Math.ceil(assignmentTotal / assignmentPageSize))}
             </span>
             <button
@@ -1831,7 +1831,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             </div>
             <div className="max-h-[360px] overflow-y-auto py-2">
               {filteredCandidates.length === 0 ? (
-                <div className="px-5 py-8 text-center text-sm font-semibold text-slate-400">Không có nhân sự phù hợp</div>
+                <div className="px-5 py-8 text-center text-sm font-normal text-slate-400">Không có nhân sự phù hợp</div>
               ) : filteredCandidates.map((staff) => {
                 const staffConflict = getCandidateConflict(staff.id || staff.userId);
                 return (
@@ -1852,9 +1852,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                   >
                     <div className="min-w-0">
                       <p className="text-sm font-black text-slate-800 truncate">{staff.name}</p>
-                      <p className="text-xs font-medium text-slate-500 truncate">{staff.email}</p>
+                      <p className="text-xs font-normal text-slate-500 truncate">{staff.email}</p>
                       {staffConflict && (
-                        <p className="text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                        <p className="text-[11px] font-normal text-red-600 mt-1 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
                           Bị trùng thời gian ({staffConflict.time} - {staffConflict.title})
                         </p>
@@ -2065,7 +2065,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             </div>
 
             {/* Chú thích màu sắc ngang hàng bên phải */}
-            <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
+            <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-normal text-slate-600">
               {calendarType === 'Trong văn phòng' ? (
                 <>
                   <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />Cần xử lý</span>
@@ -2324,7 +2324,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             return `${parts[2]}/${parts[1]}/${parts[0]}`;
                           })()}
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1 font-medium">Báo cáo hậu cần nội bộ trực tiếp cho điều phối viên</p>
+                        <p className="text-xs text-slate-500 mt-1 font-normal">Báo cáo hậu cần nội bộ trực tiếp cho điều phối viên</p>
                       </div>
 
                       <button
@@ -2345,7 +2345,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <CalendarIcon className="w-7 h-7" />
                             </div>
                             <h4 className="text-xs font-black text-slate-700">Không có sự kiện hậu cần nào</h4>
-                            <p className="text-[11px] text-slate-400 mt-1 max-w-xs font-medium">
+                            <p className="text-[11px] text-slate-400 mt-1 max-w-xs font-normal">
                               Ngày này hiện chưa có chương trình đón tiếp hay cuộc họp quốc tế nào được thiết lập.
                             </p>
                           </div>
@@ -2381,12 +2381,12 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                       </span>
                                     )}
                                   </div>
-                                  <span className="text-[11px] font-bold opacity-80">{ev.time}</span>
+                                  <span className="text-[11px] font-normal opacity-80">{ev.time}</span>
                                 </div>
 
-                                <h4 className={`text-sm font-medium mt-2 leading-snug ${ev.status === 'CANCELLED' ? 'line-through' : ''}`}>{ev.title}</h4>
+                                <h4 className={`text-sm font-normal mt-2 leading-snug ${ev.status === 'CANCELLED' ? 'line-through' : ''}`}>{ev.title}</h4>
 
-                                <div className="mt-3.5 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-medium opacity-90 border-t border-current/10 pt-2.5">
+                                <div className="mt-3.5 grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-normal opacity-90 border-t border-current/10 pt-2.5">
                                   <div className="flex items-center gap-1.5">
                                     <MapPin className="w-3.5 h-3.5 shrink-0 text-[#f37021]" />
                                     <span className="truncate">{ev.location}</span>
@@ -2586,7 +2586,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div>
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Mục đích đón tiếp & Nội dung làm việc</span>
-                            <p className="font-bold text-slate-700 mt-0.5 leading-relaxed">{activePopoverEvent.purpose}</p>
+                            <p className="font-normal text-slate-700 mt-0.5 leading-relaxed">{activePopoverEvent.purpose}</p>
                           </div>
                         </div>
                       )}
@@ -2598,14 +2598,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         <div>
                           <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Ngày & Giờ diễn ra</span>
-                          <p className="font-bold text-slate-700 mt-0.5 leading-relaxed">
+                          <p className="font-normal text-slate-700 mt-0.5 leading-relaxed">
                             {(() => {
                               const d = parseDateKey(activePopoverEvent.date);
                               const weekdays = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
                               return `${weekdays[d.getDay() || 0]}, ngày ${d.getDate()} tháng ${d.getMonth() + 1} năm ${d.getFullYear()}`;
                             })()}
                           </p>
-                          <p className="font-bold text-[#f37021] mt-0.5">{activePopoverEvent.time}</p>
+                          <p className="font-normal text-[#f37021] mt-0.5">{activePopoverEvent.time}</p>
                         </div>
                       </div>
 
@@ -2616,7 +2616,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         <div>
                           <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Địa điểm & Vị trí tổ chức</span>
-                          <p className="font-bold text-slate-700 mt-0.5 leading-normal">{activePopoverEvent.location}</p>
+                          <p className="font-normal text-slate-700 mt-0.5 leading-normal">{activePopoverEvent.location}</p>
                         </div>
                       </div>
 
@@ -2628,7 +2628,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div>
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Xe công vụ & Đưa đón</span>
-                            <p className="font-semibold text-slate-650 mt-1 leading-relaxed">{activePopoverEvent.carBooking}</p>
+                            <p className="font-normal text-slate-650 mt-1 leading-relaxed">{activePopoverEvent.carBooking}</p>
                           </div>
                         </div>
                       )}
@@ -2655,7 +2655,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         <div>
                           <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Bộ phận FPTU chủ trì / Host</span>
-                          <p className="font-bold text-slate-700 mt-0.5 leading-normal">{activePopoverEvent.host}</p>
+                          <p className="font-normal text-slate-700 mt-0.5 leading-normal">{activePopoverEvent.host}</p>
                         </div>
                       </div>
 
@@ -2667,7 +2667,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div>
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Cán bộ điều phối liên hệ</span>
-                            <p className="font-bold text-emerald-700 mt-0.5">{activePopoverEvent.coordinatorName}</p>
+                            <p className="font-normal text-emerald-700 mt-0.5">{activePopoverEvent.coordinatorName}</p>
                           </div>
                         </div>
                       )}
@@ -2680,7 +2680,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div>
                             <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Khách sạn lưu trú đoàn khách</span>
-                            <p className="font-semibold text-slate-650 mt-1 leading-relaxed">{activePopoverEvent.hotelInfo}</p>
+                            <p className="font-normal text-slate-650 mt-1 leading-relaxed">{activePopoverEvent.hotelInfo}</p>
                           </div>
                         </div>
                       )}
@@ -2692,7 +2692,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         <div>
                           <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Chi tiết đoàn khách đối tác</span>
-                          <p className="font-bold text-slate-700 mt-0.5 leading-relaxed">{activePopoverEvent.guests}</p>
+                          <p className="font-normal text-slate-700 mt-0.5 leading-relaxed">{activePopoverEvent.guests}</p>
                         </div>
                       </div>
 
@@ -2702,7 +2702,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <span className="text-[10px] font-extrabold text-[#f37021] uppercase tracking-widest block">
                             ✔ Checklist nhiệm vụ hậu cần:
                           </span>
-                          <ul className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200/60 font-medium text-slate-650">
+                          <ul className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200/60 font-normal text-slate-650">
                             {activePopoverEvent.checklist.map((item, idx) => (
                               <li key={idx} className="flex items-start gap-2">
                                 <CheckSquare className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
@@ -2718,7 +2718,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 ) : (
                   <div className="bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 p-6 text-center text-slate-400">
                     <Info className="w-8 h-8 mx-auto text-slate-350 mb-2" />
-                    <p className="text-xs font-bold">Vui lòng chọn bất kỳ sự kiện nào trên lịch để rà soát chi tiết hậu cần & thao tác.</p>
+                    <p className="text-xs font-normal">Vui lòng chọn bất kỳ sự kiện nào trên lịch để rà soát chi tiết hậu cần & thao tác.</p>
                   </div>
                 )}
 
@@ -2728,7 +2728,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <h3 className="text-sm font-extrabold text-[#004c91] uppercase tracking-wider">
                       Các mốc sự kiện trong {monthNames[currentMonth]} năm {currentYear}
                     </h3>
-                    <p className="text-[10px] text-slate-400 mt-0.5 font-semibold">Tự động tập hợp dựa trên lịch học & phái đoàn đã khởi tạo</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 font-normal">Tự động tập hợp dựa trên lịch học & phái đoàn đã khởi tạo</p>
                   </div>
 
                   <div className="space-y-2.5 max-h-[360px] overflow-y-auto no-scrollbar pr-0.5">
@@ -2768,7 +2768,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 }`}>
                                 {ev.category}
                               </span>
-                              <span className="text-[10px] font-bold text-[#f37021]">
+                              <span className="text-[10px] font-normal text-[#f37021]">
                                 {ev.time}
                               </span>
                             </div>
@@ -2777,9 +2777,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               {ev.title}
                             </h4>
 
-                            <div className="flex items-center justify-between text-[10px] font-extrabold text-slate-450 border-t border-slate-100 pt-1.5 mt-1.5">
-                              <span className="text-slate-500 font-extrabold">Ngày {displayDayNum} {monthNames[currentMonth]}</span>
-                              <span className="text-slate-400 font-medium truncate max-w-[110px]">{ev.location}</span>
+                            <div className="flex items-center justify-between text-[10px] font-normal text-slate-450 border-t border-slate-100 pt-1.5 mt-1.5">
+                              <span className="text-slate-500 font-normal">Ngày {displayDayNum} {monthNames[currentMonth]}</span>
+                              <span className="text-slate-400 font-normal truncate max-w-[110px]">{ev.location}</span>
                             </div>
                           </div>
                         );
@@ -2981,7 +2981,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
                   />
                 </div>
-                {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+                {personalEventModal.error && <p className="text-red-500 text-xs font-normal">{personalEventModal.error}</p>}
                 <div className="flex justify-between items-center pt-3 border-t border-slate-100">
                   <button
                     type="button"
@@ -3072,7 +3072,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     <h3 className={`font-extrabold tracking-tight text-white leading-tight font-sans ${activePopoverEvent.category === 'Lời mời tham gia' || (activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending') ? 'text-xl md:text-3xl' : 'text-base md:text-lg'}`}>
                       {activePopoverEvent.category === 'Lời mời tham gia' ? 'Chi tiết thư mời' : activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending' ? 'Thông tin chi tiết' : activePopoverEvent.title}
                     </h3>
-                    <p className={`text-white/80 mt-1 ${activePopoverEvent.category === 'Lời mời tham gia' ? 'text-sm font-medium' : 'text-[11px] mt-0.5'}`}>
+                    <p className={`text-white/80 mt-1 ${activePopoverEvent.category === 'Lời mời tham gia' ? 'text-sm font-normal' : 'text-[11px] mt-0.5'}`}>
                       {activePopoverEvent.category === 'Lời mời tham gia'
                         ? 'Thông tin sự kiện'
                         : activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'pending'
@@ -3153,23 +3153,23 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-xl text-xs">
                             <div>
                               <p className="text-slate-500 mb-1">Họ và tên</p>
-                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
+                              <p className="font-normal text-slate-800">{activeEventDetail?.registrantFullName || 'N/A'}</p>
                             </div>
                             <div>
                               <p className="text-slate-500 mb-1">Email</p>
-                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
+                              <p className="font-normal text-slate-800">{activeEventDetail?.registrantEmail || 'N/A'}</p>
                             </div>
                             <div>
                               <p className="text-slate-500 mb-1">Đơn vị công tác</p>
-                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
+                              <p className="font-normal text-slate-800">{activeEventDetail?.registrantOrganization || 'N/A'}</p>
                             </div>
                             <div>
                               <p className="text-slate-500 mb-1">Chức danh</p>
-                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
+                              <p className="font-normal text-slate-800">{activeEventDetail?.registrantJobTitle || 'N/A'}</p>
                             </div>
                             <div>
                               <p className="text-slate-500 mb-1">Số điện thoại (SĐT)</p>
-                              <p className="font-bold text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
+                              <p className="font-normal text-slate-800">{activeEventDetail?.registrantPhone || 'N/A'}</p>
                             </div>
                           </div>
                         </div>
@@ -3185,28 +3185,28 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl text-xs mb-4">
                           <div>
                             <p className="text-slate-500 mb-1">Tên đoàn</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.delegationName || 'N/A'}</p>
+                            <p className="font-normal text-slate-800">{activeEventDetail?.delegationName || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 mb-1">Cơ sở đón tiếp</p>
-                            <p className="font-bold text-slate-800">{activePopoverEvent?.location || 'Hòa Lạc'}</p>
+                            <p className="font-normal text-slate-800">{activePopoverEvent?.location || 'Hòa Lạc'}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 mb-1">Ngày bắt đầu</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.date || 'N/A'}</p>
+                            <p className="font-normal text-slate-800">{activeEventDetail?.date || 'N/A'}</p>
                           </div>
                           <div>
                             <p className="text-slate-500 mb-1">Thời gian</p>
-                            <p className="font-bold text-slate-800">{activeEventDetail?.startTime} - {activeEventDetail?.endTime}</p>
+                            <p className="font-normal text-slate-800">{activeEventDetail?.startTime} - {activeEventDetail?.endTime}</p>
                           </div>
                         </div>
                         <div className="space-y-3 bg-slate-50 p-4 rounded-xl text-xs">
                           <div>
-                            <p className="text-slate-500 mb-1 font-bold">Mục đích thăm</p>
+                            <p className="text-slate-500 mb-1 font-normal">Mục đích thăm</p>
                             <p className="text-slate-800">{activeEventDetail?.purpose || 'Không có'}</p>
                           </div>
                           <div>
-                            <p className="text-slate-500 mb-1 font-bold">Nội dung làm việc</p>
+                            <p className="text-slate-500 mb-1 font-normal">Nội dung làm việc</p>
                             <p className="text-slate-800">{activeEventDetail?.workingContent || 'Không có'}</p>
                           </div>
                           {/* The guest's own remark about THIS campus — dietary needs, accessibility,
@@ -3214,7 +3214,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               any of the logistics item's note columns, so it gets its own row and is
                               never folded into them. Always shown, like the two blocks above. */}
                           <div>
-                            <p className="text-slate-500 mb-1 font-bold">Ghi chú gửi FPTU</p>
+                            <p className="text-slate-500 mb-1 font-normal">Ghi chú gửi FPTU</p>
                             <p className="text-slate-800 whitespace-pre-line">{activeEventDetail?.notesToFptu || 'Không có'}</p>
                           </div>
                         </div>
@@ -3236,7 +3236,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <User className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
                         </div>
-                        <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
+                        <div className="text-sm font-normal text-[#004c91]">{activePopoverEvent.host}</div>
                       </div>
 
                       <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
@@ -3246,7 +3246,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         </div>
                         {/* InvitationDetailDto.InvitedAt (visit_participants.invited_at) — NOT requestedAt,
                             which only exists on the logistics-request DTO below. */}
-                        <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.invitedAt)}</div>
+                        <div className="text-sm font-normal text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.invitedAt)}</div>
                       </div>
 
                       <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default flex flex-col justify-center">
@@ -3264,11 +3264,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <Calendar className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian diễn ra</span>
                         </div>
-                        <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                        <div className="text-[15px] font-normal text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
                           <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
                           <ChevronRight className="w-4 h-4 text-gray-400" />
                           <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
-                          <span className="text-[#004c91] font-bold ml-1">{activePopoverEvent.date?.split('-').reverse().join('-')}</span>
+                          <span className="text-[#004c91] font-normal ml-1">{activePopoverEvent.date?.split('-').reverse().join('-')}</span>
                         </div>
                       </div>
 
@@ -3279,9 +3279,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <FileText className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung</span>
                       </div>
-                      <div className="text-[15px] font-medium text-gray-700 leading-relaxed transition-all relative">
+                      <div className="text-[15px] font-normal text-gray-700 leading-relaxed transition-all relative">
                         {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line, idx) => (
-                          <p key={idx} className={idx > 0 && line.startsWith('Vui lòng') ? 'mt-4 font-bold text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
+                          <p key={idx} className={idx > 0 && line.startsWith('Vui lòng') ? 'mt-4 font-normal text-gray-900 border-l-2 border-[#004c91] pl-3 py-1 bg-blue-50/50' : 'mb-2'}>
                             {line}
                           </p>
                         ))}
@@ -3348,7 +3348,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           {rejectSignature && (
                             <div className="bg-red-100/50 px-3 py-1.5 rounded-lg inline-block self-start sm:ml-8">
-                              <span className="text-red-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                              <span className="text-red-800 text-[11px] font-normal flex flex-col sm:flex-row sm:items-center sm:gap-1">
                                 <span>bởi: <span className="font-bold">{rejectSignature.name}</span></span>
                                 <span className="hidden sm:inline">-</span>
                                 <span>{rejectSignature.time}</span>
@@ -3370,7 +3370,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           <div className="border-t border-blue-100 pt-3">
                             <div className="flex flex-col">
-                              <span className="text-xs text-slate-500 font-medium">Xác nhận bởi: <span className="font-extrabold text-[#004c91]">{acceptSignature.name}</span></span>
+                              <span className="text-xs text-slate-500 font-normal">Xác nhận bởi: <span className="font-extrabold text-[#004c91]">{acceptSignature.name}</span></span>
                               <span className="text-[10px] text-slate-400 font-mono mt-0.5">{acceptSignature.time}</span>
                             </div>
                           </div>
@@ -3384,7 +3384,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                           <div className="flex-1">
                             <span className="text-blue-800 font-bold text-sm block mb-1">Đã ủy quyền nhiệm vụ</span>
-                            <span className="text-blue-600/80 text-xs font-medium block">Người phụ trách hiện tại: <span className="font-extrabold">{assignedPerson}</span></span>
+                            <span className="text-blue-600/80 text-xs font-normal block">Người phụ trách hiện tại: <span className="font-extrabold">{assignedPerson}</span></span>
                           </div>
                         </div>
                       </div>
@@ -3394,10 +3394,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     {invitationStatus === 'pending' && (
                       <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                         {isDeptLeader && leaderSelfConflict && (
-                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-start gap-2 shadow-xs">
+                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-normal flex items-start gap-2 shadow-xs">
                             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                             <div>
-                              <p className="font-black">Thư/đơn này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
+                              <p className="font-normal">Thư/đơn này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
                               <p className="text-[11px] font-normal text-red-600 mt-0.5">Trùng với: {leaderSelfConflict.title}</p>
                             </div>
                           </div>
@@ -3455,7 +3455,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-xl shadow-[0_8px_30px_-4px_rgba(0,0,0,0.1)] z-50 overflow-hidden">
                                 <div className="py-2">
                                   {filteredCandidates.length === 0 ? (
-                                    <div className="px-4 py-3 text-xs text-slate-400 text-center font-medium">Không có nhân sự phòng ban</div>
+                                    <div className="px-4 py-3 text-xs text-slate-400 text-center font-normal">Không có nhân sự phòng ban</div>
                                   ) : filteredCandidates.map((staff) => {
                                     const staffConflict = getCandidateConflict(staff.id || staff.userId);
                                     return (
@@ -3484,9 +3484,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                       >
                                         <div>
                                           <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
-                                          <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
+                                          <span className="block text-xs font-normal text-slate-500 mt-0.5">{staff.email}</span>
                                           {staffConflict && (
-                                            <span className="block text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                            <span className="block text-[11px] font-normal text-red-600 mt-1 flex items-center gap-1">
                                               <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
                                               Trùng thời gian ({staffConflict.time} - {staffConflict.title})
                                             </span>
@@ -3522,7 +3522,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <User className="w-4 h-4" />
                               <span className="text-[11px] font-bold uppercase tracking-wider">Người gửi</span>
                             </div>
-                            <div className="text-sm font-black text-[#004c91]">{activePopoverEvent.host}</div>
+                            <div className="text-sm font-normal text-[#004c91]">{activePopoverEvent.host}</div>
                           </div>
 
                           <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
@@ -3530,7 +3530,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <Clock className="w-4 h-4" />
                               <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian gửi</span>
                             </div>
-                            <div className="text-sm font-black text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
+                            <div className="text-sm font-normal text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.requestedAt)}</div>
                           </div>
 
                           {activePopoverEvent.guests && (
@@ -3553,7 +3553,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                     <FileText className="w-4 h-4" />
                                     <span className="text-[11px] font-bold uppercase tracking-wider">Tiêu đề</span>
                                   </div>
-                                  <div className="text-sm font-black text-[#004c91]">{activeEventDetail?.title || activePopoverEvent?.title}</div>
+                                  <div className="text-sm font-normal text-[#004c91]">{activeEventDetail?.title || activePopoverEvent?.title}</div>
                                 </div>
                               )}
                               {activeEventDetail?.quantity != null && (
@@ -3562,7 +3562,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                     <FileText className="w-4 h-4" />
                                     <span className="text-[11px] font-bold uppercase tracking-wider">Số lượng</span>
                                   </div>
-                                  <div className="text-sm font-black text-[#004c91]">{finalQuantityDisplay}</div>
+                                  <div className="text-sm font-normal text-[#004c91]">{finalQuantityDisplay}</div>
                                 </div>
                               )}
                             </div>
@@ -3573,7 +3573,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <Calendar className="w-4 h-4" />
                               <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian sử dụng</span>
                             </div>
-                            <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                            <div className="text-[15px] font-normal text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
                               {isMultiDay ? (
                                 <>
                                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{formatDateTimeDisplay(activeEventDetail?.usageStartAt)}</span>
@@ -3585,7 +3585,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
                                   <ChevronRight className="w-4 h-4 text-gray-400" />
                                   <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
-                                  <span className="text-sm text-[#004c91] ml-2 font-black">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
+                                  <span className="text-sm text-[#004c91] ml-2 font-normal">{activePopoverEvent.date.split('-').reverse().join('-')}</span>
                                 </>
                               )}
                             </div>
@@ -3602,7 +3602,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
                           </div>
                           <div className="p-6 bg-[#f8fafc] rounded-2xl border border-gray-200 transition-all relative">
-                            <LogisticsWorkContent detail={activeEventDetail} className="text-[15px] font-medium text-gray-700" />
+                            <LogisticsWorkContent detail={activeEventDetail} className="text-[15px] font-normal text-gray-700" />
                           </div>
                         </div>
 
@@ -3626,7 +3626,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 <span className="font-extrabold text-sm uppercase tracking-wider">Chờ xác nhận (Đề xuất thay đổi)</span>
                               </div>
                               <div className="bg-black/15 px-4 py-1.5 rounded-full inline-block">
-                                <span className="text-white/95 text-xs font-medium">
+                                <span className="text-white/95 text-xs font-normal">
                                   bởi: {activeEventDetail?.proposedByName || user?.name || 'Người xử lý'}
                                   {activeEventDetail?.proposedByRole ? ` - ${activeEventDetail.proposedByRole}` : ''}
                                   {' - '}
@@ -3696,7 +3696,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                 className={`w-full text-sm px-3 py-2 border rounded-lg outline-none bg-white font-normal text-slate-800 ${quantityTooHigh ? 'border-red-400 focus:border-red-500 ring-1 ring-red-200' : 'border-orange-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-200'}`}
                               />
                               {quantityTooHigh && (
-                                <p className="mt-1 text-[11px] font-semibold text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({activeEventDetail.quantity}).</p>
+                                <p className="mt-1 text-[11px] font-normal text-red-600">Số lượng đề xuất phải nhỏ hơn số lượng dự kiến ({activeEventDetail.quantity}).</p>
                               )}
                             </div>
 
@@ -3897,7 +3897,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           </div>
                           {requestRejectSignature && (
                             <div className="bg-red-100/50 px-3 py-1.5 rounded-lg inline-block self-start sm:ml-8">
-                              <span className="text-red-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                              <span className="text-red-800 text-[11px] font-normal flex flex-col sm:flex-row sm:items-center sm:gap-1">
                                 <span>bởi: <span className="font-bold">{requestRejectSignature.name}</span></span>
                                 <span className="hidden sm:inline">-</span>
                                 <span>{requestRejectSignature.time}</span>
@@ -3911,10 +3911,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     {(requestStatus === 'pending' || requestStatus === 'accepted' || requestStatus === 'assigned' || requestStatus === 'awaiting-reassign') && !isProposing && !proposalSubmitted && (
                       <div className="flex gap-4 pt-6 mt-6 border-t border-gray-100 flex-col relative z-10 w-full animate-fade-in-quick">
                         {isDeptLeader && leaderSelfConflict && requestStatus === 'pending' && (
-                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-start gap-2 shadow-xs">
+                          <div className="mb-2 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-normal flex items-start gap-2 shadow-xs">
                             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                             <div>
-                              <p className="font-black">Đơn/thư này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
+                              <p className="font-normal">Đơn/thư này đã trùng thời gian của bạn ({leaderSelfConflict.time}). Hãy phân công cho nhân sự!</p>
                               <p className="text-[11px] font-normal text-red-600 mt-0.5">Trùng với: {leaderSelfConflict.title}</p>
                             </div>
                           </div>
@@ -3967,14 +3967,14 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <span className="text-green-800 font-bold text-sm block mb-2">Đã xác nhận nhiệm vụ</span>
                               {requestAcceptSignature && (
                                 <div className="bg-green-100/50 px-3 py-1.5 rounded-lg inline-block w-full sm:w-auto mb-2">
-                                  <span className="text-green-800 text-[11px] font-medium flex flex-col sm:flex-row sm:items-center sm:gap-1">
+                                  <span className="text-green-800 text-[11px] font-normal flex flex-col sm:flex-row sm:items-center sm:gap-1">
                                     <span>bởi: <span className="font-bold">{requestAcceptSignature.name}</span></span>
                                     <span className="hidden sm:inline">-</span>
                                     <span>{requestAcceptSignature.time}</span>
                                   </span>
                                 </div>
                               )}
-                              <span className="text-green-600/80 text-xs font-medium block">Bên dưới là biên bản bàn giao &amp; nghiệm thu.</span>
+                              <span className="text-green-600/80 text-xs font-normal block">Bên dưới là biên bản bàn giao &amp; nghiệm thu.</span>
                             </div>
                           </div>
                         )}
@@ -3984,7 +3984,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                             <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                             <div className="flex-1">
                               <span className="text-blue-800 font-bold text-sm block mb-1">Đã phân công người phụ trách</span>
-                              <span className="text-blue-600/80 text-xs font-medium block">Đang chờ nhân viên xác nhận: <span className="font-extrabold">{assignedPerson}</span></span>
+                              <span className="text-blue-600/80 text-xs font-normal block">Đang chờ nhân viên xác nhận: <span className="font-extrabold">{assignedPerson}</span></span>
                             </div>
                           </div>
                         )}
@@ -4003,7 +4003,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                               <div className="absolute bottom-full mb-2 left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-[0_-8px_30px_-4px_rgba(0,0,0,0.1)] z-50 overflow-hidden">
                                 <div className="py-2">
                                   {filteredCandidates.length === 0 ? (
-                                    <div className="px-4 py-3 text-xs text-slate-400 text-center font-medium">Không có nhân sự phòng ban</div>
+                                    <div className="px-4 py-3 text-xs text-slate-400 text-center font-normal">Không có nhân sự phòng ban</div>
                                   ) : filteredCandidates.map((staff) => {
                                     const staffConflict = getCandidateConflict(staff.id || staff.userId);
                                     return (
@@ -4032,9 +4032,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                                       >
                                         <div>
                                           <span className="block text-sm font-bold text-slate-800 group-hover:text-[#004c91]">{staff.name}</span>
-                                          <span className="block text-xs font-medium text-slate-500 mt-0.5">{staff.email}</span>
+                                          <span className="block text-xs font-normal text-slate-500 mt-0.5">{staff.email}</span>
                                           {staffConflict && (
-                                            <span className="block text-[11px] font-bold text-red-600 mt-1 flex items-center gap-1">
+                                            <span className="block text-[11px] font-normal text-red-600 mt-1 flex items-center gap-1">
                                               <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
                                               Trùng thời gian ({staffConflict.time} - {staffConflict.title})
                                             </span>
@@ -4150,7 +4150,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <User className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Chủ tọa</span>
                         </div>
-                        <div className="text-sm font-black text-purple-900">{activePopoverEvent.host}</div>
+                        <div className="text-sm font-normal text-purple-900">{activePopoverEvent.host}</div>
                       </div>
 
                       <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default">
@@ -4158,7 +4158,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <MapPin className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Địa điểm</span>
                         </div>
-                        <div className="text-sm font-black text-slate-800">{activePopoverEvent.location || 'Chưa cập nhật'}</div>
+                        <div className="text-sm font-normal text-slate-800">{activePopoverEvent.location || 'Chưa cập nhật'}</div>
                       </div>
 
                       <div className="col-span-1 sm:col-span-2 p-4 bg-gray-50/80 rounded-2xl border border-gray-100 cursor-default relative overflow-hidden flex flex-col justify-center">
@@ -4166,11 +4166,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                           <Calendar className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian</span>
                         </div>
-                        <div className="text-[15px] font-bold text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
+                        <div className="text-[15px] font-normal text-gray-800 relative z-10 flex items-center flex-wrap gap-2 sm:gap-3">
                           <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-purple-700">{activePopoverEvent.time?.split('-')[0]?.trim()}</span>
                           <ChevronRight className="w-4 h-4 text-gray-400" />
                           <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-purple-700">{activePopoverEvent.time?.split('-')[1]?.trim()}</span>
-                          <span className="text-purple-800 font-bold ml-1">{activePopoverEvent.date?.split('-').reverse().join('-')}</span>
+                          <span className="text-purple-800 font-normal ml-1">{activePopoverEvent.date?.split('-').reverse().join('-')}</span>
                         </div>
                       </div>
                     </div>
@@ -4180,7 +4180,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         <FileText className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết</span>
                       </div>
-                      <div className="text-[15px] font-medium text-gray-700 leading-relaxed transition-all relative">
+                      <div className="text-[15px] font-normal text-gray-700 leading-relaxed transition-all relative">
                         {typeof activePopoverEvent.purpose === 'string' && activePopoverEvent.purpose.split('\n').map((line: string, idx: number) => (
                           <p key={idx} className={'mb-2'}>
                             {line}

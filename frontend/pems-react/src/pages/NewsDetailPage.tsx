@@ -62,7 +62,7 @@ export function NewsDetailPage() {
     return (
       <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-500 font-medium">{t('news:detail.loadingArticle')}</p>
+        <p className="text-gray-500 font-normal">{t('news:detail.loadingArticle')}</p>
       </div>
     );
   }
@@ -163,7 +163,7 @@ export function NewsDetailPage() {
         <div className="h-[1px] bg-gray-200 w-full mt-12 mb-6"></div>
 
         {/* Copyright */}
-        <p className="text-[14px] text-gray-400 opacity-80 font-medium pb-8 border-b border-white">
+        <p className="text-[14px] text-gray-400 opacity-80 font-normal pb-8 border-b border-white">
           {t('news:detail.copyright')}
         </p>
 

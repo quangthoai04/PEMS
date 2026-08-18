@@ -154,7 +154,7 @@ export function MinuteManagement() {
         </div>
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
           <span className="text-sm font-bold text-slate-500 mb-1">Cập nhật gần nhất</span>
-          <span className="text-sm font-medium text-slate-700 mt-auto">{listData?.summary?.latestUpdatedAt ? formatVietnamDateTime(listData.summary.latestUpdatedAt) : 'Chưa có'}</span>
+          <span className="text-sm font-normal text-slate-700 mt-auto">{listData?.summary?.latestUpdatedAt ? formatVietnamDateTime(listData.summary.latestUpdatedAt) : 'Chưa có'}</span>
         </div>
       </div>
 
@@ -361,7 +361,7 @@ export function MinuteManagement() {
                   </td>
                   <td className="px-4 py-4">
                     <div className="flex flex-col gap-1">
-                      <div className="font-bold text-slate-700">{doc.visitTitle || 'Chưa có tên đoàn'}</div>
+                      <div className="font-normal text-slate-700">{doc.visitTitle || 'Chưa có tên đoàn'}</div>
                       <div className="text-xs text-slate-500 font-mono">INST #{doc.visitInstanceId}</div>
                       {doc.hostName && <div className="text-xs text-slate-500">Host: {doc.hostName}</div>}
                     </div>
@@ -403,7 +403,7 @@ export function MinuteManagement() {
                         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
                           <Search className="w-8 h-8 text-slate-300" />
                         </div>
-                        <p className="text-slate-500 font-medium font-sans">Không tìm thấy biên bản phù hợp.</p>
+                        <p className="text-slate-500 font-normal font-sans">Không tìm thấy biên bản phù hợp.</p>
                      </div>
                   </td>
                 </tr>
@@ -437,7 +437,7 @@ export function MinuteManagement() {
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <span className="text-sm font-medium px-2">Trang {currentPage} / {totalPages}</span>
+              <span className="text-sm font-normal px-2">Trang {currentPage} / {totalPages}</span>
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => handlePageChange(currentPage + 1)}
@@ -532,10 +532,10 @@ export function MinuteManagement() {
                         <h3 className="text-xs font-bold text-[#004c91] uppercase tracking-wide mb-2 flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Thông tin đoàn / Chuyến thăm tại cơ sở</h3>
                         <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                           <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Đoàn khách:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.visitTitle || 'Chưa có dữ liệu'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-semibold text-slate-800">{detailData.status ? formatVisitStatus(detailData.status) : 'Chưa có dữ liệu'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Host:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.hostName || 'Chưa có dữ liệu'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Campus:</dt><dd className="font-semibold text-slate-800 truncate">{selectedMinute.campusName || 'Chưa có dữ liệu'}</dd></div>
-                          <div className="flex gap-1.5 md:col-span-2"><dt className="text-slate-500 shrink-0">Thời gian dự kiến:</dt><dd className="font-semibold text-slate-800">
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Trạng thái:</dt><dd className="font-normal text-slate-800">{detailData.status ? formatVisitStatus(detailData.status) : 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Host:</dt><dd className="font-normal text-slate-800 truncate">{selectedMinute.hostName || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500 shrink-0">Campus:</dt><dd className="font-normal text-slate-800 truncate">{selectedMinute.campusName || 'Chưa có dữ liệu'}</dd></div>
+                          <div className="flex gap-1.5 md:col-span-2"><dt className="text-slate-500 shrink-0">Thời gian dự kiến:</dt><dd className="font-normal text-slate-800">
                             {selectedMinute.plannedStartAt ? formatVietnamDateTime(selectedMinute.plannedStartAt) : '?'} - {selectedMinute.plannedEndAt ? formatVietnamDateTime(selectedMinute.plannedEndAt) : '?'}
                           </dd></div>
                         </dl>
@@ -595,9 +595,9 @@ export function MinuteManagement() {
                                     </span>
                                   </td>
                                   <td className="px-2 py-1.5 text-center">
-                                    {p.attendanceStatus === 'PRESENT' && <span className="text-green-700 font-bold">{formatAttendanceStatus('PRESENT')}</span>}
-                                    {p.attendanceStatus === 'ABSENT' && <span className="text-red-700 font-bold">{formatAttendanceStatus('ABSENT')}</span>}
-                                    {p.attendanceStatus === 'EXCUSED' && <span className="text-yellow-700 font-bold">{formatAttendanceStatus('EXCUSED')}</span>}
+                                    {p.attendanceStatus === 'PRESENT' && <span className="text-green-700 font-normal">{formatAttendanceStatus('PRESENT')}</span>}
+                                    {p.attendanceStatus === 'ABSENT' && <span className="text-red-700 font-normal">{formatAttendanceStatus('ABSENT')}</span>}
+                                    {p.attendanceStatus === 'EXCUSED' && <span className="text-yellow-700 font-normal">{formatAttendanceStatus('EXCUSED')}</span>}
                                     {!p.attendanceStatus && <span className="text-slate-400">-</span>}
                                   </td>
                                   <td className="px-2 py-1.5 text-slate-600">{p.attendanceNote || '-'}</td>
@@ -640,7 +640,7 @@ export function MinuteManagement() {
                                     <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
                                       <User className="w-3 h-3 shrink-0" />
                                       {ai.assignedToUserName ? (
-                                        <>Phụ trách: <span className="font-semibold text-slate-700">{ai.assignedToUserName}</span></>
+                                        <>Phụ trách: <span className="font-normal text-slate-700">{ai.assignedToUserName}</span></>
                                       ) : 'Chưa có người phụ trách'}
                                     </p>
                                   </div>
@@ -664,9 +664,9 @@ export function MinuteManagement() {
                       <div>
                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5"><ShieldAlert className="w-3.5 h-3.5" /> Audit & Concurrency</h3>
                         <dl className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-600">
-                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày khóa:</dt><dd className="font-semibold text-slate-800">{detailData.editLockedAt ? formatVietnamDateTime(detailData.editLockedAt) : 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày cập nhật:</dt><dd className="font-semibold text-slate-800">{detailData.updatedAt ? formatVietnamDateTime(detailData.updatedAt) : 'N/A'}</dd></div>
-                          <div className="flex gap-1.5"><dt className="text-slate-500">Row version:</dt><dd className="font-semibold text-slate-800">{detailData.rowVersion}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày khóa:</dt><dd className="font-normal text-slate-800">{detailData.editLockedAt ? formatVietnamDateTime(detailData.editLockedAt) : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Ngày cập nhật:</dt><dd className="font-normal text-slate-800">{detailData.updatedAt ? formatVietnamDateTime(detailData.updatedAt) : 'N/A'}</dd></div>
+                          <div className="flex gap-1.5"><dt className="text-slate-500">Row version:</dt><dd className="font-normal text-slate-800">{detailData.rowVersion}</dd></div>
                         </dl>
                       </div>
                    </div>

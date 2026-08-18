@@ -118,7 +118,7 @@ export const AutoGrowTextField: React.FC<Props> = ({
       {showCounter && (
         <p
           data-testid={testId ? `${testId}-counter` : undefined}
-          className={`mt-0.5 text-right text-[11px] ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}
+          className={`mt-0.5 text-right text-[11px] ${over ? 'font-normal text-red-600' : 'text-slate-400'}`}
         >
           {t('validation:characterCount', { current: value.length, max: maxLength })}
         </p>

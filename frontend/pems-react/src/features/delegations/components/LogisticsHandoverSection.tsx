@@ -806,7 +806,7 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
 
             {/* Footer controls inside modal */}
             <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row justify-between items-center border-t border-slate-200 gap-4 shrink-0 rounded-b-2xl">
-              <span className="text-[11px] text-slate-500 font-medium italic">
+              <span className="text-[11px] text-slate-500 font-normal italic">
                 {err ? <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {err}</span> : 'Vui lòng kiểm tra kỹ hiện trạng trước khi ký xác nhận.'}
               </span>
               <button onClick={closeSignModal} className="px-6 py-2.5 bg-[#004c91] text-white hover:bg-[#003b70] text-[12px] font-bold rounded-xl transition-colors shadow-sm w-full sm:w-auto outline-none">

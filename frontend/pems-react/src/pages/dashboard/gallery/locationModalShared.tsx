@@ -360,11 +360,11 @@ export function EnFieldHint({ field }: { field: BilingualFieldValue }) {
   if (field.state === 'TRANSLATING')
     return <p className="text-[11px] text-slate-400">Đang dịch…</p>;
   if (field.state === 'STALE' && !field.manuallyEdited)
-    return <p className="text-[11px] text-amber-600 font-semibold">Nội dung tiếng Việt đã thay đổi. Vui lòng dịch lại.</p>;
+    return <p className="text-[11px] text-amber-600 font-normal">Nội dung tiếng Việt đã thay đổi. Vui lòng dịch lại.</p>;
   if (field.manualNeedsReview)
-    return <p className="text-[11px] text-amber-600 font-semibold">Tên tiếng Việt đã thay đổi. Hãy kiểm tra lại bản tiếng Anh trước khi lưu.</p>;
+    return <p className="text-[11px] text-amber-600 font-normal">Tên tiếng Việt đã thay đổi. Hãy kiểm tra lại bản tiếng Anh trước khi lưu.</p>;
   if (field.state === 'FAILED')
-    return <p className="text-[11px] text-red-500 font-semibold">Dịch tự động thất bại. Bạn có thể thử lại hoặc tự nhập bản tiếng Anh.</p>;
+    return <p className="text-[11px] text-red-500 font-normal">Dịch tự động thất bại. Bạn có thể thử lại hoặc tự nhập bản tiếng Anh.</p>;
   if (field.origin === 'AUTO_PREVIEW' && field.state === 'READY')
     return <p className="text-[11px] text-slate-400">Bản dịch tự động — bạn có thể chỉnh sửa trước khi lưu.</p>;
   if (field.manuallyEdited)

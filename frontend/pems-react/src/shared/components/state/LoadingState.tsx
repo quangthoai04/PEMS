@@ -28,7 +28,7 @@ export function LoadingState({ label, inline = false, className = '' }: LoadingS
       }
     >
       <Loader2 className={(inline ? 'w-4 h-4' : 'w-8 h-8') + ' animate-spin text-slate-400'} aria-hidden="true" />
-      <span className={inline ? '' : 'text-sm font-medium'}>{text}</span>
+      <span className={inline ? '' : 'text-sm font-normal'}>{text}</span>
     </div>
   );
 }

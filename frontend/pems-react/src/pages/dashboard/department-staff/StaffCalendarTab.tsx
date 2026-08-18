@@ -388,7 +388,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
   };
 
   const renderEmpty = (label = 'Không có lịch được giao') => (
-    <div className="flex items-center justify-center min-h-[220px] text-sm text-slate-400 font-semibold">{label}</div>
+    <div className="flex items-center justify-center min-h-[220px] text-sm text-slate-400 font-normal">{label}</div>
   );
 
   const displayItems = useMemo(() => {
@@ -608,7 +608,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         </div>
         <span className="text-base font-extrabold text-[#004c91]">{viewTitle}</span>
         {/* Chú thích rút gọn */}
-        <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600">
+        <div className="ml-auto flex flex-wrap items-center gap-4 text-xs font-normal text-slate-600">
           {calendarType === 'office' ? (
             <>
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-amber-400 inline-block" />Cần xử lý</span>
@@ -633,7 +633,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
             {WEEKDAYS.map(d => <div key={d}>{d}</div>)}
           </div>
           {calendarLoading ? (
-            <div className="flex items-center justify-center h-64 text-sm text-slate-400 font-semibold">Đang tải lịch...</div>
+            <div className="flex items-center justify-center h-64 text-sm text-slate-400 font-normal">Đang tải lịch...</div>
           ) : displayMode === 'Tháng' ? (
             <div className="grid grid-cols-7 grid-rows-5 min-h-[850px] divide-x divide-y divide-slate-300 border-b border-slate-300 bg-slate-50/20">
               {daysGrid.map((cell, idx) => {
@@ -700,7 +700,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                       <p className="text-[10px] font-black uppercase text-slate-400">{day.label}</p>
                       <span className={`inline-flex mt-1 w-8 h-8 items-center justify-center rounded-full text-sm font-black ${isToday ? 'bg-red-500 text-white' : selectedDate === day.dateStr ? 'bg-[#f37021] text-white' : 'bg-slate-100 text-slate-700'}`}>{day.day}</span>
                     </div>
-                    <div className="space-y-1">{dayEvs.length ? dayEvs.map(ev => renderEventPill(ev, day.dateStr)) : <p className="text-[11px] text-slate-300 text-center font-semibold pt-4">Trống</p>}</div>
+                    <div className="space-y-1">{dayEvs.length ? dayEvs.map(ev => renderEventPill(ev, day.dateStr)) : <p className="text-[11px] text-slate-300 text-center font-normal pt-4">Trống</p>}</div>
                     {/* Lớp xám phủ lên các ngày trong quá khứ */}
                     {isPastDay && (
                       <div className="absolute inset-0 bg-slate-300/45 pointer-events-none z-10" aria-hidden="true" />
@@ -830,7 +830,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                   {activeEvent.itemType === 'INVITATION' ? 'Chi tiết thư mời' : 'Thông tin đơn yêu cầu'}
                 </span>
                 <p className="text-xl md:text-3xl font-extrabold tracking-tight text-white leading-tight">{activeEvent.title}</p>
-                {activeEvent.delegationName && <p className="text-sm text-white/80 font-medium mt-1">{activeEvent.delegationName}</p>}
+                {activeEvent.delegationName && <p className="text-sm text-white/80 font-normal mt-1">{activeEvent.delegationName}</p>}
               </div>
               <button onClick={() => setActiveEvent(null)} className="p-2 hover:bg-white/10 rounded-full text-white flex-shrink-0"><X className="w-5 h-5" /></button>
             </div>
@@ -853,31 +853,31 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                       <User className="w-4 h-4" />
                       <span className="text-[11px] font-bold uppercase tracking-wider">Người giao</span>
                     </div>
-                    <p className="text-sm font-black text-[#004c91]">{activeEvent.host || 'Hệ thống'}</p>
+                    <p className="text-sm font-normal text-[#004c91]">{activeEvent.host || 'Hệ thống'}</p>
                   </div>
                   <div className="p-4 bg-orange-50/60 rounded-2xl border border-orange-100">
                     <div className="flex items-center gap-2 text-[#f37021] mb-2">
                       <MapPin className="w-4 h-4" />
                       <span className="text-[11px] font-bold uppercase tracking-wider">Địa điểm</span>
                     </div>
-                    <p className="text-sm font-black text-slate-800">{activeEvent.location || 'Chưa cập nhật'}</p>
+                    <p className="text-sm font-normal text-slate-800">{activeEvent.location || 'Chưa cập nhật'}</p>
                   </div>
                   <div className="sm:col-span-2 p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="flex items-center gap-2 text-slate-500 mb-2">
                       <Clock className="w-4 h-4" />
                       <span className="text-[11px] font-bold uppercase tracking-wider">Thời gian</span>
                     </div>
-                    <div className="text-[15px] font-bold text-gray-800 flex items-center flex-wrap gap-2">
+                    <div className="text-[15px] font-normal text-gray-800 flex items-center flex-wrap gap-2">
                       <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activeEvent.time?.split('-')[0]?.trim()}</span>
                       <ChevronRight className="w-4 h-4 text-gray-400" />
                       <span className="px-3 py-1 bg-white rounded-lg border border-gray-200 shadow-sm text-[#004c91]">{activeEvent.time?.split('-')[1]?.trim()}</span>
-                      <span className="text-[#004c91] font-bold ml-1">{activeEvent.date?.split('-').reverse().join('-')}</span>
+                      <span className="text-[#004c91] font-normal ml-1">{activeEvent.date?.split('-').reverse().join('-')}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${getStatusBadge(activeEvent.status)}`}>{statusLabel(activeEvent.status)}</span>
-                  <span className="text-[11px] font-bold text-slate-400">{activeEvent.itemType === 'INVITATION' ? 'Thư mời tham gia' : 'Đơn yêu cầu hỗ trợ'}</span>
+                  <span className="text-[11px] font-normal text-slate-400">{activeEvent.itemType === 'INVITATION' ? 'Thư mời tham gia' : 'Đơn yêu cầu hỗ trợ'}</span>
                 </div>
                 {/* A REQUEST's detail comes from the request detail's `description`. `activeEvent.purpose`
                     is derived from the calendar feed, which carries no description — its value is the
@@ -893,7 +893,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                           <FileText className="w-4 h-4" />
                           <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết</span>
                         </div>
-                        <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-700">
+                        <p className="whitespace-pre-wrap break-words text-sm font-normal leading-relaxed text-slate-700">
                           {activeEvent.purpose}
                         </p>
                       </div>
@@ -905,7 +905,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                         <FileText className="w-4 h-4" />
                         <span className="text-[11px] font-bold uppercase tracking-wider">Nội dung chi tiết công việc</span>
                       </div>
-                      <LogisticsWorkContent detail={eventDetail} className="text-sm font-medium text-slate-700" />
+                      <LogisticsWorkContent detail={eventDetail} className="text-sm font-normal text-slate-700" />
                     </div>
                   );
                 })()}
@@ -915,7 +915,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
               {eventDetail?.rejectReason && (
                 <div className="bg-rose-50 rounded-xl p-3 border border-rose-100 flex gap-2">
                   <AlertCircle className="w-4 h-4 text-rose-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-rose-700 font-medium">{eventDetail.rejectReason}</p>
+                  <p className="text-[11px] text-rose-700 font-normal">{eventDetail.rejectReason}</p>
                 </div>
               )}
 
@@ -1224,7 +1224,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                   className="w-full text-xs px-3.5 py-2 border border-slate-200 rounded-xl focus:border-purple-500 outline-none resize-none font-sans bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700"
                 />
               </div>
-              {personalEventModal.error && <p className="text-red-500 text-xs font-semibold">{personalEventModal.error}</p>}
+              {personalEventModal.error && <p className="text-red-500 text-xs font-normal">{personalEventModal.error}</p>}
               <div className="flex justify-between items-center pt-3 border-t border-slate-100">
                 <button
                   type="button"

@@ -62,7 +62,7 @@ export function ChangePasswordPage() {
           <img src={logo} alt="FPT University" className="h-14 object-contain mb-4" />
           <h1 className="text-[#004c91] text-xl font-black text-center">{t('loginModal:changePassword.title')}</h1>
           {forced && (
-            <p className="text-amber-600 text-sm text-center mt-1 font-medium">
+            <p className="text-amber-600 text-sm text-center mt-1 font-normal">
               {t('loginModal:changePassword.forcedNotice')}
             </p>
           )}

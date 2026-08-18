@@ -233,7 +233,7 @@ export function CampusDetail() {
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
           <AlertTriangle className="w-10 h-10 text-gray-400" />
-          <p className="text-lg font-bold text-gray-900">Không tìm thấy campus.</p>
+          <p className="text-lg font-normal text-gray-900">Không tìm thấy campus.</p>
           <button
             onClick={() => navigate('/dashboard/campus')}
             className="mt-2 flex items-center gap-2 px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-50 hover:text-[#004c91] transition-colors shadow-sm"
@@ -251,7 +251,7 @@ export function CampusDetail() {
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center py-24 text-center gap-3 text-red-600">
           <AlertTriangle className="w-8 h-8" />
-          <p className="font-medium">{error ?? 'Không thể tải chi tiết campus.'}</p>
+          <p className="font-normal">{error ?? 'Không thể tải chi tiết campus.'}</p>
           <button onClick={() => refetch()} className="mt-2 px-4 py-1.5 text-sm font-bold text-[#004c91] border border-[#004c91]/30 rounded-lg hover:bg-[#e6eff7]">
             Thử lại
           </button>
@@ -327,7 +327,7 @@ export function CampusDetail() {
                   className={`w-full text-2xl md:text-3xl font-normal text-white bg-transparent border focus:bg-white/10 p-3 rounded-2xl outline-none transition-all placeholder:text-white/50 ${errors.name ? 'border-red-300' : 'border-white/30 focus:border-white'}`}
                   placeholder="Nhập tên campus..."
                 />
-                {errors.name && <p id="edit-name-error" className="text-xs text-red-200 font-medium mt-1">{errors.name}</p>}
+                {errors.name && <p id="edit-name-error" className="text-xs text-red-200 font-normal mt-1">{errors.name}</p>}
               </div>
             ) : (
               <h2 className="text-2xl md:text-3xl font-bold text-white leading-snug mt-2">{campus.name}</h2>
@@ -502,7 +502,7 @@ export function CampusDetail() {
                 <span className="font-bold text-gray-900">"{pendingCodeChange.newCode}"</span>.
               </p>
               <p>Các báo cáo hoặc tích hợp đang sử dụng mã cũ có thể bị ảnh hưởng.</p>
-              <p className="font-bold text-gray-900">Bạn có chắc muốn tiếp tục?</p>
+              <p className="font-normal text-gray-900">Bạn có chắc muốn tiếp tục?</p>
             </div>
 
             <div className="p-5 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
@@ -527,7 +527,7 @@ export function CampusDetail() {
       {/* Toasts */}
       <div className="fixed top-6 right-6 z-[110] flex flex-col gap-2">
         {toasts.map((t) => (
-          <div key={t.id} className={`px-4 py-3 rounded-xl shadow-lg text-sm font-medium max-w-sm ${t.type === 'success' ? 'bg-[#0aa14f] text-white' : 'bg-red-600 text-white'}`}>
+          <div key={t.id} className={`px-4 py-3 rounded-xl shadow-lg text-sm font-normal max-w-sm ${t.type === 'success' ? 'bg-[#0aa14f] text-white' : 'bg-red-600 text-white'}`}>
             {t.msg}
           </div>
         ))}
@@ -557,7 +557,7 @@ function Field({ label, field, required, error, full, children }: {
         {label}{required && <span className="text-red-500 ml-1">*</span>}
       </label>
       {children}
-      {error && <p id={`edit-${field}-error`} className="text-xs text-red-500 font-medium mt-1">{error}</p>}
+      {error && <p id={`edit-${field}-error`} className="text-xs text-red-500 font-normal mt-1">{error}</p>}
     </div>
   );
 }
@@ -566,7 +566,7 @@ function Info({ label, value, muted }: { label: string; value: string; muted?: b
   return (
     <div>
       <p className="text-sm text-gray-500 font-medium mb-1">{label}</p>
-      <p className={`font-bold text-lg ${muted ? 'text-gray-400 italic' : 'text-gray-900'}`}>{value}</p>
+      <p className={`font-normal text-lg ${muted ? 'text-gray-400 italic' : 'text-gray-900'}`}>{value}</p>
     </div>
   );
 }

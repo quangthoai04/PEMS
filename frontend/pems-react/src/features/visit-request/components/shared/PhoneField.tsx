@@ -51,7 +51,7 @@ export const PhoneField: React.FC<Props> = ({
       {focused && !error && (
         <p
           data-testid={testId ? `${testId}-hint` : undefined}
-          className="mt-1 text-xs font-medium text-slate-500"
+          className="mt-1 text-xs font-normal text-slate-500"
         >
           {t('validation:phoneHint')}
         </p>

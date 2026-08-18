@@ -274,7 +274,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
               <Building2 className="w-3.5 h-3.5 text-[#004c91]" /> Chi phí phòng ban — Hạng mục yêu cầu
             </h3>
             {pendingCount > 0 && (
-              <span className="text-[10px] font-bold text-amber-600">{pendingCount} đơn chưa kê khai</span>
+              <span className="text-[10px] font-normal text-amber-600">{pendingCount} đơn chưa kê khai</span>
             )}
           </div>
 
@@ -302,7 +302,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         <Clock className="w-2.5 h-2.5" /> Chưa kê khai
                       </span>
                     )}
-                    <span className="ml-auto text-xs font-black text-[#004c91]">
+                    <span className="ml-auto text-xs font-normal text-[#004c91]">
                       {state === 'SAVED' && r ? `${r.totalAmount.toLocaleString('vi-VN')} ₫` : state === 'NO_EXPENSE' ? '0 ₫' : '—'}
                     </span>
                   </div>
@@ -316,7 +316,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                             <td className="px-2 py-1 text-right text-slate-500 w-14">{it.quantity}</td>
                             <td className="px-2 py-1 text-slate-400 w-20">{it.unitName || ''}</td>
                             <td className="px-2 py-1 text-right text-slate-500 w-24">{it.unitPrice.toLocaleString('vi-VN')}</td>
-                            <td className="px-3 py-1 text-right font-bold text-slate-700 w-28">{it.totalAmount.toLocaleString('vi-VN')} ₫</td>
+                            <td className="px-3 py-1 text-right font-normal text-slate-700 w-28">{it.totalAmount.toLocaleString('vi-VN')} ₫</td>
                           </tr>
                         ))}
                       </tbody>
@@ -331,7 +331,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                     <CheckCircle2 className="w-2.5 h-2.5" /> Đã kê khai
                   </span>
-                  <span className="ml-auto text-xs font-black text-[#004c91]">{r.totalAmount.toLocaleString('vi-VN')} ₫</span>
+                  <span className="ml-auto text-xs font-normal text-[#004c91]">{r.totalAmount.toLocaleString('vi-VN')} ₫</span>
                 </div>
               ))}
             </div>
@@ -351,7 +351,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
               data-testid="general-expense-empty"
               className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 px-3 py-4 text-center"
             >
-              <p className="text-[11px] font-semibold text-slate-500">
+              <p className="text-[11px] font-normal text-slate-500">
                 {canInitialize
                   ? 'Chưa có bảng chi phí chung cho chuyến này.'
                   : instanceStatus === 'CLOSED'
@@ -434,7 +434,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                         className="w-full bg-transparent border-none text-xs font-normal text-slate-700 text-right outline-none focus:ring-0 px-0 disabled:bg-transparent"
                       />
                     </td>
-                    <td className="px-2.5 py-1 text-right font-black text-[#004c91]">
+                    <td className="px-2.5 py-1 text-right font-normal text-[#004c91]">
                       {((it.quantity || 0) * (it.unitPrice || 0)).toLocaleString('vi-VN')} ₫
                     </td>
                     {!readonly && (
@@ -462,8 +462,8 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
 
         {/* ── Tổng cộng + hành động ── */}
         <div className="rounded-lg bg-orange-50 border border-orange-100 px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className="font-bold text-slate-600">Phòng ban: <b className="text-[#004c91]">{deptTotal.toLocaleString('vi-VN')} ₫</b></span>
-          <span className="font-bold text-slate-600">Chi phí chung: <b className="text-[#004c91]">{generalTotal.toLocaleString('vi-VN')} ₫</b></span>
+          <span className="font-bold text-slate-600">Phòng ban: <b className="font-normal text-[#004c91]">{deptTotal.toLocaleString('vi-VN')} ₫</b></span>
+          <span className="font-bold text-slate-600">Chi phí chung: <b className="font-normal text-[#004c91]">{generalTotal.toLocaleString('vi-VN')} ₫</b></span>
           <span className="ml-auto font-black text-slate-700 uppercase text-[11px]">Tổng chi phí đoàn:
             <span className="text-sm font-black text-[#c2410c] ml-1.5">{grandTotal.toLocaleString('vi-VN')} ₫</span>
           </span>
@@ -678,11 +678,11 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                   <div className="grid grid-cols-1 gap-2 text-xs">
                     <div>
                       <span className="font-semibold text-gray-500">Người gửi: </span>
-                      <span className="font-medium text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
+                      <span className="font-normal text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Người nhận ({lastRemindSent ? lastRemindSent.count : pendingCount} đơn vị): </span>
-                      <span className="font-bold text-[#004c91]">
+                      <span className="font-normal text-[#004c91]">
                         {lastRemindSent
                           ? lastRemindSent.recipients.join(', ')
                           : pendingCount > 0
@@ -692,7 +692,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Tiêu đề: </span>
-                      <span className="font-bold text-gray-900">
+                      <span className="font-normal text-gray-900">
                         [PEMS] Nhắc nhở hoàn tất kê khai chi phí đợt công tác
                       </span>
                     </div>
@@ -706,7 +706,7 @@ export function GeneralExpensePanel({ visitInstanceId, isReadOnly = false, secti
                     <span className="text-xs font-normal opacity-80">Thông báo nhắc nhở kê khai chi phí</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">
+                    <p className="font-normal">
                       Kính gửi <strong className="text-gray-900">Người phụ trách kê khai chi phí các phòng ban</strong>,
                     </p>
                     <p className="text-sm leading-relaxed">

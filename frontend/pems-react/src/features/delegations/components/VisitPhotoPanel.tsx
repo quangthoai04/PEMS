@@ -192,7 +192,7 @@ export function VisitPhotoPanel({
 
   if (loading) {
     return (
-      <div className="py-6 flex items-center justify-center gap-2 text-slate-400 text-sm font-semibold">
+      <div className="py-6 flex items-center justify-center gap-2 text-slate-400 text-sm font-normal">
         <Loader2 className="w-4 h-4 animate-spin" /> Đang tải ảnh đoàn khách...
       </div>
     );
@@ -204,7 +204,7 @@ export function VisitPhotoPanel({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs font-bold text-slate-500">
+        <p className="text-xs font-normal text-slate-500">
           {data.folderName
             ? <>Thư mục: <span className="text-slate-700">{data.folderName}</span> · {data.photos.length} ảnh</>
             : <>{data.photos.length} ảnh</>}
@@ -229,7 +229,7 @@ export function VisitPhotoPanel({
       </div>
 
       {data.photos.length === 0 ? (
-        <p className="text-sm font-semibold text-slate-400">Chưa có ảnh đoàn khách nào được tải lên.</p>
+        <p className="text-sm font-normal text-slate-400">Chưa có ảnh đoàn khách nào được tải lên.</p>
       ) : (
         <div className="space-y-4">
           <div className={columns === 6 ? "grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3" : "grid grid-cols-2 sm:grid-cols-4 gap-3"}>
@@ -301,7 +301,7 @@ export function VisitPhotoPanel({
         </div>
       )}
       {canManage && data.canUpload && (
-        <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+        <p className="mt-0.5 text-[11px] font-normal text-slate-400">
           JPG/JPEG/PNG/WEBP, tối đa 5MB/file, 10 file mỗi lần.
         </p>
       )}

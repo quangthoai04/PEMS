@@ -67,7 +67,7 @@ export function DeptLeadDashboardView({ user }: { user: any }) {
             </div>
           )}
         </div>
-        <p className="text-sm font-medium text-slate-500">
+        <p className="text-sm font-normal text-slate-500">
           Trung tâm xử lý tác vụ và thông báo dành cho Trưởng phòng
         </p>
       </div>

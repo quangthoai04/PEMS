@@ -12,7 +12,7 @@ export function EmailChangePreview({ oldEmail, newEmail }: { oldEmail: string; n
     <div>
       <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5">
         <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Email hiện tại</p>
-        <p className="mt-0.5 break-all text-[15px] font-semibold text-gray-500">{oldEmail || '—'}</p>
+        <p className="mt-0.5 break-all text-[15px] font-normal text-gray-500">{oldEmail || '—'}</p>
       </div>
 
       <div className="flex justify-center py-1.5" aria-hidden="true">
@@ -21,7 +21,7 @@ export function EmailChangePreview({ oldEmail, newEmail }: { oldEmail: string; n
 
       <div className="rounded-xl border border-[#004c91]/25 bg-[#004c91]/[0.04] px-4 py-2.5">
         <p className="text-[11px] font-bold uppercase tracking-wider text-[#004c91]/70">Email mới</p>
-        <p className="mt-0.5 break-all text-[15px] font-bold text-[#004c91]">{newEmail}</p>
+        <p className="mt-0.5 break-all text-[15px] font-normal text-[#004c91]">{newEmail}</p>
       </div>
     </div>
   );

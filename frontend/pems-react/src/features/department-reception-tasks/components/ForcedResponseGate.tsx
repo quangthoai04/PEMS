@@ -161,18 +161,18 @@ export function ForcedResponseGate() {
             <>
               <div>
                 <div className="text-xs font-bold text-slate-400 uppercase">Hạng mục</div>
-                <div className="text-base font-black text-slate-800">{detail.title}</div>
+                <div className="text-base font-normal text-slate-800">{detail.title}</div>
               </div>
               {detail.delegationName && (
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase">Đoàn khách</div>
-                  <div className="text-sm font-bold text-[#004c91]">{detail.delegationName}</div>
+                  <div className="text-sm font-normal text-[#004c91]">{detail.delegationName}</div>
                 </div>
               )}
               {(detail.startTime || detail.endTime) && (
                 <div>
                   <div className="text-xs font-bold text-slate-400 uppercase">Thời gian sử dụng</div>
-                  <div className="text-sm font-semibold text-slate-700">{detail.startTime} - {detail.endTime} {detail.date}</div>
+                  <div className="text-sm font-normal text-slate-700">{detail.startTime} - {detail.endTime} {detail.date}</div>
                 </div>
               )}
               {detail.description && (

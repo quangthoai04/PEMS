@@ -921,7 +921,7 @@ function GalleryItemDetailModal({
               {isLoading ? (
                 <p className="text-white/70">{t('visitFptu:gallery.labels.loadingDescription')}</p>
               ) : notFound ? (
-                <p className="text-red-300 font-medium">{t('visitFptu:gallery.errors.contentHidden')}</p>
+                <p className="text-red-300 font-normal">{t('visitFptu:gallery.errors.contentHidden')}</p>
               ) : (
                 <p className="text-white/90 whitespace-pre-line break-words [overflow-wrap:anywhere] first-letter:text-4xl first-letter:font-bold first-letter:text-fpt-orange first-letter:mr-1 first-letter:float-left">
                   {activeContent?.description}

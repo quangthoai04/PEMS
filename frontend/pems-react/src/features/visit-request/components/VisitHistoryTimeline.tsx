@@ -144,7 +144,7 @@ export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }:
       <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
         <div className="flex items-start gap-2">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <p className="font-semibold">{t('visitRequestV2:history.loadFailed')}</p>
+          <p className="font-normal">{t('visitRequestV2:history.loadFailed')}</p>
         </div>
         <button
           type="button"
@@ -180,7 +180,7 @@ export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }:
               }`}
             />
             <div className="flex flex-wrap items-center gap-2">
-              <time className="text-xs font-medium text-slate-400" dateTime={e.at}>
+              <time className="text-xs font-normal text-slate-400" dateTime={e.at}>
                 {formatVietnamDateTime(e.at)}
               </time>
               {e.eventCode === 'AMENDMENT_SUBMITTED' && (
@@ -190,7 +190,7 @@ export default function VisitHistoryTimeline({ visitRequestId, refreshKey = 0 }:
               )}
             </div>
             <div className="mt-0.5 flex items-start gap-1.5">
-              <p className="min-w-0 break-words font-semibold text-slate-800">{describe(e)}</p>
+              <p className="min-w-0 break-words font-normal text-slate-800">{describe(e)}</p>
               {/* Offered ONLY where the backend has a diff to show. A decision or a cancellation
                   states its outcome on this line, so an eye button there would open a drawer that
                   repeats what the reader just read. */}

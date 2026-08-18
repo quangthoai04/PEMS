@@ -111,7 +111,7 @@ export const TurnstileWidget: React.FC<Props> = ({ onToken, disabled }) => {
     <div className="flex flex-col items-center gap-2">
       <div ref={containerRef} data-testid="turnstile-widget" className="min-h-[65px]" />
       {loadError && (
-        <p className="text-xs font-medium text-red-600">
+        <p className="text-xs font-normal text-red-600">
           {t('visitRequest:otp.human.loadError')}
         </p>
       )}

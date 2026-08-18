@@ -118,7 +118,7 @@ export function AccountStatusConfirmModal({
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-black leading-snug text-gray-800">{theme.title}</h2>
-            <p className="mt-0.5 text-xs font-medium text-gray-500">{theme.subtitle}</p>
+            <p className="mt-0.5 text-xs font-normal text-gray-500">{theme.subtitle}</p>
           </div>
           <button
             type="button"
@@ -149,9 +149,9 @@ export function AccountStatusConfirmModal({
               {name && (
                 <p className="truncate text-[15px] font-bold text-gray-800">{name}</p>
               )}
-              <p className="break-all text-sm font-semibold text-[#004c91]">{email || '—'}</p>
+              <p className="break-all text-sm font-normal text-[#004c91]">{email || '—'}</p>
               {meta && (
-                <p className="mt-0.5 truncate text-xs font-medium text-gray-500">{meta}</p>
+                <p className="mt-0.5 truncate text-xs font-normal text-gray-500">{meta}</p>
               )}
             </div>
           </div>
@@ -169,7 +169,7 @@ export function AccountStatusConfirmModal({
           </ul>
 
           {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-normal text-red-700">
               {error}
             </div>
           )}

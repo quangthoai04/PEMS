@@ -133,10 +133,10 @@ export function SessionManagement() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-300">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm font-medium text-gray-500 mb-6">
+      <div className="flex items-center gap-2 text-sm text-gray-500 mb-6">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] cursor-pointer">Dashboard</button>
         <span>/</span>
-        <span className="text-[#004c91]">Phiên đăng nhập</span>
+        <span className="text-[#004c91] font-medium">Phiên đăng nhập</span>
       </div>
 
       <div className="flex items-center justify-between mb-8">
@@ -203,16 +203,16 @@ export function SessionManagement() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
-                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-normal">
                   <Loader2 className="w-5 h-5 animate-spin inline mr-2" /> Đang tải danh sách phiên...
                 </td></tr>
               ) : error ? (
                 <tr><td colSpan={8} className="py-16 text-center">
-                  <p className="text-sm font-bold text-red-500 mb-2">{error}</p>
+                  <p className="text-sm font-normal text-red-500 mb-2">{error}</p>
                   <button onClick={load} className="text-sm font-bold text-[#004c91] hover:underline cursor-pointer">Thử lại</button>
                 </td></tr>
               ) : (data?.items.length ?? 0) === 0 ? (
-                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-medium">
+                <tr><td colSpan={8} className="py-16 text-center text-gray-400 text-sm font-normal">
                   Không có phiên nào phù hợp bộ lọc
                 </td></tr>
               ) : data!.items.map((sess, idx) => (
@@ -226,18 +226,18 @@ export function SessionManagement() {
                       )}
                     </p>
                     <p className="text-xs text-gray-500 break-all">{sess.email}</p>
-                    <p className="text-[10px] text-gray-400 font-bold uppercase">
+                    <p className="text-[10px] text-gray-400 font-normal uppercase">
                       {ROLE_LABEL[sess.roleCode ?? ''] ?? sess.roleCode ?? ''} · Phiên #{sess.sessionId}
                     </p>
                   </td>
                   <td className="p-3 text-[13px] text-gray-600 break-words">
-                    <p className="font-bold text-gray-700">{PORTAL_LABEL[sess.loginPortal] ?? sess.loginPortal}</p>
+                    <p className="font-normal text-gray-700">{PORTAL_LABEL[sess.loginPortal] ?? sess.loginPortal}</p>
                     {sess.providerType && (
                       <p className="text-xs text-gray-400">{PROVIDER_LABEL[sess.providerType] ?? sess.providerType}</p>
                     )}
                   </td>
                   <td className="p-3 text-xs text-gray-500 break-words">
-                    <p className="font-bold text-gray-600 break-all">{sess.ipAddress || '—'}</p>
+                    <p className="font-normal text-gray-600 break-all">{sess.ipAddress || '—'}</p>
                     {sess.userAgent && (
                       <div className="mt-1 flex items-center gap-1 min-w-0">
                         <button
@@ -262,7 +262,7 @@ export function SessionManagement() {
                   <td className="p-3 text-xs text-gray-500 break-words">
                     {formatVietnamDateTime(sess.expiresAt)}
                     {sess.revokedAt && (
-                      <p className="text-red-500 font-semibold">Thu hồi: {formatVietnamDateTime(sess.revokedAt)}</p>
+                      <p className="text-red-500 font-normal">Thu hồi: {formatVietnamDateTime(sess.revokedAt)}</p>
                     )}
                   </td>
                   <td className="p-3 text-center">
@@ -301,7 +301,7 @@ export function SessionManagement() {
         {/* Pagination */}
         {(data?.totalItems ?? 0) > 0 && (
           <div className="p-5 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-500">
+            <div className="flex items-center gap-2 text-sm font-normal text-gray-500">
               <span>Hiển thị</span>
               <div className="relative">
                 <select
@@ -323,7 +323,7 @@ export function SessionManagement() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-bold text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
+              <span className="text-sm font-normal text-gray-700">{page} / {Math.max(totalPages, 1)}</span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}

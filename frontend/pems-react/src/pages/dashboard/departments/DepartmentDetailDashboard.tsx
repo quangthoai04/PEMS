@@ -368,7 +368,7 @@ export function DepartmentDetailDashboard() {
                   <span className="text-6xl font-black">{departmentInfo.activeAccounts}</span>
                   <span className="text-2xl font-bold text-orange-200">/{departmentInfo.totalStaff} <span className="text-xl">tài khoản</span></span>
                 </div>
-                <p className="text-[11px] text-orange-100 border-t border-orange-800/20 pt-2 font-medium mt-2">
+                <p className="text-[11px] text-orange-100 border-t border-orange-800/20 pt-2 font-normal mt-2">
                   Số tài khoản đã cấp cho nhân sự
                 </p>
               </div>
@@ -485,7 +485,7 @@ export function DepartmentDetailDashboard() {
                         </span>
                       </div>
                     </td>
-                    <td className="p-4 font-medium text-gray-700 whitespace-nowrap">
+                    <td className="p-4 font-normal text-gray-700 whitespace-nowrap">
                       {member.email}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
@@ -591,7 +591,7 @@ export function DepartmentDetailDashboard() {
                 <tr>
                   <td
                     colSpan={(isStaffRole || user?.role?.toUpperCase() === 'DEPARTMENT' || isHO) ? 6 : 7}
-                    className="py-12 text-center text-gray-500 bg-white font-medium"
+                    className="py-12 text-center text-gray-500 bg-white font-normal"
                   >
                     Không tìm thấy nhân sự nào
                   </td>
@@ -850,7 +850,7 @@ export function DepartmentDetailDashboard() {
                         className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-[#004c91] rounded-lg px-2 py-1 w-full outline-none"
                       />
                     ) : (
-                      <p className="text-[15px] font-bold text-gray-800 truncate">{selectedMember.email}</p>
+                      <p className="text-[15px] font-normal text-gray-800 truncate">{selectedMember.email}</p>
                     )}
                   </div>
                 </div>
@@ -869,7 +869,7 @@ export function DepartmentDetailDashboard() {
                         className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-[#f37021] rounded-lg px-2 py-1 w-full outline-none"
                       />
                     ) : (
-                      <p className="text-[15px] font-bold text-gray-800">{selectedMember.phone}</p>
+                      <p className="text-[15px] font-normal text-gray-800">{selectedMember.phone}</p>
                     )}
                   </div>
                 </div>
@@ -888,7 +888,7 @@ export function DepartmentDetailDashboard() {
                         <option value="Khác">Khác</option>
                       </select>
                     ) : (
-                      <p className="text-[15px] font-bold text-gray-800">{selectedMember.gender}</p>
+                      <p className="text-[15px] font-normal text-gray-800">{selectedMember.gender}</p>
                     )}
                   </div>
 
@@ -902,7 +902,7 @@ export function DepartmentDetailDashboard() {
                         className="text-[15px] font-normal text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
                       />
                     ) : (
-                      <p className="text-[15px] font-bold text-gray-800">Campus {selectedMember.campus}</p>
+                      <p className="text-[15px] font-normal text-gray-800">Campus {selectedMember.campus}</p>
                     )}
                   </div>
                 </div>
@@ -917,7 +917,7 @@ export function DepartmentDetailDashboard() {
                       className="text-[15px] font-normal text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none cursor-not-allowed w-full"
                     />
                   ) : (
-                    <p className="text-[15px] font-bold text-gray-800">{departmentInfo.name}</p>
+                    <p className="text-[15px] font-normal text-gray-800">{departmentInfo.name}</p>
                   )}
                 </div>
               </div>
@@ -932,7 +932,7 @@ export function DepartmentDetailDashboard() {
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-gray-100 bg-[#004c91] shrink-0">
               <h3 className="text-xl font-black text-white uppercase tracking-tight">Đổi người phụ trách</h3>
-              <p className="text-sm font-medium text-blue-100 mt-1">Chọn người phụ trách mới cho nhiệm vụ</p>
+              <p className="text-sm font-normal text-blue-100 mt-1">Chọn người phụ trách mới cho nhiệm vụ</p>
             </div>
             <div className="p-6 bg-gray-50/30 overflow-y-auto flex-1">
               <div className="space-y-2">
@@ -947,7 +947,7 @@ export function DepartmentDetailDashboard() {
                     </div>
                     <div className="flex-1">
                       <p className={`text-[15px] font-bold ${newAssigneeId === member.id.toString() ? 'text-[#004c91]' : 'text-gray-800'}`}>{member.name}</p>
-                      <p className="text-[12px] font-medium text-gray-500 truncate">{member.email}</p>
+                      <p className="text-[12px] font-normal text-gray-500 truncate">{member.email}</p>
                     </div>
                   </div>
                 ))}
@@ -987,7 +987,7 @@ export function DepartmentDetailDashboard() {
           <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-gray-100 bg-[#004c91] shrink-0">
               <h3 className="text-xl font-black text-white uppercase tracking-tight">Thay đổi trưởng phòng</h3>
-              <p className="text-sm font-medium text-blue-100 mt-1">Chọn trưởng phòng mới</p>
+              <p className="text-sm font-normal text-blue-100 mt-1">Chọn trưởng phòng mới</p>
             </div>
             <div className="p-6 bg-gray-50/30 overflow-y-auto flex-1">
               <div className="space-y-2">
@@ -1002,7 +1002,7 @@ export function DepartmentDetailDashboard() {
                     </div>
                     <div className="flex-1">
                       <p className={`text-[15px] font-bold ${newLeaderId === member.id.toString() ? 'text-[#004c91]' : 'text-gray-800'}`}>{member.name}</p>
-                      <p className="text-[12px] font-medium text-gray-500 truncate">{member.email}</p>
+                      <p className="text-[12px] font-normal text-gray-500 truncate">{member.email}</p>
                     </div>
                   </div>
                 ))}
@@ -1043,7 +1043,7 @@ export function DepartmentDetailDashboard() {
               <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-2">
                 {memberToDelete.rawStatus === 'LOCK' ? "Xác nhận mở khóa tài khoản" : (memberToDelete.rawStatus === 'ACTIVE' ? "Xác nhận vô hiệu hóa" : "Xác nhận kích hoạt")}
               </h3>
-              <p className="text-gray-600 mb-6 font-medium leading-relaxed">
+              <p className="text-gray-600 mb-6 font-normal leading-relaxed">
                 Bạn có chắc chắn muốn {memberToDelete.rawStatus === 'LOCK' ? "mở khóa" : (memberToDelete.rawStatus === 'ACTIVE' ? "vô hiệu hóa" : "kích hoạt")} tài khoản của nhân sự <span className="font-bold text-gray-900">{memberToDelete.name}</span> không?
               </p>
 
@@ -1136,7 +1136,7 @@ export function DepartmentDetailDashboard() {
               </button>
             </div>
             <div className="p-6">
-              <p className="text-gray-700 font-medium whitespace-pre-wrap">{selectedRejectReason}</p>
+              <p className="text-gray-700 font-normal whitespace-pre-wrap">{selectedRejectReason}</p>
             </div>
             <div className="p-5 border-t border-gray-100 bg-gray-50 flex justify-end">
               <button

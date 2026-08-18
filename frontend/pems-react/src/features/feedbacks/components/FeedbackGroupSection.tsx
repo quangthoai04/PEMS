@@ -30,7 +30,7 @@ export function FeedbackGroupSection({ group, startIndex, drafts, disabled, forc
       {/* Header group */}
       <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-1.5">
         <h3 className="text-[13px] font-bold text-[#004c91]">{group.title}</h3>
-        <span className="text-[11px] font-semibold text-slate-400">{t('targetCount', { count: group.targets.length })}</span>
+        <span className="text-[11px] font-normal text-slate-400">{t('targetCount', { count: group.targets.length })}</span>
       </div>
 
       {/* Info note nếu có */}

@@ -74,16 +74,16 @@ export function WelcomeHero({ user }: WelcomeHeroProps) {
         </h1>
 
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-white text-base lg:text-lg" style={textShadow}>
-          <span className="inline-flex items-center gap-1.5 font-medium">
+          <span className="inline-flex items-center gap-1.5 font-normal">
             <LayoutDashboard className="w-4 h-4 lg:w-5 lg:h-5" /> {roleLabel}
           </span>
           {user.campusName && (
-            <span className="inline-flex items-center gap-1.5 font-medium">
+            <span className="inline-flex items-center gap-1.5 font-normal">
               <School className="w-4 h-4 lg:w-5 lg:h-5" /> {user.campusName}
             </span>
           )}
           {user.departmentName && (
-            <span className="inline-flex items-center gap-1.5 font-medium">
+            <span className="inline-flex items-center gap-1.5 font-normal">
               <Building2 className="w-4 h-4 lg:w-5 lg:h-5" /> {user.departmentName}
             </span>
           )}

@@ -66,7 +66,7 @@ export default function ContactProfileSyncPrompt({ difference, onSynced }: Props
       <div className="flex items-start gap-2">
         <UserCog className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-sky-900">
+          <p className="text-sm font-normal text-sky-900">
             {t('visitRequestV2:profileSync.question')}
           </p>
 

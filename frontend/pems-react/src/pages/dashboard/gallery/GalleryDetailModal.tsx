@@ -33,7 +33,7 @@ function formatDate(iso?: string | null): string {
 function AudioBlock({ audio, audioRef }: { audio: GalleryAudioInfo; audioRef: React.RefObject<HTMLAudioElement> }) {
   const { url, status } = useAuthenticatedMedia(audio.url);
   if (status === 'error') {
-    return <p className="text-xs text-amber-600 font-medium">Không tải được bản ghi âm.</p>;
+    return <p className="text-xs text-amber-600 font-normal">Không tải được bản ghi âm.</p>;
   }
   if (!url) {
     return <div className="flex items-center gap-2 text-slate-400"><Loader2 className="w-4 h-4 animate-spin" /> Đang tải...</div>;
@@ -88,7 +88,7 @@ function PreviewMedia({ fileUrl, mediaType }: { fileUrl: string; mediaType: 'IMA
     return (
       <div className="w-full h-full flex flex-col items-center justify-center text-amber-600 gap-2 p-6 text-center">
         <ImageOff className="w-8 h-8" />
-        <span className="text-sm font-semibold">Media này chưa có file khả dụng.</span>
+        <span className="text-sm font-normal">Media này chưa có file khả dụng.</span>
       </div>
     );
   }
@@ -204,7 +204,7 @@ export function GalleryDetailModal({
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-amber-600 gap-2 p-6 text-center">
                     <AlertTriangle className="w-8 h-8" />
-                    <span className="text-sm font-semibold">Media này chưa có file khả dụng.</span>
+                    <span className="text-sm font-normal">Media này chưa có file khả dụng.</span>
                   </div>
                 )}
                 <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-bold text-[#004c91] flex items-center gap-1.5">
@@ -262,9 +262,9 @@ export function GalleryDetailModal({
                 <h3 className="text-2xl font-black text-gray-900 leading-tight">{detail.title}</h3>
                 {/* EN title (when READY): one size smaller, gray, right under the VI title (§12). */}
                 {detail.titleEn?.trim() && (
-                  <p className="mt-1 text-base font-semibold text-slate-400 leading-snug">{detail.titleEn}</p>
+                  <p className="mt-1 text-base font-normal text-slate-400 leading-snug">{detail.titleEn}</p>
                 )}
-                <div className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-slate-600 border-b border-slate-100 pb-4">
+                <div className="mt-2 flex items-center gap-1.5 text-sm font-normal text-slate-600 border-b border-slate-100 pb-4">
                   <span className="text-[#004c91]">{detail.area.areaName}</span>
                   <ChevronRight className="w-4 h-4 text-slate-300" />
                   <span>{detail.location.locationName}</span>
@@ -300,11 +300,11 @@ export function GalleryDetailModal({
                 <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 grid grid-cols-2 gap-4 mb-4">
                   <div>
                     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Ngày tạo</span>
-                    <span className="text-sm font-bold text-gray-800">{formatDate(detail.createdAt)}</span>
+                    <span className="text-sm font-normal text-gray-800">{formatDate(detail.createdAt)}</span>
                   </div>
                   <div>
                     <span className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Người tạo</span>
-                    <span className="text-sm font-bold text-gray-800">{detail.createdByName ?? '—'}</span>
+                    <span className="text-sm font-normal text-gray-800">{detail.createdByName ?? '—'}</span>
                   </div>
                 </div>
 

@@ -196,7 +196,7 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
             {values.partnerSelectionMode === 'EXISTING_PARTNER' && values.partnerId != null ? (
               <span data-testid="v2-summary-partner-existing">
                 {values.registerInfo.organization?.trim() && (
-                  <span className="font-semibold">{values.registerInfo.organization.trim()}<br /></span>
+                  <span className="font-normal">{values.registerInfo.organization.trim()}<br /></span>
                 )}
                 <span className="text-xs text-slate-500">{t('visitRequestV2:summary.partnerExisting')}</span>
               </span>

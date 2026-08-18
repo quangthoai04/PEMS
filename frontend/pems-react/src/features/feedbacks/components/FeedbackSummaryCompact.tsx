@@ -14,7 +14,7 @@ const formatDate = (dateStr: string) => formatVietnamDateTime(dateStr, { fallbac
 
 export function FeedbackSummaryCompact({ totalDelegations, totalFeedbacks, avgRating, lowRating, latest }: Props) {
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-medium text-slate-600 mb-4">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs sm:text-sm font-normal text-slate-600 mb-4">
       <span className="font-bold text-slate-700">Tổng quan:</span>
       {typeof totalDelegations === 'number' && (
         <>

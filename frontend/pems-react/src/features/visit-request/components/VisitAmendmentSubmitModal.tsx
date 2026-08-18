@@ -707,7 +707,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
             {memberEditor('support', support, setSupport, true, supportErrors, setSupportErrors)}
 
             {/* Additions / removals / edits vs the active content — a proposal is never active content. */}
-            <p className="text-xs font-semibold text-slate-500 sm:col-span-2" role="status">
+            <p className="text-xs font-normal text-slate-500 sm:col-span-2" role="status">
               {memberChangeCount === 0
                 ? t('visitRequestV2:amend.members.noChange')
                 : t('visitRequestV2:amend.members.changeSummary', {
@@ -717,7 +717,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                   })}
             </p>
             {!hasVisitor && (
-              <p className="text-xs font-semibold text-red-600 sm:col-span-2">{t('visitRequestV2:amend.members.needOne')}</p>
+              <p className="text-xs font-normal text-red-600 sm:col-span-2">{t('visitRequestV2:amend.members.needOne')}</p>
             )}
 
             {/* The contact's PROFILE is read-only here — it has exactly one editable door left,

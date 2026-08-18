@@ -191,7 +191,7 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
                         >
                           {beforeCell(f)}
                         </td>
-                        <td className="border-b border-slate-100 px-3 py-2 font-medium text-slate-900">
+                        <td className="border-b border-slate-100 px-3 py-2 font-normal text-slate-900">
                           {value(statusText(f.fieldCode, f.afterValue))}
                         </td>
                       </tr>
@@ -232,7 +232,7 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
                             <dd className="text-slate-500 line-through decoration-slate-300">
                               {value(c.before![f])}
                             </dd>
-                            <dd className="font-medium text-slate-900">→ {value(c.after![f])}</dd>
+                            <dd className="font-normal text-slate-900">→ {value(c.after![f])}</dd>
                           </div>
                         ))}
                       </dl>

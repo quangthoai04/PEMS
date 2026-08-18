@@ -146,7 +146,7 @@ export function HODashboardView() {
                   ))}
                 </div>
               ) : (
-                <div className="h-24 flex items-center justify-center text-sm font-medium text-slate-500">
+                <div className="h-24 flex items-center justify-center text-sm font-normal text-slate-500">
                   Không có công việc nào cần xử lý.
                 </div>
               )}
@@ -178,8 +178,8 @@ export function HODashboardView() {
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="px-4 py-3 font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                           <td className="px-5 py-3 font-semibold text-slate-800">{req.id}</td>
-                          <td className="px-5 py-3 font-medium text-slate-600">{req.name}</td>
-                          <td className="px-5 py-3 font-medium text-slate-600">{req.campus}</td>
+                          <td className="px-5 py-3 font-normal text-slate-600">{req.name}</td>
+                          <td className="px-5 py-3 font-normal text-slate-600">{req.campus}</td>
                           <td className="px-5 py-3 text-right">
                             <Link to="/dashboard/visit" className="text-[#004c91] hover:text-[#003870] font-bold inline-flex items-center gap-1">
                               Chi tiết <ChevronRight className="w-4 h-4" />
@@ -191,7 +191,7 @@ export function HODashboardView() {
                   </table>
                 </div>
               ) : (
-                <div className="h-24 flex items-center justify-center text-sm font-medium text-slate-500">
+                <div className="h-24 flex items-center justify-center text-sm font-normal text-slate-500">
                   Không có đơn liên cơ sở đang chờ duyệt.
                 </div>
               )}
@@ -223,8 +223,8 @@ export function HODashboardView() {
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="px-4 py-3 font-extrabold text-slate-400 text-center text-xs">{idx + 1}</td>
                           <td className="px-5 py-3 font-bold text-slate-800">{c.name}</td>
-                          <td className="px-5 py-3 font-medium text-slate-600">{c.processing}</td>
-                          <td className="px-5 py-3 font-medium text-slate-600">{c.upcoming}</td>
+                          <td className="px-5 py-3 font-normal text-slate-600">{c.processing}</td>
+                          <td className="px-5 py-3 font-normal text-slate-600">{c.upcoming}</td>
                           <td className="px-5 py-3">
                             {c.alerts > 0 ? (
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-md">
@@ -240,7 +240,7 @@ export function HODashboardView() {
                   </table>
                 </div>
               ) : (
-                <div className="h-24 flex items-center justify-center text-sm font-medium text-slate-500">
+                <div className="h-24 flex items-center justify-center text-sm font-normal text-slate-500">
                   Chưa có dữ liệu vận hành campus.
                 </div>
               )}
@@ -267,7 +267,7 @@ export function HODashboardView() {
                       <p className="text-sm font-bold text-slate-800 truncate">{visit.name}</p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{visit.campus}</span>
-                        <span className="text-xs font-semibold text-[#004c91]">{visit.date}</span>
+                        <span className="text-xs font-normal text-[#004c91]">{visit.date}</span>
                       </div>
                     </div>
                   ))}
@@ -276,7 +276,7 @@ export function HODashboardView() {
                   </Link>
                 </div>
               ) : (
-                <div className="h-24 flex items-center justify-center text-sm font-medium text-slate-500">
+                <div className="h-24 flex items-center justify-center text-sm font-normal text-slate-500">
                   Không có chuyến sắp tới trong 7 ngày.
                 </div>
               )}
@@ -298,13 +298,13 @@ export function HODashboardView() {
                       <div className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0" />
                       <div>
                         <p className="text-sm text-slate-700">{act.content}</p>
-                        <p className="text-xs font-medium text-slate-400 mt-1">{act.time}</p>
+                        <p className="text-xs font-normal text-slate-400 mt-1">{act.time}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="h-24 flex items-center justify-center text-sm font-medium text-slate-500">
+                <div className="h-24 flex items-center justify-center text-sm font-normal text-slate-500">
                   Chưa có hoạt động mới.
                 </div>
               )}

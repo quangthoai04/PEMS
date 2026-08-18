@@ -210,7 +210,7 @@ export function FAQDetail() {
       </div>
 
       {saveError && (
-        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-medium text-sm">
+        <div className="flex items-center gap-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-700 font-normal text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {saveError}
         </div>
@@ -350,7 +350,7 @@ export function FAQDetail() {
                     placeholder="Nhập câu trả lời..."
                   />
                 ) : (
-                  <p className="text-gray-700 leading-relaxed text-[15px] whitespace-pre-line font-medium">
+                  <p className="text-gray-700 leading-relaxed text-[15px] whitespace-pre-line font-normal">
                     {viewLang === 'en' ? (faq.englishAnswer || faq.answer) : faq.answer}
                   </p>
                 )
@@ -376,19 +376,19 @@ export function FAQDetail() {
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100">
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Người tạo</p>
-              <p className="text-sm font-semibold text-gray-700">{faq.createdByName || '—'}</p>
+              <p className="text-sm font-normal text-gray-700">{faq.createdByName || '—'}</p>
             </div>
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ngày tạo</p>
-              <p className="text-sm font-semibold text-gray-700">{formatDate(faq.createdAt)}</p>
+              <p className="text-sm font-normal text-gray-700">{formatDate(faq.createdAt)}</p>
             </div>
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Người cập nhật</p>
-              <p className="text-sm font-semibold text-gray-700">{faq.updatedByName || '—'}</p>
+              <p className="text-sm font-normal text-gray-700">{faq.updatedByName || '—'}</p>
             </div>
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ngày cập nhật</p>
-              <p className="text-sm font-semibold text-gray-700">{formatDate(faq.updatedAt)}</p>
+              <p className="text-sm font-normal text-gray-700">{formatDate(faq.updatedAt)}</p>
             </div>
           </div>
 

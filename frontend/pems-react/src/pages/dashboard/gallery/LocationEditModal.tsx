@@ -226,12 +226,12 @@ export function LocationEditModal({
           {loading ? (
             <div className="py-14 text-center text-slate-500">
               <Loader2 className="w-8 h-8 text-[#004c91] mx-auto mb-3 animate-spin" />
-              <p className="font-medium text-slate-600">Đang tải thông tin vị trí...</p>
+              <p className="font-normal text-slate-600">Đang tải thông tin vị trí...</p>
             </div>
           ) : loadError ? (
             <div className="py-14 text-center text-red-500">
               <AlertCircle className="w-10 h-10 mx-auto mb-3" />
-              <p className="font-semibold mb-3">{loadError}</p>
+              <p className="font-normal mb-3">{loadError}</p>
               <button onClick={() => void loadDetail()} className="px-4 py-2 rounded-lg bg-[#004c91] text-white text-sm font-bold outline-none">
                 Thử lại
               </button>

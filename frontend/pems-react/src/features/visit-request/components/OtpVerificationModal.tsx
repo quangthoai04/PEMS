@@ -243,7 +243,7 @@ export const OtpVerificationModal: React.FC<Props> = ({
               {isRecovering ? (
                 <div
                   data-testid="otp-recovering"
-                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600"
+                  className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-normal text-slate-600"
                 >
                   <RefreshCw className="w-4 h-4 animate-spin" />
                   {t('visitRequest:otp.human.recovering')}
@@ -336,14 +336,14 @@ export const OtpVerificationModal: React.FC<Props> = ({
 
                 {/* Remaining attempts — server value, shown after a wrong attempt. */}
                 {otpError && remainingAttempts !== null && remainingAttempts > 0 && (
-                  <p data-testid="otp-remaining-attempts" className="mt-2 text-xs font-semibold text-amber-600 text-center">
+                  <p data-testid="otp-remaining-attempts" className="mt-2 text-xs font-normal text-amber-600 text-center">
                     {t('visitRequest:otp.remainingAttempts', { count: remainingAttempts })}
                   </p>
                 )}
 
                 {/* Server cooldown — presentation countdown, server re-enforces anyway. */}
                 {retryCountdown > 0 && (
-                  <p data-testid="otp-retry-countdown" className="mt-2 text-xs font-semibold text-slate-500 text-center">
+                  <p data-testid="otp-retry-countdown" className="mt-2 text-xs font-normal text-slate-500 text-center">
                     {t('visitRequest:otp.retryIn', { count: retryCountdown })}
                   </p>
                 )}

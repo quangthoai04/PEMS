@@ -32,7 +32,7 @@ export default function SearchMatchContexts({ contexts }: Props) {
           >
             <Search className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
             <span className="font-semibold">{t('visitRequestV2:search.matchedAt')}:</span>
-            <span className="font-medium text-slate-600 dark:text-slate-300">{where}</span>
+            <span className="font-normal text-slate-600 dark:text-slate-300">{where}</span>
             <span aria-hidden>—</span>
             <span>{fields}</span>
           </li>

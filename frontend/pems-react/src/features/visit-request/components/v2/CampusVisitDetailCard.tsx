@@ -137,7 +137,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
               {t('visitRequestV2:detail.amendmentBadge', { no: campus.activeAmendment.amendmentNo })}
             </span>
           )}
-          <span className="ml-auto flex items-center gap-1 text-xs font-medium text-white/90">
+          <span className="ml-auto flex items-center gap-1 text-xs font-normal text-white/90">
             <Clock className="h-3.5 w-3.5" aria-hidden />
             <time dateTime={campus.plannedStartAt}>{formatVietnamDateTime(campus.plannedStartAt)}</time>
             {' → '}

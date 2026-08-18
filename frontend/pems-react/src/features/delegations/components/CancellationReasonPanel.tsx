@@ -58,28 +58,28 @@ export function CancellationReasonPanel({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
         <div>
           <p className="text-xs font-bold text-slate-500">Cấp hủy</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{levelLabel(cancellationLevel)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{levelLabel(cancellationLevel)}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Người hủy</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{cancelledBy}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{cancelledBy}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Thời gian hủy</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatDateTime(cancelledAt)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{formatDateTime(cancelledAt)}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Vai trò hủy</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{actorTypeLabel(cancellationActorType)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{actorTypeLabel(cancellationActorType)}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Nguồn hủy</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{sourceLabel(cancellationSource)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{sourceLabel(cancellationSource)}</p>
         </div>
       </div>
       <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
         <p className="text-xs font-bold text-slate-500">Nội dung</p>
-        <p className="mt-1 text-sm font-semibold text-slate-900 whitespace-pre-wrap">
+        <p className="mt-1 text-sm font-normal text-slate-900 whitespace-pre-wrap">
           {cancellationReason || 'Chưa ghi nhận lý do hủy.'}
         </p>
       </div>

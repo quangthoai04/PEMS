@@ -1259,7 +1259,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                 </h3>
 
                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-700 min-h-[150px] shadow-inner bg-gray-50/30">
-                  <div className="font-bold border-b border-gray-100 pb-2 mb-2">
+                  <div className="font-normal border-b border-gray-100 pb-2 mb-2">
                     {previewSubject || <span className="text-gray-400 italic">Chưa có tiêu đề...</span>}
                   </div>
                   {/* Already sanitised, by the pipeline that substituted the samples into it: the
@@ -1549,7 +1549,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
                   contact card — and between them they could not answer "is there unsaved work on this
                   screen" without the reader knowing which button each referred to. */}
               {isDirty && (
-                <span className="text-xs font-semibold text-amber-700" data-testid="editor-dirty">
+                <span className="text-xs font-normal text-amber-700" data-testid="editor-dirty">
                   ● Có thay đổi chưa lưu
                 </span>
               )}
@@ -1684,7 +1684,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">
-              Đang xem <span className="font-bold text-gray-900">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-bold text-gray-900">{Math.min(currentPage * pageSize, filteredData.length)}</span> trong <span className="font-bold text-gray-900">{filteredData.length}</span> mẫu
+              Đang xem <span className="font-normal text-gray-900">{(currentPage - 1) * pageSize + 1}</span> - <span className="font-normal text-gray-900">{Math.min(currentPage * pageSize, filteredData.length)}</span> trong <span className="font-normal text-gray-900">{filteredData.length}</span> mẫu
             </span>
             <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
               <label htmlFor="pageSize" className="text-sm text-gray-500">Hiển thị:</label>

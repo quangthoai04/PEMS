@@ -268,7 +268,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 <h3 className="text-lg font-extrabold text-slate-900">
                   {t('visitRequest:cancelConfirm.title')}
                 </h3>
-                <p className="mt-2 text-sm font-medium text-slate-600 leading-relaxed">
+                <p className="mt-2 text-sm font-normal text-slate-600 leading-relaxed">
                   {closePrompt === 'emptied'
                     ? t('visitRequestV2:draft.emptiedDesc')
                     : t('visitRequest:cancelConfirm.desc')}
@@ -277,7 +277,7 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                   <p
                     role="alert"
                     data-testid="v2-modal-save-draft-failed"
-                    className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
+                    className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-normal text-amber-800"
                   >
                     {saveDraftFailed === 'empty'
                       ? t('visitRequestV2:draft.nothingToSave')

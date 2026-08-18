@@ -267,7 +267,7 @@ export function NewsManagement() {
 
       {notificationNewsId && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm mb-4">
-          <span className="font-medium text-blue-800">
+          <span className="font-normal text-blue-800">
             Đang hiển thị đúng tin tức từ thông báo bạn vừa bấm.
           </span>
           <button
@@ -334,13 +334,13 @@ export function NewsManagement() {
                       <div className="line-clamp-2">{item.description}</div>
                     </td>
                     <td className="p-3 align-middle whitespace-nowrap">
-                      <div className="font-bold text-[#004c91] text-[13px]">{item.authorName}</div>
+                      <div className="font-normal text-[#004c91] text-[13px]">{item.authorName}</div>
                       {isHO && item.campusName && (
                         <div className="text-[11px] text-gray-500 mt-0.5">{item.campusName}</div>
                       )}
                     </td>
                     <td className="p-3 align-middle whitespace-nowrap">
-                      <div className="font-medium text-gray-600 text-[13px]">{formatDate(item.createdAt)}</div>
+                      <div className="font-normal text-gray-600 text-[13px]">{formatDate(item.createdAt)}</div>
                     </td>
                     <td className="p-3 align-middle whitespace-nowrap">{getStatusBadge(item.statusLabel)}</td>
                     <td className="p-3 align-middle whitespace-nowrap">{renderActions(item)}</td>
@@ -355,7 +355,7 @@ export function NewsManagement() {
       {/* Pagination */}
       {!loading && !error && (
         <div className="flex items-center justify-between mt-6">
-          <div className="flex items-center gap-3 text-sm text-gray-600 font-medium">
+          <div className="flex items-center gap-3 text-sm text-gray-600 font-normal">
             <span>Hiển thị</span>
             <select
               value={itemsPerPage}

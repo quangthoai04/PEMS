@@ -115,7 +115,7 @@ function LocationManagementMock() {
 
   return (
     <div className="w-full pb-12 animate-in fade-in duration-500 font-sans">
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
+      <div className="flex items-center gap-2 text-sm font-normal text-slate-500 mb-6">
         <span>Dashboard</span>
         <span>/</span>
         <Link to="/dashboard/gallery" className="hover:text-[#004c91] transition-colors">Quản lý Gallery</Link>
@@ -133,7 +133,7 @@ function LocationManagementMock() {
           </button>
           <div>
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý khu vực</h1>
-            <p className="text-gray-500 mt-1 font-medium">Danh sách các tòa và khu vực cụ thể</p>
+            <p className="text-gray-500 mt-1 font-normal">Danh sách các tòa và khu vực cụ thể</p>
           </div>
         </div>
         <button 
@@ -231,7 +231,7 @@ function LocationManagementMock() {
                     <td className="p-4 font-semibold text-slate-800 whitespace-nowrap">
                       {item.category}
                     </td>
-                    <td className="p-4 font-medium text-slate-600 whitespace-nowrap">
+                    <td className="p-4 font-normal text-slate-600 whitespace-nowrap">
                       {item.detail}
                     </td>
                     <td className="p-4 text-center">
@@ -243,7 +243,7 @@ function LocationManagementMock() {
                         {item.status}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">
+                    <td className="p-4 text-slate-600 font-normal whitespace-nowrap text-center">
                       {item.date}
                     </td>
                     <td className="p-4">
@@ -268,7 +268,7 @@ function LocationManagementMock() {
                 )) : (
                   <tr className="bg-slate-50/50">
                     <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
-                      <p className="font-medium text-slate-600 mb-1">Không tìm thấy khu vực nào</p>
+                      <p className="font-normal text-slate-600 mb-1">Không tìm thấy khu vực nào</p>
                     </td>
                   </tr>
                 )}

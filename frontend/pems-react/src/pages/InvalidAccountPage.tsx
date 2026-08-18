@@ -28,7 +28,7 @@ export function InvalidAccountPage() {
           <UserX className="w-8 h-8" />
         </div>
         <h1 className="text-2xl font-black text-[#004c91] mb-2">{t('errors:invalidAccount.title')}</h1>
-        <p className="text-gray-700 font-semibold mb-1">
+        <p className="text-gray-700 font-normal mb-1">
           {t('errors:invalidAccount.message')}
         </p>
         <p className="text-gray-500 text-sm mb-6">

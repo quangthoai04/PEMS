@@ -133,7 +133,7 @@ export function LocationManagementStaffLeader() {
   return (
     <div className="w-full pb-12 animate-in fade-in duration-500 font-sans">
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-500 mb-6">
+      <div className="flex items-center gap-2 text-sm font-normal text-slate-500 mb-6">
         <span>Dashboard</span>
         <span>/</span>
         <Link to="/dashboard/gallery" className="hover:text-[#004c91] transition-colors">Quản lý Gallery</Link>
@@ -151,7 +151,7 @@ export function LocationManagementStaffLeader() {
           </button>
           <div>
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý khu vực</h1>
-            <p className="text-gray-500 mt-1 font-medium">Danh sách khu vực/tòa và vị trí cụ thể dùng cho Gallery</p>
+            <p className="text-gray-500 mt-1 font-normal">Danh sách khu vực/tòa và vị trí cụ thể dùng cho Gallery</p>
           </div>
         </div>
         <button
@@ -240,14 +240,14 @@ export function LocationManagementStaffLeader() {
                 <tr>
                   <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
                     <Loader2 className="w-8 h-8 text-[#004c91] mx-auto mb-3 animate-spin" />
-                    <p className="font-medium text-slate-600">Đang tải dữ liệu...</p>
+                    <p className="font-normal text-slate-600">Đang tải dữ liệu...</p>
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-16 text-center text-red-500">
                     <AlertCircle className="w-10 h-10 mx-auto mb-3" />
-                    <p className="font-semibold mb-3">{error}</p>
+                    <p className="font-normal mb-3">{error}</p>
                     <button onClick={refetch} className="px-4 py-2 rounded-lg bg-[#004c91] text-white text-sm font-bold">Thử lại</button>
                   </td>
                 </tr>
@@ -258,7 +258,7 @@ export function LocationManagementStaffLeader() {
                       {(page - 1) * pageSize + index + 1}
                     </td>
                     <td className="p-4 font-semibold text-slate-800 whitespace-nowrap">{item.areaName}</td>
-                    <td className="p-4 font-medium text-slate-600 whitespace-nowrap">{item.locationName}</td>
+                    <td className="p-4 font-normal text-slate-600 whitespace-nowrap">{item.locationName}</td>
                     <td className="p-4 text-center">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${
                         item.status === 'ACTIVE'
@@ -268,7 +268,7 @@ export function LocationManagementStaffLeader() {
                         {item.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng hoạt động'}
                       </span>
                     </td>
-                    <td className="p-4 text-slate-600 font-medium whitespace-nowrap text-center">{formatDate(item.createdAt)}</td>
+                    <td className="p-4 text-slate-600 font-normal whitespace-nowrap text-center">{formatDate(item.createdAt)}</td>
                     <td className="p-4">
                       <div className="flex items-center justify-center gap-2">
                         <button
@@ -294,7 +294,7 @@ export function LocationManagementStaffLeader() {
                 <tr className="bg-slate-50/50">
                   <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
                     <MapPin className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                    <p className="font-medium text-slate-600 mb-1">
+                    <p className="font-normal text-slate-600 mb-1">
                       {hasAnyFilter ? 'Không tìm thấy khu vực phù hợp.' : 'Chưa có khu vực/vị trí nào.'}
                     </p>
                     <p className="text-xs">
@@ -325,7 +325,7 @@ export function LocationManagementStaffLeader() {
                 </select>
                 <ChevronDown className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
               </div>
-              <span className="text-sm font-medium text-gray-500">/ {data.totalItems} bản ghi</span>
+              <span className="text-sm font-normal text-gray-500">/ {data.totalItems} bản ghi</span>
             </div>
 
             <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export function LocationManagementStaffLeader() {
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-sm font-bold text-gray-600 px-2">Trang {page} / {Math.max(1, totalPages)}</span>
+              <span className="text-sm font-normal text-gray-600 px-2">Trang {page} / {Math.max(1, totalPages)}</span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}

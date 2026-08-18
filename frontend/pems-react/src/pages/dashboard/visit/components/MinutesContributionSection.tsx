@@ -41,7 +41,7 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
         </div>
         <div className="flex-1">
           <h2 className="text-base font-black text-[#004c91]">Biên bản</h2>
-          <p className="text-xs font-semibold text-slate-500">
+          <p className="text-xs font-normal text-slate-500">
             {data.hasMinutes ? 'Đã khởi tạo' : 'Chưa có biên bản'}
           </p>
         </div>
@@ -61,11 +61,11 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
           />
         ) : (
-          <p className="text-sm font-semibold text-slate-400">Nội dung biên bản trống.</p>
+          <p className="text-sm font-normal text-slate-400">Nội dung biên bản trống.</p>
         )}
 
         {data.lockedByName && (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700">
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-normal text-amber-700">
             <Lock className="w-4 h-4 shrink-0" />
             Đang được chỉnh sửa bởi {data.lockedByName}
           </div>

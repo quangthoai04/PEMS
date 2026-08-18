@@ -38,7 +38,7 @@ function Field({ label, value, className = '', multiline = false }: {
     return (
       <div className={`py-0.5 text-[13px] leading-5 ${className}`}>
         <span className="text-gray-500">{label}:</span>
-        <p className="mt-0.5 whitespace-pre-wrap break-words font-medium text-gray-800">
+        <p className="mt-0.5 whitespace-pre-wrap break-words font-normal text-gray-800">
           {has ? value : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
         </p>
       </div>
@@ -47,7 +47,7 @@ function Field({ label, value, className = '', multiline = false }: {
   return (
     <div className={`flex gap-2 py-0.5 text-[13px] leading-5 ${className}`}>
       <span className="w-40 shrink-0 text-gray-500">{label}:</span>
-      <span className="min-w-0 break-words font-medium text-gray-800">
+      <span className="min-w-0 break-words font-normal text-gray-800">
         {has ? value : <span className="font-normal italic text-gray-400">{EMPTY}</span>}
       </span>
     </div>
@@ -133,7 +133,7 @@ export function DelegationInfoReadOnly({ summary }: { summary?: VisitProcessRequ
                 <tr><td className="px-2.5 py-1.5 italic text-gray-400" colSpan={3}>{EMPTY}</td></tr>
               ) : (
                 summary!.campuses.map((c) => (
-                  <tr key={c.visitInstanceId} className={c.isCurrent ? 'bg-blue-50/40 font-semibold' : ''}>
+                  <tr key={c.visitInstanceId} className={c.isCurrent ? 'bg-blue-50/40' : ''}>
                     <td className="px-2.5 py-1.5 text-gray-800">
                       {c.campusName}
                       {c.isCurrent && <span className="ml-2 rounded bg-[#004c91] px-1.5 py-0.5 text-[10px] font-bold text-white">Đang xử lý</span>}

@@ -276,7 +276,7 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
                     {/* Visitor is an external guest, not tied to any campus — showing "Campus
                         Không rõ" would just be noise. */}
                     {!isVisitor && (
-                      <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-medium">
+                      <p className="text-[12px] text-[#004c91] flex items-center gap-1 mt-0.5 truncate font-normal">
                         <School className="w-3.5 h-3.5 flex-shrink-0" />
                         Campus {displayCampus}
                       </p>

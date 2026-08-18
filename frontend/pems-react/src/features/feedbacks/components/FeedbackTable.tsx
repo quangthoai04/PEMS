@@ -43,7 +43,7 @@ export function FeedbackTable({ summaries, loading, currentPage, pageSize, onVie
                   </td>
                   <td className="p-4">
                     <p className="font-bold text-[#004c91] mb-1 line-clamp-1">{item.visitTitle}</p>
-                    <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <div className="flex items-center gap-2 text-xs font-normal text-slate-500">
                       <span className="bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">REQ #{item.visitRequestId}</span>
                       {item.visitInstanceId && <span className="bg-slate-100 px-2 py-0.5 rounded whitespace-nowrap">INST #{item.visitInstanceId}</span>}
                       {item.campusName && <span className="text-slate-400 whitespace-nowrap">• {item.campusName}</span>}
@@ -51,14 +51,14 @@ export function FeedbackTable({ summaries, loading, currentPage, pageSize, onVie
                   </td>
                   <td className="p-4 text-center whitespace-nowrap">
                     <div className="flex items-center justify-center gap-1">
-                      <span className="font-bold text-slate-700">{item.averageRating.toFixed(1)}</span>
+                      <span className="font-normal text-slate-700">{item.averageRating.toFixed(1)}</span>
                       <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
                     </div>
                   </td>
                   <td className="p-4">
                     {item.latestSubmittedAt ? (
                       <>
-                        <div className="text-sm font-medium text-slate-700 whitespace-nowrap">{formatDate(item.latestSubmittedAt)}</div>
+                        <div className="text-sm font-normal text-slate-700 whitespace-nowrap">{formatDate(item.latestSubmittedAt)}</div>
                         <div className="text-xs text-slate-500 mt-0.5 truncate max-w-[150px]">{item.latestSubmitterName}</div>
                       </>
                     ) : <span className="text-slate-400">-</span>}
@@ -87,14 +87,14 @@ export function FeedbackTable({ summaries, loading, currentPage, pageSize, onVie
               <tr>
                 <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
                   <MessageSquare className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p className="font-medium text-slate-600 mb-1">Không tìm thấy feedback nào</p>
+                  <p className="font-normal text-slate-600 mb-1">Không tìm thấy feedback nào</p>
                   <p className="text-sm text-slate-400">Vui lòng thử thay đổi bộ lọc hoặc tìm kiếm khác</p>
                 </td>
               </tr>
             ) : (
               <tr>
                 <td colSpan={6} className="px-6 py-16 text-center text-slate-500">
-                  <p className="font-medium text-slate-600 mb-1">Đang tải dữ liệu...</p>
+                  <p className="font-normal text-slate-600 mb-1">Đang tải dữ liệu...</p>
                 </td>
               </tr>
             )}

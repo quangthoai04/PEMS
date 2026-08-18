@@ -162,7 +162,7 @@ export function AssignHostModal({
 
         <div className="p-5 flex-1 overflow-y-auto">
           <p className="mb-3 rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-2 text-[12px] text-[#004c91]">
-            Duyệt yêu cầu <span className="font-bold">bắt buộc chọn người phụ trách tiếp đón</span> trong cùng một bước.
+            Duyệt yêu cầu <span className="font-normal">bắt buộc chọn người phụ trách tiếp đón</span> trong cùng một bước.
             Bạn có thể chọn IC Staff của cơ sở hoặc chính mình phụ trách tiếp đón.
           </p>
 
@@ -183,7 +183,7 @@ export function AssignHostModal({
               <p className="text-sm">Đang tải danh sách nhân sự...</p>
             </div>
           ) : loadError ? (
-            <div className="py-10 text-center text-red-500 text-sm font-medium">{loadError}</div>
+            <div className="py-10 text-center text-red-500 text-sm font-normal">{loadError}</div>
           ) : filtered.length === 0 ? (
             <div className="py-10 text-center text-slate-500 text-sm">
               <Users className="w-10 h-10 mx-auto mb-2 text-slate-300" />
@@ -227,7 +227,7 @@ export function AssignHostModal({
                     </div>
 
                     {!c.hasScheduleConflict ? (
-                      <p className="mt-1.5 text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                      <p className="mt-1.5 text-[11px] font-normal text-emerald-600 flex items-center gap-1">
                         <Check className="w-3.5 h-3.5" /> Không trùng lịch với đơn này
                       </p>
                     ) : (
@@ -241,7 +241,7 @@ export function AssignHostModal({
                           </p>
                         )}
                         {c.conflictCount > 1 && (
-                          <p className="mt-0.5 font-semibold">Trùng {c.conflictCount} lịch trong khung giờ này</p>
+                          <p className="mt-0.5 font-normal">Trùng {c.conflictCount} lịch trong khung giờ này</p>
                         )}
                       </div>
                     )}
@@ -271,7 +271,7 @@ export function AssignHostModal({
               role="alert"
               className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900"
             >
-              <p className="flex items-start gap-2 font-semibold">
+              <p className="flex items-start gap-2 font-normal">
                 <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 {INSTANCE_VERSION_CONFLICT_MESSAGE}
               </p>

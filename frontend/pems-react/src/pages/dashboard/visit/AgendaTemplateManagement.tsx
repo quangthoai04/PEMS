@@ -412,7 +412,7 @@ export function AgendaTemplateManagement() {
                   </button>
                 ))}
                 {!listLoading && templates.length === 0 && (
-                  <div className="text-center py-10 text-gray-400 text-sm font-medium">Chưa có mẫu agenda nào.</div>
+                  <div className="text-center py-10 text-gray-400 text-sm font-normal">Chưa có mẫu agenda nào.</div>
                 )}
               </div>
             </div>
@@ -437,7 +437,7 @@ export function AgendaTemplateManagement() {
                           {detail.status === 'INACTIVE' && <span className="px-3 py-1 bg-gray-200 text-gray-600 rounded-full text-xs font-bold">INACTIVE</span>}
                         </div>
                         <h2 className="text-2xl font-bold text-gray-900">{detail.name}</h2>
-                        {detail.description && <p className="text-gray-500 mt-2 font-medium leading-relaxed">{detail.description}</p>}
+                        {detail.description && <p className="text-gray-500 mt-2 font-normal leading-relaxed">{detail.description}</p>}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {!detail.isDefault && detail.status === 'ACTIVE' && !detail.isDeleted && (
@@ -460,13 +460,13 @@ export function AgendaTemplateManagement() {
                         {[...detail.items].sort((a, b) => a.startOffsetMinutes - b.startOffsetMinutes || a.displayOrder - b.displayOrder).map((item) => (
                           <div key={item.agendaTemplateItemId} className="flex gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50">
                             <div className="shrink-0 w-40 flex flex-col pt-0.5">
-                              <span className="text-[#f37021] font-bold text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" /> Bắt đầu sau {item.startOffsetMinutes} phút</span>
+                              <span className="text-[#f37021] font-normal text-sm flex items-center gap-1.5"><Clock className="w-4 h-4" /> Bắt đầu sau {item.startOffsetMinutes} phút</span>
                               <span className="text-xs text-gray-400 mt-0.5 ml-5">Thời lượng {item.durationMinutes} phút</span>
                             </div>
                             <div className="flex-1">
-                              <h4 className="font-bold text-gray-900 mb-2">{item.title}</h4>
+                              <h4 className="font-normal text-gray-900 mb-2">{item.title}</h4>
                               {item.description && <p className="text-sm text-gray-500 mb-2">{item.description}</p>}
-                              <div className="flex flex-wrap gap-4 text-sm font-medium text-gray-500">
+                              <div className="flex flex-wrap gap-4 text-sm font-normal text-gray-500">
                                 {item.responsibleRoleLabel && <span className="flex items-center gap-1.5"><User className="w-4 h-4" /> Gợi ý phụ trách: {item.responsibleRoleLabel}</span>}
                                 {item.location && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" /> {item.location}</span>}
                               </div>
@@ -479,7 +479,7 @@ export function AgendaTemplateManagement() {
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-gray-400">
                     <FileText className="w-16 h-16 text-gray-200 mb-4" />
-                    <p className="font-medium">Chọn một mẫu hoặc tạo mẫu mới.</p>
+                    <p className="font-normal">Chọn một mẫu hoặc tạo mẫu mới.</p>
                   </div>
                 )}
               </div>
@@ -626,18 +626,18 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                       <input type="text" value={item.responsibleRoleLabel} onChange={(e) => onPatchItem(item.uid, { responsibleRoleLabel: e.target.value })} maxLength={150}
                         placeholder="VD: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ"
                         className="h-11 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 text-sm font-normal text-slate-800 outline-none transition-colors focus:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/10" />
-                      <p className="mt-1.5 text-xs font-medium text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
+                      <p className="mt-1.5 text-xs font-normal text-slate-400">Nhập vai trò nên phụ trách mục này trong mẫu, ví dụ: Người phụ trách tiếp đón, IC hỗ trợ, Sinh viên hỗ trợ. Đây chỉ là gợi ý, không phải phân công người cụ thể.</p>
                     </div>
                   </div>
 
-                  <div className="mt-3 text-xs font-medium text-slate-400">
+                  <div className="mt-3 text-xs font-normal text-slate-400">
                     Bắt đầu sau {normalizeNonNegativeInteger(item.startOffsetMinutes) || '0'} phút · Thời lượng {normalizeNonNegativeInteger(item.durationMinutes) || '0'} phút (mục #{idx + 1})
                   </div>
                 </div>
               ))}
               {editor.items.length === 0 && (
                 <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
-                  <p className="text-sm font-medium text-gray-500">Chưa có mục nào. Hãy thêm mục để hoàn thành mẫu agenda.</p>
+                  <p className="text-sm font-normal text-gray-500">Chưa có mục nào. Hãy thêm mục để hoàn thành mẫu agenda.</p>
                 </div>
               )}
             </div>

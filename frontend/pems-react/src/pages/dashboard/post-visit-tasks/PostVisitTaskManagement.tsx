@@ -131,7 +131,7 @@ export function PostVisitTaskManagement() {
       {/* Banner khi mở từ chuông thông báo — chỉ đang hiện đúng 1 đầu việc, không phải toàn bộ danh sách. */}
       {filters.actionItemId && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#004c91]/20 bg-[#004c91]/5 px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-[#004c91]">
+          <div className="flex items-center gap-2 text-sm font-normal text-[#004c91]">
             <Bell className="w-4 h-4 shrink-0" />
             Đang lọc theo thông báo — chỉ hiển thị đúng công việc bạn vừa mở.
           </div>
@@ -237,9 +237,9 @@ export function PostVisitTaskManagement() {
                         <Building2 className="w-3 h-3" /> {item.delegationName}
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-sm font-medium text-slate-600">
+                    <td className="px-4 py-4 text-sm font-normal text-slate-600">
                       {item.dueDate ? (
-                        <span className={`inline-flex items-center gap-1 ${overdue ? 'text-red-600 font-bold' : ''}`}>
+                        <span className={`inline-flex items-center gap-1 ${overdue ? 'text-red-600 font-normal' : ''}`}>
                           <Calendar className="w-3.5 h-3.5" /> {formatVietnamDateTime(item.dueDate)}
                         </span>
                       ) : 'Chưa đặt hạn'}
@@ -269,7 +269,7 @@ export function PostVisitTaskManagement() {
                   <td colSpan={5} className="px-6 py-16">
                     <div className="flex flex-col items-center gap-2">
                       <ClipboardList className="w-10 h-10 text-slate-300" />
-                      <p className="text-slate-500 font-medium">Không có công việc nào phù hợp.</p>
+                      <p className="text-slate-500 font-normal">Không có công việc nào phù hợp.</p>
                     </div>
                   </td>
                 </tr>
@@ -296,7 +296,7 @@ export function PostVisitTaskManagement() {
                 className="p-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <span className="text-sm font-medium px-2">Trang {currentPage} / {totalPages}</span>
+              <span className="text-sm font-normal px-2">Trang {currentPage} / {totalPages}</span>
               <button disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}
                 className="p-1.5 border border-slate-200 rounded-lg text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                 <ChevronRight className="w-5 h-5" />
@@ -328,7 +328,7 @@ export function PostVisitTaskManagement() {
               </button>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Nội dung công việc</p>
-                <p className="text-sm font-semibold text-slate-800">{detailItem.title}</p>
+                <p className="text-sm font-normal text-slate-800">{detailItem.title}</p>
               </div>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1">Hạn hoàn thành</p>

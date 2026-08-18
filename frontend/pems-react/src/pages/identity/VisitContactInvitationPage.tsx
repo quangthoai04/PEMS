@@ -182,28 +182,28 @@ export default function VisitContactInvitationPage({ kind }: Props) {
             <dl className="mt-6 space-y-2 rounded-lg bg-gray-50 dark:bg-gray-700/40 p-4 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.requestCode')}</dt>
-                <dd className="font-medium text-gray-900 dark:text-gray-100">{info.requestCode ?? '—'}</dd>
+                <dd className="font-normal text-gray-900 dark:text-gray-100">{info.requestCode ?? '—'}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.delegation')}</dt>
-                <dd className="font-medium text-gray-900 dark:text-gray-100">{info.delegationName ?? '—'}</dd>
+                <dd className="font-normal text-gray-900 dark:text-gray-100">{info.delegationName ?? '—'}</dd>
               </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.invitedEmail')}</dt>
-                <dd className="font-medium text-gray-900 dark:text-gray-100">{info.maskedEmail ?? '—'}</dd>
+                <dd className="font-normal text-gray-900 dark:text-gray-100">{info.maskedEmail ?? '—'}</dd>
               </div>
               {/* The campus this invitation is about. It is the whole point of a per-campus
                   invitation: accepting binds the recipient to THIS campus and no other. */}
               {info.campusName ? (
                 <div className="flex justify-between gap-4">
                   <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.campus')}</dt>
-                  <dd className="font-medium text-gray-900 dark:text-gray-100">{info.campusName}</dd>
+                  <dd className="font-normal text-gray-900 dark:text-gray-100">{info.campusName}</dd>
                 </div>
               ) : null}
               {info.expiresAt && (
                 <div className="flex justify-between gap-4">
                   <dt className="text-gray-500 dark:text-gray-400">{t('contactInvitation.fields.expiresAt')}</dt>
-                  <dd className="font-medium text-gray-900 dark:text-gray-100">
+                  <dd className="font-normal text-gray-900 dark:text-gray-100">
                     {formatLocalizedDateTime(info.expiresAt, language)}
                   </dd>
                 </div>

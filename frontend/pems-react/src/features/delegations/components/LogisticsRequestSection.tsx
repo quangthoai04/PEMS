@@ -635,7 +635,7 @@ export function LogisticsRequestSection({
                   placeholder="Nhập lý do hủy yêu cầu logistics..."
                   className="h-[100px] w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#004c91]" />
                 {cancelModal.err && (
-                  <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-red-600">
+                  <p className="mt-1 flex items-center gap-1 text-xs font-normal text-red-600">
                     <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {cancelModal.err}
                   </p>
                 )}
@@ -994,7 +994,7 @@ export function LogisticsRequestSection({
 
             {/* Footer controls inside modal */}
             <div className="bg-slate-50 px-6 py-4 flex flex-col sm:flex-row justify-between items-center border-t border-slate-200 gap-4 shrink-0 rounded-b-2xl">
-              <span className="text-[11px] text-slate-500 font-medium italic">
+              <span className="text-[11px] text-slate-500 font-normal italic">
                 {signErr ? <span className="text-red-500 flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {signErr}</span> : 'Vui lòng kiểm tra kỹ hiện trạng trước khi ký xác nhận.'}
               </span>
               <button onClick={closeSignModal} className="px-6 py-2.5 bg-[#004c91] text-white hover:bg-[#003b70] text-[12px] font-bold rounded-xl transition-colors shadow-sm w-full sm:w-auto outline-none">
@@ -1069,8 +1069,8 @@ function ItemSummary({ item, label, departments, canManage, busy, onCancel }: {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-700">
-        {item.quantity != null && <div><span className="text-gray-500">Số lượng:</span> <b>{item.quantity}</b></div>}
-        {deptName && <div><span className="text-gray-500">Phòng ban:</span> <b>{deptName}</b></div>}
+        {item.quantity != null && <div><span className="text-gray-500">Số lượng:</span> <b className="font-normal">{item.quantity}</b></div>}
+        {deptName && <div><span className="text-gray-500">Phòng ban:</span> <b className="font-normal">{deptName}</b></div>}
         {(item.usageStartAt || item.usageEndAt) && (
           <div className="sm:col-span-2"><span className="text-gray-500">Thời gian:</span> {fmtDateTime(item.usageStartAt)} – {fmtDateTime(item.usageEndAt)}</div>
         )}
@@ -1315,7 +1315,7 @@ function ResourceCard({
                           {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                         </div>
                         {!d.canReceiveLogistics && d.logisticsDisabledReason && (
-                          <div className="mt-0.5 text-[11px] font-medium text-amber-600">{d.logisticsDisabledReason}</div>
+                          <div className="mt-0.5 text-[11px] font-normal text-amber-600">{d.logisticsDisabledReason}</div>
                         )}
                       </div>
                       {d.canReceiveLogistics && (
@@ -1340,7 +1340,7 @@ function ResourceCard({
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-600 mt-0.5">
-                      <span>Trưởng phòng: <span className="font-semibold">{dept.leaderName || 'Chưa có'}</span></span>
+                      <span>Trưởng phòng: <span className="font-normal">{dept.leaderName || 'Chưa có'}</span></span>
                     </div>
                   </div>
                   {canManage && !isSubmitted && (
@@ -1399,7 +1399,7 @@ function ResourceCard({
         </div>
 
         {err && (
-          <p className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
+          <p className="flex items-center gap-1.5 text-xs font-normal text-red-600">
             <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {err}
           </p>
         )}
@@ -1478,7 +1478,7 @@ function OfflineCard({
 
   return (
     <div className="ml-5 flex flex-col gap-4 p-5 bg-amber-50/40 border border-amber-200 rounded-xl shadow-sm">
-      <div className="flex items-center gap-2 text-sm font-bold text-amber-800">
+      <div className="flex items-center gap-2 text-sm font-normal text-amber-800">
         <AlertCircle className="w-4 h-4" /> Đã trao đổi/xử lý bên ngoài hệ thống — chỉ lưu dấu vết, không gửi email.
         {onRemove && canManage && !isSubmitted && (
           <button type="button" onClick={onRemove} title="Xóa dòng"
@@ -1557,7 +1557,7 @@ function OfflineCard({
       </div>
 
       {err && (
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
+        <p className="flex items-center gap-1.5 text-xs font-normal text-red-600">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {err}
         </p>
       )}
@@ -1780,7 +1780,7 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
           </span>
           {it.quantity != null && (
             <span className="inline-flex items-center text-xs font-medium text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
-              SL dự kiến: <b className="ml-1 text-slate-800">{it.quantity}</b>
+              SL dự kiến: <b className="ml-1 font-normal text-slate-800">{it.quantity}</b>
             </span>
           )}
           {it.proposedQuantity != null && it.proposalResponse !== 'ACCEPTED' && (
@@ -1817,7 +1817,7 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             {it.departmentName && (
-              <div><span className="text-slate-400 font-medium">Phòng ban:</span> <b className="text-slate-800">{it.departmentName}</b></div>
+              <div><span className="text-slate-400 font-medium">Phòng ban:</span> <b className="font-normal text-slate-800">{it.departmentName}</b></div>
             )}
           </div>
           {isHandoverEligible && (
@@ -1842,7 +1842,7 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
             {(it.usageStartAt || it.usageEndAt) && (
               <div>
                 <span className="text-slate-400 font-medium">Thời gian:</span>{' '}
-                <span className="font-semibold text-slate-800">{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>
+                <span className="font-normal text-slate-800">{fmtDateTime(it.usageStartAt)} – {fmtDateTime(it.usageEndAt)}</span>
               </div>
             )}
           </div>
@@ -1874,13 +1874,13 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {it.requestedByName && (
-              <div><span className="text-slate-400 font-medium">Người gửi:</span> <span className="font-semibold text-slate-700">{it.requestedByName}</span></div>
+              <div><span className="text-slate-400 font-medium">Người gửi:</span> <span className="font-normal text-slate-700">{it.requestedByName}</span></div>
             )}
             {it.assignedToName && (
               <div className="flex items-center gap-1.5">
                 {it.requestedByName && <span className="text-slate-300">•</span>}
                 <span className="text-slate-400 font-medium">Nhân sự:</span>{' '}
-                <span className="font-semibold text-slate-700">{it.assignedToName}</span>
+                <span className="font-normal text-slate-700">{it.assignedToName}</span>
               </div>
             )}
           </div>
@@ -1910,10 +1910,10 @@ function LogisticsListRow({ it, delegationName, canManage, busy, onRespond, onVi
             {proposed ? 'Phòng ban đề xuất thay đổi' : 'Đã chấp nhận đề xuất thay đổi'}
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-700">
-            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className={proposed ? 'text-violet-900' : 'text-emerald-900'}>{it.proposedQuantity}</b></div>}
-            {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-semibold text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
+            {it.proposedQuantity != null && <div><span className="text-slate-500">Số lượng đề xuất:</span> <b className={`font-normal ${proposed ? 'text-violet-900' : 'text-emerald-900'}`}>{it.proposedQuantity}</b></div>}
+            {(it.proposedUsageStartAt || it.proposedUsageEndAt) && <div><span className="text-slate-500">Thời gian đề xuất:</span> <span className="font-normal text-slate-800">{fmtDateTime(it.proposedUsageStartAt)} – {fmtDateTime(it.proposedUsageEndAt)}</span></div>}
             {it.proposedDescription && <div className="sm:col-span-2"><span className="text-slate-500">Nội dung đề xuất:</span> {it.proposedDescription}</div>}
-            {it.proposalNote && <div className={`sm:col-span-2 font-medium ${proposed ? 'text-violet-800' : 'text-emerald-800'}`}>Lý do: {it.proposalNote}</div>}
+            {it.proposalNote && <div className={`sm:col-span-2 font-normal ${proposed ? 'text-violet-800' : 'text-emerald-800'}`}>Lý do: {it.proposalNote}</div>}
           </div>
           {proposed && canManage && (!rejecting ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">

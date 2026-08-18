@@ -369,7 +369,7 @@ export function FAQManagement() {
                 ))
               ) : error ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-red-500 font-medium">
+                  <td colSpan={6} className="px-4 py-12 text-center text-red-500 font-normal">
                     {error}
                   </td>
                 </tr>
@@ -412,7 +412,7 @@ export function FAQManagement() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500 font-medium">
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-500 font-normal">
                     Không tìm thấy FAQ nào
                   </td>
                 </tr>

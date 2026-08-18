@@ -52,7 +52,7 @@ export function CancellationReasonModal({
           {delegationName ? (
             <div>
               <span className="text-[11px] uppercase tracking-wider font-bold text-gray-400">Đoàn khách</span>
-              <p className="text-base font-bold text-slate-800 mt-0.5">{delegationName}</p>
+              <p className="text-base font-normal text-slate-800 mt-0.5">{delegationName}</p>
             </div>
           ) : null}
           <CancellationReasonPanel

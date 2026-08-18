@@ -42,29 +42,29 @@ export const VisitCreateUncertainPanel: React.FC<Props> = ({
             {t('visitRequestV2:uncertain.title')}
           </h2>
           <p className="mt-1 text-sm text-amber-900">{t('visitRequestV2:uncertain.body')}</p>
-          <p className="mt-1 text-sm font-bold text-amber-900">{t('visitRequestV2:uncertain.doNotResend')}</p>
+          <p className="mt-1 text-sm font-normal text-amber-900">{t('visitRequestV2:uncertain.doNotResend')}</p>
         </div>
       </div>
 
       {/* What the lookup answered. COMPLETED never reaches here — the caller promotes straight to
           the success screen — so these are the states that still need the user to decide. */}
       {lookup?.state === 'PENDING' && (
-        <p data-testid="v2-uncertain-pending" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900">
+        <p data-testid="v2-uncertain-pending" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-normal text-amber-900">
           {t('visitRequestV2:uncertain.statePending')}
         </p>
       )}
       {lookup?.state === 'FAILED' && (
-        <p data-testid="v2-uncertain-failed" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900">
+        <p data-testid="v2-uncertain-failed" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-normal text-amber-900">
           {t('visitRequestV2:uncertain.stateFailed')}
         </p>
       )}
       {lookup?.state === 'NOT_FOUND' && (
-        <p data-testid="v2-uncertain-notfound" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-semibold text-amber-900">
+        <p data-testid="v2-uncertain-notfound" className="mt-4 rounded-xl bg-white/70 px-3 py-2.5 text-sm font-normal text-amber-900">
           {t('visitRequestV2:uncertain.stateNotFound')}
         </p>
       )}
       {error && (
-        <p data-testid="v2-uncertain-error" className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700">
+        <p data-testid="v2-uncertain-error" className="mt-4 rounded-xl bg-red-50 px-3 py-2.5 text-sm font-normal text-red-700">
           {error}
         </p>
       )}

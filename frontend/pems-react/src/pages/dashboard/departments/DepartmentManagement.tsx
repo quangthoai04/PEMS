@@ -456,7 +456,7 @@ export function DepartmentManagement() {
                       <span className="font-bold text-gray-800 whitespace-nowrap">{item.name}</span>
                     </td>
                     {isHO && (
-                      <td className="p-4 font-medium text-[#f37021] whitespace-nowrap">
+                      <td className="p-4 font-normal text-[#f37021] whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {item.campus}
@@ -464,14 +464,14 @@ export function DepartmentManagement() {
                       </td>
                     )}
                     {!isStaffLeader && (
-                      <td className="p-4 text-center font-medium whitespace-nowrap">
+                      <td className="p-4 text-center font-normal whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1">
                           {item.staffCount}
                           <User className="w-3.5 h-3.5 text-gray-400" />
                         </div>
                       </td>
                     )}
-                    <td className={`p-4 whitespace-nowrap ${item.head === 'Chưa gán trưởng phòng' ? 'font-medium text-gray-400 italic' : 'font-medium text-gray-700'}`}>
+                    <td className={`p-4 whitespace-nowrap ${item.head === 'Chưa gán trưởng phòng' ? 'font-normal text-gray-400 italic' : 'font-normal text-gray-700'}`}>
                       {item.head}
                     </td>
                     <td className="p-4 text-center whitespace-nowrap">
@@ -487,7 +487,7 @@ export function DepartmentManagement() {
                           <Eye className="w-4 h-4" />
                         </button>
                         {isStaffLeader && (item as any).canToggleStatus === false ? (
-                          <span className="text-xs font-medium text-gray-400 italic">Phòng mặc định</span>
+                          <span className="text-xs font-normal text-gray-400 italic">Phòng mặc định</span>
                         ) : (
                           <button
                             onClick={() => isStaffLeader ? openStatusConfirm(item as any) : toggleStatus(item.id)}
@@ -509,7 +509,7 @@ export function DepartmentManagement() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={isHO ? 7 : (isStaffLeader ? 5 : 6)} className="py-12 text-center text-gray-500 bg-white font-medium">
+                  <td colSpan={isHO ? 7 : (isStaffLeader ? 5 : 6)} className="py-12 text-center text-gray-500 bg-white font-normal">
                     {isStaffLeader
                       ? (slLoading
                           ? 'Đang tải danh sách phòng ban...'
@@ -609,10 +609,10 @@ export function DepartmentManagement() {
 
               {isStaffLeader ? (
                 <>
-                  {createError && <p className="mt-2 text-sm font-bold text-red-600">{createError}</p>}
+                  {createError && <p className="mt-2 text-sm font-normal text-red-600">{createError}</p>}
                   <div className="mt-4">
                     <label className="block text-sm font-bold text-gray-700 mb-2">Cơ sở</label>
-                    <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 font-medium">
+                    <div className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-600 font-normal">
                       {user?.campus || 'Cơ sở của bạn'}
                     </div>
                   </div>
@@ -714,16 +714,16 @@ export function DepartmentManagement() {
               {/* Impact summary (best-effort preview) */}
               {statusConfirm.target === 'INACTIVE' && (
                 statusImpactLoading ? (
-                  <p className="text-sm font-medium text-gray-400">Đang tải thông tin ảnh hưởng...</p>
+                  <p className="text-sm font-normal text-gray-400">Đang tải thông tin ảnh hưởng...</p>
                 ) : statusImpact ? (
                   <div className="rounded-xl bg-gray-50 border border-gray-200 p-4 text-sm space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-gray-600">Tài khoản bị ảnh hưởng</span>
-                      <span className="font-bold text-gray-900">{statusImpact.affectedAccountCount}</span>
+                      <span className="font-normal text-gray-900">{statusImpact.affectedAccountCount}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-gray-600">Phiên đăng nhập đang hoạt động</span>
-                      <span className="font-bold text-gray-900">{statusImpact.activeSessionCount}</span>
+                      <span className="font-normal text-gray-900">{statusImpact.activeSessionCount}</span>
                     </div>
                   </div>
                 ) : null
@@ -743,7 +743,7 @@ export function DepartmentManagement() {
                 </div>
               )}
 
-              {statusError && <p className="text-sm font-bold text-red-600">{statusError}</p>}
+              {statusError && <p className="text-sm font-normal text-red-600">{statusError}</p>}
             </div>
 
             {/* Footer */}
@@ -794,12 +794,12 @@ export function DepartmentManagement() {
             {/* Body */}
             <div className="p-6">
               {detailLoading && (
-                <div className="py-10 text-center text-gray-400 font-medium">Đang tải chi tiết phòng ban...</div>
+                <div className="py-10 text-center text-gray-400 font-normal">Đang tải chi tiết phòng ban...</div>
               )}
 
               {!detailLoading && detailError && (
                 <div className="py-6 text-center">
-                  <p className="text-sm font-bold text-red-600 mb-4">{detailError}</p>
+                  <p className="text-sm font-normal text-red-600 mb-4">{detailError}</p>
                   <button
                     onClick={() => detailData?.departmentId && openDetail(detailData.departmentId)}
                     className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-bold text-gray-600 hover:text-[#004c91] hover:border-[#004c91] transition-colors"
@@ -822,23 +822,23 @@ export function DepartmentManagement() {
                           className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-800 shadow-sm"
                           autoFocus
                         />
-                        {editError && <p className="mt-1.5 text-sm font-bold text-red-600">{editError}</p>}
+                        {editError && <p className="mt-1.5 text-sm font-normal text-red-600">{editError}</p>}
                       </>
                     ) : (
-                      <p className="text-base font-bold text-gray-800">{detailData.name}</p>
+                      <p className="text-base font-normal text-gray-800">{detailData.name}</p>
                     )}
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Cơ sở</label>
-                    <p className="text-sm font-medium text-gray-700">{detailData.campusName}</p>
+                    <p className="text-sm font-normal text-gray-700">{detailData.campusName}</p>
                   </div>
 
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Trưởng phòng</label>
                     {detailData.headFullName
-                      ? <p className="text-sm font-medium text-gray-700">{detailData.headFullName}</p>
-                      : <p className="text-sm font-medium text-gray-400 italic">Chưa gán trưởng phòng</p>}
+                      ? <p className="text-sm font-normal text-gray-700">{detailData.headFullName}</p>
+                      : <p className="text-sm font-normal text-gray-400 italic">Chưa gán trưởng phòng</p>}
                   </div>
 
                   <div>
@@ -895,7 +895,7 @@ export function DepartmentManagement() {
       {/* Toast (Staff Leader actions) — góc trên bên phải */}
       {toast && (
         <div className="fixed top-6 right-6 z-[60] animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className={`px-5 py-3 rounded-xl shadow-lg text-sm font-bold text-white ${toast.type === 'success' ? 'bg-[#0aa14f]' : 'bg-red-600'}`}>
+          <div className={`px-5 py-3 rounded-xl shadow-lg text-sm font-normal text-white ${toast.type === 'success' ? 'bg-[#0aa14f]' : 'bg-red-600'}`}>
             {toast.text}
           </div>
         </div>

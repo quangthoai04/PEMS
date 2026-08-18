@@ -463,7 +463,7 @@ export function CreateVisitRequest() {
                       </div>
                       
                       {showNoAccountError && (
-                        <p className="text-sm text-red-500 mt-2 font-medium">
+                        <p className="text-sm text-red-500 mt-2 font-normal">
                           Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
                           <span 
                             className="underline cursor-pointer hover:text-red-600 font-bold"
@@ -539,7 +539,7 @@ export function CreateVisitRequest() {
                     </div>
 
                     {showSupporterNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
+                      <p className="text-sm text-red-500 mt-2 font-normal">
                         Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
                         <span 
                           className="underline cursor-pointer hover:text-red-600 font-bold"
@@ -626,7 +626,7 @@ export function CreateVisitRequest() {
                     </div>
 
                     {showOtherDeptNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
+                      <p className="text-sm text-red-500 mt-2 font-normal">
                         Nguyễn Không TK chưa có tài khoản <ArrowRight className="w-4 h-4 inline mx-1" /> 
                         <span 
                           className="underline cursor-pointer hover:text-red-600 font-bold"
@@ -701,9 +701,9 @@ export function CreateVisitRequest() {
                     </div>
 
                     {showStudentNoAccountError && (
-                      <p className="text-sm text-red-500 mt-2 font-medium">
+                      <p className="text-sm text-red-500 mt-2 font-normal">
                         Sinh viên chưa có tài khoản trên hệ thống <ArrowRight className="w-4 h-4 inline mx-1" /> 
-                        <span className="font-bold">
+                        <span className="font-normal">
                           Liên hệ Trưởng phòng IC để cấp tài khoản
                         </span>
                       </p>
@@ -761,7 +761,7 @@ export function CreateVisitRequest() {
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
                       <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-normal outline-none bg-transparent" value={alerts.system.days} onChange={e => setAlerts({...alerts, system: {...alerts.system, days: parseInt(e.target.value)||1}})} />
                     </div>
-                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                    <span className="text-xs text-gray-600 font-normal">ngày trước, vào lúc</span>
                     <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.system.time} onChange={e => setAlerts({...alerts, system: {...alerts.system, time: e.target.value}})} />
                   </div>
                 </div>
@@ -779,7 +779,7 @@ export function CreateVisitRequest() {
                     <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
                       <input type="number" min="1" max="31" className="w-14 px-2 py-2 text-center text-sm font-normal outline-none bg-transparent" value={alerts.email.days} onChange={e => setAlerts({...alerts, email: {...alerts.email, days: parseInt(e.target.value)||1}})} />
                     </div>
-                    <span className="text-xs text-gray-600 font-medium">ngày trước, vào lúc</span>
+                    <span className="text-xs text-gray-600 font-normal">ngày trước, vào lúc</span>
                     <input type="time" className="px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none bg-white" value={alerts.email.time} onChange={e => setAlerts({...alerts, email: {...alerts.email, time: e.target.value}})} />
                   </div>
                 </div>

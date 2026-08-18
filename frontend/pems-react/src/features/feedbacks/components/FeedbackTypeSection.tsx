@@ -37,7 +37,7 @@ const formatDate = (dateStr: string) => formatVietnamDateTime(dateStr, { fallbac
 export function FeedbackTypeSection({ title, items, emptyText = 'Chưa có đánh giá.' }: Props) {
   return (
     <div>
-      <h3 className="text-sm font-bold text-slate-800 mb-1.5">{title} <span className="text-slate-400 font-medium">({items.length})</span></h3>
+      <h3 className="text-sm font-bold text-slate-800 mb-1.5">{title} <span className="text-slate-400 font-normal">({items.length})</span></h3>
 
       {items.length === 0 ? (
         <p className="text-xs text-slate-400 italic py-1">{emptyText}</p>
@@ -49,7 +49,7 @@ export function FeedbackTypeSection({ title, items, emptyText = 'Chưa có đán
                 <p className="text-sm text-slate-700">
                   <span className="font-bold text-slate-800">{fb.submitterNameSnapshot}</span>
                   <span className="text-slate-400"> → </span>
-                  <span className="font-medium">{fb.targetNameSnapshot}</span>
+                  <span className="font-normal">{fb.targetNameSnapshot}</span>
                   <span className="text-[11px] text-slate-400 ml-2">{formatDate(fb.submittedAt)}</span>
                 </p>
                 {fb.commentPreview && <FeedbackCommentText comment={fb.commentPreview} />}

@@ -596,16 +596,16 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               {/* Chỉ giữ banner cho lỗi tải dữ liệu (khi không có gì để hiển thị). Mọi thông báo
                   thao tác (lưu/đồng bộ/thêm người) dùng toast ở góc phải trên. */}
               {loadError && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{loadError}</div>
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-normal text-red-700">{loadError}</div>
               )}
 
               {loading ? (
-                <div className="py-8 text-center text-slate-500 font-medium">Đang tải biên bản...</div>
+                <div className="py-8 text-center text-slate-500 font-normal">Đang tải biên bản...</div>
               ) : !data ? null : !data.exists ? (
                 /* Chưa có biên bản — nút tạo màu cam như mẫu cũ */
                 <div className="text-center py-6">
                   <FileText className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-                  <p className="text-slate-600 font-medium mb-4">Chưa có biên bản cho chuyến thăm này.</p>
+                  <p className="text-slate-600 font-normal mb-4">Chưa có biên bản cho chuyến thăm này.</p>
                   {data.canCreate && !isReadOnly && (
                     <button type="button" onClick={handleCreate} disabled={busy}
                       className="px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl shadow-sm hover:bg-[#e0611d] transition-colors inline-flex items-center gap-2 disabled:opacity-50">
@@ -616,11 +616,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               ) : (
                 <>
                   {editing ? (
-                    <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800">
+                    <div className="mb-6 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-normal text-amber-800">
                       <Clock className="w-4 h-4" /> Bạn đang chỉnh sửa biên bản. Phiên sửa còn {mm}:{ss}
                     </div>
                   ) : data.isLockedByOther ? (
-                    <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                    <div className="mb-6 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-normal text-amber-800">
                       <Lock className="w-4 h-4 mt-0.5 shrink-0" />
                       <span>
                         Biên bản đang được chỉnh sửa bởi <b>{data.editLockedByName || 'người khác'}</b>. Bạn chỉ có thể xem nội dung hiện tại;
@@ -650,12 +650,12 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                         }`}
                       />
                       {editing && titleError && (
-                        <p className="mt-1.5 ml-1 text-xs font-semibold text-red-600">{titleError}</p>
+                        <p className="mt-1.5 ml-1 text-xs font-normal text-red-600">{titleError}</p>
                       )}
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Trạng thái</label>
-                      <div className="bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 border border-gray-200">
+                      <div className="bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl font-normal flex items-center gap-2 border border-gray-200">
                         <FileText className="w-5 h-5 text-[#004c91] shrink-0" />
                         <span className="whitespace-nowrap">
                           {data.status === 'SAVED' ? 'Đã lưu' : 'Bản nháp'}{data.updatedAt ? ` · ${formatDateTime(data.updatedAt)}` : ''}
@@ -741,7 +741,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                       <span className="font-semibold text-gray-900">{p.fullNameSnapshot || '-'}</span>
                                     )}
                                     {rowError && (
-                                      <p className="mt-1 text-xs font-semibold text-red-600">{rowError}</p>
+                                      <p className="mt-1 text-xs font-normal text-red-600">{rowError}</p>
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
@@ -973,7 +973,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         placeholder="Nội dung công việc..."
                                         className={`w-full bg-transparent text-sm font-normal rounded-lg border px-3 py-2 outline-none ${actionErrors[a._key] ? 'border-red-400 focus:border-red-500' : 'border-gray-300 focus:border-[#004c91]'} ${a.status === 'DONE' ? 'line-through text-gray-400' : 'text-gray-800'}`} />
                                       {actionErrors[a._key] && (
-                                        <p className="mt-1 text-xs font-semibold text-red-600">{actionErrors[a._key]}</p>
+                                        <p className="mt-1 text-xs font-normal text-red-600">{actionErrors[a._key]}</p>
                                       )}
                                     </div>
                                   ) : (
@@ -991,7 +991,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                         ))}
                                       </select>
                                     ) : (
-                                      <span className="text-xs font-semibold text-[#004c91]">
+                                      <span className="text-xs font-normal text-[#004c91]">
                                         {a.assignedToUserId
                                           ? (a.assignedToUserName
                                               ?? responsibleCandidates.find((c) => c.userId === a.assignedToUserId)?.fullName
@@ -1008,11 +1008,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                                           onChange={(e) => { updateActionItem(a._key, { dueDate: e.target.value }); clearActionDateError(a._key); }}
                                           className={`text-xs font-normal px-2 py-1.5 rounded-md border outline-none ${actionDateErrors[a._key] ? 'text-red-700 bg-red-50 border-red-400 focus:border-red-500' : 'text-orange-700 bg-orange-50 border-orange-200 hover:border-orange-300'}`} />
                                       ) : (
-                                        <span className="text-xs font-bold text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
+                                        <span className="text-xs font-normal text-orange-700">{a.dueDate ? formatDateTime(a.dueDate) : 'Chưa đặt hạn'}</span>
                                       )}
                                     </div>
                                     {editing && actionDateErrors[a._key] && (
-                                      <p className="text-xs font-semibold text-red-600">{actionDateErrors[a._key]}</p>
+                                      <p className="text-xs font-normal text-red-600">{actionDateErrors[a._key]}</p>
                                     )}
                                   </div>
                                   {editing ? (
@@ -1135,11 +1135,11 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                   <div className="grid grid-cols-1 gap-2 text-xs">
                     <div>
                       <span className="font-semibold text-gray-500">Người gửi: </span>
-                      <span className="font-medium text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
+                      <span className="font-normal text-gray-800">Ban quản trị PEMS &lt;no-reply@mail.pems-fpt.site&gt;</span>
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Người nhận: </span>
-                      <span className="font-bold text-[#004c91]">
+                      <span className="font-normal text-[#004c91]">
                         {previewEmailItem.assignedToUserId
                           ? (previewEmailItem.assignedToUserName
                               ?? responsibleCandidates.find((c) => c.userId === previewEmailItem.assignedToUserId)?.fullName
@@ -1149,7 +1149,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                     </div>
                     <div>
                       <span className="font-semibold text-gray-500">Tiêu đề: </span>
-                      <span className="font-bold text-gray-900">
+                      <span className="font-normal text-gray-900">
                         [PEMS] Phân công đầu mục công việc — {previewEmailItem.title || '(Chưa nhập nội dung công việc)'}
                       </span>
                     </div>
@@ -1163,7 +1163,7 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                     <span className="text-xs font-normal opacity-80">Chuyến thăm: {data?.title || 'Biên bản cuộc họp'}</span>
                   </div>
                   <div className="p-5 space-y-4 text-gray-700">
-                    <p className="font-semibold">
+                    <p className="font-normal">
                       Kính gửi{' '}
                       <strong className="text-gray-900">
                         {previewEmailItem.assignedToUserId
@@ -1194,16 +1194,16 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
                             className="w-full font-normal text-xs text-[#004c91] p-2 rounded-lg border border-blue-200 focus:border-[#004c91] outline-none bg-white shadow-xs"
                           />
                         ) : (
-                          <span className="font-bold text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>
+                          <span className="font-normal text-sm text-[#004c91]">{previewEmailItem.title || 'Chưa nhập nội dung'}</span>
                         )}
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">HẠN HOÀN THÀNH:</span>
-                        <span className="font-bold text-orange-600">{previewEmailItem.dueDate ? formatDateTime(previewEmailItem.dueDate) : 'Chưa đặt hạn'}</span>
+                        <span className="font-normal text-orange-600">{previewEmailItem.dueDate ? formatDateTime(previewEmailItem.dueDate) : 'Chưa đặt hạn'}</span>
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-blue-100 pb-2">
                         <span className="font-bold text-gray-500">TRẠNG THÁI:</span>
-                        <span className="font-bold text-gray-800">{ACTION_STATUS_META[previewEmailItem.status]?.label ?? 'Chưa làm'}</span>
+                        <span className="font-normal text-gray-800">{ACTION_STATUS_META[previewEmailItem.status]?.label ?? 'Chưa làm'}</span>
                       </div>
                       <div className="space-y-1 pt-1">
                         <span className="font-bold text-gray-500 block">GHI CHÚ HƯỚNG DẪN (CÓ THỂ SỬA TRƯỚC KHI GỬI):</span>

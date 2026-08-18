@@ -164,7 +164,7 @@ export default function VisitAmendmentPanel({
                     {labelKey ? t(`detail.amendment.fields.${labelKey}`) : c.fieldPath}
                   </th>
                   <td className="py-1.5 pr-2 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{pretty(c.oldValueJson)}</td>
-                  <td className="py-1.5 whitespace-pre-wrap font-medium text-gray-900 dark:text-gray-50">{pretty(c.newValueJson)}</td>
+                  <td className="py-1.5 whitespace-pre-wrap font-normal text-gray-900 dark:text-gray-50">{pretty(c.newValueJson)}</td>
                 </tr>
               );
             })}

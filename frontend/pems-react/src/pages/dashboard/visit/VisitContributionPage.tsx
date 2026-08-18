@@ -89,7 +89,7 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
     <div>
       <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-sm font-semibold text-slate-800 break-words">{value || '—'}</p>
+      <p className="text-sm font-normal text-slate-800 break-words">{value || '—'}</p>
     </div>
   );
 }
@@ -160,7 +160,7 @@ export function VisitContributionPage() {
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center min-h-[320px] gap-3 text-slate-400">
           <Loader2 className="w-8 h-8 animate-spin text-[#004c91]" />
-          <p className="text-sm font-semibold">{tt('contribution.loading')}</p>
+          <p className="text-sm font-normal">{tt('contribution.loading')}</p>
         </div>
       </div>
     );
@@ -175,7 +175,7 @@ export function VisitContributionPage() {
             <Lock className="w-10 h-10 text-rose-400 stroke-[1.5]" />
           </div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">{tt('contribution.noAccessTitle')}</h2>
-          <p className="text-gray-500 font-medium max-w-sm mx-auto leading-relaxed text-sm mb-6">
+          <p className="text-gray-500 font-normal max-w-sm mx-auto leading-relaxed text-sm mb-6">
             {tt('contribution.noAccessDesc')}
           </p>
           <button onClick={() => navigate(returnUrl)}
@@ -193,7 +193,7 @@ export function VisitContributionPage() {
         {Breadcrumb}
         <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center shadow-sm flex flex-col items-center justify-center min-h-[300px]">
           <AlertCircle className="w-12 h-12 text-orange-400 mb-4" />
-          <p className="text-slate-600 font-semibold mb-6">{error || tt('contribution.loadErrorFallback')}</p>
+          <p className="text-slate-600 font-normal mb-6">{error || tt('contribution.loadErrorFallback')}</p>
           <button onClick={() => navigate(0)}
             className="px-6 py-2.5 rounded-xl bg-[#004c91] text-white text-sm font-bold hover:bg-[#003b70] transition-colors">
             {tt('contribution.retry')}
@@ -237,7 +237,7 @@ export function VisitContributionPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-600 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs text-slate-600 font-normal">
             <span className="inline-flex items-center gap-1.5">
               <Building2 className="w-3.5 h-3.5 text-[#f37021] shrink-0" /> {summary.campusName || '—'}
             </span>
@@ -253,7 +253,7 @@ export function VisitContributionPage() {
           </div>
 
           {isReadOnlyContribution && (
-            <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+            <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-normal text-slate-500">
               <Lock className="w-3.5 h-3.5 shrink-0" />
               {isDeptRole ? 'Phòng ban / Nhân sự phòng ban chỉ có quyền xem thông tin đóng góp.' : 'Chuyến thăm đã đóng/hủy — trang ở chế độ chỉ xem.'}
             </p>
@@ -302,19 +302,19 @@ export function VisitContributionPage() {
           <Section icon={<CalendarDays className="w-4 h-4" />} title="Lịch trình"
             badge={<span className="text-[11px] font-bold text-slate-400">{summary.agenda.length} mục</span>}>
             {summary.agenda.length === 0 ? (
-              <p className="text-xs font-semibold text-slate-400">Chưa có dữ liệu cho phần này.</p>
+              <p className="text-xs font-normal text-slate-400">Chưa có dữ liệu cho phần này.</p>
             ) : (
               <ol className="space-y-2">
                 {summary.agenda.map((a) => (
                   <li key={a.agendaId} className="flex gap-3">
-                    <div className="text-xs font-bold text-[#004c91] whitespace-nowrap pt-0.5 w-[100px] shrink-0">
+                    <div className="text-xs font-normal text-[#004c91] whitespace-nowrap pt-0.5 w-[100px] shrink-0">
                       {fmtDateTime(a.startTime).slice(0, 5)}
                       {a.endTime ? ` - ${fmtDateTime(a.endTime).slice(0, 5)}` : ''}
                     </div>
                     <div className="min-w-0 border-l-2 border-slate-100 pl-3">
-                      <p className="text-sm font-bold text-slate-800">{a.title}</p>
+                      <p className="text-sm font-normal text-slate-800">{a.title}</p>
                       {(a.location || a.responsibleName || a.templateResponsibleRoleLabel) && (
-                        <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                        <p className="text-xs text-slate-500 font-normal mt-0.5">
                           {a.location && <span className="inline-flex items-center gap-1 mr-3"><MapPin className="w-3 h-3" /> {a.location}</span>}
                           {(a.responsibleName || a.templateResponsibleRoleLabel) && <>Phụ trách: {a.responsibleName || a.templateResponsibleRoleLabel}</>}
                         </p>
@@ -331,7 +331,7 @@ export function VisitContributionPage() {
           <Section icon={<Users className="w-4 h-4" />} title="Thành phần tham gia"
             badge={<span className="text-[11px] font-bold text-slate-400">{summary.participants.length} người</span>}>
             {summary.participants.length === 0 ? (
-              <p className="text-xs font-semibold text-slate-400">Chưa có dữ liệu cho phần này.</p>
+              <p className="text-xs font-normal text-slate-400">Chưa có dữ liệu cho phần này.</p>
             ) : (
               <div className="divide-y divide-slate-100">
                 {summary.participants.map((p) => (
@@ -339,13 +339,13 @@ export function VisitContributionPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-800">
                         {p.fullName}{p.isHost && <span className="ml-2 text-[10px] font-black text-emerald-600">(Phụ trách)</span>}
-                        <span className="ml-2 text-xs text-slate-500 font-semibold">
+                        <span className="ml-2 text-xs text-slate-500 font-normal">
                           {PARTICIPANT_ROLE_LABELS[p.participantRole] || p.participantRole}
                           {p.departmentName ? ` · ${p.departmentName}` : ''}
                         </span>
                       </p>
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500">
+                    <span className="text-[11px] font-normal text-slate-500">
                       {PARTICIPANT_STATUS_LABELS[p.status] || p.status}
                     </span>
                   </div>
@@ -361,7 +361,7 @@ export function VisitContributionPage() {
               ? <span className="text-[11px] font-bold text-slate-400">Chỉ hạng mục liên quan bạn</span>
               : <span className="text-[11px] font-bold text-slate-400">{scopedLogistics.length} mục</span>}>
             {scopedLogistics.length === 0 ? (
-              <p className="text-xs font-semibold text-slate-400">Chưa có dữ liệu cho phần này.</p>
+              <p className="text-xs font-normal text-slate-400">Chưa có dữ liệu cho phần này.</p>
             ) : (
               <div className="divide-y divide-slate-100">
                 {scopedLogistics.map((l) => (
@@ -369,12 +369,12 @@ export function VisitContributionPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-800">
                         {l.title}
-                        <span className="ml-2 text-xs text-slate-500 font-semibold">
+                        <span className="ml-2 text-xs text-slate-500 font-normal">
                           {l.departmentName || '—'}{l.assignedToName ? ` · ${l.assignedToName}` : ''}
                         </span>
                       </p>
                     </div>
-                    <span className="text-[11px] font-bold text-slate-500">
+                    <span className="text-[11px] font-normal text-slate-500">
                       {LOGISTICS_STATUS_LABELS[l.status] || l.status}
                     </span>
                   </div>

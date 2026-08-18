@@ -189,7 +189,7 @@ export const TimeSelect: React.FC<Props> = ({
       className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
     >
       {options.length === 0 && (
-        <li className="px-3 py-2 text-xs font-semibold text-slate-500">{emptyHint}</li>
+        <li className="px-3 py-2 text-xs font-normal text-slate-500">{emptyHint}</li>
       )}
       {options.map((o, i) => (
         <li key={o.value} data-index={i} role="none">
@@ -207,7 +207,7 @@ export const TimeSelect: React.FC<Props> = ({
             } ${o.value === value ? 'font-bold text-[#004c91]' : 'font-semibold text-slate-700'}`}
           >
             <span>{o.value}</span>
-            {o.hint && <span className="text-xs font-medium text-slate-500">{o.hint}</span>}
+            {o.hint && <span className="text-xs font-normal text-slate-500">{o.hint}</span>}
           </button>
         </li>
       ))}

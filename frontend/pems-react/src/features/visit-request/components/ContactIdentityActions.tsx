@@ -463,7 +463,7 @@ export default function ContactIdentityActions({
       {/* Says what the address DOES before it is changed, not after. Once the save has gone through,
           an invitation is already out and "did you mean to do that?" is too late to be useful. */}
       {field === 'email' && !emailError && (
-        <p id="ci-email-hint" className="mt-1 text-xs font-medium text-slate-500">
+        <p id="ci-email-hint" className="mt-1 text-xs font-normal text-slate-500">
           {t('visitRequestV2:contact.emailIdentityHint')}
         </p>
       )}
@@ -515,7 +515,7 @@ export default function ContactIdentityActions({
 
       {identityChanging && (
         <p
-          className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800"
+          className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-normal text-amber-800"
           role="note"
           data-testid="contact-identity-warning"
         >

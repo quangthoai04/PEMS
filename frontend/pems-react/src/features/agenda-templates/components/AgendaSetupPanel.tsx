@@ -187,7 +187,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
   if (!setup) return null;
   if (autoApplying) {
     return (
-      <div className="mb-5 flex items-center gap-2 rounded-xl border border-[#004c91]/20 bg-blue-50/40 p-4 text-sm font-semibold text-[#004c91]">
+      <div className="mb-5 flex items-center gap-2 rounded-xl border border-[#004c91]/20 bg-blue-50/40 p-4 text-sm font-normal text-[#004c91]">
         <Loader2 className="h-4 w-4 animate-spin" />
         Đang áp dụng mẫu Agenda mặc định theo loại hình đã đăng ký…
       </div>
@@ -242,7 +242,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
               ))}
             </select>
             {selectedTemplate && (
-              <p className="mt-2 text-xs font-medium text-slate-500">
+              <p className="mt-2 text-xs font-normal text-slate-500">
                 {VISIT_TYPE_LABELS[selectedTemplate.visitType]} · {scopeLabel(selectedTemplate.campusId)}
                 {selectedTemplate.isDefault ? ' · Mặc định' : ''}
               </p>
@@ -262,7 +262,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
                 <span>Thay thế lịch trình hiện tại</span>
               </label>
             ) : (
-              <span className="text-sm font-medium text-slate-400">Chưa có lịch trình hiện tại.</span>
+              <span className="text-sm font-normal text-slate-400">Chưa có lịch trình hiện tại.</span>
             )}
             <button
               onClick={apply}
@@ -274,7 +274,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
           </div>
 
           {setup.hasExistingAgenda && !replaceExisting && (
-            <p className="mt-2 text-xs font-medium text-slate-500">Có lịch trình hiện tại — tick “Thay thế” nếu muốn ghi đè.</p>
+            <p className="mt-2 text-xs font-normal text-slate-500">Có lịch trình hiện tại — tick “Thay thế” nếu muốn ghi đè.</p>
           )}
           {!setup.canApply && (
             <p className="mt-2 text-xs text-slate-500">Chỉ Host phụ trách mới được áp dụng mẫu, và chỉ trong giai đoạn chuẩn bị (trước tiếp khách).</p>
@@ -283,7 +283,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
           {/* Preview of the template that WILL be applied (not the saved agenda below) */}
           <div className="mt-5">
             <h4 className="text-sm font-bold text-slate-700">Xem trước mẫu sẽ áp dụng</h4>
-            <p className="text-xs font-medium text-slate-400">Tính theo giờ bắt đầu dự kiến: {fmtDateTime(planned)}</p>
+            <p className="text-xs font-normal text-slate-400">Tính theo giờ bắt đầu dự kiến: {fmtDateTime(planned)}</p>
 
             {selectedId == null ? (
               <p className="mt-3 text-xs text-slate-400">Chọn một mẫu để xem trước lịch trình.</p>
@@ -304,10 +304,10 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
                       key={it.agendaTemplateItemId}
                       className="grid grid-cols-1 sm:grid-cols-[130px_minmax(0,1fr)_170px] gap-0.5 sm:gap-4 px-4 py-2.5 text-sm border-b border-slate-50 last:border-0"
                     >
-                      <span className="font-semibold text-[#f37021] sm:text-slate-700 inline-flex items-center gap-1">
+                      <span className="font-normal text-[#f37021] sm:text-slate-700 inline-flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5 shrink-0" /> {hhmm(start)} – {hhmm(end)}
                       </span>
-                      <span className="min-w-0 font-medium text-slate-800">{it.title}</span>
+                      <span className="min-w-0 font-normal text-slate-800">{it.title}</span>
                       <span className="min-w-0 truncate text-slate-500 inline-flex items-center gap-1">
                         {it.location ? (<><MapPin className="h-3 w-3 shrink-0" />{it.location}</>) : '—'}
                       </span>

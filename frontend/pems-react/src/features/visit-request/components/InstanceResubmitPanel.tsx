@@ -104,7 +104,7 @@ export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onR
       data-testid={`instance-resubmit-${campusVisit.visitInstanceId}`}
       className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3"
     >
-      <p className="text-sm font-semibold text-amber-900">
+      <p className="text-sm font-normal text-amber-900">
         {t('visitRequestV2:instanceResubmit.title')}
       </p>
 
@@ -133,7 +133,7 @@ export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onR
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="text-xs font-medium text-slate-600">
+              <span className="text-xs font-normal text-slate-600">
                 {t('visitRequestV2:card.startAt')}
               </span>
               <input
@@ -145,7 +145,7 @@ export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onR
               />
             </label>
             <label className="block">
-              <span className="text-xs font-medium text-slate-600">
+              <span className="text-xs font-normal text-slate-600">
                 {t('visitRequestV2:card.endAt')}
               </span>
               <input

@@ -103,7 +103,7 @@ function VisitFeedbackInlineSection({
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
+                <p className="text-sm font-normal text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
               </div>
             </div>
             <button
@@ -124,7 +124,7 @@ function VisitFeedbackInlineSection({
     return (
       <CollapsibleSection number="3" title="Đánh giá chuyến thăm" subtitle="Đánh giá đoàn khách, các bên hỗ trợ setup và bên hậu cần theo dữ liệu thật.">
         <div className="p-4 sm:p-5 space-y-4 bg-slate-50 border-t border-gray-100">
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700">
+          <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-normal text-emerald-700">
             <Check className="h-4 w-4 shrink-0" />
             {data.actorType === 'VISITOR' ? 'Bạn đã đánh giá chuyến thăm này.' : 'Bạn đã đánh giá đầy đủ các mục của chuyến thăm này.'}
           </div>
@@ -159,7 +159,7 @@ function VisitFeedbackInlineSection({
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="p-1.5 bg-orange-100 rounded-lg shrink-0"><Star className="w-5 h-5 text-[#f37021]" /></div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
+              <p className="text-sm font-normal text-gray-800">Hãy dành chút thời gian đánh giá chất lượng phục vụ của chuyến thăm</p>
             </div>
           </div>
           <button
@@ -377,7 +377,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 truncate" title={driveConfig.folderName}>
-                    Thư mục: <span className="font-mono font-bold text-gray-700">{driveConfig.folderName}</span>
+                    Thư mục: <span className="font-mono font-normal text-gray-700">{driveConfig.folderName}</span>
                   </p>
                   <div className="flex items-center gap-3 mt-2">
                     <button
@@ -388,7 +388,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                       <Eye className="w-3.5 h-3.5" /> Mở thư mục ảnh
                     </button>
                     <span className="text-gray-300 text-xs">|</span>
-                    <div className="text-gray-500 text-xs flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 font-semibold">
+                    <div className="text-gray-500 text-xs flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 font-normal">
                       <span className="flex items-center gap-1">
                         Người upload: <span className="text-[#004c91]">{driveConfig.uploaderName}</span>
                       </span>
@@ -398,7 +398,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                         {driveConfig.syncStatus === 'syncing' ? (
                           <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#004c91]" />
                         ) : (
-                          <span className="text-emerald-600 font-bold">{driveConfig.lastSynced}</span>
+                          <span className="text-emerald-600 font-normal">{driveConfig.lastSynced}</span>
                         )}
                       </span>
                     </div>
@@ -549,7 +549,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                 <div className="flex flex-col gap-4">
                   <div className="flex items-start gap-3 p-5 bg-amber-50 border border-amber-300 rounded-2xl text-left shadow-sm">
                     <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-amber-900 leading-relaxed bg-transparent">
+                    <p className="text-sm font-normal text-amber-900 leading-relaxed bg-transparent">
                       <strong className="text-amber-700 font-extrabold block mb-0.5">CHỐT HỒ SƠ TIẾP ĐÓN:</strong>
                       Khi bấm nút này, hệ thống sẽ chốt toàn bộ dữ liệu hiện có trong quy trình tiếp khách. Bạn sẽ không thể chỉnh sửa hay thực hiện bất kì thao tác nào sau khi ấn nút này.
                     </p>
@@ -557,9 +557,9 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
 
                   <div className="flex items-start gap-3 p-5 bg-blue-50 border border-blue-200 rounded-2xl text-left shadow-sm font-sans">
                     <FileText className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
-                    <div className="text-sm font-semibold text-blue-950 leading-relaxed">
+                    <div className="text-sm font-normal text-blue-950 leading-relaxed">
                       <strong className="text-blue-800 font-extrabold block mb-0.5">ĐIỀU KIỆN ĐỂ CÓ THỂ ĐÓNG ĐOÀN KHÁCH:</strong>
-                      <ul className="list-decimal pl-4 space-y-1 mt-1 text-xs font-bold text-blue-900">
+                      <ul className="list-decimal pl-4 space-y-1 mt-1 text-xs font-normal text-blue-900">
                         <li>Còn đầu mục công việc chưa tích xác nhận trong biên bản cuộc họp</li>
                         <li>Chưa upload ảnh của đoàn khách</li>
                         <li>Tin tức chưa được duyệt (nếu có)</li>
@@ -595,7 +595,7 @@ export function VisitAfterTab({ onTourCloseSuccess, isReadOnly = false, isDept =
                 </div>
                 <div>
                   <h3 className="text-base font-extrabold text-[#004c91] truncate">Thư mục ảnh đoàn khách</h3>
-                  <p className="text-xs text-slate-500 font-medium truncate">{driveConfig.folderName}</p>
+                  <p className="text-xs text-slate-500 font-normal truncate">{driveConfig.folderName}</p>
                 </div>
               </div>
               <button

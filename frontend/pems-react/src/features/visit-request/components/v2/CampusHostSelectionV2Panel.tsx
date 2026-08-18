@@ -91,7 +91,7 @@ export const CampusHostSelectionV2Panel: React.FC<Props> = ({
     return (
       <div
         data-testid={`campus-host-selection-readonly-${code}`}
-        className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600"
+        className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-normal text-slate-600"
       >
         {t('visitRequest:campusProcessing.otherCampusPending')}
       </div>
@@ -144,7 +144,7 @@ export const CampusHostSelectionV2Panel: React.FC<Props> = ({
               </span>
             ) : candidatesError ? (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-red-600">
+                <span className="text-xs font-normal text-red-600">
                   {t('visitRequest:campusProcessing.candidatesError')}
                 </span>
                 <button
@@ -156,7 +156,7 @@ export const CampusHostSelectionV2Panel: React.FC<Props> = ({
                 </button>
               </div>
             ) : (candidates?.length ?? 0) === 0 ? (
-              <span className="text-xs font-medium text-amber-600">
+              <span className="text-xs font-normal text-amber-600">
                 {t('visitRequestV2:hostSelection.noCandidates')}
               </span>
             ) : (

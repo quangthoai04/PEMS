@@ -43,20 +43,20 @@ export function DecisionReasonPanel({
       <div className={`grid gap-4 mb-3 ${compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
         <div>
           <p className="text-xs font-bold text-slate-500">Vai trò xử lý</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{decisionRoleLabel(decisionActorRole)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{decisionRoleLabel(decisionActorRole)}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Người xử lý</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{processedBy}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{processedBy}</p>
         </div>
         <div>
           <p className="text-xs font-bold text-slate-500">Thời gian xử lý</p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatDateTime(decidedAt)}</p>
+          <p className="mt-0.5 text-sm font-normal text-slate-900">{formatDateTime(decidedAt)}</p>
         </div>
       </div>
       <div className="rounded-xl border border-red-100 bg-white px-4 py-3">
         <p className="text-xs font-bold text-slate-500">Nội dung</p>
-        <p className="mt-1 text-sm font-semibold text-red-950 whitespace-pre-wrap italic">
+        <p className="mt-1 text-sm font-normal text-red-950 whitespace-pre-wrap italic">
           {decisionNote || 'Không có lý do chi tiết.'}
         </p>
       </div>

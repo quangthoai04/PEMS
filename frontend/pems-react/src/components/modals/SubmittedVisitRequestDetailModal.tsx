@@ -199,12 +199,12 @@ export function SubmittedVisitRequestDetailModal({
             {loading ? (
               <div className="py-20 flex flex-col items-center justify-center text-slate-500">
                 <Loader2 className="w-10 h-10 animate-spin text-[#004c91] mb-3" />
-                <p className="font-medium">Đang tải thông tin đơn...</p>
+                <p className="font-normal">Đang tải thông tin đơn...</p>
               </div>
             ) : error ? (
               <div className="py-20 flex flex-col items-center justify-center text-center">
                 <AlertCircle className="w-12 h-12 text-red-400 mb-3" />
-                <p className="font-semibold text-red-600 max-w-md">{error}</p>
+                <p className="font-normal text-red-600 max-w-md">{error}</p>
               </div>
             ) : data ? (
               <div className="space-y-5">

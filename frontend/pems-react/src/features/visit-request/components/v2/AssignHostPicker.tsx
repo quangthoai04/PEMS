@@ -100,7 +100,7 @@ export default function AssignHostPicker({ visitInstanceId, campusName, onCancel
         )}
 
         <label className="mt-4 block">
-          <span className="text-xs font-medium text-slate-600">
+          <span className="text-xs font-normal text-slate-600">
             {t('visitRequestV2:pendingCampusEdit.decisionNote')}
           </span>
           <textarea

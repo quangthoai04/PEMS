@@ -98,7 +98,7 @@ export function DocumentTable({
                     <span className="inline-flex px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-600 border border-slate-200">
                       {formatDocumentType(doc.ownerType)}
                     </span>
-                    <span className="text-xs font-medium text-slate-700 truncate w-full" title={doc.ownerDisplayName || `${formatDocumentType(doc.ownerType)} #${doc.ownerId || 'N/A'}`}>
+                    <span className="text-xs font-normal text-slate-700 truncate w-full" title={doc.ownerDisplayName || `${formatDocumentType(doc.ownerType)} #${doc.ownerId || 'N/A'}`}>
                       {doc.ownerDisplayName || `${formatDocumentType(doc.ownerType)} #${doc.ownerId || 'N/A'}`}
                     </span>
                     {doc.documentCategory && (
@@ -121,10 +121,10 @@ export function DocumentTable({
                 {/* File */}
                 <td className="px-4 py-2.5">
                   <div className="flex flex-col gap-0.5 w-[110px]">
-                    <span className="text-xs font-bold text-slate-700 uppercase break-words">
+                    <span className="text-xs font-normal text-slate-700 uppercase break-words">
                       {doc.originalFilename?.split('.').pop() || doc.mimeType?.split('/').pop() || 'N/A'}
                     </span>
-                    <span className="text-[11px] font-medium text-slate-500">
+                    <span className="text-[11px] font-normal text-slate-500">
                       {doc.fileSize ? formatFileSize(doc.fileSize) : 'N/A'}
                     </span>
                     {doc.storageProvider === 'GOOGLE_DRIVE' && (
@@ -161,7 +161,7 @@ export function DocumentTable({
                       <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center mb-3">
                         <Search className="w-7 h-7 text-slate-300" />
                       </div>
-                      <p className="text-slate-500 font-medium font-sans text-sm">
+                      <p className="text-slate-500 font-normal font-sans text-sm">
                         {searchQuery || statusFilterActive ? 'Không tìm thấy tài liệu phù hợp với bộ lọc.' : 'Chưa có tài liệu nào trong campus của bạn.'}
                       </p>
                    </div>
@@ -196,7 +196,7 @@ export function DocumentTable({
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs font-medium text-slate-700">Trang {page} / {totalPages}</span>
+            <span className="text-xs font-normal text-slate-700">Trang {page} / {totalPages}</span>
             <button
               disabled={page >= totalPages}
               onClick={() => onPageChange(page + 1)}

@@ -91,7 +91,7 @@ export const AutoGrowTextarea: React.FC<Props> = ({
       {showCounter && (
         <p
           data-testid={counterTestId}
-          className={`mt-1 text-right text-xs ${over ? 'font-bold text-red-600' : 'text-slate-400'}`}
+          className={`mt-1 text-right text-xs ${over ? 'font-normal text-red-600' : 'text-slate-400'}`}
         >
           {t('validation:characterCount', { current: value.length, max: maxLength })}
         </p>

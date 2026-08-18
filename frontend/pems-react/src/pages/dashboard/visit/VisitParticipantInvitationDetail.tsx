@@ -169,9 +169,9 @@ export function VisitParticipantInvitationDetail() {
       </div>
 
       {isLoading ? (
-        <div className="py-16 text-center text-slate-500 font-medium">Đang tải lời mời...</div>
+        <div className="py-16 text-center text-slate-500 font-normal">Đang tải lời mời...</div>
       ) : loadError ? (
-        <div className="py-16 text-center text-red-500 font-medium">
+        <div className="py-16 text-center text-red-500 font-normal">
           <AlertCircle className="w-10 h-10 mx-auto mb-3 text-red-400" /><p>{loadError}</p>
         </div>
       ) : invitation ? (
@@ -179,7 +179,7 @@ export function VisitParticipantInvitationDetail() {
           {(invitation.visitRequestStatus === 'CANCELLED' || invitation.visitRequestStatus === 'REJECTED' || invitation.campusVisitStatus === 'CANCELLED') && (
             <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 text-red-700 flex items-center gap-3">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-semibold">Lịch thăm đã bị hủy hoặc từ chối, lời mời này không còn hiệu lực.</p>
+              <p className="text-sm font-normal">Lịch thăm đã bị hủy hoặc từ chối, lời mời này không còn hiệu lực.</p>
             </div>
           )}
           {!(invitation.visitRequestStatus === 'CANCELLED' || invitation.visitRequestStatus === 'REJECTED' || invitation.campusVisitStatus === 'CANCELLED') 
@@ -187,7 +187,7 @@ export function VisitParticipantInvitationDetail() {
             && (invitation.campusVisitStatus === 'DURING_VISIT' || invitation.campusVisitStatus === 'AFTER_VISIT' || invitation.campusVisitStatus === 'CLOSED') && (
             <div className="mb-4 p-4 rounded-xl border border-orange-200 bg-orange-50 text-orange-700 flex items-center gap-3">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="text-sm font-semibold">Lời mời đã hết hạn vì chuyến thăm đã bắt đầu hoặc kết thúc.</p>
+              <p className="text-sm font-normal">Lời mời đã hết hạn vì chuyến thăm đã bắt đầu hoặc kết thúc.</p>
             </div>
           )}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -232,19 +232,19 @@ export function VisitParticipantInvitationDetail() {
                 below, which is this participant's own text and never the guest's. */}
             <div>
               <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Mục đích</span></div>
-              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-normal text-slate-700 leading-relaxed border border-slate-100">
                 {invitation.purpose?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
               </p>
             </div>
             <div>
               <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Nội dung làm việc</span></div>
-              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100">
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-normal text-slate-700 leading-relaxed border border-slate-100">
                 {invitation.workingContent?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
               </p>
             </div>
             <div>
               <div className="flex items-center gap-2 text-slate-400 mb-1.5"><FileText className="w-4 h-4" /><span className="text-[11px] font-bold uppercase tracking-wider">Ghi chú gửi FPTU</span></div>
-              <p className="p-4 bg-slate-50 rounded-xl text-sm font-medium text-slate-700 leading-relaxed border border-slate-100 whitespace-pre-line">
+              <p className="p-4 bg-slate-50 rounded-xl text-sm font-normal text-slate-700 leading-relaxed border border-slate-100 whitespace-pre-line">
                 {invitation.notesToFptu?.trim() || <span className="italic text-slate-400">Chưa có thông tin</span>}
               </p>
             </div>
@@ -252,11 +252,11 @@ export function VisitParticipantInvitationDetail() {
             {invitation.status === 'DECLINED' && invitation.note && (
               <div className="bg-red-50 rounded-xl p-4 border border-red-100">
                 <span className="text-xs font-bold text-red-600 uppercase tracking-wide block mb-1">Lý do từ chối</span>
-                <p className="text-sm font-semibold text-red-950 italic">"{invitation.note}"</p>
+                <p className="text-sm font-normal text-red-950 italic">"{invitation.note}"</p>
               </div>
             )}
 
-            {actionError && <p className="text-red-500 text-sm font-medium"><AlertCircle className="w-4 h-4 inline-block mr-1" />{actionError}</p>}
+            {actionError && <p className="text-red-500 text-sm font-normal"><AlertCircle className="w-4 h-4 inline-block mr-1" />{actionError}</p>}
           </div>
 
           {canRespond ? (
@@ -292,7 +292,7 @@ export function VisitParticipantInvitationDetail() {
               </button>
             </div>
           ) : invitation.status === 'ACCEPTED' ? (
-            <div className="px-6 py-5 border-t border-slate-100 bg-green-50/60 text-center text-sm font-semibold text-green-700">
+            <div className="px-6 py-5 border-t border-slate-100 bg-green-50/60 text-center text-sm font-normal text-green-700">
               <div className="mb-4">{isDeptStaff ? 'Bạn đã nhận nhiệm vụ này' : 'Bạn đã xác nhận tham gia'}{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.</div>
               <div className="flex justify-center gap-4">
                 {canViewRequestForm && (
@@ -308,7 +308,7 @@ export function VisitParticipantInvitationDetail() {
               </div>
             </div>
           ) : invitation.status === 'ASSIGNED' ? (
-            <div className="px-6 py-5 border-t border-slate-100 bg-blue-50/60 text-center text-sm font-semibold text-blue-700">
+            <div className="px-6 py-5 border-t border-slate-100 bg-blue-50/60 text-center text-sm font-normal text-blue-700">
               <div className="mb-4">Bạn mới được giao nhiệm vụ này{invitation.assignedAt ? ` lúc ${formatDateTime(invitation.assignedAt)}` : ''}.</div>
               <div className="flex justify-center gap-4">
                 {canViewRequestForm && (
@@ -324,7 +324,7 @@ export function VisitParticipantInvitationDetail() {
               </div>
             </div>
           ) : invitation.status === 'DECLINED' ? (
-            <div className="px-6 py-5 border-t border-slate-100 bg-red-50/60 text-center text-sm font-semibold text-red-600">
+            <div className="px-6 py-5 border-t border-slate-100 bg-red-50/60 text-center text-sm font-normal text-red-600">
               Bạn đã từ chối lời mời này{invitation.respondedAt ? ` lúc ${formatDateTime(invitation.respondedAt)}` : ''}.
             </div>
           ) : null}
@@ -354,7 +354,7 @@ export function VisitParticipantInvitationDetail() {
               <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ví dụ: Tôi bận lịch cá nhân vào thời gian này..." disabled={submitting} maxLength={1000}
                 className={`w-full px-4 py-3 rounded-2xl border focus:ring-4 focus:ring-orange-500/10 outline-none transition-all text-sm min-h-[120px] resize-none bg-gray-50/50 focus:bg-white ${declineError ? 'border-red-300 focus:border-red-400' : 'border-gray-200 focus:border-[#F37021]'}`} />
               <div className="mt-1.5 flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-red-500">{declineError || ''}</span>
+                <span className="text-xs font-normal text-red-500">{declineError || ''}</span>
                 <span className="text-xs text-gray-400 shrink-0">{trimmedReason.length}/1000</span>
               </div>
             </div>
@@ -372,6 +372,6 @@ export function VisitParticipantInvitationDetail() {
 const Field = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
   <div className="p-4 bg-slate-50/80 rounded-xl border border-slate-100">
     <div className="flex items-center gap-2 text-slate-400 mb-1.5">{icon}<span className="text-[11px] font-bold uppercase tracking-wider">{label}</span></div>
-    <div className="text-sm font-bold text-slate-800 break-words">{value}</div>
+    <div className="text-sm font-normal text-slate-800 break-words">{value}</div>
   </div>
 );
