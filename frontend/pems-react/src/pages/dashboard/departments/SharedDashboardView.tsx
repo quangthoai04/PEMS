@@ -38,7 +38,8 @@ import { LogisticsWorkContent } from '../../../features/department-reception-tas
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
 import { useNotifications } from '../../../features/notifications/context/NotificationsContext';
-import { getNotificationLink, timeAgo } from '../../../features/notifications/components/NotificationBellButton';
+import { timeAgo } from '../../../features/notifications/components/NotificationBellButton';
+import { resolveNotificationDestination } from '../../../features/notifications/utils/resolveNotificationDestination';
 import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
 import { HostFeedbackModal } from '../../../features/feedbacks/components/HostFeedbackModal';
 import { VisitorFeedbackDetailModal } from '../../../features/feedbacks/components/VisitorFeedbackDetailModal';
@@ -245,7 +246,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
       setVisitorFeedbackVisitInstanceId(n.visitInstanceId);
       return;
     }
-    const link = getNotificationLink(n, authUser);
+    const link = resolveNotificationDestination(n, authUser);
     if (link) {
       setActivePopoverEvent(null);
       navigate(link);

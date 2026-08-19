@@ -6,7 +6,7 @@ import { useAuth } from '../../shared/hooks/useAuth';
 import { useNotifications } from '../../features/notifications/context/NotificationsContext';
 import { notificationsApi } from '../../features/notifications/api/notificationsApi';
 import { NotificationFilterBar } from '../../features/notifications/components/NotificationFilterBar';
-import { getNotificationLink } from '../../features/notifications/components/NotificationBellButton';
+import { resolveNotificationDestination } from '../../features/notifications/utils/resolveNotificationDestination';
 import { HostFeedbackModal } from '../../features/feedbacks/components/HostFeedbackModal';
 import { VisitFeedbackModal } from '../../features/feedbacks/components/VisitFeedbackModal';
 import { VisitorFeedbackDetailModal } from '../../features/feedbacks/components/VisitorFeedbackDetailModal';
@@ -139,7 +139,7 @@ export function NotificationsPage() {
     }
     // Tính link trước rồi mới quyết định modal: notification NEWS/PARTNER cũ không có
     // targetUrl (canOpen=false) vẫn điều hướng được nhờ rewrite theo relatedType/relatedId.
-    const link = getNotificationLink(item, user);
+    const link = resolveNotificationDestination(item, user);
     if (!link) {
       setDetailModalItem(item);
       return;

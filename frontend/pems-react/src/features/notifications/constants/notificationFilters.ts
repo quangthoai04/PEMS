@@ -15,6 +15,8 @@ export const NotificationCategories = {
 
 export const NotificationActionTypes = {
   OpenVisitDetail: 'OPEN_VISIT_DETAIL',
+  OpenCampusReview: 'OPEN_CAMPUS_REVIEW',
+  OpenVisitHistory: 'OPEN_VISIT_HISTORY',
   OpenVisitInvitation: 'OPEN_VISIT_INVITATION',
   OpenHostFeedbackModal: 'OPEN_HOST_FEEDBACK_MODAL',
   OpenLogisticsDetail: 'OPEN_LOGISTICS_DETAIL',

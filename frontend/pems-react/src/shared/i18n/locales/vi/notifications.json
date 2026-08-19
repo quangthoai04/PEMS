@@ -177,6 +177,26 @@
       "title": "Cơ sở chưa xử lý sắp tới giờ tham quan",
       "message": "{{campusName}} thuộc đoàn {{delegationName}} (đơn {{requestCode}}) vẫn chưa được xử lý dù sắp đến giờ."
     },
+    "AMENDMENT_PROPOSED": {
+      "title": "Có đề xuất thay đổi nội dung chuyến thăm",
+      "message": "Đơn {{requestCode}}: khách đề xuất thay đổi nội dung tại cơ sở bạn phụ trách. Vui lòng xem và quyết định."
+    },
+    "MULTI_CAMPUS_REQUEST_SUBMITTED_HO_VISIBILITY": {
+      "title": "Có đơn liên cơ sở mới",
+      "message": "Đơn liên cơ sở mới {{requestCode}} đang chờ các cơ sở xử lý."
+    },
+    "VISIT_REQUEST_PARTIALLY_APPROVED_HO_VISIBILITY": {
+      "title": "Đơn liên cơ sở được duyệt một phần",
+      "message": "Đơn {{requestCode}} ({{delegationName}}) hiện đã được duyệt một phần."
+    },
+    "VISIT_REQUEST_FULLY_PROCESSED_HO_VISIBILITY": {
+      "title": "Đơn liên cơ sở đã xử lý xong",
+      "message": "Tất cả cơ sở của đơn {{requestCode}} ({{delegationName}}) đã xử lý xong."
+    },
+    "VISIT_REQUEST_CANCELLED_BEFORE_APPROVAL": {
+      "title": "Yêu cầu tham quan đã bị hủy",
+      "message": "Visitor đã hủy yêu cầu {{requestCode}} trước khi được xử lý."
+    },
     "PARTICIPATION_INVITED": {
       "title": "Bạn được mời tham gia đoàn",
       "message": "Bạn được mời tham gia đoàn {{delegationName}} tại {{campusName}}."

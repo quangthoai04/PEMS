@@ -1100,6 +1100,7 @@
       "none": "View only"
     },
     "empty": {
+      "notificationTargetNotFound": "Could not find the delegation from the notification, or you no longer have access to it.",
       "noMatch": "No request matches your filters.",
       "noRegistered": "You haven't registered a delegation for anyone else yet.",
       "visitorNone": "You aren't the contact for any visit request yet.",

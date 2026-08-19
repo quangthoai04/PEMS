@@ -66,6 +66,17 @@ public static class NotificationEventKeys
     public const string VisitCancelledStaffLeader = "VISIT_CANCELLED_STAFF_LEADER";
     public const string HoCampusUnprocessedAlert = "HO_CAMPUS_UNPROCESSED_ALERT";
 
+    // --- Added closing the P5 legacy-metadata gap (notification-continuation plan §15): these 5
+    // producer call sites previously created Title/Message-only rows with MetadataJson=null — all 5
+    // are genuinely new business events, none sharing an existing message template closely enough to
+    // reuse it (VisitRequestCancelledBeforeApproval cancels the WHOLE request pre-processing, with no
+    // single campus to name — its sibling VisitCancelledStaffLeader's template requires one).
+    public const string AmendmentProposed = "AMENDMENT_PROPOSED";
+    public const string MultiCampusRequestSubmittedHoVisibility = "MULTI_CAMPUS_REQUEST_SUBMITTED_HO_VISIBILITY";
+    public const string VisitRequestPartiallyApprovedHoVisibility = "VISIT_REQUEST_PARTIALLY_APPROVED_HO_VISIBILITY";
+    public const string VisitRequestFullyProcessedHoVisibility = "VISIT_REQUEST_FULLY_PROCESSED_HO_VISIBILITY";
+    public const string VisitRequestCancelledBeforeApproval = "VISIT_REQUEST_CANCELLED_BEFORE_APPROVAL";
+
     // Participation invitations.
     public const string ParticipationInvited = "PARTICIPATION_INVITED";
     public const string ParticipationAccepted = "PARTICIPATION_ACCEPTED";

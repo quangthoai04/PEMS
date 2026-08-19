@@ -87,6 +87,13 @@ public static class NotificationCategories
 public static class NotificationActionTypes
 {
     public const string OpenVisitDetail = "OPEN_VISIT_DETAIL";
+    // Fine-grained successors to the generic OpenVisitDetail above, added for the notification
+    // second-click/semantic-routing fix (plan §33/§34): WHAT HAPPENED (eventKey) already lets the
+    // frontend classify a navigation intent on its own, so setting these is a belt-and-braces
+    // precedence signal (plan §11), not a requirement — a producer left on OpenVisitDetail still
+    // routes correctly off its eventKey.
+    public const string OpenCampusReview = "OPEN_CAMPUS_REVIEW";
+    public const string OpenVisitHistory = "OPEN_VISIT_HISTORY";
     public const string OpenVisitInvitation = "OPEN_VISIT_INVITATION";
     public const string OpenHostFeedbackModal = "OPEN_HOST_FEEDBACK_MODAL";
     public const string OpenVisitorFeedbackModal = "OPEN_VISITOR_FEEDBACK_MODAL";

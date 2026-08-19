@@ -354,15 +354,17 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
 
             if (previousRequestStatus != visit.Status)
             {
-                var (title, message) = visit.Status switch
+                var (title, message, aggregateEventKey) = visit.Status switch
                 {
                     VisitRequestStatuses.PartiallyApproved => (
                         "Đơn liên cơ sở được duyệt một phần",
-                        $"Đơn {visit.RequestCode} ({delegationName}) hiện đã được duyệt một phần."),
+                        $"Đơn {visit.RequestCode} ({delegationName}) hiện đã được duyệt một phần.",
+                        NotificationEventKeys.VisitRequestPartiallyApprovedHoVisibility),
                     VisitRequestStatuses.Approved or VisitRequestStatuses.Rejected => (
                         "Đơn liên cơ sở đã xử lý xong",
-                        $"Tất cả cơ sở của đơn {visit.RequestCode} ({delegationName}) đã xử lý xong."),
-                    _ => (string.Empty, string.Empty),
+                        $"Tất cả cơ sở của đơn {visit.RequestCode} ({delegationName}) đã xử lý xong.",
+                        NotificationEventKeys.VisitRequestFullyProcessedHoVisibility),
+                    _ => (string.Empty, string.Empty, (string?)null),
                 };
                 if (title.Length > 0)
                     notifications.AddRange(hoUsers.Select(id => new CreateNotificationRequest(
@@ -376,7 +378,9 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
                         Category: NotificationCategories.Visit,
                         VisitRequestId: visit.VisitRequestId,
                         ActionType: NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: detailUrl)));
+                        ActionUrl: detailUrl,
+                        MetadataJson: aggregateEventKey is null ? null : NotificationEventKeys.BuildMetadata(
+                            aggregateEventKey, new { requestCode = visit.RequestCode, delegationName }))));
             }
         }
 

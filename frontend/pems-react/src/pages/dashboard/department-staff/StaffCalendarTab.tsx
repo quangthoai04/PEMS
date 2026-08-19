@@ -14,7 +14,7 @@ import { departmentReceptionTasksApi } from '../../../features/department-recept
 import { LogisticsWorkContent } from '../../../features/department-reception-tasks/components/LogisticsWorkContent';
 import { notificationsApi } from '../../../features/notifications/api/notificationsApi';
 import { useNotifications } from '../../../features/notifications/context/NotificationsContext';
-import { getNotificationLink } from '../../../features/notifications/components/NotificationBellButton';
+import { resolveNotificationDestination } from '../../../features/notifications/utils/resolveNotificationDestination';
 import { NotificationDetailModal } from '../../../features/notifications/components/NotificationDetailModal';
 import { HostFeedbackModal } from '../../../features/feedbacks/components/HostFeedbackModal';
 import { VisitorFeedbackDetailModal } from '../../../features/feedbacks/components/VisitorFeedbackDetailModal';
@@ -295,7 +295,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
       setVisitorFeedbackVisitInstanceId(n.visitInstanceId);
       return;
     }
-    const link = getNotificationLink(n, authUser);
+    const link = resolveNotificationDestination(n, authUser);
     if (link) {
       setActiveEvent(null);
       navigate(link);

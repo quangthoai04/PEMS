@@ -74,7 +74,11 @@ internal static class V2CreateNotifier
                 // reviewer).
                 VisitInstanceId: c.VisitInstanceId,
                 CampusId: c.CampusId,
-                ActionType: NotificationActionTypes.OpenVisitDetail,
+                // OpenCampusReview (not the generic OpenVisitDetail): the notification IS the review
+                // task itself — the frontend's navigation-intent resolver may open the live
+                // approve/reject control for it, unlike a same-request "just updated" notification
+                // (plan §14/§34).
+                ActionType: NotificationActionTypes.OpenCampusReview,
                 ActionUrl: $"/dashboard/visit?visitRequestId={created.VisitRequestId}",
                 MetadataJson: NotificationEventKeys.BuildMetadata(
                     NotificationEventKeys.VisitRequestWaitingApproval,
@@ -103,7 +107,10 @@ internal static class V2CreateNotifier
                     IsActionRequired: false,
                     VisitRequestId: created.VisitRequestId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={created.VisitRequestId}")));
+                    ActionUrl: $"/dashboard/visit?visitRequestId={created.VisitRequestId}",
+                    MetadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.MultiCampusRequestSubmittedHoVisibility,
+                        new { requestCode = created.RequestCode }))));
             }
 
             if (notifications.Count > 0)

@@ -142,7 +142,10 @@ public static class ProposedHostNotifier
                     VisitRequestId: visit.VisitRequestId,
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
-                    ActionType: NotificationActionTypes.OpenVisitDetail,
+                    // OpenCampusReview: same action as VISIT_REQUEST_WAITING_APPROVAL — "Vui lòng
+                    // duyệt và chọn người phụ trách tiếp đón" is the approve+assign-host control, not
+                    // a passive detail view (plan-continuation §3 evidence).
+                    ActionType: NotificationActionTypes.OpenCampusReview,
                     ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
                     MetadataJson: NotificationEventKeys.BuildMetadata(
                         NotificationEventKeys.HostReassignmentRequired,

@@ -457,6 +457,7 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
              merely failed to arrive. ── */}
       {canViewHistory && (
         <VisitSectionCard
+          id="history"
           step={3}
           title={t('visitRequestV2:detail.historyTitle')}
           readOnlyLabel={t('visitRequestV2:detail.readOnly')}

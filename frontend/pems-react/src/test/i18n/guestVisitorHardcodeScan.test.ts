@@ -67,6 +67,8 @@ export const SCOPED_FILES = [
   'features/notifications/components/NotificationFilterBar.tsx',
   'features/notifications/context/NotificationsContext.tsx',
   'features/notifications/utils/resolveNotificationPresentation.ts',
+  'features/notifications/utils/notificationSemantic.ts',
+  'features/notifications/utils/resolveNotificationDestination.ts',
   'pages/notifications/NotificationsPage.tsx',
 
   // Discovered by scopedFileListFreshness.test.ts (Phase 20 gate): the rest of the closure

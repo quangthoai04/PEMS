@@ -14,6 +14,8 @@ interface Props {
   defaultOpen?: boolean;
   children: React.ReactNode;
   'data-testid'?: string;
+  /** Anchor id for a deep link (e.g. notification's `#history` target) to scroll straight to this section. */
+  id?: string;
 }
 
 /**
@@ -25,7 +27,7 @@ interface Props {
  * the keyboard; when it is not collapsible there is no interactive element to tab through.
  */
 export const VisitSectionCard: React.FC<Props> = ({
-  step, title, readOnlyLabel, headerExtra, collapsible = true, defaultOpen = true, children, ...rest
+  step, title, readOnlyLabel, headerExtra, collapsible = true, defaultOpen = true, children, id, ...rest
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   const bodyId = useId();
@@ -62,6 +64,7 @@ export const VisitSectionCard: React.FC<Props> = ({
 
   return (
     <section
+      id={id}
       data-testid={rest['data-testid']}
       className="overflow-hidden rounded-xl border border-[#004c91]/20 bg-white shadow-sm"
     >

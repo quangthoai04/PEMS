@@ -29,7 +29,7 @@ import { delegationsApi } from '../../../../features/delegations/api/delegations
 import { departmentReceptionTasksApi } from '../../../../features/department-reception-tasks/api/departmentReceptionTasksApi';
 import { notificationsApi } from '../../../../features/notifications/api/notificationsApi';
 import { useNotifications } from '../../../../features/notifications/context/NotificationsContext';
-import { getNotificationLink } from '../../../../features/notifications/components/NotificationBellButton';
+import { resolveNotificationDestination } from '../../../../features/notifications/utils/resolveNotificationDestination';
 import { NotificationDetailModal } from '../../../../features/notifications/components/NotificationDetailModal';
 import { HostFeedbackModal } from '../../../../features/feedbacks/components/HostFeedbackModal';
 import { VisitorFeedbackDetailModal } from '../../../../features/feedbacks/components/VisitorFeedbackDetailModal';
@@ -266,7 +266,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
       setVisitorFeedbackVisitInstanceId(n.visitInstanceId);
       return;
     }
-    const link = getNotificationLink(n, authUser);
+    const link = resolveNotificationDestination(n, authUser);
     if (link) {
       setDetailInstanceId(null);
       navigate(link);

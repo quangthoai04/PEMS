@@ -161,7 +161,12 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
                     Category: NotificationCategories.Visit,
                     IsActionRequired: true,
                     VisitRequestId: visitRequestId,
-                    ActionType: NotificationActionTypes.OpenVisitDetail,
+                    // OpenVisitHistory (not the generic OpenVisitDetail): this notification means "data
+                    // changed, go read it" — never "a decision is waiting for you". The frontend's
+                    // navigation-intent resolver must never escalate this into the live approve/reject
+                    // control even if the campus is still genuinely PENDING and the viewer still holds
+                    // APPROVE_AND_ASSIGN_HOST (plan §5/§7/§14 — this IS the reported bug).
+                    ActionType: NotificationActionTypes.OpenVisitHistory,
                     ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
                     MetadataJson: NotificationEventKeys.BuildMetadata(
                         NotificationEventKeys.VisitRequestUpdatedPending,

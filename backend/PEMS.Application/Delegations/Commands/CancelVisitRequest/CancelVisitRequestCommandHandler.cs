@@ -190,7 +190,10 @@ public sealed class CancelVisitRequestCommandHandler
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                     VisitRequestId: visit.VisitRequestId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestCancelledBeforeApproval,
+                        new { requestCode = visit.RequestCode })
                 )));
             }
 

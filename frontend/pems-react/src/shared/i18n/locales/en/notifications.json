@@ -177,6 +177,26 @@
       "title": "Unprocessed campus approaching visit time",
       "message": "{{campusName}} for {{delegationName}} (request {{requestCode}}) is still unprocessed as the visit time approaches."
     },
+    "AMENDMENT_PROPOSED": {
+      "title": "Content change proposed",
+      "message": "Request {{requestCode}}: the guest proposed a content change at your campus. Please review and decide."
+    },
+    "MULTI_CAMPUS_REQUEST_SUBMITTED_HO_VISIBILITY": {
+      "title": "New multi-campus request",
+      "message": "New multi-campus request {{requestCode}} is awaiting campus processing."
+    },
+    "VISIT_REQUEST_PARTIALLY_APPROVED_HO_VISIBILITY": {
+      "title": "Multi-campus request partially approved",
+      "message": "Request {{requestCode}} ({{delegationName}}) has been partially approved."
+    },
+    "VISIT_REQUEST_FULLY_PROCESSED_HO_VISIBILITY": {
+      "title": "Multi-campus request fully processed",
+      "message": "All campuses of request {{requestCode}} ({{delegationName}}) have been processed."
+    },
+    "VISIT_REQUEST_CANCELLED_BEFORE_APPROVAL": {
+      "title": "Visit request cancelled",
+      "message": "The visitor cancelled request {{requestCode}} before it was processed."
+    },
     "PARTICIPATION_INVITED": {
       "title": "You're invited to join a delegation",
       "message": "You've been invited to join {{delegationName}} at {{campusName}}."

@@ -55,6 +55,14 @@ const EVENT_PARAMS: Record<string, string[]> = {
   HOST_CHANGED_HO_VISIBILITY: ['campusName', 'requestCode', 'hostName'],
   VISIT_CANCELLED_STAFF_LEADER: ['campusName', 'requestCode'],
   HO_CAMPUS_UNPROCESSED_ALERT: ['campusName', 'delegationName', 'requestCode'],
+  // Added closing the P5 legacy-metadata gap (notification-continuation plan §15) — 5 producer call
+  // sites previously created Title/Message-only rows with MetadataJson=null; see
+  // resolveNotificationDestination.ts's EVENT_INTENT map for the per-event routing evidence.
+  AMENDMENT_PROPOSED: ['requestCode'],
+  MULTI_CAMPUS_REQUEST_SUBMITTED_HO_VISIBILITY: ['requestCode'],
+  VISIT_REQUEST_PARTIALLY_APPROVED_HO_VISIBILITY: ['requestCode', 'delegationName'],
+  VISIT_REQUEST_FULLY_PROCESSED_HO_VISIBILITY: ['requestCode', 'delegationName'],
+  VISIT_REQUEST_CANCELLED_BEFORE_APPROVAL: ['requestCode'],
   PARTICIPATION_INVITED: ['delegationName', 'campusName'],
   PARTICIPATION_ACCEPTED: ['delegationName', 'participantName'],
   PARTICIPATION_DECLINED: ['delegationName', 'participantName'],

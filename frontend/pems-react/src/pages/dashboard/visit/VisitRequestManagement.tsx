@@ -36,6 +36,7 @@ import {
   dismissCapabilityToasts,
 } from '../../../shared/features/useVisitEntryCta';
 import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
+import { VISIT_COMMAND_INTENTS, type NotificationNavigationIntent } from '../../../features/notifications/utils/resolveNotificationDestination';
 import { visitDraftNamespace } from '../../../features/visit-request/utils/visitRequestV2DraftStorage';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
 import { CancellationReasonModal } from '../../../features/delegations/components/CancellationReasonModal';
@@ -413,7 +414,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // Đến từ 1 thông báo cụ thể (?visitRequestId=...): chỉ hiển thị đúng đơn đó thay vì cả
   // danh sách, để người dùng không phải tự tìm. "Reset" (nút có sẵn) xoá filter này để xem
   // lại toàn bộ. Độc lập với draftFilters/appliedFilters (không hiện trên thanh filter UI).
-  const [notificationVisitRequestId, setNotificationVisitRequestId] = useState(searchParams.get('visitRequestId') || '');
+  //
+  // URL IS THE SOURCE OF TRUTH for this value — deliberately NOT `useState(searchParams.get(...))`.
+  // That used to read the URL only once, at mount; React Router does not remount this component for
+  // a same-route navigation, so clicking a SECOND notification (Nanning 47028 -> Shinyway 47027)
+  // changed the URL but the mount-captured state never saw it, and `loadDelegations` kept using the
+  // stale id — the table kept showing Nanning under a URL that already said Shinyway. Deriving this
+  // fresh every render makes that impossible: URL 47027 always means target 47027 by the very next
+  // render, with no separate state to fall behind it.
+  const notificationVisitRequestId = searchParams.get('visitRequestId') || '';
 
   const [rows, setRows] = useState<Row[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -463,7 +472,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setDraftFilters(newFilters);
     setAppliedFilters(newFilters);
     setCurrentPage(1);
-    setNotificationVisitRequestId('');
+    // Notification-target mode is exited by removing `visitRequestId` from the URL — updateUrlParams
+    // already does that below (keepNotificationFilter defaults to false) — the derived
+    // `notificationVisitRequestId` const then naturally reads '' on the next render. No separate
+    // state to clear.
     updateUrlParams(activeTab, 1, pageSize, newFilters, sortOrder);
     loadDelegations(activeTab, 1, pageSize, newFilters, sortOrder, '');
   };
@@ -650,10 +662,34 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     setFilterError(null);
     setCurrentPage(1);
     setDebouncedKeyword('');
-    setNotificationVisitRequestId('');
+    // See applyFilterChange above — updateUrlParams removes `visitRequestId`; the derived const
+    // follows on the next render.
     updateUrlParams(activeTab, 1, pageSize, empty, sortOrder);
     loadDelegations(activeTab, 1, pageSize, empty, sortOrder, '');
   };
+
+  /**
+   * Stale-response guard (plan §8): a slower EARLIER request must never overwrite what a faster
+   * LATER request already rendered — e.g. click Nanning (slow), then Shinyway (fast) before Nanning
+   * resolves; Nanning's response arriving afterward must not clobber the table back to Nanning.
+   * Every `loadDelegations` call claims a new version number; only the still-current version is
+   * allowed to touch rows/total/summaryStats/listError/isLoading.
+   */
+  const requestVersionRef = React.useRef(0);
+
+  /**
+   * The full (tab, page, pageSize, sortOrder, filters, notification target) tuple the most recent
+   * `loadDelegations` call was FOR — set at call time by every caller (pagination, sort, filters, tab
+   * clicks, and the external URL-sync effect below). Seeded from the same values used for the initial
+   * render so the sync effect's first pass sees no diff and does not double-fire the mount load.
+   */
+  const lastLoadedTargetRef = React.useRef<{
+    tab: Tab; page: number; pageSize: number; sortOrder: string;
+    filters: typeof appliedFilters; notifTarget: string;
+  }>({
+    tab: activeTab, page: currentPage, pageSize, sortOrder,
+    filters: appliedFilters, notifTarget: notificationVisitRequestId,
+  });
 
   const loadDelegations = async (
     targetTab: Tab,
@@ -665,6 +701,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   ) => {
     if (isAdmin) return;
     const notifFilter = notifFilterOverride !== undefined ? notifFilterOverride : notificationVisitRequestId;
+    lastLoadedTargetRef.current = {
+      tab: targetTab, page: targetPage, pageSize: targetSize, sortOrder: targetSort,
+      filters: targetFilters, notifTarget: notifFilter,
+    };
+    const version = ++requestVersionRef.current;
+    const isCurrent = () => version === requestVersionRef.current;
     try {
       setIsLoading(true);
       setListError(null);
@@ -679,10 +721,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       const params: Record<string, unknown> = {
         tab: effectiveTab,
         page: notifFilter ? 1 : targetPage,
-        pageSize: notifFilter ? 1000 : targetSize,
+        pageSize: targetSize,
         sortBy: 'plannedStartAt',
         sortOrder: targetSort,
       };
+      // A notification target is resolved by the BACKEND (permission-scoped, exact match) rather
+      // than fetched-then-filtered on the client — no more requesting up to 1000 rows and searching
+      // them locally for one id. `ViewGuestDelegationListQueryHandler` already applies this AFTER
+      // its relation/scope predicates, so an unauthorized/deleted target still correctly returns 0.
+      if (notifFilter) params.visitRequestId = notifFilter;
       const keyword = targetFilters.keyword.trim();
       if (keyword) params.keyword = keyword;
 
@@ -727,6 +774,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         if (targetFilters.toDate) invParams.toDate = targetFilters.toDate;
 
         const response = await delegationsApi.visitInvitations.getMyInvitations(invParams);
+        if (!isCurrent()) return; // a later call already superseded this one — see requestVersionRef
 
         if (response.summary) {
           setSummaryStats(response.summary);
@@ -776,6 +824,11 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             statusText,
           };
         });
+        // KNOWN LIMITATION (unlike the branch below): GetVisitInvitations has no server-side
+        // visitRequestId filter, so a notification target on the attending tab is still matched by
+        // scanning the current page's own `targetPage`/`targetSize` window — a target sitting on a
+        // later page of a large invitation list can be missed. Adding that backend filter is outside
+        // this fix's scope (URL/state lifecycle only, plan §25); not claiming it is fixed here.
         const filtered = notifFilter
           ? mapped.filter((r) => String(r.visitRequestId) === notifFilter)
           : mapped;
@@ -783,6 +836,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         setTotal(notifFilter ? filtered.length : (response.totalItems || 0));
       } else {
         const response = await delegationsApi.getVisitRequestManagementList(params);
+        if (!isCurrent()) return; // a later call already superseded this one — see requestVersionRef
 
         if (response.summary) {
           setSummaryStats(response.summary);
@@ -821,17 +875,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           time: formatDateTimeShort(item.plannedStartAt),
           statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
         }));
-        const filtered = notifFilter
-          ? mapped.filter((r) => String(r.visitRequestId) === notifFilter)
-          : mapped;
-        setRows(filtered);
-        setTotal(notifFilter ? filtered.length : (response.totalItems || 0));
+        // `params.visitRequestId` above already narrowed this to the exact target server-side — no
+        // client re-filter needed, and `response.totalItems` is already the exact (0 or 1+) count.
+        setRows(mapped);
+        setTotal(response.totalItems || 0);
       }
     } catch (e) {
       console.error('Failed to fetch visit requests', e);
-      setListError(tt('visitRequestV2:list.row.loadError'));
+      if (isCurrent()) setListError(tt('visitRequestV2:list.row.loadError'));
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   };
 
@@ -839,6 +892,61 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     loadDelegations(activeTab, currentPage, pageSize, appliedFilters, sortOrder);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * EXTERNAL URL -> local state sync (stale notification-target fix, plan-continuation "URL/State
+   * Sync"). Every internal handler in this file already pushes state -> URL and calls
+   * `loadDelegations` itself (tab clicks, Reset, Apply, pagination, sort) — `lastLoadedTargetRef` is
+   * how this effect recognizes "I already handled this" and no-ops for those.
+   *
+   * What it exists FOR is navigation this page's own handlers never ran: clicking a second
+   * notification while `/dashboard/visit` stays mounted (Nanning 47028 -> Shinyway 47027 — React
+   * Router does not remount for a same-route navigation), and Back/Forward. Both change
+   * `searchParams` without touching `activeTab`/`currentPage`/`pageSize`/`sortOrder`/
+   * `draftFilters`/`appliedFilters`, which — before this effect existed — stayed frozen at whatever
+   * they were on the LAST render that actually ran a handler, so the table kept showing the OLD
+   * target under a URL that already said the new one.
+   */
+  useEffect(() => {
+    const urlTabNow = searchParams.get('tab') as Tab | null;
+    const urlState = {
+      tab: (isTabAllowed(urlTabNow) ? urlTabNow : activeTab) as Tab,
+      page: Number(searchParams.get('page')) || 1,
+      pageSize: Number(searchParams.get('pageSize')) || 10,
+      sortOrder: (searchParams.get('sortOrder') as 'desc' | 'asc') || 'desc',
+      filters: getUrlFilters(),
+      notifTarget: searchParams.get('visitRequestId') || '',
+    };
+    const last = lastLoadedTargetRef.current;
+    const filtersChanged = JSON.stringify(urlState.filters) !== JSON.stringify(last.filters);
+    const changed = urlState.tab !== last.tab
+      || urlState.page !== last.page
+      || urlState.pageSize !== last.pageSize
+      || urlState.sortOrder !== last.sortOrder
+      || urlState.notifTarget !== last.notifTarget
+      || filtersChanged;
+    if (!changed) return;
+
+    // A notification target always wins page back to 1 — it must never be hidden behind whatever
+    // page a stale filter/pagination combination left the list on (plan §7/§11).
+    const displayPage = urlState.notifTarget ? 1 : urlState.page;
+
+    if (urlState.tab !== activeTab) setActiveTab(urlState.tab);
+    if (displayPage !== currentPage) setCurrentPage(displayPage);
+    if (urlState.pageSize !== pageSize) setPageSize(urlState.pageSize);
+    if (urlState.sortOrder !== sortOrder) setSortOrder(urlState.sortOrder);
+    if (filtersChanged) {
+      setDraftFilters(urlState.filters);
+      setAppliedFilters(urlState.filters);
+    }
+    // Clear stale rows immediately rather than leaving the OLD target on screen under the NEW url
+    // while the fresh request is still in flight (plan §7) — `isLoading` (set inside
+    // `loadDelegations`) drives the skeleton/loading state on top of this.
+    setRows([]);
+    setTotal(0);
+    void loadDelegations(urlState.tab, displayPage, urlState.pageSize, urlState.filters, urlState.sortOrder, urlState.notifTarget);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const loadPendingInvitations = async () => {
     if (!showTabs) return;
@@ -969,7 +1077,9 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
    * result (deleted, or no relation to it any more) is reported and nothing is guessed from the
    * notification's own title/message text.
    */
-  const resolveAndOpenNotificationTarget = async (requestId: number, instanceId: number | null) => {
+  const resolveAndOpenNotificationTarget = async (
+    requestId: number, instanceId: number | null, intent: NotificationNavigationIntent | null,
+  ) => {
     if (isAdmin) return;
     const resolveTab: Tab = canUseAllTab ? 'all' : (isStudent || isDept) ? 'attending' : 'responsible';
     try {
@@ -1004,10 +1114,30 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       // pending. `openEntryContext`'s own CAMPUS_REVIEW branch only opens the read-only submitted
       // form (no approve control lives there); this is the one place the notification flow adds
       // navigation, and it still reuses the exact existing approve mechanism rather than inventing one.
-      if (row.primaryEntryContext === 'CAMPUS_REVIEW' && (row.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST')) {
+      //
+      // GATED BY INTENT (plan §7/§45): the notification's own eventKey sets the MAXIMUM interaction
+      // level this click may open — current pending state may only ever downgrade it, never upgrade
+      // it into this approve control. `VISIT_REVIEW` (VISIT_REQUEST_WAITING_APPROVAL) may escalate;
+      // `VISIT_HISTORY` (VISIT_REQUEST_UPDATED_PENDING/RESUBMITTED/AMENDMENT_*) etc. never may, even
+      // when the campus is still genuinely pending + the viewer still has APPROVE_AND_ASSIGN_HOST.
+      // `intent === null` (no classifiable eventKey/actionType — a link that predates this scheme, or
+      // was typed by hand) keeps the pre-existing behavior for backward compatibility.
+      const mayEscalateToReview = intent == null || intent === 'VISIT_REVIEW';
+      if (mayEscalateToReview && row.primaryEntryContext === 'CAMPUS_REVIEW'
+        && (row.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST')) {
         setAssign({ open: true, row, mode: 'approve' });
         return;
       }
+
+      // "Có thay đổi, hãy xem lại" (VISIT_HISTORY) always lands on the full request detail with its
+      // change-history section in view — never the entry-context shortcut, which for a still-pending
+      // campus would otherwise be the very approve-adjacent submitted form. No mutation control is
+      // reachable from here; reviewing and deciding stay two separate, explicit acts (plan §14/§45).
+      if (intent === 'VISIT_HISTORY' && row.canViewRequestDetail !== false) {
+        navTo(`${resolveVisitRowRoutes(row.visitRequestId).detailRoute}#history`);
+        return;
+      }
+
       if (openEntryContext(row)) return;
       if (navigateByRelation(row)) return;
       showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
@@ -1018,27 +1148,39 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   /**
-   * `openVisitRequestId`/`openVisitInstanceId` — ONE-SHOT COMMAND from a notification deep link,
-   * kept separate from the persistent `visitRequestId` list filter above (that one only narrows the
-   * list; this one OPENS a target). Consumed and deleted from the URL by replace on this same run,
-   * exactly like `feedbackVisitInstanceId` above — left in place it would replay on every unrelated
-   * searchParams change after the target is closed (search/filter/tab/page — see plan §11, §17-19).
+   * `openVisitRequestId`/`openVisitInstanceId`(+`notificationIntent`) — ONE-SHOT COMMAND from a
+   * notification deep link, kept separate from the persistent `visitRequestId` list filter above
+   * (that one only narrows the list; this one OPENS a target). Consumed and deleted from the URL by
+   * replace on this same run, exactly like `feedbackVisitInstanceId` above — left in place it would
+   * replay on every unrelated searchParams change after the target is closed (search/filter/tab/page
+   * — see plan §11, §17-19).
    */
   const consumedNotificationCommandRef = React.useRef<string | null>(null);
   useEffect(() => {
     const rawRequestId = searchParams.get('openVisitRequestId');
     const rawInstanceId = searchParams.get('openVisitInstanceId');
-    if (rawRequestId === null && rawInstanceId === null) return;
+    const rawIntent = searchParams.get('notificationIntent');
+    if (rawRequestId === null && rawInstanceId === null) {
+      // No command present — either it was just consumed below, or the reader never came from a
+      // notification at all. Either way the guard's ONLY job is surviving StrictMode's double-invoke
+      // of THIS SAME command; keeping it set past that point silently drops a real second click on
+      // the identical notification later (the same requestId:instanceId reappearing on the URL is a
+      // NEW user action then, not a StrictMode replay). Reset it here so the next command — even an
+      // identical one — is always treated as new.
+      consumedNotificationCommandRef.current = null;
+      return;
+    }
 
     const next = new URLSearchParams(searchParams);
     next.delete('openVisitRequestId');
     next.delete('openVisitInstanceId');
+    next.delete('notificationIntent');
     setSearchParams(next, { replace: true });
 
     // StrictMode double-invokes effects; the replace above already lands on the first pass, but the
     // second pass still closes over the pre-replace searchParams snapshot. Without this guard the
     // same command would resolve — and navigate/open a modal — twice.
-    const commandKey = `${rawRequestId}:${rawInstanceId}`;
+    const commandKey = `${rawRequestId}:${rawInstanceId}:${rawIntent}`;
     if (consumedNotificationCommandRef.current === commandKey) return;
     consumedNotificationCommandRef.current = commandKey;
 
@@ -1046,8 +1188,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     const instanceId = rawInstanceId != null ? Number(rawInstanceId) : null;
     if (!Number.isFinite(requestId) || requestId <= 0) return;
     if (instanceId != null && (!Number.isFinite(instanceId) || instanceId <= 0)) return;
+    const intent = VISIT_COMMAND_INTENTS.has(rawIntent as NotificationNavigationIntent)
+      ? (rawIntent as NotificationNavigationIntent) : null;
 
-    void resolveAndOpenNotificationTarget(requestId, instanceId);
+    void resolveAndOpenNotificationTarget(requestId, instanceId, intent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, setSearchParams]);
 
@@ -2307,7 +2451,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   }
 
   const hasActiveFilter = !!(appliedFilters.keyword || appliedFilters.status || appliedFilters.visitScope || appliedFilters.relation || appliedFilters.fromDate || appliedFilters.toDate);
-  const emptyText = hasActiveFilter
+  // A notification target that resolves to 0 rows (deleted / no permission by the time it's
+  // clicked) must say so specifically — not fall through to a generic tab-empty message that reads
+  // as "you have nothing here", which is a different, misleading claim (plan §13/N-09).
+  const emptyText = notificationVisitRequestId
+    ? tt('visitRequestV2:list.empty.notificationTargetNotFound')
+    : hasActiveFilter
     ? tt('visitRequestV2:list.empty.noMatch')
     : activeTab === 'attending'
       ? tt('visitRequestV2:list.empty.noAttending')

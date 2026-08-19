@@ -225,7 +225,10 @@ public sealed class RejectCampusInstanceCommandHandler
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                         VisitRequestId: visit.VisitRequestId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestPartiallyApprovedHoVisibility,
+                            new { requestCode = visit.RequestCode, delegationName })
                     )));
                 }
                 else if (visit.Status == VisitRequestStatuses.Approved || visit.Status == VisitRequestStatuses.Rejected)
@@ -241,7 +244,10 @@ public sealed class RejectCampusInstanceCommandHandler
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Visit,
                         VisitRequestId: visit.VisitRequestId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
+                        ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestFullyProcessedHoVisibility,
+                            new { requestCode = visit.RequestCode, delegationName })
                     )));
                 }
             }

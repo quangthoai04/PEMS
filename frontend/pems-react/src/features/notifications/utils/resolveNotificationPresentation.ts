@@ -26,8 +26,14 @@
  * `reason` handling in the CAMPUS_REJECTED event.)
  */
 import { formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
+import { parseNotificationSemantic } from './notificationSemantic';
 
-const KNOWN_EVENT_KEYS = new Set([
+/**
+ * Exported so the coverage guard (notificationEventCoverage.test.ts) can assert every LIVE backend
+ * eventKey (read straight from NotificationEventKeys.cs) is recognized here — an eventKey missing
+ * from this set silently falls back to legacy/placeholder presentation instead of failing loudly.
+ */
+export const KNOWN_EVENT_KEYS = new Set([
   // Guest/Visitor-facing (original set).
   'CAMPUS_APPROVED',
   'CAMPUS_REJECTED',
@@ -58,6 +64,11 @@ const KNOWN_EVENT_KEYS = new Set([
   'HOST_CHANGED_HO_VISIBILITY',
   'VISIT_CANCELLED_STAFF_LEADER',
   'HO_CAMPUS_UNPROCESSED_ALERT',
+  'AMENDMENT_PROPOSED',
+  'MULTI_CAMPUS_REQUEST_SUBMITTED_HO_VISIBILITY',
+  'VISIT_REQUEST_PARTIALLY_APPROVED_HO_VISIBILITY',
+  'VISIT_REQUEST_FULLY_PROCESSED_HO_VISIBILITY',
+  'VISIT_REQUEST_CANCELLED_BEFORE_APPROVAL',
   // Participation.
   'PARTICIPATION_INVITED',
   'PARTICIPATION_ACCEPTED',
@@ -112,14 +123,9 @@ export type NotificationPresentation = {
 type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
 function parseEvent(metadataJson: string | null | undefined): { eventKey: string; params: Record<string, unknown> } | null {
-  if (!metadataJson) return null;
-  try {
-    const parsed = JSON.parse(metadataJson) as { eventKey?: string; params?: Record<string, unknown> };
-    if (!parsed.eventKey || !KNOWN_EVENT_KEYS.has(parsed.eventKey)) return null;
-    return { eventKey: parsed.eventKey, params: parsed.params ?? {} };
-  } catch {
-    return null;
-  }
+  const event = parseNotificationSemantic(metadataJson);
+  if (!event || !KNOWN_EVENT_KEYS.has(event.eventKey)) return null;
+  return event;
 }
 
 export function resolveNotificationPresentation(

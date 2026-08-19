@@ -10,112 +10,13 @@ import { VisitFeedbackModal } from '../../feedbacks/components/VisitFeedbackModa
 import { HostFeedbackModal } from '../../feedbacks/components/HostFeedbackModal';
 import { VisitorFeedbackDetailModal } from '../../feedbacks/components/VisitorFeedbackDetailModal';
 import { NotificationDetailModal } from './NotificationDetailModal';
-import type { AuthUser } from '../../authentication/types/authentication.types';
 import { formatVietnamRelative, type UiLanguage } from '../../../shared/utils/vietnamTime';
 import { resolveNotificationPresentation } from '../utils/resolveNotificationPresentation';
+import { resolveNotificationDestination } from '../utils/resolveNotificationDestination';
 
 export function timeAgo(dateStr: string): string {
   // API trả ISO +07:00 (giờ Việt Nam) — parse offset-aware, tuyệt đối không nối 'Z'.
   return formatVietnamRelative(dateStr);
-}
-
-export function getNotificationLink(item: NotificationItem, user: AuthUser | null): string | undefined {
-  // Tin tức / đối tác: mọi thông báo (duyệt, từ chối, chờ duyệt) đều đưa về trang quản lý
-  // lọc đúng 1 bản ghi — có nút "Xem tất cả" để thoát. Rewrite theo relatedType/relatedId
-  // để xử lý luôn notification cũ trỏ trang chi tiết hoặc không có targetUrl.
-  const relatedType = item.relatedType?.toUpperCase();
-  if (relatedType === 'NEWS' && item.relatedId) {
-    return `/dashboard/news?newsId=${item.relatedId}`;
-  }
-  if (relatedType === 'PARTNER' && item.relatedId) {
-    return `/dashboard/partners?partnerId=${item.relatedId}`;
-  }
-
-  let link = item.targetUrl || undefined;
-
-  if (link && user) {
-    const isDeptStaff = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() !== 'LEADER';
-    const isDeptLeader = user.roleCode?.toUpperCase() === 'DEPARTMENT' && user.subRole?.toUpperCase() === 'LEADER';
-    if (isDeptStaff) {
-      if (link.includes('/tasks/')) {
-        const parts = link.split('/tasks/');
-        return `/dashboard?taskId=${parts[1]}&itemType=REQUEST`;
-      }
-      if (link.includes('/invitations/')) {
-        const parts = link.split('/invitations/');
-        return `/dashboard?taskId=${parts[1]}&itemType=INVITATION`;
-      }
-    }
-
-    // Dept Leader: đơn/thư mời mở thẳng modal chi tiết (giống bấm 1 đơn trong Bảng lịch)
-    // thay vì trang "Chi tiết nhiệm vụ điều phối" đứng riêng (đã bỏ) — dùng luôn id tách
-    // từ targetUrl, không phụ thuộc visitRequestId (một số notification hậu cần không có field này).
-    if (isDeptLeader) {
-      if (link.includes('/tasks/')) {
-        const parts = link.split('/tasks/');
-        return `/dashboard/visit?taskId=${parts[1]}&itemType=REQUEST`;
-      }
-      if (link.includes('/invitations/')) {
-        const parts = link.split('/invitations/');
-        return `/dashboard/visit?taskId=${parts[1]}&itemType=INVITATION`;
-      }
-    }
-
-    // Notification trỏ thẳng vào trang danh sách kèm định danh request — dạng bare
-    // "/dashboard/visit" (rất cũ, trước khi ActionUrl bắt đầu kèm id) HOẶC dạng hiện tại
-    // "/dashboard/visit?visitRequestId=N" (mọi handler backend đang tạo). Cả hai chỉ LỌC
-    // danh sách xuống 1 dòng — không mở đúng entry context/campus review, và filter đó bị
-    // "quên" lại trên URL nên đổi tab/filter/trang sau khi đóng có thể làm nó tái xuất hiện.
-    // Rewrite sang ONE-SHOT COMMAND "openVisitRequestId"(+"openVisitInstanceId" nếu notification
-    // đã biết đúng campus) để trang tự resolve CURRENT state rồi mở đúng entry context, và tự xoá
-    // command khỏi URL ngay sau khi dùng (xem VisitRequestManagement — không dùng lại tên
-    // `visitRequestId` cũ vì nó đã có nghĩa "persistent filter" khác, xem RC-03 trong plan).
-    const isPlainVisitListLink = link === '/dashboard/visit'
-      || /^\/dashboard\/visit\?visitRequestId=\d+$/.test(link);
-    if (isPlainVisitListLink && item.visitRequestId) {
-      const oneShot = new URLSearchParams();
-      oneShot.set('openVisitRequestId', String(item.visitRequestId));
-      if (item.visitInstanceId) oneShot.set('openVisitInstanceId', String(item.visitInstanceId));
-      return `/dashboard/visit?${oneShot.toString()}`;
-    }
-
-    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
-
-    // Visitor & HO không bao giờ là Host theo thiết kế hệ thống — trang Host Operation
-    // không dành cho họ. Notification cũ có thể còn trỏ vào /process|/reception-detail|
-    // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
-    // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
-    const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
-    if (isViewOnlyRole && (isProcessDetailLink || link.includes('/feedback/')) && item.visitRequestId) {
-      if (item.visitInstanceId && (link.includes('/feedback/') || item.category === 'Feedback')) {
-        return `/dashboard/visit?visitRequestId=${item.visitRequestId}&feedbackVisitInstanceId=${item.visitInstanceId}`;
-      }
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
-    }
-
-    // "Bạn được mời tham gia đoàn" (participant invitation) — người nhận có thể là
-    // Student/IC Staff KHÔNG phải Host của đoàn này (IC Staff đôi khi là Host đoàn khác,
-    // nên không thể chặn theo role tĩnh). Trang Host Operation chỉ dành cho đúng Host của
-    // đoàn, nên loại notification này luôn rewrite về trang danh sách "Quản lý tiếp khách"
-    // lọc đúng đơn, bất kể role. Bắt buộc kèm tab=attending: mặc định trang này rơi vào tab
-    // "Tất cả các loại đơn" (Staff/Staff Leader) — nơi dòng attending bị đánh dấu read-only
-    // (backend BuildAllowedActions không có participantId/trạng thái mời để tính nút Chấp
-    // nhận), nên nếu không ép tab, nút "Nhận lời" sẽ biến mất cho tới khi user tự đổi tab.
-    if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}&tab=attending`;
-    }
-
-    // Student/Department không bao giờ là Host (theo thiết kế vai trò) — trang "Quy trình tiếp
-    // khách" (process) chỉ dành cho Host. Notification cũ (tạo trước khi backend đổi ActionUrl
-    // sang trang "Đóng góp kết quả") vẫn có thể còn trỏ vào /process/ — luôn rewrite về đúng trang
-    // của 2 role này, tính theo dữ liệu hiện tại thay vì tin URL đã lưu sẵn.
-    const isNeverHostRole = ['STUDENT', 'DEPARTMENT'].includes(user.roleCode?.toUpperCase() || '');
-    if (isNeverHostRole && isProcessDetailLink && item.visitInstanceId) {
-      return `/dashboard/visit/contribution/${item.visitInstanceId}`;
-    }
-  }
-
-  return link;
 }
 
 /** Item ảo (client-side) đại diện cho một lời mời đánh giá đoàn (pendingFeedback), trộn chung
@@ -208,7 +109,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
 
     // Tính link trước rồi mới quyết định modal: notification NEWS/PARTNER cũ không có
     // targetUrl (canOpen=false) vẫn điều hướng được nhờ rewrite theo relatedType/relatedId.
-    const link = getNotificationLink(item, user);
+    const link = resolveNotificationDestination(item, user);
     setIsOpen(false);
     if (!link) {
       setDetailModalItem(item);

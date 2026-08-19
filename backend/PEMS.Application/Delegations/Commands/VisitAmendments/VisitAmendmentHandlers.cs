@@ -184,7 +184,10 @@ public sealed class SubmitVisitAmendmentCommandHandler
                             VisitInstanceId: instance.VisitInstanceId,
                             CampusId: instance.CampusId,
                             ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                            ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"),
+                            ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                            MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                                PEMS.Application.Notifications.Common.NotificationEventKeys.AmendmentProposed,
+                                new { requestCode = visit.RequestCode })),
                         cancellationToken);
             }
             catch (System.Exception ex)

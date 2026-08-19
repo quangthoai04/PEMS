@@ -1100,6 +1100,7 @@
       "none": "Chỉ theo dõi"
     },
     "empty": {
+      "notificationTargetNotFound": "Không tìm thấy đoàn được nhắc trong thông báo, hoặc bạn không còn quyền xem đoàn này.",
       "noMatch": "Không tìm thấy đơn phù hợp với bộ lọc.",
       "noRegistered": "Bạn chưa đăng ký đoàn khách nào cho người khác.",
       "visitorNone": "Bạn chưa là đầu mối của đơn tiếp khách nào.",

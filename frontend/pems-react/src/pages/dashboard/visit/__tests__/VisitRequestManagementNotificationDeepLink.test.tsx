@@ -20,7 +20,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useSearchParams } from 'react-router-dom';
 
 const listMock = vi.fn();
 const invitationsMock = vi.fn();
@@ -152,6 +152,23 @@ const renderAt = (search: string, row: Record<string, unknown> = baseRow()) => {
 
 const UrlProbe = () => <span data-testid="url-search">{useLocation().search}</span>;
 const params = () => new URLSearchParams(screen.getByTestId('url-search').textContent ?? '');
+
+/**
+ * Simulates the Bell/NotificationsPage/dashboard attaching a NEW one-shot command onto the SAME
+ * mounted `VisitRequestManagement` instance — exactly what a real second click on a notification does
+ * (the SPA never remounts the page; it just navigates to the same base path with a fresh query
+ * string). Uses the real (unmocked) `useSearchParams` setter — only `useNavigate` is mocked in this
+ * file — so it drives the actual router location `VisitRequestManagement`'s own `useSearchParams()`
+ * observes, the same way `setSearchParams` inside the component itself works.
+ */
+const ReplaySameCommand = ({ search }: { search: string }) => {
+  const [, setSearchParams] = useSearchParams();
+  return (
+    <button type="button" data-testid="replay-command" onClick={() => setSearchParams(new URLSearchParams(search))}>
+      replay
+    </button>
+  );
+};
 
 const searchFor = async (keyword: string) => {
   await userEvent.type(await screen.findByTestId('visit-search-input'), keyword);
@@ -370,5 +387,150 @@ describe('a visit list opened without the command', () => {
     await waitFor(() => expect(listMock).toHaveBeenCalled());
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
     expect(params().get('tab')).toBe('all');
+  });
+});
+
+// ── BUG 1 (plan §3/§56 DL-01): the SAME notification clicked a second time must open again ─────────
+
+describe('the exact same notification clicked a second time still opens (second-click regression)', () => {
+  it('re-opens the approve flow when the identical command reappears on an already-consumed instance', async () => {
+    listMock.mockResolvedValue({ items: [baseRow()], totalItems: 1 });
+    render(
+      <MemoryRouter initialEntries={['/dashboard/visit']}>
+        <UrlProbe />
+        <ReplaySameCommand search={`openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`} />
+        <VisitRequestManagement />
+      </MemoryRouter>,
+    );
+
+    // Nothing open yet — the page was not entered via a notification link.
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+
+    // CLICK 1 (simulated): the command lands on the URL, the modal opens, the command is stripped.
+    await userEvent.click(screen.getByTestId('replay-command'));
+    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
+
+    // User closes it.
+    await userEvent.click(screen.getByTestId('assign-close'));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+
+    // CLICK 2 (simulated): the exact SAME requestId/instanceId reappears — a real second click on
+    // the identical Bell notification. Before the fix, `consumedNotificationCommandRef` was still
+    // holding this same commandKey from CLICK 1 and this second, perfectly ordinary user action was
+    // silently dropped as if it were a StrictMode duplicate.
+    await userEvent.click(screen.getByTestId('replay-command'));
+    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
+  });
+});
+
+// ── BUG 2 (plan §5/§7/§14/§57 CR-03): semantic intent gates the approve escalation ──────────────────
+
+describe('notificationIntent gates whether the notification may escalate to the live approve control', () => {
+  it('VISIT_HISTORY never opens the approve modal even though the campus is still pending and APPROVE is allowed', async () => {
+    // Same row shape as the "still WAITING_REQUEST_APPROVAL" test above (genuinely pending,
+    // APPROVE_AND_ASSIGN_HOST allowed) — the ONLY difference is the notification's own semantic
+    // intent. This is the exact regression the plan calls out: "Visitor đã cập nhật đơn" must never
+    // auto-open the approve/assign-host control, no matter how permissive the current state is.
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_HISTORY`,
+    );
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}#history`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+  });
+
+  it('strips notificationIntent from the URL along with the rest of the one-shot command', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_HISTORY`,
+    );
+    await waitFor(() => expect(navigateMock).toHaveBeenCalled());
+    expect(params().get('notificationIntent')).toBeNull();
+    expect(params().get('openVisitRequestId')).toBeNull();
+    expect(params().get('openVisitInstanceId')).toBeNull();
+  });
+
+  it('VISIT_REVIEW still opens the approve flow for a genuinely pending campus (unchanged from before)', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
+    );
+    const modal = await screen.findByTestId('assign-host-modal');
+    expect(modal).toHaveAttribute('data-request', String(REQUEST_ID));
+  });
+
+  it('an unrecognized notificationIntent value is ignored (falls back to legacy permissive behavior)', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=NOT_A_REAL_INTENT`,
+    );
+    await screen.findByTestId('assign-host-modal');
+  });
+});
+
+// ── DL-07/DL-08 (plan-continuation §10/§17): HOST_PROCESS intent never overrides CURRENT host state ──
+
+describe('HOST_PROCESS intent (HOST_ASSIGNED / HOST_TRANSFER_INCOMING) defers entirely to current state', () => {
+  it('DL-07: still the current Host -> opens Host Process, same as the entry-context fallback would', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=HOST_PROCESS`,
+      baseRow({
+        requestStatus: 'APPROVED',
+        campusStatus: 'BEFORE_VISIT',
+        currentHostUserId: 77,
+        hostName: 'Staff Leader',
+        currentUserIsHost: true,
+        primaryEntryContext: 'HOST_PROCESS',
+        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+      }),
+    );
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/process/${INSTANCE_ID}`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+  });
+
+  it('DL-08: no longer the current Host -> falls back to current detail, never Host Process', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=HOST_PROCESS`,
+      baseRow({
+        requestStatus: 'APPROVED',
+        campusStatus: 'BEFORE_VISIT',
+        currentHostUserId: 999,
+        hostName: 'Nguoi Khac',
+        currentUserIsHost: false,
+        primaryEntryContext: 'REQUEST_DETAIL',
+        primaryEntryVisitInstanceId: null,
+        allowedActions: ['VIEW_DETAIL'],
+      }),
+    );
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    expect(navigateMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/dashboard/visit/process/'), expect.anything(),
+    );
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+  });
+});
+
+// ── Admin never attempts to resolve a notification command (plan-continuation §19 role coverage) ────
+
+describe('ADMIN role', () => {
+  it('no-ops on a notification deep link instead of resolving/opening anything', async () => {
+    currentUser = { userId: '1', roleCode: 'ADMIN', subRole: null };
+    renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
+
+    await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
+    expect(listMock).not.toHaveBeenCalledWith(expect.objectContaining({ visitRequestId: REQUEST_ID }));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
