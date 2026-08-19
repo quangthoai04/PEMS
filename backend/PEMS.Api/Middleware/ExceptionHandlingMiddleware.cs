@@ -142,7 +142,10 @@ public sealed class ExceptionHandlingMiddleware
 
             case AuthenticationFailedException auth:
                 status = StatusCodes.Status401Unauthorized;
-                payload = new { success = false, message = auth.Message, traceId };
+                // The exception's own contract keeps InternalReason out of the response by design
+                // (anti-enumeration) — every public reason reduces to "your session is dead, sign
+                // in again", which is exactly what TOKEN_EXPIRED already says in both languages.
+                payload = new { success = false, errorCode = AuthErrorCodes.TokenExpired, message = auth.Message, traceId };
                 _logger.LogInformation("Authentication failed ({Reason}).", auth.InternalReason ?? "n/a");
                 break;
 

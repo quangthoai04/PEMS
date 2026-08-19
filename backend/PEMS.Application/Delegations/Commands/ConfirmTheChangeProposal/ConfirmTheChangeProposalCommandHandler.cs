@@ -73,6 +73,14 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
         string msgText = request.Accepted
             ? $"Host đã chấp nhận đề xuất thay đổi cho nhiệm vụ \"{item.Title}\"."
             : $"Host đã từ chối đề xuất thay đổi cho nhiệm vụ \"{item.Title}\".";
+        var delegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+            .ForInstancesAsync(_db, new[] { item.VisitInstanceId }, cancellationToken))
+            .GetValueOrDefault(item.VisitInstanceId) ?? item.Title;
+        string proposalMetadataJson = PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+            request.Accepted
+                ? PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsProposalAccepted
+                : PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsProposalRejected,
+            new { delegationName });
 
         if (assigneeId.HasValue && assigneeId.Value != currentUserId)
         {
@@ -87,7 +95,8 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                 VisitInstanceId: item.VisitInstanceId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}",
+                MetadataJson: proposalMetadataJson
             ));
         }
 
@@ -104,7 +113,8 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                 VisitInstanceId: item.VisitInstanceId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}",
+                MetadataJson: proposalMetadataJson
             ));
         }
 
@@ -125,7 +135,8 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                 VisitInstanceId: item.VisitInstanceId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}"
+                ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{item.VisitInstanceId}",
+                MetadataJson: proposalMetadataJson
             ));
         }
 

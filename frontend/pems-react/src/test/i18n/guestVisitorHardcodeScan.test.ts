@@ -188,6 +188,7 @@ export const SCOPED_FILES = [
   'pages/visit/VisitRequestV2Page.tsx',
   'services/visit-expense.service.ts',
   'shared/api/authInterceptor.ts',
+  'shared/api/authPaths.ts',
   'shared/api/endpoints.ts',
   'shared/api/filesApi.ts',
   'shared/api/normalizeApiError.ts',
@@ -310,7 +311,7 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     43: 'COLUMN_ALIASES.nationality — same bilingual header-matching data.',
   },
   'shared/api/httpClient.ts': {
-    89: 'FORCED_LOGOUT_REASON_KEY fallback message (BR-AUTH-CAMPUS-08). PublicHomePage.tsx now consumes and renders this value one-shot -- this line is the ONLY hardcoded-VI source for it (the interceptor prefers the backend-supplied errorBody.message when present). Still not i18n-translated: pending a proper follow-up to move this fallback into validation/errors locale JSON.',
+    122: 'FORCED_LOGOUT_REASON_KEY fallback message (BR-AUTH-CAMPUS-08). PublicHomePage.tsx now consumes and renders this value one-shot -- this line is the ONLY hardcoded-VI source for it (the interceptor prefers the backend-supplied errorBody.message when present). Still not i18n-translated: pending a proper follow-up to move this fallback into validation/errors locale JSON.',
   },
   'shared/constants/countryCoordinates.ts': {
     16: 'Map-pin lookup table keyed by lowercase Vietnamese country name (e.g. việt nam/hàn quốc) for matching against localized country name strings — a data KEY, never rendered as UI text itself.',

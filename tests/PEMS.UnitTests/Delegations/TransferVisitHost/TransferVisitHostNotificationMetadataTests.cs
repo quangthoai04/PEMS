@@ -11,10 +11,10 @@ using NotificationTypes = PEMS.Application.Notifications.Common.NotificationType
 namespace PEMS.UnitTests.Delegations.TransferVisitHost;
 
 /// <summary>
-/// Producer-level contract for the semantic-notification gap closed on TransferVisitHostCommandHandler:
-/// the campus's operational contact (a VISITOR) is notified on a host handover, and that notification
-/// must now carry HOST_CHANGED metadata — the pre-existing HostAssigned notifications to the outgoing/
-/// incoming Host and the campus's other Staff Leaders (Staff-facing, never i18n'd) must stay untouched.
+/// Producer-level contract for TransferVisitHostCommandHandler's notification metadata: the campus's
+/// operational contact (a VISITOR) carries HOST_CHANGED; the outgoing/incoming Host notifications carry
+/// HOST_TRANSFER_OUTGOING/HOST_TRANSFER_INCOMING (closed 2026-08-19 — previously MetadataJson=null); the
+/// campus's other Staff Leaders carry HOST_CHANGED_HO_VISIBILITY.
 /// </summary>
 public class TransferVisitHostNotificationMetadataTests
 {
@@ -116,21 +116,27 @@ public class TransferVisitHostNotificationMetadataTests
     }
 
     [Fact]
-    public async Task OutgoingAndIncomingHost_NeverGetMetadata_OnlyTheVisitorDoes()
+    public async Task OutgoingAndIncomingHost_GetHostTransferMetadata()
     {
-        // The Staff-facing HOST_ASSIGNED notifications (outgoing Host loses the role, incoming Host
-        // gains it) stay on raw VI Message — they are never read through resolveNotificationPresentation,
-        // and giving them metadata would be scope creep beyond the Visitor i18n gap this producer had.
+        // Closed by the notification-system audit (2026-08-19): the Staff-facing "no longer Host" /
+        // "now Host" notifications used to stay on raw VI Message (MetadataJson=null), which meant an
+        // EN-language Staff member saw the generic placeholder instead of who they were and who took
+        // over. They now carry their own eventKeys, distinct from the Guest-facing HOST_CHANGED.
         var (_, handler, _, _, sent) = CreateSut();
 
         await handler.Handle(Cmd(), CancellationToken.None);
 
         var outgoingHost = sent.Single(n => n.RecipientUserId == DelegationsTestData.HostUserId);
         Assert.Equal(NotificationTypes.HostAssigned, outgoingHost.NotificationType);
-        Assert.Null(outgoingHost.MetadataJson);
+        Assert.NotNull(outgoingHost.MetadataJson);
+        var outgoingMeta = System.Text.Json.JsonDocument.Parse(outgoingHost.MetadataJson!).RootElement;
+        Assert.Equal(NotificationEventKeys.HostTransferOutgoing, outgoingMeta.GetProperty("eventKey").GetString());
+        Assert.Equal($"User {NewHostId}", outgoingMeta.GetProperty("params").GetProperty("newHostName").GetString());
 
         var incomingHost = sent.Single(n => n.RecipientUserId == NewHostId);
         Assert.Equal(NotificationTypes.HostAssigned, incomingHost.NotificationType);
-        Assert.Null(incomingHost.MetadataJson);
+        Assert.NotNull(incomingHost.MetadataJson);
+        var incomingMeta = System.Text.Json.JsonDocument.Parse(incomingHost.MetadataJson!).RootElement;
+        Assert.Equal(NotificationEventKeys.HostTransferIncoming, incomingMeta.GetProperty("eventKey").GetString());
     }
 }

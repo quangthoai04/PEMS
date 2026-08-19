@@ -89,7 +89,10 @@ public sealed class ApprovePartnerCommandHandler : IRequestHandler<ApprovePartne
                     CampusId: partner.OwnerCampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenPartnerDetail,
                     // Trang quản lý đối tác lọc đúng 1 hồ sơ (có nút "Xem tất cả"), không vào thẳng chi tiết.
-                    ActionUrl: $"/dashboard/partners?partnerId={partner.PartnerId}"),
+                    ActionUrl: $"/dashboard/partners?partnerId={partner.PartnerId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.PartnerApproved,
+                        new { partnerName = partner.Name })),
                 cancellationToken);
         }
 

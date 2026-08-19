@@ -117,15 +117,19 @@ public class ManageAccountStatusNotificationMetadataTests
     }
 
     [Fact]
-    public async Task VisitorTarget_RoutingAndActionType_UnchangedByAddingMetadata()
+    public async Task VisitorTarget_RoutesToProfile_NotTheAccountListRoleGuardBlocks()
     {
+        // Closed by the notification-system audit (2026-08-19): '/dashboard/accounts' is only on the
+        // menu for ADMIN/HO/Staff-Leader (dashboardRouteAccess.ts). A VISITOR clicking a notification
+        // about their OWN account used to be routed into a page their role's route guard blocks —
+        // now it routes to their own Profile page, which every role can reach.
         var h = CreateHarness();
 
         await h.Run(Cmd(UserStatuses.Locked));
 
         var sent = Assert.Single(h.Sent, n => n.RecipientUserId == TargetId);
         Assert.Equal(NotificationActionTypes.OpenAccountDetail, sent.ActionType);
-        Assert.Equal("/dashboard/accounts", sent.ActionUrl);
+        Assert.Equal("/dashboard/profile", sent.ActionUrl);
         Assert.Equal(NotificationRelatedTypes.Account, sent.RelatedType);
         Assert.Equal(TargetId, sent.RelatedId);
     }

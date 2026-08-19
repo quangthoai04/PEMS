@@ -66,7 +66,15 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
                 .ForInstancesAsync(_db, new[] { participant.VisitInstanceId }, cancellationToken))
                 .GetValueOrDefault(participant.VisitInstanceId) ?? "Đoàn khách";
             string responseText = request.Accept ? "chấp nhận" : "từ chối";
-            
+
+            string metadataJson = request.Accept
+                ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationAccepted,
+                    new { delegationName, participantName })
+                : PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationDeclined,
+                    new { delegationName, participantName, reason = request.DeclineReason });
+
             await _notificationService.CreateAsync(
                 new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: participant.VisitInstance.CurrentHostUserId.Value,
@@ -79,7 +87,8 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
                     VisitInstanceId: participant.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit/process/{participant.VisitInstanceId}"),
+                    ActionUrl: $"/dashboard/visit/process/{participant.VisitInstanceId}",
+                    MetadataJson: metadataJson),
                 cancellationToken
             );
         }

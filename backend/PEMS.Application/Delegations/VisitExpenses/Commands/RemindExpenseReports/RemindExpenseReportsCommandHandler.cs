@@ -138,7 +138,10 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                             IsActionRequired: true,
                             VisitInstanceId: item.VisitInstanceId,
                             ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                            ActionUrl: actionUrl),
+                            ActionUrl: actionUrl,
+                            MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                                PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsExpenseReminder,
+                                new { delegationName })),
                         cancellationToken);
 
                     prepared.Add(await _dispatcher.PrepareAsync(

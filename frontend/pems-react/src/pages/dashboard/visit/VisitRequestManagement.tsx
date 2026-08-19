@@ -428,11 +428,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // "xem 1 đơn từ thông báo" — chỉ Reset và lần load ban đầu mới cần giữ/xoá tường minh.
   const updateUrlParams = (tab: Tab, page: number, size: number, filters: typeof appliedFilters, sort: string, keepNotificationFilter = false) => {
     const params = new URLSearchParams(searchParams);
-    // Defense in depth for the one-shot feedback command. The consume effect above is the real fix;
-    // this makes sure a filter/page/tab change can never CARRY the parameter forward if it is still
-    // present when this runs — cloning the current query string is exactly how it used to survive
-    // every navigation on the page.
+    // Defense in depth for the one-shot feedback/notification commands. The consume effects are the
+    // real fix; this makes sure a filter/page/tab change can never CARRY a command forward if it is
+    // still present when this runs — cloning the current query string is exactly how it used to
+    // survive every navigation on the page.
     params.delete('feedbackVisitInstanceId');
+    params.delete('openVisitRequestId');
+    params.delete('openVisitInstanceId');
     if (tab) params.set('tab', tab);
     if (page > 1) params.set('page', page.toString()); else params.delete('page');
     if (size !== 10) params.set('pageSize', size.toString()); else params.delete('pageSize');
@@ -953,6 +955,101 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         return false;
     }
   };
+
+  /**
+   * Notification deep link — resolves a business target against CURRENT backend state, never the
+   * notification's own historical snapshot, then opens it the same way a normal row click would
+   * (reusing {@link openEntryContext}/{@link navigateByRelation} — no second routing system).
+   *
+   * The notification only ever named WHERE to go (`requestId`/`instanceId`); what is true NOW —
+   * status, `allowedActions`, `primaryEntryContext`, whether this caller may even see the row at
+   * all — is re-fetched here through the same list endpoint every other row on this screen uses, so
+   * a Staff Leader who clicks a "cần duyệt" notification after someone else already decided that
+   * campus lands on the CURRENT decided state, not a resurrected Duyệt/Từ chối control. An empty
+   * result (deleted, or no relation to it any more) is reported and nothing is guessed from the
+   * notification's own title/message text.
+   */
+  const resolveAndOpenNotificationTarget = async (requestId: number, instanceId: number | null) => {
+    if (isAdmin) return;
+    const resolveTab: Tab = canUseAllTab ? 'all' : (isStudent || isDept) ? 'attending' : 'responsible';
+    try {
+      const response = await delegationsApi.getVisitRequestManagementList({
+        tab: resolveTab,
+        visitRequestId: requestId,
+        page: 1,
+        pageSize: 20,
+        sortBy: 'plannedStartAt',
+        sortOrder: 'desc',
+      });
+      const items: VisitRequestManagementItem[] = response?.items || [];
+      if (items.length === 0) {
+        showErrorToast(null, 'Không tìm thấy đoàn được nhắc trong thông báo, hoặc bạn không còn quyền xem đoàn này.');
+        return;
+      }
+      const matched = (instanceId != null && items.find((it) => it.visitInstanceId === instanceId)) || items[0];
+      const row: Row = {
+        ...matched,
+        id: matched.visitInstanceId || matched.visitRequestId,
+        name: matched.delegationName || tt('visitRequestV2:list.row.untitledDelegation'),
+        org: matched.partnerName || '-',
+        campus: matched.campusName || '-',
+        host: matched.hostName || '',
+        sender: matched.visitorName || '',
+        time: formatDateTimeShort(matched.plannedStartAt),
+        statusText: getVietnameseStatus(matched.requestStatus, matched.campusStatus),
+      };
+
+      // Same trigger the row's own primary button uses (renderRowActions) — gated on the CURRENT,
+      // freshly-fetched allowedActions, so this only opens when the decision is still actually
+      // pending. `openEntryContext`'s own CAMPUS_REVIEW branch only opens the read-only submitted
+      // form (no approve control lives there); this is the one place the notification flow adds
+      // navigation, and it still reuses the exact existing approve mechanism rather than inventing one.
+      if (row.primaryEntryContext === 'CAMPUS_REVIEW' && (row.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST')) {
+        setAssign({ open: true, row, mode: 'approve' });
+        return;
+      }
+      if (openEntryContext(row)) return;
+      if (navigateByRelation(row)) return;
+      showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
+    } catch (e) {
+      console.error('Failed to resolve notification target', e);
+      showErrorToast(e, 'Không thể mở nội dung từ thông báo. Vui lòng thử lại.');
+    }
+  };
+
+  /**
+   * `openVisitRequestId`/`openVisitInstanceId` — ONE-SHOT COMMAND from a notification deep link,
+   * kept separate from the persistent `visitRequestId` list filter above (that one only narrows the
+   * list; this one OPENS a target). Consumed and deleted from the URL by replace on this same run,
+   * exactly like `feedbackVisitInstanceId` above — left in place it would replay on every unrelated
+   * searchParams change after the target is closed (search/filter/tab/page — see plan §11, §17-19).
+   */
+  const consumedNotificationCommandRef = React.useRef<string | null>(null);
+  useEffect(() => {
+    const rawRequestId = searchParams.get('openVisitRequestId');
+    const rawInstanceId = searchParams.get('openVisitInstanceId');
+    if (rawRequestId === null && rawInstanceId === null) return;
+
+    const next = new URLSearchParams(searchParams);
+    next.delete('openVisitRequestId');
+    next.delete('openVisitInstanceId');
+    setSearchParams(next, { replace: true });
+
+    // StrictMode double-invokes effects; the replace above already lands on the first pass, but the
+    // second pass still closes over the pre-replace searchParams snapshot. Without this guard the
+    // same command would resolve — and navigate/open a modal — twice.
+    const commandKey = `${rawRequestId}:${rawInstanceId}`;
+    if (consumedNotificationCommandRef.current === commandKey) return;
+    consumedNotificationCommandRef.current = commandKey;
+
+    const requestId = Number(rawRequestId);
+    const instanceId = rawInstanceId != null ? Number(rawInstanceId) : null;
+    if (!Number.isFinite(requestId) || requestId <= 0) return;
+    if (instanceId != null && (!Number.isFinite(instanceId) || instanceId <= 0)) return;
+
+    void resolveAndOpenNotificationTarget(requestId, instanceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, setSearchParams]);
 
   const canOpenProcess = (row: Row) => {
     const actions = row.allowedActions || [];

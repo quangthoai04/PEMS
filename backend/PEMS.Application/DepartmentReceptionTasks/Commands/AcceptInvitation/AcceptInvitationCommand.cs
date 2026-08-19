@@ -114,7 +114,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
                         Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
                         VisitInstanceId: p.VisitInstanceId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: $"/dashboard/visit/process/{p.VisitInstanceId}"),
+                        ActionUrl: $"/dashboard/visit/process/{p.VisitInstanceId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationAccepted,
+                            new { delegationName, participantName = actorName })),
                     cancellationToken
                 );
             }

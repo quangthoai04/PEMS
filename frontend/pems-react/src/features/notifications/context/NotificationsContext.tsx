@@ -25,7 +25,7 @@ const POLL_MS = 60000;
  * unread count lệch nhau giữa các nơi.
  */
 export function NotificationsProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isReady } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [pendingFeedback, setPendingFeedback] = useState<PendingFeedbackItem[]>([]);
@@ -91,7 +91,15 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    // NotificationsProvider wraps the whole app (main.tsx), so this effect runs on EVERY page —
+    // including the public homepage — not just when a bell is actually on screen. `isAuthenticated`
+    // alone is the OPTIMISTIC value AuthContext seeds synchronously from whatever `pems_user` sits
+    // in localStorage, true even for a stale/revoked session left over from a previous visit; firing
+    // an authenticated request on that alone 401'd on a guest's very first paint and surfaced the
+    // generic "session expired" toast to someone who had never signed in this visit. `isReady` is
+    // the flag AuthContext already built for exactly this — it only flips once bootstrap has
+    // verified (or cleared) the stored session — so wait for it too.
+    if (!isReady || !isAuthenticated) {
       setUnreadCount(0);
       setItems([]);
       setPendingFeedback([]);
@@ -103,7 +111,7 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const interval = setInterval(fetchUnreadCount, POLL_MS);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated]);
+  }, [isReady, isAuthenticated]);
 
   const value: NotificationsContextValue = {
     unreadCount,

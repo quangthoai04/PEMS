@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { authInterceptor } from './authInterceptor';
+import { PUBLIC_AUTH_PATHS } from './authPaths';
 import { authStorage, AUTH_EXPIRED_EVENT } from '../auth/authStorage';
 import { showMessageErrorToast } from '../utils/toast';
 import i18n from '../i18n/config';
@@ -10,6 +11,39 @@ const httpClient = axios.create({
   baseURL,
 });
 
+/**
+ * Per-request escape hatch from the generic "Phiên đăng nhập đã hết hạn" toast below.
+ *
+ * A 401 from a genuinely PROTECTED endpoint (e.g. `/auth/me`) is correct — the caller must still
+ * clear auth state and redirect. But some callers make that same request purely to CHECK whether a
+ * stored token is still good, and already handle a negative answer silently on their own (e.g.
+ * AuthContext's bootstrap effect: try `/auth/me`, clear session quietly on failure). Without this
+ * flag, a guest sitting on the public homepage with a stale/revoked token from a previous visit saw
+ * a misleading "session expired" toast on every reload — they were never signed in on THIS visit at
+ * all, bootstrap was just verifying an old token in the background. `AUTH_EXPIRED_EVENT` still
+ * fires either way (other listeners still need to know), only the toast is suppressed.
+ */
+export interface PemsRequestConfig extends AxiosRequestConfig {
+  suppressSessionExpiredToast?: boolean;
+}
+
+/**
+ * True while AuthContext's bootstrap effect is still verifying a stored token (from mount until
+ * its `/auth/me` call settles). AuthContext seeds `user`/`isAuthenticated` OPTIMISTICALLY and
+ * synchronously from localStorage — on purpose, so a hard refresh with a genuinely valid session
+ * never flashes a logged-out UI — but that same optimistic value is what OTHER ambient consumers
+ * (NotificationsProvider's poll, the header avatar's `useAuthenticatedImage`, ...) read to decide
+ * whether to fire their own authenticated request, before bootstrap has had a chance to correct it.
+ * A stale/revoked session then made EACH of those independently 401 and show this file's generic
+ * toast. Per-request `suppressSessionExpiredToast` covers bootstrap's own call; this wider window
+ * is the safety net for every OTHER request that races it — the toast is suppressed, but the
+ * request itself still runs and still fails, and `AUTH_EXPIRED_EVENT` still fires either way.
+ */
+let authBootstrapping = false;
+export function setAuthBootstrapping(value: boolean): void {
+  authBootstrapping = value;
+}
+
 httpClient.interceptors.request.use((config) => {
   const language = localStorage.getItem('pems.language') || 'vi';
   config.headers['Accept-Language'] = language;
@@ -18,15 +52,13 @@ httpClient.interceptors.request.use((config) => {
 
 httpClient.interceptors.request.use(authInterceptor);
 
-// Endpoints that must never trigger a refresh-retry loop.
-const NO_REFRESH_PATHS = [
-  '/auth/login',
-  '/auth/google',
-  '/auth/refresh',
-  '/auth/forgot-password',
-  '/auth/reset-password',
-  '/auth/logout',
-];
+// Endpoints that must never trigger a refresh-retry loop: every PUBLIC_AUTH_PATHS endpoint (a
+// 401 there is the auth attempt's own answer, not an expired session) plus `/auth/logout` — that
+// one IS `[Authorize]` (so authInterceptor still attaches the bearer, hence it is not in
+// PUBLIC_AUTH_PATHS), but retrying a failed logout via refresh-then-retry is pointless: the
+// session is already being torn down, and AuthContext.logout() clears local state regardless of
+// whether the server call succeeds.
+const NO_REFRESH_PATHS = [...PUBLIC_AUTH_PATHS, '/auth/logout'];
 
 // A deliberate logout revokes the session server-side; any OTHER request already in
 // flight at that moment (e.g. notification polling) legitimately gets a 401 back from
@@ -71,9 +103,10 @@ export const FORCED_LOGOUT_REASON_KEY = 'pems.forcedLogoutReason';
 httpClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const original = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
+    const original = error.config as (PemsRequestConfig & { _retry?: boolean }) | undefined;
     const status = error.response?.status;
     const url = original?.url ?? '';
+    const suppressSessionExpiredToast = original?.suppressSessionExpiredToast === true || authBootstrapping;
 
     const isAuthPath = NO_REFRESH_PATHS.some((p) => url.includes(p));
 
@@ -99,7 +132,7 @@ httpClient.interceptors.response.use(
       if (!original || original._retry || !authStorage.getRefreshToken()) {
         authStorage.clear();
         window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-        if (!isDeliberateLogout) showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
+        if (!isDeliberateLogout && !suppressSessionExpiredToast) showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
         return Promise.reject(error);
       }
 
@@ -119,7 +152,7 @@ httpClient.interceptors.response.use(
       // Refresh failed → clear auth and notify the app to redirect to /login.
       authStorage.clear();
       window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
-      if (!isDeliberateLogout) showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
+      if (!isDeliberateLogout && !suppressSessionExpiredToast) showMessageErrorToast(i18n.t('toast:http.401'), 'session-expired');
     }
 
     return Promise.reject(error);

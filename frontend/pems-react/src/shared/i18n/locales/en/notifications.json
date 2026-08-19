@@ -117,6 +117,178 @@
       "title": "Account status updated",
       "message": "Your account has been unlocked and you can sign in again."
     },
+    "VISIT_REQUEST_WAITING_APPROVAL": {
+      "title": "Visit request requires your review",
+      "message": "{{delegationName}} is waiting for your review at {{campusName}}."
+    },
+    "VISIT_REQUEST_UPDATED_PENDING": {
+      "title": "Visit request updated",
+      "message": "Request {{requestCode}} was just edited and is waiting for your review."
+    },
+    "VISIT_REQUEST_RESUBMITTED": {
+      "title": "Visit request resubmitted",
+      "message": "Request {{requestCode}} was resubmitted after rejection and is waiting for your review."
+    },
+    "VISIT_PRIVACY_CONSENT_WITHDRAWN": {
+      "title": "Media consent withdrawn",
+      "message": "Request {{requestCode}} just withdrew media/image consent. Please handle urgently."
+    },
+    "HOST_ASSIGNED": {
+      "title": "You've been assigned as Host",
+      "message": "You are the host in charge of {{delegationName}} at {{campusName}}."
+    },
+    "HOST_PROPOSAL_PENDING": {
+      "title": "You've been proposed as Host",
+      "message": "You've been proposed as host for {{delegationName}} at {{campusName}}. Please confirm."
+    },
+    "HOST_REASSIGNMENT_REQUIRED": {
+      "title": "Host needs to be reassigned",
+      "message": "The proposed host for {{campusName}} could not confirm ({{reason}}). Please choose another host."
+    },
+    "HOST_TRANSFER_INCOMING": {
+      "title": "You are now the Host",
+      "message": "You are the new host in charge of {{delegationName}} at {{campusName}}."
+    },
+    "HOST_TRANSFER_OUTGOING": {
+      "title": "You are no longer the Host",
+      "message": "The host role for {{delegationName}} at {{campusName}} was transferred to {{newHostName}}."
+    },
+    "CAMPUS_APPROVED_HO_VISIBILITY": {
+      "title": "A campus approved the request",
+      "message": "{{campusName}} approved request {{requestCode}}. Assigned host: {{hostName}}."
+    },
+    "CAMPUS_REJECTED_HO_VISIBILITY": {
+      "title": "A campus rejected the request",
+      "message": "{{campusName}} rejected request {{requestCode}}. Reason: {{reason}}"
+    },
+    "VISIT_CANCELLED_HO_VISIBILITY": {
+      "title": "A campus was cancelled",
+      "message": "{{campusName}} on request {{requestCode}} was cancelled."
+    },
+    "HOST_CHANGED_HO_VISIBILITY": {
+      "title": "Host has changed",
+      "message": "{{campusName}} on request {{requestCode}} changed host to {{hostName}}."
+    },
+    "VISIT_CANCELLED_STAFF_LEADER": {
+      "title": "Visit request cancelled",
+      "message": "{{campusName}} on request {{requestCode}} was cancelled."
+    },
+    "HO_CAMPUS_UNPROCESSED_ALERT": {
+      "title": "Unprocessed campus approaching visit time",
+      "message": "{{campusName}} for {{delegationName}} (request {{requestCode}}) is still unprocessed as the visit time approaches."
+    },
+    "PARTICIPATION_INVITED": {
+      "title": "You're invited to join a delegation",
+      "message": "You've been invited to join {{delegationName}} at {{campusName}}."
+    },
+    "PARTICIPATION_ACCEPTED": {
+      "title": "Invitation accepted",
+      "message": "{{participantName}} accepted the invitation to join {{delegationName}}."
+    },
+    "PARTICIPATION_DECLINED": {
+      "title": "Invitation declined",
+      "message": "{{participantName}} declined the invitation to join {{delegationName}}."
+    },
+    "AGENDA_UPDATED": {
+      "title": "Agenda updated",
+      "message": "The agenda for {{delegationName}} was just updated by the host."
+    },
+    "MINUTES_UPDATED": {
+      "title": "Minutes updated",
+      "message": "The minutes \"{{title}}\" for {{delegationName}} were just updated."
+    },
+    "ACTION_ITEM_ASSIGNED": {
+      "title": "You've been assigned a task",
+      "message": "You've been assigned the task \"{{title}}\" for the visit {{delegationName}}."
+    },
+    "ACTION_ITEM_DUE": {
+      "title": "Task due soon",
+      "message": "Your task \"{{title}}\" for the visit {{delegationName}} is due soon."
+    },
+    "LOGISTICS_REQUEST_CREATED": {
+      "title": "New logistics request",
+      "message": "{{delegationName}} at {{campusName}} has a logistics request that needs handling."
+    },
+    "LOGISTICS_ASSIGNED": {
+      "title": "You've been assigned a logistics task",
+      "message": "You've been assigned the logistics request for {{delegationName}} at {{campusName}}."
+    },
+    "LOGISTICS_ASSIGNEE_ACCEPTED": {
+      "title": "Logistics task accepted",
+      "message": "The assignee accepted the logistics request for {{delegationName}}."
+    },
+    "LOGISTICS_ASSIGNEE_DECLINED": {
+      "title": "Logistics task declined",
+      "message": "The assignee declined the logistics request for {{delegationName}}. Reason: {{reason}}"
+    },
+    "LOGISTICS_PROPOSAL_CREATED": {
+      "title": "Logistics change proposed",
+      "message": "{{departmentName}} proposed a change to the logistics request for {{delegationName}}."
+    },
+    "LOGISTICS_PROPOSAL_ACCEPTED": {
+      "title": "Logistics proposal accepted",
+      "message": "The proposed logistics change for {{delegationName}} was accepted."
+    },
+    "LOGISTICS_PROPOSAL_REJECTED": {
+      "title": "Logistics proposal rejected",
+      "message": "The proposed logistics change for {{delegationName}} was rejected."
+    },
+    "LOGISTICS_HANDOVER_SIGNED": {
+      "title": "Handover signed",
+      "message": "The logistics handover for {{delegationName}} has been signed."
+    },
+    "LOGISTICS_EXPENSE_REMINDER": {
+      "title": "Expense report reminder",
+      "message": "Please complete the expense report for {{delegationName}}."
+    },
+    "NEWS_PENDING_APPROVAL": {
+      "title": "News pending approval",
+      "message": "\"{{newsTitle}}\" is waiting for your review."
+    },
+    "NEWS_APPROVED": {
+      "title": "News approved",
+      "message": "Your news \"{{newsTitle}}\" was approved."
+    },
+    "NEWS_REJECTED": {
+      "title": "News rejected",
+      "message": "Your news \"{{newsTitle}}\" was rejected. Reason: {{reason}}"
+    },
+    "PARTNER_PENDING_APPROVAL": {
+      "title": "Partner pending approval",
+      "message": "\"{{partnerName}}\" is waiting for your review."
+    },
+    "PARTNER_APPROVED": {
+      "title": "Partner approved",
+      "message": "Your partner \"{{partnerName}}\" was approved."
+    },
+    "PARTNER_REJECTED": {
+      "title": "Partner rejected",
+      "message": "Your partner \"{{partnerName}}\" was rejected. Reason: {{reason}}"
+    },
+    "HOST_FEEDBACK_INVITE": {
+      "title": "Please rate participants",
+      "message": "Visit {{delegationName}} has ended. Please rate the participants who joined."
+    },
+    "VISITOR_FEEDBACK_RECEIVED": {
+      "title": "Visitor submitted feedback",
+      "message": "The visitor from {{delegationName}} just submitted feedback for the visit."
+    },
+    "HOST_FEEDBACK_RECEIVED": {
+      "title": "You received feedback from the Host",
+      "message": "The host submitted feedback about you for the visit {{delegationName}}."
+    },
+    "VISIT_REMINDER": {
+      "title": "Upcoming visit reminder",
+      "message": "{{delegationName}} is visiting {{campusName}} soon. Don't forget to prepare."
+    },
+    "ACCOUNT_STATUS_ACTIVATED": {
+      "title": "Account status updated",
+      "message": "Your account has been activated."
+    },
+    "ACCOUNT_STATUS_DEACTIVATED": {
+      "title": "Account status updated",
+      "message": "Your account has been deactivated."
+    },
     "unknown": {
       "title": "You have a new notification."
     }

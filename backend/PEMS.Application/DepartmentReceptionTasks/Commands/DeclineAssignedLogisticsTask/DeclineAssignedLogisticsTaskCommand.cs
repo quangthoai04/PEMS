@@ -83,6 +83,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
             var deptTaskUrl = l.RequestedToDepartmentId.HasValue
                 ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
                 : null;
+            var delegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_context, new[] { l.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(l.VisitInstanceId) ?? l.Title;
+            var declinedMetadataJson = PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsAssigneeDeclined,
+                new { delegationName, reason = l.AssigneeResponseNote });
 
             if (assignedBy.HasValue && assignedBy.Value != userId)
             {
@@ -99,7 +105,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                     VisitRequestId: l.VisitInstance?.VisitRequestId,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"
+                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}",
+                    MetadataJson: declinedMetadataJson
                 ));
             }
             else if (l.RequestedToDepartmentId.HasValue)
@@ -120,7 +127,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                         VisitRequestId: l.VisitInstance?.VisitRequestId,
                         VisitInstanceId: l.VisitInstanceId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                        ActionUrl: deptTaskUrl!
+                        ActionUrl: deptTaskUrl!,
+                        MetadataJson: declinedMetadataJson
                     ));
                 }
             }
@@ -139,7 +147,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.DeclineAssignedLogi
                     IsActionRequired: false,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"
+                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}",
+                    MetadataJson: declinedMetadataJson
                 ));
             }
 

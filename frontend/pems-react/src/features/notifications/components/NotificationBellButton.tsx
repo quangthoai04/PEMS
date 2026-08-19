@@ -61,11 +61,22 @@ export function getNotificationLink(item: NotificationItem, user: AuthUser | nul
       }
     }
 
-    // Notification cũ (tạo trước khi ActionUrl bắt đầu kèm id) còn lưu targetUrl trơ trụi
-    // "/dashboard/visit" — không định danh được đơn nào. Vá lại bằng visitRequestId sẵn có
-    // trên chính notification, áp dụng mọi role vì list không lọc gì thì vô nghĩa.
-    if (link === '/dashboard/visit' && item.visitRequestId) {
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
+    // Notification trỏ thẳng vào trang danh sách kèm định danh request — dạng bare
+    // "/dashboard/visit" (rất cũ, trước khi ActionUrl bắt đầu kèm id) HOẶC dạng hiện tại
+    // "/dashboard/visit?visitRequestId=N" (mọi handler backend đang tạo). Cả hai chỉ LỌC
+    // danh sách xuống 1 dòng — không mở đúng entry context/campus review, và filter đó bị
+    // "quên" lại trên URL nên đổi tab/filter/trang sau khi đóng có thể làm nó tái xuất hiện.
+    // Rewrite sang ONE-SHOT COMMAND "openVisitRequestId"(+"openVisitInstanceId" nếu notification
+    // đã biết đúng campus) để trang tự resolve CURRENT state rồi mở đúng entry context, và tự xoá
+    // command khỏi URL ngay sau khi dùng (xem VisitRequestManagement — không dùng lại tên
+    // `visitRequestId` cũ vì nó đã có nghĩa "persistent filter" khác, xem RC-03 trong plan).
+    const isPlainVisitListLink = link === '/dashboard/visit'
+      || /^\/dashboard\/visit\?visitRequestId=\d+$/.test(link);
+    if (isPlainVisitListLink && item.visitRequestId) {
+      const oneShot = new URLSearchParams();
+      oneShot.set('openVisitRequestId', String(item.visitRequestId));
+      if (item.visitInstanceId) oneShot.set('openVisitInstanceId', String(item.visitInstanceId));
+      return `/dashboard/visit?${oneShot.toString()}`;
     }
 
     const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);

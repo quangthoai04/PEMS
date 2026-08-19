@@ -58,6 +58,8 @@ public sealed class ApproveNewsCommandHandler
         string newStatus;
         string notificationTitle;
         string notificationMessage;
+        string notificationEventKey;
+        object notificationEventParams;
 
         if (request.Action == "APPROVE")
         {
@@ -67,6 +69,8 @@ public sealed class ApproveNewsCommandHandler
             newStatus = NewsConstants.Status.Published;
             notificationTitle   = "Tin tức của bạn đã được duyệt";
             notificationMessage = $"Bài viết \"{await GetNewsTitleAsync(request.NewsId, cancellationToken)}\" đã được Staff Leader duyệt và xuất bản.";
+            notificationEventKey = PEMS.Application.Notifications.Common.NotificationEventKeys.NewsApproved;
+            notificationEventParams = new { newsTitle = await GetNewsTitleAsync(request.NewsId, cancellationToken) };
         }
         else // REJECT
         {
@@ -76,6 +80,8 @@ public sealed class ApproveNewsCommandHandler
             newStatus = NewsConstants.Status.Rejected;
             notificationTitle   = "Tin tức của bạn bị từ chối";
             notificationMessage = $"Bài viết \"{await GetNewsTitleAsync(request.NewsId, cancellationToken)}\" bị từ chối. Lý do: {request.Reason!.Trim()}";
+            notificationEventKey = PEMS.Application.Notifications.Common.NotificationEventKeys.NewsRejected;
+            notificationEventParams = new { newsTitle = await GetNewsTitleAsync(request.NewsId, cancellationToken), reason = request.Reason!.Trim() };
         }
 
         if (request.IsFeatured.HasValue)
@@ -101,7 +107,9 @@ public sealed class ApproveNewsCommandHandler
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.News,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenNewsDetail,
                 // Trang quản lý tin tức lọc đúng 1 bài (có nút "Xem tất cả"), không vào thẳng chi tiết.
-                ActionUrl: $"/dashboard/news?newsId={news.NewsId}"),
+                ActionUrl: $"/dashboard/news?newsId={news.NewsId}",
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    notificationEventKey, notificationEventParams)),
             cancellationToken
         );
 

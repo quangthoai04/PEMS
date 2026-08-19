@@ -1,4 +1,4 @@
-import httpClient from '../../../shared/api/httpClient';
+import httpClient, { type PemsRequestConfig } from '../../../shared/api/httpClient';
 import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import type {
   AuthResponse,
@@ -36,8 +36,8 @@ export const authenticationApi = {
     return data;
   },
 
-  async getMe(): Promise<UserProfileResponse> {
-    const { data } = await httpClient.get<UserProfileResponse>(API_ENDPOINTS.auth.me);
+  async getMe(config?: PemsRequestConfig): Promise<UserProfileResponse> {
+    const { data } = await httpClient.get<UserProfileResponse>(API_ENDPOINTS.auth.me, config);
     return data;
   },
 

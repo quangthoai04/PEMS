@@ -144,6 +144,9 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         if (item.VisitInstance?.CurrentHostUserId != null)
         {
             string label = signerSide == HandoverSignerSides.Borrower ? "Bên nhận" : "Bên giao";
+            var handoverDelegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_context, new[] { item.VisitInstance.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(item.VisitInstance.VisitInstanceId) ?? item.Title;
             await _notificationService.CreateAsync(
                 new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: item.VisitInstance.CurrentHostUserId.Value,
@@ -156,7 +159,10 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Handover,
                     VisitInstanceId: item.VisitInstance.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHandoverDetail,
-                    ActionUrl: $"/dashboard/visit/process/{item.VisitInstance.VisitInstanceId}"),
+                    ActionUrl: $"/dashboard/visit/process/{item.VisitInstance.VisitInstanceId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsHandoverSigned,
+                        new { delegationName = handoverDelegationName, label })),
                 cancellationToken
             );
         }

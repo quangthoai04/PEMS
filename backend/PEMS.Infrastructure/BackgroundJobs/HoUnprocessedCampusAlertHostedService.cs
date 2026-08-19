@@ -118,7 +118,10 @@ public sealed class HoUnprocessedCampusAlertHostedService : BackgroundService
                 CampusId: item.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
                 ActionUrl: $"/dashboard/visit/process/{item.VisitInstanceId}",
-                DedupeKey: $"HO_CAMPUS_UNPROCESSED_{item.VisitInstanceId}"
+                DedupeKey: $"HO_CAMPUS_UNPROCESSED_{item.VisitInstanceId}",
+                MetadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.HoCampusUnprocessedAlert,
+                    new { delegationName = item.DelegationName, campusName, requestCode = item.RequestCode })
             )));
         }
 

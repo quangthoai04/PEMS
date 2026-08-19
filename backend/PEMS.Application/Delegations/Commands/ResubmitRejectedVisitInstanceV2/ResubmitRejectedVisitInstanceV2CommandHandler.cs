@@ -129,7 +129,10 @@ public sealed class ResubmitRejectedVisitInstanceV2CommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"
+                ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestResubmitted,
+                    new { requestCode = visit.RequestCode, campusName })
             ), cancellationToken);
         }
         catch (System.Exception ex)

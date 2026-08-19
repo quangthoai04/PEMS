@@ -171,6 +171,9 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
 
         if (item.AssignedToUserId.HasValue)
         {
+            var handoverDelegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_db, new[] { instance.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(instance.VisitInstanceId) ?? item.Title;
             await _notificationService.CreateAsync(
                 new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: item.AssignedToUserId.Value,
@@ -183,7 +186,10 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Handover,
                     VisitInstanceId: instance.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                    ActionUrl: deptHandoverUrl ?? $"/dashboard/visit/process/{instance.VisitInstanceId}"),
+                    ActionUrl: deptHandoverUrl ?? $"/dashboard/visit/process/{instance.VisitInstanceId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsHandoverSigned,
+                        new { delegationName = handoverDelegationName, actorName })),
                 cancellationToken
             );
         }

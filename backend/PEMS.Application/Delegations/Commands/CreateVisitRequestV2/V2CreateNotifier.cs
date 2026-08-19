@@ -49,6 +49,15 @@ internal static class V2CreateNotifier
                     .Where(d => pendingInstanceIds.Contains(d.VisitInstanceId))
                     .ToDictionaryAsync(d => d.VisitInstanceId, d => d.DelegationName, cancellationToken);
 
+            // Campus display name for the "waiting approval" notification message — the reviewer needs
+            // to see WHICH campus without opening the request first.
+            var pendingCampusIds = pendingInstances.Select(c => c.CampusId).Distinct().ToList();
+            var campusNameById = pendingCampusIds.Count == 0
+                ? new Dictionary<ulong, string>()
+                : await db.Campuses.AsNoTracking()
+                    .Where(c => pendingCampusIds.Contains(c.CampusId))
+                    .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
             var notifications = pendingInstances.Select(c => new CreateNotificationRequest(
                 RecipientUserId: c.CoordinatorUserId!.Value,
                 Title: "Có yêu cầu tiếp khách mới",
@@ -59,8 +68,22 @@ internal static class V2CreateNotifier
                 Category: NotificationCategories.Visit,
                 IsActionRequired: true,
                 VisitRequestId: created.VisitRequestId,
+                // Exact campus context — the frontend deep-link resolver needs this to route the
+                // coordinator straight to THEIR campus's review, not merely the request (plan
+                // §13.1: multi-campus without an instance id cannot say which campus needs this
+                // reviewer).
+                VisitInstanceId: c.VisitInstanceId,
+                CampusId: c.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: $"/dashboard/visit?visitRequestId={created.VisitRequestId}")).ToList();
+                ActionUrl: $"/dashboard/visit?visitRequestId={created.VisitRequestId}",
+                MetadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.VisitRequestWaitingApproval,
+                    new
+                    {
+                        delegationName = nameByInstance.TryGetValue(c.VisitInstanceId, out var dn) ? dn : created.RequestCode,
+                        requestCode = created.RequestCode,
+                        campusName = campusNameById.TryGetValue(c.CampusId, out var cn) ? cn : created.RequestCode,
+                    }))).ToList();
 
             if (created.VisitScope == VisitScopes.MultiCampus)
             {

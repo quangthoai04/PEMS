@@ -288,6 +288,9 @@ public sealed class CompleteVisitStageCommandHandler
             }
             if (instance.CurrentHostUserId.HasValue)
             {
+                var hostFeedbackDelegationName = instance.VisitRequest is { } hostFeedbackVr
+                    ? Services.VisitFormRead.VisitInstanceEffectiveName.Of(hostFeedbackVr, instance.FormDetail)
+                    : null;
                 notifications.Add(new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: instance.CurrentHostUserId.Value,
                     Title: "Mời bạn đánh giá thành phần tham gia",
@@ -302,7 +305,10 @@ public sealed class CompleteVisitStageCommandHandler
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     ActionUrl: feedbackUrl,
-                    DedupeKey: $"FEEDBACK_INVITE_HOST_{instance.VisitInstanceId}"
+                    DedupeKey: $"FEEDBACK_INVITE_HOST_{instance.VisitInstanceId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.HostFeedbackInvite,
+                        new { delegationName = hostFeedbackDelegationName })
                 ));
             }
         }

@@ -491,6 +491,9 @@ public sealed class CancelVisitRequestCommandHandler
                 ? leaders
                 : new List<ulong>();
             var actionUrl = $"/dashboard/visit/process/{instance.VisitInstanceId}";
+            var campusNameForInstance = campusNamesById.TryGetValue(instance.CampusId, out var instanceCampusName)
+                ? instanceCampusName
+                : instance.CampusId.ToString();
             if (isGuestSideCanceller)
             {
                 if (instance.CurrentHostUserId.HasValue)
@@ -508,7 +511,10 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: actionUrl
+                        ActionUrl: actionUrl,
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitCancelledStaffLeader,
+                            new { campusName = campusNameForInstance, requestCode = visit.RequestCode })
                     ));
                 }
                 foreach (var staffLeaderId in staffLeaderIds)
@@ -526,7 +532,10 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: actionUrl
+                        ActionUrl: actionUrl,
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitCancelledStaffLeader,
+                            new { campusName = campusNameForInstance, requestCode = visit.RequestCode })
                     ));
                 }
                 foreach (var ho in hoUsersToNotify)
@@ -544,7 +553,10 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: actionUrl
+                        ActionUrl: actionUrl,
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitCancelledHoVisibility,
+                            new { campusName = campusNameForInstance, requestCode = visit.RequestCode })
                     ));
                 }
             }
@@ -591,7 +603,10 @@ public sealed class CancelVisitRequestCommandHandler
                         VisitInstanceId: instance.VisitInstanceId,
                         CampusId: instance.CampusId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                        ActionUrl: actionUrl
+                        ActionUrl: actionUrl,
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.VisitCancelledStaffLeader,
+                            new { campusName = campusNameForInstance, requestCode = visit.RequestCode })
                     ));
                 }
             }

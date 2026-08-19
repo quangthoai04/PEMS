@@ -166,7 +166,14 @@ public sealed class SubmitVisitSafeEditCommandHandler
                 IsActionRequired: urgent,
                 VisitRequestId: visitRequestId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}")).ToList();
+                ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
+                MetadataJson: urgent
+                    ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitPrivacyConsentWithdrawn,
+                        new { requestCode })
+                    : PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestUpdatedPending,
+                        new { requestCode }))).ToList();
             await _notificationService.CreateManyAsync(notifications, ct);
         }
         catch (System.Exception ex)

@@ -150,7 +150,10 @@ public sealed class SubmitVisitFeedbackCommandHandler
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitorFeedbackModal,
-                    ActionUrl: visitDetailUrl
+                    ActionUrl: visitDetailUrl,
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitorFeedbackReceived,
+                        new { delegationName = effectiveDelegationName })
                 ));
             }
         }
@@ -174,7 +177,9 @@ public sealed class SubmitVisitFeedbackCommandHandler
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHostFeedbackModal,
                     ActionUrl: visitDetailUrl,
-                    MetadataJson: $"{{\"feedbackId\":{f.FeedbackId}}}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.HostFeedbackReceived,
+                        new { delegationName = effectiveDelegationName, feedbackId = f.FeedbackId }),
                     DedupeKey: $"FEEDBACK_{f.FeedbackId}"
                 ));
             }

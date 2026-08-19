@@ -132,7 +132,10 @@ public sealed class ActionItemDueReminderHostedService : BackgroundService
             CampusId: instance.CampusId,
             ActionType: NotificationActionTypes.OpenVisitDetail,
             ActionUrl: actionUrl,
-            DedupeKey: $"ACTION_ITEM_DUE_{item.ActionItemId}"
+            DedupeKey: $"ACTION_ITEM_DUE_{item.ActionItemId}",
+            MetadataJson: NotificationEventKeys.BuildMetadata(
+                NotificationEventKeys.ActionItemDue,
+                new { delegationName, title = item.Title })
         ), ct);
 
         if (string.IsNullOrWhiteSpace(assignee.Email)) return;

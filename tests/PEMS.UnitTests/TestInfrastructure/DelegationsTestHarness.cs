@@ -100,7 +100,8 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
         modelBuilder.Ignore<VisitInstanceAmendmentChange>();
         modelBuilder.Ignore<VisitInstanceFormRevisionHistory>();
         modelBuilder.Ignore<VisitRequestRevisionHistory>();
-        modelBuilder.Ignore<VisitAgenda>();
+        // Agendas are NOT pruned either: VisitNextTaskBuilder reads them (LoadPreparationBlockedAsync)
+        // for every row ViewGuestDelegationListQueryHandler returns, same rule as the amendments above.
         // Handovers + assignment attempts are NOT pruned: the assignee-assignment and expense-reminder
         // handlers read both to decide whether a task may still be reassigned and whether its expense
         // entry is open, so by this slice's own rule ("map what these handlers use") they belong here.

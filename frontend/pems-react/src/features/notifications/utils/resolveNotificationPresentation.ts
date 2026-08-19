@@ -1,8 +1,9 @@
 /**
- * The single localization layer for every Guest/Visitor-reachable notification surface
- * (NotificationBellButton, NotificationsPage, NotificationDetailModal,
- * VisitorNotificationsSection). No component reads `item.title` / `item.message` /
- * `item.timeAgoText` directly — they all go through `resolveNotificationPresentation`.
+ * The single localization layer for every notification surface across every role — Guest/Visitor,
+ * Staff, Staff Leader, Department, HO (NotificationBellButton, NotificationsPage,
+ * NotificationDetailModal, VisitorNotificationsSection). No component reads `item.title` /
+ * `item.message` / `item.timeAgoText` directly — they all go through
+ * `resolveNotificationPresentation`.
  *
  * Architecture: the backend stores WHAT HAPPENED (an `eventKey` + structured `params` in
  * `metadataJson`, plus `createdAt`), never a pre-built sentence. Rendering the sentence in
@@ -27,6 +28,7 @@
 import { formatLocalizedRelativeTime, type UiLanguage } from '../../../shared/utils/vietnamTime';
 
 const KNOWN_EVENT_KEYS = new Set([
+  // Guest/Visitor-facing (original set).
   'CAMPUS_APPROVED',
   'CAMPUS_REJECTED',
   'FEEDBACK_INVITE_VISITOR',
@@ -40,6 +42,56 @@ const KNOWN_EVENT_KEYS = new Set([
   'ACCOUNT_CREATED',
   'ACCOUNT_LOCKED',
   'ACCOUNT_UNLOCKED',
+  // Staff / Staff Leader / Department / HO — visit request lifecycle.
+  'VISIT_REQUEST_WAITING_APPROVAL',
+  'VISIT_REQUEST_UPDATED_PENDING',
+  'VISIT_REQUEST_RESUBMITTED',
+  'VISIT_PRIVACY_CONSENT_WITHDRAWN',
+  'HOST_ASSIGNED',
+  'HOST_PROPOSAL_PENDING',
+  'HOST_REASSIGNMENT_REQUIRED',
+  'HOST_TRANSFER_INCOMING',
+  'HOST_TRANSFER_OUTGOING',
+  'CAMPUS_APPROVED_HO_VISIBILITY',
+  'CAMPUS_REJECTED_HO_VISIBILITY',
+  'VISIT_CANCELLED_HO_VISIBILITY',
+  'HOST_CHANGED_HO_VISIBILITY',
+  'VISIT_CANCELLED_STAFF_LEADER',
+  'HO_CAMPUS_UNPROCESSED_ALERT',
+  // Participation.
+  'PARTICIPATION_INVITED',
+  'PARTICIPATION_ACCEPTED',
+  'PARTICIPATION_DECLINED',
+  // Agenda / Minutes / Action items.
+  'AGENDA_UPDATED',
+  'MINUTES_UPDATED',
+  'ACTION_ITEM_ASSIGNED',
+  'ACTION_ITEM_DUE',
+  // Logistics.
+  'LOGISTICS_REQUEST_CREATED',
+  'LOGISTICS_ASSIGNED',
+  'LOGISTICS_ASSIGNEE_ACCEPTED',
+  'LOGISTICS_ASSIGNEE_DECLINED',
+  'LOGISTICS_PROPOSAL_CREATED',
+  'LOGISTICS_PROPOSAL_ACCEPTED',
+  'LOGISTICS_PROPOSAL_REJECTED',
+  'LOGISTICS_HANDOVER_SIGNED',
+  'LOGISTICS_EXPENSE_REMINDER',
+  // News / Partner.
+  'NEWS_PENDING_APPROVAL',
+  'NEWS_APPROVED',
+  'NEWS_REJECTED',
+  'PARTNER_PENDING_APPROVAL',
+  'PARTNER_APPROVED',
+  'PARTNER_REJECTED',
+  // Feedback / reminders.
+  'HOST_FEEDBACK_INVITE',
+  'VISITOR_FEEDBACK_RECEIVED',
+  'HOST_FEEDBACK_RECEIVED',
+  'VISIT_REMINDER',
+  // Accounts.
+  'ACCOUNT_STATUS_ACTIVATED',
+  'ACCOUNT_STATUS_DEACTIVATED',
 ]);
 
 export type NotificationPresentationInput = {

@@ -153,7 +153,10 @@ public sealed class SaveMinutesCommandHandler
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
                     // Khác với "Biên bản cập nhật" (trỏ về đúng trang biên bản theo role), thông báo
                     // giao việc trỏ thẳng tới "Quản lý việc sau tiếp khách" lọc đúng 1 đầu việc này.
-                    ActionUrl: $"/dashboard/post-visit-tasks?actionItemId={item.ActionItemId}"
+                    ActionUrl: $"/dashboard/post-visit-tasks?actionItemId={item.ActionItemId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.ActionItemAssigned,
+                        new { delegationName, title = item.Title })
                 ));
 
                 if (!string.IsNullOrWhiteSpace(assignee.Email))
@@ -181,7 +184,10 @@ public sealed class SaveMinutesCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: ActionUrlFor(pId)
+                ActionUrl: ActionUrlFor(pId),
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.MinutesUpdated,
+                    new { delegationName, title })
             ));
         }
 
@@ -204,7 +210,10 @@ public sealed class SaveMinutesCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: ActionUrlFor(instance.CurrentHostUserId.Value)
+                ActionUrl: ActionUrlFor(instance.CurrentHostUserId.Value),
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.MinutesUpdated,
+                    new { delegationName, title })
             ));
         }
 

@@ -117,6 +117,178 @@
       "title": "Cập nhật trạng thái tài khoản",
       "message": "Tài khoản của bạn đã được mở khóa và có thể đăng nhập lại."
     },
+    "VISIT_REQUEST_WAITING_APPROVAL": {
+      "title": "Có yêu cầu tiếp khách cần duyệt",
+      "message": "{{delegationName}} đang chờ bạn xử lý tại {{campusName}}."
+    },
+    "VISIT_REQUEST_UPDATED_PENDING": {
+      "title": "Yêu cầu tiếp khách đã được cập nhật",
+      "message": "Đơn {{requestCode}} vừa được chỉnh sửa, đang chờ bạn xem lại."
+    },
+    "VISIT_REQUEST_RESUBMITTED": {
+      "title": "Yêu cầu tiếp khách đã được nộp lại",
+      "message": "Đơn {{requestCode}} đã được nộp lại sau khi bị từ chối, đang chờ bạn xử lý."
+    },
+    "VISIT_PRIVACY_CONSENT_WITHDRAWN": {
+      "title": "Yêu cầu rút lại đồng ý sử dụng hình ảnh",
+      "message": "Đơn {{requestCode}} vừa rút lại đồng ý sử dụng hình ảnh/truyền thông. Vui lòng xử lý khẩn."
+    },
+    "HOST_ASSIGNED": {
+      "title": "Bạn được phân công làm Host",
+      "message": "Bạn là Host phụ trách đoàn {{delegationName}} tại {{campusName}}."
+    },
+    "HOST_PROPOSAL_PENDING": {
+      "title": "Bạn được đề xuất làm Host",
+      "message": "Bạn được đề xuất làm Host cho đoàn {{delegationName}} tại {{campusName}}. Vui lòng xác nhận."
+    },
+    "HOST_REASSIGNMENT_REQUIRED": {
+      "title": "Cần chọn lại Host",
+      "message": "Host đề xuất cho {{campusName}} không thể xác nhận ({{reason}}). Vui lòng chọn Host khác."
+    },
+    "HOST_TRANSFER_INCOMING": {
+      "title": "Bạn vừa được chuyển giao làm Host",
+      "message": "Bạn là Host mới phụ trách đoàn {{delegationName}} tại {{campusName}}."
+    },
+    "HOST_TRANSFER_OUTGOING": {
+      "title": "Bạn không còn là Host",
+      "message": "Vai trò Host của đoàn {{delegationName}} tại {{campusName}} đã chuyển cho {{newHostName}}."
+    },
+    "CAMPUS_APPROVED_HO_VISIBILITY": {
+      "title": "Cơ sở đã duyệt yêu cầu",
+      "message": "{{campusName}} đã duyệt đơn {{requestCode}}. Host phụ trách: {{hostName}}."
+    },
+    "CAMPUS_REJECTED_HO_VISIBILITY": {
+      "title": "Cơ sở đã từ chối yêu cầu",
+      "message": "{{campusName}} đã từ chối đơn {{requestCode}}. Lý do: {{reason}}"
+    },
+    "VISIT_CANCELLED_HO_VISIBILITY": {
+      "title": "Một cơ sở đã bị hủy",
+      "message": "{{campusName}} thuộc đơn {{requestCode}} đã bị hủy."
+    },
+    "HOST_CHANGED_HO_VISIBILITY": {
+      "title": "Host phụ trách đã thay đổi",
+      "message": "{{campusName}} thuộc đơn {{requestCode}} đã đổi Host sang {{hostName}}."
+    },
+    "VISIT_CANCELLED_STAFF_LEADER": {
+      "title": "Yêu cầu tiếp khách đã bị hủy",
+      "message": "{{campusName}} thuộc đơn {{requestCode}} đã bị hủy."
+    },
+    "HO_CAMPUS_UNPROCESSED_ALERT": {
+      "title": "Cơ sở chưa xử lý sắp tới giờ tham quan",
+      "message": "{{campusName}} thuộc đoàn {{delegationName}} (đơn {{requestCode}}) vẫn chưa được xử lý dù sắp đến giờ."
+    },
+    "PARTICIPATION_INVITED": {
+      "title": "Bạn được mời tham gia đoàn",
+      "message": "Bạn được mời tham gia đoàn {{delegationName}} tại {{campusName}}."
+    },
+    "PARTICIPATION_ACCEPTED": {
+      "title": "Lời mời đã được chấp nhận",
+      "message": "{{participantName}} đã chấp nhận lời mời tham gia đoàn {{delegationName}}."
+    },
+    "PARTICIPATION_DECLINED": {
+      "title": "Lời mời đã bị từ chối",
+      "message": "{{participantName}} đã từ chối lời mời tham gia đoàn {{delegationName}}."
+    },
+    "AGENDA_UPDATED": {
+      "title": "Lịch trình đã được cập nhật",
+      "message": "Lịch trình đoàn {{delegationName}} vừa được Host cập nhật."
+    },
+    "MINUTES_UPDATED": {
+      "title": "Biên bản đã được cập nhật",
+      "message": "Biên bản \"{{title}}\" của đoàn {{delegationName}} vừa được cập nhật."
+    },
+    "ACTION_ITEM_ASSIGNED": {
+      "title": "Bạn được giao một công việc",
+      "message": "Bạn được giao công việc \"{{title}}\" sau chuyến thăm {{delegationName}}."
+    },
+    "ACTION_ITEM_DUE": {
+      "title": "Công việc sắp đến hạn",
+      "message": "Công việc \"{{title}}\" sau chuyến thăm {{delegationName}} sắp đến hạn."
+    },
+    "LOGISTICS_REQUEST_CREATED": {
+      "title": "Có yêu cầu hậu cần mới",
+      "message": "Đoàn {{delegationName}} tại {{campusName}} có yêu cầu hậu cần cần xử lý."
+    },
+    "LOGISTICS_ASSIGNED": {
+      "title": "Bạn được giao xử lý hậu cần",
+      "message": "Bạn được giao xử lý yêu cầu hậu cần cho đoàn {{delegationName}} tại {{campusName}}."
+    },
+    "LOGISTICS_ASSIGNEE_ACCEPTED": {
+      "title": "Yêu cầu hậu cần đã được nhận",
+      "message": "Người được giao đã nhận xử lý yêu cầu hậu cần của đoàn {{delegationName}}."
+    },
+    "LOGISTICS_ASSIGNEE_DECLINED": {
+      "title": "Yêu cầu hậu cần bị từ chối",
+      "message": "Người được giao đã từ chối yêu cầu hậu cần của đoàn {{delegationName}}. Lý do: {{reason}}"
+    },
+    "LOGISTICS_PROPOSAL_CREATED": {
+      "title": "Có đề xuất thay đổi hậu cần",
+      "message": "{{departmentName}} vừa đề xuất thay đổi yêu cầu hậu cần cho đoàn {{delegationName}}."
+    },
+    "LOGISTICS_PROPOSAL_ACCEPTED": {
+      "title": "Đề xuất hậu cần đã được chấp nhận",
+      "message": "Đề xuất thay đổi hậu cần cho đoàn {{delegationName}} đã được chấp nhận."
+    },
+    "LOGISTICS_PROPOSAL_REJECTED": {
+      "title": "Đề xuất hậu cần đã bị từ chối",
+      "message": "Đề xuất thay đổi hậu cần cho đoàn {{delegationName}} đã bị từ chối."
+    },
+    "LOGISTICS_HANDOVER_SIGNED": {
+      "title": "Biên bản bàn giao đã được ký",
+      "message": "Biên bản bàn giao hậu cần cho đoàn {{delegationName}} đã được ký."
+    },
+    "LOGISTICS_EXPENSE_REMINDER": {
+      "title": "Nhắc báo cáo chi phí",
+      "message": "Vui lòng hoàn tất báo cáo chi phí cho đoàn {{delegationName}}."
+    },
+    "NEWS_PENDING_APPROVAL": {
+      "title": "Tin tức chờ duyệt",
+      "message": "Tin \"{{newsTitle}}\" đang chờ bạn duyệt."
+    },
+    "NEWS_APPROVED": {
+      "title": "Tin tức đã được duyệt",
+      "message": "Tin \"{{newsTitle}}\" của bạn đã được duyệt."
+    },
+    "NEWS_REJECTED": {
+      "title": "Tin tức bị từ chối",
+      "message": "Tin \"{{newsTitle}}\" của bạn bị từ chối. Lý do: {{reason}}"
+    },
+    "PARTNER_PENDING_APPROVAL": {
+      "title": "Đối tác chờ duyệt",
+      "message": "Đối tác \"{{partnerName}}\" đang chờ bạn duyệt."
+    },
+    "PARTNER_APPROVED": {
+      "title": "Đối tác đã được duyệt",
+      "message": "Đối tác \"{{partnerName}}\" của bạn đã được duyệt."
+    },
+    "PARTNER_REJECTED": {
+      "title": "Đối tác bị từ chối",
+      "message": "Đối tác \"{{partnerName}}\" của bạn bị từ chối. Lý do: {{reason}}"
+    },
+    "HOST_FEEDBACK_INVITE": {
+      "title": "Mời bạn đánh giá thành viên đoàn",
+      "message": "Chuyến thăm {{delegationName}} đã kết thúc tiếp khách. Hãy đánh giá các thành viên đã tham gia."
+    },
+    "VISITOR_FEEDBACK_RECEIVED": {
+      "title": "Visitor vừa gửi đánh giá",
+      "message": "Visitor của đoàn {{delegationName}} vừa gửi đánh giá chuyến thăm."
+    },
+    "HOST_FEEDBACK_RECEIVED": {
+      "title": "Bạn nhận được đánh giá từ Host",
+      "message": "Host đã gửi đánh giá về bạn trong chuyến thăm {{delegationName}}."
+    },
+    "VISIT_REMINDER": {
+      "title": "Nhắc lịch chuyến thăm sắp tới",
+      "message": "Đoàn {{delegationName}} sẽ đến {{campusName}} sắp tới. Đừng quên chuẩn bị."
+    },
+    "ACCOUNT_STATUS_ACTIVATED": {
+      "title": "Cập nhật trạng thái tài khoản",
+      "message": "Tài khoản của bạn đã được kích hoạt."
+    },
+    "ACCOUNT_STATUS_DEACTIVATED": {
+      "title": "Cập nhật trạng thái tài khoản",
+      "message": "Tài khoản của bạn đã bị vô hiệu hóa."
+    },
     "unknown": {
       "title": "Bạn có một thông báo mới."
     }

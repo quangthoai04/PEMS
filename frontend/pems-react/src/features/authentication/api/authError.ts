@@ -85,8 +85,14 @@ export function translateErrorCode(errorCode?: string): string | undefined {
  * for a known errorCode, then the backend message, then field errors, then a
  * network/generic fallback. Never surfaces stack traces or internal details.
  *
- * In EN mode a raw Vietnamese backend `message` is suppressed in favour of the generic
- * fallback, so an English screen never mixes in Vietnamese (i18n requirements §8.1).
+ * A raw backend `message` not already resolved via a known `errorCode` is developer text with no
+ * guaranteed language — some handlers write it in Vietnamese, some in English (see the auth 401
+ * audit: `SessionValidationMiddleware`/JwtBearer's `OnChallenge` used to write plain English with
+ * no errorCode at all, which rendered verbatim — e.g. "Authentication required." — under a fully
+ * Vietnamese login screen). It is only safe to show as-is when it happens to already be in the
+ * CURRENT UI language; otherwise the caller's localized `fallback` is shown instead. This is
+ * symmetric on purpose: EN mode suppresses a raw Vietnamese message exactly as VI mode suppresses
+ * a raw English one (i18n requirements §8.1).
  */
 export function getAuthErrorMessage(error: unknown, fallback?: string): string {
   const axiosError = error as AxiosError<ApiErrorBody>;
@@ -96,8 +102,11 @@ export function getAuthErrorMessage(error: unknown, fallback?: string): string {
   if (translated) return translated;
 
   const isEnglish = i18n.language?.startsWith('en');
-  const usable = (text?: string): boolean =>
-    !!text && !!text.trim() && !(isEnglish && VIETNAMESE_CHARS.test(text));
+  const usable = (text?: string): boolean => {
+    if (!text?.trim()) return false;
+    const looksVietnamese = VIETNAMESE_CHARS.test(text);
+    return isEnglish ? !looksVietnamese : looksVietnamese;
+  };
 
   if (usable(body?.message)) return maskSecrets(body!.message!);
 

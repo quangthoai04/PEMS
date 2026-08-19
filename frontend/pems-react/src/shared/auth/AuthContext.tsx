@@ -10,7 +10,7 @@ import type {
 import { authStorage, AUTH_EXPIRED_EVENT } from './authStorage';
 import { hasRole } from './permissionChecker';
 import { resolveEffectiveRole, type EffectiveRole } from './resolveEffectiveRole';
-import { markDeliberateLogout } from '../api/httpClient';
+import { markDeliberateLogout, setAuthBootstrapping } from '../api/httpClient';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -89,12 +89,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsReady(true);
         return;
       }
+      // Opens the window (see httpClient.ts) other ambient consumers race against — ANY request
+      // that 401s while this is true (not just this call) has its "session expired" toast
+      // suppressed too, since none of them were asked for by something the user actually did.
+      setAuthBootstrapping(true);
       try {
-        const profile = await authenticationApi.getMe();
+        // suppressSessionExpiredToast: this call only VERIFIES a stored token is still good — the
+        // user never asked for anything auth-specific on this page load. A stale/revoked token
+        // (previous visit, dev backend restart, a revoked session) is handled silently below
+        // (clearSession(), no toast); without the flag the shared 401 interceptor would show a
+        // misleading "session expired" toast even to a guest who was never signed in this visit.
+        const profile = await authenticationApi.getMe({ suppressSessionExpiredToast: true });
         if (!cancelled) applySession(profile.user);
       } catch {
         if (!cancelled) clearSession();
       } finally {
+        setAuthBootstrapping(false);
         if (!cancelled) {
           setIsLoading(false);
           setIsReady(true);

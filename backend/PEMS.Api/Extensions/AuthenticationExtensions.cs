@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -10,6 +11,13 @@ namespace PEMS.Api.Extensions;
 
 public static class AuthenticationExtensions
 {
+    /// <summary>
+    /// <see cref="HttpContext.Items"/> key <see cref="JwtBearerEvents.OnAuthenticationFailed"/> uses
+    /// to hand its exception-derived errorCode to <see cref="JwtBearerEvents.OnChallenge"/> — the two
+    /// events run on the same request but only OnAuthenticationFailed sees WHY validation failed.
+    /// </summary>
+    private const string AuthChallengeErrorCodeKey = "PEMS.AuthChallengeErrorCode";
+
     /// <summary>
     /// Configures JWT bearer authentication from the JwtSettings section. When (and only when) the fail-closed
     /// E2E gate is fully open (Testing env + explicit flag + secret + profile file — see
@@ -56,20 +64,37 @@ public static class AuthenticationExtensions
                     {
                         var accessToken = context.Request.Query["access_token"];
                         var path = context.HttpContext.Request.Path;
-                        if (!string.IsNullOrEmpty(accessToken) && 
+                        if (!string.IsNullOrEmpty(accessToken) &&
                             path.StartsWithSegments("/api/files"))
                         {
                             context.Token = accessToken;
                         }
                         return Task.CompletedTask;
                     },
+                    // Records WHY authentication failed so OnChallenge can pick a stable errorCode
+                    // instead of one generic message for every reason — an expired token and a
+                    // missing/malformed one are different facts and the frontend already has
+                    // separate localized copy for each (errors:api.TOKEN_EXPIRED vs UNAUTHORIZED).
+                    OnAuthenticationFailed = ctx =>
+                    {
+                        if (ctx.Exception is SecurityTokenExpiredException)
+                            ctx.HttpContext.Items[AuthChallengeErrorCodeKey] = AuthErrorCodes.TokenExpired;
+                        return Task.CompletedTask;
+                    },
                     OnChallenge = async ctx =>
                     {
                         ctx.HandleResponse();
                         if (ctx.Response.HasStarted) return;
+                        var errorCode = ctx.HttpContext.Items[AuthChallengeErrorCodeKey] as string
+                            ?? AuthErrorCodes.Unauthorized;
                         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         ctx.Response.ContentType = "application/json";
-                        await ctx.Response.WriteAsync("{\"message\":\"Authentication required.\"}");
+                        await ctx.Response.WriteAsync(JsonSerializer.Serialize(new
+                        {
+                            success = false,
+                            errorCode,
+                            message = "Authentication required.",
+                        }));
                     },
                     OnForbidden = async ctx =>
                     {

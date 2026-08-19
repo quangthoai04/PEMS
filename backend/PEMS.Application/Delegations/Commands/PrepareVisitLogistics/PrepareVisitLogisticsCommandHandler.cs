@@ -301,7 +301,10 @@ public sealed class PrepareVisitLogisticsCommandHandler
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
                         ActionUrl: requestedDeptId.HasValue
                             ? $"/dashboard/departments/{requestedDeptId.Value}/tasks/{item.LogisticsItemId}"
-                            : $"/dashboard/visit/process/{item.VisitInstanceId}"),
+                            : $"/dashboard/visit/process/{item.VisitInstanceId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsRequestCreated,
+                            new { delegationName, campusName })),
                     cancellationToken
                 );
 

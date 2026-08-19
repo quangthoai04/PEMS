@@ -169,7 +169,10 @@ public sealed class SaveVisitAgendaCommandHandler
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: agendaActionUrl
+                ActionUrl: agendaActionUrl,
+                MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    PEMS.Application.Notifications.Common.NotificationEventKeys.AgendaUpdated,
+                    new { delegationName })
             ));
         }
 

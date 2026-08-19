@@ -289,7 +289,10 @@ public sealed class InviteVisitParticipantCommandHandler
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitInvitation,
-                    ActionUrl: invitationActionUrl),
+                    ActionUrl: invitationActionUrl,
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationInvited,
+                        new { delegationName, campusName })),
                 cancellationToken
             );
             await _db.SaveChangesAsync(cancellationToken);

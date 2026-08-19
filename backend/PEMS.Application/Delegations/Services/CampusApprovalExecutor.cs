@@ -319,7 +319,10 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: visitProcessUrl));
+                ActionUrl: visitProcessUrl,
+                MetadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.HostAssigned,
+                    new { delegationName, campusName })));
         }
 
         // HO visibility on multi-campus per-campus decisions + aggregate transitions. HO doesn't act on
@@ -344,7 +347,10 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: visitProcessUrl)));
+                ActionUrl: visitProcessUrl,
+                MetadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.CampusApprovedHoVisibility,
+                    new { campusName, requestCode = visit.RequestCode, hostName }))));
 
             if (previousRequestStatus != visit.Status)
             {

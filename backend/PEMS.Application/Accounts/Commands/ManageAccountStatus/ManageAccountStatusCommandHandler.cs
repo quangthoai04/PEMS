@@ -225,17 +225,27 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
             SecurityAction.Unlock => "Tài khoản của bạn đã được mở khóa và có thể đăng nhập lại.",
             _ => $"Tài khoản của bạn đã được {(newStatus == UserStatuses.Active ? "kích hoạt" : newStatus == UserStatuses.Inactive ? "vô hiệu hóa" : "khóa")}.",
         };
-        // Only the two ADMIN security actions (Lock/Unlock) are reachable for a VISITOR target: the
-        // HO/Staff-Leader business-status branch below (the `_ =>` case, Active/Inactive) explicitly
-        // excludes VISITOR from targetInScope above, so it never needs Guest/Visitor i18n metadata —
-        // left as the raw VI Message, unchanged, same as every other non-Visitor-reachable branch in
-        // this notification architecture.
+        // The HO/Staff-Leader business-status branch (the `_ =>` case) is Active/Inactive — give it
+        // its own eventKey pair too, distinct from the two ADMIN security actions, instead of
+        // leaving it on MetadataJson=null (that branch never reaches VISITOR — targetInScope above
+        // excludes it — but it does reach Staff/Department/Student, who need the same semantic
+        // vocabulary as everyone else now).
         var accountStatusEventKey = securityAction switch
         {
             SecurityAction.Lock => PEMS.Application.Notifications.Common.NotificationEventKeys.AccountLocked,
             SecurityAction.Unlock => PEMS.Application.Notifications.Common.NotificationEventKeys.AccountUnlocked,
-            _ => null,
+            _ => newStatus == UserStatuses.Active
+                ? PEMS.Application.Notifications.Common.NotificationEventKeys.AccountStatusActivated
+                : newStatus == UserStatuses.Inactive
+                    ? PEMS.Application.Notifications.Common.NotificationEventKeys.AccountStatusDeactivated
+                    : null,
         };
+        // Same ACCOUNT_LIST route-guard mismatch as account creation: only ADMIN/HO/Staff-Leader can
+        // open '/dashboard/accounts'. The recipient here is the account HOLDER, who is frequently
+        // none of those (Staff, Department, Student) — route them to their own Profile instead.
+        var recipientCanViewAccountList = user.Role.RoleCode == RoleCodes.Admin
+            || user.Role.RoleCode == RoleCodes.Ho
+            || (user.Role.RoleCode == RoleCodes.Staff && user.SubRole == UserSubRoles.Leader);
         await _notificationService.CreateAsync(
             new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                 RecipientUserId: user.UserId,
@@ -247,7 +257,7 @@ public sealed class ManageAccountStatusCommandHandler : IRequestHandler<ManageAc
                 ActorUserId: actorId,
                 Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
-                ActionUrl: "/dashboard/accounts",
+                ActionUrl: recipientCanViewAccountList ? "/dashboard/accounts" : "/dashboard/profile",
                 MetadataJson: accountStatusEventKey is null
                     ? null
                     : PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(

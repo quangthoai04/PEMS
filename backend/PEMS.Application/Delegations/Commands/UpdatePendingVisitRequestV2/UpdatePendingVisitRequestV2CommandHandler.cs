@@ -162,7 +162,10 @@ public sealed class UpdatePendingVisitRequestV2CommandHandler
                     IsActionRequired: true,
                     VisitRequestId: visitRequestId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}")).ToList(),
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
+                    MetadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.VisitRequestUpdatedPending,
+                        new { delegationName, requestCode }))).ToList(),
                 cancellationToken);
         }
         catch (System.Exception ex)

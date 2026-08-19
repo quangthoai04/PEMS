@@ -243,7 +243,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                         IsActionRequired: true,
                         VisitInstanceId: l.VisitInstanceId,
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                        ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"),
+                        ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsProposalCreated,
+                            new { delegationName, departmentName })),
                     cancellationToken
                 );
                 await _context.SaveChangesAsync(cancellationToken);

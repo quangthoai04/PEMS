@@ -244,7 +244,10 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                         ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
                         ActionUrl: l.RequestedToDepartmentId.HasValue
                             ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
-                            : $"/dashboard/visit/process/{l.VisitInstanceId}"),
+                            : $"/dashboard/visit/process/{l.VisitInstanceId}",
+                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsAssigned,
+                            new { delegationName, campusName })),
                     cancellationToken
                 );
                 await _context.SaveChangesAsync(cancellationToken);

@@ -72,6 +72,12 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             var deptTaskUrl = l.RequestedToDepartmentId.HasValue
                 ? $"/dashboard/departments/{l.RequestedToDepartmentId.Value}/tasks/{l.LogisticsItemId}"
                 : null;
+            var delegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_context, new[] { l.VisitInstanceId }, cancellationToken))
+                .GetValueOrDefault(l.VisitInstanceId) ?? l.Title;
+            var acceptedMetadataJson = PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsAssigneeAccepted,
+                new { delegationName });
 
             if (assignedBy.HasValue && assignedBy.Value != userId)
             {
@@ -87,7 +93,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
                     VisitRequestId: l.VisitInstance?.VisitRequestId,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}"
+                    ActionUrl: deptTaskUrl ?? $"/dashboard/visit/process/{l.VisitInstanceId}",
+                    MetadataJson: acceptedMetadataJson
                 ));
             }
 
@@ -104,7 +111,8 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
                     VisitInstanceId: l.VisitInstanceId,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}"
+                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}",
+                    MetadataJson: acceptedMetadataJson
                 ));
             }
 

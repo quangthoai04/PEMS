@@ -61,6 +61,11 @@ internal static class OperationalContactNotifier
             if (targets.Count == 0)
                 return;
 
+            var targetCampusIds = targets.Select(t => t.CampusId).Distinct().ToList();
+            var campusNameById = await db.Campuses.AsNoTracking()
+                .Where(c => targetCampusIds.Contains(c.CampusId))
+                .ToDictionaryAsync(c => c.CampusId, c => c.Name, cancellationToken);
+
             var items = targets.Select(t => new CreateNotificationRequest(
                 RecipientUserId: t.CoordinatorUserId,
                 Title: "Có yêu cầu tiếp khách chờ duyệt",
@@ -77,7 +82,10 @@ internal static class OperationalContactNotifier
                 CampusId: t.CampusId,
                 ActionType: NotificationActionTypes.OpenVisitDetail,
                 ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
-                DedupeKey: $"APPROVAL_READY:{visitRequestId}:{t.VisitInstanceId}:{gateRevision}"))
+                DedupeKey: $"APPROVAL_READY:{visitRequestId}:{t.VisitInstanceId}:{gateRevision}",
+                MetadataJson: Notifications.Common.NotificationEventKeys.BuildMetadata(
+                    Notifications.Common.NotificationEventKeys.VisitRequestWaitingApproval,
+                    new { delegationName = t.DelegationName, requestCode = head.RequestCode, campusName = campusNameById.GetValueOrDefault(t.CampusId, t.DelegationName) })))
                 .ToList();
 
             await notifications.CreateManyAsync(items, cancellationToken);

@@ -79,7 +79,10 @@ public static class ProposedHostNotifier
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"));
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                    MetadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.HostProposalPending,
+                        new { delegationName = DelegationName(delegations, instance), campusName = CampusName(names, instance) })));
             }
 
             foreach (var activation in activations)
@@ -110,7 +113,10 @@ public static class ProposedHostNotifier
                             VisitInstanceId: instance.VisitInstanceId,
                             CampusId: instance.CampusId,
                             ActionType: NotificationActionTypes.OpenVisitDetail,
-                            ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}"));
+                            ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}",
+                            MetadataJson: NotificationEventKeys.BuildMetadata(
+                                NotificationEventKeys.HostAssigned,
+                                new { delegationName = DelegationName(delegations, instance), campusName = CampusName(names, instance) })));
                     }
                     continue;
                 }
@@ -137,7 +143,10 @@ public static class ProposedHostNotifier
                     VisitInstanceId: instance.VisitInstanceId,
                     CampusId: instance.CampusId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}"));
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                    MetadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.HostReassignmentRequired,
+                        new { campusName = CampusName(names, instance), reason = activation.RejectionReason })));
             }
 
             if (messages.Count > 0)

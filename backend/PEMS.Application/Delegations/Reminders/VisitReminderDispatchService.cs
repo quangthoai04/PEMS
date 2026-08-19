@@ -276,7 +276,10 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             CampusId: instance.CampusId,
             ActionType: NotificationActionTypes.OpenVisitDetail,
             ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}",
-            DedupeKey: $"REMINDER_{reminder.ReminderSettingId}_USER_{r.UserId}"
+            DedupeKey: $"REMINDER_{reminder.ReminderSettingId}_USER_{r.UserId}",
+            MetadataJson: NotificationEventKeys.BuildMetadata(
+                NotificationEventKeys.VisitReminder,
+                new { delegationName, campusName })
         )).ToList();
 
         return _notifications.CreateManyAsync(requests, ct);

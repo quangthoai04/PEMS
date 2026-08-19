@@ -640,6 +640,7 @@ public sealed class ViewGuestDelegationListQueryHandler
         Page = 1,
         PageSize = pageSize,
         Keyword = source.Keyword,
+        VisitRequestId = source.VisitRequestId,
         RequestStatus = source.RequestStatus,
         CampusStatus = source.CampusStatus,
         CampusId = source.CampusId,
@@ -899,6 +900,11 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
 
         // â”€â”€ Common filters â”€â”€
+        // Notification deep-link resolution: narrow to one request, but only AFTER the relation/
+        // scope predicates above — an unauthorized caller still sees nothing.
+        if (request.VisitRequestId.HasValue)
+            q = q.Where(x => x.vr.VisitRequestId == request.VisitRequestId.Value);
+
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {
             // Scope-before-keyword: q is already reduced to the staff actor's own campus/instances above.
@@ -1380,6 +1386,9 @@ public sealed class ViewGuestDelegationListQueryHandler
         // No filter is applied for HO here â€” read-only is enforced via AllowedActions (the HO
         // action builder only grants HO_APPROVE/HO_REJECT to MULTI_CAMPUS pending requests).
         // else if (roleCode == RoleCodes.Ho)  â†’ all requests visible.
+
+        if (request.VisitRequestId.HasValue)
+            q = q.Where(vr => vr.VisitRequestId == request.VisitRequestId.Value);
 
         if (!string.IsNullOrWhiteSpace(request.Keyword))
         {

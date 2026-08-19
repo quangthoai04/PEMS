@@ -16,6 +16,13 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public int Page { get; init; } = 1;
     public int PageSize { get; init; } = 10;
     public string? Keyword { get; init; }
+    /// <summary>
+    /// Notification deep-link target resolution: return only this request, ignoring status/date/
+    /// keyword filters (but NOT tab or authorization scoping — a caller with no relation to it still
+    /// gets an empty result, same as any other row they cannot see). Population/authorization are
+    /// unaffected; this only narrows WHICH request within them.
+    /// </summary>
+    public ulong? VisitRequestId { get; init; }
     public string? RequestStatus { get; init; }
     public string? CampusStatus { get; init; }
     public ulong? CampusId { get; init; }

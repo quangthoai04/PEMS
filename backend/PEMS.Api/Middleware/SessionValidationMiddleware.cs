@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Security;
@@ -24,6 +25,21 @@ public sealed class SessionValidationMiddleware
         ISessionService sessionService,
         IApplicationDbContext db)
     {
+        // [AllowAnonymous] endpoints (login, google, feid, refresh, forgot/reset-password) must
+        // stay reachable no matter what OLD session the caller's Authorization header happens to
+        // carry — their entire job is to accept NEW credentials/tokens and issue a fresh session.
+        // This middleware runs BEFORE UseAuthorization(), so without this check a syntactically
+        // valid-but-revoked/stale JWT on the login request would 401 here and the request would
+        // never even reach the login handler — new, correct credentials never get checked, and the
+        // caller can never sign back in until they manually clear localStorage. UseAuthorization()
+        // below already grants this same exemption for authorization purposes; this is the same
+        // exemption applied one step earlier, for session validation.
+        if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
+        {
+            await _next(context);
+            return;
+        }
+
         var principal = context.User;
         if (principal?.Identity?.IsAuthenticated != true)
         {
@@ -36,14 +52,16 @@ public sealed class SessionValidationMiddleware
 
         if (!ulong.TryParse(sessionIdClaim, out var sessionId) || !ulong.TryParse(userIdClaim, out var userId))
         {
-            await WriteUnauthorizedAsync(context, "Your session is no longer valid. Please sign in again.");
+            await WriteUnauthorizedAsync(
+                context, AuthErrorCodes.Unauthorized, "Your session is no longer valid. Please sign in again.");
             return;
         }
 
         var sessionActive = await sessionService.IsSessionActiveAsync(sessionId, context.RequestAborted);
         if (!sessionActive)
         {
-            await WriteUnauthorizedAsync(context, "Your session has been revoked. Please sign in again.");
+            await WriteUnauthorizedAsync(
+                context, AuthErrorCodes.SessionRevoked, "Your session has been revoked. Please sign in again.");
             return;
         }
 
@@ -64,7 +82,8 @@ public sealed class SessionValidationMiddleware
             || account.Status != UserStatuses.Active
             || account.RoleStatus != EntityStatuses.Active)
         {
-            await WriteUnauthorizedAsync(context, "Your account is not active. Please contact administrator.");
+            await WriteUnauthorizedAsync(
+                context, AuthErrorCodes.AccountInactive, "Your account is not active. Please contact administrator.");
             return;
         }
 
@@ -72,7 +91,8 @@ public sealed class SessionValidationMiddleware
         // even if a session somehow escaped revocation — never trust the JWT's login-time snapshot.
         if (DepartmentAccessRule.IsBlocked(account.RoleCode, account.DepartmentStatus))
         {
-            await WriteUnauthorizedAsync(context, "Your department is no longer active. Please contact administrator.");
+            await WriteUnauthorizedAsync(
+                context, AuthErrorCodes.DepartmentInactive, "Your department is no longer active. Please contact administrator.");
             return;
         }
 
@@ -90,14 +110,19 @@ public sealed class SessionValidationMiddleware
         await _next(context);
     }
 
-    private static async Task WriteUnauthorizedAsync(HttpContext context, string message)
+    /// <summary>
+    /// 401 with a machine-readable error code (same payload shape as ExceptionHandlingMiddleware)
+    /// so the frontend can localize instead of rendering this English fallback text verbatim.
+    /// </summary>
+    private static async Task WriteUnauthorizedAsync(HttpContext context, string errorCode, string message)
     {
         if (context.Response.HasStarted)
             return;
 
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.ContentType = "application/json";
-        await context.Response.WriteAsync(JsonSerializer.Serialize(new { message }, JsonOptions));
+        await context.Response.WriteAsync(
+            JsonSerializer.Serialize(new { success = false, errorCode, message }, JsonOptions));
     }
 
     /// <summary>

@@ -268,6 +268,9 @@ public sealed class TransferVisitHostCommandHandler
             var detailUrl = $"/dashboard/visit?visitRequestId={visitRequestId}";
             var because = string.IsNullOrWhiteSpace(reason) ? "" : $" Lý do: {reason}";
             var notifications = new List<CreateNotificationRequest>();
+            var delegationName = (await PEMS.Application.Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
+                .ForInstancesAsync(_db, new[] { visitInstanceId }, ct))
+                .GetValueOrDefault(visitInstanceId) ?? campusName;
 
             CreateNotificationRequest Build(
                 ulong recipient, string title, string message, string type,
@@ -294,14 +297,20 @@ public sealed class TransferVisitHostCommandHandler
                     previousHostId,
                     "Bạn không còn phụ trách đoàn khách này",
                     $"Bạn đã được chuyển giao vai trò Host của đoàn khách tại {campusName} (đơn {requestCode}) cho {newHostName}.{because}",
-                    NotificationTypes.HostAssigned, actionRequired: false, visitProcessUrl));
+                    NotificationTypes.HostAssigned, actionRequired: false, visitProcessUrl,
+                    metadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.HostTransferOutgoing,
+                        new { delegationName, campusName, newHostName })));
 
             if (newHostId != actorId)
                 notifications.Add(Build(
                     newHostId,
                     "Bạn được chuyển làm Host phụ trách đoàn khách",
                     $"Bạn được phân công làm Host chính cho đoàn khách tại {campusName} (đơn {requestCode}), thay cho {previousHostName}. Vui lòng vào Setup đoàn khách để tiếp nhận.{because}",
-                    NotificationTypes.HostAssigned, actionRequired: true, visitProcessUrl));
+                    NotificationTypes.HostAssigned, actionRequired: true, visitProcessUrl,
+                    metadataJson: NotificationEventKeys.BuildMetadata(
+                        NotificationEventKeys.HostTransferIncoming,
+                        new { delegationName, campusName })));
 
             if (visitorUserId is { } visitor)
                 notifications.Add(Build(
@@ -325,7 +334,10 @@ public sealed class TransferVisitHostCommandHandler
                 id,
                 "Host của một đoàn khách đã được chuyển",
                 $"Host của đoàn khách tại {campusName} (đơn {requestCode}) đã chuyển từ {previousHostName} sang {newHostName}.{because}",
-                NotificationTypes.VisitStatusChanged, actionRequired: false, detailUrl)));
+                NotificationTypes.VisitStatusChanged, actionRequired: false, detailUrl,
+                metadataJson: NotificationEventKeys.BuildMetadata(
+                    NotificationEventKeys.HostChangedHoVisibility,
+                    new { campusName, requestCode, hostName = newHostName }))));
 
             if (notifications.Count > 0)
                 await _notificationService.CreateManyAsync(notifications, ct);

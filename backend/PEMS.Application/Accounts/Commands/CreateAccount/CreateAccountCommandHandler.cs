@@ -371,6 +371,15 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
 
             await _db.SaveChangesAsync(cancellationToken);
 
+            // ACCOUNT_LIST ('/dashboard/accounts') is only on the menu for ADMIN/HO/Staff-Leader
+            // (frontend dashboardRouteAccess.ts) — every other recipient role (Staff, Department,
+            // Student, Visitor) clicking this notification about their OWN new account must not be
+            // routed into a page their role's route guard blocks. Route those to their own Profile
+            // page instead, which is reachable by every role.
+            var recipientCanViewAccountList = shape.RoleCode == RoleCodes.Admin
+                || shape.RoleCode == RoleCodes.Ho
+                || (shape.RoleCode == RoleCodes.Staff && shape.SubRole == UserSubRoles.Leader);
+
             await _notificationService.CreateAsync(
                 new PEMS.Application.Notifications.Common.CreateNotificationRequest(
                     RecipientUserId: user.UserId,
@@ -382,15 +391,14 @@ public sealed class CreateAccountCommandHandler : IRequestHandler<CreateAccountC
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Account,
                     ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenAccountDetail,
-                    ActionUrl: "/dashboard/accounts",
-                    // Only a VISITOR-role account is Guest/Visitor i18n-reachable — every other role
-                    // recipient here (STAFF/HO/DEPARTMENT/STUDENT/ADMIN) stays on the raw VI Message
-                    // above, unchanged, same as the rest of this notification architecture.
-                    MetadataJson: shape.RoleCode == RoleCodes.Visitor
-                        ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
-                            PEMS.Application.Notifications.Common.NotificationEventKeys.AccountCreated,
-                            new { })
-                        : null),
+                    ActionUrl: recipientCanViewAccountList ? "/dashboard/accounts" : "/dashboard/profile",
+                    // Every role now gets the semantic eventKey — the resolver's vocabulary is no
+                    // longer Guest/Visitor-only (see resolveNotificationPresentation.ts), so gating
+                    // this on RoleCode == Visitor would just leave every other role's EN readers
+                    // seeing the generic placeholder for no reason.
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.AccountCreated,
+                        new { })),
                 cancellationToken
             );
 

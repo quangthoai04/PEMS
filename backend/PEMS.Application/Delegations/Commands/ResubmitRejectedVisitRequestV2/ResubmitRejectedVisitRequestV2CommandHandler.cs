@@ -133,7 +133,10 @@ public sealed class ResubmitRejectedVisitRequestV2CommandHandler
                     IsActionRequired: true,
                     VisitRequestId: visit.VisitRequestId,
                     ActionType: NotificationActionTypes.OpenVisitDetail,
-                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}")).ToList(),
+                    ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.VisitRequestResubmitted,
+                        new { requestCode = visit.RequestCode }))).ToList(),
                 cancellationToken);
         }
         catch (System.Exception ex)
