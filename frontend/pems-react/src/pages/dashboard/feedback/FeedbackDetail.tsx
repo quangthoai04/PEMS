@@ -61,7 +61,7 @@ export function FeedbackDetail() {
 
   if (!rawFeedbacks?.items?.length) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 flex flex-col items-center justify-center min-h-[60vh]">
+      <div className="p-4 sm:p-6 md:p-8 max-w-[95%] mx-auto pb-12 flex flex-col items-center justify-center min-h-[60dvh]">
         <h2 className="text-2xl font-bold text-slate-700">Không tìm thấy dữ liệu hoặc đoàn không có đánh giá</h2>
         <button
           onClick={() => navigate('/dashboard/feedback')}

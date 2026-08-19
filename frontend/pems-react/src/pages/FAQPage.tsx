@@ -357,7 +357,7 @@ export function FAQPage() {
   const allTypesTotal = useMemo(() => typeCounts.reduce((sum, t) => sum + t.count, 0), [typeCounts]);
 
   return (
-    <div className="bg-slate-50 min-h-screen pt-20 pb-16">
+    <div className="bg-slate-50 min-h-dvh pt-20 pb-16">
       {/* A. Compact Hero — navy background, badge, search */}
       <div className="bg-[#004c91] relative overflow-hidden">
         <div className="absolute top-0 right-0 opacity-10 pointer-events-none transform translate-x-16 -translate-y-16">

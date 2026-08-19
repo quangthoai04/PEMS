@@ -73,6 +73,7 @@ const SAMPLES: Record<string, string> = {
   hostMessage: 'Rất mong bạn thu xếp tham gia cùng đoàn, buổi làm việc dự kiến kéo dài khoảng hai giờ.',
   reason: 'Điều chuyển công tác theo quyết định của Ban Giám hiệu ngày 01/08/2026.',
   oldEmailMasked: 'ngu***thao@fpt.edu.vn',
+  pendingContactEmailMasked: 'tra***nguyen@fpt.edu.vn',
   requestCode: 'VR-2026-0042',
   otpCode: '000000',
   expireMinutes: '10',

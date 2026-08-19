@@ -308,8 +308,11 @@ export function VisitPhotoPanel({
 
       {/* Popup xóa mềm — bắt buộc nhập lý do (removal_reason) */}
       {showRemovePrompt && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[120] px-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[120] p-4">
+          {/* Overlay gutter is p-4 (2rem) on every side now (was px-4 only, so a short landscape
+              viewport had zero vertical margin); max-h + overflow-y-auto is the same safety net
+              every other modal in this pass uses so the confirm button stays reachable. */}
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <div className="flex justify-center mb-4"><Trash2 className="w-12 h-12 text-red-500" /></div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Xóa ảnh đoàn khách</h3>
             <p className="text-gray-500 text-center text-sm mb-4">
@@ -361,11 +364,11 @@ export function VisitPhotoPanel({
                 onClick={(e) => e.stopPropagation()}
               />
             ) : (
-              <div className="relative max-w-full max-h-[88vh] flex items-center justify-center select-none" onClick={(e) => e.stopPropagation()}>
-                <img 
-                  src={previewData.url} 
-                  alt={previewData.photo.fileName} 
-                  className="max-w-full max-h-[88vh] object-contain rounded-lg shadow-2xl"
+              <div className="relative max-w-full max-h-[calc(100dvh-2rem)] flex items-center justify-center select-none" onClick={(e) => e.stopPropagation()}>
+                <img
+                  src={previewData.url}
+                  alt={previewData.photo.fileName}
+                  className="max-w-full max-h-[calc(100dvh-2rem)] object-contain rounded-lg shadow-2xl"
                 />
                 {showFaceTags && previewFaceDetections.length > 0 && (
                   previewFaceDetections.map((detection, idx) => {
@@ -399,10 +402,18 @@ export function VisitPhotoPanel({
                           }`}
                         />
 
-                        {/* Thẻ tên siêu nhỏ gọn, phong cách pill tối màu mỏng nhẹ */}
+                        {/* Thẻ tên siêu nhỏ gọn, phong cách pill tối màu mỏng nhẹ. Anchor flips near
+                            the image edges (same boundingBoxX heuristic as FaceScanPanel) so the
+                            label doesn't render past the viewport edge for an edge-detected face. */}
                         <div
                           style={isTopEdge ? { top: `calc(100% + ${stemHeight}px)` } : { bottom: `calc(100% + ${stemHeight}px)` }}
-                          className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30"
+                          className={`absolute whitespace-nowrap z-30 ${
+                            detection.boundingBoxX < 0.25
+                              ? 'left-0'
+                              : detection.boundingBoxX > 0.75
+                                ? 'right-0'
+                                : 'left-1/2 -translate-x-1/2'
+                          }`}
                         >
                           <span
                             className="px-1.5 py-0.5 rounded-full text-[7px] sm:text-[8px] font-semibold leading-none tracking-tight block max-w-[80px] sm:max-w-[95px] truncate bg-emerald-950/90 text-emerald-200 border border-emerald-400/50 shadow-md backdrop-blur-xs"

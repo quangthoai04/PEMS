@@ -200,7 +200,7 @@ export function LocationCreateModal({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl relative max-h-[92vh] flex flex-col"
+        className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl relative max-h-[92dvh] flex flex-col"
       >
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
           <h3 className="text-xl font-black text-[#004c91]">Thêm khu vực mới</h3>

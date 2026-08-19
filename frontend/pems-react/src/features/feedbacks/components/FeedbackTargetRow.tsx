@@ -41,7 +41,7 @@ export function FeedbackTargetRow({ index, target, draft, disabled, forceShowCom
         
         {/* Name + subtitle */}
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-semibold text-slate-800 leading-tight">{target.name}</p>
+          <p className="truncate text-[13px] font-semibold text-slate-800 leading-tight" title={target.name}>{target.name}</p>
           {target.subtitle && (
             <p className="truncate text-[11px] text-slate-400 leading-tight">{target.subtitle}</p>
           )}

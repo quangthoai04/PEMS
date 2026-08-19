@@ -6,7 +6,7 @@ export default function UnsupportedVersionPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-[60vh] flex items-center justify-center p-4">
+    <div className="min-h-[60dvh] flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-lg shadow-sm border border-gray-100 p-8 text-center">
         <div className="mx-auto w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mb-6">
           <AlertCircle className="w-8 h-8 text-red-500" />

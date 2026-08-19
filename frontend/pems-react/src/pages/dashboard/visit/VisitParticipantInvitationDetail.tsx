@@ -196,7 +196,7 @@ export function VisitParticipantInvitationDetail() {
               <div className="p-2.5 bg-white/10 text-white rounded-xl border border-white/20"><Info className="w-6 h-6" /></div>
               <div className="min-w-0">
                 <h2 className="text-lg font-bold text-white truncate">{invitation.delegationName || 'Đoàn khách'}</h2>
-                <p className="text-sm text-blue-100 truncate">{invitation.organizationName || '-'}</p>
+                <p className="text-sm text-blue-100 truncate" title={invitation.organizationName || '-'}>{invitation.organizationName || '-'}</p>
               </div>
             </div>
             <div className="flex flex-col items-end gap-2">

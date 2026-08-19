@@ -125,7 +125,10 @@ export function SubmittedVisitRequestDetailModal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
+            // Overlay padding is p-3 sm:p-6 (mobile gutter 1.5rem) -- dvh-clamp using the mobile
+            // (smaller) gutter so the modal never exceeds the visible viewport at any breakpoint
+            // (was a flat 92vh, not tied to the actual gutter or mobile browser chrome).
+            className="bg-white w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
           >
             <div className="flex-none px-4 sm:px-6 py-3 flex items-start justify-between text-white bg-[#004c91]">
               <h2 className="text-base sm:text-lg font-bold tracking-tight pr-8">Chi tiết đơn đăng ký tham quan</h2>
@@ -164,7 +167,8 @@ export function SubmittedVisitRequestDetailModal({
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
+          // Overlay is p-3 below `sm` (1.5rem), p-6 at `sm`+ (3rem).
+          className="bg-white w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
         >
           {/* Header — compact 1 vùng mỏng */}
           <div className="flex-none px-4 sm:px-6 py-3 flex items-start justify-between text-white bg-[#004c91]">

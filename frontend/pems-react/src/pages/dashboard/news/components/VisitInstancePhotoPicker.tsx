@@ -73,7 +73,10 @@ export function VisitInstancePhotoPicker({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4 py-8">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+      {/* Overlay gutter is py-8 (32px top+bottom => 4rem) at every breakpoint, so the ceiling is
+          100dvh minus that gutter -- was a flat 85vh unrelated to the actual overlay padding or
+          mobile browser chrome. */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-4rem)] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h3 className="text-lg font-bold text-gray-800">Chọn từ ảnh đoàn</h3>
           <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">

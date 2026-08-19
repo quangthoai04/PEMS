@@ -227,7 +227,7 @@ function ContactFooter() {
                 className="flex items-center gap-1.5 text-[12px] text-slate-600 hover:text-[#004c91] transition-colors min-w-0"
               >
                 <Mail className="w-3.5 h-3.5 shrink-0 text-[#004c91]/70" />
-                <span className="truncate">{campus.email}</span>
+                <span className="truncate" title={campus.email}>{campus.email}</span>
               </a>
             </div>
           </div>
@@ -393,7 +393,9 @@ export function SearchPopup({ isOpen, onClose }: SearchPopupProps) {
             role="dialog"
             aria-modal="true"
             aria-label={t('search:title')}
-            className="bg-white w-full max-w-4xl max-h-[92vh] sm:max-h-[85vh] rounded-2xl sm:rounded-[20px]
+            // Overlay padding: p-3 (1.5rem vertical gutter) below `sm`, p-6 (3rem) at `sm`, and at
+            // `md`+ `pt-[7vh]` REPLACES just the top padding (p-6's bottom, 1.5rem, still applies).
+            className="bg-white w-full max-w-4xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] md:max-h-[calc(93dvh-1.5rem)] rounded-2xl sm:rounded-[20px]
                        shadow-[0_24px_60px_-12px_rgba(15,23,42,0.45)] ring-1 ring-slate-900/5
                        flex flex-col overflow-hidden"
           >

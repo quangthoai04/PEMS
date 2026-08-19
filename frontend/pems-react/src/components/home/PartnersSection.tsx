@@ -88,7 +88,7 @@ export function PartnersSection() {
           {totalPages > 1 && (
             <button
               onClick={prevPage}
-              className="absolute -left-5 sm:-left-8 lg:-left-16 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-fpt-navy hover:text-white hover:border-fpt-navy transition-all shadow-md sm:opacity-0 sm:group-hover:opacity-100"
+              className="absolute -left-4 sm:-left-6 lg:-left-8 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-fpt-navy hover:text-white hover:border-fpt-navy transition-all shadow-md sm:opacity-0 sm:group-hover:opacity-100"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
@@ -124,7 +124,7 @@ export function PartnersSection() {
           {totalPages > 1 && (
             <button
               onClick={nextPage}
-              className="absolute -right-5 sm:-right-8 lg:-right-16 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-fpt-navy hover:text-white hover:border-fpt-navy transition-all shadow-md sm:opacity-0 sm:group-hover:opacity-100"
+              className="absolute -right-4 sm:-right-6 lg:-right-8 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-gray-200 bg-white flex items-center justify-center hover:bg-fpt-navy hover:text-white hover:border-fpt-navy transition-all shadow-md sm:opacity-0 sm:group-hover:opacity-100"
             >
               <ChevronRight className="w-6 h-6" />
             </button>

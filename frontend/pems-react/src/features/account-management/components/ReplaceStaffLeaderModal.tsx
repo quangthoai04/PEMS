@@ -148,7 +148,8 @@ export function ReplaceStaffLeaderModal({ campusId, campusName, onClose, onRepla
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+      {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+      <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[calc(100dvh-2rem)]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-[#004c91] shrink-0">
           <h2 className="text-xl font-black text-white flex items-center gap-2">

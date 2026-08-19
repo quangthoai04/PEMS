@@ -326,10 +326,10 @@ export function AdminDashboardView() {
                       <ShieldAlert className="w-3 h-3" /> {ev.severity}
                     </span>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-700 truncate">
+                      <p className="text-sm font-semibold text-slate-700 truncate" title={`${ev.eventType} · ${ev.result}`}>
                         {ev.eventType} · {ev.result}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">
+                      <p className="text-xs text-slate-400 mt-0.5 truncate" title={`${ev.email || '—'} · IP ${ev.ipAddress || '—'} · ${formatVietnamDateTime(ev.createdAt)}`}>
                         {ev.email || '—'} · IP {ev.ipAddress || '—'} · {formatVietnamDateTime(ev.createdAt)}
                       </p>
                     </div>
@@ -367,11 +367,17 @@ export function AdminDashboardView() {
                     <Activity className="w-4 h-4" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-normal text-slate-800 truncate">
+                    <p
+                      className="text-sm font-normal text-slate-800 truncate"
+                      title={`${log.actorName || log.actorEmail || 'Hệ thống'} · ${log.action} · ${log.entityType}${log.entityId ? ` #${log.entityId}` : ''}`}
+                    >
                       <span className="font-bold text-[#004c91]">{log.actorName || log.actorEmail || 'Hệ thống'}</span>
                       {' '}· {log.action} · {log.entityType}{log.entityId ? ` #${log.entityId}` : ''}
                     </p>
-                    <p className="text-xs text-slate-400 mt-1 truncate">
+                    <p
+                      className="text-xs text-slate-400 mt-1 truncate"
+                      title={`${formatVietnamDateTime(log.createdAt)}${log.campusName ? ` · ${log.campusName}` : ''}${log.ipAddress ? ` · IP: ${log.ipAddress}` : ''}`}
+                    >
                       {formatVietnamDateTime(log.createdAt)}
                       {log.campusName ? ` · ${log.campusName}` : ''}
                       {log.ipAddress ? ` · IP: ${log.ipAddress}` : ''}

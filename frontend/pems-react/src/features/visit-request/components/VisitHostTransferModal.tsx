@@ -141,7 +141,7 @@ export default function VisitHostTransferModal({ campus, onClose, onTransferred 
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl outline-none"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl outline-none"
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>

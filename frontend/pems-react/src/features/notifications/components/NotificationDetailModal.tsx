@@ -34,7 +34,7 @@ function NotificationDetailModalInner({ item, onClose }: { item: NotificationIte
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-0 sm:px-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative flex w-full flex-col rounded-t-2xl bg-white shadow-2xl border border-slate-200 sm:w-[560px] sm:max-w-[96vw] sm:rounded-xl max-h-[92vh] sm:max-h-[80vh]">
+      <div className="relative flex w-full flex-col rounded-t-2xl bg-white shadow-2xl border border-slate-200 sm:w-[560px] sm:max-w-[96vw] sm:rounded-xl max-h-[92dvh] sm:max-h-[80dvh]">
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
           <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
             <Bell className="h-4 w-4 text-[#004c91]" /> {t('notifications:detailModal.title')}

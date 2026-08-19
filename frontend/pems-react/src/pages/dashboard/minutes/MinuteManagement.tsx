@@ -463,7 +463,10 @@ export function MinuteManagement() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col m-auto relative"
+              // Overlay has no vertical padding of its own (only `px-4`) -- the 90% figure IS the
+              // gutter, via flex centering. A straight vh->dvh unit swap is the correct fix here
+              // (unlike the p-4/p-6-overlay modals elsewhere, which need a calc() gutter instead).
+              className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90dvh] overflow-hidden flex flex-col m-auto relative"
             >
               {/* Header */}
               <div className="bg-[#004c91] px-6 py-4 flex items-center justify-between border-b border-[#003366] shrink-0 sticky top-0 z-10">
@@ -472,7 +475,7 @@ export function MinuteManagement() {
                       <span className="w-8 h-8 rounded-full bg-[#f37021] flex items-center justify-center text-sm shrink-0">
                         <FileText className="w-4 h-4 text-white" />
                       </span>
-                      <span className="truncate max-w-[400px]">{detailData?.title || selectedMinute.title}</span>
+                      <span className="truncate max-w-[400px]" title={detailData?.title || selectedMinute.title}>{detailData?.title || selectedMinute.title}</span>
                    </h2>
                    <div className="flex items-center gap-2 mt-2 ml-10">
                       <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded font-mono">MIN #{selectedMinute.minutesId}</span>

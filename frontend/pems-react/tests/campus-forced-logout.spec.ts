@@ -49,7 +49,7 @@ async function mockBaseApis(page: Page) {
 }
 
 test.describe('UC-86 campus forced logout', () => {
-  test('TC-01: 403 CAMPUS_INACTIVE_ACCESS_DENIED → auth cleared, redirected to /login with the campus message', async ({ page }) => {
+  test('TC-01: 403 CAMPUS_INACTIVE_ACCESS_DENIED → auth cleared, redirected to / with the campus message', async ({ page }) => {
     await mockBaseApis(page);
     await page.route('**/api/campuses/viewcampuslist**', (route) =>
       route.fulfill({ status: 403, json: CAMPUS_INACTIVE_BODY }));
@@ -57,8 +57,10 @@ test.describe('UC-86 campus forced logout', () => {
 
     await page.goto('/dashboard/campus');
 
-    // Forced logout: back on the login page with the explanation banner.
-    await page.waitForURL('**/login', { timeout: 15_000 });
+    // Forced logout: ProtectedRoute sends unauthenticated users to "/" (there is no dedicated
+    // /login page -- that route itself is just <Navigate to="/" />), where PublicHomePage shows
+    // the one-shot explanation banner (doc 08 §12 step 6 / §19 "hiển thị đúng message").
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 15_000 });
     await expect(page.getByRole('alert')).toContainText('Cơ sở của tài khoản hiện đã ngừng hoạt động');
 
     // Auth state fully cleared (access + refresh + user snapshots).

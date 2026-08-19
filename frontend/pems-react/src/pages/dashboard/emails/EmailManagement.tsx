@@ -160,10 +160,10 @@ export function EmailManagement() {
         <span className="mx-2">/</span>
         <span className="text-[#004c91]">Quản lý email</span>
       </div>
-      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex justify-between items-end">
+      <div className="border-b border-gray-100 pb-3 mb-4 text-left flex flex-wrap justify-between items-end gap-3">
         <h1 className="text-3xl font-bold text-[#004c91]">Quản lý email</h1>
         {userRole === 'HO' && (
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4">
             <button 
               className={`pb-3 -mb-[13px] border-b-2 px-1 font-medium text-sm transition-colors ${activeTab === 'emails' ? 'border-[#004c91] text-[#004c91]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
               onClick={() => setActiveTab('emails')}
@@ -380,7 +380,10 @@ export function EmailManagement() {
       {showTemplateModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-[2px]" onClick={() => { setShowTemplateModal(false); setSelectedTemplate(null); }}></div>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl relative z-10 p-6 max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Overlay gutter is p-4 (16px/side => 2rem) at every breakpoint, so the ceiling is
+              100dvh minus that gutter -- was a flat 90vh unrelated to the actual overlay padding
+              or mobile browser chrome. */}
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl relative z-10 p-6 max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-[#004c91]">
                 {selectedTemplate ? 'Chi tiết mẫu email' : 'Danh sách mẫu email'}
@@ -434,12 +437,21 @@ export function EmailManagement() {
                     <div className="text-[14px] font-normal text-gray-800 mb-4">{selectedTemplate.subjectVi || selectedTemplate.subject}</div>
                     
                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Nội dung mẫu (Preview)</label>
-                    <div className="bg-white p-4 border border-gray-200 rounded min-h-[200px] text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTemplate.bodyVi || selectedTemplate.content || '') }} />
+                    {/* Quill body HTML can carry inline width-styled <img>/<table> markup; without a
+                        cap it can force this preview (and the modal around it) wider than the
+                        viewport on mobile (§26 rich-text contract). */}
+                    <div
+                      className="bg-white p-4 border border-gray-200 rounded min-h-[200px] text-sm text-gray-700 overflow-x-auto [&_img]:max-w-full [&_img]:h-auto [&_table]:max-w-full"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedTemplate.bodyVi || selectedTemplate.content || '') }}
+                    />
                   </div>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col h-[calc(90vh-140px)]">
+              // Kept in sync with the modal's own max-h-[calc(100dvh-2rem)] above -- this used to
+              // subtract from a flat 90vh, which drifted from the modal's real ceiling once that
+              // was switched to a dvh-based gutter calc.
+              <div className="flex flex-col h-[calc(100dvh-2rem-140px)]">
                 <div className="flex items-center gap-3 mb-4 shrink-0">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />

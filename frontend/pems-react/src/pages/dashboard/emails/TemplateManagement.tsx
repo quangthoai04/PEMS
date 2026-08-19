@@ -1605,11 +1605,11 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col">
-      <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-        <div className="flex items-center gap-3">
+      <div className="p-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3 bg-gray-50/50">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Tìm kiếm mẫu..." aria-label="Tìm kiếm mẫu" className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:border-[#004c91] outline-none" />
+            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Tìm kiếm mẫu..." aria-label="Tìm kiếm mẫu" className="w-full sm:w-auto pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:border-[#004c91] outline-none" />
           </div>
           <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)} aria-label="Lọc theo nhóm" className="border border-gray-300 rounded-md px-3 py-1.5 text-sm outline-none">
             <option value="">Tất cả nhóm</option>
@@ -1622,7 +1622,7 @@ export function TemplateManagement({ pushToast }: { pushToast: (type: 'success' 
           </select>
         </div>
         {/* No "Thêm mẫu mới": the catalog is fixed in code (G11-I). */}
-        <p className="text-xs text-gray-500 max-w-md text-right">
+        <p className="text-xs text-gray-500 max-w-md sm:text-right">
           Danh mục mẫu do hệ thống quản lý. Bạn có thể xem và cập nhật nội dung, không thể thêm hoặc xóa mẫu.
         </p>
       </div>

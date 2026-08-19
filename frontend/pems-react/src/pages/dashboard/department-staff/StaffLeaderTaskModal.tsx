@@ -392,7 +392,8 @@ export function StaffLeaderTaskModal({ item, onClose, onRefresh, changeNotifs = 
         `}
       </style>
       <div id="staff-task-modal-backdrop" className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={onClose}>
-        <div id="staff-task-modal-card" className="w-full max-w-3xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+        <div id="staff-task-modal-card" className="w-full max-w-3xl max-h-[calc(100dvh-2rem)] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
           {/* Header compact */}
           <div className={`${isRequest && canShowHandover ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-5 py-3.5 text-white flex items-center justify-between gap-3`}>
             <div className="flex items-center gap-2.5 min-w-0">

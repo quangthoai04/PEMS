@@ -161,7 +161,8 @@ export function StaffVisitDetailModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 12 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        // Overlay is a flat p-4 (2rem vertical gutter).
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
       >
         {/* Header */}
         <div className="px-6 py-4 bg-[#004c91] flex items-start justify-between gap-3 flex-shrink-0">

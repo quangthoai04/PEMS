@@ -310,7 +310,7 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     43: 'COLUMN_ALIASES.nationality — same bilingual header-matching data.',
   },
   'shared/api/httpClient.ts': {
-    89: 'FORCED_LOGOUT_REASON_KEY sessionStorage value — written here but confirmed (repo-wide search) to have ZERO readers anywhere in the codebase; a genuinely dead/latent write, not a current render-time leak. Flag for translation if a consumer is ever added.',
+    89: 'FORCED_LOGOUT_REASON_KEY fallback message (BR-AUTH-CAMPUS-08). PublicHomePage.tsx now consumes and renders this value one-shot -- this line is the ONLY hardcoded-VI source for it (the interceptor prefers the backend-supplied errorBody.message when present). Still not i18n-translated: pending a proper follow-up to move this fallback into validation/errors locale JSON.',
   },
   'shared/constants/countryCoordinates.ts': {
     16: 'Map-pin lookup table keyed by lowercase Vietnamese country name (e.g. việt nam/hàn quốc) for matching against localized country name strings — a data KEY, never rendered as UI text itself.',
@@ -349,7 +349,10 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     // Language-switcher item labels: by UX convention these always show a language's own native
     // name ("Tiếng Việt"/"English"), never translated into whichever language is currently active
     // — same as every other language picker (a French picker still shows "Deutsch", not "German").
-    178: "language-switcher item label — always shown in the language's own name, by convention",
+    // Line shifted from 178 to 182 by the responsive-fix pass (docs/CanhIter3FixBug/GopYCQuyen/
+    // PEMS_System_Wide_Responsive_UI_Audit_and_Fix_Plan.md): getLinkClass() dropped its unused
+    // `widthClass` parameter and its 7 call sites shrank from two arguments to one.
+    182: "language-switcher item label — always shown in the language's own name, by convention",
   },
   'pages/CampusDetailVisitPage.tsx': {
     // CAMPUS_FALLBACK.description (hn/hcm/dn/ct/qn) is only ever read as a `t(..., {defaultValue})`

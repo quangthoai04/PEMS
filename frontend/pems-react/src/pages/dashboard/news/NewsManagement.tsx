@@ -67,6 +67,26 @@ function formatDate(dateStr?: string): string {
   return formatVietnamDate(dateStr);
 }
 
+// Windowed page-number list for the pagination bar (same fix as AccountManagement's RC-05 pager):
+// rendering every page number in one un-wrapping row breaks past a handful of pages and runs off a
+// narrow screen. Pure UI concern -- no change to what setPage does or how totalPages is computed.
+const PAGE_ELLIPSIS = 'ellipsis' as const;
+function buildPageWindow(current: number, total: number, siblings = 1): (number | typeof PAGE_ELLIPSIS)[] {
+  if (total <= 0) return [];
+  const pages = new Set<number>([1, total, current]);
+  for (let d = 1; d <= siblings; d++) {
+    if (current - d >= 1) pages.add(current - d);
+    if (current + d <= total) pages.add(current + d);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const out: (number | typeof PAGE_ELLIPSIS)[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push(PAGE_ELLIPSIS);
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 export function NewsManagement() {
   const navigate = useNavigate();
 
@@ -354,8 +374,8 @@ export function NewsManagement() {
 
       {/* Pagination */}
       {!loading && !error && (
-        <div className="flex items-center justify-between mt-6">
-          <div className="flex items-center gap-3 text-sm text-gray-600 font-normal">
+        <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-0 sm:justify-between mt-6">
+          <div className="flex items-center gap-3 text-sm text-gray-600 font-normal flex-wrap justify-center">
             <span>Hiển thị</span>
             <select
               value={itemsPerPage}
@@ -383,15 +403,19 @@ export function NewsManagement() {
             </button>
 
             <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  className={`w-9 h-9 rounded-xl font-bold text-sm transition-colors ${page === p ? 'bg-[#004c91] text-white shadow-sm border border-[#004c91]' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              ))}
+              {buildPageWindow(page, totalPages).map((p, idx) =>
+                p === PAGE_ELLIPSIS ? (
+                  <span key={`ellipsis-${idx}`} className="w-9 h-9 flex items-center justify-center text-sm text-gray-400 select-none">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    className={`w-9 h-9 rounded-xl font-bold text-sm transition-colors ${page === p ? 'bg-[#004c91] text-white shadow-sm border border-[#004c91]' : 'text-gray-600 hover:bg-gray-100 border border-transparent'}`}
+                    onClick={() => setPage(p)}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
             </div>
 
             <button

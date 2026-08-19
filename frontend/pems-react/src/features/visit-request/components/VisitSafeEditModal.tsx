@@ -107,7 +107,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"
       aria-label={t('visitRequestV2:safeEdit.title')}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-xl">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-extrabold text-[#004c91]">{t('visitRequestV2:safeEdit.title')}</h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label={t('visitRequestV2:common.cancel')}>

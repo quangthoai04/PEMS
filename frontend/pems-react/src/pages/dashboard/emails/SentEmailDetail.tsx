@@ -94,7 +94,7 @@ export function SentEmailDetail() {
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
       transition={{ duration: 0.3 }}
-      className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto min-h-screen pb-20"
+      className="p-4 sm:p-6 md:p-8 max-w-[1100px] mx-auto min-h-dvh pb-20"
     >
       {/* Breadcrumbs */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500">

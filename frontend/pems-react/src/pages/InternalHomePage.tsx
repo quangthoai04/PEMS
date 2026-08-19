@@ -20,7 +20,7 @@ interface InternalHomePageProps {
 
 export function InternalHomePage({ user }: InternalHomePageProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-dvh">
       <WelcomeHero user={user} />
       <QuickAccessSection user={user} />
       <NewsSection />

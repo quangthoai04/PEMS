@@ -744,7 +744,8 @@ export function EmailComposeModal({
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 p-4" onMouseDown={handleRequestClose}>
       <div
-        className="flex w-full max-w-2xl max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        // Overlay is a flat p-4 (2rem vertical gutter).
+        className="flex w-full max-w-2xl max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">

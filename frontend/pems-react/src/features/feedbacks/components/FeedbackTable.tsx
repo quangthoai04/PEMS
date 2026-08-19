@@ -59,7 +59,7 @@ export function FeedbackTable({ summaries, loading, currentPage, pageSize, onVie
                     {item.latestSubmittedAt ? (
                       <>
                         <div className="text-sm font-normal text-slate-700 whitespace-nowrap">{formatDate(item.latestSubmittedAt)}</div>
-                        <div className="text-xs text-slate-500 mt-0.5 truncate max-w-[150px]">{item.latestSubmitterName}</div>
+                        <div className="text-xs text-slate-500 mt-0.5 truncate max-w-[150px]" title={item.latestSubmitterName}>{item.latestSubmitterName}</div>
                       </>
                     ) : <span className="text-slate-400">-</span>}
                   </td>

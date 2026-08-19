@@ -65,6 +65,28 @@ import { RelatedVisitorsTab } from '../../../features/account-management/compone
 const CAMPUSES = ["Hà Nội", "Hồ Chí Minh", "Đà Nẵng", "Cần Thơ", "Quy Nhơn"];
 const ROLES = ["ADMIN", "HO", "STAFF", "DEPARTMENT", "STUDENT", "VISITOR"];
 
+// Windowed page-number list for the pagination bar (RC-05): the old version rendered every page
+// number in one un-wrapping row, which both looked wrong and ran off a narrow screen once
+// totalPages grew past a handful. Pure UI concern -- no change to what setCurrentPage does or to
+// how totalPages itself is computed. Always keeps first, last, current, and one sibling each side;
+// gaps become a single 'ellipsis' entry.
+const PAGE_ELLIPSIS = 'ellipsis' as const;
+function buildPageWindow(current: number, total: number, siblings = 1): (number | typeof PAGE_ELLIPSIS)[] {
+  if (total <= 0) return [];
+  const pages = new Set<number>([1, total, current]);
+  for (let d = 1; d <= siblings; d++) {
+    if (current - d >= 1) pages.add(current - d);
+    if (current + d <= total) pages.add(current + d);
+  }
+  const sorted = Array.from(pages).sort((a, b) => a - b);
+  const out: (number | typeof PAGE_ELLIPSIS)[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) out.push(PAGE_ELLIPSIS);
+    out.push(sorted[i]);
+  }
+  return out;
+}
+
 // Status dropdown value → users.status. One map for both the server query and the client-side
 // narrowing below, so a filter can never mean two different things depending on which one runs.
 const STATUS_FILTER_TO_DB: Record<string, string> = {
@@ -1819,7 +1841,7 @@ export function AccountManagement() {
 
         {/* II. Filter Bar */}
         <div className="p-6 bg-[#004c91] flex flex-wrap items-center gap-4 border-b border-[#00386b]">
-          <div className="relative flex-1 min-w-[250px]">
+          <div className="relative flex-1 min-w-0 sm:min-w-[250px]">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
@@ -1987,7 +2009,7 @@ export function AccountManagement() {
                           <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{acc.name}</p>
                         </div>
                       </td>
-                      <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-left">{acc.email}</td>
+                      <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-left" title={acc.email}>{acc.email}</td>
                       {/* A VISITOR belongs to no campus by design (AccountProvisioningRules gives the
                           role no primary_campus_id), so this cell is legitimately empty for every
                           guest row. An empty cell reads as missing data; the dash says "none", which
@@ -2169,7 +2191,7 @@ export function AccountManagement() {
 
             {/* Pagination */}
             {totalItems > 0 && (
-            <div className="p-6 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+            <div className="p-6 border-t border-gray-100 flex flex-col sm:flex-row items-center gap-4 sm:gap-0 sm:justify-between bg-gray-50/50">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-normal text-gray-500">Hiển thị</span>
                 <div className="relative">
@@ -2200,15 +2222,19 @@ export function AccountManagement() {
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {buildPageWindow(currentPage, totalPages).map((page, idx) =>
+                    page === PAGE_ELLIPSIS ? (
+                      <span key={`ellipsis-${idx}`} className="w-8 h-8 flex items-center justify-center text-sm text-gray-400 select-none">…</span>
+                    ) : (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`w-8 h-8 rounded-lg text-sm font-bold transition-all outline-none ${currentPage === page ? 'bg-[#004c91] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        {page}
+                      </button>
+                    )
+                  )}
                 </div>
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
@@ -2231,8 +2257,12 @@ export function AccountManagement() {
             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300"
             onClick={closeViewDrawer}
           />
-          {/* Modal Content - Horizontal Layout */}
-          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row h-auto max-h-[85vh] animate-in zoom-in-95 duration-300 overflow-hidden">
+          {/* Modal Content - Horizontal Layout.
+              max-h: overlay padding is p-4 (16px/side => 2rem) below `sm`, p-6 (24px/side => 3rem)
+              at `sm` and up -- ceiling = 100dvh minus that gutter, guaranteed to fit the visible
+              viewport instead of a flat 85vh unrelated to the actual overlay padding or mobile
+              browser chrome. */}
+          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row h-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] animate-in zoom-in-95 duration-300 overflow-hidden">
             {/* Modal Left Sidebar */}
             <div className="p-4 sm:p-6 md:p-8 bg-gradient-to-br from-[#004c91] to-[#00386b] shrink-0 md:w-1/3 flex flex-col items-center justify-center text-center relative border-r border-[#00386b]/50">
               <button 
@@ -2332,7 +2362,7 @@ export function AccountManagement() {
             </div>
 
             {/* Modal Right Content */}
-            <div className="flex-1 overflow-y-auto p-8 bg-[#f8fafc] relative">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-[#f8fafc] relative">
               <div className="flex items-start justify-between mb-6">
                 <h3 className="text-xl font-black text-[#004c91] flex items-center gap-2 tracking-tight mt-1">
                   <UserCog className="w-6 h-6" /> {isEditingProfile ? 'Chỉnh sửa thông tin tài khoản' : 'Thông tin chi tiết'}
@@ -2989,14 +3019,20 @@ export function AccountManagement() {
         </div>
       )}
 
-      {/* Modal Khởi tạo tài khoản mới */}
+      {/* Modal Khởi tạo tài khoản mới.
+          Overlay used to have NO padding and the outer card NO max-height at all -- only the body
+          was capped (`max-h-[70vh]`), which doesn't leave room for the header/footer height on top
+          of it, so on a short viewport the total (header + 70vh body + footer) could exceed the
+          visible viewport with nothing to scroll it back into view. Overlay gets a p-4 gutter, and
+          the OUTER card is now the single scroll region (removed the body's own nested scroll --
+          this loses a sticky header while scrolling, but two nested scrollbars is worse). */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-hidden animate-in zoom-in-95 duration-300">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center animate-in fade-in duration-200 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl overflow-y-auto animate-in zoom-in-95 duration-300 max-h-[calc(100dvh-2rem)]">
             {/* Header */}
             <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-[#004c91]">
               <h2 className="text-xl font-black text-white">Khởi tạo tài khoản mới</h2>
-              <button 
+              <button
                 onClick={() => setIsCreateModalOpen(false)}
                 className="w-8 h-8 rounded-full hover:bg-white/20 flex items-center justify-center text-white transition-colors"
               >
@@ -3005,7 +3041,7 @@ export function AccountManagement() {
             </div>
 
             {/* Body */}
-            <div className="p-6 max-h-[70vh] overflow-y-auto">
+            <div className="p-6">
                 <div className="space-y-5">                  
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">Vai trò (Role) <span className="text-red-500">*</span></label>
@@ -3327,7 +3363,8 @@ export function AccountManagement() {
           aria-modal="true"
           aria-labelledby="create-confirm-title"
         >
-          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+          {/* Overlay is p-4 below `sm` (2rem), p-6 at `sm`+ (3rem). */}
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)]">
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-[#004c91] shrink-0">
               <h2 id="create-confirm-title" className="text-lg font-black text-white uppercase tracking-wide">

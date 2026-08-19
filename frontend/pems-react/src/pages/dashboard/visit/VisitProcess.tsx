@@ -1792,7 +1792,7 @@ export function VisitProcess() {
                     </div>
 
                     {isInfoEditable && (
-                      <div className="flex justify-end gap-3 px-8 pb-8 pt-4 border-t border-gray-100">
+                      <div className="flex flex-wrap justify-end gap-3 px-8 pb-8 pt-4 border-t border-gray-100">
                         <button 
                           onClick={() => setIsInfoEditable(false)}
                           className="px-8 py-3 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors shadow-sm outline-none"
@@ -2069,14 +2069,14 @@ export function VisitProcess() {
                 rows={3}
                 placeholder="Nhập lý do từ chối..."
               />
-              <div className="flex justify-end gap-3">
-                <button 
+              <div className="flex flex-wrap justify-end gap-3">
+                <button
                   onClick={() => setRejectReasonModal({ isOpen: false, targetId: null, targetName: null, reasonText: '' })}
                   className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
                 >
                   Huỷ
                 </button>
-                <button 
+                <button
                   onClick={handleConfirmReject}
                   disabled={!rejectReasonModal.reasonText.trim()}
                   className="px-5 py-2.5 rounded-xl font-bold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -2138,7 +2138,7 @@ export function VisitProcess() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl w-full max-w-5xl h-[92vh] relative z-10 shadow-2xl border border-gray-100 flex flex-col overflow-hidden"
+              className="bg-white rounded-2xl w-full max-w-5xl h-[92dvh] relative z-10 shadow-2xl border border-gray-100 flex flex-col overflow-hidden"
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -2197,7 +2197,7 @@ export function VisitProcess() {
                 )}
               </div>
 
-              <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100 flex-shrink-0">
+              <div className="px-6 py-4 bg-gray-50 flex flex-wrap items-center justify-end gap-3 border-t border-gray-100 flex-shrink-0">
                 <button
                   onClick={closeScheduleReportModal}
                   className="px-5 py-2.5 rounded-xl font-bold text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
@@ -2387,7 +2387,7 @@ export function VisitProcess() {
                 {' '}Việc này được phép — chỉ cần chắc chắn đoàn đã tới hoặc sắp tới.
               </p>
             )}
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
               <button
                 type="button"
                 data-testid="stage-confirm-cancel"

@@ -21,7 +21,7 @@ export function CreateVisitRequestEntry() {
 
   if (status === 'loading') {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center" role="status" aria-live="polite">
+      <div className="flex min-h-[40dvh] items-center justify-center" role="status" aria-live="polite">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#004c91] border-t-transparent" />
         <span className="sr-only">{tt('createEntry.loading')}</span>
       </div>
@@ -30,7 +30,7 @@ export function CreateVisitRequestEntry() {
 
   if (status === 'error') {
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 text-center" role="alert">
+      <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-3 text-center" role="alert">
         <p className="text-sm font-normal text-slate-700">
           {tt('createEntry.capabilityError')}
         </p>

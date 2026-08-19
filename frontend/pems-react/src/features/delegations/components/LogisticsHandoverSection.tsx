@@ -422,7 +422,9 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
           </style>
           <div id="logistics-handover-modal" className="fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={closeSignModal} />
-            <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
+            {/* Overlay is a flat p-4 (2rem vertical gutter) -- same dvh-clamp pattern as AssignHostModal
+                so the modal never exceeds the visible mobile viewport (was a flat 90vh). */}
+            <div className="relative w-full max-w-4xl max-h-[calc(100dvh-2rem)] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none">
             {/* Modal header */}
             <div className="bg-[#004c91] text-white px-6 py-4 flex items-center justify-between shrink-0 print:hidden">
               <h3 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
@@ -497,12 +499,12 @@ export function LogisticsHandoverSection({ visitInstanceId, canManage, handoverP
                       <p>Chúng tôi gồm:</p>
                       <div className="space-y-2 pl-4">
                         <div className="flex flex-wrap gap-x-8 gap-y-2">
-                          <p className="flex-1 min-w-[250px]">Người bàn giao: <b>{providerName}</b></p>
-                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>{signTarget.item.departmentName || '................'}</b></p>
+                          <p className="flex-1 min-w-[140px] sm:min-w-[250px]">Người bàn giao: <b className="break-words">{providerName}</b></p>
+                          <p className="flex-1 min-w-[120px] sm:min-w-[200px]">Bộ phận: <b className="break-words">{signTarget.item.departmentName || '................'}</b></p>
                         </div>
                         <div className="flex flex-wrap gap-x-8 gap-y-2">
-                          <p className="flex-1 min-w-[250px]">Người nhận bàn giao: <b>{hostName}</b></p>
-                          <p className="flex-1 min-w-[200px]">Bộ phận: <b>Người phụ trách tiếp đón</b></p>
+                          <p className="flex-1 min-w-[140px] sm:min-w-[250px]">Người nhận bàn giao: <b className="break-words">{hostName}</b></p>
+                          <p className="flex-1 min-w-[120px] sm:min-w-[200px]">Bộ phận: <b className="break-words">Người phụ trách tiếp đón</b></p>
                         </div>
                         <p>Lý do bàn giao: <b>Phục vụ công tác đón tiếp đoàn khách</b></p>
                         <p>Thời gian hẹn trả tài sản: <b>Sau khi kết thúc chuyến thăm</b></p>

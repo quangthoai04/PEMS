@@ -316,7 +316,9 @@ export function EmailPreviewModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4" onMouseDown={busy ? undefined : onClose}>
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
+        // Overlay is a flat p-4 (2rem vertical gutter) -- dvh-clamp so the modal never exceeds the
+        // visible mobile viewport (was a flat 90vh).
+        className="w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl bg-white shadow-2xl flex flex-col"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">

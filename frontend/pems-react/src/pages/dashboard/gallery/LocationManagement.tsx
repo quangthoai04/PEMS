@@ -338,9 +338,9 @@ function LocationManagementMock() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl relative"
+              className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl relative max-h-[92dvh] flex flex-col"
             >
-              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
                 <h3 className="text-xl font-black text-[#004c91]">
                   {isEditMode ? "Chỉnh sửa khu vực" : "Thêm khu vực mới"}
                 </h3>
@@ -349,7 +349,7 @@ function LocationManagementMock() {
                 </button>
               </div>
 
-              <div className="p-6">
+              <div className="p-6 overflow-y-auto">
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-3">
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-100 pb-2 block">Tên Khu Vực / Tòa</label>

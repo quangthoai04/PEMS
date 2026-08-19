@@ -187,7 +187,7 @@ export function FilePreviewModal({ open, file, onClose }: FilePreviewModalProps)
         aria-labelledby="file-preview-title"
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
-        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
         {/* Header — name, type and size, so the reader knows what they are looking at even when the
             body could not be rendered. */}
@@ -264,7 +264,7 @@ export function FilePreviewModal({ open, file, onClose }: FilePreviewModalProps)
                 src={state.url}
                 alt={file.name}
                 data-testid="file-preview-image"
-                className="max-h-[65vh] max-w-full rounded-lg object-contain shadow-sm"
+                className="max-h-[65dvh] max-w-full rounded-lg object-contain shadow-sm"
               />
             </div>
           ) : state.status === 'ready' && kind === 'pdf' && state.url ? (
@@ -272,13 +272,13 @@ export function FilePreviewModal({ open, file, onClose }: FilePreviewModalProps)
               src={state.url}
               title={file.name}
               data-testid="file-preview-pdf"
-              className="h-[65vh] w-full rounded-lg border border-gray-200 bg-white"
+              className="h-[65dvh] w-full rounded-lg border border-gray-200 bg-white"
             />
           ) : state.status === 'ready' && kind === 'text' ? (
             // Rendered as text, with its own horizontal scroll so a long line cannot widen the page.
             <pre
               data-testid="file-preview-text"
-              className="max-h-[65vh] overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs leading-relaxed text-gray-800"
+              className="max-h-[65dvh] overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs leading-relaxed text-gray-800"
             >
               {state.text}
             </pre>

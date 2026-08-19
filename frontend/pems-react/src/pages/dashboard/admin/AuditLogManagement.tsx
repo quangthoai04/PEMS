@@ -430,7 +430,7 @@ export function AuditLogManagement() {
       {/* Detail modal */}
       {detailId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6 animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85dvh] overflow-y-auto p-6 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-black text-gray-800">Chi tiết bản ghi kiểm toán #{detailId}</h3>
               <button onClick={closeDetail} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 cursor-pointer">

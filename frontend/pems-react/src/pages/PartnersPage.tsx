@@ -169,7 +169,7 @@ function CountryFlagShowcase({
 
   if (countries.length === 0) {
     return (
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <div key={i} className="bg-white rounded-2xl border border-slate-200 p-4 h-[92px] animate-pulse">
             <div className="h-full w-full bg-slate-100 rounded-lg skeleton-shimmer" />
@@ -181,7 +181,7 @@ function CountryFlagShowcase({
 
   return (
     <div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         {visible.map((c, i) => (
           <CountryFlagCard
             key={c.value}

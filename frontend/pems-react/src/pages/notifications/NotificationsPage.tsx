@@ -152,7 +152,7 @@ export function NotificationsPage() {
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen pt-20 pb-16">
+    <div className="bg-slate-50 min-h-dvh pt-20 pb-16">
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-8">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
           <div>

@@ -49,15 +49,18 @@ export function RejectedReasonModal({
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative border border-gray-100"
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden relative border border-gray-100 flex flex-col max-h-[calc(100dvh-2rem)]"
       >
-        <div className="px-6 py-4 bg-[#004c91] flex items-center justify-between">
+        <div className="px-6 py-4 bg-[#004c91] flex items-center justify-between shrink-0">
           <h3 className="text-lg font-bold text-white">Lý do từ chối</h3>
           <button type="button" onClick={onClose} aria-label="Đóng" className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5 cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <div className="p-5 space-y-3 text-left max-h-[70vh] overflow-y-auto">
+        {/* Was a flat max-h-[70vh] on the body alone -- header+body+footer could still exceed the
+            visible viewport on a short screen since the body cap wasn't gutter-aware. Modal is now
+            flex-col + dvh-clamped as a whole, same pattern as CancellationReasonModal. */}
+        <div className="p-5 space-y-3 text-left overflow-y-auto min-h-0">
           {delegationName ? <MetaRow label="Đoàn khách" value={delegationName} /> : null}
           <div className="grid grid-cols-2 gap-3">
             <MetaRow label="Mã đơn" value={requestCode} />
@@ -73,7 +76,7 @@ export function RejectedReasonModal({
             decisionNote={decisionNote}
           />
         </div>
-        <div className="px-6 py-4 bg-gray-50 flex items-center justify-end border-t border-gray-100">
+        <div className="px-6 py-4 bg-gray-50 flex items-center justify-end border-t border-gray-100 shrink-0">
           <button type="button" onClick={onClose} className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#00386b] shadow-sm transition-all outline-none text-sm cursor-pointer">Đóng</button>
         </div>
       </motion.div>

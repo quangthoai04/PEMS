@@ -165,7 +165,7 @@ export function SecurityMonitoring() {
         {/* Filter bar — hàng 1: tìm kiếm + khoảng ngày; hàng 2: các bộ lọc chọn nhanh */}
         <div className="p-5 bg-[#004c91] flex flex-col gap-3 border-b border-[#00386b]">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[220px]">
+            <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
               <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"

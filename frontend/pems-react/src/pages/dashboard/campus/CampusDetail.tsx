@@ -218,7 +218,7 @@ export function CampusDetail() {
 
   if (loading) {
     return (
-      <div className="p-4 md:p-8 bg-gray-50/50 min-h-screen">
+      <div className="p-4 md:p-8 bg-gray-50/50 min-h-dvh">
         {Breadcrumb}
         <div className="flex items-center justify-center py-24 text-gray-500">
           <Loader2 className="w-6 h-6 animate-spin mr-2 text-[#004c91]" /> Đang tải chi tiết campus...
@@ -229,7 +229,7 @@ export function CampusDetail() {
 
   if (notFound) {
     return (
-      <div className="p-4 md:p-8 bg-gray-50/50 min-h-screen">
+      <div className="p-4 md:p-8 bg-gray-50/50 min-h-dvh">
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
           <AlertTriangle className="w-10 h-10 text-gray-400" />
@@ -247,7 +247,7 @@ export function CampusDetail() {
 
   if (error || !campus) {
     return (
-      <div className="p-4 md:p-8 bg-gray-50/50 min-h-screen">
+      <div className="p-4 md:p-8 bg-gray-50/50 min-h-dvh">
         {Breadcrumb}
         <div className="flex flex-col items-center justify-center py-24 text-center gap-3 text-red-600">
           <AlertTriangle className="w-8 h-8" />
@@ -263,7 +263,7 @@ export function CampusDetail() {
   const dash = (v: string | null | undefined) => (v && v.trim() ? v : 'Chưa cập nhật');
 
   return (
-    <div className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-screen">
+    <div className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-dvh">
       {Breadcrumb}
 
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden w-full max-w-5xl">

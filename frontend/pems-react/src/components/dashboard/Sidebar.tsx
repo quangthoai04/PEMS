@@ -180,8 +180,8 @@ export function Sidebar({ isMobileOpen = false, onCloseMobile, isCollapsed = fal
       </AnimatePresence>
 
 
-      <aside className={`${collapsed ? "w-[84px]" : "w-[290px]"} bg-white border-r border-gray-200 h-screen flex flex-col pt-6 pb-4 shadow-sm z-50 transition-all duration-300
-        ${isMobileOpen ? "fixed top-0 left-0 h-full w-[290px]" : "hidden lg:flex lg:sticky lg:top-0"}
+      <aside className={`${collapsed ? "w-[84px]" : "w-[290px]"} bg-white border-r border-gray-200 h-dvh flex flex-col pt-6 pb-4 shadow-sm z-50 transition-all duration-300
+        ${isMobileOpen ? "fixed top-0 left-0 w-[min(290px,85vw)]" : "hidden lg:flex lg:sticky lg:top-0"}
       `}>
         {/* Close mobile button */}
         {isMobileOpen && (

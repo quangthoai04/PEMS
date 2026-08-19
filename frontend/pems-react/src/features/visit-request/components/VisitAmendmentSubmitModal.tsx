@@ -595,7 +595,8 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true"
       aria-label={t('visitRequestV2:amend.title', { campus: campus.campusName })}>
-      <div ref={dialogRef} className="flex max-h-[92vh] w-[min(1180px,96vw)] max-w-none flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-xl">
+      {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+      <div ref={dialogRef} className="flex max-h-[calc(100dvh-2rem)] w-[min(1180px,96vw)] max-w-none flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-xl">
         <header className="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-700">
           <h2 className="flex items-center text-base font-extrabold text-[#004c91]">
             {selfApproves ? t('visitRequestV2:amend.titleUpdate', { campus: campus.campusName, defaultValue: `Cập nhật thông tin — ${campus.campusName}` }) : t('visitRequestV2:amend.title', { campus: campus.campusName })}

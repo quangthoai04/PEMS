@@ -68,19 +68,23 @@ export function Header() {
     }
   };
 
-  const getLinkClass = (path: string, widthClass = 'w-[92px]') => {
+  const getLinkClass = (path: string) => {
     const isActive = path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
-    
+
+    // Content-based width (min-w-fit + px-3) instead of a reserved w-[Npx] slot per link: the total
+    // nav shrinks to what the 7 short labels actually need, recovering slack at the 1280-1366px range
+    // where the fixed slots used to run tight against the logo+actions. whitespace-nowrap stays (these
+    // are short one-line labels), but overflow-hidden/truncate are dropped -- with a content-based
+    // width the box can never be narrower than the label, so nothing is ever cropped.
     const baseClass = [
       'h-20',
-      widthClass,
-      'px-2',
+      'min-w-fit',
+      'px-3',
       'shrink-0',
       'flex',
       'items-center',
       'justify-center',
       'whitespace-nowrap',
-      'overflow-hidden',
       'transition-colors',
       'relative',
     ].join(' ');
@@ -116,42 +120,42 @@ export function Header() {
 
             {/* Desktop Nav */}
             <nav className="hidden xl:flex items-center justify-center gap-1 flex-1 min-w-0 font-medium text-[15px]">
-              <Link to="/" className={getLinkClass('/', 'w-[92px]')}>
-                <span className="truncate">{t('publicLayout:nav.home')}</span>
+              <Link to="/" className={getLinkClass('/')}>
+                <span>{t('publicLayout:nav.home')}</span>
               </Link>
 
-              <Link to="/news" className={getLinkClass('/news', 'w-[84px]')}>
-                <span className="truncate">{t('publicLayout:nav.news')}</span>
+              <Link to="/news" className={getLinkClass('/news')}>
+                <span>{t('publicLayout:nav.news')}</span>
               </Link>
 
-              <Link to="/partners" className={getLinkClass('/partners', 'w-[104px]')}>
-                <span className="truncate">{t('publicLayout:nav.partners')}</span>
+              <Link to="/partners" className={getLinkClass('/partners')}>
+                <span>{t('publicLayout:nav.partners')}</span>
               </Link>
 
               <a
                 href="https://outbound.fpt.edu.vn/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="h-20 w-[104px] px-2 shrink-0 flex items-center justify-center whitespace-nowrap overflow-hidden text-gray-700 hover:text-[#f37021] transition-colors relative"
+                className="h-20 min-w-fit px-3 shrink-0 flex items-center justify-center whitespace-nowrap text-gray-700 hover:text-[#f37021] transition-colors relative"
               >
-                <span className="truncate">Outbound</span>
+                <span>Outbound</span>
               </a>
 
               <a
                 href="https://international.fpt.edu.vn/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="h-20 w-[96px] px-2 shrink-0 flex items-center justify-center whitespace-nowrap overflow-hidden text-gray-700 hover:text-[#f37021] transition-colors relative"
+                className="h-20 min-w-fit px-3 shrink-0 flex items-center justify-center whitespace-nowrap text-gray-700 hover:text-[#f37021] transition-colors relative"
               >
-                <span className="truncate">Inbound</span>
+                <span>Inbound</span>
               </a>
 
-              <Link to="/visit-fptu" className={getLinkClass('/visit-fptu', 'w-[148px]')}>
-                <span className="truncate">{t('publicLayout:nav.galleryShort')}</span>
+              <Link to="/visit-fptu" className={getLinkClass('/visit-fptu')}>
+                <span>{t('publicLayout:nav.galleryShort')}</span>
               </Link>
 
-              <Link to="/faq" className={getLinkClass('/faq', 'w-[72px]')}>
-                <span className="truncate">{t('publicLayout:nav.faqShort')}</span>
+              <Link to="/faq" className={getLinkClass('/faq')}>
+                <span>{t('publicLayout:nav.faqShort')}</span>
               </Link>
             </nav>
 
@@ -191,7 +195,7 @@ export function Header() {
                     className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-full hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200 max-w-[100px] lg:max-w-[130px] xl:max-w-[180px]"
                   >
                     <img src={avatarSrc} alt="Avatar" className="w-8 h-8 flex-shrink-0 rounded-full border border-gray-200 object-cover" onError={(e) => { e.currentTarget.src = avatarImg; }} />
-                    <span className="font-bold text-[#004c91] text-sm truncate flex-1 block overflow-hidden">{user.name}</span>
+                    <span className="font-bold text-[#004c91] text-sm truncate flex-1 block overflow-hidden" title={user.name}>{user.name}</span>
                     <ChevronDown className="w-4 h-4 flex-shrink-0 text-gray-500" />
                   </button>
 
@@ -340,7 +344,7 @@ export function Header() {
                   <div className="flex items-center gap-3 px-3 py-2 bg-white rounded-xl border border-slate-100 shadow-xs">
                     <img src={avatarSrc} alt="Avatar" className="w-10 h-10 rounded-full border border-slate-250 object-cover" onError={(e) => { e.currentTarget.src = avatarImg; }} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-[#004c91] truncate">{user.name}</p>
+                      <p className="text-sm font-bold text-[#004c91] truncate" title={user.name}>{user.name}</p>
                       <p className="text-xs text-slate-405 truncate">
                         {user.role === 'VISITOR' ? t('publicLayout:roles.VISITOR') : (user.role || t('publicLayout:profile.guest'))}
                       </p>

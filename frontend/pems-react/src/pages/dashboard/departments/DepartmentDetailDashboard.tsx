@@ -850,7 +850,7 @@ export function DepartmentDetailDashboard() {
                         className="text-[15px] font-normal text-gray-800 bg-white border border-gray-300 focus:border-[#004c91] rounded-lg px-2 py-1 w-full outline-none"
                       />
                     ) : (
-                      <p className="text-[15px] font-normal text-gray-800 truncate">{selectedMember.email}</p>
+                      <p className="text-[15px] font-normal text-gray-800 truncate" title={selectedMember.email}>{selectedMember.email}</p>
                     )}
                   </div>
                 </div>
@@ -929,7 +929,7 @@ export function DepartmentDetailDashboard() {
       {/* Modal Đổi người phụ trách */}
       {isChangeAssigneeModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[calc(100dvh-2rem)]">
             <div className="p-6 border-b border-gray-100 bg-[#004c91] shrink-0">
               <h3 className="text-xl font-black text-white uppercase tracking-tight">Đổi người phụ trách</h3>
               <p className="text-sm font-normal text-blue-100 mt-1">Chọn người phụ trách mới cho nhiệm vụ</p>
@@ -947,7 +947,7 @@ export function DepartmentDetailDashboard() {
                     </div>
                     <div className="flex-1">
                       <p className={`text-[15px] font-bold ${newAssigneeId === member.id.toString() ? 'text-[#004c91]' : 'text-gray-800'}`}>{member.name}</p>
-                      <p className="text-[12px] font-normal text-gray-500 truncate">{member.email}</p>
+                      <p className="text-[12px] font-normal text-gray-500 truncate" title={member.email}>{member.email}</p>
                     </div>
                   </div>
                 ))}
@@ -984,7 +984,7 @@ export function DepartmentDetailDashboard() {
       {/* Modal Thay đổi trưởng phòng */}
       {isChangeLeaderModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col max-h-[calc(100dvh-2rem)]">
             <div className="p-6 border-b border-gray-100 bg-[#004c91] shrink-0">
               <h3 className="text-xl font-black text-white uppercase tracking-tight">Thay đổi trưởng phòng</h3>
               <p className="text-sm font-normal text-blue-100 mt-1">Chọn trưởng phòng mới</p>
@@ -1002,7 +1002,7 @@ export function DepartmentDetailDashboard() {
                     </div>
                     <div className="flex-1">
                       <p className={`text-[15px] font-bold ${newLeaderId === member.id.toString() ? 'text-[#004c91]' : 'text-gray-800'}`}>{member.name}</p>
-                      <p className="text-[12px] font-normal text-gray-500 truncate">{member.email}</p>
+                      <p className="text-[12px] font-normal text-gray-500 truncate" title={member.email}>{member.email}</p>
                     </div>
                   </div>
                 ))}

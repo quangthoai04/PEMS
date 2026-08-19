@@ -12,7 +12,20 @@ import { test, expect, type Page } from '@playwright/test';
 const VIETNAMESE =
   /[àáâãèéêìíòóôõùúăđĩũơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹý]/i;
 
+/**
+ * The homepage CTA (and, in this file, the login modal via the header button) both mount behind
+ * PerCampusV2CapabilityProvider, which fires GET /public/features/per-campus-form-v2 from a
+ * useEffect on mount and fails SAFE (no silent v1 fallback) on any unmocked/failed fetch --
+ * Playwright's webServer starts no backend, so this must be mocked before navigation or the CTA
+ * shows an error toast instead of opening anything (see visit-request-single-form.spec.ts).
+ */
+async function mockV2Capability(page: Page) {
+  await page.route('**/public/features/per-campus-form-v2', (route) =>
+    route.fulfill({ json: { readEnabled: true, writeEnabled: true, enabled: true } }));
+}
+
 async function gotoWithLanguage(page: Page, path: string, lng: 'vi' | 'en') {
+  await mockV2Capability(page);
   await page.addInitScript((l) => window.localStorage.setItem('pems.language', l), lng);
   await page.goto(path);
   await page.waitForLoadState('domcontentloaded');
@@ -40,7 +53,8 @@ test.describe('visit-request validation is localized at runtime', () => {
     await gotoWithLanguage(page, '/', 'en');
     await openVisitForm(page);
 
-    await page.getByRole('button', { name: /Submit Request/i }).click();
+    // visitRequestV2.json submit.public = "Submit & receive OTP" (was "Submit Request").
+    await page.getByRole('button', { name: /Submit & receive OTP/i }).click();
 
     // A real message from validation.json, produced by the Zod resolver.
     await expect(page.getByText('Full name is required').first()).toBeVisible();
@@ -82,9 +96,15 @@ test.describe('visit-request validation is localized at runtime', () => {
   });
 });
 
+/**
+ * `/login` is `<Navigate to="/" replace />` -- there is no dedicated login page/route anymore.
+ * The real UI is the LoginModal, opened from the header "Đăng nhập" button on the homepage
+ * (same pattern as responsive-overflow.spec.ts's "Login modal (opened via Home UI)" test).
+ */
 test.describe('login modal Google button', () => {
   test('EN mode: no Vietnamese Google button label', async ({ page }) => {
-    await gotoWithLanguage(page, '/login', 'en');
+    await gotoWithLanguage(page, '/', 'en');
+    await page.getByRole('button', { name: 'Sign in' }).first().click();
 
     // Google's GSI iframe may or may not load (network); either way the visible label
     // in our own DOM must never be the Vietnamese one.
@@ -94,7 +114,8 @@ test.describe('login modal Google button', () => {
   });
 
   test('VI mode: login page renders Vietnamese', async ({ page }) => {
-    await gotoWithLanguage(page, '/login', 'vi');
+    await gotoWithLanguage(page, '/', 'vi');
+    await page.getByRole('button', { name: 'Đăng nhập' }).first().click();
     await expect(page.getByText('Đăng nhập PEMS').first()).toBeVisible();
     await expect(page.getByText('Sign in to PEMS')).toHaveCount(0);
   });
@@ -117,7 +138,8 @@ test.describe('public auth pages are localized', () => {
     await page.locator('input[type="email"]').fill('not-an-email');
     await page.getByRole('button', { name: /Send reset code/i }).click();
 
-    await expect(page.getByText('Invalid email format (RFC 5322)').first()).toBeVisible();
+    // ForgotPasswordPage.tsx uses validation:emailInvalid ("Invalid email format", no RFC suffix).
+    await expect(page.getByText('Invalid email format').first()).toBeVisible();
     await expect(page.getByText('Vui lòng nhập email hợp lệ.')).toHaveCount(0);
   });
 });

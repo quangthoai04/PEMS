@@ -532,8 +532,8 @@ export function ParticipantInvitationSection({
                 return (
                 <div key={d.departmentId} className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-gray-800">{d.departmentName}</div>
-                    <div className="truncate text-xs text-gray-500">
+                    <div className="truncate text-sm font-bold text-gray-800" title={d.departmentName}>{d.departmentName}</div>
+                    <div className="truncate text-xs text-gray-500" title={d.leaderName ? `Trưởng phòng: ${d.leaderName}` : undefined}>
                       {d.leaderName ? `Trưởng phòng: ${d.leaderName}` : 'Chưa có trưởng phòng đang hoạt động'}
                     </div>
                     {!canInviteDept && (
@@ -585,10 +585,10 @@ export function ParticipantInvitationSection({
               <div key={p.participantId} className="rounded-xl border border-gray-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-gray-800">
+                    <div className="truncate text-sm font-bold text-gray-800" title={p.departmentName || 'Phòng ban'}>
                       {p.departmentName || 'Phòng ban'}
                     </div>
-                    <div className="truncate text-xs text-gray-500">Trưởng phòng: {p.fullName}</div>
+                    <div className="truncate text-xs text-gray-500" title={`Trưởng phòng: ${p.fullName}`}>Trưởng phòng: {p.fullName}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={p.status} />
@@ -687,7 +687,7 @@ function CandidateRow({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5 last:border-b-0">
       <div className="min-w-0">
-        <div className="truncate text-sm font-bold text-gray-800">{candidate.fullName}</div>
+        <div className="truncate text-sm font-bold text-gray-800" title={candidate.fullName}>{candidate.fullName}</div>
         <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
           {roleLabel && <span>{roleLabel}</span>}
           {candidate.departmentName && <span>{candidate.departmentName}</span>}
@@ -762,7 +762,7 @@ function ParticipantList({
       {rows.map((p) => (
         <div key={p.participantId} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white p-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold text-gray-800">{p.fullName}</div>
+            <div className="truncate text-sm font-bold text-gray-800" title={p.fullName}>{p.fullName}</div>
             {p.invitedAt && (
               <div className="mt-0.5 text-[11px] text-gray-400">Đã gửi email lúc {fmtDateTime(p.invitedAt)}</div>
             )}

@@ -269,7 +269,8 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
@@ -330,7 +331,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-gray-700 truncate">{file.name}</p>
+                    <p className="text-sm font-bold text-gray-700 truncate" title={file.name}>{file.name}</p>
                     <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(0)} KB</p>
                   </div>
                   <button
@@ -501,7 +502,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-gray-700 truncate">{selectedPartner.name}</p>
+                            <p className="text-sm font-bold text-gray-700 truncate" title={selectedPartner.name}>{selectedPartner.name}</p>
                             <p className="text-xs text-gray-400 flex items-center gap-2">
                               {selectedPartner.country && (
                                 <span className="flex items-center gap-0.5"><MapPin className="w-3 h-3" />{selectedPartner.country}</span>

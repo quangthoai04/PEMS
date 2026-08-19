@@ -603,7 +603,7 @@ export function CreateNews() {
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="font-bold text-gray-800 text-sm truncate">{visit.visitTitle}</div>
+                            <div className="font-bold text-gray-800 text-sm truncate" title={visit.visitTitle}>{visit.visitTitle}</div>
                             <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
                               <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{visit.campusName}</span>
                               <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{formatDate(visit.plannedStartAt)} – {formatDate(visit.plannedEndAt)}</span>

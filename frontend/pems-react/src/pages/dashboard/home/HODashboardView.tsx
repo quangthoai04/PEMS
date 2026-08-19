@@ -264,7 +264,7 @@ export function HODashboardView() {
                 <div className="divide-y divide-slate-100">
                   {upcomingVisits.map((visit: any, idx: number) => (
                     <div key={idx} className="p-4 hover:bg-slate-50 transition-colors">
-                      <p className="text-sm font-bold text-slate-800 truncate">{visit.name}</p>
+                      <p className="text-sm font-bold text-slate-800 truncate" title={visit.name}>{visit.name}</p>
                       <div className="flex items-center justify-between mt-2">
                         <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-md">{visit.campus}</span>
                         <span className="text-xs font-normal text-[#004c91]">{visit.date}</span>

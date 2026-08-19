@@ -32,7 +32,10 @@ async function gotoForm(page: Page) {
   await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible();
 }
 
-const del = (i: number) => `input[name="campusVisits.${i}.delegationName"]`;
+// delegationName is a Controller-bound AutoGrowTextField (plan §21.2, long org names wrap instead
+// of scrolling sideways) -- it renders as a <textarea data-testid="campus-delegation-input"> with
+// no `name` HTML attribute (RHF tracks it by the Controller `name` prop, not the DOM attribute).
+const del = (i: number) => `[data-testid="campus-delegation-input"] >> nth=${i}`;
 const campusSel = (i: number) => `select[name="campusVisits.${i}.campus"]`;
 
 test.describe('Per-campus form v2 (browser component/contract)', () => {
@@ -73,7 +76,7 @@ test.describe('Per-campus form v2 (browser component/contract)', () => {
     // Give campus 2 its own content, then trigger apply-to-all from campus 1.
     await page.locator(campusSel(1)).selectOption('HCM');
     await page.locator(del(1)).fill('Nội dung riêng HCM');
-    await page.getByRole('button', { name: /Áp dụng nội dung này cho các cơ sở còn lại/ }).first().click();
+    await page.getByRole('button', { name: /Áp dụng cho cơ sở khác/ }).first().click();
 
     // A confirmation dialog appears over the real layout and names the campus it would overwrite —
     // apply-to-all never mutates silently (the dialog is browser-DOM behaviour).

@@ -111,7 +111,7 @@ function FaceScanModalContent({
   }, [photosData]);
 
   return (
-    <div className="flex flex-col h-full max-h-[92vh]">
+    <div className="flex flex-col h-full max-h-[92dvh]">
       {/* Modal Header */}
       <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 shrink-0">
         <div className="min-w-0 flex items-center gap-3">
@@ -661,7 +661,7 @@ export function VisitPhotoManagement() {
       {/* Modal 1: Xem tất cả ảnh (Gallery view, hỗ trợ hiển thị danh tính khi xem full cho Staff) */}
       {photoModalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] flex flex-col overflow-hidden animate-in zoom-in-95">
             <div className="px-6 py-3.5 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50/50 shrink-0">
               <div className="min-w-0 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0 border border-orange-100 shadow-sm">
@@ -708,7 +708,7 @@ export function VisitPhotoManagement() {
       {/* Modal 2: Modal Quét mặt & Gán tên khuôn mặt */}
       {faceScanModalItem && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[110] p-4 sm:p-6">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] flex flex-col overflow-hidden animate-in zoom-in-95">
             <FaceScanModalContent
               item={faceScanModalItem}
               onClose={(changed) => closeFaceScanModal(changed)}

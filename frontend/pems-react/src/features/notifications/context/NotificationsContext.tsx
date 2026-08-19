@@ -44,7 +44,11 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     try {
       setLoading(true);
       const data = await notificationsApi.getNotifications({ page: 1, pageSize: 10 });
-      setItems(data.items);
+      // Matches fetchPendingFeedback's own fallback below -- an incomplete response (e.g. a test
+      // double that doesn't mirror the full paginated shape) left `items` undefined, which crashed
+      // NotificationBellButton's `.map()` into the route's ErrorBoundary instead of just rendering
+      // an empty bell. Not a behavior change for any real backend response, which always includes it.
+      setItems(data.items || []);
     } catch (error) {
       console.error('Failed to fetch notifications', error);
     } finally {

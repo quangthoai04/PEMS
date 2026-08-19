@@ -170,7 +170,7 @@ export function FAQDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-dvh">
         <Loader2 className="w-8 h-8 animate-spin text-[#004c91]" />
       </div>
     );
@@ -194,7 +194,7 @@ export function FAQDetail() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.3 }}
-      className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-screen"
+      className="p-4 md:p-8 space-y-6 bg-gray-50/50 min-h-dvh"
     >
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">

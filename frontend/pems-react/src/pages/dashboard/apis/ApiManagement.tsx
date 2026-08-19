@@ -601,7 +601,7 @@ export function ApiManagement() {
       {/* Quota + logs panel */}
       {panelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[85vh] overflow-y-auto p-6">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-gray-800">{panelTarget.name}</h3>
               <button onClick={() => setPanelTarget(null)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 cursor-pointer">
@@ -779,7 +779,7 @@ function GoogleTranslationConfigForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-gray-800">
             {config ? 'Chỉnh sửa cấu hình Google Cloud Translation' : 'Cấu hình Google Cloud Translation'}
@@ -933,7 +933,7 @@ function GoogleDocumentAiConfigForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-gray-800">
             {config ? 'Chỉnh sửa cấu hình Google Document AI' : 'Cấu hình Google Document AI'}
@@ -1098,7 +1098,7 @@ function GoogleVisionFaceDetectionConfigForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-gray-800">
             {config ? 'Chỉnh sửa cấu hình Google Cloud Vision' : 'Cấu hình Google Cloud Vision'}
@@ -1247,7 +1247,7 @@ function ResendConfigForm({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+      <form onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-bold text-gray-800">
             {config ? 'Chỉnh sửa cấu hình Resend Email' : 'Cấu hình Resend Email'}

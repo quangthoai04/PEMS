@@ -60,7 +60,7 @@ export function NewsDetailPage() {
 
   if (loading) {
     return (
-      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center">
+      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-dvh flex flex-col items-center justify-center">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
         <p className="text-gray-500 font-normal">{t('news:detail.loadingArticle')}</p>
       </div>
@@ -69,7 +69,7 @@ export function NewsDetailPage() {
 
   if (error || !article) {
     return (
-      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen flex flex-col items-center justify-center p-6 text-center">
+      <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-dvh flex flex-col items-center justify-center p-6 text-center">
         <div className="w-16 h-16 bg-slate-200 text-slate-500 rounded-full flex items-center justify-center mb-4">
           <ImageIcon className="w-8 h-8" />
         </div>
@@ -90,7 +90,7 @@ export function NewsDetailPage() {
   const formatDate = (iso: string) => formatLocalizedDate(iso, i18n.language as UiLanguage, { fallback: iso });
 
   return (
-    <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-screen">
+    <div className="pt-24 md:pt-28 pb-12 md:pb-20 bg-white min-h-dvh">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Breadcrumbs */}
@@ -158,7 +158,29 @@ export function NewsDetailPage() {
         <div className="news-content text-gray-800 space-y-8">
           <PublicNewsSections sections={article.sections} />
         </div>
-        
+
+        {/* Same rich-text overrides as the dashboard NewsDetailDashboard.tsx: body HTML comes from
+            Quill (via dangerouslySetInnerHTML) and can carry inline width-styled <img>/<table>
+            markup that would otherwise overflow the viewport on mobile (§26 rich-text contract). */}
+        <style>{`
+          .news-content p,
+          .news-content span,
+          .news-content strong,
+          .news-content b,
+          .news-content em,
+          .news-content i,
+          .news-content u,
+          .news-content s,
+          .news-content li,
+          .news-content h1,
+          .news-content h2,
+          .news-content h3,
+          .news-content h4 { white-space: normal !important; word-break: normal !important; overflow-wrap: break-word !important; hyphens: none !important; }
+          .news-content img { max-width: 100% !important; width: auto !important; height: auto !important; object-fit: contain; border-radius: 0.5rem; display: block; margin: 1rem auto; }
+          .news-content table { max-width: 100%; display: block; overflow-x: auto; }
+          .news-content a { word-break: normal !important; overflow-wrap: break-word !important; white-space: normal !important; hyphens: none !important; }
+        `}</style>
+
         {/* Light Gray Line Bottom */}
         <div className="h-[1px] bg-gray-200 w-full mt-12 mb-6"></div>
 

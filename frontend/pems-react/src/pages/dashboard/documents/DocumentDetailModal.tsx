@@ -238,7 +238,9 @@ export function DocumentDetailModal({ documentId, onClose }: DocumentDetailModal
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[85vh]"
+            // 85% leaves enough margin below the p-4/p-6 overlay gutter at any realistic viewport
+            // height that only the vh->dvh unit needs fixing here, not a gutter-aware calc().
+            className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[85dvh]"
           >
             {isLoading ? (
               <div className="flex-1 flex flex-col items-center justify-center">

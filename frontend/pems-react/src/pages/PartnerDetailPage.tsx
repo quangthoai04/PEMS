@@ -59,7 +59,7 @@ export function PartnerDetailPage() {
 
   if (loading) {
     return (
-      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center">
+      <div className="pt-24 pb-24 bg-white min-h-dvh flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-[#004c91] animate-spin" />
       </div>
     );
@@ -67,7 +67,7 @@ export function PartnerDetailPage() {
 
   if (notFound || !partner) {
     return (
-      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center px-4">
+      <div className="pt-24 pb-24 bg-white min-h-dvh flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 py-14 px-6 text-center">
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-700 mb-2">
@@ -86,7 +86,7 @@ export function PartnerDetailPage() {
 
   if (error) {
     return (
-      <div className="pt-24 pb-24 bg-white min-h-screen flex items-center justify-center px-4">
+      <div className="pt-24 pb-24 bg-white min-h-dvh flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-white rounded-2xl border border-red-100 py-14 px-6 text-center">
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-slate-700 mb-2">{error}</h3>
@@ -108,7 +108,7 @@ export function PartnerDetailPage() {
     : null;
 
   return (
-    <div className="pt-20 pb-16 bg-white min-h-screen">
+    <div className="pt-20 pb-16 bg-white min-h-dvh">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* Breadcrumb */}
@@ -121,7 +121,7 @@ export function PartnerDetailPage() {
             {t('partners:detail.partners')}
           </button>
           <span className="text-slate-300">/</span>
-          <span className="text-slate-600 font-bold truncate max-w-[200px] sm:max-w-none">{partner.name}</span>
+          <span className="text-slate-600 font-bold truncate max-w-[200px] sm:max-w-none" title={partner.name}>{partner.name}</span>
         </div>
 
         {/* Back button */}

@@ -17,7 +17,7 @@ export function ForbiddenPage() {
   const destination = getDefaultDashboardRoute(effectiveRole);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fafafa] px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-[#fafafa] px-4">
       <div className="text-center max-w-md">
         <div className="w-16 h-16 mx-auto rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mb-5">
           <ShieldAlert className="w-8 h-8" />

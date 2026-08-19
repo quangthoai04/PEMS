@@ -12,13 +12,29 @@
  *   5. Resetting an unsaved form (preview → send flow) returns to the planned defaults.
  *   6. IC_SUPPORT candidates render the Staff Leader / Staff labels from subRole.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 
 // Prove Vietnam wall-clock independence: everything runs in a non-VN browser timezone.
 test.use({ timezoneId: 'America/New_York' });
 
 // The dashboard shell is a heavy dev-server page; give slow machines room.
 test.setTimeout(120_000);
+
+/**
+ * Planned/saved dates are anchored to "today + N days" instead of a literal calendar date.
+ * LogisticsRequestSection.tsx's `validate()` refuses any usageStartAt before Vietnam "now"
+ * (vietnamNowDateTimeLocal(), independent of browser TZ) — a hardcoded past-tense literal
+ * eventually rots into a real business-rule rejection as the calendar moves past it (this is
+ * exactly what broke "reset after preview-send" once "today" passed 2026-08-01). UTC-based
+ * arithmetic keeps the calendar DATE stable regardless of the host machine's local timezone.
+ */
+function futureDateStr(daysFromNow: number): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + daysFromNow);
+  return d.toISOString().slice(0, 10);
+}
+const PLANNED_DATE = futureDateStr(14);
+const SAVED_ITEM_DATE = futureDateStr(15); // Saved times differ from the planned window on purpose (AC-06).
 
 const AUTH_USER = {
   userId: '100',
@@ -64,14 +80,14 @@ const PERM = {
 };
 
 // Planned window of THIS campus instance — the expected datetime-local defaults are
-// 2026-08-01T09:00 / 2026-08-01T11:00 (Vietnam wall-clock, +07:00 carried by the API).
+// {PLANNED_DATE}T09:00 / {PLANNED_DATE}T11:00 (Vietnam wall-clock, +07:00 carried by the API).
 const DETAIL = {
   visitRequestId: 10,
   visitInstanceId: 10,
   delegationName: 'Đoàn kiểm thử',
   instanceStatus: 'BEFORE_VISIT',
-  plannedStartAt: '2026-08-01T09:00:00+07:00',
-  plannedEndAt: '2026-08-01T11:00:00+07:00',
+  plannedStartAt: `${PLANNED_DATE}T09:00:00+07:00`,
+  plannedEndAt: `${PLANNED_DATE}T11:00:00+07:00`,
   campusName: 'Campus 1',
   hostUserId: 100,
   hostName: 'Host Test',
@@ -85,7 +101,7 @@ const DETAIL = {
     visitScope: 'SINGLE_CAMPUS',
     campuses: [{
       visitInstanceId: 10, campusId: 1, campusName: 'Campus 1',
-      plannedStartAt: '2026-08-01T09:00:00+07:00', plannedEndAt: '2026-08-01T11:00:00+07:00', isCurrent: true,
+      plannedStartAt: `${PLANNED_DATE}T09:00:00+07:00`, plannedEndAt: `${PLANNED_DATE}T11:00:00+07:00`, isCurrent: true,
     }],
     guestMembers: [],
     externalSupportMembers: [],
@@ -134,9 +150,8 @@ const SAVED_LED_ITEM = {
   coordinationMode: 'SYSTEM_REQUEST',
   requestedToDepartmentId: 20,
   departmentName: 'Phòng Hành chính Test',
-  // Saved times differ from the planned window on purpose (AC-06).
-  usageStartAt: '2026-08-02T13:00:00+07:00',
-  usageEndAt: '2026-08-02T15:00:00+07:00',
+  usageStartAt: `${SAVED_ITEM_DATE}T13:00:00+07:00`,
+  usageEndAt: `${SAVED_ITEM_DATE}T15:00:00+07:00`,
 };
 
 async function mockApp(page: Page, opts?: { logisticsItems?: unknown[] }) {
@@ -163,7 +178,7 @@ async function mockApp(page: Page, opts?: { logisticsItems?: unknown[] }) {
     route.fulfill({
       json: {
         visitInstanceId: 10, visitRequestId: 10, campusId: 1, visitType: 'CAMPUS_TOUR',
-        plannedStartAt: '2026-08-01T09:00:00+07:00', plannedEndAt: '2026-08-01T11:00:00+07:00',
+        plannedStartAt: `${PLANNED_DATE}T09:00:00+07:00`, plannedEndAt: `${PLANNED_DATE}T11:00:00+07:00`,
         relation: 'HOST', canApply: true, defaultTemplateId: null, defaultScope: null,
         selectableTemplates: [],
       },
@@ -191,16 +206,40 @@ async function gotoVisitProcess(page: Page) {
   await expect(page.getByText('2. Chuẩn bị chi tiết')).toBeVisible({ timeout: 90_000 });
 }
 
+/**
+ * Idempotently expands an accordion section: clicks `headerText` ONLY when `probe` (a locator
+ * inside the section's body) isn't already visible.
+ *
+ * Root cause this guards against (traced via tests/_diag-accordion.spec.ts, deleted after use):
+ * VisitProcess.tsx's "1. Thông tin chung" sub-sections and "2. Chuẩn bị chi tiết" now start
+ * EXPANDED by default (see the "mở sẵn cả..." comment around VisitProcess.tsx:150-153 — a
+ * deliberate UX change so the Host sees prep content immediately on entering the tab). The
+ * header's onClick is `setExpanded(!expanded)` — an unconditional click TOGGLES, it doesn't
+ * "open". This suite used to click unconditionally, assuming closed-by-default, which instead
+ * CLOSED an already-open section. Because the body is wrapped in Framer Motion's
+ * `AnimatePresence` (opacity/height exit transition, confirmed ~650ms), the closing content
+ * stayed hittable for a few hundred ms after the click — so the failure never showed up on the
+ * click itself, only later (mid-way through an unrelated SearchDropdown interaction or a
+ * `waitForTimeout`), once the exit animation finally finished and the whole subtree unmounted.
+ * That timing made it look like "interacting with SearchDropdown collapses the accordion" when
+ * the accordion had already been toggled closed by the entry click; SearchDropdown never reads
+ * or writes this state and cannot cause the collapse.
+ */
+async function ensureSectionOpen(page: Page, headerText: string, probe: Locator) {
+  if (!(await probe.isVisible().catch(() => false))) {
+    await page.getByText(headerText).click();
+    await expect(probe).toBeVisible();
+  }
+}
+
 /** Opens "3 Thiết lập & Điều phối sự kiện (Set up)" — the accordion hosting the invite panels. */
 async function openParticipantsSection(page: Page) {
-  await page.getByText('Thiết lập & Điều phối sự kiện (Set up)').click();
-  await expect(page.getByText('2. Thành phần tham gia')).toBeVisible();
+  await ensureSectionOpen(page, 'Thiết lập & Điều phối sự kiện (Set up)', page.getByText('2. Thành phần tham gia'));
 }
 
 /** Expands "2. Chuẩn bị chi tiết" and opens the Welcome LED system-request form. */
 async function openLedSystemForm(page: Page) {
-  await page.getByText('2. Chuẩn bị chi tiết').click();
-  await expect(page.getByText('Mục 1: Welcome LED')).toBeVisible();
+  await ensureSectionOpen(page, '2. Chuẩn bị chi tiết', page.getByText('Mục 1: Welcome LED'));
   await page.getByText('Cần Welcome LED — gửi yêu cầu qua hệ thống').click();
 }
 
@@ -225,7 +264,10 @@ test.describe('capability split + time defaults (one page)', () => {
 
     // ── IC candidates: Staff Leader vs Staff labels (from subRole; role stays IC_SUPPORT). ──
     const icPanel = page.locator('div', { has: page.getByRole('heading', { name: 'Staff hỗ trợ IC' }) }).last();
-    await icPanel.getByPlaceholder('Tìm theo tên / email...').click();
+    // ParticipantInvitationSection.tsx:456 -- placeholder was shortened to drop "/ email".
+    await icPanel.getByPlaceholder('Tìm theo tên...').click();
+    // SearchDropdown debounces its fetch by 350ms after open; give it room to settle.
+    await page.waitForTimeout(500);
     await expect(page.getByText('Trần Thị Leader')).toBeVisible();
     await expect(page.getByText('Staff Leader hỗ trợ IC')).toBeVisible();
     await expect(page.getByText('Nguyễn Văn Staff')).toBeVisible();
@@ -234,7 +276,8 @@ test.describe('capability split + time defaults (one page)', () => {
 
     // ── Invitation panel: the department must be disabled with the participant reason. ──
     const invitePanel = page.locator('div', { has: page.getByRole('heading', { name: 'Phòng ban hỗ trợ' }) }).last();
-    await invitePanel.getByPlaceholder('Tìm phòng ban (GENERAL) cùng cơ sở...').click();
+    // ParticipantInvitationSection.tsx:519 -- distinct from the logistics picker's placeholder below.
+    await invitePanel.getByPlaceholder('Tìm phòng ban...').click();
     await expect(page.getByText('Phòng Hành chính Test')).toBeVisible();
     await expect(page.getByText('Trưởng phòng này đã có trong danh sách tham gia của đoàn.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Mời', exact: true })).toBeDisabled();
@@ -244,14 +287,14 @@ test.describe('capability split + time defaults (one page)', () => {
     await openLedSystemForm(page);
     const card = ledCard(page);
     const inputs = card.locator('input[type="datetime-local"]');
-    await expect(inputs.nth(0)).toHaveValue('2026-08-01T09:00');
-    await expect(inputs.nth(1)).toHaveValue('2026-08-01T11:00');
+    await expect(inputs.nth(0)).toHaveValue(`${PLANNED_DATE}T09:00`);
+    await expect(inputs.nth(1)).toHaveValue(`${PLANNED_DATE}T11:00`);
 
     // ── Default is editable and the edit survives unrelated re-renders. ──
     const start = inputs.nth(0);
-    await start.fill('2026-08-01T07:30');
+    await start.fill(`${PLANNED_DATE}T07:30`);
     await card.getByPlaceholder('Kích thước, nội dung hiển thị, đã gửi ảnh thiết kế...').fill('ghi chú setup sớm');
-    await expect(start).toHaveValue('2026-08-01T07:30');
+    await expect(start).toHaveValue(`${PLANNED_DATE}T07:30`);
 
     // ── Logistics picker: the SAME blocked-for-invitation department is selectable. ──
     await card.getByPlaceholder('Tìm phòng ban (GENERAL) cùng cơ sở...').click();
@@ -269,14 +312,13 @@ test.describe('logistics usage-time — saved item & reset', () => {
   test('an existing logistics item shows ITS saved usage time, not the planned window', async ({ page }) => {
     await mockApp(page, { logisticsItems: [SAVED_LED_ITEM] });
     await gotoVisitProcess(page);
-    await page.getByText('2. Chuẩn bị chi tiết').click();
-    await expect(page.getByText('Mục 1: Welcome LED')).toBeVisible();
+    await ensureSectionOpen(page, '2. Chuẩn bị chi tiết', page.getByText('Mục 1: Welcome LED'));
 
     // The saved item renders the form summary directly (no radio choice) with its own times.
     const card = ledCard(page);
     const inputs = card.locator('input[type="datetime-local"]');
-    await expect(inputs.nth(0)).toHaveValue('2026-08-02T13:00');
-    await expect(inputs.nth(1)).toHaveValue('2026-08-02T15:00');
+    await expect(inputs.nth(0)).toHaveValue(`${SAVED_ITEM_DATE}T13:00`);
+    await expect(inputs.nth(1)).toHaveValue(`${SAVED_ITEM_DATE}T15:00`);
     await expect(inputs.nth(0)).toBeDisabled(); // saved card is read-only
   });
 
@@ -309,7 +351,7 @@ test.describe('logistics usage-time — saved item & reset', () => {
     const start = card.locator('input[type="datetime-local"]').nth(0);
     // Fill the required fields, edit the default, then send via the preview modal.
     await card.getByPlaceholder(/VD: 2/).first().fill('1');
-    await start.fill('2026-08-01T07:30');
+    await start.fill(`${PLANNED_DATE}T07:30`);
     await card.getByPlaceholder('Tìm phòng ban (GENERAL) cùng cơ sở...').click();
     await page.locator('div', { hasText: 'Phòng Hành chính Test' })
       .filter({ has: page.getByRole('button', { name: 'Chọn' }) }).last().click();
@@ -317,6 +359,29 @@ test.describe('logistics usage-time — saved item & reset', () => {
     await page.getByRole('button', { name: 'Gửi với nội dung này' }).click();
 
     // onReset fires after the send: the (still unsaved on this mock) form returns to the defaults.
-    await expect(start).toHaveValue('2026-08-01T09:00');
+    await expect(start).toHaveValue(`${PLANNED_DATE}T09:00`);
+  });
+});
+
+test.describe('accordion header is a TOGGLE, not an open-only button (regression)', () => {
+  test('"3 Thiết lập & Điều phối sự kiện" and "2 Chuẩn bị chi tiết" render expanded with no click, and one click collapses them', async ({ page }) => {
+    await mockApp(page);
+    await gotoVisitProcess(page);
+
+    // Pins VisitProcess.tsx's "mở sẵn cả... 1. Thông tin chung (kèm ba mục con)... và
+    // 2. Chuẩn bị chi tiết" default-expand UX (see comment ~line 150-153): both bodies must be
+    // visible on first render, with zero interaction.
+    await expect(page.getByText('2. Thành phần tham gia')).toBeVisible();
+    await expect(page.getByText('Mục 1: Welcome LED')).toBeVisible();
+
+    // A single click on an already-open header TOGGLES it closed (not a no-op "expand" action).
+    // web-first `not.toBeVisible()` waits out the Framer Motion AnimatePresence exit transition
+    // instead of racing it, unlike a fixed waitForTimeout would.
+    await page.getByText('Thiết lập & Điều phối sự kiện (Set up)').click();
+    await expect(page.getByText('2. Thành phần tham gia')).not.toBeVisible();
+
+    // A second click re-opens it.
+    await page.getByText('Thiết lập & Điều phối sự kiện (Set up)').click();
+    await expect(page.getByText('2. Thành phần tham gia')).toBeVisible();
   });
 });

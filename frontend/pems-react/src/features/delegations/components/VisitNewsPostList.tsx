@@ -183,8 +183,8 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
 
       {/* Popup xác nhận duyệt */}
       {approveTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <div className="flex justify-center mb-4"><CheckCircle className="w-12 h-12 text-green-500" /></div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Xác nhận duyệt bài viết</h3>
             <p className="text-gray-500 text-center text-sm mb-6">
@@ -207,8 +207,8 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
 
       {/* Popup từ chối — bắt buộc nhập lý do */}
       {rejectTarget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <div className="flex justify-center mb-4"><XCircle className="w-12 h-12 text-red-500" /></div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Từ chối bài viết</h3>
             <p className="text-gray-500 text-center text-sm mb-4">Vui lòng nhập lý do từ chối để tác giả biết và chỉnh sửa.</p>

@@ -586,7 +586,7 @@ export function CreateVisitRequest() {
                   <div>
                     <div className="flex gap-2 items-center">
                       <select 
-                        className="w-[250px] px-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
+                        className="w-full sm:w-[250px] px-4 py-2 rounded-lg border border-gray-300 text-sm outline-none focus:border-[#004c91] hover:border-[#004c91] focus:ring-2 focus:ring-[#004c91]/20 transition-all bg-white"
                         value={selectedOtherDept}
                         onChange={(e) => {
                           const dept = e.target.value;

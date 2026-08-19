@@ -147,11 +147,11 @@ export function AccountStatusConfirmModal({
             )}
             <div className="min-w-0 flex-1">
               {name && (
-                <p className="truncate text-[15px] font-bold text-gray-800">{name}</p>
+                <p className="truncate text-[15px] font-bold text-gray-800" title={name}>{name}</p>
               )}
               <p className="break-all text-sm font-normal text-[#004c91]">{email || '—'}</p>
               {meta && (
-                <p className="mt-0.5 truncate text-xs font-normal text-gray-500">{meta}</p>
+                <p className="mt-0.5 truncate text-xs font-normal text-gray-500" title={meta}>{meta}</p>
               )}
             </div>
           </div>

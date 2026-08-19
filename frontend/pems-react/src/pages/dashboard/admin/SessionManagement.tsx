@@ -156,7 +156,7 @@ export function SessionManagement() {
       <div className="bg-white rounded-[2rem] shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)] border border-[#004c91] overflow-hidden">
         {/* Filter bar */}
         <div className="p-6 bg-[#004c91] flex flex-wrap items-center gap-4 border-b border-[#00386b]">
-          <div className="relative flex-1 min-w-[250px]">
+          <div className="relative flex-1 min-w-0 sm:min-w-[250px]">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"

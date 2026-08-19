@@ -152,7 +152,7 @@ export function ForcedResponseGate() {
           </button>
         </div>
 
-        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+        <div className="p-5 space-y-3 max-h-[60dvh] overflow-y-auto">
           {detailLoading || !detail ? (
             <div className="flex items-center justify-center py-10 text-slate-400">
               <Loader2 className="w-6 h-6 animate-spin" />

@@ -764,7 +764,7 @@ function GalleryItemDetailModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 10 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-6xl h-[82vh] grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6"
+        className="relative z-10 w-full max-w-6xl h-[82dvh] grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6"
       >
         {/* ── Left: breadcrumb / title / description ── */}
         <div className="lg:col-span-5 flex flex-col gap-4 h-full min-h-0">
@@ -779,10 +779,10 @@ function GalleryItemDetailModal({
                 this row's stacking context, could never escape above it whatever z-index it asked for.
                 The result was a menu you could see but not click on its upper half. */}
             <div className="flex items-center justify-between mb-5 relative z-40 gap-3">
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
-                <span className="truncate">{displayAreaName}</span>
+              <div className="inline-flex min-w-0 items-center gap-2 px-4 py-1.5 bg-fpt-orange/90 text-white font-semibold text-[10px] sm:text-xs tracking-widest uppercase rounded-full border border-white/30 backdrop-blur-md shadow-[0_0_15px_rgba(243,112,33,0.4)] max-w-full overflow-hidden">
+                <span className="min-w-0 truncate">{displayAreaName}</span>
                 <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                <span className="truncate">{displayLocationName}</span>
+                <span className="min-w-0 truncate">{displayLocationName}</span>
               </div>
               <div ref={shareMenuRef} className="flex items-center gap-2 relative shrink-0">
                 <button
@@ -1129,13 +1129,13 @@ function GalleryItemDetailModal({
                   autoPlay
                   muted
                   playsInline
-                  className="max-w-[92vw] max-h-[90vh] object-contain"
+                  className="max-w-[92vw] max-h-[90dvh] object-contain"
                 />
               ) : (
                 <img
                   src={mediaSrc(cur.url)}
                   alt={cur.altText || displayItemTitle || "FPTU"}
-                  className="max-w-[92vw] max-h-[90vh] object-contain"
+                  className="max-w-[92vw] max-h-[90dvh] object-contain"
                 />
               )}
             </div>
@@ -1916,7 +1916,7 @@ export function CampusDetailVisitPage() {
   }, [activeLocationId, detail?.galleryItem.galleryItemId, stopNarration]);
 
   return (
-    <div className="relative min-h-[calc(100vh-64px)] w-full flex flex-col bg-gray-900">
+    <div className="relative min-h-[calc(100dvh-64px)] w-full flex flex-col bg-gray-900">
       {/* ── Floating sidebar: areas + hover flyout of locations ── */}
       {hasContent && (
         <div
@@ -2039,7 +2039,7 @@ export function CampusDetailVisitPage() {
       </motion.button>
 
       {/* ── Hero ── */}
-      <div className="relative w-full h-[100vh] flex items-center justify-center overflow-hidden bg-black">
+      <div className="relative w-full h-[100dvh] flex items-center justify-center overflow-hidden bg-black">
         <div className="absolute inset-0 z-0">
           <motion.img
             initial={{ scale: 1.1, filter: "brightness(0.5)" }}

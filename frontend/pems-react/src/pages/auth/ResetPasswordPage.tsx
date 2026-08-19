@@ -57,7 +57,7 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#eaf2fb] via-white to-[#fdeee5] px-4">
+    <div className="min-h-dvh flex items-center justify-center bg-gradient-to-br from-[#eaf2fb] via-white to-[#fdeee5] px-4">
       <div className="w-full max-w-[440px] bg-white rounded-2xl shadow-xl border border-gray-100 p-7 md:p-9">
         <div className="flex flex-col items-center mb-6">
           <Link to="/"><img src={logo} alt="FPT University" className="h-14 object-contain mb-4" /></Link>

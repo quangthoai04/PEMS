@@ -86,7 +86,7 @@ export default function AssignHostPicker({ visitInstanceId, campusName, onCancel
                     {c.fullName}
                     {c.roleLabel ? <span className="ml-1 font-normal text-slate-500">({c.roleLabel})</span> : null}
                   </span>
-                  <span className="block truncate text-xs text-slate-500">{c.email}</span>
+                  <span className="block truncate text-xs text-slate-500" title={c.email}>{c.email}</span>
                   {c.hasScheduleConflict && (
                     <span className="mt-1 flex items-center gap-1 text-xs font-semibold text-amber-700">
                       <AlertTriangle className="h-3.5 w-3.5" aria-hidden />

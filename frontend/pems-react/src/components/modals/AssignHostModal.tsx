@@ -141,7 +141,11 @@ export function AssignHostModal({
       <motion.div
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[88vh]"
+        // Overlay is a flat p-4 (16px/side => 2rem vertical gutter) at every breakpoint, so the
+        // ceiling is exactly 100dvh minus that gutter -- guarantees the modal never exceeds the
+        // visible viewport (was a flat 88vh, not tied to the actual gutter or to mobile browser
+        // chrome).
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[calc(100dvh-2rem)]"
       >
         <div className="px-6 py-4 bg-[#004c91] flex items-center justify-between flex-shrink-0">
           <div>

@@ -34,7 +34,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
 
   if (!detail || !perm) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center justify-center min-h-[60dvh]">
         <div className="w-12 h-12 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin mb-4"></div>
         <p className="text-gray-500 font-normal">{t('loading')}</p>
       </div>
@@ -47,7 +47,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
   // Block access if no host or not approved (unless cancelled)
   if (!detail.host && !isCancelled) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+      <div className="flex flex-col items-center justify-center min-h-[60dvh] text-center px-4">
         <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
           <AlertCircle className="w-8 h-8 text-slate-400" />
         </div>
@@ -64,7 +64,7 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-dvh bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 pb-24">
         
         {/* 1. Breadcrumb */}

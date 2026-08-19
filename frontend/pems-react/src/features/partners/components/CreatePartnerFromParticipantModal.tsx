@@ -487,7 +487,8 @@ export function CreatePartnerFromParticipantModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col">
+      {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[calc(100dvh-2rem)] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 rounded-t-2xl">
           <h3 className="text-lg font-bold text-gray-800">Tạo hoặc liên kết đối tác</h3>
           <button onClick={onClose} disabled={anyBusy} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors disabled:opacity-40">

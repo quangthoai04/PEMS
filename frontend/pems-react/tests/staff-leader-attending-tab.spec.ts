@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Staff Leader Attending Tab Regression', () => {
-  test('Staff Leader can see and use Attending Tab, and pending banner', async ({ page }) => {
+  test('Staff Leader can see and use Attending Tab', async ({ page }) => {
     const AUTH_USER = {
       userId: '101',
       fullName: 'Test Staff Leader',
@@ -79,20 +79,28 @@ test.describe('Staff Leader Attending Tab Regression', () => {
 
     await page.goto('/dashboard/visit', { waitUntil: 'domcontentloaded' });
 
-    // Should see pending banner
-    await expect(page.getByRole('heading', { name: /Lời mời tham gia chờ phản hồi/i })).toBeVisible({ timeout: 5000 });
+    // Note: this test used to also assert a "pending invitations" banner here. That entry point
+    // was deliberately removed (see VisitRequestManagement.tsx: "UC-27: pending invitations entry
+    // point (removed per user request to declutter)") -- it is gone by design, not a regression.
 
-    // Should see attending tab
-    const attendingTab = page.locator('button', { hasText: 'Lời mời tham dự' });
-    await expect(attendingTab).toBeVisible();
+    // Tabs were replaced by a single filter-button + dropdown (VisitRequestManagement.tsx: "Loại
+    // đơn (filter button thay cho tabs)") -- "Lời mời tham dự" is now an option inside that
+    // dropdown, not its own standalone <button>. Default tab is 'all', so the trigger currently
+    // reads "Tất cả các loại đơn".
+    await page.getByRole('button', { name: 'Tất cả các loại đơn' }).click();
+    const attendingOption = page.getByText('Lời mời tham dự', { exact: true });
+    await expect(attendingOption).toBeVisible();
 
     // Click attending tab
-    await attendingTab.click();
+    await attendingOption.click();
 
     // Should see list item with the delegation
     await expect(page.locator('text=Test Delegation Attending').first()).toBeVisible({ timeout: 10000 });
     
-    // Label should be "Staff Leader hỗ trợ IC"
-    await expect(page.locator('text=Staff Leader hỗ trợ IC').first()).toBeVisible();
+    // The attending-list row badge uses the flat PARTICIPANT_ROLE_LABELS map (same badge style
+    // used for every role chip in this list), not the Leader-aware phrasing -- that variant
+    // ("Staff Leader hỗ trợ IC") only appears on the invitation DETAIL page
+    // (VisitParticipantInvitationDetail.tsx) and the invite-candidate panel, not this summary row.
+    await expect(page.locator('text=Staff hỗ trợ IC').first()).toBeVisible();
   });
 });

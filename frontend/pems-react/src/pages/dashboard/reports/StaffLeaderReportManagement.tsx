@@ -143,8 +143,8 @@ function StatTile({ label, value, sub, tone = 'blue', icon }: {
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${tones[tone]}`}>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 truncate">{label}</p>
-        {icon}
+        <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 truncate min-w-0">{label}</p>
+        {icon && <span className="shrink-0">{icon}</span>}
       </div>
       <p className="text-lg font-extrabold mt-0.5 leading-tight">{value}</p>
       {sub && <p className="text-[10px] font-normal opacity-75">{sub}</p>}
@@ -1125,9 +1125,9 @@ export function StaffLeaderReportManagement() {
       {viewExpenseVisit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/50" onClick={() => setViewExpenseVisit(null)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85dvh] overflow-hidden flex flex-col">
             <div className="px-5 py-3.5 bg-[#004c91] text-white flex items-center justify-between gap-3">
-              <h3 className="text-sm font-black truncate">
+              <h3 className="text-sm font-black truncate min-w-0 flex-1">
                 Ghi chú chi phí — {viewExpenseVisit.delegationName}
                 <span className="block text-[11px] font-normal opacity-75">
                   {viewExpenseVisit.requestCode} · {fmtDateTime(viewExpenseVisit.visitDate)}
@@ -1154,23 +1154,25 @@ export function StaffLeaderReportManagement() {
                     <span className="ml-auto text-xs font-black text-[#004c91]">{vnMoney(r.totalAmount)}</span>
                   </div>
                   {!r.noExpense && r.items.length > 0 && (
-                    <table className="w-full text-left border-collapse text-[11px]">
-                      <tbody className="divide-y divide-slate-50">
-                        {r.items.map((it, j) => (
-                          <tr key={j}>
-                            <td className="pl-4 pr-2 py-1 text-slate-400 whitespace-nowrap w-36">
-                              {r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : (ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin)}
-                            </td>
-                            <td className="px-2 py-1 font-semibold text-slate-700">{it.itemName}</td>
-                            <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-14">
-                              {it.quantity}{it.unitName ? ` ${it.unitName}` : ''}
-                            </td>
-                            <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-24">{it.unitPrice.toLocaleString('vi-VN')}</td>
-                            <td className="pl-2 pr-3 py-1 text-right font-normal text-slate-700 whitespace-nowrap w-28">{vnMoney(it.totalAmount)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-[11px]">
+                        <tbody className="divide-y divide-slate-50">
+                          {r.items.map((it, j) => (
+                            <tr key={j}>
+                              <td className="pl-4 pr-2 py-1 text-slate-400 whitespace-nowrap w-36">
+                                {r.reportScope === 'LOGISTICS' ? 'Hạng mục yêu cầu' : (ORIGIN_LABELS[it.itemOrigin] ?? it.itemOrigin)}
+                              </td>
+                              <td className="px-2 py-1 font-semibold text-slate-700">{it.itemName}</td>
+                              <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-14">
+                                {it.quantity}{it.unitName ? ` ${it.unitName}` : ''}
+                              </td>
+                              <td className="px-2 py-1 text-right text-slate-500 whitespace-nowrap w-24">{it.unitPrice.toLocaleString('vi-VN')}</td>
+                              <td className="pl-2 pr-3 py-1 text-right font-normal text-slate-700 whitespace-nowrap w-28">{vnMoney(it.totalAmount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                   {r.reportNote && (
                     <p className="px-3 py-1.5 text-[11px] italic text-slate-500 border-t border-slate-100">Ghi chú: {r.reportNote}</p>
@@ -1194,7 +1196,7 @@ export function StaffLeaderReportManagement() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90dvh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-white">
                 <div className="flex items-center gap-2.5">
@@ -1294,7 +1296,7 @@ export function StaffLeaderReportManagement() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90dvh] overflow-hidden flex flex-col border border-gray-100 font-sans text-left"
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/60 to-white">
                 <div className="flex items-center gap-2.5">

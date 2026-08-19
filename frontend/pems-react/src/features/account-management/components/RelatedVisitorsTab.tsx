@@ -290,7 +290,7 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
                 <td className="p-5 text-center">
                   <p className="text-[13px] font-bold text-[#004c91] leading-tight whitespace-nowrap">{v.fullName}</p>
                 </td>
-                <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-center">{v.email}</td>
+                <td className="p-5 text-[13px] font-normal text-gray-600 truncate max-w-[200px] text-center" title={v.email}>{v.email}</td>
                 <td className="p-5 text-center"><StatusBadge status={v.status} /></td>
                 <td className="p-5 pr-8 text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -364,7 +364,8 @@ export function RelatedVisitorsTab({ accountTypeFilter = 'VISITOR', onAccountTyp
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={closeDetail} />
-          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row h-auto max-h-[85vh] animate-in zoom-in-95 duration-300 overflow-hidden">
+          {/* Overlay is p-4 below `sm` (2rem), p-6 at `sm`+ (3rem). */}
+          <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl flex flex-col md:flex-row h-auto max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] animate-in zoom-in-95 duration-300 overflow-hidden">
             {/* Left sidebar */}
             <div className="p-4 sm:p-6 md:p-8 bg-gradient-to-br from-[#004c91] to-[#00386b] shrink-0 md:w-1/3 flex flex-col items-center justify-center text-center relative border-r border-[#00386b]/50">
               <button

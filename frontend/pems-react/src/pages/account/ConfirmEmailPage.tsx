@@ -74,7 +74,7 @@ export default function ConfirmEmailPage() {
   }, [confirm]);
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
+    <div className="min-h-[70dvh] flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
         <h1 className="text-xl font-bold text-[#004c91] mb-6">{t('confirmEmail.pageTitle')}</h1>
 

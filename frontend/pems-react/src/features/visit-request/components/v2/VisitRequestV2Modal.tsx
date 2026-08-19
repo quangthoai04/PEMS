@@ -177,7 +177,11 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
         aria-modal="true"
         aria-labelledby="v2-modal-title"
         data-testid="v2-create-modal"
-        className="grid h-[96vh] w-full max-w-[1400px] grid-rows-[auto_1fr_auto] overflow-hidden rounded-2xl bg-white shadow-2xl outline-none"
+        // Overlay padding is p-2 (8px/side => 1rem vertical gutter) below `sm`, p-4 (16px/side =>
+        // 2rem) at `sm` and up. Height = 100dvh minus that gutter, not an arbitrary vh percentage --
+        // guarantees the modal never exceeds the visible viewport regardless of mobile browser
+        // chrome (address bar / keyboard), matching exactly what the overlay already reserves.
+        className="grid h-[calc(100dvh-1rem)] sm:h-[calc(100dvh-2rem)] w-full max-w-[1400px] grid-rows-[auto_1fr_auto] overflow-hidden rounded-2xl bg-white shadow-2xl outline-none"
       >
         {/* Sticky header (grid row, so it cannot be overlapped by the site header) */}
         <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">

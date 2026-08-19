@@ -59,7 +59,10 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 pb-safe"
+          // `pb-safe` is not a real Tailwind utility (nothing defines it in src/index.css) -- it was
+          // a no-op, so the safe-area-inset-bottom padding it implies for a notched phone was never
+          // actually applied. `pb-[env(...)]` is the real arbitrary-value equivalent.
+          className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
           onClick={onClose}
         >
           <motion.div
@@ -68,7 +71,8 @@ export function VisitDetailsModal({ isOpen, onClose, guest }: VisitDetailsModalP
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.3, ease: 'easeOut' }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
+            // Overlay padding is p-3 (1.5rem vertical gutter) below `sm`, p-6 (3rem) at `sm` and up.
+            className="bg-white w-full max-w-5xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] rounded-2xl shadow-2xl flex flex-col overflow-hidden relative border border-gray-100"
           >
             {/* Header */}
             <div className="flex-none px-6 py-5 sm:px-10 flex flex-col sm:flex-row items-start sm:items-center justify-between text-white relative z-10 overflow-hidden bg-[#004c91]">

@@ -14,6 +14,7 @@ import i18next from 'i18next';
 
 import {
   validateVisitorExcel,
+  canApplyImport,
   type ExcelTranslator,
 } from '../src/features/visit-request/components/ExcelUpload/excelValidator';
 
@@ -60,7 +61,7 @@ test.describe('Excel headers parse in either language', () => {
       const result = await validateVisitorExcel(fileFrom(fixture), [], t);
 
       expect(result.errors, `unexpected errors: ${JSON.stringify(result.errors)}`).toHaveLength(0);
-      expect(result.valid).toBe(true);
+      expect(canApplyImport(result)).toBe(true);
       expect(result.data).toHaveLength(1);
       expect(result.data[0].organization).toBe('XYZ');
       expect(result.data[0].nationality).toBe('Vietnam');
@@ -73,8 +74,10 @@ test.describe('EN mode produces English messages only', () => {
     const t = await translatorFor('en');
     const result = await validateVisitorExcel(fileFrom('visitors-vi-missing-cell.xlsx'), [], t);
 
-    expect(result.valid).toBe(false);
-    expect(result.errors[0].message).toBe('Row 2: column "Job Title" must not be empty.');
+    expect(canApplyImport(result)).toBe(false);
+    // Row/column are separate report fields (not baked into the message) so the UI table and the
+    // downloadable CSV can render them as their own columns -- see ExcelImportPanel/excelDownload.
+    expect(result.errors[0]).toMatchObject({ row: 2, column: 'Job Title', message: 'Must not be empty' });
     for (const e of result.errors) expect(e.message).not.toMatch(VIETNAMESE);
   });
 
@@ -82,23 +85,26 @@ test.describe('EN mode produces English messages only', () => {
     const t = await translatorFor('en');
     const result = await validateVisitorExcel(fileFrom('visitors-en-missing-cell.xlsx'), [], t);
 
-    expect(result.errors[0].message).toBe('Row 2: column "Job Title" must not be empty.');
+    expect(result.errors[0]).toMatchObject({ row: 2, column: 'Job Title', message: 'Must not be empty' });
   });
 
   test('missing whole column', async () => {
     const t = await translatorFor('en');
     const result = await validateVisitorExcel(fileFrom('visitors-missing-column.xlsx'), [], t);
 
-    expect(result.errors[0].message).toContain('Missing required column(s): Nationality');
-    expect(result.errors[0].message).not.toMatch(VIETNAMESE);
+    // A whole-file problem (no per-row table to show) is reported as `fatalMessage`, not `errors[]`.
+    expect(result.errors).toHaveLength(0);
+    expect(result.fatalMessage).toContain('Missing required column: Nationality');
+    expect(result.fatalMessage).not.toMatch(VIETNAMESE);
   });
 
   test('header-only file', async () => {
     const t = await translatorFor('en');
     const result = await validateVisitorExcel(fileFrom('visitors-header-only.xlsx'), [], t);
 
-    expect(result.errors[0].message).toBe('The file has no data rows (header only, or empty).');
-    expect(result.errors[0].message).not.toMatch(VIETNAMESE);
+    expect(result.errors).toHaveLength(0);
+    expect(result.fatalMessage).toBe('The file has no data rows (header only, or empty).');
+    expect(result.fatalMessage).not.toMatch(VIETNAMESE);
   });
 
   test('no English error contains the reported Vietnamese words', async () => {
@@ -111,7 +117,9 @@ test.describe('EN mode produces English messages only', () => {
       'visitors-header-only.xlsx',
     ]) {
       const result = await validateVisitorExcel(fileFrom(fixture), [], t);
-      const text = result.errors.map((e) => e.message).join(' | ');
+      // Whole-file failures land in `fatalMessage`, per-row failures in `errors[]` -- scan both, or a
+      // fixture that trips the fatal path would leak Vietnamese into EN mode with nothing catching it.
+      const text = [result.fatalMessage, ...result.errors.map((e) => e.message)].filter(Boolean).join(' | ');
       for (const word of banned) {
         expect(text, `"${word}" leaked into EN output for ${fixture}`).not.toContain(word);
       }
@@ -124,21 +132,23 @@ test.describe('VI mode produces Vietnamese messages', () => {
     const t = await translatorFor('vi');
     const result = await validateVisitorExcel(fileFrom('visitors-vi-missing-cell.xlsx'), [], t);
 
-    expect(result.errors[0].message).toBe('Dòng 2: Cột "Chức vụ" không được để trống.');
+    expect(result.errors[0]).toMatchObject({ row: 2, column: 'Chức vụ', message: 'Không được để trống' });
   });
 
   test('missing whole column', async () => {
     const t = await translatorFor('vi');
     const result = await validateVisitorExcel(fileFrom('visitors-missing-column.xlsx'), [], t);
 
-    expect(result.errors[0].message).toContain('Thiếu cột bắt buộc: Quốc tịch');
+    expect(result.errors).toHaveLength(0);
+    expect(result.fatalMessage).toContain('Thiếu cột bắt buộc: Quốc tịch');
   });
 
   test('header-only file', async () => {
     const t = await translatorFor('vi');
     const result = await validateVisitorExcel(fileFrom('visitors-header-only.xlsx'), [], t);
 
-    expect(result.errors[0].message).toBe('File không có dữ liệu (chỉ có header hoặc rỗng).');
+    expect(result.errors).toHaveLength(0);
+    expect(result.fatalMessage).toBe('File không có dữ liệu (chỉ có header hoặc rỗng).');
   });
 });
 
@@ -150,7 +160,7 @@ test.describe('duplicate rows are still skipped', () => {
     ];
     const result = await validateVisitorExcel(fileFrom('visitors-en-valid.xlsx'), existing, t);
 
-    expect(result.skippedDuplicates).toBe(1);
+    expect(result.duplicateRows).toBe(1);
     expect(result.data).toHaveLength(0);
   });
 });

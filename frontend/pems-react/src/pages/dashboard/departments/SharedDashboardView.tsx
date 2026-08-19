@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Calendar as CalendarIcon,
   Calendar,
@@ -49,6 +50,7 @@ import { EmailPreviewModal, type EmailPreviewSendPayload } from '../../../featur
 import { participantScopeKey, logisticsAssigneeScopeKey } from '../../../features/emails/utils/emailScopeKey';
 import { stripLegacyActionHtml } from '../../../features/emails/utils/actionLinks';
 import { formatVietnamDateTime, toVietnamCalendarDate, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
+import { useAnchoredPanelPosition } from '../../../shared/hooks/useAnchoredPanelPosition';
 
 interface Event {
   id: string;
@@ -896,6 +898,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
   const [calendarType, setCalendarType] = useState<'Trong văn phòng' | 'Lịch của tôi'>(isDeptLeader ? 'Trong văn phòng' : 'Lịch của tôi');
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
 
+  // Toolbar dropdowns (mini calendar / display mode / calendar type) are trigger-anchored popovers
+  // that used to be `absolute left-0 top-full` inside the header's `flex flex-wrap` row — at narrow
+  // viewports a wrapped trigger can sit anywhere horizontally, so a fixed `left-0` + fixed px width
+  // (up to 280px for the mini calendar) can run off the right edge. Reuse the viewport-clamped
+  // positioning hook proven in VisitRequestManagement's filter popovers instead of hand-rolling it.
+  const miniCalendarPanel = useAnchoredPanelPosition(showMiniCalendar, 280);
+  const displayDropdownPanel = useAnchoredPanelPosition(showDisplayDropdown, 150);
+  const typeDropdownPanel = useAnchoredPanelPosition(showTypeDropdown, 160);
+
   // Filter events based on type
   const filteredEvents = useMemo(() => {
     const currentUserIdStr = user?.id ?? user?.userId ?? user?.user_id ?? user?.account;
@@ -1569,7 +1580,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             {attentionItems.slice(0, 5).map(item => (
               <div key={`${item.itemType}_${item.itemId}`} className="flex items-center justify-between gap-3 bg-white/80 border border-orange-100 rounded-xl px-3 py-2">
                 <div className="min-w-0">
-                  <p className="text-xs font-black text-slate-850 truncate">{item.delegationName} - {item.title}</p>
+                  <p className="text-xs font-black text-slate-850 truncate" title={`${item.delegationName} - ${item.title}`}>{item.delegationName} - {item.title}</p>
                   <p className="text-[11px] text-orange-700 font-normal">{item.attentionReason || item.statusLabel}</p>
                 </div>
                 <button
@@ -1851,8 +1862,8 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     }`}
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-800 truncate">{staff.name}</p>
-                      <p className="text-xs font-normal text-slate-500 truncate">{staff.email}</p>
+                      <p className="text-sm font-black text-slate-800 truncate" title={staff.name}>{staff.name}</p>
+                      <p className="text-xs font-normal text-slate-500 truncate" title={staff.email}>{staff.email}</p>
                       {staffConflict && (
                         <p className="text-[11px] font-normal text-red-600 mt-1 flex items-center gap-1">
                           <AlertCircle className="w-3 h-3 text-red-500 shrink-0 inline" />
@@ -1901,7 +1912,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
             </div>
 
             {/* Month & Year Dropdown Trigger with Mini Calendar Popover */}
-            <div className="relative">
+            <div className="relative" ref={miniCalendarPanel.triggerRef as React.RefObject<HTMLDivElement>}>
               <button
                 onClick={() => {
                   setMiniMonth(currentMonth);
@@ -1928,7 +1939,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               {showMiniCalendar && (
                 <>
                   <div className="fixed inset-0 z-25" onClick={() => setShowMiniCalendar(false)} />
-                  <div className="absolute left-0 top-full mt-2 w-[280px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-4 animate-fade-in-quick text-slate-800">
+                  {miniCalendarPanel.rect && createPortal(
+                    <div
+                      style={{ position: 'fixed', top: miniCalendarPanel.rect.top, left: miniCalendarPanel.rect.left, width: miniCalendarPanel.rect.maxWidth }}
+                      className="bg-white border border-slate-200 rounded-2xl shadow-xl z-30 p-4 animate-fade-in-quick text-slate-800"
+                    >
                     <div className="flex items-center justify-between mb-3.5">
                       <span className="text-xs font-extrabold text-slate-700">
                         Tháng {miniMonth + 1} năm {miniYear}
@@ -1992,13 +2007,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         );
                       })}
                     </div>
-                  </div>
+                    </div>,
+                    document.body
+                  )}
                 </>
               )}
             </div>
 
             {/* Display Mode Dropdown "Hiển thị: " */}
-            <div className="relative">
+            <div className="relative" ref={displayDropdownPanel.triggerRef as React.RefObject<HTMLDivElement>}>
               <button
                 onClick={() => {
                   setShowDisplayDropdown(!showDisplayDropdown);
@@ -2013,7 +2030,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               {showDisplayDropdown && (
                 <>
                   <div className="fixed inset-0 z-25" onClick={() => setShowDisplayDropdown(false)} />
-                  <div className="absolute left-0 top-full mt-2 w-[150px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
+                  {displayDropdownPanel.rect && createPortal(
+                    <div
+                      style={{ position: 'fixed', top: displayDropdownPanel.rect.top, left: displayDropdownPanel.rect.left, width: displayDropdownPanel.rect.maxWidth }}
+                      className="bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800"
+                    >
                     {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as const).map((mode) => (
                       <button
                         key={mode}
@@ -2024,13 +2045,15 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         {mode}
                       </button>
                     ))}
-                  </div>
+                    </div>,
+                    document.body
+                  )}
                 </>
               )}
             </div>
 
             {/* Calendar Type Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={typeDropdownPanel.triggerRef as React.RefObject<HTMLDivElement>}>
               <button
                 onClick={() => {
                   setShowTypeDropdown(!showTypeDropdown);
@@ -2045,7 +2068,11 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               {showTypeDropdown && (
                 <>
                   <div className="fixed inset-0 z-25" onClick={() => setShowTypeDropdown(false)} />
-                  <div className="absolute left-0 top-full mt-2 w-[160px] bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800">
+                  {typeDropdownPanel.rect && createPortal(
+                    <div
+                      style={{ position: 'fixed', top: typeDropdownPanel.rect.top, left: typeDropdownPanel.rect.left, width: typeDropdownPanel.rect.maxWidth }}
+                      className="bg-white border border-slate-200 rounded-2xl shadow-xl z-30 py-2 animate-fade-in-quick text-slate-800"
+                    >
                     {((isStudent || isVisitor) ? ['Lịch của tôi'] : ['Trong văn phòng', 'Lịch của tôi']).map((type) => (
                       <button
                         key={type}
@@ -2059,7 +2086,9 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                         {type}
                       </button>
                     ))}
-                  </div>
+                    </div>,
+                    document.body
+                  )}
                 </>
               )}
             </div>
@@ -2820,7 +2849,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
 
               <form onSubmit={handleAddEventSubmit} className="p-6 space-y-4 text-xs text-slate-800">
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Title + time-range: two native `time` inputs inside the 2nd column don't fit a
+                      ~140px half-column at phone width (this modal's outer wrapper matches the
+                      viewport there) -- stack on mobile, restore side-by-side once there's real room. */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">
                         Tiêu đề sự kiện *
@@ -2935,7 +2967,10 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                     className="w-full text-xs px-3 py-2.5 border border-slate-200 rounded-xl focus:border-purple-500 outline-none bg-slate-50/20 disabled:bg-slate-100 disabled:text-slate-700 font-normal"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                {/* Date + start + end: 3 native date/time inputs need ~110px+ each to render without
+                    clipping; a modal this narrow at phone width only gives ~93px/col at grid-cols-3 --
+                    stack on mobile. */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
                     <label className="block text-[10px] font-extrabold text-slate-450 uppercase tracking-wider mb-1">Ngày *</label>
                     <input
@@ -3059,8 +3094,13 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
                 }
               `}
             </style>
+          {/* Backdrop p-4 (2rem) + card's own my-8 (4rem) = 6rem total vertical gutter. Card is
+              already flex-col, so the body below only needed flex-1/min-h-0 instead of its own
+              unrelated max-h-[70vh] -- that fixed figure left no room for the header on a short
+              viewport, with nothing making the difference up (the backdrop's own overflow-y-auto is
+              a safety net, not a substitute for the card actually fitting). */}
           <div id="event-modal-backdrop" className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div id="event-modal-card" className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick flex flex-col my-8">
+            <div id="event-modal-card" className="bg-white rounded-2xl max-w-5xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-fade-in-quick flex flex-col my-8 max-h-[calc(100dvh-6rem)]">
 
               {/* Modal Title Banner */}
               <div className={`${activePopoverEvent.category === 'Đơn yêu cầu mượn đồ' && requestStatus === 'accepted' ? 'bg-[#f37021]' : 'bg-[#004c91]'} px-6 py-5 text-white flex justify-between items-center relative shadow-sm border-b border-white/10`}>
@@ -3093,7 +3133,7 @@ export function SharedDashboardView({ user, isDeptLeader, isDeptStaff, isStudent
               </div>
 
               {/* Modal Contents in a clean wide Horizontal Table layout */}
-              <div id="event-modal-body" className="p-6 md:p-8 space-y-4 overflow-y-auto max-h-[70vh] no-scrollbar bg-slate-50/50">
+              <div id="event-modal-body" className="p-6 md:p-8 space-y-4 overflow-y-auto flex-1 min-h-0 no-scrollbar bg-slate-50/50">
                 {/* Thay đổi mới (thông báo chưa đọc gắn với đơn/thư mời này) */}
                 {(() => {
                   const changes = getEventChangeNotifs(activePopoverEvent);

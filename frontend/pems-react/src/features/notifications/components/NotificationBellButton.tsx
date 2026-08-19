@@ -249,7 +249,7 @@ export function NotificationBellButton({ variant = 'dashboard', onNavigate }: No
               )}
             </div>
 
-            <div className="max-h-[70vh] overflow-y-auto">
+            <div className="max-h-[70dvh] overflow-y-auto">
               {loading && displayItems.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-8 text-gray-400">
                   <div className="w-4 h-4 border-2 border-[#004c91] border-t-transparent rounded-full animate-spin" />

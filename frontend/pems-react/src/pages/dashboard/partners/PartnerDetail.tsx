@@ -497,7 +497,7 @@ export function PartnerDetail() {
         <span className="text-gray-400">/</span>
         <button onClick={() => navigate('/dashboard/partners')} className="hover:text-[#004c91] transition-colors cursor-pointer">Quản lý đối tác</button>
         <span className="text-gray-400">/</span>
-        <span className="text-[#004c91] truncate max-w-[220px]">{partner.name}</span>
+        <span className="text-[#004c91] truncate max-w-[220px]" title={partner.name}>{partner.name}</span>
       </div>
 
       {/* Back button + actions */}
@@ -819,7 +819,7 @@ export function PartnerDetail() {
                       <FileText className="w-5 h-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors">{d.title}</div>
+                      <div className="text-gray-800 font-bold text-[15px] truncate group-hover:text-[#004c91] transition-colors" title={d.title}>{d.title}</div>
                       <div className="text-xs text-gray-500 font-normal mt-0.5 truncate">
                         {d.originalFilename || '—'}
                         {d.fileSize ? ` • ${(d.fileSize / 1024).toFixed(0)} KB` : ''}
@@ -1268,7 +1268,8 @@ export function PartnerDetail() {
       {/* Contact detail modal (read-only "Xem chi tiết") — restores the original popup */}
       {viewContact && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-[#00a651] shrink-0">
               <h3 className="text-xl font-bold text-white">Thông tin chi tiết</h3>
               <button
@@ -1285,7 +1286,7 @@ export function PartnerDetail() {
                   <ContactAvatarImage fileId={viewContact.avatarFileId} url={viewContact.avatarUrl} alt={viewContact.fullName} />
                 </div>
                 <div className="min-w-0">
-                  <h4 className="font-black text-gray-900 text-xl tracking-tight truncate">{viewContact.fullName}</h4>
+                  <h4 className="font-black text-gray-900 text-xl tracking-tight truncate" title={viewContact.fullName}>{viewContact.fullName}</h4>
                   <p className="text-sm font-normal text-[#00a651] uppercase tracking-wide mt-1 truncate">
                     {[viewContact.jobTitle, viewContact.departmentName].filter(Boolean).join(' - ') || 'Chưa cập nhật chức vụ'}
                   </p>

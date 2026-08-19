@@ -48,7 +48,8 @@ export function TransferLeadershipModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
+      {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between bg-[#004c91] px-6 py-4">
           <h3 className="flex items-center gap-2 text-lg font-bold text-white">
             <Crown className="h-5 w-5 text-amber-300" />
@@ -120,7 +121,7 @@ export function TransferLeadershipModal({
                         <span className="block truncate text-sm font-bold text-[#004c91]">
                           {candidate.fullName}
                         </span>
-                        <span className="block truncate text-xs text-gray-500">{candidate.email}</span>
+                        <span className="block truncate text-xs text-gray-500" title={candidate.email}>{candidate.email}</span>
                       </span>
                     </label>
                   ))}

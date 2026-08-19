@@ -349,7 +349,7 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
   return (
     <div className="animate-fadeIn">
       {/* Interactive preview + scan controls — full width (danh sách ảnh bên trái đã bỏ, chọn ảnh qua modal "Chọn từ thư mục ảnh đoàn"). */}
-      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 flex flex-col min-h-[85vh] relative">
+      <div className="border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 flex flex-col min-h-[85dvh] relative">
         {selectedPhoto ? (
           <>
             <div className="bg-white px-5 py-3 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
@@ -401,12 +401,12 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
             )}
 
             <div className="flex-1 flex items-center justify-center p-3 relative select-none">
-              <div className="relative max-w-full max-h-[80vh] rounded-lg border border-gray-300 bg-white">
+              <div className="relative max-w-full max-h-[80dvh] rounded-lg border border-gray-300 bg-white">
                 {selectedImageUrl ? (
                   <img
                     src={selectedImageUrl}
                     alt={selectedPhoto.name}
-                    className={`max-w-full max-h-[78vh] object-contain rounded-lg transition-all ${scanning ? 'brightness-50' : ''}`}
+                    className={`max-w-full max-h-[78dvh] object-contain rounded-lg transition-all ${scanning ? 'brightness-50' : ''}`}
                   />
                 ) : (
                   <div className="w-[320px] h-[240px] flex items-center justify-center">
@@ -501,7 +501,19 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
 
                         {isActive && (
                           <div
-                            className={`absolute ${isLowerHalf ? 'bottom-full mb-2' : 'top-full mt-2'} left-1/2 -translate-x-1/2 bg-white border border-gray-200 p-3 rounded-2xl shadow-2xl z-50 w-60 text-left space-y-2.5 max-h-[260px] flex flex-col`}
+                            // The guest-picker popup lives inside an ancestor with overflow-hidden
+                            // (the panel shell), so a fixed centered translate can get silently
+                            // clipped off-screen for a face detected near the image's left/right
+                            // edge. Flip the horizontal anchor using the same normalized
+                            // boundingBoxX already used to place the face box itself -- no DOM
+                            // measurement needed, and it keeps the popup within the image bounds.
+                            className={`absolute ${isLowerHalf ? 'bottom-full mb-2' : 'top-full mt-2'} ${
+                              detection.boundingBoxX < 0.25
+                                ? 'left-0'
+                                : detection.boundingBoxX > 0.75
+                                  ? 'right-0'
+                                  : 'left-1/2 -translate-x-1/2'
+                            } bg-white border border-gray-200 p-3 rounded-2xl shadow-2xl z-50 w-60 max-w-[calc(100vw-2rem)] text-left space-y-2.5 max-h-[260px] flex flex-col`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div className="flex items-center justify-between border-b border-gray-100 pb-1.5 shrink-0">
@@ -740,7 +752,9 @@ export const FaceScanPanel = forwardRef<FaceScanPanelHandle, FaceScanPanelProps>
               initial={{ scale: 0.95, opacity: 0, y: 15 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.95, opacity: 0, y: 15 }}
-              className="bg-white rounded-3xl shadow-xl w-full max-w-4xl overflow-hidden relative border border-gray-100 z-10 text-left font-sans flex flex-col max-h-[85vh]"
+              // Overlay is a flat p-4 (2rem vertical gutter) -- dvh-clamp so the modal never exceeds
+              // the visible mobile viewport (was a flat 85vh).
+              className="bg-white rounded-3xl shadow-xl w-full max-w-4xl overflow-hidden relative border border-gray-100 z-10 text-left font-sans flex flex-col max-h-[calc(100dvh-2rem)]"
             >
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3 shrink-0 flex-wrap">

@@ -232,7 +232,7 @@ function AudioPicker({
         <div className="rounded-xl border border-[#f37021]/40 bg-orange-50/40 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-1.5 text-xs font-bold text-[#004c91] truncate">
-              <Music className="w-4 h-4 shrink-0" /> <span className="truncate">{newFile.name}</span>
+              <Music className="w-4 h-4 shrink-0" /> <span className="truncate" title={newFile.name}>{newFile.name}</span>
             </span>
             <span className="text-[11px] text-slate-400 font-normal shrink-0">{formatBytes(newFile.size)}</span>
           </div>
@@ -574,7 +574,7 @@ export function GalleryUpsertModal({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl relative focus:outline-none flex flex-col md:flex-row max-h-[92vh]"
+        className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl relative focus:outline-none flex flex-col md:flex-row max-h-[92dvh]"
       >
         {/* Left: media upload */}
         <div className="w-full md:w-5/12 p-6 bg-slate-50 border-r border-slate-200 flex flex-col overflow-y-auto">
@@ -682,7 +682,7 @@ export function GalleryUpsertModal({
                       ? <video src={p.url} className="w-full h-full object-cover" muted />
                       : <img src={p.url} className="w-full h-full object-cover" alt="" />}
                   </div>
-                  <p className="text-xs font-bold text-gray-700 truncate">{p.entry.file.name}</p>
+                  <p className="text-xs font-bold text-gray-700 truncate" title={p.entry.file.name}>{p.entry.file.name}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <PrimaryStar isPrimary={isPrimary({ kind: 'upload', id: p.entry.id })} onClick={() => setPrimary({ kind: 'upload', id: p.entry.id })} />

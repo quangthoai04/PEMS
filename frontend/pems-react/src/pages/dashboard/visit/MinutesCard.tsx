@@ -1095,7 +1095,8 @@ export function MinutesCard({ visitInstanceId, isReadOnly = false }: { visitInst
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-gray-100"
+              // Overlay is a flat p-4 (2rem vertical gutter).
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col border border-gray-100"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50/50 to-white">

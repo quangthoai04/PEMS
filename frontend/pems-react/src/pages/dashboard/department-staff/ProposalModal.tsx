@@ -145,14 +145,14 @@ export function ProposalModal({ item, onClose, onSuccess }: Props) {
         <div className="px-5 py-3.5 bg-[#004c91] text-white flex items-center justify-between">
           <div className="min-w-0">
             <h3 className="text-base font-black">Đề xuất thay đổi</h3>
-            <p className="text-xs text-white/80 mt-0.5 truncate">{item.delegationName || item.title}</p>
+            <p className="text-xs text-white/80 mt-0.5 truncate" title={item.delegationName || item.title}>{item.delegationName || item.title}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-white shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+        <div className="p-5 space-y-4 max-h-[80dvh] overflow-y-auto">
           {/* Detailed Task Info Summary Card */}
           <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs space-y-2">
             <div className="flex justify-between items-start">

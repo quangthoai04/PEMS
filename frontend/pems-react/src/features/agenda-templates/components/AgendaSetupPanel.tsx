@@ -308,7 +308,7 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
                         <Clock className="h-3.5 w-3.5 shrink-0" /> {hhmm(start)} – {hhmm(end)}
                       </span>
                       <span className="min-w-0 font-normal text-slate-800">{it.title}</span>
-                      <span className="min-w-0 truncate text-slate-500 inline-flex items-center gap-1">
+                      <span className="min-w-0 truncate text-slate-500 inline-flex items-center gap-1" title={it.location || undefined}>
                         {it.location ? (<><MapPin className="h-3 w-3 shrink-0" />{it.location}</>) : '—'}
                       </span>
                     </div>

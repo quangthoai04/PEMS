@@ -41,7 +41,7 @@ export function VisitFPTUPage() {
   return (
     <div className="w-full bg-gray-900 flex flex-col overflow-x-hidden">
       {/* Hero Interactive Section - Screen Height */}
-      <div className="relative min-h-screen w-full flex flex-col items-center justify-center pt-24 sm:pt-28 pb-10 overflow-hidden bg-gray-900">
+      <div className="relative min-h-dvh w-full flex flex-col items-center justify-center pt-24 sm:pt-28 pb-10 overflow-hidden bg-gray-900">
         {/* Background Underlay */}
         <div className="absolute inset-0 z-0 flex items-center justify-center">
           <img

@@ -61,20 +61,23 @@ export function ConfirmModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]" onMouseDown={onClose}>
-      <div 
-        className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200"
+      <div
+        // Overlay is a flat p-4 (2rem vertical gutter). `message` allows multi-line free text
+        // (whitespace-pre-line), so without a height cap + its own scroll region a long message
+        // could push the confirm/cancel buttons past the visible viewport on a short screen.
+        className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[calc(100dvh-2rem)]"
         onMouseDown={e => e.stopPropagation()}
       >
-        <div className="p-6">
+        <div className="p-6 overflow-y-auto min-h-0">
           <div className="flex items-start gap-4">
             <div className={`shrink-0 flex items-center justify-center w-12 h-12 rounded-full ${styles.bgIcon}`}>
               {styles.icon}
             </div>
             <div className="flex-1 mt-1">
               <h3 className="text-lg font-bold text-gray-900 leading-none mb-2">{title}</h3>
-              <p className="text-sm text-gray-600 whitespace-pre-line">{message}</p>
+              <p className="text-sm text-gray-600 whitespace-pre-line break-words">{message}</p>
             </div>
-            <button 
+            <button
               onClick={onClose}
               className="shrink-0 text-gray-400 hover:text-gray-500 hover:bg-gray-100 p-1 rounded-lg transition-colors"
               disabled={isLoading}
@@ -83,7 +86,7 @@ export function ConfirmModal({
             </button>
           </div>
         </div>
-        <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100">
+        <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-gray-100 shrink-0">
           {!hideCancel && (
             <button
               type="button"

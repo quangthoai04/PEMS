@@ -12,6 +12,8 @@
  */
 
 import React, { Fragment, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useAnchoredPanelPosition } from '../../../shared/hooks/useAnchoredPanelPosition';
 import {
   Search, Plus, Eye, AlertCircle, Users, MapPin, Calendar,
   ChevronLeft, ChevronRight, ChevronDown, Check, X, XCircle, Mail,
@@ -397,6 +399,16 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   const [isCampusFilterOpen, setIsCampusFilterOpen] = useState(false);
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
   const [isTabFilterOpen, setIsTabFilterOpen] = useState(false);
+  // RC-07: these 6 filter/date panels used to be `absolute left-0 top-full` inside their own
+  // trigger's `relative` wrapper -- width-only clamping isn't enough when the trigger itself sits
+  // near the right edge of the wrapping filter bar (the panel still runs off-screen). Each now
+  // renders through a portal at a viewport-clamped, trigger-anchored position instead.
+  const tabFilterPanel = useAnchoredPanelPosition(isTabFilterOpen, 220);
+  const statusFilterPanel = useAnchoredPanelPosition(isStatusFilterOpen, 220);
+  const typeFilterPanel = useAnchoredPanelPosition(isTypeFilterOpen, 220);
+  const campusFilterPanel = useAnchoredPanelPosition(isCampusFilterOpen, 'trigger');
+  const relationFilterPanel = useAnchoredPanelPosition(isRelationFilterOpen, 'trigger');
+  const dateFilterPanel = useAnchoredPanelPosition(isDateFilterOpen, 280);
 
   // Đến từ 1 thông báo cụ thể (?visitRequestId=...): chỉ hiển thị đúng đơn đó thay vì cả
   // danh sách, để người dùng không phải tự tìm. "Reset" (nút có sẵn) xoá filter này để xem
@@ -2187,7 +2199,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // ── Admin: no business screen ──
   if (isAdmin) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] animate-in fade-in duration-300">
+      <div className="flex flex-col items-center justify-center min-h-[50dvh] animate-in fade-in duration-300">
         <AlertCircle className="w-16 h-16 text-slate-300 mb-4" />
         <h2 className="text-2xl font-bold text-slate-700 mb-2">Không tham gia luồng tiếp khách</h2>
         <p className="text-slate-500 text-center max-w-md">
@@ -2294,14 +2306,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Loại đơn (filter button thay cho tabs) — width fits its own label */}
           {showTabFilter && (
             <div className="relative shrink-0">
-              <button onClick={() => setIsTabFilterOpen(!isTabFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+              <button ref={tabFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsTabFilterOpen(!isTabFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{tabOptions.find((opt) => opt.key === activeTab)?.label ?? tt('visitRequestV2:list.chooseType')}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
               </button>
-              {isTabFilterOpen && (
+              {isTabFilterOpen && tabFilterPanel.rect && createPortal(
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsTabFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
+                  <div
+                    style={{ top: tabFilterPanel.rect.top, left: tabFilterPanel.rect.left, maxWidth: tabFilterPanel.rect.maxWidth }}
+                    className="fixed z-30 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                  >
                     {tabOptions.map((t) => (
                       <div
                         key={t.key}
@@ -2324,7 +2339,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       </div>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           )}
@@ -2332,14 +2348,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Status — width fits its own label */}
           {filterConfig.showStatus && (
             <div className="relative shrink-0">
-              <button onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+              <button ref={statusFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsStatusFilterOpen(!isStatusFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{filterConfig.statusOptions.find((o) => o.value === draftFilters.status)?.label ?? tt('visitRequestV2:list.allStatuses')}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
               </button>
-              {isStatusFilterOpen && (
+              {isStatusFilterOpen && statusFilterPanel.rect && createPortal(
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsStatusFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div
+                    style={{ top: statusFilterPanel.rect.top, left: statusFilterPanel.rect.left, maxWidth: statusFilterPanel.rect.maxWidth }}
+                    className="fixed z-30 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto"
+                  >
                     {filterConfig.statusOptions.map((option) => (
                       <div key={option.value} title={option.description} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center gap-4 ${draftFilters.status === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ status: option.value }); setIsStatusFilterOpen(false); }}>
@@ -2348,7 +2367,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       </div>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           )}
@@ -2356,14 +2376,17 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           {/* Scope — width fits its own label */}
           {filterConfig.showScope && (
             <div className="relative shrink-0">
-              <button onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+              <button ref={typeFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsTypeFilterOpen(!isTypeFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="truncate">{filterConfig.scopeOptions?.find((o) => o.value === draftFilters.visitScope)?.label ?? tt('visitRequestV2:list.allScopes')}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
               </button>
-              {isTypeFilterOpen && (
+              {isTypeFilterOpen && typeFilterPanel.rect && createPortal(
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsTypeFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div
+                    style={{ top: typeFilterPanel.rect.top, left: typeFilterPanel.rect.left, maxWidth: typeFilterPanel.rect.maxWidth }}
+                    className="fixed z-30 min-w-[220px] w-max rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto"
+                  >
                     {filterConfig.scopeOptions?.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center gap-4 ${draftFilters.visitScope === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ visitScope: option.value }); setIsTypeFilterOpen(false); }}>
@@ -2372,22 +2395,26 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       </div>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           )}
 
           {/* Campus */}
           {filterConfig.showCampus && (
-            <div className="relative w-[190px] shrink-0">
-              <button onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+            <div className="relative w-full sm:w-[190px] shrink-0">
+              <button ref={campusFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsCampusFilterOpen(!isCampusFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{campusOptions.find((o) => o.value === draftFilters.campusId)?.label ?? tt('visitRequestV2:list.allCampuses')}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
               </button>
-              {isCampusFilterOpen && (
+              {isCampusFilterOpen && campusFilterPanel.rect && createPortal(
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsCampusFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div
+                    style={{ top: campusFilterPanel.rect.top, left: campusFilterPanel.rect.left, width: campusFilterPanel.rect.maxWidth, maxWidth: campusFilterPanel.rect.maxWidth }}
+                    className="fixed z-30 min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto"
+                  >
                     {campusOptions.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.campusId === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ campusId: option.value }); setIsCampusFilterOpen(false); }}>
@@ -2396,22 +2423,26 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       </div>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           )}
 
           {/* Relation */}
           {filterConfig.showRelation && (
-            <div className="relative w-[170px] shrink-0">
-              <button onClick={() => setIsRelationFilterOpen(!isRelationFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+            <div className="relative w-full sm:w-[170px] shrink-0">
+              <button ref={relationFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsRelationFilterOpen(!isRelationFilterOpen)} className="flex h-11 w-full min-w-0 items-center justify-between rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
                 <span className="min-w-0 truncate">{filterConfig.relationOptions.find((o) => o.value === draftFilters.relation)?.label ?? tt('visitRequestV2:list.allRelations')}</span>
                 <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0 ml-2 pointer-events-none" />
               </button>
-              {isRelationFilterOpen && (
+              {isRelationFilterOpen && relationFilterPanel.rect && createPortal(
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setIsRelationFilterOpen(false)} />
-                  <div className="absolute left-0 top-full z-30 mt-1 w-full min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto">
+                  <div
+                    style={{ top: relationFilterPanel.rect.top, left: relationFilterPanel.rect.left, width: relationFilterPanel.rect.maxWidth, maxWidth: relationFilterPanel.rect.maxWidth }}
+                    className="fixed z-30 min-w-[210px] rounded-xl border border-slate-200 bg-white py-1 shadow-lg max-h-72 overflow-y-auto"
+                  >
                     {filterConfig.relationOptions.map((option) => (
                       <div key={option.value} className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex items-center ${draftFilters.relation === option.value ? 'bg-blue-50 text-[#004c91] font-bold' : 'text-gray-700 font-medium'}`}
                         onClick={() => { applyFilterChange({ relation: option.value }); setIsRelationFilterOpen(false); }}>
@@ -2420,14 +2451,15 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                       </div>
                     ))}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           )}
 
           {/* Date range — width fits its own label */}
           <div className="relative shrink-0">
-            <button onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
+            <button ref={dateFilterPanel.triggerRef as React.RefObject<HTMLButtonElement>} onClick={() => setIsDateFilterOpen(!isDateFilterOpen)} className="inline-flex h-11 items-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition-colors focus:border-[#004c91]">
               <span className="truncate">
                 {!draftFilters.fromDate && !draftFilters.toDate ? tt('visitRequestV2:list.chooseDateRange')
                   : draftFilters.fromDate && !draftFilters.toDate ? tt('visitRequestV2:list.fromDatePrefix', { date: formatDateOnly(draftFilters.fromDate) })
@@ -2436,10 +2468,13 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
               </span>
               <Calendar className="w-4 h-4 text-gray-500 flex-shrink-0 pointer-events-none" />
             </button>
-            {isDateFilterOpen && (
+            {isDateFilterOpen && dateFilterPanel.rect && createPortal(
               <>
                 <div className="fixed inset-0 z-20" onClick={() => setIsDateFilterOpen(false)} />
-                <div className="absolute left-0 top-full z-30 mt-2 w-[280px] bg-white border border-slate-200 rounded-2xl shadow-lg p-4">
+                <div
+                  style={{ top: dateFilterPanel.rect.top, left: dateFilterPanel.rect.left, width: dateFilterPanel.rect.maxWidth }}
+                  className="fixed z-30 bg-white border border-slate-200 rounded-2xl shadow-lg p-4"
+                >
                   <div className="flex flex-col gap-3">
                     <div className="w-full space-y-1">
                       <label className="block text-xs font-bold text-slate-500">{tt('visitRequestV2:list.fromDateLabel')}</label>
@@ -2452,7 +2487,8 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                     <button onClick={() => { setIsDateFilterOpen(false); applyFilterChange({}); }} className="mt-2 h-9 w-full rounded-lg bg-slate-100 text-sm font-semibold text-slate-700 hover:bg-slate-200 transition-colors">{tt('visitRequestV2:list.close')}</button>
                   </div>
                 </div>
-              </>
+              </>,
+              document.body
             )}
           </div>
 
@@ -2627,7 +2663,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
                             <Bell className="h-3.5 w-3.5" fill="currentColor" />
                           </span>
                         )}
-                        <span className="truncate">{row.name}</span>
+                        <span className="truncate" title={row.name}>{row.name}</span>
                       </p>
                       <p className="text-xs text-slate-500 truncate">{row.org}</p>
                     </div>

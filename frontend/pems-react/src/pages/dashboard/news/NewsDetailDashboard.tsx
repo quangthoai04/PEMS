@@ -238,8 +238,8 @@ function ImageLightbox({ files, startIndex, onClose }: { files: SectionFile[]; s
         </button>
       )}
 
-      <div onClick={e => e.stopPropagation()} className="max-w-[90vw] max-h-[85vh] flex flex-col items-center gap-3">
-        <AuthenticatedImage url={file.url} alt={file.fileName ?? ''} className="max-w-[90vw] max-h-[80vh] object-contain rounded-lg" />
+      <div onClick={e => e.stopPropagation()} className="max-w-[90vw] max-h-[85dvh] flex flex-col items-center gap-3">
+        <AuthenticatedImage url={file.url} alt={file.fileName ?? ''} className="max-w-[90vw] max-h-[80dvh] object-contain rounded-lg" />
         {files.length > 1 && (
           <span className="text-white/70 text-sm font-medium">{index + 1}/{files.length}</span>
         )}
@@ -432,7 +432,7 @@ export function NewsDetailDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex items-center justify-center min-h-[60dvh]">
         <div className="w-8 h-8 border-4 border-[#004c91] border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -440,7 +440,7 @@ export function NewsDetailDashboard() {
 
   if (error || !news) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+      <div className="flex flex-col items-center justify-center min-h-[60dvh] gap-4">
         <p className="text-red-500 font-normal">{error ?? 'Không tìm thấy bài viết.'}</p>
         <button onClick={() => navigate('/dashboard/news')} className="text-[#004c91] hover:underline font-semibold">
           ← Quay lại danh sách

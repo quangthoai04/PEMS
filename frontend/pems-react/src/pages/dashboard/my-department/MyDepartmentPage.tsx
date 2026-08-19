@@ -388,7 +388,7 @@ export function MyDepartmentPage() {
       {/* Toolbar + table */}
       <section className="overflow-hidden rounded-[2rem] border border-[#004c91] bg-white shadow-[0_8px_30px_-4px_rgba(0,0,0,0.05)]">
         <div className="flex flex-wrap items-center gap-3 border-b border-[#00386b] bg-[#004c91] p-5">
-          <div className="relative min-w-[240px] flex-1">
+          <div className="relative min-w-0 sm:min-w-[240px] flex-1">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-blue-200" />
             <input
               type="text"

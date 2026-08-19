@@ -145,14 +145,14 @@ export default function VisitContactInvitationPage({ kind }: Props) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+      <div className="min-h-dvh flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <p className="text-gray-500" role="status">{t('contactInvitation.loading')}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4 py-10">
+    <div className="min-h-dvh bg-gray-50 dark:bg-gray-900 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-lg bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8">
         <h1 className="text-xl font-bold text-gray-900 dark:text-gray-50">{labels.title}</h1>
         <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{labels.intro}</p>

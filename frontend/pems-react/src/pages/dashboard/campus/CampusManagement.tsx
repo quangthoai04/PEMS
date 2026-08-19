@@ -533,7 +533,9 @@ export function CampusManagement() {
       {/* UC-81 — Create campus modal */}
       {isCreateOpen && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+          {/* Overlay is a flat p-4 (2rem vertical gutter) -- ceiling = 100dvh minus that gutter,
+              guaranteed to fit the visible viewport instead of a flat 90vh. */}
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
               <h3 className="text-xl font-bold text-[#004c91] flex items-center gap-2">
                 <Building2 className="w-5 h-5" /> Thêm mới campus
@@ -667,7 +669,8 @@ export function CampusManagement() {
       {/* UC-86 — Disable confirmation modal with §18 impact preview */}
       {confirmTarget && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-label="Ngừng hoạt động campus">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
+          {/* Overlay is a flat p-4 (2rem vertical gutter) -- ceiling = 100dvh minus that gutter. */}
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between shrink-0">
               <h3 className="text-lg font-bold text-[#004c91] flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-[#f37021]" />

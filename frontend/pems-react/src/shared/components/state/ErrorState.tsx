@@ -45,7 +45,7 @@ export function ErrorState({ error, onRetry, inline = false, className = '' }: E
     return (
       <div role="alert" className={'flex items-center gap-2 text-sm text-red-600 ' + className}>
         <AlertTriangle className="w-4 h-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 truncate">{norm.message || title}</span>
+        <span className="min-w-0 truncate" title={norm.message || title}>{norm.message || title}</span>
         {onRetry && (
           <button type="button" onClick={onRetry} className="ml-1 inline-flex items-center gap-1 text-red-700 underline hover:no-underline">
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />

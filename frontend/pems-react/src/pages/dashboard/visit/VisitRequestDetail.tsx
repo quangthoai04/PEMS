@@ -265,7 +265,7 @@ export function VisitRequestDetail() {
                     {guests.map((g) => (
                       <li key={g.guestMemberId} className="flex items-center justify-between px-4 py-3 bg-white">
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-gray-800 truncate">{g.fullName}</p>
+                          <p className="text-sm font-bold text-gray-800 truncate" title={g.fullName}>{g.fullName}</p>
                           <p className="text-xs text-gray-500 truncate">
                             {[g.jobTitle, g.organization, g.nationality].filter(Boolean).join(' · ') || '—'}
                           </p>
@@ -289,7 +289,7 @@ export function VisitRequestDetail() {
                     {supportMembers.map((s) => (
                       <li key={s.guestMemberId} className="flex items-center justify-between px-4 py-3 bg-white">
                         <div className="min-w-0">
-                          <p className="text-sm font-bold text-gray-800 truncate">{s.fullName}</p>
+                          <p className="text-sm font-bold text-gray-800 truncate" title={s.fullName}>{s.fullName}</p>
                           <p className="text-xs text-gray-500 truncate">
                             {[s.jobTitle, s.organization, s.nationality].filter(Boolean).join(' · ') || '—'}
                           </p>

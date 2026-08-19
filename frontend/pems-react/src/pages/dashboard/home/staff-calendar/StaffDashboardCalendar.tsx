@@ -500,13 +500,13 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
         >
           {full ? (
             <>
-              <p className="text-xs font-normal truncate">{ev.title}</p>
+              <p className="text-xs font-normal truncate" title={ev.title}>{ev.title}</p>
               <p className="text-[11px] font-normal opacity-80 mt-0.5">
                 {fmtTime(ev.startAt)} – {fmtTime(ev.endAt)} · Lịch cá nhân
               </p>
             </>
           ) : (
-            <p className="text-[10px] font-normal truncate leading-4">{fmtTime(ev.startAt)} {ev.title}</p>
+            <p className="text-[10px] font-normal truncate leading-4" title={ev.title}>{fmtTime(ev.startAt)} {ev.title}</p>
           )}
         </button>
       );
@@ -522,7 +522,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
       >
         {full ? (
           <>
-            <p className={`text-xs font-normal truncate ${item.isCancelled ? 'line-through' : ''}`}>{item.title}</p>
+            <p className={`text-xs font-normal truncate ${item.isCancelled ? 'line-through' : ''}`} title={item.title}>{item.title}</p>
             <p className="text-[11px] font-normal opacity-80 mt-0.5">
               {fmtTime(item.plannedStartAt)} – {fmtTime(item.plannedEndAt)} · {item.displayStatus}
               {item.currentHostName ? ` · Người phụ trách: ${item.currentHostName}` : ''}
@@ -651,7 +651,7 @@ export function StaffDashboardCalendar({ isStaffLeader }: { user?: any; isStaffL
                 {displayMode} <ChevronDown className="w-3.5 h-3.5" />
               </button>
               {showModeDropdown && (
-                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px]">
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden min-w-[110px] max-w-[calc(100vw-2rem)]">
                   {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as DisplayMode[]).map((m) => (
                     <button
                       key={m}

@@ -584,7 +584,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           </button>
           {showDisplayDd && (
             <><div className="fixed inset-0 z-20" onClick={() => setShowDisplayDd(false)} />
-            <div className="absolute left-0 top-full mt-2 w-32 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
+            <div className="absolute left-0 top-full mt-2 w-32 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
               {(['Ngày', 'Tuần', 'Tháng', 'Năm'] as const).map(m => (
                 <button key={m} onClick={() => { setDisplayMode(m); setShowDisplayDd(false); }}
                   className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-colors ${displayMode === m ? 'bg-blue-50 text-[#004c91]' : 'text-slate-700 hover:bg-slate-50'}`}>{m}</button>
@@ -598,7 +598,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
           </button>
           {showTypeDd && (
             <><div className="fixed inset-0 z-20" onClick={() => setShowTypeDd(false)} />
-            <div className="absolute left-0 top-full mt-2 w-40 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
+            <div className="absolute left-0 top-full mt-2 w-40 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1">
               <button onClick={() => { setCalendarType('office'); setShowTypeDd(false); }}
                 className={`w-full text-left px-4 py-2.5 text-xs font-bold transition-colors ${calendarType === 'office' ? 'bg-blue-50 text-[#004c91]' : 'text-slate-700 hover:bg-slate-50'}`}>Trong văn phòng</button>
               <button onClick={() => { setCalendarType('mine'); setShowTypeDd(false); }}
@@ -730,7 +730,7 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
                     <div key={ev.id} onClick={() => setActiveEvent(ev)} className={`px-4 py-3 rounded-xl border text-sm font-normal cursor-pointer ${ev.color}`}>
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate flex items-center gap-2">
-                          <span className={`truncate ${ev.status === 'CANCELLED' ? 'line-through' : ''}`}>{ev.title}</span>
+                          <span className={`truncate ${ev.status === 'CANCELLED' ? 'line-through' : ''}`} title={ev.title}>{ev.title}</span>
                           {hasChanges && (
                             <span className="relative flex h-2 w-2 shrink-0" title="Đơn này có thay đổi mới">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -823,7 +823,8 @@ export function StaffCalendarTab({ year, onYearChange, calendarItems, calendarLo
         {/* Event detail modal */}
         {false && activeEvent && (
           <div className="fixed inset-0 z-50 bg-slate-900/45 flex items-center justify-center p-4" onClick={() => setActiveEvent(null)}>
-          <div className="w-full max-w-4xl max-h-[92vh] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+          {/* Overlay is a flat p-4 (2rem vertical gutter). */}
+          <div className="w-full max-w-4xl max-h-[calc(100dvh-2rem)] bg-white rounded-2xl border border-slate-200 shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="bg-[#004c91] px-6 py-5 text-white flex items-start justify-between gap-4 shadow-sm">
               <div className="flex-1 min-w-0">
                 <span className="text-[11px] font-black uppercase tracking-wider text-white/75 inline-block mb-2">

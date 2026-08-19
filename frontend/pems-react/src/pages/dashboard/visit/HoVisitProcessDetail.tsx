@@ -32,7 +32,7 @@ export function HoVisitProcessDetail() {
   })) || [];
 
   return (
-    <div className="flex-1 w-full bg-[#f8fbff] min-h-screen">
+    <div className="flex-1 w-full bg-[#f8fbff] min-h-dvh">
       {/* Breadcrumb */}
       <div className="mb-6 flex items-center text-sm font-medium text-gray-500 px-4 md:px-8 mt-4">
         <button onClick={() => navigate('/dashboard')} className="hover:text-[#004c91] transition-colors outline-none cursor-pointer">Dashboard</button>

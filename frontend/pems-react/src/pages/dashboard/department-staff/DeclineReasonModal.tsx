@@ -50,7 +50,7 @@ export function DeclineReasonModal({ item, onClose, onSuccess }: Props) {
         <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
           <div className="min-w-0">
             <h3 className="text-sm font-black text-rose-600">Từ chối {item.itemType === 'INVITATION' ? 'thư mời' : 'nhiệm vụ'}</h3>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">{item.delegationName ? `${item.delegationName} — ` : ''}{item.title}</p>
+            <p className="text-xs text-slate-500 mt-0.5 truncate" title={item.delegationName ? `${item.delegationName} — ${item.title}` : item.title}>{item.delegationName ? `${item.delegationName} — ` : ''}{item.title}</p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 shrink-0">
             <X className="w-4 h-4" />

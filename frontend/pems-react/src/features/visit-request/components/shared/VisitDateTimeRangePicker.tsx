@@ -258,8 +258,12 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
           </div>
         </div>
 
-        {/* Inputs: BẮT ĐẦU → KẾT THÚC, no box wrapper */}
-        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap min-w-0">
+        {/* Inputs: BẮT ĐẦU → KẾT THÚC, no box wrapper.
+            `flex-col sm:flex-row` (not `flex-wrap`): both groups below are `flex-1 min-w-0`, and a
+            flex item with `min-width: 0` never triggers wrap -- the browser shrinks it toward zero
+            instead of ever dropping to a new line, so on a narrow phone the two groups (each already
+            containing a shrink-0 112px TimeSelect) got squeezed onto one row instead of stacking. */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
           
           {/* Start Section. `data-field-error` here (not on the outer wrapper) is what lets
               `focusFirstInvalidField()` find and scroll to THIS control specifically — the outer

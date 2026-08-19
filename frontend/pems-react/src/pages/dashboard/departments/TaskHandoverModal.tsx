@@ -160,7 +160,8 @@ export function TaskHandoverModal({ isOpen, onClose, detailData, onSuccess, inli
       </style>
       <div id="task-handover-modal" className={inline ? "bg-white rounded-2xl p-6 md:p-10 font-sans w-full space-y-6 relative overflow-hidden print:max-w-none mt-6 border border-slate-200" : "fixed inset-0 z-[80] flex items-center justify-center p-4 print:static print:inset-auto print:p-0"}>
         {!inline && <div className="absolute inset-0 bg-black/60 backdrop-blur-sm print:hidden" onClick={onClose} />}
-        <div className={inline ? "w-full" : "relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none"}>
+        {/* Modal branch's overlay (line above) is a flat p-4 (2rem vertical gutter). */}
+        <div className={inline ? "w-full" : "relative w-full max-w-4xl max-h-[calc(100dvh-2rem)] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden font-sans border border-slate-200 print:max-w-none print:max-h-none print:shadow-none print:border-none print:rounded-none"}>
           
           {/* Header/Download Button */}
           {inline ? (
