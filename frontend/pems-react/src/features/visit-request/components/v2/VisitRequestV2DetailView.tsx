@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { AlertCircle, Loader2, PencilLine, RefreshCw, UserCog } from 'lucide-react';
+import { AlertCircle, Check, Loader2, PencilLine, RefreshCw, UserCog, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   getVisitRequestFormV2,
@@ -14,7 +14,9 @@ import VisitAmendmentPanel from '../VisitAmendmentPanel';
 import VisitAmendmentSubmitModal from '../VisitAmendmentSubmitModal';
 import VisitSafeEditModal from '../VisitSafeEditModal';
 import VisitHostTransferModal, { type HostTransferTarget } from '../VisitHostTransferModal';
+import VisitCampusRejectModal from '../VisitCampusRejectModal';
 import VisitHistoryTimeline from '../VisitHistoryTimeline';
+import { AssignHostModal } from '../../../../components/modals/AssignHostModal';
 import { VisitActionButton } from './shared/VisitActionButton';
 import { capabilityFor, hasAction, VisitV2Action } from '../../utils/visitV2Actions';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
@@ -52,6 +54,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const [safeEditOpen, setSafeEditOpen] = useState(false);
   const [amendCampus, setAmendCampus] = useState<ResolvedCampusVisit | null>(null);
   const [transferCampus, setTransferCampus] = useState<HostTransferTarget | null>(null);
+  /** Ordinary campus decision (APPROVE_AND_ASSIGN_HOST / CAMPUS_REJECT) — reuses AssignHostModal and
+   *  the new VisitCampusRejectModal exactly as the List/Management screen does; this screen only
+   *  decides WHICH campus opens which dialog. */
+  const [approveCampus, setApproveCampus] = useState<ResolvedCampusVisit | null>(null);
+  const [rejectCampus, setRejectCampus] = useState<ResolvedCampusVisit | null>(null);
   // The timeline fetches for itself, so reloading this screen's data does not reload it. Anything that
   // writes history bumps this instead of only calling load(): a user who cancels an invitation and
   // watches the timeline below not mention it reasonably concludes the cancel did not happen.
@@ -359,6 +366,11 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
               // a Staff Leader reviewing somebody else's request does not receive it (they approve or
               // reject instead), and nothing here re-derives that from the viewer's role.
               const canEditPendingCampus = hasAction(cv.allowedActions, VisitV2Action.EditPendingCampus);
+              // Ordinary decision — DIFFERENT from canEditPendingCampus above. Edit right and decision
+              // right are separate verdicts: a Staff Leader of this campus who did NOT file the request
+              // never gets EditPendingCampus, but keeps deciding the campus normally right here.
+              const canApproveCampus = hasAction(cv.allowedActions, VisitV2Action.ApproveAndAssignHost);
+              const canRejectCampus = hasAction(cv.allowedActions, VisitV2Action.CampusReject);
               // Per-campus verdicts: these belong to THIS card, not to the request. A sibling that is
               // under way says nothing about this campus, and a global button could not express that.
               const amendCap = capabilityFor(cv.capabilities, VisitV2Action.SubmitAmendment);
@@ -409,6 +421,26 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       >
                         {t('visitRequestV2:pendingCampusEdit.open')}
                       </VisitActionButton>
+                    )}
+                    {canApproveCampus && (
+                      <button
+                        type="button"
+                        data-testid={`campus-approve-open-${cv.visitInstanceId}`}
+                        onClick={() => setApproveCampus(cv)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-emerald-700"
+                      >
+                        <Check className="h-4 w-4" aria-hidden /> {t('visitRequestV2:detail.approveCampus')}
+                      </button>
+                    )}
+                    {canRejectCampus && (
+                      <button
+                        type="button"
+                        data-testid={`campus-reject-open-${cv.visitInstanceId}`}
+                        onClick={() => setRejectCampus(cv)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-50"
+                      >
+                        <X className="h-4 w-4" aria-hidden /> {t('visitRequestV2:detail.rejectCampus')}
+                      </button>
                     )}
                     <VisitActionButton
                       capability={amendCap}
@@ -487,6 +519,42 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           campus={transferCampus}
           onClose={() => setTransferCampus(null)}
           onTransferred={() => { setTransferCampus(null); void reloadWithHistory(); }}
+        />
+      )}
+      {approveCampus && (
+        <AssignHostModal
+          isOpen
+          mode="approve"
+          visitRequestId={data.visitRequestId}
+          visitInstanceId={approveCampus.visitInstanceId}
+          delegationName={approveCampus.delegationName}
+          currentHostUserId={approveCampus.currentHostUserId}
+          // Phiên bản campus ĐÚNG NHƯ màn hình đang hiển thị — backend 409 nếu khách đã sửa.
+          expectedInstanceRowVersion={approveCampus.rowVersion}
+          onClose={() => setApproveCampus(null)}
+          onConfirmed={() => {
+            setApproveCampus(null);
+            showSuccessToast(t('visitRequestV2:detail.approveCampusSuccess'));
+            void reloadWithHistory();
+          }}
+          // Chỉ TẢI LẠI. Không tự mở lại modal, không tự duyệt — người duyệt phải xem bản mới rồi
+          // chủ động bấm quyết định lần nữa.
+          onReloadRequested={() => void reloadWithHistory()}
+        />
+      )}
+      {rejectCampus && (
+        <VisitCampusRejectModal
+          visitRequestId={data.visitRequestId}
+          visitInstanceId={rejectCampus.visitInstanceId}
+          campusName={rejectCampus.campusName}
+          expectedInstanceRowVersion={rejectCampus.rowVersion}
+          onClose={() => setRejectCampus(null)}
+          onRejected={() => {
+            setRejectCampus(null);
+            showSuccessToast(t('visitRequestV2:detail.rejectCampusSuccess'));
+            void reloadWithHistory();
+          }}
+          onReloadRequested={() => void reloadWithHistory()}
         />
       )}
     </div>

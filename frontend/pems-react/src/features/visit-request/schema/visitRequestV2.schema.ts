@@ -196,8 +196,24 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
       fullName: bounded(z.string().trim(), 150, t('fields.operationalFullName'), t),
       organization: bounded(z.string().trim(), 200, t('fields.operationalOrganization'), t),
       jobTitle: bounded(z.string().trim(), 150, t('fields.operationalJobTitle'), t),
-      // Phone is OPTIONAL everywhere — never required, on a new campus or an existing one.
-      phone: buildPhoneSchema(t, 'operationalPhone'),
+      // Phone is OPTIONAL everywhere — never required, on a new campus or an existing one. The FORMAT
+      // check (isValidPhone) is NOT here: unlike every other field on this object, a phone typed on a
+      // NEW campus and a phone replayed from an EXISTING one are held to different bars (mirrors the
+      // backend split between OperationalContactV2Validator and OperationalContactReplayV2Validator),
+      // so the format rule lives in the per-campus superRefine below, gated by `isNewCampus` exactly
+      // like email's. This base shape is the REPLAY bar every campus gets unconditionally: bounded
+      // length only, never a rejection of what the backend already accepted (a legacy value like
+      // "+8435352152512asdasdsadasd" must not block Save on a field this screen cannot edit).
+      phone: z
+        .string()
+        .nullish()
+        .transform((val) => {
+          const trimmed = val?.trim();
+          return trimmed ? trimmed : null;
+        })
+        .refine((val) => !val || val.length <= 50, {
+          message: maxLenMessage(t, t('fields.operationalPhone'), 50),
+        }),
       email: bounded(z.string().trim(), 150, t('fields.operationalEmail'), t),
     }),
 
@@ -266,6 +282,15 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
           code: z.ZodIssueCode.custom,
           path: ['operationalContact', 'jobTitle'],
           message: t('requiredField', { field: t('fields.operationalJobTitle') }),
+        });
+      }
+      // Phone stays OPTIONAL here too (see the base shape above) — only its FORMAT is checked, and
+      // only when the user actually typed one, mirroring OperationalContactV2Validator.MustBeAPhoneNumber.
+      if (oc.phone && !isValidPhone(oc.phone)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContact', 'phone'],
+          message: t('phoneInvalidField', { field: t('fields.operationalPhone') }),
         });
       }
       const email = oc.email?.trim() ?? '';
@@ -381,6 +406,25 @@ export const buildVisitRequestV2Schema = (
       }
     });
   });
+
+/**
+ * Scope for the per-campus pending-edit screen (`EditPendingCampusV2Page`): exactly the ONE campus
+ * card it renders and sends as `V2InstancePendingEditPayload.content` — never the request-level
+ * `registerInfo`/`partnerSelectionMode`/`partnerId` the screen shows read-only (or not at all) and
+ * never submits to `PUT .../instances/{id}/pending-edit`.
+ *
+ * The screen used to validate against the full `buildVisitRequestV2Schema`, so a legacy registrant
+ * snapshot that failed CREATE-strength validation (an old phone/email/nationality that predates this
+ * form) blocked "Lưu và duyệt" on fields this mutation cannot even touch. Reuses `buildCampusVisitSchema`
+ * unchanged rather than duplicating it, so the two screens can never drift on what ONE campus card
+ * requires.
+ */
+export const buildPendingCampusEditSchema = (
+  minAdvanceHours: number,
+  t: ValidationTranslator = defaultT,
+) => z.object({
+  campusVisits: z.array(buildCampusVisitSchema(minAdvanceHours, t)).length(1),
+});
 
 export type CampusVisitSchema = z.infer<ReturnType<typeof buildCampusVisitSchema>>;
 export type VisitRequestV2Schema = z.infer<ReturnType<typeof buildVisitRequestV2Schema>>;

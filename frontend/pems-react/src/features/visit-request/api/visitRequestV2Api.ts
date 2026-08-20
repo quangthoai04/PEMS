@@ -340,6 +340,13 @@ export interface ResolvedCampusVisit {
    * leader whoever filed the request, and come from the list screen's own actions.
    */
   canOverrideScheduleLeadTime?: boolean;
+  /**
+   * The backend's OWN verdict on whether "Lưu và duyệt" may be offered — a separate contract from
+   * `canOverrideScheduleLeadTime`, even though both currently come from the same leader-registrant
+   * pairing on the backend. The button must render from THIS field; `canOverrideScheduleLeadTime` is
+   * the 72-hour floor's business alone and must not double as a save-and-approve proxy.
+   */
+  canSaveAndApprove?: boolean;
 }
 
 /**

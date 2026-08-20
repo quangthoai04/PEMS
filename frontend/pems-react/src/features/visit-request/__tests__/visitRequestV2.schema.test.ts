@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildVisitRequestV2Schema,
+  buildCampusVisitSchema,
+  buildPendingCampusEditSchema,
   V2_MAX_CAMPUSES,
   type VisitRequestV2Schema,
 } from '../schema/visitRequestV2.schema';
@@ -124,5 +126,46 @@ describe('visitRequestV2 schema', () => {
     if (!result.success) {
       expect(result.error.issues.some(i => i.message === 'startTimeMinAdvance')).toBe(true);
     }
+  });
+
+  // ── Operational-contact replay scope: an EXISTING campus's contact is read-only, and the backend's
+  //    own split (OperationalContactV2Validator vs OperationalContactReplayV2Validator) never
+  //    format-checks a replayed phone — only a FRESH one being written right now. ───────────────────
+
+  it('does not format-check operational-contact phone on an EXISTING campus (visitInstanceId set)', () => {
+    const campusSchema = buildCampusVisitSchema(72, t);
+    const cv = { ...validCampus('HN'), visitInstanceId: 42 };
+    cv.operationalContact = { ...cv.operationalContact, phone: '+8435352152512asdasdsadasd' };
+    const result = campusSchema.safeParse(cv);
+    expect(result.success).toBe(true);
+  });
+
+  it('still format-checks operational-contact phone on a NEW campus (visitInstanceId null)', () => {
+    const campusSchema = buildCampusVisitSchema(72, t);
+    const cv = { ...validCampus('HN'), visitInstanceId: null };
+    cv.operationalContact = { ...cv.operationalContact, phone: '+8435352152512asdasdsadasd' };
+    const result = campusSchema.safeParse(cv);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some(i =>
+        i.path.join('.') === 'operationalContact.phone' && i.message === 'phoneInvalidField')).toBe(true);
+    }
+  });
+
+  it('an over-length operational-contact phone still fails on an EXISTING campus (structural bound survives)', () => {
+    const campusSchema = buildCampusVisitSchema(72, t);
+    const cv = { ...validCampus('HN'), visitInstanceId: 42 };
+    cv.operationalContact = { ...cv.operationalContact, phone: '0'.repeat(51) };
+    const result = campusSchema.safeParse(cv);
+    expect(result.success).toBe(false);
+  });
+
+  it('buildPendingCampusEditSchema scopes to ONE campus and never validates registerInfo', () => {
+    const pendingSchema = buildPendingCampusEditSchema(0, t);
+    const cv = { ...validCampus('HN'), visitInstanceId: 42 };
+    cv.operationalContact = { ...cv.operationalContact, phone: '+8435352152512asdasdsadasd' };
+    // No registerInfo/partnerSelectionMode/partnerId at all — this screen never submits them.
+    const result = pendingSchema.safeParse({ campusVisits: [cv] });
+    expect(result.success).toBe(true);
   });
 });

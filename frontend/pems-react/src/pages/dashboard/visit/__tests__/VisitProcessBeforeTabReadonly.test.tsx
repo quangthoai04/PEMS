@@ -221,9 +221,48 @@ describe('NP-04: the preparation tab locks the moment the stage moves', () => {
     render(<VisitProcess />);
 
     await waitFor(() => expect(screen.getByTestId('participants-status')).toHaveTextContent('ASSIGNED'));
-    expect(screen.getByTestId('start-preparation-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('start-preparation-button')).toBeInTheDocument();
     expect(prepControls().saveReminders).not.toBeInTheDocument();
     expect(prepControls().saveNote).not.toBeInTheDocument();
     expect(prepControls().agendaTemplate).not.toBeInTheDocument();
+  });
+
+  // ── §F — "Bắt đầu chuẩn bị" moved onto the stepper row; the orange status card is gone ───────────
+
+  it('offers "Bắt đầu chuẩn bị" next to the stepper, with no separate orange status card', async () => {
+    getVisitProcessPermissions.mockResolvedValue(permission({
+      instanceStatus: 'ASSIGNED', canEditBeforeVisit: false, canStartPreparation: true, canStartVisit: false,
+    }));
+    getVisitProcessDetail.mockResolvedValue(detail({ instanceStatus: 'ASSIGNED' }));
+
+    render(<VisitProcess />);
+
+    const button = await screen.findByTestId('start-preparation-button');
+    // Same row as the 3-step tab bar: the CTA and "1. Trước tiếp khách" share one flex container.
+    const row = button.closest('div')?.parentElement?.parentElement;
+    expect(row?.textContent).toContain('Trước tiếp khách');
+
+    // The old block — its own heading and an always-visible explanation — is gone outright, not
+    // shrunk: the CTA text alone already says a host is waiting to start.
+    expect(screen.queryByRole('heading', { name: 'Đã phân công Host' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/mở lịch trình, thành phần tham gia, hậu cần/)).not.toBeInTheDocument();
+
+    // The explanation still exists — behind a click-toggled info control, not always on screen.
+    const info = screen.getByRole('button', { name: /Bắt đầu chuẩn bị mở gì/i });
+    expect(screen.queryByTestId('start-preparation-info')).not.toBeInTheDocument();
+    await userEvent.setup().click(info);
+    expect(screen.getByTestId('start-preparation-info')).toHaveTextContent(/mở lịch trình, thành phần tham gia, hậu cần/);
+  });
+
+  // ── §G1 — the always-visible Agenda helper sentence is gone ──────────────────────────────────────
+
+  it('does not render the Agenda helper sentence above the schedule', async () => {
+    getVisitProcessPermissions.mockResolvedValue(permission());
+    getVisitProcessDetail.mockResolvedValue(detail());
+
+    render(<VisitProcess />);
+
+    await waitFor(() => expect(screen.getByText('Lịch trình hiện tại')).toBeInTheDocument());
+    expect(screen.queryByText(/Sắp xếp các hoạt động theo thứ tự thời gian/)).not.toBeInTheDocument();
   });
 });

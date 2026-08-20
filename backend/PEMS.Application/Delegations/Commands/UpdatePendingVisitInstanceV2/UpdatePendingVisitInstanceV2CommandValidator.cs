@@ -1,5 +1,6 @@
 using FluentValidation;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Domain.Policies;
 
 namespace PEMS.Application.Delegations.Commands.UpdatePendingVisitInstanceV2;
 
@@ -44,7 +45,9 @@ public sealed class UpdatePendingVisitInstanceV2CommandValidator
         {
             RuleFor(x => x.ApproveAfterSave!.HostUserId)
                 .GreaterThan(0UL).WithMessage("Khi duyệt yêu cầu, bạn phải chọn host chính thức.");
-            RuleFor(x => x.ApproveAfterSave!.DecisionNote).MaximumLength(500);
+            // Same column, same limit as the ordinary approve/reject commands — see
+            // VisitMutationPolicy.DecisionNoteMaxLength.
+            RuleFor(x => x.ApproveAfterSave!.DecisionNote).MaximumLength(VisitMutationPolicy.DecisionNoteMaxLength);
         });
     }
 }

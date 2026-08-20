@@ -282,6 +282,17 @@ public sealed class ResolvedCampusVisitDto
     /// </para>
     /// </summary>
     public bool CanOverrideScheduleLeadTime { get; init; }
+
+    /// <summary>
+    /// The read model's OWN verdict on whether "Lưu và duyệt" may be offered inside the pending-campus
+    /// edit — <see cref="PEMS.Application.Delegations.Common.PendingCampusEditRelation.CanSaveAndApprove"/>,
+    /// exposed as its own field rather than left for the frontend to infer from
+    /// <see cref="CanOverrideScheduleLeadTime"/>. The two happen to carry the same value today (both are
+    /// <c>ActsAsCampusLeader</c>), but they answer different questions and must stay independently
+    /// readable — the 72-hour floor and "may I approve in this call" are not the same rule and must not
+    /// be forced to agree just because they currently do.
+    /// </summary>
+    public bool CanSaveAndApprove { get; init; }
 }
 
 public sealed class ResolvedMemberDto

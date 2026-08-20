@@ -187,7 +187,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
 
             var result = await edit.ApplyInstancePendingEditAsync(
                 r, hcm, Content(hcm, Campus("HCM", delegation: "Đoàn HCM đã sửa", visitorName: "Guest HCM")),
-                Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default);
+                Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
 
             // The target moved, and stayed WAITING — editing is not deciding (§30.1).
             Assert.Equal("Đoàn HCM đã sửa", hcm.FormDetail!.DelegationName);
@@ -226,7 +226,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, Campus("HN", delegation: "Đoàn sửa")),
-                    Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
+                    Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
             Assert.Equal(VisitRequestErrorCodes.PendingCampusNotEditable, ex.ErrorCode);
         });
     }
@@ -243,7 +243,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, Campus("HCM")),   // same instance, different campus
-                    Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
+                    Registrant, Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
             Assert.Equal(VisitRequestErrorCodes.CampusSetImmutable, ex.ErrorCode);
         });
     }
@@ -265,7 +265,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<ConflictException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, stale, Registrant, Now,
-                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
             Assert.Equal(VisitRequestErrorCodes.InstanceVersionConflict, ex.ErrorCode);
         });
     }
@@ -289,7 +289,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
                 with { PlannedStartAt = near, PlannedEndAt = near.AddHours(2) };
             await edit.ApplyInstancePendingEditAsync(
                 r, hn, Content(hn, sameSchedule), Registrant, Now,
-                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default);
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
 
             Assert.Equal("Đoàn HN (sửa chính tả)", hn.FormDetail!.DelegationName);
             Assert.Equal(near, hn.PlannedStartAt);
@@ -314,7 +314,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, moved), Registrant, Now,
-                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: true, default));
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: true, approveAfterSaveRequested: false, default));
             Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
             Assert.Equal(originalStart, hn.PlannedStartAt);
         });
@@ -342,13 +342,13 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<ConflictException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, moved), leader, Now,
-                    actorIsCampusLeader: true, overrideLeadTimeConfirmed: false, default));
+                    actorIsCampusLeader: true, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
             Assert.Equal(VisitMutationErrorCodes.LeadTimeOverrideConfirmationRequired, ex.ErrorCode);
             Assert.Equal(originalStart, hn.PlannedStartAt); // nothing applied while the question is open
 
             await edit.ApplyInstancePendingEditAsync(
                 r, hn, Content(hn, moved), leader, Now,
-                actorIsCampusLeader: true, overrideLeadTimeConfirmed: true, default);
+                actorIsCampusLeader: true, overrideLeadTimeConfirmed: true, approveAfterSaveRequested: false, default);
 
             Assert.Equal(tooSoon, hn.PlannedStartAt);
             // The override is a decision somebody took, so it gets its own audit row rather than being
@@ -372,7 +372,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
 
             await edit.ApplyInstancePendingEditAsync(
                 r, hn, Content(hn, Campus("HN", delegation: "Đoàn HN (leader sửa)")), leader, Now,
-                actorIsCampusLeader: true, overrideLeadTimeConfirmed: true, default);
+                actorIsCampusLeader: true, overrideLeadTimeConfirmed: true, approveAfterSaveRequested: false, default);
 
             Assert.False(await db.AuditLogs.AnyAsync(a =>
                 a.VisitInstanceId == hn.VisitInstanceId && a.Action == VisitAuditActions.LeadTimeOverride));
@@ -389,11 +389,43 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             MarkWaitingApproval(hn, Registrant);
             var revisionBefore = hn.FormDetail!.FormRevision;
 
-            await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, Campus("HN")), Registrant, Now,
-                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
+            Assert.Equal(VisitFormV2ErrorCodes.PendingCampusNoContentChanges, ex.ErrorCode);
             Assert.Equal(revisionBefore, hn.FormDetail!.FormRevision);
+        });
+    }
+
+    /// <summary>
+    /// The service-level half of the "Lưu và duyệt" no-diff fix: when the SAME command also asked to
+    /// approve, a no-diff edit is a silent no-op instead of a refusal — the caller (the command handler)
+    /// still has an approval to run. No revision, no audit row, no row-version bump; the result reports
+    /// exactly the request's CURRENT scope/mixed/row-version, not anything freshly computed.
+    /// </summary>
+    [Fact]
+    public async Task An_edit_that_changes_nothing_is_a_silent_noop_when_an_approval_is_riding_with_it()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var revisionBefore = hn.FormDetail!.FormRevision;
+            var rowVersionBefore = hn.RowVersion;
+            var requestRowVersionBefore = r.RowVersion;
+
+            var result = await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, Campus("HN")), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: true, default);
+
+            Assert.Equal(revisionBefore, hn.FormDetail!.FormRevision);
+            Assert.Equal(rowVersionBefore, hn.RowVersion);
+            Assert.Equal(requestRowVersionBefore, r.RowVersion);
+            Assert.Equal(r.RowVersion, result.RequestRowVersion);
+            Assert.False(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                h.VisitInstanceId == hn.VisitInstanceId && h.SourceType == FormRevisionSourceTypes.PendingEdit));
         });
     }
 
@@ -427,7 +459,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
 
             await edit.ApplyInstancePendingEditAsync(
                 r, hn, Content(hn, scheduleOnly), Registrant, Now,
-                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default);
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
 
             Assert.Equal(revisionBefore + 1, hn.FormDetail!.FormRevision);
             Assert.Equal(newStart, hn.PlannedStartAt);
@@ -489,8 +521,8 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                 edit.ApplyInstancePendingEditAsync(
                     r, hn, Content(hn, resubmitted), Registrant, Now,
-                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
-            Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
+            Assert.Equal(VisitFormV2ErrorCodes.PendingCampusNoContentChanges, ex.ErrorCode);
 
             // Refused BEFORE anything was written: revision, members and stored spelling are untouched.
             Assert.Equal(revisionBefore, hn.FormDetail!.FormRevision);
@@ -523,7 +555,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
 
             await edit.ApplyInstancePendingEditAsync(
                 r, hn, Content(hn, edited), Registrant, Now,
-                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default); // must not throw
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default); // must not throw
 
             var newMemberId = hn.GuestMemberLinks.Single().GuestMemberId;
             var savedNationality = await db.VisitGuestMembers.AsNoTracking()

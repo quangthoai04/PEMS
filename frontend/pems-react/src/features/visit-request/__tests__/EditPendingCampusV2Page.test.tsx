@@ -19,6 +19,11 @@ vi.mock('../../delegations/api/delegationsApi', () => ({
   delegationsApi: { getHostCandidates: vi.fn() },
 }));
 
+vi.mock('../../../shared/utils/toast', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../shared/utils/toast')>();
+  return { ...actual, showInfoToast: vi.fn(actual.showInfoToast) };
+});
+
 vi.mock('../hooks/useRegistrationCampuses', () => ({
   useRegistrationCampuses: () => ({
     campuses: [
@@ -32,6 +37,7 @@ vi.mock('../hooks/useRegistrationCampuses', () => ({
 
 import { getVisitRequestFormV2, updatePendingVisitInstance } from '../api/visitRequestV2Api';
 import { delegationsApi } from '../../delegations/api/delegationsApi';
+import { showInfoToast } from '../../../shared/utils/toast';
 
 /** Far enough out that the 72-hour floor is satisfied by the EXISTING schedule. */
 const FAR_START = '2027-09-01T09:00:00';
@@ -219,6 +225,7 @@ describe('EditPendingCampusV2Page', () => {
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
         campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
           canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
         }),
       ],
     }));
@@ -265,10 +272,13 @@ describe('EditPendingCampusV2Page', () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
       campusVisits: [
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
-        // Granted the edit; canOverrideScheduleLeadTime deliberately false — this is what the read
-        // model returns for a leader editing a campus they do not lead.
+        // Granted the edit; canOverrideScheduleLeadTime AND canSaveAndApprove deliberately false —
+        // this is what the read model returns for a leader editing (as its registrant) a campus they
+        // do not lead. Both fields explicit here: the registrant right on the REQUEST stays intact
+        // (Save works below), only the two leader-only privileges are withheld.
         campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
           canOverrideScheduleLeadTime: false,
+          canSaveAndApprove: false,
         }),
       ],
     }));
@@ -327,6 +337,7 @@ describe('EditPendingCampusV2Page', () => {
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
         campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
           canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
         }),
       ],
     }));
@@ -368,5 +379,229 @@ describe('EditPendingCampusV2Page', () => {
       .toHaveTextContent(/no longer waiting for a decision/i);
     expect(screen.getByRole('button', { name: /Reload latest data/ })).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // ── A. Save with nothing to write is informational, never a failed mutation (bug report §A) ────
+
+  it('shows an info toast — not a red inline alert — when Save has nothing to write', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm());
+    vi.mocked(updatePendingVisitInstance).mockRejectedValue(
+      axiosError(400, 'PENDING_CAMPUS_NO_CONTENT_CHANGES', 'Không có thay đổi nào để lưu cho cơ sở này.'));
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(vi.mocked(showInfoToast)).toHaveBeenCalledWith('Nothing to save.'));
+    // Matched by CODE, never message text — and never rendered as the red inline alert other
+    // refusals use, since this is not a failed mutation.
+    expect(screen.queryByTestId('pending-campus-edit-error')).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  // ── C. The Staff Leader explanatory banner is gone; the buttons alone say what may be done ──────
+
+  it('no longer renders the Staff Leader explanatory banner above Save/Save&Approve', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
+        }),
+      ],
+    }));
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    expect(screen.queryByText(/Staff Leader for this campus/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('pending-campus-save-approve')).toBeInTheDocument();
+  });
+
+  // ── D. Shared Host UI: same visual language as the List/Detail AssignHostModal ───────────────────
+
+  it('Host picker offers a search box, a self-host badge, a conflict warning, and the canonical note length', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
+        }),
+      ],
+    }));
+    vi.mocked(delegationsApi.getHostCandidates).mockResolvedValue([
+      {
+        userId: 3, fullName: 'Leader HCM', email: 'leader@fpt.edu.vn', campusId: 2,
+        departmentName: 'IC', subRole: 'LEADER', isStaffLeaderSelfHostOption: true,
+        hasScheduleConflict: false, conflictCount: 0, conflicts: [],
+      },
+      {
+        userId: 101, fullName: 'IC Staff Busy', email: 'ic@fpt.edu.vn', campusId: 2,
+        departmentName: 'IC', subRole: 'STAFF', hasScheduleConflict: true, conflictCount: 2,
+        conflicts: [{ source: 'VISIT_INSTANCE', title: 'Another delegation', startAt: '2027-09-01T09:00:00', endAt: '2027-09-01T10:00:00' }],
+      },
+    ] as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.click(screen.getByTestId('pending-campus-save-approve'));
+    await screen.findByTestId('pending-campus-host-3');
+
+    // Search box — same visual language as List/Detail's AssignHostModal, not the old radio list.
+    expect(screen.getByPlaceholderText('Search staff by name, email, department...')).toBeInTheDocument();
+    // Self-host candidate carries the self-host badge.
+    expect(screen.getByTestId('pending-campus-host-3')).toHaveTextContent('I will take it on');
+    // A candidate with a schedule conflict shows the warning, not a silent selection.
+    expect(screen.getByTestId('pending-campus-host-101')).toHaveTextContent('Schedule conflict with this request');
+    // Canonical decisionNote max length — one source shared with the ordinary AssignHostModal
+    // (VisitMutationPolicy.DecisionNoteMaxLength on the backend).
+    expect(screen.getByTestId('pending-campus-decision-note')).toHaveAttribute('maxlength', '2000');
+  });
+
+  // ── Replay scope: an EXISTING campus's read-only contact/registrant snapshot must never block a
+  //    mutation that never touches those fields (bug report §II/§III). ─────────────────────────────
+
+  it('does not let a legacy invalid operational-contact phone block Save or Save&Approve', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
+          operationalContact: {
+            fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
+            // Structurally nonsense, exactly the shape reported: this campus's contact is read-only
+            // here, and the backend's own OperationalContactReplayV2Validator never format-checks it.
+            phone: '+8435352152512asdasdsadasd', email: 'op@example.com',
+            confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
+          },
+        }),
+      ],
+    }));
+    vi.mocked(updatePendingVisitInstance).mockResolvedValue({
+      visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+      visitInstanceStatus: 'WAITING_REQUEST_APPROVAL', instanceRowVersion: 5, requestRowVersion: 8,
+      approved: false, hostUserId: null, message: 'Đã cập nhật',
+    } as never);
+    vi.mocked(delegationsApi.getHostCandidates).mockResolvedValue([] as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId('pending-campus-save-approve'));
+    expect(await screen.findByTestId('pending-campus-decision-note')).toBeInTheDocument();
+  });
+
+  it('does not let a legacy registrant snapshot that fails create-strength validation block Save', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      registrant: {
+        fullName: 'Reg', organization: 'ĐH X', jobTitle: 'TP',
+        phone: 'not-a-phone', email: 'not-an-email', nationality: '',
+      },
+    }));
+    vi.mocked(updatePendingVisitInstance).mockResolvedValue({
+      visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+      visitInstanceStatus: 'WAITING_REQUEST_APPROVAL', instanceRowVersion: 5, requestRowVersion: 8,
+      approved: false, hostUserId: null, message: 'Đã cập nhật',
+    } as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.click(screen.getByTestId('pending-campus-save'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
+  });
+
+  it('blocks Save&Approve on an invalid EDITABLE field and focuses it, without opening the Host picker', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
+        }),
+      ],
+    }));
+
+    renderPage();
+    const delegationInput = await screen.findByDisplayValue('Đoàn HCM');
+    fireEvent.change(delegationInput, { target: { value: '' } });
+
+    fireEvent.click(screen.getByTestId('pending-campus-save-approve'));
+
+    await waitFor(() => expect(delegationInput.closest('[data-field-error="true"]')).not.toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(delegationInput));
+    expect(screen.queryByTestId('pending-campus-decision-note')).not.toBeInTheDocument();
+    expect(updatePendingVisitInstance).not.toHaveBeenCalled();
+  });
+
+  // ── Save&Approve + the 72-hour floor together (bug report §IV) ───────────────────────────────────
+
+  it('keeps the chosen Host and decision note through a 72-hour override confirmation on Save&Approve', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: true,
+        }),
+      ],
+    }));
+    vi.mocked(delegationsApi.getHostCandidates).mockResolvedValue([
+      { userId: 77, fullName: 'Host A', email: 'a@fpt.edu.vn', campusId: 2, departmentName: 'IC', subRole: null, hasScheduleConflict: false, conflictCount: 0, conflicts: [] },
+    ] as never);
+    vi.mocked(updatePendingVisitInstance)
+      .mockRejectedValueOnce(axiosError(409, 'LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED', 'Chưa đủ 72 giờ'))
+      .mockResolvedValueOnce({
+        visitRequestId: 5, visitInstanceId: 2, visitRequestStatus: 'PARTIALLY_APPROVED',
+        visitInstanceStatus: 'ASSIGNED', instanceRowVersion: 5, requestRowVersion: 8,
+        approved: true, hostUserId: 77, message: 'Đã duyệt',
+      } as never);
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    fireEvent.click(screen.getByTestId('pending-campus-save-approve'));
+    await screen.findByTestId('pending-campus-host-77');
+    fireEvent.click(screen.getByTestId('pending-campus-host-77'));
+    fireEvent.change(screen.getByTestId('pending-campus-decision-note'), { target: { value: 'Đồng ý tiếp nhận' } });
+    fireEvent.click(screen.getByTestId('pending-campus-host-confirm'));
+
+    await screen.findByTestId('pending-campus-override-body');
+    expect(vi.mocked(updatePendingVisitInstance).mock.calls[0][2].approveAfterSave).toEqual({
+      hostUserId: 77, decisionNote: 'Đồng ý tiếp nhận',
+    });
+
+    fireEvent.click(screen.getByTestId('pending-campus-override-confirm'));
+
+    await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(2));
+    const secondCall = vi.mocked(updatePendingVisitInstance).mock.calls[1][2];
+    expect(secondCall.overrideLeadTimeConfirmed).toBe(true);
+    // The regression itself: before the fix this was undefined/null, so a "Lưu và duyệt" that hit the
+    // 72-hour floor ended as a plain save — the leader believed they had approved the campus.
+    expect(secondCall.approveAfterSave).toEqual({ hostUserId: 77, decisionNote: 'Đồng ý tiếp nhận' });
+  });
+
+  // ── CanSaveAndApprove is its own contract, not a canOverrideScheduleLeadTime proxy (bug report §V) ─
+
+  it('does not use canOverrideScheduleLeadTime as a proxy for the Save&Approve button', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          canOverrideScheduleLeadTime: true,
+          canSaveAndApprove: false,
+        }),
+      ],
+    }));
+
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+    expect(screen.queryByTestId('pending-campus-save-approve')).not.toBeInTheDocument();
   });
 });

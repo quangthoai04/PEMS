@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -387,6 +388,10 @@ public sealed class PerCampusFormV2ReadTests
         // and rendering it greyed out would suggest the door might open later.
         Assert.DoesNotContain(campus.Capabilities, c => c.Code == VisitFormActions.EditPendingCampus);
         Assert.False(campus.CanOverrideScheduleLeadTime);
+        // No EditPendingCampus at all here, so CanSaveAndApprove (its own contract — see the DTO's
+        // doc comment) must agree rather than accidentally offering "Lưu và duyệt" on a screen this
+        // actor cannot even open.
+        Assert.False(campus.CanSaveAndApprove);
 
         // The registrant is untouched by any of this.
         var ownerView = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
@@ -419,11 +424,20 @@ public sealed class PerCampusFormV2ReadTests
         var campus = Assert.Single(view.CampusVisits);
         Assert.Equal((long)Campus1, campus.CampusId);
         Assert.Contains(VisitFormActions.EditPendingCampus, campus.AllowedActions);
-        // The flag the client draws the override dialog and the save-and-approve button from.
+        // The flag the client draws the 72-hour override dialog from.
         Assert.False(campus.CanOverrideScheduleLeadTime);
+        // The SEPARATE flag the "Lưu và duyệt" button itself renders from — same actor, same false,
+        // for its own reason: they edit Campus1 as its registrant but do not lead it.
+        Assert.False(campus.CanSaveAndApprove);
         // And nothing about deciding Campus1 leaked in with it: the handover is the leader's action on
         // the campus they actually lead, and this is not it.
         Assert.DoesNotContain(VisitFormActions.TransferHost, campus.AllowedActions);
+        // Nor does the ORDINARY decision — approve/reject are Campus1's own leader's business, and
+        // being Campus1's registrant does not make this actor Campus1's leader. Being a Staff Leader
+        // of a DIFFERENT campus must never be read as "Staff Leader, therefore only own-campus
+        // actions" — the registrant-side rights above are real and independent of it.
+        Assert.DoesNotContain(VisitListActions.ApproveAndAssignHost, campus.AllowedActions);
+        Assert.DoesNotContain(VisitListActions.CampusReject, campus.AllowedActions);
         await tx.RollbackAsync();
     }
 
@@ -452,6 +466,98 @@ public sealed class PerCampusFormV2ReadTests
         // code in the list twice for the one person who is both.
         Assert.Single(campus.Capabilities, c => c.Code == VisitFormActions.EditPendingCampus);
         Assert.True(campus.CanOverrideScheduleLeadTime);
+        // Same actor, own separate verdict: the leader-registrant pairing grants BOTH the 72-hour
+        // override AND "Lưu và duyệt" — they happen to agree today (both ActsAsCampusLeader), but
+        // CanSaveAndApprove must be readable on its own rather than inferred from the other field.
+        Assert.True(campus.CanSaveAndApprove);
+        await tx.RollbackAsync();
+    }
+
+    // ── Ordinary campus decision (APPROVE_AND_ASSIGN_HOST / CAMPUS_REJECT) — the V2 Detail gap ────
+    //
+    // Distinct from EditPendingCampus above: EDIT right and DECISION right are separate questions.
+    // A Staff Leader decides their OWN campus ordinarily whether or not they filed the request —
+    // exactly the actions ViewGuestDelegationListQueryHandler has offered the list screen all along
+    // (VisitListActions.ApproveAndAssignHost / .CampusReject), now also offered here so a leader who
+    // opens the V2 Detail screen instead of the list is not stuck with nothing to click.
+
+    /// <summary>
+    /// The campus's own Staff Leader, on a request somebody else filed (the ordinary case — approving
+    /// and rejecting never required leading AND registering). WAITING_REQUEST_APPROVAL, request active,
+    /// contact gate open: every condition ApproveCampusInstanceCommandHandler/RejectCampusInstanceCommandHandler
+    /// re-check independently is already true, so the read model must offer both.
+    /// </summary>
+    [Fact]
+    public async Task OrdinaryCampusDecision_is_offered_to_this_campus_own_Staff_Leader_while_waiting()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // Seeded registrant is VisitorOwner — the leader below did not file this request.
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        var leaderView = await Resolver(db, StaffLeader(SlCampus1, Campus1))
+            .ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = Assert.Single(leaderView.CampusVisits);
+        Assert.Contains(VisitListActions.ApproveAndAssignHost, campus.AllowedActions);
+        Assert.Contains(VisitListActions.CampusReject, campus.AllowedActions);
+        // EDIT right is a different question and correctly absent — they never filed this request.
+        Assert.DoesNotContain(VisitFormActions.EditPendingCampus, campus.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// The mirror image of the read-model rule above: a Staff Leader of a DIFFERENT campus gets
+    /// neither ordinary action for a campus they do not lead, and neither does the registrant who is
+    /// not that campus's leader — deciding stays with whoever actually leads the campus.
+    /// </summary>
+    [Fact]
+    public async Task OrdinaryCampusDecision_is_withheld_from_a_different_campus_leader_and_from_a_non_leader_registrant()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
+
+        // Campus2's leader is not scoped to this request at all — this campus is the only one on it,
+        // and it is not theirs — so the read model refuses the whole request rather than a bare empty
+        // list, exactly as it does for any other stranger.
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            Resolver(db, StaffLeader(SlCampus2, Campus2)).ResolveAsync(req.VisitRequestId, CancellationToken.None));
+
+        var ownerView = await Resolver(db, Owner()).ResolveAsync(req.VisitRequestId, CancellationToken.None);
+        var campus = Assert.Single(ownerView.CampusVisits);
+        // The registrant edits Campus1 (they filed it) but does not lead it, so neither decision
+        // action is offered — deciding is the campus leader's alone, filed-by-them or not.
+        Assert.DoesNotContain(VisitListActions.ApproveAndAssignHost, campus.AllowedActions);
+        Assert.DoesNotContain(VisitListActions.CampusReject, campus.AllowedActions);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>
+    /// Once the campus is decided (ASSIGNED) the ordinary decision is no longer offered — the same
+    /// leader keeps other actions (host handover) but not a second approve/reject on a campus that is
+    /// no longer WAITING_REQUEST_APPROVAL.
+    /// </summary>
+    [Fact]
+    public async Task OrdinaryCampusDecision_is_withheld_once_the_campus_is_already_decided()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: SlCampus1);
+
+        var leaderView = await Resolver(db, StaffLeader(SlCampus1, Campus1))
+            .ResolveAsync(req.VisitRequestId, CancellationToken.None);
+
+        var campus = Assert.Single(leaderView.CampusVisits);
+        Assert.Equal(VisitInstanceStatuses.Assigned, campus.InstanceStatus);
+        Assert.DoesNotContain(VisitListActions.ApproveAndAssignHost, campus.AllowedActions);
+        Assert.DoesNotContain(VisitListActions.CampusReject, campus.AllowedActions);
         await tx.RollbackAsync();
     }
 

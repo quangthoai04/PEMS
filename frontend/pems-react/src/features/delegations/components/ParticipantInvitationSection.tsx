@@ -442,12 +442,6 @@ export function ParticipantInvitationSection({
         )}
       </div>
 
-      {!canManage && (
-        <p className="text-xs font-normal text-slate-500">
-          Chỉ Host phụ trách mới có thể mời thành phần tham gia. Danh sách dưới đây ở chế độ xem.
-        </p>
-      )}
-
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {/* ── Staff hỗ trợ IC ── */}
         <Panel title="Staff hỗ trợ IC" icon={<Users className="w-5 h-5" />}>

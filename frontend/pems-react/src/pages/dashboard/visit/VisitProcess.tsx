@@ -23,7 +23,8 @@ import {
   Wand2,
   Download,
   FileText,
-  Calendar
+  Calendar,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { VisitDuringTab } from './VisitDuringTab';
@@ -270,6 +271,9 @@ export function VisitProcess() {
   // ASSIGNED → BEFORE_VISIT. Only ever from this click handler: the campus must not start preparing
   // because the Host opened the page, switched tabs or triggered a refetch.
   const [startingPreparation, setStartingPreparation] = useState(false);
+  // Click-toggled (not hover-only), so the "what does this open" explanation reaches touch and
+  // keyboard users exactly like mouse users — see the button markup below.
+  const [showStartPrepInfo, setShowStartPrepInfo] = useState(false);
   const startPreparation = async () => {
     if (!perm || startingPreparation) return; // second guard = the double-click guard
     setStartingPreparation(true);
@@ -1069,40 +1073,83 @@ export function VisitProcess() {
         </div>
       )}
 
-      {/* Tabs */}
+      {/* Tabs + (when the campus is ASSIGNED and this Host has not opened preparation yet) the
+          "Bắt đầu chuẩn bị" CTA, sharing one row instead of a separate orange card below: the CTA
+          text itself already says the campus is ready to start, so a second block repeating "Đã
+          phân công Host" said nothing the button did not. Driven by the backend flag alone — never
+          by relation/role — so a Staff Leader, HO, the operational contact and the registrant simply
+          never see the CTA. */}
       {!isReceptionDetail && (
-        <div className="flex bg-white rounded-2xl p-1.5 shadow-sm border border-gray-200 mb-8 max-w-2xl">
-          {canViewBefore && (
-            <button
-              onClick={() => setActiveTab('before')}
-              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'before' ? 'bg-[#004c91] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
-            >
-              1. Trước tiếp khách
-            </button>
-          )}
-          {canViewDuring && (
-            <button
-              onClick={() => duringUnlocked && setActiveTab('during')}
-              disabled={!duringUnlocked}
-              title={duringUnlocked ? undefined : 'Hoàn thành giai đoạn "Trước tiếp khách" để mở khóa.'}
-              aria-disabled={!duringUnlocked}
-              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : duringUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
-            >
-              {!duringUnlocked && <Lock className="w-3.5 h-3.5" />}
-              2. Đang tiếp khách
-            </button>
-          )}
-          {canViewAfter && (
-            <button
-              onClick={() => afterUnlocked && setActiveTab('after')}
-              disabled={!afterUnlocked}
-              title={afterUnlocked ? undefined : 'Hoàn thành giai đoạn "Đang tiếp khách" để mở khóa.'}
-              aria-disabled={!afterUnlocked}
-              className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : afterUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
-            >
-              {!afterUnlocked && <Lock className="w-3.5 h-3.5" />}
-              3. Sau tiếp khách
-            </button>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-1 bg-white rounded-2xl p-1.5 shadow-sm border border-gray-200 max-w-2xl">
+            {canViewBefore && (
+              <button
+                onClick={() => setActiveTab('before')}
+                className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none ${activeTab === 'before' ? 'bg-[#004c91] text-white shadow-md' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'}`}
+              >
+                1. Trước tiếp khách
+              </button>
+            )}
+            {canViewDuring && (
+              <button
+                onClick={() => duringUnlocked && setActiveTab('during')}
+                disabled={!duringUnlocked}
+                title={duringUnlocked ? undefined : 'Hoàn thành giai đoạn "Trước tiếp khách" để mở khóa.'}
+                aria-disabled={!duringUnlocked}
+                className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'during' ? 'bg-[#f37021] text-white shadow-md' : duringUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
+              >
+                {!duringUnlocked && <Lock className="w-3.5 h-3.5" />}
+                2. Đang tiếp khách
+              </button>
+            )}
+            {canViewAfter && (
+              <button
+                onClick={() => afterUnlocked && setActiveTab('after')}
+                disabled={!afterUnlocked}
+                title={afterUnlocked ? undefined : 'Hoàn thành giai đoạn "Đang tiếp khách" để mở khóa.'}
+                aria-disabled={!afterUnlocked}
+                className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all outline-none inline-flex items-center justify-center gap-1.5 ${activeTab === 'after' ? 'bg-[#00a651] text-white shadow-md' : afterUnlocked ? 'text-gray-500 hover:bg-gray-50 hover:text-gray-700' : 'text-slate-300 cursor-not-allowed'}`}
+              >
+                {!afterUnlocked && <Lock className="w-3.5 h-3.5" />}
+                3. Sau tiếp khách
+              </button>
+            )}
+          </div>
+
+          {perm?.canStartPreparation && (
+            <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="start-preparation-button"
+                  disabled={startingPreparation}
+                  onClick={startPreparation}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f37021] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#d95f16] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {startingPreparation ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {startingPreparation ? 'Đang bắt đầu...' : 'Bắt đầu chuẩn bị'}
+                </button>
+                {showStartPrepInfo && (
+                  <div
+                    role="tooltip"
+                    data-testid="start-preparation-info"
+                    className="absolute right-0 top-full z-20 mt-1.5 w-64 rounded-xl border border-gray-200 bg-white p-3 text-xs font-normal leading-snug text-gray-600 shadow-lg"
+                  >
+                    Bắt đầu giai đoạn chuẩn bị để mở lịch trình, thành phần tham gia, hậu cần, nhắc
+                    lịch và ghi chú chuẩn bị.
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                aria-label="Bắt đầu chuẩn bị mở gì?"
+                aria-expanded={showStartPrepInfo}
+                onClick={() => setShowStartPrepInfo((v) => !v)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-400 outline-none transition-colors hover:bg-gray-100 hover:text-gray-600"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1112,35 +1159,6 @@ export function VisitProcess() {
           {/* Honest notice: the "Thông tin chung" registrant/delegation block is read-only
               reference data (what the guest registered). Lịch trình, thành phần tham gia and
               hậu cần (Chuẩn bị chi tiết) are all wired to real save APIs. */}
-
-          {/* Campus is ASSIGNED: approved and handed to this Host, preparation not opened yet.
-              Everything below renders read-only until they press this. The banner is driven by the
-              backend flag — never by relation/role — so a Staff Leader, HO, the operational contact
-              and the registrant simply never see it. */}
-          {perm?.canStartPreparation && (
-            <div
-              data-testid="start-preparation-banner"
-              className="rounded-[2rem] border border-[#f37021]/30 bg-[#fff7f2] p-6 flex flex-col sm:flex-row sm:items-center gap-4 justify-between"
-            >
-              <div>
-                <h2 className="text-base font-bold text-[#004c91]">Đã phân công Host</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Chuyến thăm chưa bắt đầu giai đoạn chuẩn bị. Bấm “Bắt đầu chuẩn bị” để mở lịch trình,
-                  thành phần tham gia, hậu cần, nhắc lịch và ghi chú chuẩn bị.
-                </p>
-              </div>
-              <button
-                type="button"
-                data-testid="start-preparation-button"
-                disabled={startingPreparation}
-                onClick={startPreparation}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#f37021] px-6 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition-colors hover:bg-[#d95f16] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                {startingPreparation ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                {startingPreparation ? 'Đang bắt đầu...' : 'Bắt đầu chuẩn bị'}
-              </button>
-            </div>
-          )}
 
           {/* Preparation is over: say so, once, at the top (NP-04).
               Everything below is still shown — the agenda, who was invited, what was requested and
@@ -1374,10 +1392,9 @@ export function VisitProcess() {
                           <div className="mb-2 flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <h4 className="text-sm font-bold text-slate-800">Lịch trình hiện tại</h4>
-                              <p className="text-xs text-slate-500">
-                                Sắp xếp các hoạt động theo thứ tự thời gian. Mỗi dòng gồm thời gian, nội dung, địa điểm và người phụ trách.
-                                {agendaItems.length > 0 && <span className="text-slate-400"> · {agendaItems.length} hoạt động</span>}
-                              </p>
+                              {agendaItems.length > 0 && (
+                                <p className="text-xs text-slate-400">{agendaItems.length} hoạt động</p>
+                              )}
                             </div>
                             {canEditAgenda && !isEditingAgenda && (
                               <button type="button" onClick={() => setIsEditingAgenda(true)}

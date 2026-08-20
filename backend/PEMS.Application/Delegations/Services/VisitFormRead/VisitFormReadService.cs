@@ -4,6 +4,7 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
@@ -378,6 +379,30 @@ public sealed class VisitFormReadService : IVisitFormReadService
             if (hasPendingAmendment && requesterSideHere)
                 instanceActions.Add(VisitFormActions.WithdrawAmendment);
 
+            // ── Ordinary campus decision (approve+assign-host / reject) — the SAME two actions the
+            //    list/management screen already offers this campus's Staff Leader
+            //    (ViewGuestDelegationListQueryHandler.BuildAllowedActions), reproduced here on the
+            //    identical four conditions rather than shared through a helper: that handler works off
+            //    already-flattened row/relation DTOs it has no VisitRequest/VisitRequestCampus entities
+            //    to hand a shared predicate, so matching its checks verbatim is what keeps the two
+            //    read models from silently disagreeing, without reshaping either one's data model for
+            //    this alone. NOT modelled as a Decide()/VisitActionCapabilityDto: unlike edit/amendment/
+            //    transfer, ordinary approve and reject do not go through VisitMutationPolicy at all —
+            //    ApproveCampusInstanceCommandHandler and RejectCampusInstanceCommandHandler re-authorize
+            //    independently on exactly these checks (leader of THIS campus, request not cancelled,
+            //    contact gate open, campus still WAITING_REQUEST_APPROVAL), so the read model only needs
+            //    to OFFER — never to decide. EDIT right and DECISION right are deliberately different
+            //    questions: `pendingEdit.CanEdit` above answers the first, this answers the second, and a
+            //    leader who is not the registrant gets this without ever getting EditPendingCampus. ──
+            if (isLeaderHere
+                && request.Status != VisitRequestStatuses.Cancelled
+                && !VisitRequestStatuses.IsBehindContactGate(request.Status)
+                && c.Status == VisitInstanceStatuses.WaitingRequestApproval)
+            {
+                instanceActions.Add(VisitListActions.ApproveAndAssignHost);
+                instanceActions.Add(VisitListActions.CampusReject);
+            }
+
             // ── This campus's contact workflow, offered only where its handler would accept the call. ──
             pendingContactChanges.TryGetValue(c.VisitInstanceId, out var pendingChange);
             instanceActions.AddRange(ContactActionsFor(
@@ -447,6 +472,9 @@ public sealed class VisitFormReadService : IVisitFormReadService
                 // nor a registrant editing a campus they do not lead can be shown a dialog or a button
                 // offering something the API would refuse.
                 CanOverrideScheduleLeadTime = pendingEdit.ActsAsCampusLeader,
+                // Own field, own value straight from the already-computed relation — see the DTO's own
+                // doc comment for why this is not read off CanOverrideScheduleLeadTime.
+                CanSaveAndApprove = pendingEdit.CanSaveAndApprove,
             });
         }
 

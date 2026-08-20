@@ -184,8 +184,21 @@ describe('v2 required-field contract', () => {
         ...validCampus(), visitInstanceId: 42, expectedRowVersion: 3,
         operationalContact: { ...blankContact, fullName: 'X', organization: 'X', jobTitle: 'X', email: 'x@example.com', phone: '090abc123' },
       }];
-      // Phone keeps its own format check regardless (buildPhoneSchema), independent of new/existing —
-      // this pins that the relaxation above did not also swallow the phone-format rule.
+      // Mirrors the backend split: OperationalContactReplayV2Validator (existing campus) checks only
+      // MaxLength on phone, never format — MustBeAPhoneNumber lives in OperationalContactV2Validator,
+      // the FRESH-write path only. A legacy value this odd (or the reported
+      // "+8435352152512asdasdsadasd") must not block an unrelated edit on a campus whose contact this
+      // screen cannot even submit.
+      const result = schema.safeParse(values);
+      expect(result.success).toBe(true);
+    });
+
+    it('still flags an oddly-formatted phone on a campus newly added in the same edit', () => {
+      const values = validValues();
+      values.campusVisits = [{
+        ...validCampus(), visitInstanceId: null,
+        operationalContact: { fullName: 'X', organization: 'X', jobTitle: 'X', email: 'x@example.com', phone: '090abc123' },
+      }];
       const result = schema.safeParse(values);
       expect(result.success).toBe(false);
       const paths = result.success ? [] : result.error.issues.map(i => i.path.join('.'));

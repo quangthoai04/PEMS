@@ -118,6 +118,15 @@ public static class VisitFormV2ErrorCodes
     // Optimistic-concurrency conflict on the safe-edit/amendment payload versions.
     public const string VisitFormConcurrencyConflict = "VISIT_FORM_CONCURRENCY_CONFLICT";
 
+    /// <summary>
+    /// A per-campus pending edit (<c>ApplyInstancePendingEditAsync</c>) named neither a content change
+    /// nor a schedule change. Matched by CODE on the frontend, never by message text — a plain "Lưu"
+    /// on this code is an informational no-op (info toast, stay on the screen), not a failed mutation;
+    /// when the SAME request also asked to approve, the edit half is skipped as a no-op and the
+    /// approval still goes through, so this code is never raised for that combined case.
+    /// </summary>
+    public const string PendingCampusNoContentChanges = "PENDING_CAMPUS_NO_CONTENT_CHANGES";
+
     public const string AmendmentAlreadyPending = "AMENDMENT_ALREADY_PENDING";
     public const string AmendmentNotEditable = "AMENDMENT_NOT_EDITABLE";
     public const string AmendmentNoChanges = "AMENDMENT_NO_CHANGES";

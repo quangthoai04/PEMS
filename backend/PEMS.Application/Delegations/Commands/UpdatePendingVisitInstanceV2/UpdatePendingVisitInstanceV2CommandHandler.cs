@@ -148,6 +148,7 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
                 // will actually have to prepare THIS visit, so only they can knowingly stand it down.
                 actorIsCampusLeader: relation.ActsAsCampusLeader,
                 overrideLeadTimeConfirmed: request.OverrideLeadTimeConfirmed,
+                approveAfterSaveRequested: request.ApproveAfterSave is not null,
                 cancellationToken);
             requestRowVersion = result.RequestRowVersion;
 

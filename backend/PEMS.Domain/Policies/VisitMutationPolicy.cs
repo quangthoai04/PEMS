@@ -206,6 +206,16 @@ public static class VisitMutationPolicy
     /// </summary>
     public const int MinScheduleLeadHours = 72;
 
+    /// <summary>
+    /// The one length every campus decision note is held to — approve, reject, and "Lưu và duyệt"'s
+    /// combined approval, all of which write the SAME column (<c>visit_request_campuses.decision_note</c>,
+    /// declared <c>TEXT</c> so the database itself imposes no ceiling). Before this constant existed the
+    /// three validators had each picked their own number (2000/2000/500), which is real drift on one
+    /// column with one meaning, not three different business rules — this is the single source every
+    /// validator and every frontend textarea for a decision note must read instead of a literal.
+    /// </summary>
+    public const int DecisionNoteMaxLength = 2000;
+
     /// <summary>Campus states that are decided and have not started — where post-approval actions live.
     /// Both ASSIGNED (Host named, preparation not started) and BEFORE_VISIT (Host preparing) qualify:
     /// the actions this governs — a requester-side amendment, a host handover — depend on the campus

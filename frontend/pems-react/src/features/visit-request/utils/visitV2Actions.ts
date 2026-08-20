@@ -49,6 +49,16 @@ export const VisitV2Action = {
    * `campusVisit.canOverrideScheduleLeadTime`.
    */
   EditPendingCampus: 'EDIT_PENDING_CAMPUS',
+  /**
+   * Ordinary campus decision: duyệt + gán host, in one call. Mirrors the SAME code the list/management
+   * screen has offered for a long time (`VisitListActions.ApproveAndAssignHost`) — the V2 Detail read
+   * model started emitting it too so a Staff Leader of this campus who opens the detail screen (rather
+   * than the list) is not stuck with no way to decide it. EDIT right (`EditPendingCampus` above) and
+   * DECISION right are separate: a leader who is not the registrant gets this without ever getting that.
+   */
+  ApproveAndAssignHost: 'APPROVE_AND_ASSIGN_HOST',
+  /** Ordinary campus decision: reject, with a mandatory reason. Mirrors `VisitListActions.CampusReject`. */
+  CampusReject: 'CAMPUS_REJECT',
   UpdateContactProfile: 'UPDATE_OPERATIONAL_CONTACT_PROFILE',
   ResendContactConfirmation: 'RESEND_OPERATIONAL_CONTACT_CONFIRMATION',
   /**
@@ -122,6 +132,13 @@ export const VisitEditErrorCode = {
   InvalidVisitTime: 'INVALID_VISIT_TIME',
   InstanceVersionConflict: 'VISIT_INSTANCE_VERSION_CONFLICT',
   RequestVersionConflict: 'VISIT_REQUEST_VERSION_CONFLICT',
+  /**
+   * A plain "Lưu" named neither a content nor a schedule change. Informational, not a failure — the
+   * screen shows an info toast and stays put. Never raised when the same request also asked to
+   * approve: the backend treats that combination as a no-op edit riding along with a real decision,
+   * not a refusal (`VisitFormV2ErrorCodes.PendingCampusNoContentChanges` on the backend).
+   */
+  NoContentChanges: 'PENDING_CAMPUS_NO_CONTENT_CHANGES',
 } as const;
 
 // ── Amendment stable error codes (matched by code, never message text) ──────────

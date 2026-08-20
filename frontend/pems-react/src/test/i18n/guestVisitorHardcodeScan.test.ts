@@ -41,6 +41,11 @@ export const SCOPED_FILES = [
   'features/visit-request/components/v2/CampusVisitCard.tsx',
   'components/layout/DashboardLayout.tsx',
   'components/dashboard/Sidebar.tsx',
+  // Shared Host-picker presentation used by both AssignHostModal.tsx (excluded below, internal-tool
+  // Vietnamese-only) and AssignHostPicker.tsx (already in this list): genuinely Visitor-reachable
+  // through the second caller, so it carries no fixed text of its own — every label is a prop, and
+  // each caller supplies Vietnamese-only or i18n'd values respectively (see its own header comment).
+  'components/modals/HostSelectionModalView.tsx',
   'components/layout/Header.tsx',
   'pages/dashboard/profile/Profile.tsx',
   'pages/dashboard/visit/VisitorVisitDetailPage.tsx',
@@ -280,6 +285,12 @@ export const ACKNOWLEDGED_ROUTE_GUARD_EXCLUSIONS: Record<string, string> = {
     'Shared helper used only by HostFeedbackModal.tsx and VisitorFeedbackDetailModal.tsx (both excluded above for the same reason) to label the visit instance status inside those never-opens-for-Visitor modals.',
   'features/delegations/types/delegations.types.ts':
     'Large shared types+constants module (REQUEST_STATUS_LABELS/INSTANCE_STATUS_LABELS/etc.) consumed broadly across Staff/HO/Dept screens. Its VI-only label constants are a legitimate default for every consumer NOT explicitly gated for Visitor+EN (matching VisitRequestManagement.tsx\'s established dual-path pattern) — genuinely Visitor-reachable consumers (VisitRequestDetail.tsx, VisitRequestManagement.tsx) were individually hand-audited, but this shared definitions file itself was not exhaustively re-checked against every present and future consumer; flagged here rather than silently assumed safe.',
+  'components/modals/AssignHostModal.tsx':
+    'Ordinary campus approve — reused UNCHANGED from VisitRequestManagement.tsx (already excluded above), now also opened from VisitRequestV2DetailView.tsx. Rendered there only when VisitRequestV2DetailView sets `approveCampus`, which only happens via a button gated on `hasAction(cv.allowedActions, VisitV2Action.ApproveAndAssignHost)`. The backend (VisitFormReadService.cs) grants APPROVE_AND_ASSIGN_HOST only when `isLeaderHere` — RoleCode===Staff && SubRole===Leader of THIS campus — which a VISITOR/REGISTRANT account can never satisfy. Structurally reachable, never actually rendered for Visitor.',
+  'features/visit-request/components/VisitCampusRejectModal.tsx':
+    'Ordinary campus reject, opened from VisitRequestV2DetailView.tsx under the exact same gate as AssignHostModal.tsx above (`hasAction(cv.allowedActions, VisitV2Action.CampusReject)`, backend-granted only to `isLeaderHere` — never a Visitor/Registrant). 100% hardcoded Vietnamese by design, mirroring the equivalent inline reject dialog already excluded inside VisitRequestManagement.tsx, which a Visitor can never open for the same relation reason.',
+  'features/visit-request/utils/decisionConflict.ts':
+    'Pure non-JSX helper (version-conflict error code + message) consumed only by AssignHostModal.tsx and VisitCampusRejectModal.tsx (both excluded immediately above) plus VisitRequestManagement.tsx (already excluded) — never reachable outside those three Staff-Leader-only decision surfaces.',
 };
 
 const VIETNAMESE_DIACRITIC = /[À-ỹ]/; // covers Latin Extended-A/B + Vietnamese combining ranges used by all VI text in this repo

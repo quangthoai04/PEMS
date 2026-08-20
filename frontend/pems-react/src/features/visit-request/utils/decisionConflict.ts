@@ -27,3 +27,11 @@ export const isInstanceVersionConflict = (error: unknown): boolean => {
 export const INSTANCE_VERSION_CONFLICT_MESSAGE =
   'Thông tin đơn đã được cập nhật sau khi bạn mở màn hình. ' +
   'Vui lòng tải phiên bản mới nhất và xem lại trước khi duyệt.';
+
+/**
+ * Giới hạn ký tự DUY NHẤT cho ghi chú quyết định (approve/reject/"Lưu và duyệt") — mirrors
+ * `VisitMutationPolicy.DecisionNoteMaxLength` ở backend. Cả ba flow ghi cùng một cột
+ * `visit_request_campuses.decision_note`; trước hằng số này mỗi validator backend tự chọn một số
+ * (2000/2000/500) và UI đi theo từng số riêng, tạo drift trên cùng một cột với cùng một ý nghĩa.
+ */
+export const DECISION_NOTE_MAX_LENGTH = 2000;

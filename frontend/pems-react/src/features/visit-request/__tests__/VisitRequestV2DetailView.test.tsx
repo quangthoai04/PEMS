@@ -33,11 +33,23 @@ vi.mock('../api/visitRequestV2Api', () => ({
 // accurate rather than merely convenient. Mocked, not <AuthProvider>-wrapped, as elsewhere here.
 vi.mock('../../../shared/auth/AuthContext', () => ({ useAuthContext: () => ({ user: null }) }));
 
+// AssignHostModal (ordinary Approve) and VisitCampusRejectModal (ordinary Reject) both go through
+// this API — mocked here so the gap-closure tests below can prove the SAME commands/component are
+// reused rather than a new approval path.
+vi.mock('../../delegations/api/delegationsApi', () => ({
+  delegationsApi: {
+    getHostCandidates: vi.fn(),
+    approveCampusInstance: vi.fn(),
+    rejectCampusInstance: vi.fn(),
+  },
+}));
+
 import {
   getVisitRequestFormV2,
   getActiveAmendment,
   getVisitRequestHistory,
 } from '../api/visitRequestV2Api';
+import { delegationsApi } from '../../delegations/api/delegationsApi';
 
 const formFixture = (overrides: Partial<ResolvedVisitForm> = {}): ResolvedVisitForm => ({
   visitRequestId: 1,
@@ -484,6 +496,122 @@ describe('VisitRequestV2DetailView', () => {
     expect(within(screen.getByTestId('section-registrant')).getByText('1')).toBeInTheDocument();
     expect(within(screen.getByTestId('section-campuses')).getByText('2')).toBeInTheDocument();
     expect(within(screen.getByTestId('section-history')).getByText('3')).toBeInTheDocument();
+  });
+
+  // ── Ordinary campus decision (approve+assign-host / reject) — the gap this session closes: V2
+  //    Detail used to have EditPendingCampus and amendment actions but no way at all to decide a
+  //    WAITING campus, so a Staff Leader of this campus who opened Detail rather than List had
+  //    nothing to click. EDIT right and DECISION right are different verdicts on purpose. ──────────
+
+  it('offers APPROVE_AND_ASSIGN_HOST + CAMPUS_REJECT only to a WAITING campus\'s own Staff Leader', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        instanceStatus: 'WAITING_REQUEST_APPROVAL',
+        allowedActions: ['VIEW', 'APPROVE_AND_ASSIGN_HOST', 'CAMPUS_REJECT'],
+      })],
+    }));
+    const { unmount } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByTestId('campus-approve-open-10')).toBeInTheDocument();
+    expect(screen.getByTestId('campus-reject-open-10')).toBeInTheDocument();
+    unmount();
+
+    // The registrant of this SAME campus, but not its leader — EDIT right (EDIT_PENDING_CAMPUS)
+    // without DECISION right. Approving/rejecting stays the leader's alone.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        instanceStatus: 'WAITING_REQUEST_APPROVAL',
+        allowedActions: ['VIEW', 'EDIT_PENDING_CAMPUS'],
+      })],
+    }));
+    const { unmount: unmount2 } = render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByTestId('campus-approve-open-10')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('campus-reject-open-10')).not.toBeInTheDocument();
+    unmount2();
+
+    // The confirmed operational contact of this campus — guest side, never a decision actor.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'OPERATIONAL_CONTACT', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({ instanceStatus: 'WAITING_REQUEST_APPROVAL', allowedActions: ['VIEW'] })],
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+    expect(screen.queryByTestId('campus-approve-open-10')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('campus-reject-open-10')).not.toBeInTheDocument();
+  });
+
+  it('a Staff Leader of a DIFFERENT campus who is this REQUEST\'s registrant edits here but does not decide', async () => {
+    // The combined identity this gate exists for: Staff Leader of campus HCM, also the registrant of
+    // a request naming campus HN, viewing HN (which they do not lead). Backend ResolveScopeAsync
+    // resolves REGISTRANT first regardless of the Staff Leader role — VisitFormReadService.cs still
+    // computes EditPendingCampus (true, requester-side) and ordinary decision actions (false,
+    // isLeaderHere false for THIS campus) as two INDEPENDENT verdicts. This pins the read model's
+    // real allowedActions shape for that exact case, not a hand-picked one.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'REGISTRANT', canViewAllCampuses: true, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        instanceStatus: 'WAITING_REQUEST_APPROVAL',
+        allowedActions: ['VIEW', 'EDIT_PENDING_CAMPUS'],
+        canOverrideScheduleLeadTime: false,
+        canSaveAndApprove: false,
+      })],
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+
+    expect(await screen.findByTestId('pending-campus-edit-open-10')).toBeInTheDocument();
+    expect(screen.queryByTestId('campus-approve-open-10')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('campus-reject-open-10')).not.toBeInTheDocument();
+  });
+
+  it('Approve reuses AssignHostModal end to end — same host-candidate load and approve command as List/Management', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        instanceStatus: 'WAITING_REQUEST_APPROVAL',
+        allowedActions: ['VIEW', 'APPROVE_AND_ASSIGN_HOST', 'CAMPUS_REJECT'],
+        rowVersion: 9,
+      })],
+    }));
+    vi.mocked(delegationsApi.getHostCandidates).mockResolvedValue([
+      { userId: 77, fullName: 'Host A', email: 'a@fpt.edu.vn', campusId: 1, departmentName: 'IC', subRole: null, hasScheduleConflict: false, conflictCount: 0, conflicts: [] },
+    ] as never);
+    vi.mocked(delegationsApi.approveCampusInstance).mockResolvedValue({} as never);
+
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    fireEvent.click(await screen.findByTestId('campus-approve-open-10'));
+
+    expect(await screen.findByText('Host A')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Host A'));
+    fireEvent.click(screen.getByRole('button', { name: 'Duyệt & phân công người phụ trách' }));
+
+    await waitFor(() => expect(delegationsApi.approveCampusInstance)
+      .toHaveBeenCalledWith(1, 10, 77, '', 9));
+  });
+
+  it('Reject reuses rejectCampusInstance and keeps the mandatory-reason contract', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+      campusVisits: [campusFixture({
+        instanceStatus: 'WAITING_REQUEST_APPROVAL',
+        allowedActions: ['VIEW', 'APPROVE_AND_ASSIGN_HOST', 'CAMPUS_REJECT'],
+        rowVersion: 9,
+      })],
+    }));
+    vi.mocked(delegationsApi.rejectCampusInstance).mockResolvedValue({} as never);
+
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    fireEvent.click(await screen.findByTestId('campus-reject-open-10'));
+
+    // Empty reason never reaches the API — the button is disabled until one is typed.
+    expect(await screen.findByTestId('campus-reject-confirm')).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId('campus-reject-reason'), { target: { value: 'Không đủ điều kiện tiếp nhận' } });
+    fireEvent.click(screen.getByTestId('campus-reject-confirm'));
+
+    await waitFor(() => expect(delegationsApi.rejectCampusInstance)
+      .toHaveBeenCalledWith(1, 10, 'Không đủ điều kiện tiếp nhận', 9));
   });
 
   it('flag OFF / not found → stable friendly message, no silent v1 fallback fetch', async () => {

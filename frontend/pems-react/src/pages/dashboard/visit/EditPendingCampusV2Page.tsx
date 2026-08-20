@@ -6,7 +6,7 @@ import { AlertCircle, ArrowLeft, CheckCircle2, Loader2, RefreshCw, Send } from '
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import {
-  buildVisitRequestV2Schema,
+  buildPendingCampusEditSchema,
   V2_MIN_ADVANCE_HOURS_EDIT,
   type VisitRequestV2Schema,
 } from '../../../features/visit-request/schema/visitRequestV2.schema';
@@ -26,7 +26,7 @@ import { CampusVisitCard } from '../../../features/visit-request/components/v2/C
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
 import { ReadOnlyInfoGrid } from '../../../features/visit-request/components/v2/shared/ReadOnlyInfoGrid';
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
-import { getApiErrorMessage } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showInfoToast } from '../../../shared/utils/toast';
 import {
   errorCodeOf,
   hasAction,
@@ -85,6 +85,14 @@ export default function EditPendingCampusV2Page() {
   /** Open while the Staff Leader is choosing the Host for a "Lưu và duyệt". */
   const [hostPickerOpen, setHostPickerOpen] = useState(false);
   const requestRowVersionRef = useRef(0);
+  /**
+   * The `approveAfterSave` of whichever `send()` call just got the 409 LEAD_TIME_OVERRIDE_CONFIRMATION_REQUIRED
+   * — null for a plain "Lưu", the chosen host+note for "Lưu và duyệt". The confirm button below resends
+   * EXACTLY this, so a Staff Leader who chose a Host and then confirmed the 72-hour floor still gets an
+   * approved campus with that Host, not a save that silently dropped the approval. Cleared on cancel so
+   * a later, unrelated submit can never replay a stale Host pick.
+   */
+  const pendingApproveAfterSaveRef = useRef<V2ApproveAfterSave | null>(null);
 
   /**
    * The backend's verdict on the two leader-only privileges INSIDE this screen: passing the 72-hour
@@ -97,15 +105,29 @@ export default function EditPendingCampusV2Page() {
   const actsAsCampusLeader = campus?.canOverrideScheduleLeadTime === true;
 
   /**
+   * Whether "Lưu và duyệt" itself is offered — its OWN backend verdict, not a proxy read off
+   * `canOverrideScheduleLeadTime`. The two happen to agree today (both come from
+   * `PendingCampusEditRelation.ActsAsCampusLeader` on the backend), but they answer different
+   * questions and must stay independently readable: this one gates the button, `actsAsCampusLeader`
+   * above stays scoped to the 72-hour floor and the leader hint.
+   */
+  const canSaveAndApprove = campus?.canSaveAndApprove === true;
+
+  /**
    * The client-side floor is deliberately ZERO, and the 72-hour rule is applied at submit instead.
    *
    * A resolver floor would refuse a campus whose EXISTING start is already nearer than 72 hours — which
    * is the ordinary state of a request a few days before the visit — so a guest fixing a typo would be
    * told their unchanged date was invalid. The rule only ever applies to a schedule being MOVED, and
    * only to actors who cannot override it, so that is exactly where it is enforced.
+   *
+   * Scoped to the ONE campus card this screen edits (`buildPendingCampusEditSchema`), not the full
+   * create/whole-request schema: `registerInfo` is shown read-only here and never submitted by
+   * `updatePendingVisitInstance`, so validating it against CREATE-strength rules used to block
+   * "Lưu và duyệt" on a legacy registrant field this mutation cannot touch.
    */
   const schema = useMemo(
-    () => buildVisitRequestV2Schema(0, (key, opts) => t(key, { ns: 'validation', ...opts }), 1),
+    () => buildPendingCampusEditSchema(0, (key, opts) => t(key, { ns: 'validation', ...opts })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [t, i18n.language],
   );
@@ -209,7 +231,18 @@ export default function EditPendingCampusV2Page() {
       // Vietnamese, and the shared error helper deliberately drops raw Vietnamese in English mode,
       // which would leave this dialog showing a generic "data conflicts with an existing record".
       if (code === VisitMutationErrorCode.LeadTimeOverrideRequired) {
+        // Remember what THIS call was trying to do — see the ref's own comment — so confirming the
+        // floor resends the same intent instead of degrading "Lưu và duyệt" into a plain "Lưu".
+        pendingApproveAfterSaveRef.current = options.approveAfterSave ?? null;
         setOverridePrompt(t('visitRequestV2:pendingCampusEdit.overrideBody'));
+        return;
+      }
+      // Nothing to save — never a failed mutation. The backend only ever raises this on a PLAIN "Lưu"
+      // (a "Lưu và duyệt" with nothing to edit still has an approval to run, so the backend treats
+      // that combination as a no-op and never reaches this code at all). An info toast, not a red
+      // inline alert: the user stays exactly where they are, nothing was submitted, nothing failed.
+      if (code === VisitEditErrorCode.NoContentChanges) {
+        showInfoToast(t('visitRequestV2:pendingCampusEdit.noChanges'));
         return;
       }
       // A lifecycle refusal means somebody decided this campus while the form was open — reloading is
@@ -276,7 +309,14 @@ export default function EditPendingCampusV2Page() {
 
   const onSaveAndApprove = async () => {
     const valid = await form.trigger();
-    if (!valid) { setShowErrors(true); return; }
+    if (!valid) {
+      setShowErrors(true);
+      // Same reason as the manual 72-hour error below: `trigger()` populates `formState.errors` but,
+      // unlike `handleSubmit`, never focuses anything itself — silence here read as "the button did
+      // nothing" rather than "this campus card still has an invalid field".
+      window.setTimeout(() => focusFirstInvalidField(), 60);
+      return;
+    }
     setHostPickerOpen(true);
   };
 
@@ -372,12 +412,6 @@ export default function EditPendingCampusV2Page() {
           />
         </FormSection>
 
-        {actsAsCampusLeader && (
-          <p className="rounded-xl border border-[#004c91]/20 bg-[#004c91]/5 px-3 py-2 text-sm text-[#004c91]">
-            {t('visitRequestV2:pendingCampusEdit.leaderHint')}
-          </p>
-        )}
-
         {submitError && (
           <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-normal text-red-700">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -409,10 +443,12 @@ export default function EditPendingCampusV2Page() {
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {t('visitRequestV2:pendingCampusEdit.save')}
           </button>
-          {/* Only for the leader-registrant. Rendered on the backend's flag alone, never on a role the
-              browser read off the token — approving is the one thing a leader keeps on every request,
-              and it must not be reachable from an edit screen they were never granted. */}
-          {actsAsCampusLeader && (
+          {/* Only for the leader-registrant. Rendered on the backend's OWN `canSaveAndApprove` verdict
+              — never a role the browser read off the token, and never `canOverrideScheduleLeadTime`
+              (that one is the 72-hour floor's business and nothing else) — approving is the one thing a
+              leader keeps on every request, and it must not be reachable from an edit screen they were
+              never granted. */}
+          {canSaveAndApprove && (
             <button
               type="button"
               data-testid="pending-campus-save-approve"
@@ -440,7 +476,7 @@ export default function EditPendingCampusV2Page() {
               <button
                 type="button"
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold"
-                onClick={() => setOverridePrompt(null)}
+                onClick={() => { setOverridePrompt(null); pendingApproveAfterSaveRef.current = null; }}
               >
                 {t('visitRequestV2:pendingCampusEdit.overrideCancel')}
               </button>
@@ -448,7 +484,13 @@ export default function EditPendingCampusV2Page() {
                 type="button"
                 data-testid="pending-campus-override-confirm"
                 className="rounded-lg bg-[#f37021] px-4 py-2 text-sm font-bold text-white"
-                onClick={() => { setOverridePrompt(null); void send({ overrideLeadTimeConfirmed: true }); }}
+                onClick={() => {
+                  setOverridePrompt(null);
+                  void send({
+                    overrideLeadTimeConfirmed: true,
+                    approveAfterSave: pendingApproveAfterSaveRef.current,
+                  });
+                }}
               >
                 {t('visitRequestV2:pendingCampusEdit.overrideConfirm')}
               </button>

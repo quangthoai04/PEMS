@@ -640,7 +640,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     public async Task<V2EditResult> ApplyInstancePendingEditAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
-        CancellationToken ct)
+        bool approveAfterSaveRequested, CancellationToken ct)
     {
         await EnsureMemberOrganizationsSelectableAsync(new[] { content }, ct);
 
@@ -706,9 +706,18 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var contentChanged = VisitRequestV2Canonical.CanonicalContent(CurrentContentOf(request, instance, detail))
                              != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
         if (!contentChanged && !scheduleChanged)
+        {
+            // "Lưu và duyệt" carries two intents — an edit and a decision — and having nothing to
+            // EDIT does not mean there is nothing to DECIDE. The caller still has an approval to run
+            // in the same transaction, so this is a no-op rather than a refusal: no revision, no audit
+            // row, no row-version bump, and the request/instance come back exactly as they are now.
+            if (approveAfterSaveRequested)
+                return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
+
             throw new BusinessRuleException(
                 "Không có thay đổi nào để lưu cho cơ sở này.",
-                VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+                VisitFormV2ErrorCodes.PendingCampusNoContentChanges);
+        }
 
         // ─────────────────────────────────────────────────────────────────────────────
         // Apply — target-only. There is no loop over campuses here, which is the point: a sibling's

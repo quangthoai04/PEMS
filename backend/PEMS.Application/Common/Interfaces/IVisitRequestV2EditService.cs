@@ -86,8 +86,17 @@ public interface IVisitRequestV2EditService
     /// The leader's explicit "yes, this schedule, with less than the required notice". Transient — it
     /// travels with the request and is recorded as an audit event, never as a column.
     /// </param>
+    /// <param name="approveAfterSaveRequested">
+    /// Whether the SAME command also asked to approve this campus in the same transaction
+    /// (<c>UpdatePendingVisitInstanceV2Command.ApproveAfterSave</c>). A save with nothing to write is
+    /// refused (<see cref="PEMS.Domain.Constants.VisitFormV2ErrorCodes.PendingCampusNoContentChanges"/>)
+    /// when this is false — there is genuinely nothing for "Lưu" to do. It is NOT a refusal when this is
+    /// true: "Lưu và duyệt" carries two intents, an edit and a decision, and having nothing to edit does
+    /// not mean there is nothing to decide. In that case this method is a no-op — no revision, no audit
+    /// row, no row-version bump — and the caller proceeds straight to the approval it asked for.
+    /// </param>
     Task<V2EditResult> ApplyInstancePendingEditAsync(
         VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
         ulong actorId, System.DateTime now, bool actorIsCampusLeader, bool overrideLeadTimeConfirmed,
-        CancellationToken ct);
+        bool approveAfterSaveRequested, CancellationToken ct);
 }

@@ -476,6 +476,64 @@ public sealed class PerCampusEditRelationAuthorizationTests
     }
 
     /// <summary>
+    /// "Lưu và duyệt" carries two intents — an edit and a decision — and a Staff Leader who opens the
+    /// screen, changes nothing, and presses it still means the decision: they still have to name a Host.
+    /// Before this test's fix, the edit half's own "nothing to save" refusal fired FIRST and took the
+    /// whole combined command down with it, so the one actor who is BOTH this campus's leader and its
+    /// registrant could not approve their own unmodified request from this screen at all. The fix must
+    /// not paper over the edit half by writing a fake revision just to give it something to "save" —
+    /// FormRevision and the PendingEdit revision-history row must stay exactly as they were; only the
+    /// APPROVAL'S own bump (host, decision, status, audit) is allowed to move anything.
+    /// </summary>
+    [Fact]
+    public async Task A_staff_leader_who_is_the_registrant_may_save_and_approve_with_no_content_changes()
+    {
+        RequireDb();
+        var (requestId, instanceId) = (0UL, 0UL);
+        try
+        {
+            (requestId, instanceId) = await CreatePendingAsync(LeaderHn);
+            var leader = StaffLeader(LeaderHn, CampusHn);
+
+            uint revisionBefore;
+            using (var db = NewContext())
+                revisionBefore = (await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceId)).FormRevision;
+
+            // Same delegation name ("Đoàn Base" — CreatePendingAsync's own default) and same schedule
+            // (PayloadAsync reads the CURRENT PlannedStartAt when no override is given): a genuine,
+            // total no-diff, not just an unchanged field among others.
+            var noDiffPayload = await PayloadAsync(instanceId, "Đoàn Base");
+
+            using (var db = NewContext())
+            {
+                var approved = await Handler(db, leader).Handle(
+                    new UpdatePendingVisitInstanceV2Command(
+                        requestId, instanceId, noDiffPayload, false,
+                        new ApproveAfterSaveDto(IcStaffHn, "Đồng ý tiếp đoàn — không có gì để sửa")),
+                    CancellationToken.None);
+                Assert.True(approved.Approved);
+                Assert.Equal(IcStaffHn, approved.HostUserId);
+                Assert.Equal(VisitInstanceStatuses.Assigned, approved.VisitInstanceStatus);
+            }
+
+            using var check = NewContext();
+            var instance = await check.VisitRequestCampuses.AsNoTracking().SingleAsync(c => c.VisitInstanceId == instanceId);
+            Assert.Equal(VisitInstanceStatuses.Assigned, instance.Status);
+            Assert.Equal(IcStaffHn, instance.CurrentHostUserId);
+            Assert.Equal(LeaderHn, instance.DecidedBy);
+
+            // No fake content revision: the edit half was a true no-op.
+            var revisionAfter = (await check.VisitInstanceFormDetails.AsNoTracking()
+                .SingleAsync(d => d.VisitInstanceId == instanceId)).FormRevision;
+            Assert.Equal(revisionBefore, revisionAfter);
+            Assert.False(await check.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                h.VisitInstanceId == instanceId && h.SourceType == FormRevisionSourceTypes.PendingEdit));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
     /// §15 — the two halves of "Lưu và duyệt" commit together or not at all. Approving with no Host is
     /// refused (an ASSIGNED campus without one is a campus nobody can act on), and the edit that travelled
     /// with it must be gone too: a form rewritten to a schedule nobody approved is the failure this
