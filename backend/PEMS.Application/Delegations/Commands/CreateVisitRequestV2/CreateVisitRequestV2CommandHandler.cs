@@ -344,11 +344,11 @@ public sealed class CreateVisitRequestV2CommandHandler
     {
         foreach (var activation in activations)
         {
-            _db.AuditLogs.Add(new PEMS.Domain.Entities.Users.AuditLog
+            var audit = new PEMS.Domain.Entities.Users.AuditLog
             {
                 ActorUserId = activation.ProposerUserId ?? actorId,
                 Action = activation.Activated
-                    ? "PROPOSED_HOST_ACTIVATED"
+                    ? CampusDecisionAudit.HostProposalActivated
                     : "PROPOSED_HOST_NEEDS_RESELECTION",
                 EntityType = "VisitRequestCampus",
                 EntityId = activation.VisitInstanceId,
@@ -360,7 +360,28 @@ public sealed class CreateVisitRequestV2CommandHandler
                     ? $"mode={activation.SelectionMode};host={activation.ProposedHostUserId}"
                     : $"mode={activation.SelectionMode};reason={activation.RejectionReason}",
                 CreatedAt = now,
-            });
+            };
+            // Structured change rows, same shape CampusApprovalExecutor writes for a live approval —
+            // only for the real decision (Activated); NEEDS_RESELECTION decides nothing and stays a
+            // Reason-only breadcrumb, same as before.
+            if (activation.Activated)
+            {
+                audit.Changes.Add(new PEMS.Domain.Entities.Users.AuditLogChange
+                {
+                    FieldName = "visit_request_campuses.status",
+                    OldValueText = activation.OldStatus,
+                    NewValueText = VisitInstanceStatuses.Assigned,
+                    CreatedAt = now,
+                });
+                audit.Changes.Add(new PEMS.Domain.Entities.Users.AuditLogChange
+                {
+                    FieldName = "current_host_user_id",
+                    OldValueText = null,
+                    NewValueText = activation.ProposedHostUserId?.ToString(),
+                    CreatedAt = now,
+                });
+            }
+            _db.AuditLogs.Add(audit);
         }
     }
 

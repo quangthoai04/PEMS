@@ -226,9 +226,12 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             await VisitRevisionBaselineGuard.EnsureRequestBaselineAsync(
                 _db, request, requestBaselineJson, actorId, now, ct);
 
-            var nextRevision = (await _db.VisitRequestRevisionHistories
-                .Where(r => r.VisitRequestId == request.VisitRequestId)
-                .MaxAsync(r => (uint?)r.RequestRevision, ct) ?? 0) + 1;
+            // NOT a raw MaxAsync: EnsureRequestBaselineAsync just staged (unflushed) a possible
+            // RECOVERED_BASELINE row two lines above, which a database MAX cannot see yet — the
+            // shared helper unions the DB max with EF's own .Local staged rows so the two can never
+            // collide on the same revision number (see VisitRevisionBaselineGuard for detail).
+            var nextRevision = await VisitRevisionBaselineGuard.NextRequestRevisionAsync(
+                _db, request.VisitRequestId, ct);
             _db.VisitRequestRevisionHistories.Add(new VisitRequestRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,

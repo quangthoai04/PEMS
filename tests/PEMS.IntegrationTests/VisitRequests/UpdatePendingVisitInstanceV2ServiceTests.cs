@@ -396,4 +396,58 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             Assert.Equal(revisionBefore, hn.FormDetail!.FormRevision);
         });
     }
+
+    // ── Schedule-only revision integrity (Fix Group A) — Case A3: per-campus pending edit ──────────
+
+    /// <summary>
+    /// A per-campus schedule-only save must advance THIS campus's FormRevision by one and write a
+    /// history row, exactly like a content edit — before the fix it silently bumped only RowVersion,
+    /// leaving the form-revision chain unaware the schedule had ever moved. Members must never be
+    /// relinked (nothing changed about them) and the sibling campus must stay completely untouched.
+    /// </summary>
+    [Fact]
+    public async Task A_schedule_only_per_campus_edit_still_advances_form_revision_and_preserves_members()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            MarkWaitingApproval(hn, Registrant);
+            MarkWaitingApproval(hcm, Registrant);
+            await db.SaveChangesAsync();
+
+            var hcmBefore = Snapshot(hcm);
+            var hnMemberIdsBefore = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var revisionBefore = hn.FormDetail!.FormRevision;
+            var newStart = hn.PlannedStartAt.AddDays(1);
+            var newEnd = hn.PlannedEndAt.AddDays(1);
+            var scheduleOnly = Campus("HN") with { PlannedStartAt = newStart, PlannedEndAt = newEnd };
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, scheduleOnly), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default);
+
+            Assert.Equal(revisionBefore + 1, hn.FormDetail!.FormRevision);
+            Assert.Equal(newStart, hn.PlannedStartAt);
+            Assert.Equal(newEnd, hn.PlannedEndAt);
+            Assert.Equal("Đoàn Base", hn.FormDetail.DelegationName); // content untouched
+
+            // Members were never relinked: same guest_member_id set, read straight from the DB.
+            var memberIdsAfter = await db.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == hn.VisitInstanceId)
+                .Select(l => l.GuestMemberId).OrderBy(x => x).ToListAsync();
+            Assert.Equal(hnMemberIdsBefore, memberIdsAfter);
+
+            var revision = await db.VisitInstanceFormRevisionHistories
+                .SingleAsync(h => h.VisitInstanceId == hn.VisitInstanceId
+                                   && h.SourceType == FormRevisionSourceTypes.PendingEdit);
+            Assert.Equal(hn.FormDetail.FormRevision, revision.FormRevision);
+            Assert.Contains("Guest A", revision.SnapshotJson); // snapshot has the real members, never []
+
+            // Sibling campus (HCM) is completely untouched.
+            Assert.Equal(hcmBefore, Snapshot(hcm));
+        });
+    }
 }

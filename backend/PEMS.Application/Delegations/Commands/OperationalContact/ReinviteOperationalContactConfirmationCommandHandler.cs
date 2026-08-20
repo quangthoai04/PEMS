@@ -152,12 +152,19 @@ public sealed class ReinviteOperationalContactConfirmationCommandHandler
             _db.VisitRequestIdentityChanges.Add(invitation);
             await _db.SaveChangesAsync(cancellationToken); // resolve the id its event points at
 
+            // EventType is OPERATIONAL_CONTACT_REINVITED, not INVITATION_CREATED — this row IS a new
+            // VisitRequestIdentityChange (new id, TokenVersion reset to 1, ResendCount reset to 0),
+            // but the business event it represents is "the same contact was asked again after their
+            // last invitation lapsed", never "a new person was invited". Reusing INVITATION_CREATED's
+            // wording made a re-invite indistinguishable from Replace's fresh-invitation branch on
+            // the timeline, even though the two mean different things to a reader. The AuditLog
+            // below already used this distinct action; the identity event now matches it.
             _db.VisitRequestIdentityChangeEvents.Add(new VisitRequestIdentityChangeEvent
             {
                 IdentityChangeId = invitation.IdentityChangeId,
                 VisitRequestId = visit.VisitRequestId,
                 VisitInstanceId = instance.VisitInstanceId,
-                EventType = "OPERATIONAL_CONTACT_INVITATION_CREATED",
+                EventType = "OPERATIONAL_CONTACT_REINVITED",
                 FromStatus = null,
                 ToStatus = IdentityChangeStatuses.Pending,
                 ActorUserId = actorId,

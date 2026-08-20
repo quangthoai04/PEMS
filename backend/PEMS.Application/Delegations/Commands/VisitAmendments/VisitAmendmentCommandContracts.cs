@@ -185,7 +185,40 @@ public static class VisitHistoryEventCodes
     public const string InstanceAmendmentApplied = "INSTANCE_AMENDMENT_APPLIED";
     public const string InstanceApproved = "INSTANCE_APPROVED";
     public const string InstanceRejected = "INSTANCE_REJECTED";
+    /// <summary>
+    /// A preauthorized host proposal auto-applied the moment the request's contact-confirmation gate
+    /// opened (ProposedHostActivationService.ActivateAsync → CampusDecisionAudit.HostProposalActivated).
+    /// Same decision fields as an approval (decided_by/decided_at/status → ASSIGNED, a host lands on
+    /// the campus) but a DIFFERENT event: the review happened earlier, when the proposal was
+    /// authorized, not by a Staff Leader looking at the campus live at this moment. Deliberately not
+    /// <see cref="InstanceApproved"/> — collapsing the two would misattribute who reviewed the campus
+    /// and when.
+    /// </summary>
+    public const string HostProposalActivated = "PROPOSED_HOST_ACTIVATED";
     public const string InstanceCancelled = "INSTANCE_CANCELLED";
+    /// <summary>
+    /// ASSIGNED → BEFORE_VISIT — the campus's Host opened the preparation stage. Read from
+    /// StartVisitPreparationCommandHandler's immutable START_VISIT_PREPARATION audit. Distinct from
+    /// <see cref="VisitStarted"/> below, which is the NEXT transition (BEFORE_VISIT → DURING_VISIT) —
+    /// the two must never collapse into one event.
+    /// </summary>
+    public const string VisitPreparationStarted = "VISIT_PREPARATION_STARTED";
+    /// <summary>
+    /// BEFORE_VISIT → DURING_VISIT (Commit 4, Fix Group F) — the Host declared preparation complete
+    /// and the visit itself began. Read from CompleteVisitStageCommandHandler's immutable
+    /// COMPLETE_BEFORE_VISIT audit, never from the campus's current status.
+    /// </summary>
+    public const string VisitStarted = "VISIT_STARTED";
+    /// <summary>
+    /// DURING_VISIT → AFTER_VISIT (Commit 4, Fix Group F) — the Host declared the visit itself
+    /// complete. Read from the immutable COMPLETE_DURING_VISIT audit.
+    /// </summary>
+    public const string VisitCompleted = "VISIT_COMPLETED";
+    /// <summary>
+    /// AFTER_VISIT → CLOSED (Commit 4, Fix Group F) — the Host closed the instance's record. Read
+    /// from the immutable CLOSE_VISIT_INSTANCE audit. This constant predates Commit 4 but was never
+    /// constructed anywhere until now.
+    /// </summary>
     public const string InstanceClosed = "INSTANCE_CLOSED";
     public const string InstanceDecided = "INSTANCE_DECIDED";
     public const string AmendmentSubmitted = "AMENDMENT_SUBMITTED";
@@ -215,6 +248,28 @@ public static class VisitHistoryEventCodes
     public const string ContactConfirmationDeclined = "CONTACT_CONFIRMATION_DECLINED";
     public const string ContactTransferDeclined = "CONTACT_TRANSFER_DECLINED";
     public const string ContactInvitationExpired = "CONTACT_INVITATION_EXPIRED";
+    /// <summary>
+    /// The SAME contact was asked again after their previous invitation lapsed WITHOUT an answer
+    /// (cancelled, declined, or expired) — a brand new VisitRequestIdentityChange row, TokenVersion
+    /// reset to 1. Distinct from ContactInvitationResent (same row, same TokenVersion chain, still
+    /// live) and from ContactInitialConfirmationCreated (a genuinely new/different contact, via
+    /// Replace or the original submit) — all three read as different sentences to a reader and must
+    /// never collapse into one.
+    /// </summary>
+    public const string ContactReinvited = "CONTACT_REINVITED";
+    /// <summary>
+    /// A campus's operational-contact DETAILS (name/organization/title/phone) were corrected. The
+    /// address, and so the person holding the role, did not change — never confuse this with a
+    /// Contact* identity/role transition above.
+    /// </summary>
+    public const string ContactProfileUpdated = "CONTACT_PROFILE_UPDATED";
+    /// <summary>
+    /// The operational contact was replaced by an address that immediately self-matched the
+    /// registrant's own verified account — linked at once, no invitation, no separate confirmation
+    /// event exists for this outcome (unlike the external-address branch, which is told in full by
+    /// ContactInitialConfirmationCreated / ContactInvitationSuperseded above).
+    /// </summary>
+    public const string ContactReplacedWithRegistrant = "CONTACT_REPLACED_WITH_REGISTRANT";
     /// <summary>One campus's Host role was handed to a different user after approval.</summary>
     public const string HostTransferred = "HOST_TRANSFERRED";
 }

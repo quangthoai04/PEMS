@@ -153,6 +153,14 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
 
         var note = string.IsNullOrWhiteSpace(decisionNote) ? null : decisionNote.Trim();
 
+        // Captured BEFORE the mutation below, for the immutable decision audit further down — the
+        // guards above already guarantee WAITING_REQUEST_APPROVAL / null-note / no-host at this point,
+        // but reading the live values rather than assuming them is what keeps this correct if that
+        // ever changes.
+        var oldStatus = instance.Status;
+        var oldDecisionNote = instance.DecisionNote;
+        var oldHostUserId = instance.CurrentHostUserId;
+
         // Approve + assign in ONE campus-instance update (the DB trigger requires decision and host
         // fields to be present together when the row moves to ASSIGNED).
         instance.Status = VisitInstanceStatuses.Assigned;
@@ -212,12 +220,18 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
         // The decision belongs to ONE campus instance, so it is filed under that instance's own audit
         // context — audit_logs indexes campus_id / visit_request_id / visit_instance_id precisely for
         // this, and the admin audit surface filters by campus.
-        _db.AuditLogs.Add(new AuditLog
+        //
+        // This row is now the SOURCE OF TRUTH the business-history reader uses for "was this campus
+        // approved" (VISIT_HISTORY_INTEGRITY plan Fix Group B) — append-only and immune to a later
+        // resubmit clearing the current row's DecidedAt/DecisionNote/CurrentHostUserId. The three
+        // AuditLogChange rows below are what make that possible: without them the audit said only
+        // THAT a decision happened, never what it actually recorded.
+        var approvalAudit = new AuditLog
         {
             ActorUserId = actorId,
             Action = hasHostingConflict
-                ? "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST_WITH_SCHEDULE_WARNING"
-                : "APPROVE_CAMPUS_INSTANCE_AND_ASSIGN_HOST",
+                ? CampusDecisionAudit.ApprovedWithScheduleWarning
+                : CampusDecisionAudit.Approved,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CampusId = instance.CampusId,
@@ -226,7 +240,29 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
             SourceType = CampusDecisionAudit.SourceType,
             Reason = $"decision=ASSIGNED;host={hostUserId}",
             CreatedAt = now,
+        };
+        approvalAudit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "visit_request_campuses.status",
+            OldValueText = oldStatus,
+            NewValueText = instance.Status,
+            CreatedAt = now,
         });
+        approvalAudit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "decision_note",
+            OldValueText = oldDecisionNote,
+            NewValueText = note,
+            CreatedAt = now,
+        });
+        approvalAudit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "current_host_user_id",
+            OldValueText = oldHostUserId?.ToString(),
+            NewValueText = hostUserId.ToString(),
+            CreatedAt = now,
+        });
+        _db.AuditLogs.Add(approvalAudit);
 
         await _db.SaveChangesAsync(cancellationToken);
 

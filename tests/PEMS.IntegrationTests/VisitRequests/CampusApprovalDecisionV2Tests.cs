@@ -12,6 +12,8 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.ApproveCampusInstance;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.RejectCampusInstance;
+using PEMS.Application.Delegations.Commands.ResubmitRejectedVisitInstanceV2;
+using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
@@ -117,8 +119,8 @@ public sealed class CampusApprovalDecisionV2Tests
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
 
     private static ApproveCampusInstanceCommandHandler ApproveHandler(
-        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
-        => new(db, actor, new FixedClock(),
+        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications, IDateTimeService? clock = null)
+        => new(db, actor, clock ?? new FixedClock(),
             new CampusApprovalExecutor(
                 db, new VisitRequestAggregateStatusService(db), new MySqlUserMutationLockService(db), notifications,
                 new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
@@ -126,15 +128,50 @@ public sealed class CampusApprovalDecisionV2Tests
 
     private static RejectCampusInstanceCommandHandler RejectHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications,
-        RecordingDispatcher? dispatcher = null)
-        => new(db, actor, new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
+        RecordingDispatcher? dispatcher = null, IDateTimeService? clock = null)
+        => new(db, actor, clock ?? new FixedClock(), new VisitRequestAggregateStatusService(db), notifications,
             new VisitFormReadService(db, actor, NullLogger<VisitFormReadService>.Instance, new FixedClock()),
             // The rejection email is built from the campus and sent through the recoverable sender —
             // the same two objects the container wires, so what these tests exercise is what runs.
             new PEMS.Application.Delegations.VisitNotifications.CampusRejectionEmail(db),
             new PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender(
-                db, dispatcher ?? new RecordingDispatcher(), new GrantingLock(), new FixedClock(),
+                db, dispatcher ?? new RecordingDispatcher(), new GrantingLock(), clock ?? new FixedClock(),
                 NullLogger<PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender>.Instance));
+
+    private static ResubmitRejectedVisitInstanceV2CommandHandler ResubmitHandler(
+        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications, IDateTimeService? clock = null)
+        => new(db, actor, clock ?? new FixedClock(),
+            new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db)),
+            notifications, NullLogger<ResubmitRejectedVisitInstanceV2CommandHandler>.Instance, WriteOn);
+
+    private static GetVisitRequestHistoryQueryHandler HistoryHandler(ApplicationDbContext db, FakeUser actor)
+        => new(db, actor, ReadOn);
+
+    private static GetVisitHistoryDetailQueryHandler DetailHandler(ApplicationDbContext db, FakeUser actor)
+        => new(db, actor, ReadOn);
+
+    /// <summary>Strictly increasing timestamps across successive handler calls in one test — needed to
+    /// assert chronological ordering (Fix Group B cases B3/B4), unlike the shared <see cref="FixedClock"/>
+    /// every other test in this file uses, which intentionally freezes "now" at one instant.</summary>
+    private sealed class SteppingClock : IDateTimeService
+    {
+        private readonly DateTime _start;
+        private int _ticks;
+        public SteppingClock(DateTime start) => _start = start;
+        public DateTime UtcNow => _start.AddMinutes(_ticks++);
+        public DateTime VietnamNow => _start.AddMinutes(_ticks++);
+    }
+
+    /// <summary>Resubmit payload for ONE previously-rejected instance — same shape as <c>Content</c> in
+    /// the per-campus pending-edit suite, built from the lightweight <see cref="InstanceState"/> read
+    /// projection this file already uses instead of a tracked entity.</summary>
+    private static CampusVisitEditV2Dto ResubmitContent(InstanceState state, CampusVisitFormDto content)
+        => new(state.VisitInstanceId, state.RowVersion,
+            content.CampusId, content.PlannedStartAt, content.PlannedEndAt,
+            content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
+            content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
+            content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
+            content.Notes);
 
     /// <summary>Always grants: these tests send one message at a time.</summary>
     private sealed class GrantingLock : PEMS.Application.Delegations.VisitNotifications.IEmailRecoveryLock
@@ -780,6 +817,365 @@ public sealed class CampusApprovalDecisionV2Tests
                 Assert.Empty(await db.VisitInstanceFormRevisionHistories.AsNoTracking()
                     .Where(r => r.VisitRequestId == requestId && r.SourceType != "CREATE").ToListAsync());
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── VISIT_HISTORY_INTEGRITY plan, Fix Group B — immutable campus decision history ────────────
+    //
+    // These drive the REAL command handlers (reject / approve / resubmit), never hand-built entities,
+    // so what is asserted is the actual writer+reader contract rather than a reading of the handler.
+
+    [Fact]
+    public async Task B1_Rejecting_a_campus_writes_an_immutable_audit_and_one_history_entry_with_the_reason()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(40);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn B1"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "A",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var audit = Assert.Single(await db.AuditLogs.AsNoTracking().Include(a => a.Changes)
+                    .Where(a => a.VisitInstanceId == before[CampusHn].VisitInstanceId
+                                && a.SourceType == CampusDecisionAudit.SourceType)
+                    .ToListAsync());
+                Assert.Equal(requestId, audit.VisitRequestId);
+                Assert.Equal(before[CampusHn].VisitInstanceId, audit.VisitInstanceId);
+                Assert.Equal(CampusHn, audit.CampusId);
+                Assert.Equal(LeaderHn, audit.ActorUserId);
+                Assert.Equal(CampusDecisionAudit.Rejected, audit.Action);
+                var statusChange = Assert.Single(audit.Changes.Where(c => c.FieldName == "visit_request_campuses.status"));
+                Assert.Equal(VisitInstanceStatus.Rejected, statusChange.NewValueText);
+                var noteChange = Assert.Single(audit.Changes.Where(c => c.FieldName == "decision_note"));
+                Assert.Equal("A", noteChange.NewValueText);
+            }
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var entry = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceRejected));
+            Assert.Equal("A", entry.Reason);
+            Assert.Equal(before[CampusHn].VisitInstanceId, entry.VisitInstanceId);
+            Assert.False(string.IsNullOrWhiteSpace(entry.ActorName));
+            Assert.False(string.IsNullOrWhiteSpace(entry.CampusName));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B2_Rejection_survives_a_resubmit_even_though_the_current_row_is_cleared()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(41);
+            const string delegation = "Đoàn B2";
+            requestId = await CreateAsync(Campus("HN", start, delegation));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Lý do B2",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), new RecordingNotifications()).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, afterReject[CampusHn].VisitInstanceId,
+                        ResubmitContent(afterReject[CampusHn], Campus("HN", start, delegation))),
+                    CancellationToken.None);
+
+            var afterResubmit = await StateAsync(requestId);
+            // Current row genuinely cleared — this is the exact clearing that used to erase history.
+            Assert.Null(afterResubmit[CampusHn].DecidedBy);
+            Assert.Null(afterResubmit[CampusHn].DecisionNote);
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, afterResubmit[CampusHn].Status);
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var rejected = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceRejected));
+            Assert.Equal("Lý do B2", rejected.Reason);
+            Assert.False(string.IsNullOrWhiteSpace(rejected.ActorName));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B3_Reject_then_resubmit_then_approve_preserves_all_three_events_in_order()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(42);
+            const string delegation = "Đoàn B3";
+            requestId = await CreateAsync(Campus("HN", start, delegation));
+            var before = await StateAsync(requestId);
+            var clock = new SteppingClock(Now);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), clock: clock).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Từ chối lần 1",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), new RecordingNotifications(), clock).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, afterReject[CampusHn].VisitInstanceId,
+                        ResubmitContent(afterReject[CampusHn], Campus("HN", start, delegation))),
+                    CancellationToken.None);
+            var afterResubmit = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), clock).Handle(
+                    new ApproveCampusInstanceCommand(requestId, afterResubmit[CampusHn].VisitInstanceId, IcStaffHn,
+                        "Duyệt lần 1", afterResubmit[CampusHn].RowVersion),
+                    CancellationToken.None);
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+
+            var rejected = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceRejected));
+            Assert.Equal("Từ chối lần 1", rejected.Reason);
+            var approved = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceApproved));
+            Assert.Equal("Duyệt lần 1", approved.Reason);
+            var resubmitted = Assert.Single(
+                result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceContentResubmitted));
+
+            // Chronological: reject happened first, then resubmit, then approve.
+            Assert.True(rejected.At <= resubmitted.At);
+            Assert.True(resubmitted.At <= approved.At);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B4_A_second_rejection_after_resubmit_creates_a_separate_event_from_the_first()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(43);
+            const string delegation = "Đoàn B4";
+            requestId = await CreateAsync(Campus("HN", start, delegation));
+            var before = await StateAsync(requestId);
+            var clock = new SteppingClock(Now);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), clock: clock).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Từ chối lần 1",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject1 = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), new RecordingNotifications(), clock).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, afterReject1[CampusHn].VisitInstanceId,
+                        ResubmitContent(afterReject1[CampusHn], Campus("HN", start, delegation))),
+                    CancellationToken.None);
+            var afterResubmit = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications(), clock: clock).Handle(
+                    new RejectCampusInstanceCommand(requestId, afterResubmit[CampusHn].VisitInstanceId, "Từ chối lần 2",
+                        afterResubmit[CampusHn].RowVersion),
+                    CancellationToken.None);
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+
+            var rejections = result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceRejected).ToList();
+            Assert.Equal(2, rejections.Count);
+            Assert.Contains(rejections, e => e.Reason == "Từ chối lần 1");
+            Assert.Contains(rejections, e => e.Reason == "Từ chối lần 2");
+            // Two distinct immutable audit rows, not one row read twice.
+            Assert.Equal(2, rejections.Select(e => e.EventId).Distinct().Count());
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B5_Approval_history_survives_lifecycle_progression_past_assigned()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(44);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn B5"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn,
+                        "Duyệt B5", before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterApprove = await StateAsync(requestId);
+
+            // Advance the campus past ASSIGNED directly — this test's subject is the history reader,
+            // not the lifecycle command; the same raw-SQL progression is already an established pattern
+            // elsewhere in this test suite (e.g. OperationalContactLifecycleLockTests). BEFORE_VISIT is
+            // enough to prove the point; DURING_VISIT/AFTER_VISIT/CLOSED require an agenda item, which
+            // is unrelated to what this test is checking.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_campuses SET status = 'BEFORE_VISIT' WHERE visit_instance_id = {0}",
+                    afterApprove[CampusHn].VisitInstanceId);
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var approved = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceApproved));
+            Assert.Equal("Duyệt B5", approved.Reason);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceDecided);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B6_Approval_with_a_schedule_warning_still_produces_exactly_one_approved_event()
+    {
+        RequireDb();
+        ulong requestId1 = 0, requestId2 = 0;
+        try
+        {
+            var start = Now.AddDays(45);
+            requestId1 = await CreateAsync(Campus("HN", start, "Đoàn B6 đầu tiên"));
+            var state1 = await StateAsync(requestId1);
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new ApproveCampusInstanceCommand(requestId1, state1[CampusHn].VisitInstanceId, IcStaffHn,
+                        null, state1[CampusHn].RowVersion),
+                    CancellationToken.None);
+
+            // Same campus, same host, overlapping window on a SECOND request — this is what
+            // hasHostingConflict actually detects (double-booking the same person on the same campus
+            // across different requests; host eligibility is per-campus, so it can never trigger
+            // across two DIFFERENT campuses).
+            requestId2 = await CreateAsync(Campus("HN", start, "Đoàn B6 trùng lịch"));
+            var state2 = await StateAsync(requestId2);
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new ApproveCampusInstanceCommand(requestId2, state2[CampusHn].VisitInstanceId, IcStaffHn,
+                        "Duyệt trùng lịch", state2[CampusHn].RowVersion),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var audit = await db.AuditLogs.AsNoTracking()
+                    .Where(a => a.VisitInstanceId == state2[CampusHn].VisitInstanceId
+                                && a.SourceType == CampusDecisionAudit.SourceType)
+                    .SingleAsync();
+                Assert.Equal(CampusDecisionAudit.ApprovedWithScheduleWarning, audit.Action);
+            }
+
+            using var db2 = NewContext();
+            var result = await HistoryHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                new GetVisitRequestHistoryQuery(requestId2), CancellationToken.None);
+            var approved = Assert.Single(result.Entries.Where(e => e.EventCode == VisitHistoryEventCodes.InstanceApproved));
+            Assert.Equal("Duyệt trùng lịch", approved.Reason);
+        }
+        finally
+        {
+            await CleanupAsync(requestId1);
+            await CleanupAsync(requestId2);
+        }
+    }
+
+    [Fact]
+    public async Task B9_Multi_campus_scope_keeps_each_leaders_history_to_their_own_campus()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(46);
+            requestId = await CreateAsync(
+                Campus("HN", start, "Đoàn B9 HN"),
+                Campus("HCM", start.AddDays(1), "Đoàn B9 HCM"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new ApproveCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, IcStaffHn,
+                        "Duyệt HN", before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Từ chối HCM",
+                        before[CampusHcm].RowVersion),
+                    CancellationToken.None);
+
+            using (var dbA = NewContext())
+            {
+                var resultA = await HistoryHandler(dbA, Leader(LeaderHn, CampusHn)).Handle(
+                    new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+                Assert.Contains(resultA.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceApproved);
+                Assert.DoesNotContain(resultA.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceRejected);
+                Assert.DoesNotContain(resultA.Entries, e => e.VisitInstanceId == before[CampusHcm].VisitInstanceId);
+            }
+            using (var dbB = NewContext())
+            {
+                var resultB = await HistoryHandler(dbB, Leader(LeaderHcm, CampusHcm)).Handle(
+                    new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+                Assert.Contains(resultB.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceRejected);
+                Assert.DoesNotContain(resultB.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceApproved);
+                Assert.DoesNotContain(resultB.Entries, e => e.VisitInstanceId == before[CampusHn].VisitInstanceId);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B10_Guessing_another_campuss_decision_event_id_reports_not_found()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(47);
+            requestId = await CreateAsync(
+                Campus("HN", start, "Đoàn B10 HN"),
+                Campus("HCM", start.AddDays(1), "Đoàn B10 HCM"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHcm, CampusHcm), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHcm].VisitInstanceId, "Từ chối HCM",
+                        before[CampusHcm].RowVersion),
+                    CancellationToken.None);
+
+            string eventId;
+            using (var db = NewContext())
+            {
+                var audit = await db.AuditLogs.AsNoTracking()
+                    .Where(a => a.VisitInstanceId == before[CampusHcm].VisitInstanceId
+                                && a.SourceType == CampusDecisionAudit.SourceType)
+                    .SingleAsync();
+                eventId = VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, audit.AuditLogId);
+            }
+
+            using var db2 = NewContext();
+            await Assert.ThrowsAsync<NotFoundException>(() =>
+                DetailHandler(db2, Leader(LeaderHn, CampusHn)).Handle(
+                    new GetVisitHistoryDetailQuery(requestId, eventId), CancellationToken.None));
         }
         finally { await CleanupAsync(requestId); }
     }

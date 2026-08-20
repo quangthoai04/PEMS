@@ -98,6 +98,13 @@ public sealed class RejectCampusInstanceCommandHandler
         await VisitInstanceConcurrencyGuard.EnsureUnchangedAsync(
             _db, instance, request.ExpectedInstanceRowVersion, cancellationToken);
 
+        // Captured BEFORE the mutation below, for the immutable rejection audit further down — the
+        // guard above already guarantees WAITING_REQUEST_APPROVAL / null-note at this point, but
+        // reading the live values rather than assuming them is what keeps this correct if that ever
+        // changes.
+        var oldStatus = instance.Status;
+        var oldDecisionNote = instance.DecisionNote;
+
         // Reject records the decision on the instance only — never a host, never participants,
         // never logistics/minutes/calendar.
         instance.Status = VisitInstanceStatus.Rejected;
@@ -138,6 +145,25 @@ public sealed class RejectCampusInstanceCommandHandler
             Reason = "decision=REJECTED",
             CreatedAt = now
         };
+        // Immutable capture of the decision (VISIT_HISTORY_INTEGRITY plan Fix Group B) — this row is
+        // now the business-history reader's source of truth for "was this campus rejected, and why".
+        // A resubmit clears DecidedAt/DecisionNote off the current row (the DB refuses decision
+        // metadata on a campus back in review), so without this the reason would vanish the moment
+        // the registrant tried again.
+        rejectionEvent.Changes.Add(new AuditLogChange
+        {
+            FieldName = "visit_request_campuses.status",
+            OldValueText = oldStatus,
+            NewValueText = instance.Status,
+            CreatedAt = now,
+        });
+        rejectionEvent.Changes.Add(new AuditLogChange
+        {
+            FieldName = "decision_note",
+            OldValueText = oldDecisionNote,
+            NewValueText = reason,
+            CreatedAt = now,
+        });
         _db.AuditLogs.Add(rejectionEvent);
 
         await _db.SaveChangesAsync(cancellationToken);

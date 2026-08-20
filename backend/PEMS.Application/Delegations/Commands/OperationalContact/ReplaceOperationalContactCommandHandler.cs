@@ -253,9 +253,15 @@ public sealed class ReplaceOperationalContactCommandHandler
             var audit = new AuditLog
             {
                 ActorUserId = actorId,
-                Action = "OPERATIONAL_CONTACT_REPLACED",
+                Action = OperationalContactHistoryAudit.Replaced,
                 EntityType = "VisitRequestCampus",
                 EntityId = instance.VisitInstanceId,
+                // Per-campus mutation — scoped like every other campus-scoped audit row, independent
+                // of whether this particular action ends up surfaced on any reader (Commit 3, Fix
+                // Group D item 9). Previously unset, which made this row unfindable by the same
+                // VisitInstanceId filter every other campus-scoped audit query uses.
+                CampusId = instance.CampusId,
+                VisitInstanceId = instance.VisitInstanceId,
                 VisitRequestId = visit.VisitRequestId,
                 CorrelationId = correlationId,
                 SourceType = "IDENTITY",

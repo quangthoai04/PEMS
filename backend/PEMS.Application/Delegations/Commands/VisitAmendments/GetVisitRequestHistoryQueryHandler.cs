@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 
 using PEMS.Application.Delegations.Common;
@@ -184,10 +185,142 @@ public sealed class GetVisitRequestHistoryQueryHandler
             }
         }
 
-        // ── Campus decisions + cancellations ──
+        // ── Campus decisions (immutable, append-only — VISIT_HISTORY_INTEGRITY plan Fix Group B) ──
+        //
+        // Approval/rejection decisions are read from the immutable audit CampusApprovalExecutor and
+        // RejectCampusInstanceCommandHandler write at the moment of the decision, never from the
+        // current campus row: a resubmit clears DecidedAt/DecisionNote off the current row (the DB
+        // refuses decision metadata on a campus back in review), so a decision that only ever lived on
+        // the current row would vanish the instant the registrant tried again. The current row is used
+        // ONLY as a legacy fallback below, for an instance whose decision predates this audit capture.
+        var decidableInstances = visit.CampusInstances
+            .Where(c => visibleInstanceIds.Contains(c.VisitInstanceId))
+            .ToDictionary(c => c.VisitInstanceId);
+
+        var instancesWithImmutableDecision = new HashSet<ulong>();
+        if (decidableInstances.Count > 0)
+        {
+            var decisionAudits = await _db.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == visit.VisitRequestId
+                            && a.VisitInstanceId != null
+                            && decidableInstances.Keys.Contains(a.VisitInstanceId!.Value)
+                            && CampusDecisionAudit.DecisionActions.Contains(a.Action))
+                .Select(a => new
+                {
+                    a.AuditLogId, a.VisitInstanceId, a.Action, a.ActorUserId, a.CreatedAt,
+                    Changes = a.Changes
+                        .Select(c => new { c.FieldName, c.NewValueText })
+                        .ToList(),
+                })
+                .ToListAsync(cancellationToken);
+
+            // Every decision audit this instance has ever recorded, grouped so uniqueness can be
+            // proven per-instance below — a legacy audit may only borrow the current row's note when
+            // it is the ONE audit (of possibly several sharing the same whole-second timestamp; see
+            // CampusDecisionAudit.CanEnrichFromCurrentRow) that row's tuple resolves to.
+            var decisionAuditsByInstance = decisionAudits
+                .GroupBy(d => d.VisitInstanceId!.Value)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyCollection<CampusDecisionAudit.DecisionAuditFacts>)g
+                        .Select(d => new CampusDecisionAudit.DecisionAuditFacts(d.Action, d.CreatedAt, d.ActorUserId))
+                        .ToList());
+
+            foreach (var d in decisionAudits)
+            {
+                var instanceId = d.VisitInstanceId!.Value;
+                instancesWithImmutableDecision.Add(instanceId);
+
+                // Three distinct decision outcomes, not two — a host-proposal activation is a genuine
+                // decision (same decided_by/decided_at/status shape as an approval) but a DIFFERENT
+                // event, never rendered as InstanceApproved (VisitHistoryEventCodes.HostProposalActivated
+                // remarks explain why).
+                var isHostActivation = d.Action == CampusDecisionAudit.HostProposalActivated;
+                var isApproval = !isHostActivation && CampusDecisionAudit.IsApproval(d.Action);
+                var eventCode = isHostActivation
+                    ? VisitHistoryEventCodes.HostProposalActivated
+                    : isApproval ? VisitHistoryEventCodes.InstanceApproved : VisitHistoryEventCodes.InstanceRejected;
+                var statusCode = d.Changes.FirstOrDefault(c => c.FieldName == "visit_request_campuses.status")?.NewValueText
+                    ?? (isApproval || isHostActivation ? VisitInstanceStatuses.Assigned : VisitInstanceStatuses.Rejected);
+                var note = d.Changes.FirstOrDefault(c => c.FieldName == "decision_note")?.NewValueText;
+
+                // Legacy enrichment (Fix Group B §D continuation): this audit predates AuditLogChange
+                // capture, so it has no decision_note of its own — but if the CURRENT campus row is
+                // verifiably and UNIQUELY still describing THIS exact decision (never a later resubmit
+                // cycle's, and never ambiguous against a same-second sibling), borrow its DecisionNote
+                // rather than reporting the reason as permanently unknown. Not applicable to a host
+                // activation: it has always written its own AuditLogChange (never a legacy gap), sets no
+                // decision_note on the campus row, and CanEnrichFromCurrentRow's approve/reject status-
+                // class check has no branch for it.
+                if (note is null && !isHostActivation && decidableInstances.TryGetValue(instanceId, out var current)
+                    && CampusDecisionAudit.CanEnrichFromCurrentRow(
+                        new CampusDecisionAudit.DecisionAuditFacts(d.Action, d.CreatedAt, d.ActorUserId),
+                        decisionAuditsByInstance[instanceId],
+                        current.Status, current.DecidedAt, current.DecidedBy))
+                    note = current.DecisionNote;
+
+                Add(new VisitHistoryEntryDto(
+                    d.CreatedAt, eventCode,
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, d.AuditLogId),
+                    instanceId, CampusOf(instanceId), null,
+                    null, null, null, statusCode, null, note, null, null, null),
+                    d.ActorUserId);
+            }
+        }
+
+        // ── Lifecycle transitions (immutable, append-only — VISIT_HISTORY_INTEGRITY plan Fix Group F) ──
+        //
+        // BEFORE_VISIT → DURING_VISIT → AFTER_VISIT → CLOSED are read from the immutable audit
+        // CompleteVisitStageCommandHandler writes at the moment of EACH transition — never
+        // reconstructed from the campus's current status. The current row only ever holds the
+        // LATEST stage: a campus that is currently CLOSED does not prove it was ever audited through
+        // DURING_VISIT, so — unlike campus decisions above — there is deliberately NO current-row
+        // fallback here. A legacy stage transition with no audit row is unknown, not inferred.
+        if (visibleInstanceIds.Count > 0)
+        {
+            var lifecycleAudits = await _db.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == visit.VisitRequestId
+                            && a.VisitInstanceId != null
+                            && visibleInstanceIds.Contains(a.VisitInstanceId!.Value)
+                            && VisitLifecycleHistoryAudit.LifecycleActions.Contains(a.Action))
+                .Select(a => new
+                {
+                    a.AuditLogId, a.VisitInstanceId, a.Action, a.ActorUserId, a.CreatedAt,
+                    Changes = a.Changes
+                        .Select(c => new { c.FieldName, c.OldValueText, c.NewValueText })
+                        .ToList(),
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var l in lifecycleAudits)
+            {
+                var statusChange = l.Changes.FirstOrDefault(c => c.FieldName == "visit_request_campuses.status");
+                var eventCode = l.Action switch
+                {
+                    VisitLifecycleHistoryAudit.PreparationStarted => VisitHistoryEventCodes.VisitPreparationStarted,
+                    VisitLifecycleHistoryAudit.CompleteBeforeVisit => VisitHistoryEventCodes.VisitStarted,
+                    VisitLifecycleHistoryAudit.CompleteDuringVisit => VisitHistoryEventCodes.VisitCompleted,
+                    VisitLifecycleHistoryAudit.CloseVisitInstance => VisitHistoryEventCodes.InstanceClosed,
+                    _ => VisitHistoryEventCodes.InstanceDecided, // unreachable — LifecycleActions is exhaustive
+                };
+                Add(new VisitHistoryEntryDto(
+                    l.CreatedAt, eventCode,
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, l.AuditLogId),
+                    l.VisitInstanceId, CampusOf(l.VisitInstanceId), null,
+                    null, null, null, statusChange?.NewValueText, null, null, null,
+                    statusChange?.OldValueText, statusChange?.NewValueText),
+                    l.ActorUserId);
+            }
+        }
+
+        // ── Campus cancellations (unaffected by the above — cancellation is not decision) ──
         foreach (var c in visit.CampusInstances.Where(c => visibleInstanceIds.Contains(c.VisitInstanceId)))
         {
-            if (c.DecidedAt is { } decidedAt)
+            // LEGACY FALLBACK ONLY: an instance with at least one immutable decision audit is fully
+            // covered above, and rendering the current row too would duplicate the very decision the
+            // audit already describes. This branch exists solely for data that predates the audit
+            // capture above (Fix Group B §D) — never for anything decided by today's writers.
+            if (c.DecidedAt is { } decidedAt && !instancesWithImmutableDecision.Contains(c.VisitInstanceId))
             {
                 var code = c.Status switch
                 {
@@ -274,6 +407,61 @@ public sealed class GetVisitRequestHistoryQueryHandler
                     // on revision rows.
                     null, null, null, e.EventType, null, null, e.EmailMasked, e.FromStatus, e.ToStatus),
                     e.ActorUserId);
+            }
+        }
+
+        // ── Contact profile corrections + immediate self-match replacement ──
+        // (Commit 3, Fix Group C/D — VISIT_HISTORY_INTEGRITY plan)
+        //
+        // Sourced from AuditLogs, not VisitRequestIdentityChangeEvents, because neither action ever
+        // opens a VisitRequestIdentityChange row to hang an event off: a profile correction touches
+        // no identity/token state at all (UpdateOperationalContactProfileCommandHandler's own remarks
+        // say so explicitly), and the self-match branch of Replace links the registrant immediately
+        // with no invitation. Scoped by the SAME includeIdentity + visibleInstanceIds gate as the
+        // identity block above — this adds no visibility Staff Leader/Host did not already have.
+        if (includeIdentity && visibleInstanceIds.Count > 0)
+        {
+            var contactAudits = await _db.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == visit.VisitRequestId
+                            && a.VisitInstanceId != null
+                            && visibleInstanceIds.Contains(a.VisitInstanceId!.Value)
+                            && (a.Action == OperationalContactHistoryAudit.ProfileUpdated
+                                || a.Action == OperationalContactHistoryAudit.Replaced))
+                .Select(a => new
+                {
+                    a.AuditLogId, a.VisitInstanceId, a.Action, a.ActorUserId, a.CreatedAt,
+                    Changes = a.Changes.Select(c => new { c.FieldName, c.NewValueText }).ToList(),
+                })
+                .ToListAsync(cancellationToken);
+
+            foreach (var a in contactAudits)
+            {
+                string eventCode;
+                if (a.Action == OperationalContactHistoryAudit.ProfileUpdated)
+                {
+                    eventCode = VisitHistoryEventCodes.ContactProfileUpdated;
+                }
+                else
+                {
+                    // Replaced covers TWO outcomes under one Action string. The external-address
+                    // outcome (operational_contact_user_id cleared to null) is already told in full
+                    // by that invitation's own INVITATION_CREATED/_SUPERSEDED events above —
+                    // surfacing it again here would render one business action as two timeline rows.
+                    // Only the self-match outcome (landed non-null) has no other event, so only it
+                    // is ever emitted.
+                    var newContactId = a.Changes
+                        .FirstOrDefault(c => c.FieldName == "operational_contact_user_id")?.NewValueText;
+                    if (string.IsNullOrEmpty(newContactId))
+                        continue;
+                    eventCode = VisitHistoryEventCodes.ContactReplacedWithRegistrant;
+                }
+
+                Add(new VisitHistoryEntryDto(
+                    a.CreatedAt, eventCode,
+                    VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, a.AuditLogId),
+                    a.VisitInstanceId, CampusOf(a.VisitInstanceId), null,
+                    null, null, null, null, null, null, null, null, null),
+                    a.ActorUserId);
             }
         }
 

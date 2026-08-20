@@ -90,7 +90,9 @@ public sealed class GetVisitHistoryDetailQueryHandler
             VisitHistoryEventSources.AmendmentSubmitted or VisitHistoryEventSources.AmendmentDecided =>
                 await AmendmentDetailAsync(visit.VisitRequestId, key, source, visibleInstanceIds, CampusOf, CampusIdOf, ct),
             VisitHistoryEventSources.Audit =>
-                await AuditDetailAsync(visit.VisitRequestId, key, visibleInstanceIds, CampusOf, CampusIdOf, ct),
+                await AuditDetailAsync(
+                    visit.VisitRequestId, key, visit.CampusInstances, visibleInstanceIds, includeIdentity,
+                    CampusOf, CampusIdOf, ct),
             VisitHistoryEventSources.IdentityChange =>
                 await IdentityDetailAsync(visit.VisitRequestId, key, includeIdentity, visibleInstanceIds, CampusOf, CampusIdOf, ct),
             _ => throw new NotFoundException("Sự kiện lịch sử", 0),
@@ -263,10 +265,17 @@ public sealed class GetVisitHistoryDetailQueryHandler
             collections);
     }
 
-    // ── Audit-only events (Host handover) ──
+    // ── Audit-only events (Host handover, campus decisions) ──
+    //
+    // Explicit per-action whitelist — audit_logs holds a great deal more than the business history,
+    // and this endpoint must never become a window onto all of it. Every action mapped here is one
+    // the timeline itself already surfaces (GetVisitRequestHistoryQueryHandler); an action the
+    // timeline does not show is refused with the same "not found" every other out-of-scope event gets.
 
     private async Task<VisitHistoryDetailDto> AuditDetailAsync(
-        ulong visitRequestId, ulong auditLogId, List<ulong> visibleInstanceIds,
+        ulong visitRequestId, ulong auditLogId,
+        IEnumerable<Domain.Entities.Delegations.VisitRequestCampus> campusInstances,
+        List<ulong> visibleInstanceIds, bool includeIdentity,
         Func<ulong?, string?> campusOf, Func<ulong?, long?> campusIdOf, CancellationToken ct)
     {
         // The change rows come through the navigation — audit_log_changes has no DbSet of its own,
@@ -277,21 +286,218 @@ public sealed class GetVisitHistoryDetailQueryHandler
             {
                 a.Action, a.VisitInstanceId, a.ActorUserId, a.Reason, a.CreatedAt,
                 Changes = a.Changes
-                    .Select(c => new { c.FieldName, c.OldValueText, c.NewValueText })
+                    .Select(c => new ValueTuple<string, string?, string?>(
+                        c.FieldName, c.OldValueText, c.NewValueText))
                     .ToList(),
             })
             .FirstOrDefaultAsync(ct);
-        // Only events the timeline itself surfaces are readable here — audit_logs holds a great deal
-        // more than the business history, and this endpoint is not a window onto all of it.
-        if (audit is null
-            || audit.Action != VisitAuditActions.HostTransferred
-            || audit.VisitInstanceId is null
+        if (audit is null || audit.VisitInstanceId is null
             || !visibleInstanceIds.Contains(audit.VisitInstanceId.Value))
             throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
 
+        if (audit.Action == VisitAuditActions.HostTransferred)
+            return HostTransferDetail(auditLogId, audit.VisitInstanceId, audit.ActorUserId,
+                audit.Reason, audit.CreatedAt, audit.Changes, campusIdOf, campusOf,
+                await NameOfAsync(audit.ActorUserId, ct));
+
+        // Host-proposal activation is a decision (CampusDecisionAudit.HostProposalActivated is in
+        // DecisionActions, so the timeline surfaces it) but not an approval/rejection — it gets its own
+        // small builder rather than being forced through DecisionDetail's approve/reject-shaped
+        // enrichment logic. Checked BEFORE the generic branch below so it never falls into it.
+        if (audit.Action == CampusDecisionAudit.HostProposalActivated)
+            return HostProposalActivatedDetail(auditLogId, audit.VisitInstanceId, audit.CreatedAt,
+                audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+
+        if (CampusDecisionAudit.DecisionActions.Contains(audit.Action))
+        {
+            // Legacy enrichment source (Fix Group B §D continuation): the CURRENT campus row, used
+            // ONLY when CampusDecisionAudit.CanEnrichFromCurrentRow proves this audit is the UNIQUE
+            // decision audit on the instance the current row's tuple resolves to.
+            var current = campusInstances.FirstOrDefault(c => c.VisitInstanceId == audit.VisitInstanceId);
+            var siblingRows = await _db.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == visitRequestId
+                            && a.VisitInstanceId == audit.VisitInstanceId
+                            && CampusDecisionAudit.DecisionActions.Contains(a.Action))
+                .Select(a => new { a.Action, a.CreatedAt, a.ActorUserId })
+                .ToListAsync(ct);
+            var siblings = siblingRows
+                .Select(a => new CampusDecisionAudit.DecisionAuditFacts(a.Action, a.CreatedAt, a.ActorUserId))
+                .ToList();
+            return DecisionDetail(auditLogId, audit.VisitInstanceId, audit.Action, audit.CreatedAt,
+                audit.ActorUserId, audit.Changes,
+                current?.Status, current?.DecidedAt, current?.DecidedBy, current?.DecisionNote,
+                siblings, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+        }
+
+        // Contact profile/identity audits (Commit 3, Fix Group C/D) are identity data even when they
+        // arrive through AuditLogs rather than VisitRequestIdentityChangeEvents — gated by the SAME
+        // includeIdentity policy as IdentityDetailAsync below, never merely by campus visibility. A
+        // Staff Leader/Host who can read their campus's decisions and handovers must NOT gain contact
+        // identity just because this whitelist grew.
+        if (audit.Action == OperationalContactHistoryAudit.ProfileUpdated)
+        {
+            if (!includeIdentity) throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
+            return ContactProfileUpdatedDetail(auditLogId, audit.VisitInstanceId, audit.CreatedAt,
+                audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+        }
+
+        if (audit.Action == OperationalContactHistoryAudit.Replaced)
+        {
+            if (!includeIdentity) throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
+            // Only the self-match outcome is ever surfaced (see OperationalContactHistoryAudit.Replaced)
+            // — a guessed id for the external-address outcome gets the same refusal as anything else
+            // out of scope, not a partial/duplicate view of what the invitation events already tell.
+            var newContactId = audit.Changes
+                .FirstOrDefault(c => c.Item1 == "operational_contact_user_id").Item3;
+            if (string.IsNullOrEmpty(newContactId))
+                throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
+            return ContactReplacedWithRegistrantDetail(auditLogId, audit.VisitInstanceId, audit.CreatedAt,
+                audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+        }
+
+        // Lifecycle transitions (Commit 4, Fix Group F) are campus-scoped business events, not
+        // identity data — gated by the SAME visibleInstanceIds check every branch above already
+        // passed through at the top of this method, with no additional includeIdentity gate. A
+        // Staff Leader/Host who can already see this campus's decisions and handovers is entitled
+        // to see it started/completed/closed too.
+        if (VisitLifecycleHistoryAudit.LifecycleActions.Contains(audit.Action))
+            return LifecycleTransitionDetail(auditLogId, audit.VisitInstanceId, audit.Action,
+                audit.CreatedAt, audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+
+        // Not one of the whitelisted actions — out-of-scope, reported exactly like a guessed id.
+        throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
+    }
+
+    /// <summary>
+    /// A lifecycle-stage transition's before/after — just the one field that ever moves. Minimum
+    /// fields Fix Group F §11 asks for: old status, new status, actor, campus, timestamp — nothing
+    /// beyond what CompleteVisitStageCommandHandler's single AuditLogChange row actually captured.
+    /// </summary>
+    private static VisitHistoryDetailDto LifecycleTransitionDetail(
+        ulong auditLogId, ulong? visitInstanceId, string action, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var eventCode = action switch
+        {
+            VisitLifecycleHistoryAudit.PreparationStarted => VisitHistoryEventCodes.VisitPreparationStarted,
+            VisitLifecycleHistoryAudit.CompleteBeforeVisit => VisitHistoryEventCodes.VisitStarted,
+            VisitLifecycleHistoryAudit.CompleteDuringVisit => VisitHistoryEventCodes.VisitCompleted,
+            VisitLifecycleHistoryAudit.CloseVisitInstance => VisitHistoryEventCodes.InstanceClosed,
+            _ => VisitHistoryEventCodes.InstanceDecided, // unreachable — the whitelist above is exhaustive
+        };
+        var statusChange = changes.FirstOrDefault(c => c.FieldName == "visit_request_campuses.status");
+        var fields = new List<VisitHistoryFieldChangeDto>
+        {
+            new("status", "visitRequestV2:historyDetail.field.status",
+                statusChange.OldValueText, statusChange.NewValueText),
+        };
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            eventCode, createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    /// <summary>
+    /// A host-proposal activation's before/after — status and the host who landed on the campus. Same
+    /// two fields DecisionDetail shows for a live approval, read from the same two AuditLogChange rows
+    /// (visit_request_campuses.status / current_host_user_id) — but built separately because this event
+    /// has no decision_note, no legacy pre-capture rows to enrich from, and must never fall through
+    /// DecisionDetail's approve/reject branching.
+    /// </summary>
+    private static VisitHistoryDetailDto HostProposalActivatedDetail(
+        ulong auditLogId, ulong? visitInstanceId, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var statusChange = changes.FirstOrDefault(c => c.FieldName == "visit_request_campuses.status");
+        var hostChange = changes.FirstOrDefault(c => c.FieldName == "current_host_user_id");
+
+        var fields = new List<VisitHistoryFieldChangeDto>
+        {
+            new("status", "visitRequestV2:historyDetail.field.status",
+                statusChange.OldValueText, statusChange.NewValueText ?? VisitInstanceStatuses.Assigned),
+        };
+        if (hostChange.NewValueText is not null)
+            fields.Add(new VisitHistoryFieldChangeDto(
+                "host", "visitRequestV2:historyDetail.field.host",
+                hostChange.OldValueText, hostChange.NewValueText));
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            VisitHistoryEventCodes.HostProposalActivated,
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    /// <summary>
+    /// A profile correction's before/after — full name, organization, job title, phone. Only the
+    /// fields that actually changed have an AuditLogChange row (UpdateOperationalContactProfileCommand
+    /// Handler.AddChange skips no-ops), so only those appear here. Never the address (this command
+    /// cannot touch it), never operational_contact_user_id, never PendingSnapshotJson.
+    /// </summary>
+    private static VisitHistoryDetailDto ContactProfileUpdatedDetail(
+        ulong auditLogId, ulong? visitInstanceId, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var fieldMap = new (string Column, string Code)[]
+        {
+            ("operational_contact_full_name", "contactFullName"),
+            ("operational_contact_organization", "contactOrganization"),
+            ("operational_contact_job_title", "contactJobTitle"),
+            ("operational_contact_phone", "contactPhone"),
+        };
+        var fields = new List<VisitHistoryFieldChangeDto>();
+        foreach (var (column, code) in fieldMap)
+        {
+            var change = changes.FirstOrDefault(c => c.FieldName == column);
+            if (change.FieldName is null) continue;
+            fields.Add(new VisitHistoryFieldChangeDto(
+                code, $"visitRequestV2:historyDetail.field.{code}", change.OldValueText, change.NewValueText));
+        }
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            VisitHistoryEventCodes.ContactProfileUpdated,
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    /// <summary>
+    /// The self-match outcome's before/after — masked email only (the writer never keeps a full
+    /// address in the audit), never the raw operational_contact_user_id values the audit also
+    /// records: a numeric internal id would tell a reader nothing a name doesn't already, and Host
+    /// TransferDetail already draws this same line for the same reason.
+    /// </summary>
+    private static VisitHistoryDetailDto ContactReplacedWithRegistrantDetail(
+        ulong auditLogId, ulong? visitInstanceId, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var emailChange = changes.FirstOrDefault(c => c.FieldName == "operational_contact_email");
+        var fields = new List<VisitHistoryFieldChangeDto>();
+        if (emailChange.FieldName is not null)
+            fields.Add(new VisitHistoryFieldChangeDto(
+                "contactEmailMasked", "visitRequestV2:historyDetail.field.contactEmailMasked",
+                emailChange.OldValueText, emailChange.NewValueText));
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            VisitHistoryEventCodes.ContactReplacedWithRegistrant,
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    private static VisitHistoryDetailDto HostTransferDetail(
+        ulong auditLogId, ulong? visitInstanceId, ulong? actorUserId, string? reason, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
         // The names are what a reader needs; the raw user ids beside them would add nothing they can
         // use and would expose internal identifiers for no benefit.
-        var fields = audit.Changes
+        var fields = changes
             .Where(c => c.FieldName == "currentHostName")
             .Select(c => new VisitHistoryFieldChangeDto(
                 "host", "visitRequestV2:historyDetail.field.host", c.OldValueText, c.NewValueText))
@@ -300,14 +506,65 @@ public sealed class GetVisitHistoryDetailQueryHandler
         return new VisitHistoryDetailDto(
             VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
             VisitHistoryEventCodes.HostTransferred,
-            audit.CreatedAt,
-            await NameOfAsync(audit.ActorUserId, ct),
-            campusIdOf(audit.VisitInstanceId),
-            campusOf(audit.VisitInstanceId),
-            audit.Reason,
-            null, null,
-            fields,
-            Array.Empty<VisitHistoryCollectionChangeDto>());
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            reason, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    /// <summary>
+    /// A campus decision's before/after — status, the reason a Staff Leader gave, and (for an
+    /// approval) who was assigned host. Minimum fields Fix Group B §E asks for; nothing beyond what
+    /// the writer's three AuditLogChange rows (visit_request_campuses.status / decision_note /
+    /// current_host_user_id) actually captured — an audit row written before this capture existed has
+    /// no such rows.
+    ///
+    /// <para>
+    /// For that legacy case, <paramref name="currentStatus"/>/<paramref name="currentDecidedAt"/>/
+    /// <paramref name="currentDecidedBy"/>/<paramref name="currentDecisionNote"/> (the campus row's
+    /// CURRENT values) may fill in the missing reason — but ONLY when
+    /// <see cref="CampusDecisionAudit.CanEnrichFromCurrentRow"/> proves this audit is the UNIQUE
+    /// decision audit on the instance (among <paramref name="siblingDecisionAudits"/>) that the
+    /// current row's tuple resolves to. When it cannot prove that (resubmitted since, a different
+    /// decision, or an unresolved same-second tie against a sibling audit), the field stays absent
+    /// rather than guessed.
+    /// </para>
+    /// </summary>
+    private static VisitHistoryDetailDto DecisionDetail(
+        ulong auditLogId, ulong? visitInstanceId, string action, DateTime createdAt, ulong? actorUserId,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        string? currentStatus, DateTime? currentDecidedAt, ulong? currentDecidedBy, string? currentDecisionNote,
+        IReadOnlyCollection<CampusDecisionAudit.DecisionAuditFacts> siblingDecisionAudits,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var isApproval = CampusDecisionAudit.IsApproval(action);
+        var statusChange = changes.FirstOrDefault(c => c.FieldName == "visit_request_campuses.status");
+        var noteChange = changes.FirstOrDefault(c => c.FieldName == "decision_note");
+        var hostChange = changes.FirstOrDefault(c => c.FieldName == "current_host_user_id");
+
+        var reason = noteChange.NewValueText;
+        if (reason is null && CampusDecisionAudit.CanEnrichFromCurrentRow(
+                new CampusDecisionAudit.DecisionAuditFacts(action, createdAt, actorUserId),
+                siblingDecisionAudits, currentStatus, currentDecidedAt, currentDecidedBy))
+            reason = currentDecisionNote;
+
+        var fields = new List<VisitHistoryFieldChangeDto>
+        {
+            new(
+                "status", "visitRequestV2:historyDetail.field.status",
+                statusChange.OldValueText,
+                statusChange.NewValueText
+                    ?? (isApproval ? VisitInstanceStatuses.Assigned : VisitInstanceStatuses.Rejected)),
+        };
+        if (isApproval && hostChange.NewValueText is not null)
+            fields.Add(new VisitHistoryFieldChangeDto(
+                "host", "visitRequestV2:historyDetail.field.host",
+                hostChange.OldValueText, hostChange.NewValueText));
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            isApproval ? VisitHistoryEventCodes.InstanceApproved : VisitHistoryEventCodes.InstanceRejected,
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            reason,
+            null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
     }
 
     // ── Contact-identity transitions ─────────────────────────────────────────

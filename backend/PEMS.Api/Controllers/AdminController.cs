@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using PEMS.Api.Filters;
 using PEMS.Application.Admin.Commands.RevokeSession;
 using PEMS.Application.Admin.Commands.RevokeUserSessions;
+using PEMS.Application.Delegations.Commands.BackfillVisitHistory;
 using PEMS.Application.Admin.Queries.GetAdminAuditLogDetail;
 using PEMS.Application.Admin.Queries.GetAdminAuditLogs;
 using PEMS.Application.Admin.Queries.GetAdminDashboardSummary;
@@ -103,5 +104,13 @@ namespace PEMS.Api.Controllers
         [HttpGet("audit-logs/{auditLogId}")]
         public async Task<IActionResult> GetAuditLogDetail(ulong auditLogId, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new GetAdminAuditLogDetailQuery(auditLogId), cancellationToken));
+
+        // ── Visit history backfill (VISIT_HISTORY_INTEGRITY final phase, Phase C) ──────────────
+        // Deliberate, one-off recovery of pre-Commit-2/3/4 history gaps. Never runs automatically.
+
+        [HttpPost("visit-history-backfill")]
+        public async Task<IActionResult> BackfillVisitHistory(
+            [FromQuery] bool dryRun, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(new BackfillVisitHistoryCommand(dryRun), cancellationToken));
     }
 }

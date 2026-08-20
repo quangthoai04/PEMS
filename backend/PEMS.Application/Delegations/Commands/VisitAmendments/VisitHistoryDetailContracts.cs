@@ -79,6 +79,10 @@ public static class VisitContactIdentityEventCodes
             => VisitHistoryEventCodes.ContactTransferRequested,
         "OPERATIONAL_CONTACT_INVITATION_RESENT" or "INVITATION_RESENT"
             => VisitHistoryEventCodes.ContactInvitationResent,
+        // A new invitation to the SAME already-known contact after their previous one lapsed
+        // unanswered — distinct from a resend (same row, still live) and from a fresh invitation to
+        // a genuinely different contact (INVITATION_CREATED, from Replace or the original submit).
+        "OPERATIONAL_CONTACT_REINVITED" => VisitHistoryEventCodes.ContactReinvited,
         "OPERATIONAL_CONTACT_INVITATION_CANCELLED" or "INVITATION_CANCELLED"
             => VisitHistoryEventCodes.ContactInvitationCancelled,
         "OPERATIONAL_CONTACT_INVITATION_SUPERSEDED" or "INVITATION_SUPERSEDED"

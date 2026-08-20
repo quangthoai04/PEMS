@@ -15,6 +15,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
 using PEMS.Domain.Enums;
 using PEMS.Infrastructure.Persistence;
@@ -578,6 +579,121 @@ public sealed class VisitSafeEditV2Tests
                         new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "   "), null)),
                     CancellationToken.None));
             Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Request-revision numbering (Fix Group E, VISIT_HISTORY_INTEGRITY plan) ───────────────────
+    //
+    // A registrant-level safe edit stages a possible RECOVERED_BASELINE row via
+    // VisitRevisionBaselineGuard.EnsureRequestBaselineAsync (unflushed), then must number its OWN
+    // revision from VisitRevisionBaselineGuard.NextRequestRevisionAsync — which unions the DB MAX
+    // with EF's .Local staged rows — rather than a raw MaxAsync query, which cannot see the staged
+    // baseline and used to collide both writers on revision 1.
+
+    /// <summary>
+    /// CreateVisitRequestV2CommandHandler actually writes its own request-level revision 1
+    /// (SourceType=CREATE) at creation time, so to exercise the genuinely-empty-history case this
+    /// plan describes (legacy/migrated requests whose chain predates that row, or whose CREATE row
+    /// was never written) the fixture explicitly clears it first — mirroring how the per-campus
+    /// baseline-recovery test simulates the same gap for instance-level history.
+    /// </summary>
+    [Fact]
+    public async Task Registrant_safe_edit_on_empty_request_history_recovers_baseline_without_colliding()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+
+            using (var db = NewContext())
+            {
+                var seedRows = await db.VisitRequestRevisionHistories
+                    .Where(r => r.VisitRequestId == requestId).ToListAsync();
+                db.VisitRequestRevisionHistories.RemoveRange(seedRows);
+                await db.SaveChangesAsync();
+                var historyCountBefore = await db.VisitRequestRevisionHistories
+                    .CountAsync(r => r.VisitRequestId == requestId);
+                Assert.Equal(0, historyCountBefore);
+            }
+
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+8491", "VN"), null)),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var revisions = await db.VisitRequestRevisionHistories.AsNoTracking()
+                    .Where(r => r.VisitRequestId == requestId)
+                    .OrderBy(r => r.RequestRevision)
+                    .ToListAsync();
+                // No collision: exactly two rows, never two rows both claiming revision 1.
+                Assert.Equal(2, revisions.Count);
+                Assert.Equal(1u, revisions[0].RequestRevision);
+                Assert.Equal(VisitRevisionBaselineGuard.BaselineReason, revisions[0].Reason);
+                Assert.Equal(FormRevisionSourceTypes.Migration, revisions[0].SourceType);
+                Assert.Equal(2u, revisions[1].RequestRevision);
+                Assert.Equal("SAFE_EDIT", revisions[1].SourceType);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Registrant_safe_edit_after_existing_revisions_continues_the_sequence()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+
+            using (var db = NewContext())
+            {
+                // Replace the CREATE-time revision 1 with a deterministic chain 1..4 so the "next
+                // revision" this test asserts on is unambiguous. Deleted and re-added in separate
+                // SaveChanges calls — same unique key in one batch is not safe to order on.
+                var seedRows = await db.VisitRequestRevisionHistories
+                    .Where(r => r.VisitRequestId == requestId).ToListAsync();
+                db.VisitRequestRevisionHistories.RemoveRange(seedRows);
+                await db.SaveChangesAsync();
+                for (uint i = 1; i <= 4; i++)
+                    db.VisitRequestRevisionHistories.Add(new VisitRequestRevisionHistory
+                    {
+                        VisitRequestId = requestId,
+                        RequestRevision = i,
+                        SourceType = "SAFE_EDIT",
+                        SnapshotJson = "{}",
+                        AppliedBy = Registrant,
+                        AppliedAt = Now,
+                        Reason = Guid.NewGuid().ToString("N"),
+                    });
+                await db.SaveChangesAsync();
+            }
+
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant Kế Tiếp", "Org", "Job", "+8491", "VN"), null)),
+                    CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var revisions = await db.VisitRequestRevisionHistories.AsNoTracking()
+                    .Where(r => r.VisitRequestId == requestId)
+                    .OrderBy(r => r.RequestRevision)
+                    .ToListAsync();
+                Assert.Equal(5, revisions.Count); // no extra baseline — the chain already had a first link
+                Assert.Equal(5u, revisions[^1].RequestRevision);
+                Assert.Equal("SAFE_EDIT", revisions[^1].SourceType);
+            }
         }
         finally { await CleanupAsync(requestId); }
     }

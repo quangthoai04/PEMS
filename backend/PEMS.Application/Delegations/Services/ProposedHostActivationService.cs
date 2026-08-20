@@ -28,7 +28,13 @@ public readonly record struct ProposedHostActivation(
     ulong? ProposerUserId,
     string SelectionMode,
     bool Activated,
-    string? RejectionReason);
+    string? RejectionReason,
+    /// <summary>
+    /// The campus's status immediately BEFORE this activation (WAITING_CONTACT_CONFIRMATION or
+    /// WAITING_REQUEST_APPROVAL). Null when <see cref="Activated"/> is false — a refused/needs-
+    /// reselection outcome writes no decision and so has no "old → new" status change to report.
+    /// </summary>
+    string? OldStatus = null);
 
 public interface IProposedHostActivationService
 {
@@ -120,13 +126,14 @@ public sealed class ProposedHostActivationService : IProposedHostActivationServi
                 continue;
             }
 
+            var oldStatus = instance.Status;
             Activate(instance, decisionActorRole!, now);
             await EnsureHostParticipantAsync(instance, now, cancellationToken);
 
             results.Add(new ProposedHostActivation(
                 instance.VisitInstanceId, instance.CampusId, instance.ProposedHostUserId,
                 instance.ProposedHostByUserId, instance.HostSelectionMode,
-                Activated: true, RejectionReason: null));
+                Activated: true, RejectionReason: null, OldStatus: oldStatus));
         }
 
         return results;

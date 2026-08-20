@@ -5,6 +5,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
@@ -147,19 +148,29 @@ public sealed class StartVisitPreparationCommandHandler
 
         // The append-only history of what happened to this campus. Same shape as the approve/reject
         // decision audit, so one query over audit_logs still tells the whole campus story in order.
-        _db.AuditLogs.Add(new AuditLog
+        // Action/SourceType are the shared lifecycle vocabulary (VisitLifecycleHistoryAudit) so this
+        // writer and the two history readers cannot name the same transition two different ways.
+        var lifecycleAudit = new AuditLog
         {
             ActorUserId = actorId,
-            Action = "START_VISIT_PREPARATION",
+            Action = VisitLifecycleHistoryAudit.PreparationStarted,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CampusId = instance.CampusId,
             VisitRequestId = instance.VisitRequestId,
             VisitInstanceId = instance.VisitInstanceId,
-            SourceType = "LIFECYCLE",
+            SourceType = VisitLifecycleHistoryAudit.SourceType,
             Reason = $"fromStatus={VisitInstanceStatuses.Assigned};toStatus={VisitInstanceStatuses.BeforeVisit}",
             CreatedAt = now,
+        };
+        lifecycleAudit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "visit_request_campuses.status",
+            OldValueText = VisitInstanceStatuses.Assigned,
+            NewValueText = VisitInstanceStatuses.BeforeVisit,
+            CreatedAt = now,
         });
+        _db.AuditLogs.Add(lifecycleAudit);
 
         await _db.SaveChangesAsync(cancellationToken);
         await tx.CommitAsync(cancellationToken);

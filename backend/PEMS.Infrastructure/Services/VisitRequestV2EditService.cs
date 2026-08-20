@@ -204,8 +204,13 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         _db.AuditLogs.Add(audit);
 
         // ── 6. Per instance: change detection → apply only what changed ──
+        // ContentChanged travels with each entry so the post-flush block below knows whether the
+        // member links must be replaced (content changed) or the existing ones left alone
+        // (schedule-only) — see VisitFieldClassifier's sibling rule in FormRevision semantics: a
+        // saved campus always advances FormRevision by exactly one, regardless of how many of its
+        // fields moved in that one save.
         var changedInstances =
-            new List<(VisitRequestCampus Instance, List<VisitGuestMember> NewMembers, CampusVisitEditV2Dto Content)>();
+            new List<(VisitRequestCampus Instance, bool ContentChanged, List<VisitGuestMember> NewMembers, CampusVisitEditV2Dto Content)>();
         foreach (var (content, instance) in kept)
         {
             var detail = instance.FormDetail
@@ -254,12 +259,28 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 newMembers = VisitRequestV2EditOps.StageReplaceMembers(
                     _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
             }
+            else
+            {
+                // Schedule-only: still a save on this campus, so it still advances FormRevision by
+                // one — the member list is untouched, so ApplyFormDetail (which would rewrite
+                // content fields) is deliberately not called here.
+                audit.Changes.Add(new AuditLogChange
+                {
+                    FieldName = $"instance[{instance.VisitInstanceId}].form_revision",
+                    OldValueText = detail.FormRevision.ToString(),
+                    NewValueText = (detail.FormRevision + 1).ToString(),
+                    CreatedAt = now,
+                });
+                detail.FormRevision += 1;
+                detail.RowVersion += 1;
+                detail.UpdatedAt = now;
+                detail.UpdatedBy = actorId;
+            }
 
             instance.RowVersion += 1;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
-            if (contentChanged)
-                changedInstances.Add((instance, newMembers, content));
+            changedInstances.Add((instance, contentChanged, newMembers, content));
         }
 
         // ── 7. Request-level common fields (mutable subset only) + canonical recompute ──
@@ -289,11 +310,22 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         await _db.SaveChangesAsync(ct);
 
         // ── 8. Post-flush: composite links + immutable revision snapshots ──
-        foreach (var (instance, newMembers, content) in changedInstances)
+        foreach (var (instance, contentChanged, newMembers, content) in changedInstances)
         {
-            VisitRequestV2EditOps.LinkMembers(
-                _db, request, instance, newMembers, now, actorId,
-                VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
+            List<VisitGuestMember> snapshotMembers;
+            if (contentChanged)
+            {
+                VisitRequestV2EditOps.LinkMembers(
+                    _db, request, instance, newMembers, now, actorId,
+                    VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
+                snapshotMembers = newMembers;
+            }
+            else
+            {
+                // Schedule-only: members were never replaced, so there is nothing to (re)link —
+                // the snapshot must reflect the CURRENT, still-linked members, never an empty list.
+                snapshotMembers = V2CanonicalRefresh.MembersOf(request, instance);
+            }
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,
@@ -301,7 +333,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 FormRevision = instance.FormDetail!.FormRevision,
                 ApprovalRevision = instance.FormDetail.ApprovalRevision,
                 SourceType = FormRevisionSourceTypes.PendingEdit,
-                SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, instance.FormDetail, newMembers),
+                SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, instance.FormDetail, snapshotMembers),
                 AppliedBy = actorId,
                 AppliedAt = now,
                 Reason = correlationId,
@@ -717,6 +749,23 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             newMembers = VisitRequestV2EditOps.StageReplaceMembers(
                 _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
         }
+        else
+        {
+            // Schedule-only (the only other way this method reaches here — see the throw above):
+            // this campus is still being saved, so FormRevision still advances by one. Members are
+            // untouched, so ApplyFormDetail — which would rewrite content fields — is not called.
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = $"instance[{instance.VisitInstanceId}].form_revision",
+                OldValueText = detail.FormRevision.ToString(),
+                NewValueText = (detail.FormRevision + 1).ToString(),
+                CreatedAt = now,
+            });
+            detail.FormRevision += 1;
+            detail.RowVersion += 1;
+            detail.UpdatedAt = now;
+            detail.UpdatedBy = actorId;
+        }
 
         if (scheduleChanged)
         {
@@ -767,25 +816,30 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         await _db.SaveChangesAsync(ct);
 
+        // contentChanged || scheduleChanged is guaranteed true here (the method throws earlier if
+        // neither moved), so this campus always gets a new revision row — content changes relink
+        // members via LinkMembers; a schedule-only save reads back the CURRENT, untouched members
+        // instead of relinking (there is nothing to relink) so the snapshot is never empty.
+        var snapshotMembers = contentChanged
+            ? newMembers
+            : V2CanonicalRefresh.MembersOf(request, instance);
         if (contentChanged)
-        {
             VisitRequestV2EditOps.LinkMembers(
                 _db, request, instance, newMembers, now, actorId,
                 VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
-            _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
-            {
-                VisitRequestId = request.VisitRequestId,
-                VisitInstanceId = instance.VisitInstanceId,
-                FormRevision = detail.FormRevision,
-                ApprovalRevision = detail.ApprovalRevision,
-                SourceType = FormRevisionSourceTypes.PendingEdit,
-                SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, detail, newMembers),
-                AppliedBy = actorId,
-                AppliedAt = now,
-                Reason = correlationId,
-            });
-            await _db.SaveChangesAsync(ct);
-        }
+        _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
+        {
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            FormRevision = detail.FormRevision,
+            ApprovalRevision = detail.ApprovalRevision,
+            SourceType = FormRevisionSourceTypes.PendingEdit,
+            SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, detail, snapshotMembers),
+            AppliedBy = actorId,
+            AppliedAt = now,
+            Reason = correlationId,
+        });
+        await _db.SaveChangesAsync(ct);
 
         // Scope / mixed / fingerprint are facts about the campus SET and its content, so they are
         // rebuilt from the persisted campuses — this path has no payload covering the siblings and must

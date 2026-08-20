@@ -10,6 +10,7 @@ using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
 using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Services;
 namespace PEMS.Application.Delegations.Commands.CompleteVisitStage;
 
 /// <summary>
@@ -231,19 +232,38 @@ public sealed class CompleteVisitStageCommandHandler
                 throw new BusinessRuleException("Giai đoạn không hợp lệ.");
         }
 
+        var oldStatus = instance.Status;
         instance.Status = newStatus;
         instance.UpdatedAt = now;
         instance.UpdatedBy = actorId;
         instance.RowVersion += 1;
 
-        _db.AuditLogs.Add(new AuditLog
+        // Fully scoped, like every other decision/contact audit row (Commit 2/3) — previously this
+        // row carried only ActorUserId/Action/EntityType/EntityId, so a reader filtering AuditLogs by
+        // VisitInstanceId (the pattern every other history section already uses) could never find it.
+        // The status AuditLogChange is what lets a reader recover this transition's old/new value
+        // later WITHOUT reading the campus's current row — the current row only ever holds the LATEST
+        // status, not the history of how it got there.
+        var lifecycleAudit = new AuditLog
         {
             ActorUserId = actorId,
             Action = action,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
-            CreatedAt = now
+            CampusId = instance.CampusId,
+            VisitRequestId = instance.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = VisitLifecycleHistoryAudit.SourceType,
+            CreatedAt = now,
+        };
+        lifecycleAudit.Changes.Add(new AuditLogChange
+        {
+            FieldName = "visit_request_campuses.status",
+            OldValueText = oldStatus,
+            NewValueText = newStatus,
+            CreatedAt = now,
         });
+        _db.AuditLogs.Add(lifecycleAudit);
 
         await _db.SaveChangesAsync(cancellationToken);
 

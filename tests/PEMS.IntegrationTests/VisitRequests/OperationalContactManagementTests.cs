@@ -15,6 +15,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.OperationalContact;
+using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
@@ -206,6 +207,19 @@ public sealed class OperationalContactManagementTests
             new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db),
             new NoopNotifications(),
             NullLogger<AcceptOperationalContactConfirmationCommandHandler>.Instance, WriteOn);
+
+    private static ReinviteOperationalContactConfirmationCommandHandler Reinvite(
+        ApplicationDbContext db, ulong actor, FakeEmail email)
+        => new(db, new FakeUser(actor), new FixedClock(), Invitations(db, email),
+            new VisitRequestAggregateStatusService(db), WriteOn);
+
+    private static ResendOperationalContactConfirmationCommandHandler Resend(
+        ApplicationDbContext db, ulong actor, FakeEmail email)
+        => new(db, new FakeUser(actor), new FixedClock(), Invitations(db, email), WriteOn);
+
+    private static CancelOperationalContactChangeCommandHandler Cancel(
+        ApplicationDbContext db, ulong actor, FakeEmail email)
+        => new(db, new FakeUser(actor), new FixedClock(), Invitations(db, email), WriteOn);
 
     // ── Data helpers ──────────────────────────────────────────────────────────────
 
@@ -1028,5 +1042,607 @@ public sealed class OperationalContactManagementTests
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE visit_request_campuses SET status = 'BEFORE_VISIT' WHERE visit_instance_id = {0}",
             instanceId);
+    }
+
+    // ── Commit 3 — Contact History Integrity (Fix Group C/D) ───────────────────────
+    //
+    // The writer-triggered outcomes (profile update, external replace, self-match replace) run
+    // through the REAL handlers this file already has a harness for, then read back through the
+    // real history handlers below — proving the reader against actual writer output, not against
+    // an assumption of what the writer produces. Privacy/visibility regression for these same
+    // events lives in VisitRequestHistoryV2Tests.cs (C3-7..C3-13), matching that file's own
+    // hand-built-fixture convention for multi-role scoping.
+
+    private static GetVisitRequestHistoryQueryHandler HistoryHandler(ApplicationDbContext db, ICurrentUserService user)
+        => new(db, user, new PerCampusFormV2Options { Enabled = true });
+
+    private static GetVisitHistoryDetailQueryHandler HistoryDetailHandler(ApplicationDbContext db, ICurrentUserService user)
+        => new(db, user, new PerCampusFormV2Options { Enabled = true });
+
+    /// <summary>
+    /// Moves a campus straight to "confirmed contact, nothing pending" — the precondition C3-3/C3-5
+    /// need (a settled contact A about to be replaced) without going through a real accept/token
+    /// flow, which is not what either test is about. Written directly, the same way
+    /// DriveToBeforeVisitAsync above advances status for a precondition that is not the test's
+    /// subject.
+    /// </summary>
+    private static async Task ForceConfirmedNoPendingAsync(ulong instanceId, ulong contactUserId)
+    {
+        using var db = NewContext();
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE visit_request_campuses SET operational_contact_user_id = {0}, "
+            + "operational_contact_confirmed_at = {1}, "
+            + "operational_contact_confirmation_source = 'REGISTRANT_SELF_MATCH', "
+            + "status = 'WAITING_REQUEST_APPROVAL' WHERE visit_instance_id = {2}",
+            contactUserId, Now, instanceId);
+        await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM visit_request_identity_change_events WHERE visit_instance_id = {0}", instanceId);
+        await db.Database.ExecuteSqlRawAsync(
+            "DELETE FROM visit_request_identity_changes WHERE visit_instance_id = {0}", instanceId);
+    }
+
+    /// <summary>C3-1. A metadata-only correction must appear in history with the fields that moved.</summary>
+    [Fact]
+    public async Task C3_1_Profile_update_is_visible_in_history_with_before_after()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail,
+                        phone: "+84900000002", jobTitle: "Trưởng phòng mới"),
+                    CancellationToken.None);
+
+            using var read = NewContext();
+            var auditRow = await read.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == requestId
+                            && a.Action == OperationalContactHistoryAudit.ProfileUpdated)
+                .FirstAsync();
+            Assert.Equal(before.InstanceId, auditRow.VisitInstanceId);
+            Assert.NotNull(auditRow.CampusId);
+
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var entry = Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactProfileUpdated);
+            Assert.NotNull(entry.EventId);
+
+            // Never a form revision — it corrects who is asked, not what is being asked.
+            var afterDetail = await DetailAsync(before.InstanceId);
+            Assert.Equal(detail.FormRevision, afterDetail.FormRevision);
+            var afterCampus = await CampusStateAsync(requestId);
+            Assert.Equal(before.Status, afterCampus.Status);
+            Assert.Equal(before.ContactUserId, afterCampus.ContactUserId);
+
+            var drawer = await HistoryDetailHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitHistoryDetailQuery(requestId, entry.EventId!), CancellationToken.None);
+            var phoneField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "contactPhone");
+            Assert.Equal(detail.OperationalContactPhone, phoneField.BeforeValue);
+            Assert.Equal("+84900000002", phoneField.AfterValue);
+            var jobField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "contactJobTitle");
+            Assert.Equal(detail.OperationalContactJobTitle, jobField.BeforeValue);
+            Assert.Equal("Trưởng phòng mới", jobField.AfterValue);
+            // Only the two fields that actually changed — full name/organization were resubmitted
+            // unchanged and must not appear as a "change" from themselves to themselves.
+            Assert.Equal(2, drawer.FieldChanges.Count);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>C3-2. The existing no-op refusal is unchanged, and refusing means no history row.</summary>
+    [Fact]
+    public async Task C3_2_Profile_update_no_op_creates_no_history_event()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Assert.ThrowsAsync<BusinessRuleException>(() => Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail), CancellationToken.None));
+
+            using var read = NewContext();
+            Assert.False(await read.AuditLogs.AnyAsync(a => a.VisitRequestId == requestId
+                && a.Action == OperationalContactHistoryAudit.ProfileUpdated));
+
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactProfileUpdated);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-3. Replacing a SETTLED contact (no pending invitation in flight) with an external address:
+    /// exactly one business event for the new invitation, the OPERATIONAL_CONTACT_REPLACED audit
+    /// exists (scoped, per Fix Group D item 9) but is never itself surfaced for this outcome.
+    /// </summary>
+    [Fact]
+    public async Task C3_3_External_replace_produces_exactly_one_invitation_event_no_duplicate()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string initialEmail, externalEmail;
+            ulong initialUserId;
+            using (var db = NewContext())
+            {
+                (initialUserId, initialEmail) = await VisitorUserAsync(db);
+                (_, externalEmail) = await SuccessorUserAsync(db);
+            }
+            requestId = await CreateAsync(Campus("HN", initialEmail));
+            var before = await CampusStateAsync(requestId);
+            await ForceConfirmedNoPendingAsync(before.InstanceId, initialUserId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, email: externalEmail),
+                    CancellationToken.None);
+
+            var afterCampus = await CampusStateAsync(requestId);
+            Assert.Null(afterCampus.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, afterCampus.Status);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(IdentityChangeStatuses.Pending, invitation.Status);
+            Assert.Equal(detail.FormRevision, (await DetailAsync(before.InstanceId)).FormRevision);
+
+            using var read = NewContext();
+            var replacedAudit = await read.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == requestId && a.Action == OperationalContactHistoryAudit.Replaced)
+                .FirstAsync();
+            Assert.Equal(before.InstanceId, replacedAudit.VisitInstanceId); // Fix Group D item 9
+            Assert.NotNull(replacedAudit.CampusId);
+
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant);
+            var created = Assert.Single(result.Entries, e =>
+                e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+                && e.VisitInstanceId == before.InstanceId);
+            Assert.NotNull(created.EventId);
+
+            // A guessed id for the un-surfaced REPLACED audit must 404 like anything out of scope.
+            var guessedId = VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, replacedAudit.AuditLogId);
+            await Assert.ThrowsAsync<NotFoundException>(() => HistoryDetailHandler(read, new FakeUser(Registrant))
+                .Handle(new GetVisitHistoryDetailQuery(requestId, guessedId), CancellationToken.None));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-4. Replacing a contact that STILL has a pending invitation: the old invitation is
+    /// superseded and a new one created — each exactly once, two distinct events.
+    /// </summary>
+    [Fact]
+    public async Task C3_4_External_replace_with_existing_pending_invitation_supersedes_then_creates_once_each()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string initialEmail, externalEmail;
+            using (var db = NewContext())
+            {
+                (_, initialEmail) = await VisitorUserAsync(db);
+                (_, externalEmail) = await SuccessorUserAsync(db);
+            }
+            requestId = await CreateAsync(Campus("HN", initialEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var originalInvitation = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, email: externalEmail),
+                    CancellationToken.None);
+
+            var afterChanges = await ChangesAsync(requestId);
+            Assert.Equal(2, afterChanges.Count);
+            Assert.Equal(IdentityChangeStatuses.Superseded,
+                afterChanges.Single(c => c.IdentityChangeId == originalInvitation.IdentityChangeId).Status);
+            var newInvitation = Assert.Single(afterChanges, c => c.IdentityChangeId != originalInvitation.IdentityChangeId);
+            Assert.Equal(IdentityChangeStatuses.Pending, newInvitation.Status);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var superseded = Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInvitationSuperseded);
+            // Two CREATED events legitimately exist — the request's own original invitation (at
+            // submit time) and this replace's new one — each for its own IdentityChangeId, and each
+            // exactly once. The assertion is on the NEW one specifically, not merely "one exists".
+            var newEventRow = await read.VisitRequestIdentityChangeEvents.AsNoTracking()
+                .Where(e => e.IdentityChangeId == newInvitation.IdentityChangeId
+                            && e.EventType == "OPERATIONAL_CONTACT_INVITATION_CREATED")
+                .FirstAsync();
+            var expectedNewEventId = VisitHistoryEventSources.Build(
+                VisitHistoryEventSources.IdentityChange, newEventRow.IdentityChangeEventId);
+            var created = Assert.Single(result.Entries, e =>
+                e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+                && e.EventId == expectedNewEventId);
+            Assert.NotEqual(superseded.EventId, created.EventId);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-5. Replacing a settled contact with the registrant's OWN verified address: linked
+    /// immediately, no invitation of any kind, and exactly one history event represents it.
+    /// </summary>
+    [Fact]
+    public async Task C3_5_Self_match_replacement_produces_exactly_one_history_event_no_invitation()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string externalEmail;
+            ulong externalUserId;
+            using (var db = NewContext()) (externalUserId, externalEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", externalEmail));
+            var before = await CampusStateAsync(requestId);
+            await ForceConfirmedNoPendingAsync(before.InstanceId, externalUserId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var registrantEmail = V2SeedActor.Email(Registrant);
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, email: registrantEmail),
+                    CancellationToken.None);
+
+            var afterCampus = await CampusStateAsync(requestId);
+            Assert.Equal(Registrant, afterCampus.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, afterCampus.Status);
+            Assert.Empty(await ChangesAsync(requestId)); // no invitation of any kind was created
+            Assert.Equal(detail.FormRevision, (await DetailAsync(before.InstanceId)).FormRevision);
+
+            using var read = NewContext();
+            var replacedAudit = await read.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == requestId && a.Action == OperationalContactHistoryAudit.Replaced)
+                .FirstAsync();
+            var campusId = await read.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == before.InstanceId).Select(c => c.CampusId).FirstAsync();
+            Assert.Equal(before.InstanceId, replacedAudit.VisitInstanceId);
+            Assert.Equal(campusId, replacedAudit.CampusId);
+
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var contactEntries = result.Entries.Where(e => e.VisitInstanceId == before.InstanceId
+                && (e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant
+                    || e.EventCode == VisitHistoryEventCodes.ContactIdentityChanged
+                    || e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated)).ToList();
+            var entry = Assert.Single(contactEntries);
+            Assert.Equal(VisitHistoryEventCodes.ContactReplacedWithRegistrant, entry.EventCode);
+
+            var drawer = await HistoryDetailHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitHistoryDetailQuery(requestId, entry.EventId!), CancellationToken.None);
+            Assert.Equal(VisitHistoryEventCodes.ContactReplacedWithRegistrant, drawer.EventCode);
+            var emailField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "contactEmailMasked");
+            Assert.NotNull(emailField.BeforeValue);
+            Assert.NotNull(emailField.AfterValue);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-6. A profile correction submitted while an invitation is still pending must not touch that
+    /// invitation's lifecycle, and history must show the correction alone — never a fabricated resend
+    /// or confirmation.
+    /// </summary>
+    [Fact]
+    public async Task C3_6_Profile_update_while_invitation_pending_does_not_alter_invitation_lifecycle()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var pendingBefore = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, phone: "+84900000099"),
+                    CancellationToken.None);
+
+            var pendingAfter = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(pendingBefore.IdentityChangeId, pendingAfter.IdentityChangeId);
+            Assert.Equal(pendingBefore.Status, pendingAfter.Status);
+            Assert.Equal(pendingBefore.ExpiresAt, pendingAfter.ExpiresAt);
+            Assert.Equal(pendingBefore.TokenVersion, pendingAfter.TokenVersion);
+            Assert.Equal(pendingBefore.ResendCount, pendingAfter.ResendCount);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            var forInstance = result.Entries.Where(e => e.VisitInstanceId == before.InstanceId).ToList();
+            Assert.Contains(forInstance, e => e.EventCode == VisitHistoryEventCodes.ContactProfileUpdated);
+            Assert.DoesNotContain(forInstance, e => e.EventCode == VisitHistoryEventCodes.ContactInvitationResent);
+            Assert.DoesNotContain(forInstance, e => e.EventCode == VisitHistoryEventCodes.ContactConfirmed);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Commit 3 semantic-fix patch — Reinvite vs Invitation Created vs Resend ─────────────────────
+    //
+    // ReinviteOperationalContactConfirmationCommandHandler used to write EventType =
+    // OPERATIONAL_CONTACT_INVITATION_CREATED (the same string a brand-new contact's first invitation
+    // uses), even though its own AuditLog already used the distinct OPERATIONAL_CONTACT_REINVITED.
+    // Reading the handler proved the lifecycle really IS different from both a fresh invitation
+    // (Replace/submit: a different contact) and a resend (Resend: the SAME VisitRequestIdentityChange
+    // row, TokenVersion bumped) — Reinvite only runs when NO pending row exists (the previous one
+    // already ended terminally) and always creates a NEW row with TokenVersion reset to 1 and
+    // ResendCount reset to 0. So the fix changed exactly one string in the writer to match its own
+    // audit; every other mutation stays byte-for-byte identical to before this patch.
+
+    /// <summary>C3-R1. The request's own original invitation reads as CREATED, never as reinvited.</summary>
+    [Fact]
+    public async Task C3_R1_Initial_invitation_produces_exactly_one_created_event()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-R2. A real Cancel (the original invitation lapses) followed by a real Reinvite: exactly one
+    /// CONTACT_REINVITED event, and the reinvite itself adds no second CONTACT_INITIAL_CONFIRMATION_
+    /// CREATED (the one that legitimately exists is the request's own original, from before the cancel).
+    /// </summary>
+    [Fact]
+    public async Task C3_R2_Reinvite_after_a_lapsed_invitation_produces_exactly_one_reinvited_event()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var original = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Cancel(db, Registrant, mail).Handle(
+                    new CancelOperationalContactChangeCommand(requestId, before.InstanceId, "test cancel"),
+                    CancellationToken.None);
+            await using (var db = NewContext())
+                await Reinvite(db, Registrant, mail).Handle(
+                    new ReinviteOperationalContactConfirmationCommand(requestId, before.InstanceId),
+                    CancellationToken.None);
+
+            var afterChanges = await ChangesAsync(requestId);
+            Assert.Equal(2, afterChanges.Count); // the cancelled original + the fresh reinvite row
+            var reinvited = Assert.Single(afterChanges, c => c.IdentityChangeId != original.IdentityChangeId);
+            Assert.Equal(IdentityChangeStatuses.Pending, reinvited.Status);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+            // Only the ORIGINAL create-time invitation is CREATED — the reinvite must not add a second one.
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>C3-R3. Resend keeps its own distinct code and is never confused with reinvite.</summary>
+    [Fact]
+    public async Task C3_R3_Resend_produces_the_existing_resent_event_not_reinvited()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var pendingBefore = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Resend(db, Registrant, mail).Handle(
+                    new ResendOperationalContactConfirmationCommand(requestId, before.InstanceId),
+                    CancellationToken.None);
+
+            var pendingAfter = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(pendingBefore.IdentityChangeId, pendingAfter.IdentityChangeId); // SAME row — never a new one
+            Assert.Equal(pendingBefore.TokenVersion + 1, pendingAfter.TokenVersion);
+            Assert.Equal(pendingBefore.ResendCount + 1, pendingAfter.ResendCount);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInvitationResent);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>C3-R4. External replacement of a settled contact still reads as a fresh invitation, never a reinvite.</summary>
+    [Fact]
+    public async Task C3_R4_External_replacement_is_never_classified_as_reinvite()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string initialEmail, externalEmail;
+            ulong initialUserId;
+            using (var db = NewContext())
+            {
+                (initialUserId, initialEmail) = await VisitorUserAsync(db);
+                (_, externalEmail) = await SuccessorUserAsync(db);
+            }
+            requestId = await CreateAsync(Campus("HN", initialEmail));
+            var before = await CampusStateAsync(requestId);
+            await ForceConfirmedNoPendingAsync(before.InstanceId, initialUserId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, email: externalEmail),
+                    CancellationToken.None);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+                && e.VisitInstanceId == before.InstanceId);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>C3-R5. Superseding a live pending invitation with a replacement never fabricates a reinvite.</summary>
+    [Fact]
+    public async Task C3_R5_Supersede_then_replace_is_never_classified_as_reinvite()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string initialEmail, externalEmail;
+            using (var db = NewContext())
+            {
+                (_, initialEmail) = await VisitorUserAsync(db);
+                (_, externalEmail) = await SuccessorUserAsync(db);
+            }
+            requestId = await CreateAsync(Campus("HN", initialEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Save(db, Registrant, mail).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, email: externalEmail),
+                    CancellationToken.None);
+
+            using var read = NewContext();
+            var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInvitationSuperseded);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>C3-R6. None of initial/resend/reinvite ever bump FormRevision.</summary>
+    [Fact]
+    public async Task C3_R6_Initial_resend_and_reinvite_never_bump_formrevision()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var revisionAtCreate = (await DetailAsync(before.InstanceId)).FormRevision;
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Resend(db, Registrant, mail).Handle(
+                    new ResendOperationalContactConfirmationCommand(requestId, before.InstanceId),
+                    CancellationToken.None);
+            Assert.Equal(revisionAtCreate, (await DetailAsync(before.InstanceId)).FormRevision);
+
+            await using (var db = NewContext())
+                await Cancel(db, Registrant, mail).Handle(
+                    new CancelOperationalContactChangeCommand(requestId, before.InstanceId, null),
+                    CancellationToken.None);
+            await using (var db = NewContext())
+                await Reinvite(db, Registrant, mail).Handle(
+                    new ReinviteOperationalContactConfirmationCommand(requestId, before.InstanceId),
+                    CancellationToken.None);
+            Assert.Equal(revisionAtCreate, (await DetailAsync(before.InstanceId)).FormRevision);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// C3-R7. Proves this patch changed EventType ONLY: the reinvited row's own lifecycle fields
+    /// match exactly what ReinviteOperationalContactConfirmationCommandHandler's doc comment already
+    /// claimed before this patch (new row, TokenVersion 1, ResendCount 0, same address).
+    /// </summary>
+    [Fact]
+    public async Task C3_R7_Reinvite_identity_lifecycle_fields_match_expected_behavior()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var original = Assert.Single(await ChangesAsync(requestId));
+
+            var mail = new FakeEmail();
+            await using (var db = NewContext())
+                await Cancel(db, Registrant, mail).Handle(
+                    new CancelOperationalContactChangeCommand(requestId, before.InstanceId, null),
+                    CancellationToken.None);
+            await using (var db = NewContext())
+                await Reinvite(db, Registrant, mail).Handle(
+                    new ReinviteOperationalContactConfirmationCommand(requestId, before.InstanceId),
+                    CancellationToken.None);
+
+            var afterChanges = await ChangesAsync(requestId);
+            Assert.Equal(2, afterChanges.Count);
+            var reinvited = Assert.Single(afterChanges, c => c.IdentityChangeId != original.IdentityChangeId);
+            Assert.Equal(IdentityChangeKinds.InitialConfirmation, reinvited.ChangeKind);
+            Assert.Equal(IdentityChangeStatuses.Pending, reinvited.Status);
+            Assert.Equal(1u, reinvited.TokenVersion);
+            Assert.Equal(0u, reinvited.ResendCount);
+            Assert.Equal(original.NewEmailNormalized, reinvited.NewEmailNormalized);
+            Assert.Equal(original.NewEmailMasked, reinvited.NewEmailMasked);
+            Assert.True(reinvited.ExpiresAt > Now);
+
+            var campus = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, campus.Status);
+            Assert.Null(campus.ContactUserId);
+        }
+        finally { await CleanupAsync(requestId); }
     }
 }

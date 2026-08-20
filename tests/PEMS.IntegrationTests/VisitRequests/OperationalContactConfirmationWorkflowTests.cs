@@ -13,6 +13,7 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.OperationalContact;
+using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
@@ -945,6 +946,124 @@ public sealed class OperationalContactConfirmationWorkflowTests
             using var check = NewContext();
             Assert.True(await check.VisitParticipants.AnyAsync(
                 x => x.VisitInstanceId == instanceId && x.UserId == leader.Value.UserId && x.IsHost));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// VISIT_HISTORY_INTEGRITY final phase, Phase B (B2). Same activation as the test above, but
+    /// proving the WRITER side: a fully-scoped, structured decision audit exists — same shape
+    /// CampusApprovalExecutor writes for a live approval (status + host AuditLogChange rows) — under
+    /// the shared CampusDecisionAudit.HostProposalActivated action, filed under the PROPOSER (the
+    /// Leader), never the contact who merely clicked accept.
+    /// </summary>
+    [Fact]
+    public async Task B2_Activation_writes_a_fully_scoped_structured_decision_audit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            using var seed = NewContext();
+            var leader = await InternalHostAsync(seed, UserSubRoles.Leader);
+            if (leader is null) return;
+            var (contactId, contactEmail) = await VisitorUserAsync(seed);
+
+            requestId = await CreateAsInternalAsync(
+                FormFor(leader.Value.Email, CampusWithProposal(leader.Value.Campus, contactEmail, 0, HostSelectionModes.Self)),
+                leader.Value.UserId);
+
+            var (instanceId, changeId) = await PendingInvitationAsync(requestId);
+
+            var token = await MintTokenAsync(changeId);
+            using (var db = NewContext())
+            {
+                await Accept(db, contactId, contactEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+            }
+
+            var after = await InstanceAsync(instanceId);
+
+            using var check = NewContext();
+            var audit = Assert.Single(await check.AuditLogs.AsNoTracking().Include(a => a.Changes)
+                .Where(a => a.VisitRequestId == requestId && a.Action == CampusDecisionAudit.HostProposalActivated)
+                .ToListAsync());
+            Assert.Equal(requestId, audit.VisitRequestId);
+            Assert.Equal(instanceId, audit.VisitInstanceId);
+            Assert.Equal(after.CampusId, audit.CampusId);
+            Assert.Equal(leader.Value.UserId, audit.ActorUserId); // the proposer, not the contact
+            Assert.Equal(CampusDecisionAudit.SourceType, audit.SourceType);
+
+            var statusChange = Assert.Single(audit.Changes.Where(c => c.FieldName == "visit_request_campuses.status"));
+            // Within ONE Accept call, the campus first flips WAITING_CONTACT_CONFIRMATION →
+            // WAITING_REQUEST_APPROVAL (its own confirmation logic) and — since this was the request's
+            // only outstanding campus, so the gate opens in the same call — is picked up by
+            // ActivateAsync from THAT intermediate value, not the value the row held before Accept ran.
+            // Both are genuinely valid pending-bucket starting points per ActivateAsync's own filter.
+            Assert.Contains(statusChange.OldValueText, new[]
+            {
+                VisitInstanceStatuses.WaitingContactConfirmation, VisitInstanceStatuses.WaitingRequestApproval,
+            });
+            Assert.Equal(VisitInstanceStatuses.Assigned, statusChange.NewValueText);
+            var hostChange = Assert.Single(audit.Changes.Where(c => c.FieldName == "current_host_user_id"));
+            Assert.Null(hostChange.OldValueText);
+            Assert.Equal(leader.Value.UserId.ToString(), hostChange.NewValueText);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// VISIT_HISTORY_INTEGRITY final phase, Phase B (B2). Proving the READER side: the timeline
+    /// renders this as its own HostProposalActivated event — never InstanceApproved, which would
+    /// misattribute a live Staff Leader review to what was actually a preauthorized proposal
+    /// auto-applying when the LAST contact confirmed. The detail drawer shows the same status/host
+    /// facts the audit above proved were written.
+    /// </summary>
+    [Fact]
+    public async Task B2_Timeline_and_detail_show_host_proposal_activated_not_instance_approved()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            using var seed = NewContext();
+            var leader = await InternalHostAsync(seed, UserSubRoles.Leader);
+            if (leader is null) return;
+            var (contactId, contactEmail) = await VisitorUserAsync(seed);
+
+            requestId = await CreateAsInternalAsync(
+                FormFor(leader.Value.Email, CampusWithProposal(leader.Value.Campus, contactEmail, 0, HostSelectionModes.Self)),
+                leader.Value.UserId);
+
+            var (instanceId, changeId) = await PendingInvitationAsync(requestId);
+            var token = await MintTokenAsync(changeId);
+            using (var db = NewContext())
+            {
+                await Accept(db, contactId, contactEmail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+            }
+
+            // The Leader is also this request's registrant (CreateAsInternalAsync self-registers) —
+            // registrant scope sees the whole request, identity timeline included.
+            var viewer = new FakeUser(leader.Value.UserId, leader.Value.Email);
+            using var db2 = NewContext();
+            var historyOptions = new PerCampusFormV2Options { Enabled = true };
+            var result = await new GetVisitRequestHistoryQueryHandler(db2, viewer, historyOptions).Handle(
+                new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
+
+            var entry = Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.HostProposalActivated);
+            Assert.Equal(instanceId, entry.VisitInstanceId);
+            Assert.Equal(VisitInstanceStatuses.Assigned, entry.StatusCode);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.InstanceApproved
+                && e.VisitInstanceId == instanceId);
+
+            var drawer = await new GetVisitHistoryDetailQueryHandler(db2, viewer, historyOptions).Handle(
+                new GetVisitHistoryDetailQuery(requestId, entry.EventId!), CancellationToken.None);
+            Assert.Equal(VisitHistoryEventCodes.HostProposalActivated, drawer.EventCode);
+            var statusField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "status");
+            Assert.Equal(VisitInstanceStatuses.Assigned, statusField.AfterValue);
+            var hostField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "host");
+            Assert.Equal(leader.Value.UserId.ToString(), hostField.AfterValue);
         }
         finally { await CleanupAsync(requestId); }
     }

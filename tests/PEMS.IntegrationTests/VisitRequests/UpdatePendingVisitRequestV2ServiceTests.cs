@@ -642,4 +642,143 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.Equal(near, InstanceOf(r, "HN").PlannedStartAt);
         });
     }
+
+    // ── Schedule-only revision integrity (Fix Group A, VISIT_HISTORY_INTEGRITY plan) ──────────────
+    //
+    // A campus's FormRevision is the content version of THAT campus — one save, one increment,
+    // regardless of how many of its fields moved. Before this fix, a schedule-only save (dates
+    // changed, form content untouched) bumped instance.RowVersion and wrote audit, but never touched
+    // FormRevision and never wrote a visit_instance_form_revision_history row: the schedule change
+    // was invisible to the history drawer.
+
+    [Fact]
+    public async Task A_whole_request_edit_that_only_moves_the_start_still_creates_a_revision()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            var hcmRevisionBefore = hcm.FormDetail!.FormRevision;
+            var hcmRowVersionBefore = hcm.RowVersion;
+            var hnMemberIdsBefore = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            // Move the start EARLIER while leaving the end exactly where it was — the only way to
+            // change PlannedStartAt alone without also having to touch PlannedEndAt to keep end > start.
+            var newStart = hn.PlannedStartAt.AddHours(-2);
+            var endUnchanged = hn.PlannedEndAt;
+
+            await edit.ApplyPendingEditAsync(r, Edit(r,
+                Keep(hn, Campus("HN") with { PlannedStartAt = newStart, PlannedEndAt = endUnchanged }),
+                Keep(hcm, Campus("HCM"))), Registrant, Now, default);
+
+            Assert.Equal(2u, hn.FormDetail!.FormRevision);
+            Assert.Equal(newStart, hn.PlannedStartAt);
+            Assert.Equal(endUnchanged, hn.PlannedEndAt);
+            Assert.Equal("Đoàn Base", hn.FormDetail.DelegationName); // content untouched
+            Assert.Equal(hnMemberIdsBefore, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
+
+            var hnRevision = await db.VisitInstanceFormRevisionHistories
+                .SingleAsync(h => h.VisitInstanceId == hn.VisitInstanceId
+                                   && h.SourceType == FormRevisionSourceTypes.PendingEdit);
+            Assert.Equal(2u, hnRevision.FormRevision);
+            Assert.Contains("Guest A", hnRevision.SnapshotJson); // members snapshotted, never []
+
+            // Sibling absolutely untouched.
+            Assert.Equal(hcmRevisionBefore, hcm.FormDetail!.FormRevision);
+            Assert.Equal(hcmRowVersionBefore, hcm.RowVersion);
+        });
+    }
+
+    [Fact]
+    public async Task A_whole_request_edit_that_only_moves_the_end_still_creates_a_revision()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var startUnchanged = hn.PlannedStartAt;
+            var newEnd = hn.PlannedEndAt.AddMinutes(30);
+
+            await edit.ApplyPendingEditAsync(r, Edit(r,
+                Keep(hn, Campus("HN") with { PlannedStartAt = startUnchanged, PlannedEndAt = newEnd })),
+                Registrant, Now, default);
+
+            Assert.Equal(2u, hn.FormDetail!.FormRevision);
+            Assert.Equal(startUnchanged, hn.PlannedStartAt);
+            Assert.Equal(newEnd, hn.PlannedEndAt);
+            Assert.Equal("Đoàn Base", hn.FormDetail.DelegationName);
+            Assert.True(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                h.VisitInstanceId == hn.VisitInstanceId && h.FormRevision == 2
+                && h.SourceType == FormRevisionSourceTypes.PendingEdit));
+        });
+    }
+
+    [Fact]
+    public async Task Content_and_schedule_changed_together_only_creates_one_revision()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var newStart = hn.PlannedStartAt.AddDays(1);
+
+            await edit.ApplyPendingEditAsync(r, Edit(r,
+                Keep(hn, Campus("HN", delegation: "Đoàn sửa cả hai")
+                    with { PlannedStartAt = newStart, PlannedEndAt = newStart.AddMinutes(120) })),
+                Registrant, Now, default);
+
+            // Exactly one increment, never a double bump from the content branch AND a schedule branch.
+            Assert.Equal(2u, hn.FormDetail!.FormRevision);
+            var revisionRows = await db.VisitInstanceFormRevisionHistories
+                .Where(h => h.VisitInstanceId == hn.VisitInstanceId
+                            && h.SourceType == FormRevisionSourceTypes.PendingEdit)
+                .ToListAsync();
+            Assert.Single(revisionRows);
+            Assert.Equal(2u, revisionRows[0].FormRevision);
+            Assert.Equal("Đoàn sửa cả hai", hn.FormDetail.DelegationName);
+            Assert.Equal(newStart, hn.PlannedStartAt);
+        });
+    }
+
+    /// <summary>
+    /// A campus whose chain predates <c>VisitRevisionBaselineGuard</c> — <c>form_revision = 1</c> on the
+    /// detail with no matching row in <c>visit_instance_form_revision_history</c> (migrated/seeded
+    /// data). A schedule-only edit must recover revision 1 as a technical baseline before writing the
+    /// real revision 2 — never silently skip straight to 2 with no "before" to diff against.
+    /// </summary>
+    [Fact]
+    public async Task A_legacy_instance_missing_its_baseline_recovers_it_before_a_schedule_only_edit()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            Assert.Equal(1u, hn.FormDetail!.FormRevision);
+
+            // Simulate the legacy gap: delete the row create() just wrote, leaving form_revision = 1
+            // with nothing in the history table.
+            var seedRows = await db.VisitInstanceFormRevisionHistories
+                .Where(h => h.VisitInstanceId == hn.VisitInstanceId).ToListAsync();
+            db.VisitInstanceFormRevisionHistories.RemoveRange(seedRows);
+            await db.SaveChangesAsync();
+
+            var newStart = hn.PlannedStartAt.AddDays(1);
+            await edit.ApplyPendingEditAsync(r, Edit(r,
+                Keep(hn, Campus("HN") with { PlannedStartAt = newStart, PlannedEndAt = newStart.AddMinutes(120) })),
+                Registrant, Now, default);
+
+            var revisions = await db.VisitInstanceFormRevisionHistories
+                .Where(h => h.VisitInstanceId == hn.VisitInstanceId)
+                .OrderBy(h => h.FormRevision)
+                .ToListAsync();
+            Assert.Equal(2, revisions.Count); // recovered baseline + the real edit, no collision
+            Assert.Equal(1u, revisions[0].FormRevision);
+            Assert.Equal(VisitRevisionBaselineGuard.BaselineReason, revisions[0].Reason);
+            Assert.Equal(FormRevisionSourceTypes.Migration, revisions[0].SourceType);
+            Assert.Equal(2u, revisions[1].FormRevision);
+            Assert.Equal(FormRevisionSourceTypes.PendingEdit, revisions[1].SourceType);
+            Assert.Equal(2u, hn.FormDetail.FormRevision);
+        });
+    }
 }

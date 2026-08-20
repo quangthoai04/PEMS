@@ -104,7 +104,7 @@ public sealed class UpdateOperationalContactProfileCommandHandler
         var audit = new AuditLog
         {
             ActorUserId = actorId,
-            Action = "OPERATIONAL_CONTACT_PROFILE_UPDATED",
+            Action = OperationalContactHistoryAudit.ProfileUpdated,
             EntityType = "VisitRequestCampus",
             EntityId = instance.VisitInstanceId,
             CampusId = instance.CampusId,
