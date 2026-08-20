@@ -1,28 +1,40 @@
 /**
  * `openVisitRequestId`/`openVisitInstanceId` — the ONE-SHOT COMMAND a Visit notification deep link
- * lands with (see PEMS_Notification_Visit_DeepLink_OneShot_Fix_Plan.md).
+ * lands with (see PEMS_Notification_Visit_DeepLink_OneShot_Fix_Plan.md and
+ * PEMS_NOTIFICATION_VISIT_EXACT_TARGET_IMPLEMENTATION_PLAN.md).
  *
- * Two separate bugs are pinned here.
+ * Three things are pinned here.
  *
- * 1) REPLAY. Before this fix the page never consumed the parameter that identified a notification's
- *    target — closing whatever it opened and then changing tab/filter/page/search left the trigger
- *    in the URL, and the next `setSearchParams` call replayed it (the exact shape of the
- *    `feedbackVisitInstanceId` bug this mirrors, see VisitRequestManagementFeedbackDeepLink.test.tsx).
+ * 1) REPLAY. Before the first fix the page never consumed the parameter that identified a
+ *    notification's target — closing whatever it opened and then changing tab/filter/page/search
+ *    left the trigger in the URL, and the next `setSearchParams` call replayed it.
  *
  * 2) STALE STATE. The notification only ever names WHERE to go (a request/instance id) — never what
- *    is currently true about it. A campus that was WAITING_REQUEST_APPROVAL when the notification
- *    was created may be decided, rejected, cancelled or closed by the time it is clicked. This file
- *    proves the resolver never trusts the notification for status/actions: it re-fetches the row
- *    through the same list endpoint every other row on this screen uses, and opens whatever the
- *    CURRENT `primaryEntryContext`/`allowedActions` say — never a resurrected Duyệt/Từ chối control
- *    left over from the moment the notification was created.
+ *    is currently true about it. This file proves the resolver never trusts the notification for
+ *    status/relation: it calls `delegationsApi.resolveNotificationVisitTarget` — a dedicated
+ *    exact-target resolver, re-derived fresh from the caller's CURRENT relations — and opens
+ *    whatever THAT says, never a resurrected Duyệt/Từ chối control left over from the moment the
+ *    notification was created.
+ *
+ * 3) EXACT SCOPE, NOT AN AGGREGATED ROW. The old implementation resolved a notification's target by
+ *    searching the "all"-tab merged list (`getVisitRequestManagementList`), which collapses every
+ *    relation a caller holds on a REQUEST into ONE row — wrong for a notification naming one exact
+ *    campus instance different from whichever relation the merge happened to rank highest (the
+ *    Staff-Leader-is-also-participant-elsewhere collision), and structurally unable to find an exact
+ *    instance nested under a Visitor/HO multi-campus summary row (`visitInstanceId: null` at the top
+ *    level). The resolver is now the ONLY source of "what is this notification actually about, and
+ *    what may this caller do with it right now" — the list endpoint is used ONLY as a secondary
+ *    fetch, and only to build the rich `Row` shape the live approve modal needs once the resolver has
+ *    already confirmed a review is genuinely still pending at the exact instance.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation, useSearchParams } from 'react-router-dom';
+import type { NotificationVisitTarget } from '../../../../features/delegations/types/delegations.types';
 
 const listMock = vi.fn();
+const resolveTargetMock = vi.fn();
 const invitationsMock = vi.fn();
 const hostCandidatesMock = vi.fn();
 const navigateMock = vi.fn();
@@ -37,6 +49,7 @@ vi.mock('react-router-dom', async () => {
 vi.mock('../../../../features/delegations/api/delegationsApi', () => ({
   delegationsApi: {
     getVisitRequestManagementList: (...args: unknown[]) => listMock(...args),
+    resolveNotificationVisitTarget: (...args: unknown[]) => resolveTargetMock(...args),
     getMyInvitations: (...args: unknown[]) => invitationsMock(...args),
     getHostCandidates: (...args: unknown[]) => hostCandidatesMock(...args),
     visitInvitations: { getMyInvitations: (...a: unknown[]) => invitationsMock(...a) },
@@ -88,7 +101,11 @@ import { VisitRequestManagement } from '../VisitRequestManagement';
 const DELEGATION = 'Jeju Tourism Technology Delegation';
 const REQUEST_ID = 4001;
 const INSTANCE_ID = 5001;
+const CAMPUS_NAME = 'FPT University Hà Nội';
 
+/** The rich list-row shape — now used ONLY as the secondary "responsible" fetch the VISIT_REVIEW
+ * escalation makes once the resolver has already confirmed a review is genuinely pending. Its
+ * `primaryEntryContext`/`allowedActions` are exactly what `setAssign` reads to open the modal. */
 const baseRow = (over: Record<string, unknown> = {}) => ({
   visitRequestId: REQUEST_ID,
   visitInstanceId: INSTANCE_ID,
@@ -99,7 +116,7 @@ const baseRow = (over: Record<string, unknown> = {}) => ({
   campusStatus: 'WAITING_REQUEST_APPROVAL',
   visitScope: 'SINGLE_CAMPUS',
   campusId: 1,
-  campusName: 'FPT University Hà Nội',
+  campusName: CAMPUS_NAME,
   campusCount: 1,
   createdByUserId: 10,
   registrantUserId: 10,
@@ -118,7 +135,7 @@ const baseRow = (over: Record<string, unknown> = {}) => ({
   relations: ['CAMPUS_REVIEWER'],
   relationContexts: [{
     relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
-    campusName: 'FPT University Hà Nội', entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1,
+    campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1,
   }],
   primaryEntryContext: 'CAMPUS_REVIEW',
   primaryEntryVisitInstanceId: INSTANCE_ID,
@@ -140,7 +157,36 @@ const baseRow = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const renderAt = (search: string, row: Record<string, unknown> = baseRow()) => {
+/** The exact-target resolver's response — the PRIMARY thing `resolveAndOpenNotificationTarget` now
+ * reads for every routing decision except opening the live approve modal itself. */
+const baseTarget = (over: Partial<NotificationVisitTarget> = {}): NotificationVisitTarget => ({
+  exists: true,
+  hasAccess: true,
+  visitRequestId: REQUEST_ID,
+  visitInstanceId: INSTANCE_ID,
+  campusId: 1,
+  campusName: CAMPUS_NAME,
+  requestStatus: 'PENDING_APPROVAL',
+  campusStatus: 'WAITING_REQUEST_APPROVAL',
+  visitScope: 'SINGLE_CAMPUS',
+  requestCode: `VR-2026-${REQUEST_ID}`,
+  delegationName: DELEGATION,
+  canViewRequestDetail: true,
+  relationContexts: [{
+    relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+    campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1,
+  }],
+  participantId: null,
+  participantStatus: null,
+  ...over,
+});
+
+const renderAt = (
+  search: string,
+  target: NotificationVisitTarget = baseTarget(),
+  row: Record<string, unknown> = baseRow(),
+) => {
+  resolveTargetMock.mockResolvedValue(target);
   listMock.mockResolvedValue({ items: [row], totalItems: 1 });
   return render(
     <MemoryRouter initialEntries={[`/dashboard/visit${search}`]}>
@@ -191,6 +237,8 @@ beforeEach(() => {
   currentUser = { userId: '77', roleCode: 'STAFF', subRole: 'LEADER' };
   invitationsMock.mockResolvedValue([]);
   hostCandidatesMock.mockResolvedValue([]);
+  listMock.mockResolvedValue({ items: [baseRow()], totalItems: 1 });
+  resolveTargetMock.mockResolvedValue(baseTarget());
 });
 
 // ── Consuming the command exactly once ──────────────────────────────────────────────────────────
@@ -202,6 +250,9 @@ describe('a notification deep link is consumed exactly once', () => {
     const modal = await screen.findByTestId('assign-host-modal');
     expect(modal).toHaveAttribute('data-request', String(REQUEST_ID));
     expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
+    expect(resolveTargetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ visitRequestId: REQUEST_ID, visitInstanceId: INSTANCE_ID }),
+    );
 
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
     expect(params().get('openVisitInstanceId')).toBeNull();
@@ -228,8 +279,6 @@ describe('a notification deep link is consumed exactly once', () => {
   });
 
   it('resolves regardless of the current tab/filter — it is not a list filter', async () => {
-    // The old bug: `visitRequestId` only narrowed whatever tab/filter was already active. This
-    // command must find its target even starting from an unrelated tab.
     renderAt(`?tab=all&status=CLOSED&openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
     await screen.findByTestId('assign-host-modal');
   });
@@ -255,6 +304,7 @@ describe('a notification deep link is consumed exactly once', () => {
       expect(params().get('openVisitInstanceId')).toBeNull();
       expect(screen.queryByTestId('assign-host-modal')).toBeNull();
       expect(params().get('tab')).toBe('all');
+      expect(resolveTargetMock).not.toHaveBeenCalled();
     },
   );
 });
@@ -292,23 +342,45 @@ describe('the target does not come back on its own', () => {
 describe('current backend state decides what opens, never the notification snapshot', () => {
   it('does NOT resurrect the approve modal once the campus has already been decided', async () => {
     // Same notification target (request 4001 / instance 5001) the "still pending" test above uses —
-    // only what the backend NOW reports about it differs, exactly as if a second reviewer decided it
-    // between the notification firing and this click.
+    // only what the RESOLVER now reports about it differs, exactly as if a second reviewer decided
+    // it between the notification firing and this click.
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
-      baseRow({
+      baseTarget({
         requestStatus: 'APPROVED',
         campusStatus: 'BEFORE_VISIT',
-        currentHostUserId: 42,
-        hostName: 'IC Staff Hà Nội',
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+        relationContexts: [{
+          relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
+        }],
       }),
     );
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/dashboard/visit/process/${INSTANCE_ID}`),
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+  });
+
+  it('reports safe detail if the caller races into the modal but the row was decided between the resolver call and the list re-fetch', async () => {
+    // The resolver said "still pending" (reviewDue) — but by the time the secondary list fetch lands,
+    // the row itself is no longer CAMPUS_REVIEW/approvable. Must fall through to safe detail, never
+    // open the modal on stale data.
+    resolveTargetMock.mockResolvedValue(baseTarget());
+    listMock.mockResolvedValue({
+      items: [baseRow({ primaryEntryContext: 'HOST_PROCESS', allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'] })],
+      totalItems: 1,
+    });
+    render(
+      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`]}>
+        <UrlProbe />
+        <VisitRequestManagement />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
       expect.anything(),
     ));
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
@@ -317,12 +389,10 @@ describe('current backend state decides what opens, never the notification snaps
   it('opens the current read-only detail for a campus that was rejected after the notification fired', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
-      baseRow({
+      baseTarget({
         requestStatus: 'REJECTED',
         campusStatus: 'REJECTED',
-        primaryEntryContext: 'REQUEST_DETAIL',
-        primaryEntryVisitInstanceId: null,
-        allowedActions: ['VIEW_DETAIL'],
+        relationContexts: [],
       }),
     );
 
@@ -336,12 +406,10 @@ describe('current backend state decides what opens, never the notification snaps
   it('opens the current read-only detail for a campus that was cancelled after the notification fired', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
-      baseRow({
+      baseTarget({
         requestStatus: 'CANCELLED',
         campusStatus: 'CANCELLED',
-        primaryEntryContext: 'REQUEST_DETAIL',
-        primaryEntryVisitInstanceId: null,
-        allowedActions: ['VIEW_DETAIL'],
+        relationContexts: [],
       }),
     );
 
@@ -364,13 +432,10 @@ describe('current backend state decides what opens, never the notification snaps
 // ── Not found / lost permission ─────────────────────────────────────────────────────────────────
 
 describe('a target the caller can no longer resolve', () => {
-  it('reports it and consumes the command without crashing (empty result, no guess from the notification text)', async () => {
-    listMock.mockResolvedValue({ items: [], totalItems: 0 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+  it('reports it and consumes the command without crashing (deleted target, no guess from the notification text)', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
+      baseTarget({ exists: false, hasAccess: false, relationContexts: [] }),
     );
 
     // (error, fallback) — the same calling convention every other call site in this file uses;
@@ -381,28 +446,26 @@ describe('a target the caller can no longer resolve', () => {
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
+
+  it('reports lost access (exists, but no relation any more) distinctly from a deleted target', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
+      baseTarget({ exists: true, hasAccess: false, relationContexts: [] }),
+    );
+
+    await waitFor(() => expect(showErrorToastMock).toHaveBeenCalledWith(
+      null, expect.stringContaining('không còn quyền truy cập'),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+  });
 });
 
 // ── Multi-campus exact targeting ────────────────────────────────────────────────────────────────
 
 describe('multi-campus exact instance targeting', () => {
-  it('opens the named instance, not another campus of the same request', async () => {
-    const otherInstance = baseRow({
-      visitInstanceId: 9002,
-      campusId: 2,
-      campusName: 'FPT University Đà Nẵng',
-      primaryEntryVisitInstanceId: 9002,
-      relationContexts: [{
-        relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: 9002, campusId: 2,
-        campusName: 'FPT University Đà Nẵng', entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1,
-      }],
-    });
-    listMock.mockResolvedValue({ items: [otherInstance, baseRow()], totalItems: 2 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+  it('opens the named instance — the resolver, not a frontend search, is the source of exact scope', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
     );
 
     const modal = await screen.findByTestId('assign-host-modal');
@@ -413,9 +476,10 @@ describe('multi-campus exact instance targeting', () => {
 // ── The ordinary route is untouched ─────────────────────────────────────────────────────────────
 
 describe('a visit list opened without the command', () => {
-  it('opens nothing and leaves the URL alone', async () => {
+  it('opens nothing, calls no resolver, and leaves the URL alone', async () => {
     renderAt('?tab=all');
     await waitFor(() => expect(listMock).toHaveBeenCalled());
+    expect(resolveTargetMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
     expect(params().get('tab')).toBe('all');
   });
@@ -425,6 +489,7 @@ describe('a visit list opened without the command', () => {
 
 describe('the exact same notification clicked a second time still opens (second-click regression)', () => {
   it('re-opens the approve flow when the identical command reappears on an already-consumed instance', async () => {
+    resolveTargetMock.mockResolvedValue(baseTarget());
     listMock.mockResolvedValue({ items: [baseRow()], totalItems: 1 });
     render(
       <MemoryRouter initialEntries={['/dashboard/visit']}>
@@ -462,27 +527,39 @@ describe('the exact same notification clicked a second time still opens (second-
 // Live-reproduced in a real browser: click notification A (its target-resolution round-trip happens
 // to be slow), then — before A resolves — click notification B on the SAME mounted page (a real
 // second click never remounts `VisitRequestManagement`, it just changes the query string). B resolves
-// first and opens correctly; A's response then finally lands and SILENTLY REPLACED what B had just
-// opened, because `resolveAndOpenNotificationTarget` had no ordering guard of its own (unlike
+// first and opens correctly; A's response then finally lands and must NOT silently replace what B had
+// just opened, because `resolveAndOpenNotificationTarget` carries its own ordering guard (unlike
 // `loadDelegations`, which already carries one — `requestVersionRef`). Root cause + fix: a matching
-// `notificationTargetVersionRef`, checked once right after the fetch resolves, before any state
-// mutation.
+// `notificationTargetVersionRef`, checked once right after the resolver call resolves, before any
+// state mutation (and again after the secondary list fetch the VISIT_REVIEW escalation makes).
 
 describe('rapid-click race: a slower earlier notification click must never overwrite a faster later one', () => {
   it('B (fast) stays open after A (slow) finally resolves', async () => {
     const OTHER_REQUEST_ID = 4002;
     const OTHER_INSTANCE_ID = 5002;
-    let resolveSlowCall: (value: { items: unknown[]; totalItems: number }) => void = () => {};
-    const slowCall = new Promise<{ items: unknown[]; totalItems: number }>((resolve) => { resolveSlowCall = resolve; });
-    let callCount = 0;
-    listMock.mockImplementation(() => {
-      callCount += 1;
-      if (callCount === 1) return Promise.resolve({ items: [baseRow()], totalItems: 1 }); // initial mount load
-      if (callCount === 2) return slowCall; // command A — deliberately held open
-      return Promise.resolve({
-        items: [baseRow({ visitRequestId: OTHER_REQUEST_ID, visitInstanceId: OTHER_INSTANCE_ID })],
-        totalItems: 1,
-      }); // command B — resolves immediately
+    let resolveSlowCall: (value: NotificationVisitTarget) => void = () => {};
+    const slowCall = new Promise<NotificationVisitTarget>((resolve) => { resolveSlowCall = resolve; });
+    let targetCallCount = 0;
+    resolveTargetMock.mockImplementation(() => {
+      targetCallCount += 1;
+      if (targetCallCount === 1) return slowCall; // command A — deliberately held open
+      return Promise.resolve(baseTarget({
+        visitRequestId: OTHER_REQUEST_ID,
+        visitInstanceId: OTHER_INSTANCE_ID,
+        relationContexts: [{
+          relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: OTHER_INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1,
+        }],
+      }));
+    });
+    listMock.mockImplementation((query: Record<string, unknown> | undefined) => {
+      if (query?.visitRequestId === OTHER_REQUEST_ID) {
+        return Promise.resolve({
+          items: [baseRow({ visitRequestId: OTHER_REQUEST_ID, visitInstanceId: OTHER_INSTANCE_ID })],
+          totalItems: 1,
+        });
+      }
+      return Promise.resolve({ items: [baseRow()], totalItems: 1 });
     });
 
     render(
@@ -495,15 +572,15 @@ describe('rapid-click race: a slower earlier notification click must never overw
     );
     await waitFor(() => expect(listMock).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(screen.getByTestId('trigger-a')); // fires call #2 (slow, held open)
-    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByTestId('trigger-a')); // fires resolver call #1 (slow, held open)
+    await waitFor(() => expect(resolveTargetMock).toHaveBeenCalledTimes(1));
 
-    await userEvent.click(screen.getByTestId('trigger-b')); // fires call #3 (fast, resolves immediately)
+    await userEvent.click(screen.getByTestId('trigger-b')); // fires resolver call #2 (fast, resolves immediately)
     const modal = await screen.findByTestId('assign-host-modal');
     expect(modal).toHaveAttribute('data-request', String(OTHER_REQUEST_ID));
 
     // A's delayed response finally lands — it must NOT clobber B's already-open modal.
-    resolveSlowCall({ items: [baseRow()], totalItems: 1 });
+    resolveSlowCall(baseTarget());
     await waitFor(() => expect(screen.getByTestId('assign-host-modal'))
       .toHaveAttribute('data-request', String(OTHER_REQUEST_ID)));
   });
@@ -513,8 +590,8 @@ describe('rapid-click race: a slower earlier notification click must never overw
 
 describe('notificationIntent gates whether the notification may escalate to the live approve control', () => {
   it('VISIT_HISTORY never opens the approve modal even though the campus is still pending and APPROVE is allowed', async () => {
-    // Same row shape as the "still WAITING_REQUEST_APPROVAL" test above (genuinely pending,
-    // APPROVE_AND_ASSIGN_HOST allowed) — the ONLY difference is the notification's own semantic
+    // Same target shape as the "still WAITING_REQUEST_APPROVAL" test above (genuinely pending,
+    // CAMPUS_REVIEWER requiresAction) — the ONLY difference is the notification's own semantic
     // intent. This is the exact regression the plan calls out: "Visitor đã cập nhật đơn" must never
     // auto-open the approve/assign-host control, no matter how permissive the current state is.
     renderAt(
@@ -568,14 +645,13 @@ describe('HOST_PROCESS intent (HOST_ASSIGNED / HOST_TRANSFER_INCOMING) defers en
   it('DL-07: still the current Host -> opens Host Process, same as the entry-context fallback would', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=HOST_PROCESS`,
-      baseRow({
+      baseTarget({
         requestStatus: 'APPROVED',
         campusStatus: 'BEFORE_VISIT',
-        currentHostUserId: 77,
-        hostName: 'Staff Leader',
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+        relationContexts: [{
+          relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
+        }],
       }),
     );
 
@@ -589,15 +665,10 @@ describe('HOST_PROCESS intent (HOST_ASSIGNED / HOST_TRANSFER_INCOMING) defers en
   it('DL-08: no longer the current Host -> falls back to current detail, never Host Process', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=HOST_PROCESS`,
-      baseRow({
+      baseTarget({
         requestStatus: 'APPROVED',
         campusStatus: 'BEFORE_VISIT',
-        currentHostUserId: 999,
-        hostName: 'Nguoi Khac',
-        currentUserIsHost: false,
-        primaryEntryContext: 'REQUEST_DETAIL',
-        primaryEntryVisitInstanceId: null,
-        allowedActions: ['VIEW_DETAIL'],
+        relationContexts: [],
       }),
     );
 
@@ -618,14 +689,13 @@ describe('VISIT_READONLY_DETAIL intent caps at request detail even when current 
   it('R-07: currently the Host of this same instance -> still lands on request detail, never Host Process', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_READONLY_DETAIL`,
-      baseRow({
+      baseTarget({
         requestStatus: 'APPROVED',
         campusStatus: 'BEFORE_VISIT',
-        currentHostUserId: 77,
-        hostName: 'Staff Leader',
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS', 'APPROVE_AND_ASSIGN_HOST'],
+        relationContexts: [{
+          relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
+        }],
       }),
     );
 
@@ -642,12 +712,10 @@ describe('VISIT_READONLY_DETAIL intent caps at request detail even when current 
   it('still allowed when current state genuinely is only request detail (no downgrade needed)', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_READONLY_DETAIL`,
-      baseRow({
+      baseTarget({
         requestStatus: 'REJECTED',
         campusStatus: 'REJECTED',
-        primaryEntryContext: 'REQUEST_DETAIL',
-        primaryEntryVisitInstanceId: null,
-        allowedActions: ['VIEW_DETAIL'],
+        relationContexts: [],
       }),
     );
 
@@ -658,19 +726,20 @@ describe('VISIT_READONLY_DETAIL intent caps at request detail even when current 
   });
 });
 
-// ── STABILIZATION §10.6/10.7/§30: VISIT_INVITATION/CONTRIBUTION always use the row's OWN exact
-//    participantId, never whichever relation primaryEntryContext ranks highest on a multi-relation
-//    row (the exact Staff-Leader-is-also-reviewer-and-participant collision the plan calls out) ────
+// ── STABILIZATION §10.6/10.7/§30: VISIT_INVITATION/CONTRIBUTION always use the EXACT participantId
+//    the resolver found at this instance, never whichever relation ranks highest overall (the exact
+//    Staff-Leader-is-also-reviewer-and-participant collision the plan calls out) ────────────────────
 
 describe('VISIT_INVITATION/CONTRIBUTION intent always opens the exact participant screen, never a co-existing relation\'s screen', () => {
-  it('VISIT_INVITATION: participantId wins even though CAMPUS_REVIEW ranked highest on the merged row', async () => {
+  it('VISIT_INVITATION: participantId wins even though CAMPUS_REVIEW is also present at this instance', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_INVITATION`,
-      baseRow({
+      baseTarget({
         participantId: 8899,
-        // Same as the default fixture: CAMPUS_REVIEW is the CURRENT primary entry (this Staff Leader
-        // is also the campus reviewer here) — the invitation must not be lost behind it.
-        primaryEntryContext: 'CAMPUS_REVIEW',
+        relationContexts: [
+          { relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: false, priority: 1 },
+          { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: true, priority: 3 },
+        ],
       }),
     );
 
@@ -681,15 +750,15 @@ describe('VISIT_INVITATION/CONTRIBUTION intent always opens the exact participan
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('CONTRIBUTION: participantId wins even though HOST_PROCESS ranked highest on the merged row', async () => {
+  it('CONTRIBUTION: participantId wins even though HOST is also present at this instance', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=CONTRIBUTION`,
-      baseRow({
+      baseTarget({
         participantId: 8899,
-        currentHostUserId: 77,
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+        relationContexts: [
+          { relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2 },
+          { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3 },
+        ],
       }),
     );
 
@@ -702,14 +771,14 @@ describe('VISIT_INVITATION/CONTRIBUTION intent always opens the exact participan
     );
   });
 
-  it('CONTRIBUTION: falls back to the contribution screen when there is no participantId but OPEN_CONTRIBUTION is granted', async () => {
+  it('CONTRIBUTION: falls back to the contribution screen when the resolver found a participant relation but no participantId', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=CONTRIBUTION`,
-      baseRow({
+      baseTarget({
         participantId: null,
-        primaryEntryContext: 'REQUEST_DETAIL',
-        primaryEntryVisitInstanceId: null,
-        allowedActions: ['VIEW_DETAIL', 'OPEN_CONTRIBUTION'],
+        relationContexts: [
+          { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3 },
+        ],
       }),
     );
 
@@ -722,10 +791,11 @@ describe('VISIT_INVITATION/CONTRIBUTION intent always opens the exact participan
   it('VISIT_INVITATION: downgrades to safe request detail when the relation no longer exists (declined/removed) — never the review/host screen', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_INVITATION`,
-      baseRow({
+      baseTarget({
         participantId: null,
-        primaryEntryContext: 'CAMPUS_REVIEW',
-        allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST'],
+        relationContexts: [
+          { relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1 },
+        ],
       }),
     );
 
@@ -747,14 +817,13 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
   it('L-01: no notificationIntent + current user genuinely IS the current Host -> detail, never Host Process', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
-      baseRow({
+      baseTarget({
         requestStatus: 'APPROVED',
         campusStatus: 'BEFORE_VISIT',
-        currentHostUserId: 77,
-        hostName: 'Staff Leader',
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+        relationContexts: [{
+          relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
+        }],
       }),
     );
 
@@ -768,7 +837,7 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('L-02: no notificationIntent + campus still pending + APPROVE_AND_ASSIGN_HOST allowed -> detail, never the approve modal', async () => {
+  it('L-02: no notificationIntent + campus still pending + reviewer relation present -> detail, never the approve modal', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`);
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
@@ -776,15 +845,18 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
       expect.anything(),
     ));
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    // The escalation-only secondary list fetch must never fire without an explicit VISIT_REVIEW intent.
+    expect(listMock).toHaveBeenCalledTimes(1); // initial table load only
   });
 
   it('L-03: no notificationIntent + current user has a live participant relation -> detail, never invitation/contribution', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
-      baseRow({
+      baseTarget({
         participantId: 8899,
-        primaryEntryContext: 'CONTRIBUTION',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_CONTRIBUTION'],
+        relationContexts: [
+          { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3 },
+        ],
       }),
     );
 
@@ -804,11 +876,11 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
   it('an unrecognized notificationIntent value is treated identically to no intent at all -> detail, never Host Process', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=NOT_A_REAL_INTENT`,
-      baseRow({
-        currentHostUserId: 77,
-        currentUserIsHost: true,
-        primaryEntryContext: 'HOST_PROCESS',
-        allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'],
+      baseTarget({
+        relationContexts: [{
+          relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1,
+          campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
+        }],
       }),
     );
 
@@ -822,20 +894,15 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
   });
 
   it('legacy null intent still reports failure (never a silent generic-relation fallback) when the caller has no request-detail read scope at all', async () => {
-    listMock.mockResolvedValue({
-      items: [baseRow({
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`,
+      baseTarget({
         canViewRequestDetail: false,
         participantId: 8899,
-        primaryEntryContext: 'CONTRIBUTION',
-        allowedActions: ['OPEN_CONTRIBUTION'],
-      })],
-      totalItems: 1,
-    });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+        relationContexts: [
+          { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3 },
+        ],
+      }),
     );
 
     await waitFor(() => expect(showErrorToastMock).toHaveBeenCalledWith(
@@ -844,25 +911,24 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
     expect(navigateMock).not.toHaveBeenCalledWith(
       expect.stringContaining('/dashboard/visit/contribution/'), expect.anything(),
     );
+    expect(navigateMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/dashboard/visit/invitations/'), expect.anything(),
+    );
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('legacy null intent in the ambiguous multi-campus case is also safe-detail-only, never a per-campus screen', async () => {
-    const otherInstance = baseRow({
-      visitInstanceId: 9002,
-      campusId: 2,
-      campusName: 'FPT University Đà Nẵng',
-      primaryEntryVisitInstanceId: 9002,
-      currentHostUserId: 77,
-      currentUserIsHost: true,
-      primaryEntryContext: 'HOST_PROCESS',
-    });
-    listMock.mockResolvedValue({ items: [otherInstance, baseRow()], totalItems: 2 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+  it('legacy null intent in the request-level (no exact instance named) case is also safe-detail-only, never a per-campus screen', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}`,
+      baseTarget({
+        visitInstanceId: null,
+        campusId: null,
+        campusName: null,
+        campusStatus: null,
+        relationContexts: [
+          { relation: 'REGISTRANT', scope: 'REQUEST', entryContext: 'REQUEST_DETAIL', requiresAction: false, priority: 4 },
+        ],
+      }),
     );
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
@@ -878,23 +944,21 @@ describe('legacy policy: unknown intent is SAFE DETAIL ONLY, regardless of curre
 
 // ── STABILIZATION round 2 §15: canonical multi-relation collision matrix (A-F). ONE Staff Leader who
 //    is simultaneously REGISTRANT + CAMPUS_REVIEWER + HOST + PARTICIPANT on the SAME request — same
-//    row, different event -> different destination. primaryEntryContext (whichever relation the
-//    backend currently ranks highest) must never hijack the notification's own semantic. ──────────
+//    exact instance, different event -> different destination. The resolver's own relation contexts
+//    (never a merged/aggregated row's single winner) decide it. ──────────────────────────────────
 
 describe('canonical multi-relation collision matrix: same request, same user, different event -> different destination', () => {
-  const multiRelation = (over: Record<string, unknown> = {}) => baseRow({
-    relations: ['REGISTRANT', 'CAMPUS_REVIEWER', 'HOST', 'PARTICIPANT'],
-    registrantUserId: 77,
-    currentHostUserId: 77,
-    currentUserIsHost: true,
-    participantId: 8899,
-    ...over,
-  });
+  const multiRelationContexts = [
+    { relation: 'REGISTRANT', scope: 'REQUEST', entryContext: 'REQUEST_DETAIL', requiresAction: false, priority: 4 },
+    { relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1 },
+    { relation: 'HOST', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2 },
+    { relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3 },
+  ] as const;
 
   it('A. VISIT_PRIVACY_CONSENT_WITHDRAWN -> READONLY DETAIL, never invitation/host-process/approval', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_READONLY_DETAIL`,
-      multiRelation({ primaryEntryContext: 'CAMPUS_REVIEW', allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`), expect.anything(),
@@ -907,7 +971,7 @@ describe('canonical multi-relation collision matrix: same request, same user, di
   it('B. VISIT_REQUEST_UPDATED_PENDING -> HISTORY, never the approve modal', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_HISTORY`,
-      multiRelation({ primaryEntryContext: 'CAMPUS_REVIEW', allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}#history`), expect.anything(),
@@ -918,7 +982,7 @@ describe('canonical multi-relation collision matrix: same request, same user, di
   it('C. VISIT_REQUEST_WAITING_APPROVAL -> REVIEW (this IS the reviewer and it is genuinely pending)', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
-      multiRelation({ primaryEntryContext: 'CAMPUS_REVIEW', allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     const modal = await screen.findByTestId('assign-host-modal');
     expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
@@ -927,7 +991,7 @@ describe('canonical multi-relation collision matrix: same request, same user, di
   it('D. HOST_ASSIGNED -> HOST PROCESS (still current Host of this instance)', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=HOST_PROCESS`,
-      multiRelation({ primaryEntryContext: 'HOST_PROCESS', allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       expect.stringContaining(`/dashboard/visit/process/${INSTANCE_ID}`), expect.anything(),
@@ -935,10 +999,10 @@ describe('canonical multi-relation collision matrix: same request, same user, di
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('E. PARTICIPATION_INVITED -> exact INVITATION, even though CAMPUS_REVIEW ranks highest for this same row', async () => {
+  it('E. PARTICIPATION_INVITED -> exact INVITATION, even though CAMPUS_REVIEW is also present for this same instance', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_INVITATION`,
-      multiRelation({ primaryEntryContext: 'CAMPUS_REVIEW', allowedActions: ['VIEW_DETAIL', 'APPROVE_AND_ASSIGN_HOST'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       expect.stringContaining('/dashboard/visit/invitations/8899'), expect.anything(),
@@ -946,13 +1010,10 @@ describe('canonical multi-relation collision matrix: same request, same user, di
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('F. VISIT_REMINDER classified as CONTRIBUTION for this recipient -> participant/contribution, never Host Process even though this same user IS also Host of a DIFFERENT relation on this row', async () => {
-    // Models a reminder recipient who is a participant on the instance the reminder is ABOUT, distinct
-    // from their Host relation elsewhere on the same request (plan RM-03: STAFF participant but not
-    // Host of THIS instance) — participantId still resolves exactly regardless of the Host relation.
+  it('F. VISIT_REMINDER classified as CONTRIBUTION for this recipient -> participant/contribution, never Host Process even though HOST is also present at this same instance', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=CONTRIBUTION`,
-      multiRelation({ primaryEntryContext: 'HOST_PROCESS', allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'] }),
+      baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       expect.stringContaining('/dashboard/visit/invitations/8899'), expect.anything(),
@@ -968,25 +1029,14 @@ describe('canonical multi-relation collision matrix: same request, same user, di
 //    elsewhere -> an HN-specific event must resolve to HN, never a different campus/relation ────────
 
 describe('MC-03: multi-campus exact resolution is unaffected by an unrelated relation on another campus', () => {
-  it('a review notification naming the HN instance opens HN, never the other campus row returned in the same list', async () => {
-    const hn = baseRow({
-      visitInstanceId: INSTANCE_ID, campusId: 1, campusName: 'FPT University Hà Nội',
-      primaryEntryVisitInstanceId: INSTANCE_ID, primaryEntryContext: 'CAMPUS_REVIEW',
-    });
-    const dn = baseRow({
-      visitInstanceId: 9003, campusId: 3, campusName: 'FPT University Đà Nẵng',
-      primaryEntryVisitInstanceId: 9003, primaryEntryContext: 'CONTRIBUTION', participantId: 8899,
-      relationContexts: [{
-        relation: 'PARTICIPANT', scope: 'INSTANCE', visitInstanceId: 9003, campusId: 3,
-        campusName: 'FPT University Đà Nẵng', entryContext: 'CONTRIBUTION', requiresAction: false, priority: 3,
-      }],
-    });
-    listMock.mockResolvedValue({ items: [hn, dn], totalItems: 2 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+  it('a review notification naming the HN instance opens HN, never a DN-scoped relation the resolver also returned', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
+      baseTarget({
+        relationContexts: [
+          { relation: 'CAMPUS_REVIEWER', scope: 'INSTANCE', visitInstanceId: INSTANCE_ID, campusId: 1, campusName: CAMPUS_NAME, entryContext: 'CAMPUS_REVIEW', requiresAction: true, priority: 1 },
+        ],
+      }),
     );
 
     const modal = await screen.findByTestId('assign-host-modal');
@@ -995,22 +1045,21 @@ describe('MC-03: multi-campus exact resolution is unaffected by an unrelated rel
   });
 });
 
-// ── RC-10/MC-02: ambiguous multi-campus (no exact instance named) never guesses a campus ───────────
+// ── RC-10/MC-02: request-level notification with no exact instance named never guesses a campus ────
 
 describe('a campus-specific notification with no exact instance id never guesses which campus', () => {
-  it('never opens the approve modal for a random campus when the request has more than one', async () => {
-    const otherInstance = baseRow({
-      visitInstanceId: 9002,
-      campusId: 2,
-      campusName: 'FPT University Đà Nẵng',
-      primaryEntryVisitInstanceId: 9002,
-    });
-    listMock.mockResolvedValue({ items: [otherInstance, baseRow()], totalItems: 2 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&notificationIntent=VISIT_REVIEW`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
+  it('never opens the approve modal when the notification named no instance, even though the request has a reviewer relation somewhere', async () => {
+    renderAt(
+      `?openVisitRequestId=${REQUEST_ID}&notificationIntent=VISIT_REVIEW`,
+      baseTarget({
+        visitInstanceId: null,
+        campusId: null,
+        campusName: null,
+        campusStatus: null,
+        relationContexts: [
+          { relation: 'REGISTRANT', scope: 'REQUEST', entryContext: 'REQUEST_DETAIL', requiresAction: false, priority: 4 },
+        ],
+      }),
     );
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
@@ -1020,15 +1069,8 @@ describe('a campus-specific notification with no exact instance id never guesses
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('still resolves unambiguously when only one campus/instance is returned', async () => {
-    listMock.mockResolvedValue({ items: [baseRow()], totalItems: 1 });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&notificationIntent=VISIT_REVIEW`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
-    );
-
+  it('still resolves unambiguously when the resolver names the exact instance', async () => {
+    renderAt(`?openVisitRequestId=${REQUEST_ID}&notificationIntent=VISIT_REVIEW`);
     await screen.findByTestId('assign-host-modal');
   });
 });
@@ -1041,7 +1083,7 @@ describe('ADMIN role', () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
 
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
-    expect(listMock).not.toHaveBeenCalledWith(expect.objectContaining({ visitRequestId: REQUEST_ID }));
+    expect(resolveTargetMock).not.toHaveBeenCalled();
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
     expect(navigateMock).not.toHaveBeenCalled();
   });

@@ -125,6 +125,18 @@ namespace PEMS.Api.Controllers
             return Ok(result);
         }
 
+        // Exact-target resolver for a Visit notification deep link — re-derives the caller's CURRENT
+        // relation/access to one request (+ optionally one exact campus instance) fresh, instead of the
+        // aggregated "all"-tab list row a notification click used to (mis)resolve against. Read-only.
+        [HttpGet("notification-visit-target")]
+        public async Task<IActionResult> ResolveNotificationVisitTarget(
+            [FromQuery] PEMS.Application.Delegations.Queries.ResolveNotificationVisitTarget.ResolveNotificationVisitTargetQuery query,
+            CancellationToken cancellationToken)
+        {
+            var result = await _mediator.Send(query, cancellationToken);
+            return Ok(result);
+        }
+
         // Permission flags for the visit-process detail page (source of truth for tab view/edit).
         // Scope/relation enforced in the handler (403 if the caller has no relation to the instance).
         [HttpGet("visit-instances/{visitInstanceId}/process-permissions")]

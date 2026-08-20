@@ -42,6 +42,7 @@ import type {
   SignHandoverBorrowerPayload,
   SignHandoverResult,
   GetSentEmailsResult,
+  NotificationVisitTarget,
 } from '../types/delegations.types';
 
 export const delegationsApi = {
@@ -51,6 +52,23 @@ export const delegationsApi = {
    */
   async getVisitRequestManagementList(params?: Record<string, unknown>): Promise<any> {
     const { data } = await httpClient.get<any>(API_ENDPOINTS.delegations.managementList, { params });
+    return data;
+  },
+
+  /**
+   * Exact-target resolver for a Visit notification deep link. Re-derives the caller's CURRENT
+   * relation/access to the request (+ exact campus instance, if named) fresh — never off an
+   * aggregated "all"-tab list row, which can lose a relation that lives on a different campus
+   * instance of the same request (see PEMS_NOTIFICATION_VISIT_EXACT_TARGET_IMPLEMENTATION_PLAN.md).
+   */
+  async resolveNotificationVisitTarget(params: {
+    visitRequestId: number;
+    visitInstanceId?: number | null;
+  }): Promise<NotificationVisitTarget> {
+    const { data } = await httpClient.get<NotificationVisitTarget>(
+      API_ENDPOINTS.delegations.notificationVisitTarget,
+      { params },
+    );
     return data;
   },
 

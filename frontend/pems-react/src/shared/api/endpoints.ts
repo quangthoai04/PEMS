@@ -227,6 +227,7 @@ export const API_ENDPOINTS = {
   delegations: {
     list: '/delegations',
     managementList: '/delegations/viewguestdelegationlist',
+    notificationVisitTarget: '/delegations/notification-visit-target',
     detail: (id: string | number) => `/delegations/${id}`,
     // Read-only "what the guest submitted" snapshot, shared by pre-approval review,
     // approved/waiting-host detail and rejected detail screens.

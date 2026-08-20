@@ -180,6 +180,32 @@ export interface VisitRelationContext {
 }
 
 /**
+ * Exact, current-state answer to "what is this notification actually about, and what may THIS
+ * caller do with it right now" — scoped to the exact instance the notification named (or to the
+ * request itself when it named none), never to whichever relation an aggregated list row happened
+ * to rank highest. Output of `delegationsApi.resolveNotificationVisitTarget`.
+ */
+export interface NotificationVisitTarget {
+  /** False when the request (or the named instance) no longer exists at all. */
+  exists: boolean;
+  /** False when it exists but the caller currently holds no relation to it. */
+  hasAccess: boolean;
+  visitRequestId: number;
+  visitInstanceId?: number | null;
+  campusId?: number | null;
+  campusName?: string | null;
+  requestStatus?: string | null;
+  campusStatus?: string | null;
+  visitScope?: string | null;
+  requestCode?: string | null;
+  delegationName?: string | null;
+  canViewRequestDetail: boolean;
+  relationContexts: VisitRelationContext[];
+  participantId?: number | null;
+  participantStatus?: string | null;
+}
+
+/**
  * One campus instance inside a multi-campus request, used by the expandable-row accordion
  * (Phương án A). Action visibility is backend-computed (booleans) — never gate on status text.
  */
