@@ -272,10 +272,6 @@ export function ApiManagement() {
       </div>
       <div className="border-b border-gray-100 pb-4 mb-6">
         <h1 className="text-3xl font-bold text-[#004c91]">Cấu hình API tích hợp</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Quản lý cấu hình cloud API (Google Document AI — quét danh thiếp, Google Cloud Translation — dịch tin tức, Google Cloud Vision — nhận diện khuôn mặt),
-          test kết nối, hạn mức và nhật ký. Credential được mã hoá và không bao giờ hiển thị lại.
-        </p>
       </div>
 
       {loading ? (
