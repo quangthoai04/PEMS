@@ -22,7 +22,9 @@ export function FeedbackManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isHO = user?.roleCode === 'HO';
-  const campusFilterOptions = useCampusFilterOptions();
+  // Patch 6: campusOptions below is already passed only when isHO — gate the fetch itself too,
+  // or every non-HO viewer fires a request to the HO-only /campuses/filter-options endpoint.
+  const campusFilterOptions = useCampusFilterOptions({ enabled: isHO });
 
   const { summaries, loading, fetchSummaries } = useFeedbacks();
 

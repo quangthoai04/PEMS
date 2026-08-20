@@ -13,6 +13,7 @@ using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
 
@@ -143,7 +144,8 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                     // Required by the validator like FullName/JobTitle — a blank value never reaches here.
                     organization = request.Organization!.Trim(),
                     jobTitle = request.JobTitle.Trim(),
-                    phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
+                    phone = string.IsNullOrWhiteSpace(request.Phone)
+                        ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim()),
                     email = newEmail,
                 }, Json),
                 Status = IdentityChangeStatuses.Pending,

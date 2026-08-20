@@ -279,7 +279,7 @@ public sealed class VisitSafeEditV2Tests
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(
                         reqV,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84999999", "VN"), // phone changed
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84987654321", "VN"), // phone changed
                         new List<SafeInstancePatchDto>
                         {
                             // Only the transport note is sent — the sparse patch carries what changed
@@ -295,7 +295,7 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
             {
                 var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
-                Assert.Equal("+84999999", visit.RegistrantPhone);
+                Assert.Equal("+84987654321", visit.RegistrantPhone);
                 Assert.True(visit.HasMixedCampusDetails); // A's transportation note now differs from B → mixed
                 Assert.Equal(reqV + 1, visit.RowVersion);
 
@@ -551,12 +551,13 @@ public sealed class VisitSafeEditV2Tests
             {
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "JP"), null)),
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84912345678", "JP"), null)),
                     CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantNationality);
             }
             using (var db = NewContext())
-                Assert.Equal("JP", (await db.VisitRequests.AsNoTracking()
+                // Patch 4: "JP" resolves and persists as the canonical Vietnamese short name.
+                Assert.Equal("Nhật Bản", (await db.VisitRequests.AsNoTracking()
                     .SingleAsync(v => v.VisitRequestId == requestId)).RegistrantNationality);
         }
         finally { await CleanupAsync(requestId); }
@@ -623,7 +624,7 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
                 await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+8491", "VN"), null)),
+                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+84912345678", "VN"), null)),
                     CancellationToken.None);
 
             using (var db = NewContext())
@@ -681,7 +682,7 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
                 await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant Kế Tiếp", "Org", "Job", "+8491", "VN"), null)),
+                        new SafeRegistrantPatchDto("Registrant Kế Tiếp", "Org", "Job", "+84912345678", "VN"), null)),
                     CancellationToken.None);
 
             using (var db = NewContext())
@@ -725,7 +726,7 @@ public sealed class VisitSafeEditV2Tests
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
                         new SafeRegistrantPatchDto("Registrant", "Văn bản người dùng gõ tay — phải bị bỏ qua",
-                            "Job", "+8491", "VN", approvedPublicPartnerId), null)),
+                            "Job", "+84912345678", "VN", approvedPublicPartnerId), null)),
                     CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPartnerId);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantOrganization);
@@ -760,7 +761,7 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
                 await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV1,
-                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+8491", "VN", approvedPublicPartnerId), null)),
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84912345678", "VN", approvedPublicPartnerId), null)),
                     CancellationToken.None);
 
             var (reqV2, _) = await VersionsAsync(requestId);
@@ -768,7 +769,7 @@ public sealed class VisitSafeEditV2Tests
             {
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV2,
-                        new SafeRegistrantPatchDto("Registrant", "Tổ chức tự nhập", "Job", "+8491", "VN", null), null)),
+                        new SafeRegistrantPatchDto("Registrant", "Tổ chức tự nhập", "Job", "+84912345678", "VN", null), null)),
                     CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantPartnerId);
             }
@@ -839,7 +840,7 @@ public sealed class VisitSafeEditV2Tests
             {
                 var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                     new VisitRequestSafeEditDto(reqV,
-                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+8491000000", "VN"), null)),
+                        new SafeRegistrantPatchDto("Registrant Mới", "Org", "Job", "+84912345678", "VN"), null)),
                     CancellationToken.None);
                 Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantFullName);
             }
@@ -877,6 +878,100 @@ public sealed class VisitSafeEditV2Tests
                 var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
                 Assert.Null(visit.PartnerId);
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Patch 4 — nationality contract ──────────────────────────────────────────
+
+    [Fact]
+    public async Task SafeEdit_rejects_a_registrant_nationality_that_does_not_resolve()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using var db = NewContext();
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84912345678", "FPTU123"), null)),
+                    CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Legacy compatibility (Patch 4 decision, explicit constraint): a safe edit that only touches the
+    /// full name must not be blocked — or silently rewritten — because the request's legacy nationality
+    /// does not resolve to a real country. Simulates pre-Patch-4 data with a direct write (bypassing the
+    /// service), then edits only the name while echoing nationality back unchanged.
+    /// </summary>
+    [Fact]
+    public async Task SafeEdit_of_an_unrelated_field_leaves_an_unresolvable_legacy_nationality_untouched()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            using (var seed = NewContext())
+            {
+                var visit = await seed.VisitRequests.SingleAsync(v => v.VisitRequestId == requestId);
+                visit.RegistrantNationality = "Legacy Unrecognized Value";
+                await seed.SaveChangesAsync();
+            }
+            var (reqV, _) = await VersionsAsync(requestId);
+
+            using (var db = NewContext())
+            {
+                // Must NOT throw: the nationality is echoed back unchanged, not genuinely re-typed.
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant Đổi Tên", "Org", "Job", "+84912345678", "Legacy Unrecognized Value"), null)),
+                    CancellationToken.None);
+                Assert.DoesNotContain(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.RegistrantNationality);
+            }
+            using (var db = NewContext())
+            {
+                var saved = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.Equal("Registrant Đổi Tên", saved.RegistrantFullName);
+                Assert.Equal("Legacy Unrecognized Value", saved.RegistrantNationality);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The Patch 4 decision's own example: "Hàn Quốc" / "South Korea" / "KR" must all resolve to the
+    /// SAME canonical value — standing in for "VI UI / EN UI both persist canonical VI".
+    /// </summary>
+    [Theory]
+    [InlineData("Hàn Quốc")]
+    [InlineData("South Korea")]
+    [InlineData("KR")]
+    public async Task SafeEdit_persists_the_same_canonical_value_regardless_of_input_spelling(string input)
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, _) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84912345678", input), null)),
+                    CancellationToken.None);
+            using (var db = NewContext())
+                Assert.Equal("Hàn Quốc", (await db.VisitRequests.AsNoTracking()
+                    .SingleAsync(v => v.VisitRequestId == requestId)).RegistrantNationality);
         }
         finally { await CleanupAsync(requestId); }
     }

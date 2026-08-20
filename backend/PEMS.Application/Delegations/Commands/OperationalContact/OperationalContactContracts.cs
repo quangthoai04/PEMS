@@ -1,6 +1,7 @@
 using System;
 using FluentValidation;
 using MediatR;
+using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
 
@@ -380,7 +381,7 @@ public sealed class ReplaceOperationalContactCommandValidator
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
         // Phone is OPTIONAL — an email is what an invitation binds to.
         RuleFor(x => x.Phone)
-            .MaximumLength(50);
+            .MustBeAPhoneNumber("Số điện thoại đầu mối vận hành không hợp lệ.");
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành không đúng định dạng.")
@@ -400,7 +401,7 @@ public sealed class UpdateOperationalContactProfileCommandValidator
             .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.Phone).MustBeAPhoneNumber("Số điện thoại đầu mối vận hành không hợp lệ.");
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành không đúng định dạng.")
@@ -425,7 +426,7 @@ public sealed class SaveOperationalContactCommandValidator
             .MaximumLength(200);
         RuleFor(x => x.JobTitle)
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành không được để trống.").MaximumLength(150);
-        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.Phone).MustBeAPhoneNumber("Số điện thoại đầu mối vận hành không hợp lệ.");
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành không đúng định dạng.")
@@ -448,7 +449,7 @@ public sealed class InitiateOperationalContactTransferCommandValidator
             .NotEmpty().WithMessage("Chức vụ đầu mối vận hành mới không được để trống.").MaximumLength(150);
         // Phone is OPTIONAL — an email is what an invitation binds to.
         RuleFor(x => x.Phone)
-            .MaximumLength(50);
+            .MustBeAPhoneNumber("Số điện thoại đầu mối vận hành mới không hợp lệ.");
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email đầu mối vận hành mới không được để trống.")
             .EmailAddress().WithMessage("Email đầu mối vận hành mới không đúng định dạng.")

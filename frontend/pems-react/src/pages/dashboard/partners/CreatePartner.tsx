@@ -20,6 +20,7 @@ import { usePartnerBilingualTranslate } from './usePartnerBilingualTranslate';
 import { BilingualColumns, LanguageColumnLabel } from '../news/components/BilingualColumns';
 import { SmartImage } from '../news/components/SmartImage';
 import { validateFile } from '../../../shared/utils/fileValidation';
+import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import {
   getApiErrorMessage,
   showLoadingToast,
@@ -147,6 +148,10 @@ export function CreatePartner() {
     if (!name.trim()) { setError('Tên đối tác là bắt buộc.'); return; }
     if (withContact && !contactName.trim()) {
       setError('Họ tên người liên hệ là bắt buộc khi thêm người liên hệ ban đầu.');
+      return;
+    }
+    if (withContact && contactEmail.trim() && !isValidEmailSyntax(contactEmail)) {
+      setError('Email người liên hệ không đúng định dạng.');
       return;
     }
     setSubmitting(true);

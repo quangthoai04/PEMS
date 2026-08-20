@@ -13,7 +13,8 @@ import {
 import { errorCodeOf, fieldErrorsOf, firstFieldError, hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
 import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
-import { isSameEmailIdentity } from '../../../shared/utils/emailIdentity';
+import { isSameEmailIdentity, isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
+import { isValidPhone } from '../../../shared/utils/phoneNumber';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
 import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
 import { OrganizationCombobox } from './shared/OrganizationCombobox';
@@ -314,9 +315,10 @@ export default function ContactIdentityActions({
   /**
    * Client mirror of the backend's required/format rules (plan PEMS_VALIDATION_UX §2.2) — a UX aid
    * only, never a second source of truth: the server re-validates every field regardless, and a value
-   * that slips past this still fails there. Phone stays optional here because it is optional on the
-   * command (`MaximumLength` only, no `NotEmpty`); Organization is required, matching Create/Pending
-   * Edit/Resubmit and the command's own `NotEmpty` rule.
+   * that slips past this still fails there. Phone stays OPTIONAL here (blank submits) — that has not
+   * changed — but a NON-BLANK value must now be shaped like a phone number, matching the command's
+   * `MustBeAPhoneNumber` rule; Organization is required, matching Create/Pending Edit/Resubmit and the
+   * command's own `NotEmpty` rule.
    */
   const validateContactFields = (f: ContactFormState): { errors: ContactFieldErrors; email: string | null } => {
     const errors: ContactFieldErrors = {};
@@ -326,10 +328,12 @@ export default function ContactIdentityActions({
       errors.organization = t('validation:requiredField', { field: t('visitRequestV2:person.organization') });
     if (!f.jobTitle.trim())
       errors.jobTitle = t('validation:requiredField', { field: t('visitRequestV2:person.jobTitle') });
+    if (f.phone.trim() && !isValidPhone(f.phone))
+      errors.phone = t('validation:phoneInvalidField', { field: t('visitRequestV2:card.phone') });
     let email: string | null = null;
     if (!f.email.trim()) {
       email = t('validation:requiredField', { field: t('visitRequestV2:card.email') });
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.email.trim())) {
+    } else if (!isValidEmailSyntax(f.email)) {
       email = t('validation:emailInvalidField', { field: t('visitRequestV2:card.email') });
     }
     return { errors, email };

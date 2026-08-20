@@ -17,6 +17,7 @@ using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 using INotificationService = PEMS.Application.Notifications.Common.INotificationService;
 
 namespace PEMS.Application.Partners.Commands.CreatePartner;
@@ -234,7 +235,7 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
                     PartnerId = partner.PartnerId,
                     FullName = ic.FullName.Trim(),
                     Email = string.IsNullOrWhiteSpace(ic.Email) ? null : ic.Email.Trim().ToLowerInvariant(),
-                    Phone = string.IsNullOrWhiteSpace(ic.Phone) ? null : ic.Phone.Trim(),
+                    Phone = string.IsNullOrWhiteSpace(ic.Phone) ? null : PhoneNumber.NormalizeOrOriginal(ic.Phone.Trim()),
                     JobTitle = string.IsNullOrWhiteSpace(ic.JobTitle) ? null : ic.JobTitle.Trim(),
                     DepartmentName = string.IsNullOrWhiteSpace(ic.DepartmentName) ? null : ic.DepartmentName.Trim(),
                     Note = string.IsNullOrWhiteSpace(ic.Note) ? null : ic.Note.Trim(),

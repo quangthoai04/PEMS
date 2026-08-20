@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { isValidPhone } from '../../../shared/utils/phoneNumber';
+import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import i18n from '../../../shared/i18n/config';
 import { parseApiDate } from '../../../shared/utils/vietnamTime';
 export type ValidationTranslator = (key: string, options?: Record<string, unknown>) => string;
@@ -274,7 +275,7 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
           path: ['operationalContact', 'email'],
           message: t('requiredField', { field: t('fields.operationalEmail') }),
         });
-      } else if (!z.string().email().safeParse(email).success) {
+      } else if (!isValidEmailSyntax(email)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ['operationalContact', 'email'],

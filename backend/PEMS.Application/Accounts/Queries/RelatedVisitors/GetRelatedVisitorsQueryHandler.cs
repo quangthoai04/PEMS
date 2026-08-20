@@ -9,6 +9,7 @@ using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Models;
 using PEMS.Domain.Constants;
+using PEMS.Shared;
 
 namespace PEMS.Application.Accounts.Queries.RelatedVisitors;
 
@@ -107,7 +108,32 @@ public sealed class GetRelatedVisitorsQueryHandler
             // same option. Deliberately not left to the column collation — that would make the
             // filter's behaviour depend on a DB setting no test here pins down.
             var nat = request.Nationality.Trim().ToLower();
-            userQuery = userQuery.Where(u => u.Nationality != null && u.Nationality.Trim().ToLower() == nat);
+
+            // Patch 4: the dropdown (GetRelatedVisitorNationalitiesQueryHandler) now offers ONE merged
+            // option per real country — "UAE" and "Các Tiểu vương quốc Ả Rập Thống nhất" collapse into
+            // a single canonical label. An exact-string match here would then miss every row still
+            // holding the OTHER spelling, silently under-filtering. When the picked value resolves to a
+            // real country, widen the match to every raw nationality — among just this campus's
+            // candidate visitors, already a small set — that resolves to the SAME country. Nothing in
+            // users.nationality is rewritten; this only widens what the WHERE clause accepts. A value
+            // that does not resolve (never observed in the audited data) falls back to the exact match.
+            if (CountryName.TryResolve(request.Nationality, out var canonicalFilter))
+            {
+                var candidateNationalities = await userQuery
+                    .Where(u => u.Nationality != null)
+                    .Select(u => u.Nationality!)
+                    .Distinct()
+                    .ToListAsync(cancellationToken);
+                var matchingRaw = candidateNationalities
+                    .Where(raw => CountryName.TryResolve(raw, out var c)
+                                  && string.Equals(c, canonicalFilter, StringComparison.Ordinal))
+                    .ToList();
+                userQuery = userQuery.Where(u => u.Nationality != null && matchingRaw.Contains(u.Nationality));
+            }
+            else
+            {
+                userQuery = userQuery.Where(u => u.Nationality != null && u.Nationality.Trim().ToLower() == nat);
+            }
         }
 
         if (keyword is { Length: > 0 })

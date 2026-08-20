@@ -87,6 +87,12 @@ public static class VisitRequestErrorCodes
     public const string InvalidVisitScope     = "INVALID_VISIT_SCOPE";
     public const string InvalidVisitTime      = "INVALID_VISIT_TIME";
 
+    // Patch 4 — nationality does not resolve to a real country (registrant or a guest/support
+    // member). Raised only for a GENUINE new value; an unchanged legacy value that happens not to
+    // resolve is left alone rather than blocking an unrelated edit — see CountryName / the call
+    // sites in VisitRequestV2EditService.ApplyCommonFields and VisitRequestV2EditOps.StageReplaceMembers.
+    public const string InvalidNationality    = "INVALID_NATIONALITY";
+
     // Campus routing (campus-independent approval): every selected campus must have
     // an ACTIVE Staff Leader who will receive and process its instance.
     public const string CampusHasNoActiveStaffLeader = "CAMPUS_HAS_NO_ACTIVE_STAFF_LEADER";

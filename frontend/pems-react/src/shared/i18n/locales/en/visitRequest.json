@@ -315,7 +315,8 @@
       "missingColumns_other": "Missing required columns: {{missing}}. The file must contain: {{required}}.",
       "requiredCell": "Row {{row}}: column \"{{column}}\" must not be empty.",
       "cellRequired": "Must not be empty",
-      "cellMaxLength": "Longer than {{max}} characters (currently {{length}})"
+      "cellMaxLength": "Longer than {{max}} characters (currently {{length}})",
+      "cellInvalidCountry": "\"{{value}}\" is not a recognized country. Please enter a valid country name (e.g. South Korea, Japan, Vietnam)."
     },
     "template": {
       "index": "No.",

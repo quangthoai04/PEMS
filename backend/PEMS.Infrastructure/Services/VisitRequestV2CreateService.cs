@@ -192,11 +192,16 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             CreatedSource = createdSource,
             HasMixedCampusDetails = hasMixed,
             RegistrantFullName = form.Registrant.FullName,
-            RegistrantNationality = form.Registrant.Nationality,
+            RegistrantNationality = NationalityResolution.ResolveOrThrow(
+                form.Registrant.Nationality, "Quốc tịch người đăng ký không hợp lệ:"),
             RegistrantOrganization = registrantOrg,
             RegistrantJobTitle = form.Registrant.JobTitle,
             RegistrantPhone = PhoneNumber.NormalizeOrNull(form.Registrant.Phone),
-            RegistrantEmail = form.Registrant.Email,
+            // Patch 5: persisted normalized (trim + lowercase), not raw client-cased — matches the
+            // canonical form every identity comparison in this file already normalizes both sides to
+            // (registrantEmailNorm above), and matches how users.Email/partner_contacts.email are
+            // already always stored. registrantEmailNorm is the exact value this computes.
+            RegistrantEmail = registrantEmailNorm,
             VisitScope = scope,
             // Pure V2: form content — including the contact — is written per campus into
             // visit_instance_form_details. The request row holds identity, scope and lifecycle only.
@@ -269,7 +274,10 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     OperationalContactOrganization = Clean(cv.OperationalContact.Organization),
                     OperationalContactJobTitle = Clean(cv.OperationalContact.JobTitle),
                     OperationalContactPhone = PhoneNumber.NormalizeOrNull(cv.OperationalContact.Phone),
-                    OperationalContactEmail = cv.OperationalContact.Email.Trim(),
+                    // Patch 5: persisted normalized — contactEmailNorm (computed just above for the
+                    // self-match check) IS the canonical trim+lowercase form; reused rather than a
+                    // second, trim-only transform of the same input.
+                    OperationalContactEmail = contactEmailNorm,
                     WorkingLanguage = cv.WorkingLanguage,
                     TransportationNote = Clean(cv.TransportationNote),
                     MediaConsentStatus = cv.MediaConsentStatus,
@@ -306,7 +314,8 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 {
                     FullName = v.FullName, Organization = v.Organization, JobTitle = v.JobTitle,
                     OrganizationPartnerId = v.OrganizationPartnerId,
-                    Nationality = v.Nationality, MemberType = "GUEST", DisplayOrder = order++,
+                    Nationality = NationalityResolution.ResolveOrThrow(v.Nationality, "Quốc tịch khách không hợp lệ:"),
+                    MemberType = "GUEST", DisplayOrder = order++,
                     CreatedAt = vietnamNow, CreatedBy = creatorUserId,
                 });
                 keys.Add(v.ClientMemberKey);
@@ -317,7 +326,8 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 {
                     FullName = m.FullName, Organization = m.Organization, JobTitle = m.JobTitle,
                     OrganizationPartnerId = m.OrganizationPartnerId,
-                    Nationality = m.Nationality, MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
+                    Nationality = NationalityResolution.ResolveOrThrow(m.Nationality, "Quốc tịch nhân sự hỗ trợ không hợp lệ:"),
+                    MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
                     CreatedAt = vietnamNow, CreatedBy = creatorUserId,
                 });
                 keys.Add(m.ClientMemberKey);
@@ -400,12 +410,11 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
             RequestRevision = 1,
             SourceType = "CREATE",
             // Request-level snapshot = the registrant, and only the registrant. Each campus's contact is
-            // snapshotted in that campus's own form-detail revision above.
-            SnapshotJson = JsonSerializer.Serialize(new
-            {
-                request.RegistrantFullName, request.RegistrantOrganization, request.RegistrantJobTitle,
-                request.RegistrantPhone, request.RegistrantEmail,
-            }, Json),
+            // snapshotted in that campus's own form-detail revision above. Serialized through the SAME
+            // canonical builder every other request-revision writer uses (plan §7.1) — a hand-written
+            // echo here previously omitted RegistrantNationality, so the very first edit's history diff
+            // showed "Không có dữ liệu lịch sử" for nationality even though revision 1 had it all along.
+            SnapshotJson = VisitFormRevisionSnapshotBuilder.Request(request),
             AppliedBy = creatorUserId,
             AppliedAt = vietnamNow,
         });

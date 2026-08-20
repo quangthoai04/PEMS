@@ -4,6 +4,7 @@ using System.Text.Json;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Common;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Shared;
 
@@ -36,6 +37,16 @@ internal static class VisitRequestV2EditOps
         System.DateTime now,
         ulong? actorId)
     {
+        // Patch 4 hardening (H4-3): snapshot this campus's CURRENT member content BEFORE anything below
+        // is removed. A row is copy-on-write regardless of WHAT changed on the campus — even a Purpose
+        // edit rewrites every member row here — so without this, every save would re-validate every
+        // member's nationality even when that specific member's own content never moved. A row
+        // recognized as byte-identical (in canonical space) to one that already existed keeps its
+        // EXISTING stored nationality untouched instead of being forced through NationalityResolution;
+        // see MemberContentIndex for why this is content equality, not identity, and why that is the
+        // right (and the only safe, non-fuzzy) boundary without a persisted per-member identity.
+        var untouched = MemberContentIndex.Build(V2CanonicalRefresh.MembersOf(request, instance));
+
         foreach (var link in instance.GuestMemberLinks.ToList())
         {
             db.VisitInstanceGuestMembers.Remove(link);
@@ -56,6 +67,12 @@ internal static class VisitRequestV2EditOps
             }
         }
 
+        // A campus's member set is copy-on-write: whenever this runs, EVERY member row for this
+        // instance is brand new (new guest_member_id — never an in-place update, see the class doc).
+        // A row whose content is genuinely new-or-changed is resolved to the canonical Vietnamese short
+        // name or the whole edit is refused, exactly like create (Patch 4). A row recognized above as
+        // content-identical to one that already existed on this campus is exempt — see the
+        // MemberContentIndex snapshot and its own doc comment for why that boundary is safe.
         var rows = new List<VisitGuestMember>();
         uint order = 1;
         foreach (var v in visitors ?? new List<VisitorDto>())
@@ -63,7 +80,10 @@ internal static class VisitRequestV2EditOps
             {
                 FullName = v.FullName, Organization = v.Organization, JobTitle = v.JobTitle,
                 OrganizationPartnerId = v.OrganizationPartnerId,
-                Nationality = v.Nationality, MemberType = "GUEST", DisplayOrder = order++,
+                Nationality = untouched.TryTakeMatch("GUEST", v.FullName, v.Organization, v.JobTitle, v.Nationality, out var keptGuestNat)
+                    ? keptGuestNat!
+                    : NationalityResolution.ResolveOrThrow(v.Nationality, "Quốc tịch khách không hợp lệ:"),
+                MemberType = "GUEST", DisplayOrder = order++,
                 CreatedAt = now, CreatedBy = actorId,
             });
         foreach (var m in support ?? new List<SupportTeamMemberDto>())
@@ -71,7 +91,10 @@ internal static class VisitRequestV2EditOps
             {
                 FullName = m.FullName, Organization = m.Organization, JobTitle = m.JobTitle,
                 OrganizationPartnerId = m.OrganizationPartnerId,
-                Nationality = m.Nationality, MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
+                Nationality = untouched.TryTakeMatch("EXTERNAL_SUPPORT", m.FullName, m.Organization, m.JobTitle, m.Nationality, out var keptSupportNat)
+                    ? keptSupportNat!
+                    : NationalityResolution.ResolveOrThrow(m.Nationality, "Quốc tịch nhân sự hỗ trợ không hợp lệ:"),
+                MemberType = "EXTERNAL_SUPPORT", DisplayOrder = order++,
                 CreatedAt = now, CreatedBy = actorId,
             });
         foreach (var r in rows) request.GuestMembers.Add(r);
@@ -186,7 +209,9 @@ internal static class VisitRequestV2EditOps
             OperationalContactOrganization = Clean(content.OperationalContact.Organization),
             OperationalContactJobTitle = content.OperationalContact.JobTitle.Trim(),
             OperationalContactPhone = PhoneNumber.NormalizeOrOriginal(content.OperationalContact.Phone),
-            OperationalContactEmail = Clean(content.OperationalContact.Email)!,
+            // Patch 5: normalized (trim + lowercase), not Clean()'s trim-only — matches the value
+            // Create/StageReplaceMembers persist for the same column on every other write path.
+            OperationalContactEmail = VisitRequestFingerprintBuilder.NormalizeEmail(content.OperationalContact.Email),
             WorkingLanguage = content.WorkingLanguage,
             TransportationNote = Clean(content.TransportationNote),
             MediaConsentStatus = content.MediaConsentStatus,

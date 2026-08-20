@@ -315,7 +315,8 @@
       "missingColumns_other": "Thiếu cột bắt buộc: {{missing}}. File phải có các cột: {{required}}.",
       "requiredCell": "Dòng {{row}}: Cột \"{{column}}\" không được để trống.",
       "cellRequired": "Không được để trống",
-      "cellMaxLength": "Vượt quá {{max}} ký tự (đang có {{length}})"
+      "cellMaxLength": "Vượt quá {{max}} ký tự (đang có {{length}})",
+      "cellInvalidCountry": "Không nhận diện được quốc gia \"{{value}}\". Vui lòng nhập đúng tên quốc gia (ví dụ: Hàn Quốc, Nhật Bản, Việt Nam)."
     },
     "template": {
       "index": "STT",

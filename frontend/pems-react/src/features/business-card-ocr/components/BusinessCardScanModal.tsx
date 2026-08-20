@@ -16,6 +16,8 @@ import { partnersApi } from '../../partners/api/partnersApi';
 import type { PartnerListItem } from '../../partners/types/partners.types';
 import { PROFILE_STATUS_LABELS } from '../../partners/types/partners.types';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
+import { isValidPhone } from '../../../shared/utils/phoneNumber';
+import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import {
   getApiErrorMessage,
   showLoadingToast,
@@ -65,6 +67,10 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  // OCR misreads a phone number more often than any other field — a plain input here silently
+  // stored whatever the scan produced, so it needs the same check as every other phone field.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [jobTitle, setJobTitle] = useState('');
   const [departmentName, setDepartmentName] = useState('');
   const [organization, setOrganization] = useState('');
@@ -96,7 +102,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
     setPreviewUrl(null);
     setJob(null);
     setError(null);
-    setFullName(''); setEmail(''); setPhone(''); setJobTitle('');
+    setFullName(''); setEmail(''); setEmailError(null); setPhone(''); setPhoneError(null); setJobTitle('');
     setDepartmentName(''); setOrganization(''); setNote('');
     setWebsiteOcr(''); setAddressOcr('');
     setIsPrimary(false);
@@ -196,7 +202,17 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const confirm = async () => {
     const targetPartnerName = partnerSearch.trim() || organization.trim();
     if (!job || !fullName.trim() || (!partnerId && !targetPartnerName)) return;
-    
+    if (email.trim() && !isValidEmailSyntax(email)) {
+      setEmailError('Email không đúng định dạng.');
+      return;
+    }
+    setEmailError(null);
+    if (phone.trim() && !isValidPhone(phone)) {
+      setPhoneError('Số điện thoại không hợp lệ. Nhập số Việt Nam dạng 0912345678 hoặc số quốc tế dạng +84912345678. Không nhập số máy lẻ.');
+      return;
+    }
+    setPhoneError(null);
+
     setConfirming(true);
     setError(null);
     const toastId = showLoadingToast(partnerId ? 'Đang lưu người liên hệ...' : 'Đang tạo đối tác & lưu...', 'ocr-confirm');
@@ -391,11 +407,27 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
-                    <input className={inputCls} value={email} onChange={(e) => setEmail(e.target.value)} />
+                    <input
+                      className={emailError ? inputCls.replace('border-gray-300', 'border-red-400') : inputCls}
+                      value={email}
+                      onChange={(e) => { setEmail(e.target.value); if (emailError) setEmailError(null); }}
+                      aria-invalid={emailError ? true : undefined}
+                    />
+                    {emailError && (
+                      <p role="alert" className="mt-1 text-xs font-normal text-red-600">{emailError}</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-500 uppercase">Số điện thoại</label>
-                    <input className={inputCls} value={phone} onChange={(e) => setPhone(e.target.value)} />
+                    <input
+                      className={phoneError ? inputCls.replace('border-gray-300', 'border-red-400') : inputCls}
+                      value={phone}
+                      onChange={(e) => { setPhone(e.target.value); if (phoneError) setPhoneError(null); }}
+                      aria-invalid={phoneError ? true : undefined}
+                    />
+                    {phoneError && (
+                      <p role="alert" className="mt-1 text-xs font-normal text-red-600">{phoneError}</p>
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -540,7 +572,7 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     onClick={confirm}
-                    disabled={(!partnerId && !partnerSearch.trim() && !organization.trim()) || !fullName.trim() || confirming}
+                    disabled={(!partnerId && !partnerSearch.trim() && !organization.trim()) || !fullName.trim() || confirming || !!phoneError || !!emailError}
                     className="flex-1 bg-[#004c91] hover:bg-[#003a70] text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-colors disabled:opacity-50 cursor-pointer"
                   >
                     {confirming ? 'Đang xử lý...' : (partnerId ? 'Lưu người liên hệ' : 'Tạo đối tác nháp & Lưu')}

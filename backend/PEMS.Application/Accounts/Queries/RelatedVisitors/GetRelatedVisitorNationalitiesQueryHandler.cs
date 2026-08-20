@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Accounts.Common;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Domain.Constants;
+using PEMS.Shared;
 
 namespace PEMS.Application.Accounts.Queries.RelatedVisitors;
 
@@ -65,9 +66,18 @@ public sealed class GetRelatedVisitorNationalitiesQueryHandler
         // deterministic when two rows differ only by casing (the DB row order must not decide it).
         var displayOrder = StringComparer.Create(CultureInfo.GetCultureInfo("vi-VN"), ignoreCase: true);
 
+        // Patch 4: merge aliases of the SAME real country into one filter option — audited example:
+        // "UAE" and "Các Tiểu vương quốc Ả Rập Thống nhất" are one country under two spellings, and
+        // without this they showed up as two separate, non-mergeable filter choices. users.nationality
+        // itself is never rewritten here (no migration, no bulk-normalize) — only what the dropdown
+        // OFFERS changes; GetRelatedVisitorsQueryHandler is what widens the WHERE clause so picking the
+        // merged option still matches every raw spelling behind it. A value that does not resolve to a
+        // real country (never observed in the audited data, but not assumed impossible) passes through
+        // unchanged, exactly as before.
         var items = rawNationalities
             .Select(x => x.Trim())
             .Where(x => x.Length > 0)                       // drops "" and whitespace-only rows
+            .Select(x => CountryName.TryResolve(x, out var canonical) ? canonical! : x)
             .OrderBy(x => x, displayOrder)
             .ThenBy(x => x, StringComparer.Ordinal)
             // Runs AFTER the sort, so "Nhật Bản" / " nhật bản " collapse to a single, stable option.

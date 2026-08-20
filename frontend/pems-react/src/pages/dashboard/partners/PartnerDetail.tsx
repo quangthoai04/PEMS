@@ -31,6 +31,8 @@ import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { downloadAuthenticatedFile } from '../../../shared/utils/fileDownload';
 import { formatVietnamDate, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+import { isValidPhone } from '../../../shared/utils/phoneNumber';
+import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
 import {
   showLoadingToast,
@@ -56,7 +58,6 @@ type ContactFieldErrors = Partial<Record<ContactFieldKey, string>>;
 const CONTACT_FIELD_BACKEND_MAP: Record<ContactFieldKey, string> = {
   fullName: 'FullName', email: 'Email', phone: 'Phone', jobTitle: 'JobTitle', departmentName: 'DepartmentName',
 };
-const CONTACT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const contactInputCls = (hasError?: boolean) =>
   `w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 bg-white ${
     hasError
@@ -321,7 +322,10 @@ export function PartnerDetail() {
     const errors: ContactFieldErrors = {};
     if (!cName.trim()) errors.fullName = 'Họ tên người liên hệ là bắt buộc.';
     const email = cEmail.trim();
-    if (email && !CONTACT_EMAIL_RE.test(email)) errors.email = 'Email không hợp lệ.';
+    if (email && !isValidEmailSyntax(email)) errors.email = 'Email không hợp lệ.';
+    const phone = cPhone.trim();
+    if (phone && !isValidPhone(phone))
+      errors.phone = 'Số điện thoại không hợp lệ. Nhập số Việt Nam dạng 0912345678 hoặc số quốc tế dạng +84912345678. Không nhập số máy lẻ.';
     return errors;
   };
 
@@ -329,7 +333,7 @@ export function PartnerDetail() {
   const clearContactFieldError = (key: ContactFieldKey, value: string) => {
     if (!contactFieldErrors[key]) return;
     if (key === 'fullName' && !value.trim()) return;
-    if (key === 'email' && value.trim() && !CONTACT_EMAIL_RE.test(value.trim())) return;
+    if (key === 'email' && value.trim() && !isValidEmailSyntax(value)) return;
     setContactFieldErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 

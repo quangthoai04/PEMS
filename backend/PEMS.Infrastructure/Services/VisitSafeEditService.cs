@@ -2,12 +2,14 @@ using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Common.Validation;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
 using PEMS.Domain.Policies;
+using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -76,8 +78,27 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
 
             Diff(changes, VisitFieldClassifier.RegistrantFullName, null,
                 request.RegistrantFullName, reg.FullName.Trim(), v => request.RegistrantFullName = v!);
-            Diff(changes, VisitFieldClassifier.RegistrantNationality, null,
-                request.RegistrantNationality, reg.Nationality.Trim(), v => request.RegistrantNationality = v!);
+
+            // Nationality (Patch 4): compared in CANONICAL space, not raw text — mirrors
+            // VisitRequestV2EditService.ApplyCommonFields. A safe edit that only touches, say, the
+            // organization must not be blocked — or silently re-cased/rewritten — just because the
+            // registrant's legacy nationality spelling does not match the canonical form byte for
+            // byte. Nothing is written or diffed unless the two sides resolve to DIFFERENT countries;
+            // only then must the new one resolve at all.
+            var trimmedNationality = reg.Nationality.Trim();
+            var nationalityResolved = CountryName.TryResolve(trimmedNationality, out var nationalityCanonical);
+            var currentNationalityResolved = CountryName.TryResolve(request.RegistrantNationality, out var currentNationalityCanonical);
+            var effectiveCurrentNationality = currentNationalityResolved ? currentNationalityCanonical! : request.RegistrantNationality;
+            var effectiveIncomingNationality = nationalityResolved ? nationalityCanonical! : trimmedNationality;
+            if (!string.Equals(effectiveCurrentNationality, effectiveIncomingNationality, StringComparison.Ordinal))
+            {
+                if (!nationalityResolved)
+                    throw new BusinessRuleException(
+                        $"Quốc tịch người đăng ký không hợp lệ: '{trimmedNationality}'. {CountryName.FormatHint}",
+                        VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+                Diff(changes, VisitFieldClassifier.RegistrantNationality, null,
+                    request.RegistrantNationality, nationalityCanonical, v => request.RegistrantNationality = v!);
+            }
             Diff(changes, VisitFieldClassifier.RegistrantOrganization, null,
                 request.RegistrantOrganization, registrantOrg, v => request.RegistrantOrganization = v);
             Diff(changes, VisitFieldClassifier.RegistrantPartnerId, null,
@@ -85,8 +106,21 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                 v => request.PartnerId = v is null ? (ulong?)null : ulong.Parse(v));
             Diff(changes, VisitFieldClassifier.RegistrantJobTitle, null,
                 request.RegistrantJobTitle, Clean(reg.JobTitle), v => request.RegistrantJobTitle = v);
+
+            // Validated AND normalized here, not just trusted from the (already-checked) validator: the
+            // classifier/Diff pipeline below has no format opinion of its own, so an invalid value that
+            // somehow reached this far (a caller bypassing the MediatR pipeline in a test, a future
+            // refactor) must still be refused rather than silently persisted as typed — the exact
+            // regression this guards against was a Safe Edit call storing "+821012340001123213sd"
+            // verbatim because nothing between the wire and the column ever checked its shape.
+            var cleanedPhone = Clean(reg.Phone);
+            string? newPhone = null;
+            if (cleanedPhone is not null && !PhoneNumber.TryNormalize(cleanedPhone, out newPhone))
+                throw new BusinessRuleException(
+                    $"Số điện thoại người đăng ký không hợp lệ. {PhoneNumberRules.FormatHint}",
+                    VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
             Diff(changes, VisitFieldClassifier.RegistrantPhone, null,
-                request.RegistrantPhone, Clean(reg.Phone), v => request.RegistrantPhone = v);
+                request.RegistrantPhone, newPhone, v => request.RegistrantPhone = v);
         }
 
         // ── 2. Per-instance safe subset ──

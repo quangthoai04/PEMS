@@ -4,6 +4,7 @@ using System.Linq;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
+using PEMS.Shared;
 
 namespace PEMS.Infrastructure.Services;
 
@@ -53,10 +54,17 @@ public static class VisitRequestV2Canonical
         string N(string? s) => VisitRequestFingerprintBuilder.NormalizeText(s);
         string C(string? s) => VisitRequestFingerprintBuilder.NormalizeCode(s);
         string E(string? s) => VisitRequestFingerprintBuilder.NormalizeEmail(s);
+        // Nationality compares on COUNTRY, not spelling (Patch 4 hardening H4-1): "VN" / "Việt Nam" /
+        // "Vietnam" must fingerprint identically, or a purely representational resubmit — or a legacy
+        // alias already on file being echoed back untouched — registers as a content change: full
+        // member replacement, a FormRevision bump, a revision-history row, for zero real difference.
+        // A value that does not resolve to a real country (legacy garbage) falls back to its own
+        // normalized text, so it still compares stable against itself and only itself.
+        string Nat(string? s) => N(CountryName.TryResolve(s, out var canonical) ? canonical : s);
         // Members are order-independent: sort the normalized tuples.
         static string People(IEnumerable<string> xs) => string.Join(';', xs.OrderBy(x => x, StringComparer.Ordinal));
-        var visitors = People(cv.Visitors.Select(v => $"{N(v.FullName)}|{N(v.Organization)}|{N(v.JobTitle)}|{C(v.Nationality)}"));
-        var support = People(cv.ExternalSupportMembers.Select(m => $"{N(m.FullName)}|{N(m.Organization)}|{N(m.JobTitle)}|{C(m.Nationality)}"));
+        var visitors = People(cv.Visitors.Select(v => $"{N(v.FullName)}|{N(v.Organization)}|{N(v.JobTitle)}|{Nat(v.Nationality)}"));
+        var support = People(cv.ExternalSupportMembers.Select(m => $"{N(m.FullName)}|{N(m.Organization)}|{N(m.JobTitle)}|{Nat(m.Nationality)}"));
         return string.Join('#', new[]
         {
             N(cv.DelegationName), C(cv.VisitType), N(cv.VisitTypeOther), N(cv.Purpose), N(cv.WorkingContent),

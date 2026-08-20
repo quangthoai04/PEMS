@@ -59,6 +59,17 @@ public static class AuthErrorCodes
     /// <summary>Generic unauthenticated state. HTTP 401.</summary>
     public const string Unauthorized = "UNAUTHORIZED";
 
+    /// <summary>
+    /// Patch 7 (P7.1): the account's (role_code, sub_role) pair does not resolve to any known
+    /// EffectiveRole (e.g. STAFF with no sub_role) — a data defect on the account, not a server
+    /// fault. Every OTHER caller of EffectiveRole.Resolve already fails closed on this with 403
+    /// (RoleAuthorizeAttribute, RoleAccessPolicy, DepartmentPersonnelManagementScope); AuthUserMapper
+    /// — used by login, GetCurrentUser and refresh-token — is the one path that used to let the raw
+    /// InvalidOperationException fall through to a generic 500, so a user with this exact,
+    /// already-anticipated account defect could not even sign in or refresh a session to find out why.
+    /// </summary>
+    public const string InvalidRoleCombination = "INVALID_ROLE_COMBINATION";
+
     /// <summary>Unexpected server error. Production responses NEVER include details. HTTP 500.</summary>
     public const string InternalServerError = "INTERNAL_SERVER_ERROR";
 }

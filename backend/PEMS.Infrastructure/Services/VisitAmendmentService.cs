@@ -113,6 +113,21 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 OperationalContactMessages.MemberNotInDelegation,
                 VisitFormV2ErrorCodes.AmendmentNotEditable);
 
+        // ── Nationality on every GENUINELY new-or-changed member must resolve to a real country, or
+        //    this submission is refused outright (Patch 4 hardening H4-4). Rejecting only at approval
+        //    time would let a proposal with an invalid nationality sit PENDING_APPROVAL — the Requester
+        //    notified it was filed, the Staff Leader notified there is something to decide — when it
+        //    could never actually be approved. A member row whose full content already matches one that
+        //    exists on this campus is exempt, same as at approval (StageReplaceMembers): an unrelated
+        //    proposal must not be blocked by a legacy nationality nobody touched.
+        var activeMembers = MemberContentIndex.Build(V2CanonicalRefresh.MembersOf(request, instance));
+        foreach (var v in proposal.Visitors ?? new List<VisitorDto>())
+            if (!activeMembers.TryTakeMatch("GUEST", v.FullName, v.Organization, v.JobTitle, v.Nationality, out _))
+                NationalityResolution.ResolveOrThrow(v.Nationality, "Quốc tịch khách không hợp lệ:");
+        foreach (var m in proposal.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+            if (!activeMembers.TryTakeMatch("EXTERNAL_SUPPORT", m.FullName, m.Organization, m.JobTitle, m.Nationality, out _))
+                NationalityResolution.ResolveOrThrow(m.Nationality, "Quốc tịch nhân sự hỗ trợ không hợp lệ:");
+
         // ── Diff the proposal vs the ACTIVE state → immutable change rows (fail closed via classifier) ──
         var changes = BuildChangeRows(request, instance, detail, proposal, now);
         if (changes.Count == 0)
@@ -170,6 +185,17 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         }
         catch (DbUpdateException)
         {
+            // Patch 7 (P7.3): this save also writes the AuditLog row and the amendment's own Changes
+            // collection, so a blanket "any DbUpdateException here means the one-pending race" would
+            // mislabel an unrelated failure (a truncated field, an FK violation, a dropped connection)
+            // with the wrong business reason. Re-query the SPECIFIC condition the DB guard exists to
+            // catch — the same predicate the soft pre-check above already used — before reporting it;
+            // anything else re-throws and reaches the middleware as the real, unclassified 500 it is.
+            var reallyPending = await _db.VisitInstanceAmendments.AsNoTracking()
+                .AnyAsync(a => a.VisitInstanceId == instance.VisitInstanceId
+                               && a.Status == AmendmentStatuses.PendingApproval, ct);
+            if (!reallyPending) throw;
+
             throw new ConflictException(
                 "Cơ sở này đang có một đề xuất thay đổi chờ duyệt. Vui lòng chờ quyết định hoặc rút đề xuất cũ.",
                 VisitFormV2ErrorCodes.AmendmentAlreadyPending);
@@ -594,10 +620,19 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // tag (NP-03), freshly minted every time the modal opens, never persisted. Comparing it like an
         // ordinary field would make every amendment "change" the member lists even when nothing the
         // user can see was touched, since the active snapshot never carries a key to match against.
+        //
+        // Nationality specifically compares on COUNTRY, not spelling (Patch 4 hardening H4-1): two
+        // strings that resolve to the same country are the same business value, so reopening the modal
+        // and resubmitting an alias-only respelling of an unchanged member's nationality — or of a
+        // legacy value that does not resolve at all — must not manufacture a "Visitors"/"SupportMembers"
+        // change (a full member-list replace, a FormRevision bump, a revision-history row) out of zero
+        // real difference. A value that does not resolve to any real country falls back to its own text,
+        // so it still compares stable against itself and only itself.
+        string EffectiveNationality(string? s) => CountryName.TryResolve(s, out var canonical) ? canonical! : (s ?? string.Empty);
         string VisitorsFingerprint(IEnumerable<VisitorDto> vs) => JsonSerializer.Serialize(
-            vs.Select(v => new { v.FullName, v.Nationality, v.JobTitle, v.Organization, v.OrganizationPartnerId }), Json);
+            vs.Select(v => new { v.FullName, Nationality = EffectiveNationality(v.Nationality), v.JobTitle, v.Organization, v.OrganizationPartnerId }), Json);
         string SupportFingerprint(IEnumerable<SupportTeamMemberDto> ms) => JsonSerializer.Serialize(
-            ms.Select(m => new { m.FullName, m.JobTitle, m.Organization, m.Nationality, m.OrganizationPartnerId }), Json);
+            ms.Select(m => new { m.FullName, m.JobTitle, m.Organization, Nationality = EffectiveNationality(m.Nationality), m.OrganizationPartnerId }), Json);
 
         void AddMembers(string path, object? oldValue, object? newValue, bool changed)
         {

@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 
@@ -16,6 +17,6 @@ public sealed class ConfirmBusinessCardContactCommandValidator
             .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
             .WithMessage("Email không hợp lệ.")
             .MaximumLength(150);
-        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.Phone).MustBeAPhoneNumber("Số điện thoại người liên hệ không hợp lệ.");
     }
 }

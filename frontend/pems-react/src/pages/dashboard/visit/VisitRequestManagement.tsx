@@ -359,31 +359,40 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   // Campus filter options — never hardcoded, always from the database. The filter sends
   // campusId, so value = campusId; label = campus name. Best-effort: if the options fail to
   // load the dropdown still renders the "Tất cả cơ sở" default.
-  // HO uses the campus-management dataset (HO/ADMIN-only endpoint) which includes INACTIVE
-  // campuses so historical/cancelled visits at a disabled campus stay filterable. Visitor has
-  // no access to that endpoint (403) — it falls back to the public "active campuses" list
-  // instead (same one the login page uses), active-only being an acceptable trade-off here.
-  const campusFilterOptions = useCampusFilterOptions();
-  const [visitorActiveCampuses, setVisitorActiveCampuses] = useState<CampusOption[]>([]);
+  //
+  // HO uses the campus-management dataset (HO-only endpoint — RoleAccessPolicy.
+  // CanAccessCampusManagement, ADMIN excluded too) which includes INACTIVE campuses so
+  // historical/cancelled visits at a disabled campus stay filterable. Every OTHER role —
+  // Visitor, Staff, Staff Leader, Department, Student — has no access to that endpoint and
+  // falls back to the public "active campuses" list instead (same one the login page uses),
+  // active-only being an acceptable trade-off here.
+  //
+  // Patch 6: before this, the fallback below only actually applied to Visitor (`isVisitor`),
+  // but the HO-only fetch fired unconditionally for EVERY role regardless — Staff/Staff
+  // Leader/Department/Student got a 403 on every mount (silently swallowed, console-visible)
+  // and an empty campus dropdown, since neither branch of `campusOptions` served them.
+  const isHoViewer = isHO;
+  const campusFilterOptions = useCampusFilterOptions({ enabled: isHoViewer });
+  const [nonHoActiveCampuses, setNonHoActiveCampuses] = useState<CampusOption[]>([]);
   useEffect(() => {
-    if (!isVisitor) return;
+    if (isHoViewer) return;
     let active = true;
     authenticationApi.getActiveCampuses()
-      .then((list) => { if (active) setVisitorActiveCampuses(list); })
+      .then((list) => { if (active) setNonHoActiveCampuses(list); })
       .catch(() => { /* best-effort, same as the HO campus filter options */ });
     return () => { active = false; };
-  }, [isVisitor]);
+  }, [isHoViewer]);
   const campusOptions = useMemo(
     () => [
       { value: '', label: tt('visitRequestV2:list.allCampuses') },
-      ...(isVisitor
-        ? visitorActiveCampuses.map((c) => ({ value: String(c.campusId), label: c.campusName }))
-        : (campusFilterOptions?.campuses ?? []).map((c) => ({
+      ...(isHoViewer
+        ? (campusFilterOptions?.campuses ?? []).map((c) => ({
           value: String(c.campusId),
           label: c.name,
-        }))),
+        }))
+        : nonHoActiveCampuses.map((c) => ({ value: String(c.campusId), label: c.campusName }))),
     ],
-    [isVisitor, visitorActiveCampuses, campusFilterOptions, t],
+    [isHoViewer, nonHoActiveCampuses, campusFilterOptions, t],
   );
 
   const showTabFilter = showTabs && !isEmbedded;

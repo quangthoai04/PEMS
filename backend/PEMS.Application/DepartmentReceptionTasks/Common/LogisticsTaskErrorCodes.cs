@@ -60,6 +60,15 @@ public static class LogisticsTaskErrorCodes
     /// <summary>A department staff member may only propose on a request assigned to them.</summary>
     public const string ProposalNotAssignedToProposer = "LOGISTICS_PROPOSAL_NOT_ASSIGNED_TO_PROPOSER";
 
+    // ── Confirming (accepting/rejecting) a change proposal ──
+
+    /// <summary>
+    /// The item is not currently CHANGE_PROPOSED — already answered (accept/reject is not
+    /// idempotent-replayable), withdrawn, or the proposal step was skipped entirely. A normal
+    /// double-click or two people acting on the same item at once, not a defect.
+    /// </summary>
+    public const string ProposalNotAwaitingConfirmation = "LOGISTICS_PROPOSAL_NOT_AWAITING_CONFIRMATION";
+
     // ── Shared ──
 
     /// <summary>The logistics request does not exist.</summary>

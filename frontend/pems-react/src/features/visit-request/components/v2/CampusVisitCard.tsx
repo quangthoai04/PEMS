@@ -814,6 +814,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           control={control}
           render={({ field: f }) => (field === 'nationality' ? (
             <CountrySelect
+              strict
               value={f.value ?? ''}
               onChange={revalidatingChange(f)}
               onBlur={f.onBlur}

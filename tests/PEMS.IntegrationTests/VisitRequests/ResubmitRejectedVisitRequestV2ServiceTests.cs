@@ -423,4 +423,41 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             Assert.Equal(VisitRequestStatuses.Rejected, r.Status);
         });
     }
+
+    /// <summary>
+    /// Patch 4 hardening H4-9 on the resubmit path: resubmit ALWAYS structurally rewrites every
+    /// campus's member set (StageReplaceMembers runs unconditionally here, unlike pending-edit — see
+    /// ApplyResubmitAsync's own comment on why it always writes a revision), so an unresolvable legacy
+    /// nationality sitting on a member NOBODY touched must still pass through via MemberContentIndex —
+    /// otherwise a request rejected years ago, before this patch existed, could never be resubmitted at
+    /// all without first somehow fixing a nationality field the resubmit screen never asked about.
+    /// </summary>
+    [Fact]
+    public async Task Resubmit_is_not_blocked_by_an_untouched_unresolvable_legacy_member_nationality()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var memberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var member = r.GuestMembers.Single(m => m.GuestMemberId == memberId);
+            member.Nationality = "Legacy Unrecognized Value";
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Legacy Unrecognized Value", "Guest", "GuestOrg") },
+            };
+
+            // Must NOT throw: the member's own content is echoed back byte-identical.
+            await edit.ApplyResubmitAsync(r, Edit(r, Slot(hn, resubmitted)), Registrant, Now, default);
+
+            var newMemberId = InstanceOf(r, "HN").GuestMemberLinks.Single().GuestMemberId;
+            var savedNationality = await db.VisitGuestMembers.AsNoTracking()
+                .Where(m => m.GuestMemberId == newMemberId).Select(m => m.Nationality).SingleAsync();
+            Assert.Equal("Legacy Unrecognized Value", savedNationality);
+            Assert.Equal(VisitRequestStatuses.PendingApproval, r.Status);
+        });
+    }
 }

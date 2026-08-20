@@ -961,6 +961,80 @@ public sealed class OperationalContactManagementTests
         finally { await CleanupAsync(requestId); }
     }
 
+    /// <summary>
+    /// Patch 5 (E-6/E-13/E-14): a malformed Operational Contact email is refused the same way a blank
+    /// Organization is — before the invitation is raised, before any identity-change row is written,
+    /// before any audit row is written. Mirrors ORG-INT-03 exactly, swapping the malformed field.
+    /// </summary>
+    [Fact]
+    public async Task Malformed_email_on_replace_is_refused_before_the_invitation_is_raised()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            var detail = await DetailAsync(before.InstanceId);
+            var changesBefore = await ChangesAsync(requestId);
+            int auditCountBefore;
+            using (var db = NewContext())
+                auditCountBefore = await db.AuditLogs.CountAsync(a => a.VisitRequestId == requestId);
+
+            var replace = new ReplaceOperationalContactCommand(
+                requestId, before.InstanceId, "Người kế nhiệm", "OrgX", "Trưởng phòng", null, "not-an-email");
+
+            var result = new ReplaceOperationalContactCommandValidator().Validate(replace);
+            Assert.False(result.IsValid);
+            Assert.Contains(result.Errors, e => e.PropertyName == nameof(ReplaceOperationalContactCommand.Email));
+
+            // Refused BEFORE anything is written: no invitation (no new identity-change row), no new
+            // audit row, snapshot byte-identical.
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal(detail.OperationalContactEmail, after.OperationalContactEmail);
+            Assert.Equal(changesBefore.Count, (await ChangesAsync(requestId)).Count);
+            using (var db = NewContext())
+                Assert.Equal(auditCountBefore, await db.AuditLogs.CountAsync(a => a.VisitRequestId == requestId));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Patch 5 (E-15): two submissions of the SAME address, spelled differently (padding, casing),
+    /// must resolve to ONE account — never a duplicate. UserProvisionService already normalizes
+    /// (trim + lowercase) both its lookup and its write internally, independent of Patch 5's own
+    /// RegistrantEmail/OperationalContactEmail write-time normalization fix; this test pins that
+    /// guarantee directly at the unit responsible for it.
+    /// </summary>
+    [Fact]
+    public async Task Registrant_provisioning_normalizes_so_padding_and_casing_do_not_create_duplicate_identity()
+    {
+        RequireDb();
+        using var db = NewContext();
+        var uniqueLocal = "e15-" + Guid.NewGuid().ToString("N")[..8];
+        var provisioning = new UserProvisionService(db);
+
+        var firstId = await provisioning.EnsureVisitorAccountAsync(
+            $"  {uniqueLocal}@Example.COM  ", "Nguyễn Văn A", null, null, DateTime.UtcNow, CancellationToken.None);
+        var secondId = await provisioning.EnsureVisitorAccountAsync(
+            $"{uniqueLocal.ToUpperInvariant()}@EXAMPLE.com", "Nguyễn Văn A", null, null, DateTime.UtcNow, CancellationToken.None);
+
+        try
+        {
+            Assert.Equal(firstId, secondId); // same account, never a duplicate
+            Assert.Equal(1, await db.Users.CountAsync(u => u.Email == $"{uniqueLocal}@example.com"));
+        }
+        finally
+        {
+            var created = await db.Users.SingleAsync(u => u.UserId == firstId);
+            db.Users.Remove(created);
+            await db.SaveChangesAsync();
+        }
+    }
+
     /// <summary>ORG-INT-04. A blank Organization on a post-decision transfer leaves the current contact untouched.</summary>
     [Fact]
     public async Task Blank_organization_on_transfer_is_refused_and_current_contact_is_unchanged()

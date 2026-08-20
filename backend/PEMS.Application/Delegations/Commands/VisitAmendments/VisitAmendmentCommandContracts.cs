@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using FluentValidation;
 using MediatR;
 using PEMS.Application.Common.DTOs;
+using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.Delegations.Commands.VisitAmendments;
 
@@ -21,7 +22,8 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
             RuleFor(x => x.Patch.Registrant!.FullName).NotEmpty().MaximumLength(150);
             RuleFor(x => x.Patch.Registrant!.Organization).MaximumLength(200);
             RuleFor(x => x.Patch.Registrant!.JobTitle).MaximumLength(150);
-            RuleFor(x => x.Patch.Registrant!.Phone).MaximumLength(50);
+            RuleFor(x => x.Patch.Registrant!.Phone)
+                .MustBeAPhoneNumber("Số điện thoại người đăng ký không hợp lệ.");
         });
         RuleForEach(x => x.Patch.Instances).ChildRules(i =>
         {

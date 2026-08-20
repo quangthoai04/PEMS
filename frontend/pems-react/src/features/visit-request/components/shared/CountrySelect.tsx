@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import CreatableSelect from 'react-select/creatable';
+import Select from 'react-select';
 import type { StylesConfig, SingleValue } from 'react-select';
 import {
   getViCountryNames,
@@ -132,6 +133,15 @@ interface CountrySelectProps {
   storeLang?: CountryLang;
   /** Accessible name for the search input — react-select does not accept a `<label htmlFor>`. */
   ariaLabel?: string;
+  /**
+   * Patch 4 (nationality contract): when true, the field only accepts a pick from the ISO country
+   * list — no free-text "create" option. Every visit-request nationality surface (registrant, guest,
+   * support member) passes this; the backend is the actual authority (it resolves/rejects on write
+   * regardless), but a picker that still advertised free text here would just teach users to type
+   * something the next save refuses. Partner/profile forms leave this false — their contract was not
+   * touched by Patch 4.
+   */
+  strict?: boolean;
 }
 
 export const CountrySelect: React.FC<CountrySelectProps> = ({
@@ -144,6 +154,7 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
   disabled,
   storeLang = 'en',
   ariaLabel,
+  strict,
 }) => {
   const { t, i18n } = useTranslation(['visitRequest']);
   const displayLang: CountryLang = i18n.language?.toLowerCase().startsWith('vi') ? 'vi' : 'en';
@@ -175,26 +186,36 @@ export const CountrySelect: React.FC<CountrySelectProps> = ({
     [hasError, isCell]
   );
 
+  const commonProps = {
+    options,
+    value: selectedOption,
+    onChange: (opt: SingleValue<CountryOption>) => onChange(opt?.value ?? ''),
+    onBlur,
+    'aria-label': ariaLabel,
+    placeholder: placeholder ?? t('visitRequest:select.countryPlaceholder'),
+    styles,
+    isClearable: true,
+    isDisabled: disabled,
+    isSearchable: true,
+    menuPortalTarget: document.body,
+    menuPosition: 'fixed' as const,
+    noOptionsMessage: () => t('visitRequest:select.countryNoOptions'),
+    filterOption: (option: { label: string }, inputValue: string) =>
+      stripDiacritics(option.label).includes(stripDiacritics(inputValue)),
+  };
+
+  if (strict) {
+    // No onCreateOption / formatCreateLabel: the field only accepts a pick from `options`. A value
+    // that arrived from legacy data and matches nothing still displays (selectedOption's fallback
+    // above), it just cannot be RE-SUBMITTED without being changed to a real option.
+    return <Select<CountryOption> {...commonProps} />;
+  }
+
   return (
     <CreatableSelect<CountryOption>
-      options={options}
-      value={selectedOption}
-      onChange={(opt: SingleValue<CountryOption>) => onChange(opt?.value ?? '')}
+      {...commonProps}
       onCreateOption={(inputValue) => onChange(inputValue)}
-      onBlur={onBlur}
-      aria-label={ariaLabel}
-      placeholder={placeholder ?? t('visitRequest:select.countryPlaceholder')}
-      styles={styles}
-      isClearable
-      isDisabled={disabled}
-      isSearchable
-      menuPortalTarget={document.body}
-      menuPosition="fixed"
       formatCreateLabel={(input) => t('visitRequest:select.useInput', { input })}
-      noOptionsMessage={() => t('visitRequest:select.countryNoOptions')}
-      filterOption={(option, inputValue) =>
-        stripDiacritics(option.label).includes(stripDiacritics(inputValue))
-      }
     />
   );
 };

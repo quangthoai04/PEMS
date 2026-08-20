@@ -556,6 +556,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               control={form.control}
               render={({ field }) => (
                 <CountrySelect
+                  strict
                   value={field.value ?? ''}
                   // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
                   // được để trống" error immediately, including the pre-submit case where nothing

@@ -11,6 +11,7 @@ using PEMS.Application.Partners.VisitLinks.Commands.CreateOrUpdateVisitGuestPart
 using PEMS.Domain.Entities.ApiIntegrations;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 
@@ -69,7 +70,7 @@ public sealed class ConfirmBusinessCardContactCommandHandler
             PartnerId = partner.PartnerId,
             FullName = request.FullName.Trim(),
             Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant(),
-            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim()),
             JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
             DepartmentName = string.IsNullOrWhiteSpace(request.DepartmentName) ? null : request.DepartmentName.Trim(),
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),

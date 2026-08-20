@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -35,6 +36,11 @@ public sealed class VisitAmendmentV2Tests
     private const ulong Registrant = 8;
     private static bool? _dbUp;
     private static readonly DateTime Now = DateTime.Now;
+    // Mirrors VisitAmendmentService's own (private) serializer options — the approve path deserializes
+    // change-row JSON with PropertyNamingPolicy = CamelCase and case-sensitive matching, so a change row
+    // built by hand (bypassing SubmitAsync) must serialize with the same options or the round-trip
+    // silently drops every property.
+    private static readonly JsonSerializerOptions AmendmentJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     private static ApplicationDbContext NewContext()
         => new(new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -1289,6 +1295,138 @@ public sealed class VisitAmendmentV2Tests
                 Assert.Equal("Support Contact", support.FullName);
                 Assert.Equal(support.GuestMemberId, instance.FormDetail!.OperationalContactGuestMemberId);
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Patch 4 — nationality contract ──────────────────────────────────────────
+
+    /// <summary>
+    /// A member-list amendment is, from the write path's point of view, a copy-on-write replace exactly
+    /// like create — StageReplaceMembers resolves-or-rejects every row. Structural submit validation
+    /// (NotEmpty + MaximumLength) still passes an unresolvable nationality — same as before Patch 4 —
+    /// because those FluentValidation rules are also reused for pending-edit, where they must not
+    /// reject legacy content; the rejection happens at APPROVAL, the moment the new member rows are
+    /// actually written.
+    /// </summary>
+    [Fact]
+    public async Task Approving_a_member_list_amendment_rejects_an_unresolvable_nationality()
+    {
+        // Patch 4 hardening H4-4: a GENUINELY new/changed member nationality that does not resolve is
+        // now refused at SUBMIT (see the next test) — this test proves the approval-time guard still
+        // exists too (defense in depth), by writing a PENDING amendment directly rather than through
+        // SubmitAsync, simulating one somehow filed before the submit-time guard existed.
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+            var proposal = await BaselineProposalAsync(instanceA, b =>
+                b.Visitors[0] = b.Visitors[0] with { Nationality = "abcxyzcountry" });
+
+            ulong amendmentId; ulong hostA; ulong campusA;
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                var amendment = new VisitInstanceAmendment
+                {
+                    VisitRequestId = requestId,
+                    VisitInstanceId = instanceA,
+                    AmendmentNo = 1,
+                    Status = AmendmentStatuses.PendingApproval,
+                    BaseFormRevision = detail.FormRevision,
+                    BaseApprovalRevision = detail.ApprovalRevision,
+                    RequestedBy = Registrant,
+                    RequestedAt = Now,
+                    ExpiresAt = proposal.PlannedStartAt.AddHours(-VisitMutationPolicy.MutationCutoffHours),
+                    ExpectedInstanceRowVersion = (uint)proposal.ExpectedInstanceRowVersion,
+                    CreatedAt = Now,
+                };
+                amendment.Changes.Add(new VisitInstanceAmendmentChange
+                {
+                    FieldPath = VisitFieldClassifier.Visitors,
+                    ChangeClass = AmendmentChangeClasses.ApprovalSensitive,
+                    OldValueJson = null,
+                    NewValueJson = JsonSerializer.Serialize(proposal.Visitors, AmendmentJson),
+                    IsSensitive = true,
+                    DisplayOrder = 0,
+                    CreatedAt = Now,
+                });
+                db.VisitInstanceAmendments.Add(amendment);
+                await db.SaveChangesAsync();
+                amendmentId = amendment.AmendmentId;
+                var row = await db.VisitRequestCampuses.AsNoTracking().Where(c => c.VisitInstanceId == instanceA)
+                    .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+                hostA = row.CurrentHostUserId!.Value;
+                campusA = row.CampusId;
+            }
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Decide(db, new FakeUser(hostA, RoleCodes.Staff, UserSubRoles.Leader, campusA)).Handle(
+                        new ApproveVisitAmendmentCommand(instanceA, amendmentId, "OK"), CancellationToken.None));
+                Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Patch 4 hardening H4-4: the normal path a real proposal takes. A member's nationality is
+    /// GENUINELY new-or-changed content (the rest of that row is untouched, only nationality moved to
+    /// garbage) and must now be refused at SUBMIT — before a PENDING amendment nobody could ever
+    /// approve is created, notifying a Requester and a Staff Leader about nothing.
+    /// </summary>
+    [Fact]
+    public async Task Submitting_a_member_list_amendment_rejects_an_unresolvable_nationality_before_creating_it()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+            var proposal = await BaselineProposalAsync(instanceA, b =>
+                b.Visitors[0] = b.Visitors[0] with { Nationality = "abcxyzcountry" });
+
+            using var db = NewContext();
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None));
+            Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
+
+            Assert.False(await db.VisitInstanceAmendments.AnyAsync(a => a.VisitInstanceId == instanceA),
+                "a proposal that could never be approved must not be created as a PENDING amendment");
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// The other half of H4-4/H4-3: a member row whose content is BYTE-IDENTICAL to what is already on
+    /// the campus (here, an unresolvable legacy nationality nobody touched) must not block a proposal
+    /// that only changes something else about the same campus.
+    /// </summary>
+    [Fact]
+    public async Task Submitting_an_amendment_is_not_blocked_by_an_untouched_unresolvable_legacy_member_nationality()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+            using (var db = NewContext())
+            {
+                var links = await db.VisitInstanceGuestMembers.Where(l => l.VisitInstanceId == instanceA).ToListAsync();
+                var member = await db.VisitGuestMembers.SingleAsync(m => m.GuestMemberId == links[0].GuestMemberId);
+                member.Nationality = "Legacy Unrecognized Value";
+                await db.SaveChangesAsync();
+            }
+            var proposal = await BaselineProposalAsync(instanceA, b => b.Purpose = "Mục đích sửa qua đề xuất");
+            Assert.Equal("Legacy Unrecognized Value", proposal.Visitors[0].Nationality); // echoed back untouched
+
+            using var db2 = NewContext();
+            var dto = await Submit(db2, Registrant).Handle(
+                new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+            Assert.True(dto.AmendmentId > 0);
         }
         finally { await CleanupAsync(requestId); }
     }

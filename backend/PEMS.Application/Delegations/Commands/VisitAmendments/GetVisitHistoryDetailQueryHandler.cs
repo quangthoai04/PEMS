@@ -176,7 +176,7 @@ public sealed class GetVisitHistoryDetailQueryHandler
 
         var row = await _db.VisitRequestRevisionHistories.AsNoTracking()
             .Where(r => r.RequestRevisionHistoryId == revisionId && r.VisitRequestId == visitRequestId)
-            .Select(r => new { r.RequestRevision, r.SourceType, r.SnapshotJson, r.AppliedBy, r.AppliedAt })
+            .Select(r => new { r.RequestRevision, r.SourceType, r.SnapshotJson, r.AppliedBy, r.AppliedAt, r.Reason })
             .FirstOrDefaultAsync(ct)
             ?? throw new NotFoundException("Sự kiện lịch sử", (long)revisionId);
 
@@ -187,6 +187,14 @@ public sealed class GetVisitHistoryDetailQueryHandler
             .FirstOrDefaultAsync(ct);
 
         var (fields, _) = DiffSnapshots(previous?.SnapshotJson, row.SnapshotJson);
+
+        // Plan §7.4 — a field the snapshot diff left BeforeUnknown may still have a reliable answer: the
+        // exact old value the SAME write recorded in an immutable AuditLogChange. Recovery is gated on
+        // an EXACT correlation-id match (the GUID this row's writer minted once, alongside the ONE
+        // AuditLog row from the same call) — never nearest-timestamp/same-actor/latest-audit guessing,
+        // so a field that still comes back unmapped stays BeforeUnknown rather than being guessed at.
+        if (fields.Any(f => f.BeforeUnknown) && row.Reason is { Length: > 0 } correlationId)
+            fields = await RecoverFromCorrelatedAuditAsync(visitRequestId, correlationId, fields, ct);
 
         return new VisitHistoryDetailDto(
             VisitHistoryEventSources.Build(VisitHistoryEventSources.RequestRevision, revisionId),
@@ -201,6 +209,56 @@ public sealed class GetVisitHistoryDetailQueryHandler
             ComparisonStatus: previous is not null || row.RequestRevision <= 1
                 ? VisitHistoryComparisonStatuses.Available
                 : VisitHistoryComparisonStatuses.PreviousRevisionMissing);
+    }
+
+    /// <summary>
+    /// Maps an <c>AuditLogChange.FieldName</c> onto the request-revision snapshot's field code, so a
+    /// value recorded by one writer can recover a field left <c>BeforeUnknown</c> by another. Two
+    /// spellings exist because two writers exist: <see cref="VisitFieldClassifier"/>'s dotted paths
+    /// (Safe Edit) and <c>VisitRequestV2EditService.ApplyCommonFields</c>'s own camelCase names
+    /// (pending edit / resubmit, e.g. "registrantNationality") — the latter already equal the snapshot
+    /// code, so only the dotted spellings need an entry here.
+    /// </summary>
+    private static readonly Dictionary<string, string> RequestAuditFieldAliases = new(StringComparer.Ordinal)
+    {
+        [VisitFieldClassifier.RegistrantFullName] = "registrantFullName",
+        [VisitFieldClassifier.RegistrantOrganization] = "registrantOrganization",
+        [VisitFieldClassifier.RegistrantNationality] = "registrantNationality",
+        [VisitFieldClassifier.RegistrantJobTitle] = "registrantJobTitle",
+        [VisitFieldClassifier.RegistrantPhone] = "registrantPhone",
+    };
+
+    /// <summary>
+    /// Recovers BeforeUnknown fields from the ONE AuditLog row written by the SAME call as this
+    /// revision — found by the exact correlation-id match, never by proximity. A field with no
+    /// correlated AuditLogChange (a different field moved that call, or no audit was written at all)
+    /// is returned unchanged: still BeforeUnknown, per plan §4.3 "unknown remains unknown".
+    /// </summary>
+    private async Task<List<VisitHistoryFieldChangeDto>> RecoverFromCorrelatedAuditAsync(
+        ulong visitRequestId, string correlationId, List<VisitHistoryFieldChangeDto> fields, CancellationToken ct)
+    {
+        var audits = await _db.AuditLogs.AsNoTracking()
+            .Where(a => a.VisitRequestId == visitRequestId && a.CorrelationId == correlationId)
+            .Select(a => a.Changes
+                .Select(c => new ValueTuple<string, string?>(c.FieldName, c.OldValueText))
+                .ToList())
+            .ToListAsync(ct);
+        // The correlation id is minted fresh (Guid.NewGuid()) once per write call and used by exactly
+        // one AuditLog row — if more than one somehow matches, the id no longer uniquely identifies a
+        // single call's facts, so recovery is skipped entirely rather than picking one arbitrarily.
+        if (audits.Count != 1) return fields;
+
+        var oldByCode = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var (fieldName, oldValue) in audits[0])
+        {
+            var code = RequestAuditFieldAliases.TryGetValue(fieldName, out var alias) ? alias : fieldName;
+            oldByCode[code] = oldValue;
+        }
+
+        return fields.Select(f => f.BeforeUnknown && oldByCode.TryGetValue(f.FieldCode, out var recovered)
+                ? f with { BeforeValue = recovered, BeforeUnknown = false }
+                : f)
+            .ToList();
     }
 
     // ── Amendment: the immutable change rows ARE the diff ──

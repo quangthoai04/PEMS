@@ -79,16 +79,31 @@ export function useCampusDetail(campusId: string | number | undefined) {
   return { data, loading, error, notFound, refetch: fetchDetail };
 }
 
-/** Loads UC-83 filter options once (cities/campuses/statuses from the database). */
-export function useCampusFilterOptions() {
-  const [options, setOptions] = useState<CampusFilterOptions | null>(null);
+/**
+ * Loads UC-83 filter options once (cities/campuses/statuses from the database).
+ *
+ * `GET /campuses/filter-options` is HO-only server-side (Campus Management, RoleAccessPolicy.
+ * CanAccessCampusManagement — ADMIN included). Every caller outside the Campus Management
+ * screen itself must pass `enabled: false` for any viewer who isn't HO — Patch 6 hardening,
+ * after this hook firing unconditionally on every mount was found sending this request (and
+ * getting a 403 the catch below silently swallowed) for every non-HO role on four different
+ * management screens. Defaults to `true` so `CampusManagement.tsx` itself — HO-only by route
+ * guard, so always a valid caller — needs no change.
+ */
+export function useCampusFilterOptions(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
+  const [result, setResult] = useState<CampusFilterOptions | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      setResult(null);
+      return;
+    }
     let active = true;
     campusManagementApi
       .getFilterOptions()
       .then((res) => {
-        if (active) setOptions(res);
+        if (active) setResult(res);
       })
       .catch(() => {
         /* filter options are best-effort; the list still works without them */
@@ -96,9 +111,9 @@ export function useCampusFilterOptions() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [enabled]);
 
-  return options;
+  return result;
 }
 
 /** UC-86 mutation — enable/disable a campus, with submitting/error state. */

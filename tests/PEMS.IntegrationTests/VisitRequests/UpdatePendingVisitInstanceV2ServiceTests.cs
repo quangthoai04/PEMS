@@ -61,7 +61,7 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
         var start = Now.AddDays(startOffsetDays);
         return new CampusVisitFormDto(
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, purpose, "Nội dung",
-            new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
+            new List<VisitorDto> { new(visitorName, "Việt Nam", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", "op@example.com"),
             "EN", null, "DECLINED", null, null);
@@ -448,6 +448,88 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
 
             // Sibling campus (HCM) is completely untouched.
             Assert.Equal(hcmBefore, Snapshot(hcm));
+        });
+    }
+
+    // ── Patch 4 hardening (H4-1..H4-9) — the per-campus instance-edit path shares the SAME
+    //    VisitRequestV2Canonical.CanonicalContent / VisitRequestV2EditOps.StageReplaceMembers gate as
+    //    the whole-request pending-edit path (see UpdatePendingVisitRequestV2ServiceTests, which covers
+    //    the full VN/Vietnam/KR/South Korea alias matrix); these two prove the same fixed gate holds
+    //    here too, not a second copy of the logic. ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// This endpoint saves exactly ONE campus and refuses outright when nothing about it actually moved
+    /// ("Không có thay đổi nào để lưu cho cơ sở này." — see line ~709 of VisitRequestV2EditService),
+    /// unlike the whole-request pending edit, which silently skips an untouched campus among several.
+    /// An alias-only nationality respelling must land in THAT bucket — recognized as no real change —
+    /// rather than being treated as content that changed. Before the H4-1 fix, the raw-text compare
+    /// would have seen "Hàn Quốc" vs "South Korea" as different and let this proceed into a full member
+    /// replace + FormRevision bump instead of surfacing the correct "nothing to save" refusal.
+    /// </summary>
+    [Fact]
+    public async Task Member_nationality_alias_only_resubmit_is_recognized_as_no_real_change_on_the_instance_edit_path()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var initial = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Hàn Quốc", "Guest", "GuestOrg") },
+            };
+            var r = await create.CreateV2Async(CreateForm(initial), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            await db.SaveChangesAsync();
+            var memberIdsBefore = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var revisionBefore = hn.FormDetail!.FormRevision;
+
+            var resubmitted = initial with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "South Korea", "Guest", "GuestOrg") },
+            };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyInstancePendingEditAsync(
+                    r, hn, Content(hn, resubmitted), Registrant, Now,
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default));
+            Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+
+            // Refused BEFORE anything was written: revision, members and stored spelling are untouched.
+            Assert.Equal(revisionBefore, hn.FormDetail!.FormRevision);
+            Assert.Equal(memberIdsBefore, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
+            Assert.False(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                h.VisitInstanceId == hn.VisitInstanceId && h.SourceType == FormRevisionSourceTypes.PendingEdit));
+            var savedNationality = await db.VisitGuestMembers.AsNoTracking()
+                .Where(m => memberIdsBefore.Contains(m.GuestMemberId)).Select(m => m.Nationality).SingleAsync();
+            Assert.Equal("Hàn Quốc", savedNationality);
+        });
+    }
+
+    [Fact]
+    public async Task Instance_edit_of_purpose_leaves_an_unresolvable_legacy_member_nationality_untouched()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var memberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var member = r.GuestMembers.Single(m => m.GuestMemberId == memberId);
+            member.Nationality = "Legacy Unrecognized Value";
+            await db.SaveChangesAsync();
+
+            var edited = Campus("HN", purpose: "Mục đích mới") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Legacy Unrecognized Value", "Guest", "GuestOrg") },
+            };
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, edited), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, default); // must not throw
+
+            var newMemberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var savedNationality = await db.VisitGuestMembers.AsNoTracking()
+                .Where(m => m.GuestMemberId == newMemberId).Select(m => m.Nationality).SingleAsync();
+            Assert.Equal("Legacy Unrecognized Value", savedNationality);
+            Assert.Equal("Mục đích mới", hn.FormDetail!.Purpose);
         });
     }
 }

@@ -54,7 +54,7 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
         var start = Now.AddDays(startOffsetDays);
         return new CampusVisitFormDto(
             code, start, start.AddMinutes(durationMinutes), delegation, "MEETING", null, purpose, "Nội dung",
-            new List<VisitorDto> { new(visitorName, "VN", "Guest", "GuestOrg") },
+            new List<VisitorDto> { new(visitorName, "Việt Nam", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             new ContactPointDto(contactName, "OpOrg", "Trưởng phòng Hợp tác", contactPhone, contactEmail),
             "EN", null, "DECLINED", null, null);
@@ -450,6 +450,47 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
     }
 
     /// <summary>
+    /// Patch 5 (E-9): the registrant email immutability guard must not fire on a client echoing back
+    /// EXACTLY the address it was served, just with incidental casing/whitespace difference — only a
+    /// GENUINE change (a different mailbox) is refused. Before this patch, RegistrantEmail was persisted
+    /// raw-cased at create and the immutability compare was a bare OrdinalIgnoreCase (case-tolerant, but
+    /// not whitespace-tolerant), so a create with padded/mixed-case input followed by an edit that
+    /// echoed a differently-padded/cased (but same) address could spuriously throw
+    /// IMMUTABLE_REGISTRANT_EMAIL for zero real change.
+    /// </summary>
+    [Fact]
+    public async Task Registrant_email_echoed_back_with_different_casing_or_padding_is_not_a_change()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var form = CreateForm(Campus("HN")) with
+            {
+                Registrant = new RegistrantInputV2(
+                    "Registrant", "VN", "Org", "Job", "+8491", "  Padded.User@Example.COM  "),
+            };
+            var r = await create.CreateV2Async(form, Registrant, "VISITOR_SUBMITTED", Now, default);
+
+            var saved = await db.VisitRequests.AsNoTracking()
+                .SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
+            Assert.Equal("padded.user@example.com", saved.RegistrantEmail); // trim + lowercase, persisted
+
+            var keep = Keep(InstanceOf(r, "HN"), Campus("HN"));
+            var echoedDifferently = Edit(r, keep) with
+            {
+                Registrant = new RegistrantInputV2(
+                    "Registrant", "VN", "Org", "Job", "+8491", "PADDED.USER@EXAMPLE.COM"),
+            };
+
+            // Must NOT throw — same mailbox, different spelling of the same value already stored.
+            await edit.ApplyPendingEditAsync(r, echoedDifferently, Registrant, Now, default);
+
+            var after = await db.VisitRequests.AsNoTracking()
+                .SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
+            Assert.Equal("padded.user@example.com", after.RegistrantEmail); // still canonical, not re-cased
+        });
+    }
+
+    /// <summary>
     /// The registrant's DESCRIPTIVE snapshot — name, nationality, organisation, job title, phone — is
     /// editable, and used not to be.
     ///
@@ -487,7 +528,9 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             var saved = await db.VisitRequests.AsNoTracking()
                 .SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
             Assert.Equal("Nguyễn Văn Sửa", saved.RegistrantFullName);
-            Assert.Equal("JP", saved.RegistrantNationality);
+            // Patch 4: "JP" is a genuine change from the seeded "VN"/Việt Nam baseline, so it resolves
+            // and persists as the canonical Vietnamese short name, not the alpha-2 code sent.
+            Assert.Equal("Nhật Bản", saved.RegistrantNationality);
             Assert.Equal("Đại học Kyoto", saved.RegistrantOrganization);
             Assert.Equal("Trưởng đoàn", saved.RegistrantJobTitle);
             Assert.Equal("+84912345678", saved.RegistrantPhone);
@@ -779,6 +822,273 @@ public sealed class UpdatePendingVisitRequestV2ServiceTests
             Assert.Equal(2u, revisions[1].FormRevision);
             Assert.Equal(FormRevisionSourceTypes.PendingEdit, revisions[1].SourceType);
             Assert.Equal(2u, hn.FormDetail.FormRevision);
+        });
+    }
+
+    // ── Patch 4 — nationality contract ──────────────────────────────────────────
+
+    [Fact]
+    public async Task Create_rejects_a_registrant_nationality_that_does_not_resolve()
+    {
+        await RunAsync(async (db, create, _) =>
+        {
+            var form = CreateForm(Campus("HN")) with
+            {
+                Registrant = new RegistrantInputV2("Registrant", "FPTU123", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+                () => create.CreateV2Async(form, Registrant, "VISITOR_SUBMITTED", Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
+        });
+    }
+
+    [Fact]
+    public async Task Create_rejects_a_guest_nationality_that_does_not_resolve()
+    {
+        await RunAsync(async (db, create, _) =>
+        {
+            var campus = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "abcxyzcountry", "Guest", "GuestOrg") },
+            };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+                () => create.CreateV2Async(CreateForm(campus), Registrant, "VISITOR_SUBMITTED", Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
+        });
+    }
+
+    /// <summary>
+    /// The Patch 4 decision's own example: "Hàn Quốc" / "South Korea" / "KR" must all resolve to the
+    /// SAME canonical value. Standing in for "VI UI / EN UI both persist canonical VI": whichever
+    /// language/spelling a client's country picker happened to send, the stored value never differs.
+    /// </summary>
+    [Theory]
+    [InlineData("Hàn Quốc")]
+    [InlineData("South Korea")]
+    [InlineData("KR")]
+    public async Task Create_persists_the_same_canonical_value_regardless_of_input_spelling(string input)
+    {
+        await RunAsync(async (db, create, _) =>
+        {
+            var form = CreateForm(Campus("HN")) with
+            {
+                Registrant = new RegistrantInputV2("Registrant", input, "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            };
+            var r = await create.CreateV2Async(form, Registrant, "VISITOR_SUBMITTED", Now, default);
+            var saved = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
+            Assert.Equal("Hàn Quốc", saved.RegistrantNationality);
+        });
+    }
+
+    /// <summary>
+    /// Legacy compatibility (Patch 4 decision, explicit constraint): an edit that never touches
+    /// nationality must not be blocked — or silently rewritten — just because the legacy value sitting
+    /// on the request does not resolve to a real country. Simulates pre-Patch-4 data by writing an
+    /// unresolvable value directly (bypassing the service, exactly like data written before this patch
+    /// existed), then edits only the phone.
+    /// </summary>
+    [Fact]
+    public async Task Full_edit_of_an_unrelated_field_leaves_an_unresolvable_legacy_nationality_untouched()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            r.RegistrantNationality = "Legacy Unrecognized Value";
+            await db.SaveChangesAsync();
+
+            var keep = Keep(InstanceOf(r, "HN"), Campus("HN"));
+            var corrected = Edit(r, keep) with
+            {
+                Registrant = new RegistrantInputV2(
+                    r.RegistrantFullName, r.RegistrantNationality, r.RegistrantOrganization,
+                    r.RegistrantJobTitle ?? "Job", "+84987654321", r.RegistrantEmail),
+            };
+
+            // Must NOT throw: nationality is being echoed back unchanged, not genuinely re-typed.
+            await edit.ApplyPendingEditAsync(r, corrected, Registrant, Now, default);
+
+            var saved = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == r.VisitRequestId);
+            Assert.Equal("+84987654321", saved.RegistrantPhone);
+            Assert.Equal("Legacy Unrecognized Value", saved.RegistrantNationality);
+        });
+    }
+
+    [Fact]
+    public async Task Full_edit_rejects_a_guest_nationality_that_does_not_resolve_when_that_campus_content_changes()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+
+            // Content genuinely changes (purpose + the guest's nationality), so this campus's member
+            // set is copy-on-write replaced — a brand-new write, exactly like create.
+            var changed = Campus("HN", purpose: "Mục đích mới") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "abcxyzcountry", "Guest", "GuestOrg") },
+            };
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+                () => edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, changed)), Registrant, Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
+        });
+    }
+
+    // ── Patch 4 hardening (H4-1..H4-9) ──────────────────────────────────────────
+    //
+    // The completion report for the original Patch 4 pass found that its own regression fixture
+    // ("VN" resubmitted where "Việt Nam" had just been stored by create) papered over a REAL bug: the
+    // campus content-changed gate (VisitRequestV2Canonical.CanonicalContent) compared member
+    // nationality with a raw uppercase-only normalize, so an alias-only respelling of the SAME country
+    // registered as a content change — full member replacement, a FormRevision bump, a
+    // revision-history row — for zero real difference. These tests exercise the FIXED gate directly,
+    // with the alias mismatch as the ONLY thing that differs between create and resubmit (the previous
+    // tests changed the fixture to avoid the mismatch entirely, which proved nothing about the gate).
+
+    /// <summary>
+    /// H4-1/H4-2/H4-3/H4-4: two nationality strings that resolve to the same country are the same
+    /// business value — resubmitting an alias-only respelling of an untouched member (nothing else on
+    /// the campus moves) must be a TRUE no-op: no member replacement (H4-1..H4-4 proper), no
+    /// FormRevision bump (H4-6), no revision-history row (H4-7), and the stored text is not silently
+    /// re-cased to the alias's own spelling.
+    /// </summary>
+    [Theory]
+    [InlineData("Việt Nam", "VN")]
+    [InlineData("Việt Nam", "Vietnam")]
+    [InlineData("Hàn Quốc", "KR")]
+    [InlineData("Hàn Quốc", "South Korea")]
+    public async Task Member_nationality_alias_only_resubmit_is_a_true_noop(string stored, string aliasInput)
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var initial = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", stored, "Guest", "GuestOrg") },
+            };
+            var r = await create.CreateV2Async(CreateForm(initial), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var memberIdsBefore = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var rowVersionBefore = hn.RowVersion;
+
+            var resubmitted = initial with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", aliasInput, "Guest", "GuestOrg") },
+            };
+            await edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, resubmitted)), Registrant, Now, default);
+
+            Assert.Equal(1u, hn.FormDetail!.FormRevision); // H4-6: not bumped
+            Assert.Equal(rowVersionBefore, hn.RowVersion);
+            Assert.Equal(memberIdsBefore, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList()); // no replacement
+            Assert.False(await db.VisitInstanceFormRevisionHistories.AnyAsync(h => // H4-7: no history row
+                h.VisitInstanceId == hn.VisitInstanceId && h.SourceType == FormRevisionSourceTypes.PendingEdit));
+            var savedNationality = await db.VisitGuestMembers.AsNoTracking()
+                .Where(m => memberIdsBefore.Contains(m.GuestMemberId)).Select(m => m.Nationality).SingleAsync();
+            Assert.Equal(stored, savedNationality); // not silently re-cased to the alias's own spelling
+        });
+    }
+
+    /// <summary>H4-5: an alias-only nationality change on campus A must not touch A's OWN revision state
+    /// beyond the no-op guarantee above, and must leave a sibling campus B completely untouched — the
+    /// per-campus isolation the whole edit pipeline promises elsewhere must hold for this gate too.</summary>
+    [Fact]
+    public async Task Multi_campus_alias_only_nationality_change_in_A_does_not_touch_A_or_B()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var campusA = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Việt Nam", "Guest", "GuestOrg") },
+            };
+            var campusB = Campus("HCM");
+            var r = await create.CreateV2Async(CreateForm(campusA, campusB), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            var hnMemberIdsBefore = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var hnRowVersionBefore = hn.RowVersion;
+            var hcmMemberIdsBefore = hcm.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var hcmRowVersionBefore = hcm.RowVersion;
+            var hcmRevisionBefore = hcm.FormDetail!.FormRevision;
+
+            var aliasedA = campusA with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
+            };
+            await edit.ApplyPendingEditAsync(
+                r, Edit(r, Keep(hn, aliasedA), Keep(hcm, campusB)), Registrant, Now, default);
+
+            Assert.Equal(1u, hn.FormDetail!.FormRevision);
+            Assert.Equal(hnRowVersionBefore, hn.RowVersion);
+            Assert.Equal(hnMemberIdsBefore, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
+            Assert.Equal(hcmRevisionBefore, hcm.FormDetail!.FormRevision);
+            Assert.Equal(hcmRowVersionBefore, hcm.RowVersion);
+            Assert.Equal(hcmMemberIdsBefore, hcm.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
+            Assert.False(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                (h.VisitInstanceId == hn.VisitInstanceId || h.VisitInstanceId == hcm.VisitInstanceId)
+                && h.SourceType == FormRevisionSourceTypes.PendingEdit));
+        });
+    }
+
+    /// <summary>
+    /// H4-9: an unresolvable LEGACY member survives an edit to something ELSE on the same campus. A
+    /// campus's member set is copy-on-write — replaced wholesale the moment ANY campus field changes,
+    /// not just this member's own — so MemberContentIndex is what carves a byte-identical member back
+    /// out of that wholesale rewrite rather than forcing it through NationalityResolution.
+    /// </summary>
+    [Fact]
+    public async Task Full_edit_of_purpose_leaves_an_unresolvable_legacy_member_nationality_untouched()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var memberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var member = r.GuestMembers.Single(m => m.GuestMemberId == memberId);
+            member.Nationality = "Legacy Unrecognized Value";
+            await db.SaveChangesAsync();
+
+            // Purpose changes — genuinely unrelated to the guest — while the guest is echoed back
+            // byte-identical, exactly as the edit screen would re-send it unmodified.
+            var edited = Campus("HN", purpose: "Mục đích mới") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Legacy Unrecognized Value", "Guest", "GuestOrg") },
+            };
+
+            // Must NOT throw: this member's own content never moved.
+            await edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, edited)), Registrant, Now, default);
+
+            var newMemberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var savedNationality = await db.VisitGuestMembers.AsNoTracking()
+                .Where(m => m.GuestMemberId == newMemberId).Select(m => m.Nationality).SingleAsync();
+            Assert.Equal("Legacy Unrecognized Value", savedNationality);
+            Assert.Equal("Mục đích mới", hn.FormDetail!.Purpose);
+        });
+    }
+
+    /// <summary>
+    /// The boundary of H4-9's protection, made explicit rather than assumed: the moment the SAME
+    /// unresolvable-legacy member's own content changes, it is new-or-changed content for that row and
+    /// must resolve like a fresh create — this is the documented, evidence-based limitation
+    /// (MemberContentIndex's own doc comment), not a gap nobody knew about.
+    /// </summary>
+    [Fact]
+    public async Task Full_edit_rejects_an_unresolvable_legacy_member_nationality_when_that_members_own_content_changes()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var memberId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var member = r.GuestMembers.Single(m => m.GuestMemberId == memberId);
+            member.Nationality = "Legacy Unrecognized Value";
+            await db.SaveChangesAsync();
+
+            var edited = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "Legacy Unrecognized Value", "Trưởng đoàn mới", "GuestOrg") },
+            };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(
+                () => edit.ApplyPendingEditAsync(r, Edit(r, Keep(hn, edited)), Registrant, Now, default));
+            Assert.Equal(VisitRequestErrorCodes.InvalidNationality, ex.ErrorCode);
         });
     }
 }

@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { ExcelValidationError, VisitorEntry, SupportTeamEntry } from '../../types/visitRequest.types';
+import { countryNameToAlpha2, getViCountryNames } from '../../../../shared/utils/countryNames';
 
 /** Translator for user-facing Excel messages, supplied by the calling component. */
 export type ExcelTranslator = (key: string, options?: Record<string, unknown>) => string;
@@ -188,6 +189,12 @@ const scanRows = (
     const rowNum = i + 2; // 1-based, header occupies row 1
     if (row.every((c) => String(c).trim() === '')) return;
 
+    // Patch 4 (nationality contract): the imported value is canonicalized to the Vietnamese short
+    // name here, at the point the user can still fix the cell — mirrors the backend's own
+    // resolve-or-reject rule (every member row an import creates is, from the server's point of
+    // view, a brand-new write, exactly like typing it into the form). A cell that resolves to no
+    // real country is a row-level error, same tier as a blank/oversized cell, not a silent pass-through.
+    let canonicalNationality: string | null = null;
     for (const id of REQUIRED_COLUMNS) {
       const value = get(row, id);
       const column = columnLabel(t, id);
@@ -204,6 +211,16 @@ const scanRows = (
           message: t('visitRequest:excel.errors.cellMaxLength', { max, length: value.length }),
         });
         errorRows.add(rowNum);
+        continue; // already one error for this cell — an oversized value is not also "checked" for country
+      }
+      if (id === 'nationality') {
+        const code = countryNameToAlpha2(value);
+        if (code) {
+          canonicalNationality = getViCountryNames()[code] ?? value;
+        } else {
+          errors.push({ row: rowNum, column, message: t('visitRequest:excel.errors.cellInvalidCountry', { value }) });
+          errorRows.add(rowNum);
+        }
       }
     }
 
@@ -213,7 +230,7 @@ const scanRows = (
       fullName: get(row, 'fullName'),
       jobTitle: get(row, 'jobTitle'),
       organization: get(row, 'organization'),
-      nationality: get(row, 'nationality'),
+      nationality: canonicalNationality ?? get(row, 'nationality'),
     };
     const hash = createHash(entry.fullName, entry.jobTitle, entry.organization, entry.nationality);
     if (seen.has(hash)) {

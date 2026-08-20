@@ -1191,8 +1191,15 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </summary>
     private static void ValidateImmutableFields(VisitRequest request, VisitRequestEditV2Dto edit)
     {
+        // Patch 5: compared in the SAME normalized space (trim + lowercase) every other identity/
+        // snapshot check in this file already uses (EnsureContactSnapshotUnchanged, ApplyCommonFields'
+        // own registrant fields) — a client echoing back exactly what it was served, with only
+        // incidental whitespace or casing difference, must never trip this. The bare OrdinalIgnoreCase
+        // compare this replaced tolerated case but not whitespace, which could spuriously fail on a
+        // registrant email persisted with (or an echo carrying) untrimmed padding.
         var r = edit.Registrant;
-        if (!string.Equals(request.RegistrantEmail, r.Email, StringComparison.OrdinalIgnoreCase))
+        if (VisitRequestFingerprintBuilder.NormalizeEmail(request.RegistrantEmail)
+            != VisitRequestFingerprintBuilder.NormalizeEmail(r.Email))
         {
             throw new BusinessRuleException(
                 "Không được phép đổi email người đăng ký trong biểu mẫu. " +
@@ -1324,10 +1331,44 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             assign(value);
         }
 
+        // Patch 4: resolves the incoming value to a real country's canonical Vietnamese short name
+        // before comparing — see the call site below for why raw-string comparison is wrong here.
+        // Rejects only a GENUINE change to something that does not resolve; an unresolvable value
+        // that is not actually changing (the client's echo of legacy data) passes through untouched.
+        void ApplyNationality(string? incoming, string current, Action<string> assign, string field)
+        {
+            if (string.IsNullOrWhiteSpace(incoming)) return;
+            var trimmedIncoming = incoming.Trim();
+
+            var incomingResolved = CountryName.TryResolve(trimmedIncoming, out var incomingCanonical);
+            var currentResolved = CountryName.TryResolve(current, out var currentCanonical);
+            var effectiveCurrent = currentResolved ? currentCanonical! : current;
+            var effectiveIncoming = incomingResolved ? incomingCanonical! : trimmedIncoming;
+
+            if (string.Equals(effectiveCurrent, effectiveIncoming, StringComparison.Ordinal))
+                return; // same country (or the same unresolved text) either way — no real change
+
+            if (!incomingResolved)
+                throw new BusinessRuleException(
+                    $"Quốc tịch người đăng ký không hợp lệ: '{trimmedIncoming}'. {CountryName.FormatHint}",
+                    VisitRequestErrorCodes.InvalidNationality);
+
+            Track(field, current, incomingCanonical);
+            assign(incomingCanonical!);
+        }
+
+        // Nationality (Patch 4): compared in CANONICAL space, not raw text. The client always echoes
+        // back whatever the read model returned — including on an edit that never touched this field
+        // at all — so comparing raw strings would treat "Hàn Quốc" vs a re-picked "South Korea" (or a
+        // legacy row's own casing/spelling drift) as a change on every unrelated save, writing a
+        // representation-only entry into history for a field the user never opened. Resolving BOTH
+        // sides first means a genuinely unresolvable legacy value that comes back unchanged is left
+        // exactly as it was — only an ACTUAL change is required to name a real country.
+        ApplyNationality(r.Nationality, request.RegistrantNationality,
+            v => request.RegistrantNationality = v, "registrantNationality");
+
         ApplyRequired(r.FullName, request.RegistrantFullName,
             v => request.RegistrantFullName = v, "registrantFullName");
-        ApplyRequired(r.Nationality, request.RegistrantNationality,
-            v => request.RegistrantNationality = v, "registrantNationality");
         ApplyRequired(r.JobTitle, request.RegistrantJobTitle,
             v => request.RegistrantJobTitle = v, "registrantJobTitle");
 
@@ -1355,7 +1396,15 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     private static CampusVisitFormDto CurrentContentOf(
         VisitRequest request, VisitRequestCampus instance, VisitInstanceFormDetail d)
     {
-        var membersById = request.GuestMembers.ToDictionary(m => m.GuestMemberId);
+        // Called per instance, BEFORE flush #1 — an earlier instance in this same edit may already
+        // have staged its copy-on-write replacement members (StageReplaceMembers), which still carry
+        // the unassigned GuestMemberId 0 until that flush. Two or more such placeholders collide on
+        // ToDictionary. They are harmless to collapse here: no instance's GuestMemberLinks can
+        // reference id 0 (a real GuestMemberId is never 0, and LinkMembers only wires up the new rows
+        // to their owning instance AFTER flush #1), so this instance's own lookups below only ever
+        // resolve real, already-distinct ids regardless of which placeholder wins the collision.
+        var membersById = new Dictionary<ulong, VisitGuestMember>();
+        foreach (var m in request.GuestMembers) membersById[m.GuestMemberId] = m;
         var linked = instance.GuestMemberLinks
             .OrderBy(l => l.DisplayOrder)
             .Select(l => membersById.TryGetValue(l.GuestMemberId, out var m) ? m : null)

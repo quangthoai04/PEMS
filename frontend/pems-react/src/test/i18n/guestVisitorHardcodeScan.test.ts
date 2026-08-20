@@ -303,14 +303,16 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     12: "`.replace(/[đĐ]/g, 'd')` — normalizing Vietnamese đ/Đ for search matching, not UI text.",
   },
   'features/visit-request/components/shared/CountrySelect.tsx': {
-    47: "`.replace(/đ/g, 'd')` — diacritic-stripping for search filtering (see stripDiacritics above), not UI text. The component itself is fully bilingual (t() for placeholder/create-label/no-options, dynamic VI/EN country name source).",
-    48: "`.replace(/Đ/g, 'D')` — same diacritic-stripping, not UI text.",
+    // Patch 4: shifted +1 by the new `import Select from 'react-select'` line.
+    48: "`.replace(/đ/g, 'd')` — diacritic-stripping for search filtering (see stripDiacritics above), not UI text. The component itself is fully bilingual (t() for placeholder/create-label/no-options, dynamic VI/EN country name source).",
+    49: "`.replace(/Đ/g, 'D')` — same diacritic-stripping, not UI text.",
   },
   'features/visit-request/components/ExcelUpload/excelValidator.ts': {
-    40: "COLUMN_ALIASES.fullName — deliberately bilingual column-header MATCHING data (own comment: \"a file downloaded in one language must still parse when uploaded in the other\"), not rendered UI text.",
-    41: 'COLUMN_ALIASES.jobTitle — same bilingual header-matching data.',
-    42: 'COLUMN_ALIASES.organization — same bilingual header-matching data.',
-    43: 'COLUMN_ALIASES.nationality — same bilingual header-matching data.',
+    // Patch 4: shifted +1 by the new countryNames import line.
+    41: "COLUMN_ALIASES.fullName — deliberately bilingual column-header MATCHING data (own comment: \"a file downloaded in one language must still parse when uploaded in the other\"), not rendered UI text.",
+    42: 'COLUMN_ALIASES.jobTitle — same bilingual header-matching data.',
+    43: 'COLUMN_ALIASES.organization — same bilingual header-matching data.',
+    44: 'COLUMN_ALIASES.nationality — same bilingual header-matching data.',
   },
   'shared/api/httpClient.ts': {
     122: 'FORCED_LOGOUT_REASON_KEY fallback message (BR-AUTH-CAMPUS-08). PublicHomePage.tsx now consumes and renders this value one-shot -- this line is the ONLY hardcoded-VI source for it (the interceptor prefers the backend-supplied errorBody.message when present). Still not i18n-translated: pending a proper follow-up to move this fallback into validation/errors locale JSON.',
@@ -330,11 +332,15 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     72: 'Same lookup-table data key.', 73: 'Same lookup-table data key.',
   },
   'shared/utils/countryNames.ts': {
+    // Patch 4 hardening (H4-2): shifted +1 for every line at/after EXTRA_NAME_ALIASES by the new
+    // 2-line JSDoc comment above it (`export`ing the const for the backend parity-guard generator).
+    // The new getAliasesByAlpha2()/buildCountryDataSnapshot() functions below add Vietnamese-worded
+    // JSDoc of their own, but comments are exempt from this scan by construction (classifyCommentLines).
     20: 'VI<->code country-name data table (feeds getViCountryNames()/getEnCountryNames(), consumed bilingually by CountrySelect.tsx/useCountryTranslation.ts, both confirmed already fully bilingual) — the VI half of legitimate bilingual data, not untranslated UI text.',
     21: 'Same bilingual data table.', 23: 'Same bilingual data table.', 24: 'Same bilingual data table.',
-    29: 'Same bilingual data table.', 30: 'Same bilingual data table.', 34: 'Same bilingual data table.',
-    36: 'Same bilingual data table.', 37: 'Same bilingual data table.', 38: 'Same bilingual data table.',
-    40: 'Same bilingual data table.',
+    30: 'Same bilingual data table.', 31: 'Same bilingual data table.', 35: 'Same bilingual data table.',
+    37: 'Same bilingual data table.', 38: 'Same bilingual data table.', 39: 'Same bilingual data table.',
+    41: 'Same bilingual data table.',
   },
   'shared/utils/vietnamTime.ts': {
     // formatVietnamRelative() — the file's OWN comment block (right above these lines) documents

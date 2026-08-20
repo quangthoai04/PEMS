@@ -13,6 +13,8 @@
     "audit:dark": "node scripts/audit-dark-mode.mjs",
     "audit:form-typography": "node scripts/audit-form-typography.mjs",
     "audit:responsive": "node scripts/audit-responsive.mjs",
+    "gen:country-data": "tsx scripts/generate-country-data.ts",
+    "check:country-data": "tsx scripts/generate-country-data.ts --check",
     "test:e2e": "playwright test",
     "test:e2e:realstack": "node scripts/run-realstack-e2e.mjs"
   },

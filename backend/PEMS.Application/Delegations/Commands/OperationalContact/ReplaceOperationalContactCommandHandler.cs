@@ -14,6 +14,7 @@ using PEMS.Application.Delegations.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Entities.Users;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
 
@@ -141,7 +142,8 @@ public sealed class ReplaceOperationalContactCommandHandler
             // Required by the validator like FullName/JobTitle — a blank value never reaches here.
             detail.OperationalContactOrganization = request.Organization!.Trim();
             detail.OperationalContactJobTitle = request.JobTitle.Trim();
-            detail.OperationalContactPhone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
+            detail.OperationalContactPhone = string.IsNullOrWhiteSpace(request.Phone)
+                ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim());
             detail.OperationalContactEmail = newEmail;
             // A different person now holds the role, so the link naming which delegation member the
             // PREVIOUS contact was is stale — and a stale link is not harmless here: the biên bản

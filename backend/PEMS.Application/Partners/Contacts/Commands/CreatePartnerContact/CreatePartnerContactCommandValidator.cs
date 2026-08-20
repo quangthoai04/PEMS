@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.Partners.Contacts.Commands.CreatePartnerContact;
 
@@ -14,7 +15,7 @@ public sealed class CreatePartnerContactCommandValidator : AbstractValidator<Cre
             .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
             .WithMessage("Email không hợp lệ.")
             .MaximumLength(150);
-        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.Phone).MustBeAPhoneNumber("Số điện thoại người liên hệ không hợp lệ.");
         RuleFor(x => x.JobTitle).MaximumLength(150);
         RuleFor(x => x.DepartmentName).MaximumLength(150);
     }

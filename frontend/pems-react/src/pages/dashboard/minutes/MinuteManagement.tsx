@@ -16,7 +16,10 @@ export function MinuteManagement() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isHO = user?.roleCode === 'HO';
-  const campusFilterOptions = useCampusFilterOptions();
+  // Patch 6: the campus dropdown below is already HO-gated in the JSX — the fetch itself must be
+  // gated too, or every non-HO viewer of this page fires a request to the HO-only
+  // /campuses/filter-options endpoint and gets a 403 on every mount.
+  const campusFilterOptions = useCampusFilterOptions({ enabled: isHO });
 
   const {
     loading,

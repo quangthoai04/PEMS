@@ -4,6 +4,7 @@ using MediatR;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
@@ -57,8 +58,12 @@ public sealed class UpdateRegistrantInfoCommandHandler
         visit.RegistrantFullName = request.FullName.Trim();
         visit.RegistrantOrganization = request.Organization.Trim();
         visit.RegistrantJobTitle = (request.JobTitle ?? string.Empty).Trim();
-        visit.RegistrantPhone = request.Phone.Trim();
-        visit.RegistrantEmail = request.Email.Trim();
+        visit.RegistrantPhone = PhoneNumber.NormalizeOrOriginal(request.Phone.Trim());
+        // Patch 5: persisted normalized (trim + lowercase) — this command is the one place a
+        // staff-entered (non-Visitor-submitted) registrant's email CAN change at all; it does not
+        // touch that ability, only how the resulting value is stored, matching every other write of
+        // this same column and the value users.Email/partner_contacts.email already always hold.
+        visit.RegistrantEmail = VisitRequestFingerprintBuilder.NormalizeEmail(request.Email);
         visit.UpdatedAt = now;
         visit.UpdatedBy = actorId;
         visit.RowVersion += 1;

@@ -543,6 +543,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                   data-field-error={rowErr.nationality ? 'true' : undefined}
                 >
                   <CountrySelect
+                    strict
                     value={m.nationality}
                     isCell
                     hasError={!!rowErr.nationality}

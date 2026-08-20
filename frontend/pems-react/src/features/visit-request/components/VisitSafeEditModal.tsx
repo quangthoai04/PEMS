@@ -9,6 +9,7 @@ import {
 import { buildChangedOnlyPayload } from '../utils/safeEditDiff';
 import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { isValidPhone } from '../../../shared/utils/phoneNumber';
 import { PartnerOrgCombobox } from './shared/PartnerOrgCombobox';
 import { CountrySelect } from './shared/CountrySelect';
 import { PhoneField } from './shared/PhoneField';
@@ -29,7 +30,7 @@ interface Props {
  * shows a steady message and a reload; the proposal is never presented as an approval-pending amendment.
  */
 export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
-  const { t } = useTranslation(['visitRequestV2']);
+  const { t } = useTranslation(['visitRequestV2', 'validation']);
 
   const [registrant, setRegistrant] = useState({
     fullName: form.registrant.fullName,
@@ -66,6 +67,8 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [applied, setApplied] = useState<SafeEditResponse | null>(null);
+  // PhoneField is a visual/input component, not a validation authority — the check has to live here.
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   const setInstance = (id: number, patch: Partial<(typeof instances)[number]>) =>
     setInstances(prev => prev.map(i => (i.visitInstanceId === id ? { ...i, ...patch } : i)));
@@ -74,6 +77,14 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     setBusy(true);
     setError(null);
     setConflict(false);
+    // Phone is optional, but a non-blank value must be shaped like one — mirrors the backend's
+    // MustBeAPhoneNumber rule so a malformed number is caught here instead of round-tripping to the API.
+    if (canEditShared && registrant.phone.trim() && !isValidPhone(registrant.phone)) {
+      setPhoneError(t('validation:phoneInvalidField', { field: t('visitRequestV2:card.phone') }));
+      setBusy(false);
+      return;
+    }
+    setPhoneError(null);
     const payload = buildChangedOnlyPayload(form, registrant, instances);
     if (payload === null) {
       setError(t('visitRequestV2:safeEdit.noChanges'));
@@ -142,6 +153,7 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                 <label className="block text-sm" data-testid="safe-edit-registrant-nationality">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:registrant.nationality')}</span>
                   <CountrySelect
+                    strict
                     value={registrant.nationality}
                     ariaLabel={t('visitRequestV2:registrant.nationality')}
                     onChange={value => setRegistrant({ ...registrant, nationality: value })}
@@ -166,11 +178,20 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                   <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:card.phone')}</span>
                   <PhoneField
                     className={field}
+                    testId="safe-edit-registrant-phone-input"
+                    hasError={!!phoneError}
+                    error={phoneError ?? undefined}
                     field={{
                       value: registrant.phone,
-                      onChange: e => setRegistrant({ ...registrant, phone: e.target.value }),
+                      onChange: e => {
+                        setRegistrant({ ...registrant, phone: e.target.value });
+                        if (phoneError) setPhoneError(null);
+                      },
                     }}
                   />
+                  {phoneError && (
+                    <p role="alert" className="mt-1 text-xs font-normal text-red-600">{phoneError}</p>
+                  )}
                 </label>
               </div>
             </fieldset>

@@ -46,7 +46,7 @@ public static class GuestPartnerLinkResolver
         ulong? actorUserId,
         CancellationToken ct)
     {
-        var members = await db.VisitInstanceGuestMembers.AsNoTracking()
+        var memberLinks = await db.VisitInstanceGuestMembers.AsNoTracking()
             .Where(l => l.VisitRequestId == visitRequestId)
             .Join(db.VisitGuestMembers.AsNoTracking(),
                 l => l.GuestMemberId, g => g.GuestMemberId,
@@ -59,7 +59,32 @@ public static class GuestPartnerLinkResolver
                 })
             .ToListAsync(ct);
 
-        if (members.Count == 0) return 0;
+        if (memberLinks.Count == 0) return 0;
+
+        // A legacy member can still be shared by more than one instance of the SAME request (the
+        // copy-on-write split only happens the first time ONE of the sharing campuses is actually
+        // edited — §6.1 of the remediation plan). The join above then yields one row per instance
+        // that shares it, all carrying the SAME Organization/OrganizationPartnerId (both are columns
+        // of the single underlying VisitGuestMembers row, never of the instance link), so collapsing
+        // by GuestMemberId here is lossless. A member tied to exactly one instance keeps that instance
+        // on its link; a still-shared member gets a request-wide link (VisitInstanceId = null) instead
+        // of an arbitrary pick — the link then stays visible from every instance that shares the
+        // member, rather than silently attaching to only one of them (GP-2 — no cross-campus link).
+        var members = memberLinks
+            .GroupBy(m => m.GuestMemberId)
+            .Select(g =>
+            {
+                var first = g.First();
+                var instanceIds = g.Select(x => x.VisitInstanceId).Distinct().ToList();
+                return new
+                {
+                    GuestMemberId = g.Key,
+                    first.Organization,
+                    first.OrganizationPartnerId,
+                    VisitInstanceId = instanceIds.Count == 1 ? instanceIds[0] : (ulong?)null,
+                };
+            })
+            .ToList();
 
         // Existing links of this request — both the "already done" set and the source of the
         // per-organization decisions we propagate from.

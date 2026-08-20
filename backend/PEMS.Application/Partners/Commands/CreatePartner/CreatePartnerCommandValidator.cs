@@ -1,5 +1,6 @@
 using System;
 using FluentValidation;
+using PEMS.Application.Common.Validation;
 using PEMS.Application.Partners.Common;
 
 namespace PEMS.Application.Partners.Commands.CreatePartner;
@@ -40,6 +41,8 @@ public sealed class CreatePartnerCommandValidator : AbstractValidator<CreatePart
             RuleFor(x => x.InitialContact!.Email)
                 .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.InitialContact!.Email))
                 .WithMessage("Email người liên hệ không hợp lệ.");
+            RuleFor(x => x.InitialContact!.Phone)
+                .MustBeAPhoneNumber("Số điện thoại người liên hệ không hợp lệ.");
         });
     }
 }

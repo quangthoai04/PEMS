@@ -3,7 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.DepartmentReceptionTasks.Common;
 
 using PEMS.Application.Common;
 namespace PEMS.Application.Delegations.Commands.ConfirmTheChangeProposal;
@@ -23,8 +25,12 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
 
     public async Task<ConfirmTheChangeProposalResponse> Handle(ConfirmTheChangeProposalCommand request, CancellationToken cancellationToken)
     {
+        // Patch 7 (P7.1): these three used to throw bare framework exceptions, which
+        // ExceptionHandlingMiddleware's `default` case can only treat as an unhandled fault — a real
+        // user hitting a stale link (item deleted/moved) or double-clicking Accept/Reject got "Đã xảy
+        // ra lỗi hệ thống" for what is, in every case, an ordinary and expected outcome.
         if (_currentUser.UserId is null)
-            throw new UnauthorizedAccessException("Bạn cần đăng nhập để phản hồi đề xuất.");
+            throw new ForbiddenException("Bạn cần đăng nhập để phản hồi đề xuất.");
 
         var item = await _db.VisitLogisticsItems
             .Include(x => x.VisitInstance)
@@ -32,10 +38,13 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
             .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
 
         if (item == null)
-            throw new InvalidOperationException("Không tìm thấy đơn yêu cầu.");
+            throw new NotFoundException("Không tìm thấy đơn yêu cầu.", LogisticsTaskErrorCodes.RequestNotFound);
 
+        // Not a defect: a normal double-click, or a second person acting on the same item after it was
+        // already answered/withdrawn, reaches here just as easily as a genuinely stale link.
         if (item.Status != "CHANGE_PROPOSED")
-            throw new InvalidOperationException("Đơn yêu cầu không ở trạng thái đang đề xuất.");
+            throw new ConflictException(
+                "Đơn yêu cầu không ở trạng thái đang đề xuất.", LogisticsTaskErrorCodes.ProposalNotAwaitingConfirmation);
 
         var now = VietnamTime.Now();
         item.ProposalResponse = request.Accepted ? "ACCEPTED" : "REJECTED";

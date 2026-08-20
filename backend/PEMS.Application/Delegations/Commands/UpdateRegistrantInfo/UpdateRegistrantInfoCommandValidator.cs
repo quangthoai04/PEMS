@@ -1,4 +1,5 @@
 using FluentValidation;
+using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 
@@ -24,7 +25,7 @@ public sealed class UpdateRegistrantInfoCommandValidator
         // Phone is OPTIONAL, same as every other Registrant/Operational-Contact phone field in this
         // feature (see RegistrantInputV2Validator/OperationalContactV2Validator) — blank submits.
         RuleFor(x => x.Phone)
-            .MaximumLength(30).WithMessage("Số điện thoại quá dài.");
+            .MustBeAPhoneNumber("Số điện thoại người đăng ký không hợp lệ.");
 
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("Email không được để trống.")

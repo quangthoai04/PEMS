@@ -31,6 +31,7 @@ import { useContactLinkPrompt } from '../../../features/visit-request/hooks/useC
 import { FormField, inputCls } from '../../../features/visit-request/components/shared/FormField';
 import { PhoneField } from '../../../features/visit-request/components/shared/PhoneField';
 import { PartnerOrgCombobox } from '../../../features/visit-request/components/shared/PartnerOrgCombobox';
+import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
 import { getApiErrorMessage } from '../../../shared/utils/toast';
@@ -355,8 +356,26 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
             <FormField label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
               <input {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
             </FormField>
+            {/* Patch 4 (nationality contract): was a plain <input> — the only registrant nationality
+                surface in the app that was not already a country picker (Create and Safe Edit both
+                use CountrySelect). `strict` matches those: no free-text "create new" option, since
+                the backend now resolves-or-rejects every genuinely CHANGED value to a real country
+                canonical form (an untouched legacy value round-trips exactly as it was). */}
             <FormField label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
-              <input {...register('registerInfo.nationality')} className={inputCls(!!regErr?.nationality, false, false)} />
+              <Controller
+                name="registerInfo.nationality"
+                control={form.control}
+                render={({ field }) => (
+                  <CountrySelect
+                    strict
+                    value={field.value ?? ''}
+                    onChange={value => commitFieldValue(form, 'registerInfo.nationality', value, field.onChange)}
+                    onBlur={field.onBlur}
+                    hasError={!!regErr?.nationality}
+                    placeholder={t('visitRequestV2:registrant.nationality')}
+                  />
+                )}
+              />
             </FormField>
             {/* Phone is OPTIONAL — matches Create and Safe Edit. Blank passes registerInfo.schema's
                 buildPhoneSchema(); this field must never carry the `required` marker. */}
