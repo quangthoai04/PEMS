@@ -264,6 +264,12 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
         IReadOnlyList<ReminderRecipient> recipients, string delegationName, string campusName,
         CancellationToken ct)
     {
+        // Relation-aware routing (plan RC-05/RM-01..03): a STAFF recipient can be the current Host of
+        // THIS instance, or merely an accepted participant of it (e.g. Host of a different delegation
+        // reminded here only as support) — one shared process URL for everyone silently walked a
+        // non-Host participant into the Host-only operational screen. The Host gets the real Host
+        // Process entry; every other recipient gets their own contribution screen instead, never the
+        // other's page.
         var requests = recipients.Select(r => new CreateNotificationRequest(
             RecipientUserId: r.UserId,
             Title: "Nhắc lịch tiếp khách",
@@ -274,12 +280,14 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             Category: NotificationCategories.Reminder,
             VisitInstanceId: instance.VisitInstanceId,
             CampusId: instance.CampusId,
-            ActionType: NotificationActionTypes.OpenVisitDetail,
-            ActionUrl: $"/dashboard/visit/process/{instance.VisitInstanceId}",
+            ActionType: r.IsHost ? NotificationActionTypes.OpenHostProcess : NotificationActionTypes.OpenContribution,
+            ActionUrl: r.IsHost
+                ? $"/dashboard/visit/process/{instance.VisitInstanceId}"
+                : $"/dashboard/visit/contribution/{instance.VisitInstanceId}",
             DedupeKey: $"REMINDER_{reminder.ReminderSettingId}_USER_{r.UserId}",
             MetadataJson: NotificationEventKeys.BuildMetadata(
                 NotificationEventKeys.VisitReminder,
-                new { delegationName, campusName })
+                new { delegationName, campusName, isHost = r.IsHost })
         )).ToList();
 
         return _notifications.CreateManyAsync(requests, ct);

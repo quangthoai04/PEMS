@@ -81,7 +81,7 @@ public sealed class VerifyAndCreateVisitRequestV2CommandTests
     /// <summary>Fails loudly if provisioning is attempted (no gate/replay path should provision).</summary>
     private sealed class ThrowingProvision : IUserProvisionService
     {
-        public Task<ulong> EnsureVisitorAccountAsync(string email, string fullName, string? phone, DateTime utcNow, CancellationToken ct = default)
+        public Task<ulong> EnsureVisitorAccountAsync(string email, string fullName, string? phone, string? nationality, DateTime utcNow, CancellationToken ct = default)
             => throw new InvalidOperationException("Provisioning must not happen on this path.");
         public Task ValidateContactEmailCanBeUsedForVisitorAsync(string email, CancellationToken ct = default)
             => throw new InvalidOperationException("Provisioning must not happen on this path.");

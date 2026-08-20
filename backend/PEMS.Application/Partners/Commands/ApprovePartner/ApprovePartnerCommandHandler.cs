@@ -82,7 +82,7 @@ public sealed class ApprovePartnerCommandHandler : IRequestHandler<ApprovePartne
                     Title: "Đối tác đã được duyệt",
                     Message: $"Hồ sơ đối tác \"{partner.Name}\" đã được duyệt.",
                     NotificationType: NotificationTypes.PartnerReviewed,
-                    RelatedType: "Partner",
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.Partner,
                     RelatedId: partner.PartnerId,
                     ActorUserId: _currentUser.UserId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,

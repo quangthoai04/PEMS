@@ -219,7 +219,14 @@ public sealed class UpdatePendingVisitInstanceV2CommandHandler
                 VisitRequestId: visit.VisitRequestId,
                 VisitInstanceId: instance.VisitInstanceId,
                 CampusId: instance.CampusId,
-                ActionType: NotificationActionTypes.OpenVisitDetail,
+                // OpenVisitHistory (not the generic OpenVisitDetail — plan
+                // PEMS_FIX_NOTIFICATION_SEMANTIC_ROUTING_SYSTEM_WIDE.md §7): this campus's data
+                // changed, never "a decision is waiting". The eventKey below already classifies this
+                // correctly (OPEN_VISIT_DETAIL is deliberately excluded from the frontend's
+                // actionType->intent map for exactly this reason), but an explicit, matching
+                // actionType keeps eventKey and actionType from ever silently disagreeing here — the
+                // same contract this producer's sibling (UpdatePendingVisitRequestV2) already uses.
+                ActionType: NotificationActionTypes.OpenVisitHistory,
                 ActionUrl: $"/dashboard/visit?visitRequestId={visit.VisitRequestId}",
                 MetadataJson: NotificationEventKeys.BuildMetadata(
                     NotificationEventKeys.VisitRequestUpdatedPending,

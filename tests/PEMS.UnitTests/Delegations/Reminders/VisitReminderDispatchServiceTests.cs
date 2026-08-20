@@ -368,6 +368,33 @@ public class VisitReminderDispatchServiceTests
             Times.Once);
     }
 
+    // Plan RC-05/RM-01..03: one shared process URL/actionType for every recipient silently walked a
+    // non-Host participant into the Host-only operational screen. The Host must get an
+    // OPEN_HOST_PROCESS/{id} destination; every other recipient must get their own
+    // OPEN_CONTRIBUTION/contribution destination — never the other's.
+    [Fact]
+    public async Task An_in_app_reminder_routes_the_Host_to_Host_Process_and_everyone_else_to_their_own_contribution_screen()
+    {
+        var (db, service, mocks, _) = CreateSut();
+
+        await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS, VisitReminderChannel.IN_APP), default);
+
+        mocks.Notifications.Verify(
+            n => n.CreateManyAsync(
+                It.Is<IReadOnlyList<CreateNotificationRequest>>(list =>
+                    list.Count == 3
+                    && list.Single(r => r.RecipientUserId == DelegationsTestData.HostUserId).ActionType
+                        == NotificationActionTypes.OpenHostProcess
+                    && list.Single(r => r.RecipientUserId == DelegationsTestData.HostUserId).ActionUrl
+                        == $"/dashboard/visit/process/{DelegationsTestData.VisitInstanceId}"
+                    && list.Where(r => r.RecipientUserId != DelegationsTestData.HostUserId).All(r =>
+                        r.ActionType == NotificationActionTypes.OpenContribution
+                        && r.ActionUrl == $"/dashboard/visit/contribution/{DelegationsTestData.VisitInstanceId}")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     [Fact]
     public async Task An_email_reminder_creates_no_in_app_notification()
     {

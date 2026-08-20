@@ -294,7 +294,7 @@ public sealed class CreatePartnerCommandHandler : IRequestHandler<CreatePartnerC
                     Title: "Đối tác mới chờ duyệt",
                     Message: $"Đối tác \"{partner.Name}\" vừa được tạo và đang chờ duyệt.",
                     NotificationType: NotificationTypes.PartnerPendingApproval,
-                    RelatedType: "Partner",
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.Partner,
                     RelatedId: partner.PartnerId,
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,

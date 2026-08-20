@@ -449,6 +449,91 @@ public sealed class VisitSafeEditV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    // ── Producer contract (plan continuation §17): privacy-urgent notification exact-instance target ──
+
+    /// <summary>
+    /// A media-consent withdrawal touching exactly ONE campus is unambiguous — every recipient (that
+    /// campus's Host + its Staff Leaders) is being told about that specific instance, so the
+    /// notification must NAME it (VisitInstanceId/CampusId), not fall back to the generic
+    /// request-level target the frontend can only resolve to an ambiguous "pick a campus" landing.
+    /// </summary>
+    [Fact]
+    public async Task Privacy_withdrawal_on_a_single_campus_names_the_exact_instance()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start), Campus("HCM", start.AddDays(1)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+
+            ulong hnInstance;
+            ulong hnCampusId;
+            using (var db = NewContext())
+            {
+                var hn = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitRequestId == requestId).OrderBy(c => c.CampusId).FirstAsync();
+                hnInstance = hn.VisitInstanceId;
+                hnCampusId = hn.CampusId;
+            }
+
+            var notifications = new RecordingNotifications();
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(hnInstance, instV[hnInstance], null, null, "DECLINED", null),
+                    })), CancellationToken.None);
+            }
+
+            Assert.NotEmpty(notifications.Sent);
+            foreach (var n in notifications.Sent)
+            {
+                Assert.Equal(requestId, n.VisitRequestId);
+                Assert.Equal(hnInstance, n.VisitInstanceId);
+                Assert.Equal(hnCampusId, n.CampusId);
+                Assert.Contains(NotificationEventKeys.VisitPrivacyConsentWithdrawn, n.MetadataJson);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// A withdrawal touching MULTIPLE campuses in one save must NOT guess a single instance to name —
+    /// recipients differ per campus (an HCM leader was never told about an HN-only change), so there
+    /// is no one instance id that is correct for the whole recipient set. Stays request-level.
+    /// </summary>
+    [Fact]
+    public async Task Privacy_withdrawal_touching_multiple_campuses_never_guesses_a_single_instance()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start), Campus("HCM", start.AddDays(1)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instances = instV.Keys.ToList();
+
+            var notifications = new RecordingNotifications();
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, instances.Select(i =>
+                        new SafeInstancePatchDto(i, instV[i], null, null, "DECLINED", null)).ToList())),
+                    CancellationToken.None);
+            }
+
+            Assert.NotEmpty(notifications.Sent);
+            Assert.All(notifications.Sent, n => Assert.Null(n.VisitInstanceId));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
     // ── Registrant nationality + partner identity (PEMS_PATCH_SAFE_EDIT_AMENDMENT_PARTNER_SEARCH) ──
 
     [Fact]

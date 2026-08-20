@@ -147,9 +147,22 @@ const EVENT_INTENT: Record<string, NotificationNavigationIntent> = {
 
   // Feedback / reminders.
   HOST_FEEDBACK_INVITE: 'FEEDBACK_MODAL',
-  VISITOR_FEEDBACK_RECEIVED: 'VISIT_DETAIL',
-  HOST_FEEDBACK_RECEIVED: 'VISIT_DETAIL',
-  VISIT_REMINDER: 'VISIT_DETAIL', // TODO: relation-aware routing (plan §29) — kept non-escalating.
+  // Producer (SubmitVisitFeedbackCommandHandler, both branches) sets ActionType
+  // OpenVisitorFeedbackModal/OpenHostFeedbackModal explicitly, so ACTION_TYPE_INTENT below always
+  // classifies these before this eventKey is consulted (audited, stabilization round 2 §3/§23: the
+  // handler's own comment is explicit — "Bấm vào phải mở modal xem NỘI DUNG đánh giá... không điều
+  // hướng sang trang setup đoàn"). This mapping is the conservative-but-CORRECT fallback for a row
+  // that somehow lost its actionType (never a live producer today) — FEEDBACK_MODAL, not the
+  // strictly-weaker VISIT_DETAIL that used to be here, which would have opened the wrong screen
+  // (visit detail instead of the feedback-content modal) for that hypothetical row.
+  VISITOR_FEEDBACK_RECEIVED: 'FEEDBACK_MODAL',
+  HOST_FEEDBACK_RECEIVED: 'FEEDBACK_MODAL',
+  // Producer (VisitReminderDispatchService.SendInAppAsync) now sets an explicit per-recipient
+  // actionType (OPEN_HOST_PROCESS for the current Host, OPEN_CONTRIBUTION for every other
+  // recipient — plan RC-05/RM-01..03), which ACTION_TYPE_INTENT below classifies BEFORE this
+  // eventKey is ever consulted. This mapping is now only the conservative fallback for reminder
+  // rows created before that fix (no actionType stored) — never escalating on its own.
+  VISIT_REMINDER: 'VISIT_DETAIL',
 
   // Accounts.
   ACCOUNT_STATUS_ACTIVATED: 'ACCOUNT_DETAIL',
@@ -244,60 +257,59 @@ export function resolveNotificationDestination(item: NotificationItem, user: Aut
       }
     }
 
-    // Notification trỏ thẳng vào trang danh sách kèm định danh request — dạng bare
-    // "/dashboard/visit" (rất cũ, trước khi ActionUrl bắt đầu kèm id) HOẶC dạng hiện tại
-    // "/dashboard/visit?visitRequestId=N" (mọi handler backend đang tạo). Cả hai chỉ LỌC
-    // danh sách xuống 1 dòng — không mở đúng entry context/campus review, và filter đó bị
-    // "quên" lại trên URL nên đổi tab/filter/trang sau khi đóng có thể làm nó tái xuất hiện.
-    // Rewrite sang ONE-SHOT COMMAND "openVisitRequestId"(+"openVisitInstanceId" nếu notification
-    // đã biết đúng campus, +"notificationIntent" nếu eventKey/actionType phân loại được ý nghĩa
-    // — plan §12) để trang tự resolve CURRENT state rồi mở đúng entry context theo ĐÚNG ý nghĩa
-    // gốc của notification, và tự xoá command khỏi URL ngay sau khi dùng (xem
-    // VisitRequestManagement — không dùng lại tên `visitRequestId` cũ vì nó đã có nghĩa
-    // "persistent filter" khác, xem RC-03 trong plan).
-    const isPlainVisitListLink = link === '/dashboard/visit'
-      || /^\/dashboard\/visit\?visitRequestId=\d+$/.test(link);
-    if (isPlainVisitListLink && item.visitRequestId) {
+    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
+    const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
+
+    // Feedback deep link: a SEPARATE one-shot param (feedbackVisitInstanceId) that opens a modal,
+    // not an entry-context screen — kept as its own case rather than folded into the general
+    // rewrite below, which only ever knows how to open entry contexts/intents. Matched by URL shape
+    // (including an already-resolved link, left untouched/idempotent), or by category (a feedback
+    // notification's stored link is not always `/feedback/`-shaped).
+    if (isViewOnlyRole && item.visitRequestId && item.visitInstanceId
+      && (link.includes('/feedback/') || link.includes('feedbackVisitInstanceId=') || item.category === 'Feedback')) {
+      return `/dashboard/visit?visitRequestId=${item.visitRequestId}&feedbackVisitInstanceId=${item.visitInstanceId}`;
+    }
+
+    // Semantic-first (plan RC-01/RC-02/RC-03/RC-04/RC-06): ANY legacy Visit-family link that names a
+    // request — the plain list ("/dashboard/visit", "/dashboard/visit?visitRequestId=N", or any
+    // other query-string shape a producer/hand-typed link might carry, e.g. "&tab=all") OR a direct
+    // deep link into /process|/reception-detail|/ho-detail/{instanceId} — is rewritten to the
+    // ONE-SHOT COMMAND "openVisitRequestId"(+"openVisitInstanceId" if the notification already named
+    // the exact campus, +"notificationIntent" from eventKey/actionType — plan §12), for EVERY role
+    // and REGARDLESS of the exact URL shape a producer happened to store. Previously this only fired
+    // for an exact bare/`visitRequestId=N` list link, or for a hand-picked subset of roles
+    // (Visitor/HO/Student/Department) on a direct process/reception-detail/ho-detail link — any
+    // other shape (a stray query param) or any other role (Staff, Staff Leader — the very people who
+    // CAN be Host) fell straight through to the raw stored URL, letting a stale direct "/process/
+    // {id}" walk a former Host straight into Host Process with no current-state check at all.
+    // VisitRequestManagement resolves CURRENT state before opening anything — whether the click may
+    // reach Host Process, Campus Review, an approve control, an exact invitation target (participant
+    // id, re-resolved fresh, never parsed off this URL) etc. is decided there, never by which literal
+    // URL a producer stored at creation time. The command is consumed and stripped from the URL on
+    // the same run (see VisitRequestManagement) so it never replays.
+    //
+    // Gated on `classifyNotificationIntent`, not just URL shape: a Logistics/Handover/Agenda/Minutes/
+    // Action-Item/News/Partner/Account/Feedback notification can legitimately reuse this exact same
+    // "/dashboard/visit/process/{id}" shape (its own detail lives on a tab of that same screen) —
+    // those already have an exact, correct destination of their own (plan §23/§31) and must be left
+    // untouched, never folded into the Visit list's one-shot command. Only an intent this resolver
+    // itself owns (one of `VISIT_COMMAND_INTENTS`) — or no classifiable intent at all, the true
+    // legacy-notification case — is eligible.
+    const intent = classifyNotificationIntent(item);
+    const isVisitCommandCandidate = intent == null || VISIT_COMMAND_INTENTS.has(intent);
+    const isPlainVisitListLink = /^\/dashboard\/visit(\?.*)?$/.test(link);
+    if (isVisitCommandCandidate && (isPlainVisitListLink || isProcessDetailLink) && item.visitRequestId) {
       const oneShot = new URLSearchParams();
       oneShot.set('openVisitRequestId', String(item.visitRequestId));
       if (item.visitInstanceId) oneShot.set('openVisitInstanceId', String(item.visitInstanceId));
-      const intent = classifyNotificationIntent(item);
-      if (intent && VISIT_COMMAND_INTENTS.has(intent)) {
+      if (intent) {
         oneShot.set('notificationIntent', intent);
       }
       return `/dashboard/visit?${oneShot.toString()}`;
     }
 
-    const isProcessDetailLink = /\/dashboard\/visit\/(process|reception-detail|ho-detail)\//.test(link);
-
-    // Visitor & HO không bao giờ là Host theo thiết kế hệ thống — trang Host Operation
-    // không dành cho họ. Notification cũ có thể còn trỏ vào /process|/reception-detail|
-    // /ho-detail từ trước khi route này được đổi — luôn rewrite về trang Quản lý tiếp khách
-    // lọc đúng đơn, tính theo dữ liệu hiện tại của notification thay vì tin URL đã lưu sẵn.
-    const isViewOnlyRole = ['VISITOR', 'HO'].includes(user.roleCode?.toUpperCase() || '');
-    if (isViewOnlyRole && (isProcessDetailLink || link.includes('/feedback/')) && item.visitRequestId) {
-      if (item.visitInstanceId && (link.includes('/feedback/') || item.category === 'Feedback')) {
-        return `/dashboard/visit?visitRequestId=${item.visitRequestId}&feedbackVisitInstanceId=${item.visitInstanceId}`;
-      }
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}`;
-    }
-
-    // "Bạn được mời tham gia đoàn" (participant invitation) — người nhận có thể là
-    // Student/IC Staff KHÔNG phải Host của đoàn này (IC Staff đôi khi là Host đoàn khác,
-    // nên không thể chặn theo role tĩnh). Trang Host Operation chỉ dành cho đúng Host của
-    // đoàn, nên loại notification này luôn rewrite về trang danh sách "Quản lý tiếp khách"
-    // lọc đúng đơn, bất kể role. Bắt buộc kèm tab=attending: mặc định trang này rơi vào tab
-    // "Tất cả các loại đơn" (Staff/Staff Leader) — nơi dòng attending bị đánh dấu read-only
-    // (backend BuildAllowedActions không có participantId/trạng thái mời để tính nút Chấp
-    // nhận), nên nếu không ép tab, nút "Nhận lời" sẽ biến mất cho tới khi user tự đổi tab.
-    if (item.actionType === 'OPEN_VISIT_INVITATION' && isProcessDetailLink && item.visitRequestId) {
-      return `/dashboard/visit?visitRequestId=${item.visitRequestId}&tab=attending`;
-    }
-
-    // Student/Department không bao giờ là Host (theo thiết kế vai trò) — trang "Quy trình tiếp
-    // khách" (process) chỉ dành cho Host. Notification cũ (tạo trước khi backend đổi ActionUrl
-    // sang trang "Đóng góp kết quả") vẫn có thể còn trỏ vào /process/ — luôn rewrite về đúng trang
-    // của 2 role này, tính theo dữ liệu hiện tại thay vì tin URL đã lưu sẵn.
+    // Fallbacks below only matter when `visitRequestId` itself is missing (the general rewrite
+    // above already requires it) — kept role-scoped exactly as before for that narrow edge case.
     const isNeverHostRole = ['STUDENT', 'DEPARTMENT'].includes(user.roleCode?.toUpperCase() || '');
     if (isNeverHostRole && isProcessDetailLink && item.visitInstanceId) {
       return `/dashboard/visit/contribution/${item.visitInstanceId}`;

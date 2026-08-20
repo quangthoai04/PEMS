@@ -123,7 +123,9 @@ public sealed class PerCampusNotificationRoutingTests
 
     // ── What a notification row says, reduced to the parts routing is about ──────────────────────
 
-    private sealed record Sent(ulong Recipient, ulong? InstanceId, ulong? CampusId, string Type, bool ActionRequired);
+    private sealed record Sent(
+        ulong Recipient, ulong? InstanceId, ulong? CampusId, string Type, bool ActionRequired,
+        string? ActionType, string? MetadataJson);
 
     private static async Task<List<Sent>> SentForAsync(ulong requestId)
     {
@@ -131,7 +133,9 @@ public sealed class PerCampusNotificationRoutingTests
         return await db.Notifications.AsNoTracking()
             .Where(n => n.VisitRequestId == requestId)
             .OrderBy(n => n.NotificationId)
-            .Select(n => new Sent(n.RecipientUserId, n.VisitInstanceId, n.CampusId, n.NotificationType, n.IsActionRequired))
+            .Select(n => new Sent(
+                n.RecipientUserId, n.VisitInstanceId, n.CampusId, n.NotificationType, n.IsActionRequired,
+                n.ActionType, n.MetadataJson))
             .ToListAsync();
     }
 
@@ -344,6 +348,44 @@ public sealed class PerCampusNotificationRoutingTests
             // The sibling's leader is not told, and the notification does not carry the sibling's id.
             Assert.DoesNotContain(sent, s => s.Recipient == LeaderHn);
             Assert.DoesNotContain(sent, s => s.InstanceId == hn);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Producer contract (plan PEMS_FIX_NOTIFICATION_SEMANTIC_ROUTING_SYSTEM_WIDE.md §6/§7/§14): this
+    /// is the exact producer behind "Thông tin cơ sở chờ duyệt đã được cập nhật" — the reported bug was
+    /// this notification opening the live "Duyệt &amp; phân công người phụ trách" modal. A plain per-
+    /// campus save (no <c>ApproveAfterSave</c>) means "data changed, go read it", never "a decision is
+    /// waiting" — its eventKey must classify as VISIT_HISTORY on the frontend, and its actionType must
+    /// say so explicitly rather than relying on the coarse OPEN_VISIT_DETAIL fallback. This test fails
+    /// the moment a future change points either field at review/approval instead.
+    /// </summary>
+    [Fact]
+    public async Task Pending_campus_edit_notification_is_tagged_VISIT_REQUEST_UPDATED_PENDING_never_review()
+    {
+        RequireDb();
+        var requestId = 0UL;
+        try
+        {
+            (requestId, _, var hcm) = await CreatePendingAsync();
+
+            using (var db = NewContext())
+                await EditHandler(db, new FakeUser(Registrant)).Handle(
+                    new UpdatePendingVisitInstanceV2Command(
+                        requestId, hcm, await PayloadAsync(hcm, "Đoàn HCM đã sửa lần nữa"), false, null),
+                    CancellationToken.None);
+
+            var one = Assert.Single(await SentForAsync(requestId));
+
+            Assert.Equal(NotificationActionTypes.OpenVisitHistory, one.ActionType);
+            Assert.NotEqual(NotificationActionTypes.OpenCampusReview, one.ActionType);
+
+            Assert.NotNull(one.MetadataJson);
+            using var meta = System.Text.Json.JsonDocument.Parse(one.MetadataJson!);
+            var eventKey = meta.RootElement.GetProperty("eventKey").GetString();
+            Assert.Equal(NotificationEventKeys.VisitRequestUpdatedPending, eventKey);
+            Assert.NotEqual(NotificationEventKeys.VisitRequestWaitingApproval, eventKey);
         }
         finally { await CleanupAsync(requestId); }
     }

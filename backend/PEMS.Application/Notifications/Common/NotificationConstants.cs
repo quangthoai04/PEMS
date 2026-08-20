@@ -94,6 +94,9 @@ public static class NotificationActionTypes
     // routes correctly off its eventKey.
     public const string OpenCampusReview = "OPEN_CAMPUS_REVIEW";
     public const string OpenVisitHistory = "OPEN_VISIT_HISTORY";
+    public const string OpenVisitReadonlyDetail = "OPEN_VISIT_READONLY_DETAIL";
+    public const string OpenHostProcess = "OPEN_HOST_PROCESS";
+    public const string OpenContribution = "OPEN_CONTRIBUTION";
     public const string OpenVisitInvitation = "OPEN_VISIT_INVITATION";
     public const string OpenHostFeedbackModal = "OPEN_HOST_FEEDBACK_MODAL";
     public const string OpenVisitorFeedbackModal = "OPEN_VISITOR_FEEDBACK_MODAL";

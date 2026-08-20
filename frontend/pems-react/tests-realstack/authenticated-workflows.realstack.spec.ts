@@ -20,7 +20,7 @@ const CAMPUS_HN = 1;
 const CAMPUS_HCM = 2;
 
 const OWNER_USER = {
-  userId: '8', fullName: 'External Visitor Main', email: 'visitor@example.com',
+  userId: '8', fullName: 'Kim Min Jae', email: 'kim.minjae@seoultech.example',
   roleCode: 'VISITOR', mustChangePassword: false, mustSetPassword: false,
 };
 
@@ -67,7 +67,7 @@ function campusBlock(code: string, dayOffset: number, delegation: string, tag: s
     externalSupportMembers: [],
     // Matches the registrant below, so the campus self-confirms at create and the confirmation gate
     // is already open when these journeys approve it — see FIXTURE_REGISTRANT_EMAIL in realstackHelpers.
-    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'visitor@example.com' },
+    operationalContact: { fullName: 'Op Contact', organization: 'Org', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'kim.minjae@seoultech.example' },
     workingLanguage: 'EN',
     transportationNote: null,
     mediaConsentStatus: 'DECLINED',
@@ -87,7 +87,7 @@ async function createMixedRequest(request: APIRequestContext, tag: string, hnNam
     headers: hdr('visitor_owner'),
     data: {
       submissionId: `WF${tag}`,
-      registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'visitor@example.com' },
+      registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'kim.minjae@seoultech.example' },
       partnerId: null,
       campusVisits: [campusBlock('HN', 0, hnName, tag), campusBlock('HCM', 1, hcmName, tag)],
     },
@@ -189,7 +189,7 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
       headers: hdr('visitor_owner'),
       data: {
         expectedRequestRowVersion: before.rowVersion,
-        registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'visitor@example.com' },
+        registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'kim.minjae@seoultech.example' },
         partnerId: null,
         campusVisits: [
           editBlock('HN', 0, newHn, hnBefore.visitInstanceId, hnBefore.rowVersion),

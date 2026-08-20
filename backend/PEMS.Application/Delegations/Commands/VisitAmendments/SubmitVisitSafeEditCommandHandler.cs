@@ -120,6 +120,17 @@ public sealed class SubmitVisitSafeEditCommandHandler
                 .Distinct().ToList();
 
             var recipients = new HashSet<ulong>();
+            // Exact instance target (plan continuation §17): only when the edit touched EXACTLY ONE
+            // campus is this unambiguous — every recipient below (its leaders + its Host) is being
+            // told about that one instance, so naming it lets the frontend focus that exact campus
+            // instead of falling back to the safe-but-generic request-level detail. A multi-campus
+            // save intentionally stays request-level (no VisitInstanceId): recipients differ PER
+            // campus (a HN leader is never told about a DN-only change), so there is no single
+            // instance id that would be correct for the whole batch, and guessing one is exactly what
+            // plan §17 forbids — untangling that into a genuinely one-notification-per-campus shape
+            // is a bigger behavioral change than this fix, deliberately left alone here.
+            ulong? exactInstanceId = touchedInstanceIds.Count == 1 ? touchedInstanceIds[0] : null;
+            ulong? exactCampusId = null;
             if (touchedInstanceIds.Count > 0)
             {
                 var rows = await _db.VisitRequestCampuses.AsNoTracking()
@@ -127,6 +138,7 @@ public sealed class SubmitVisitSafeEditCommandHandler
                     .Select(c => new { c.CampusId, c.CurrentHostUserId })
                     .ToListAsync(ct);
                 var campusIds = rows.Select(r => r.CampusId).Distinct().ToList();
+                if (exactInstanceId.HasValue) exactCampusId = campusIds.FirstOrDefault();
                 var leaders = await _db.Users.AsNoTracking()
                     .Where(u => u.Role.RoleCode == RoleCodes.Staff && u.SubRole == UserSubRoles.Leader
                                 && u.Status == UserStatuses.Active && u.PrimaryCampusId.HasValue
@@ -165,8 +177,12 @@ public sealed class SubmitVisitSafeEditCommandHandler
                 Priority: urgent ? NotificationPriority.URGENT : NotificationPriority.NORMAL,
                 IsActionRequired: urgent,
                 VisitRequestId: visitRequestId,
+                VisitInstanceId: exactInstanceId,
+                CampusId: exactCampusId,
                 ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
-                ActionUrl: $"/dashboard/visit?visitRequestId={visitRequestId}",
+                ActionUrl: exactInstanceId.HasValue
+                    ? $"/dashboard/visit?visitRequestId={visitRequestId}&visitInstanceId={exactInstanceId}"
+                    : $"/dashboard/visit?visitRequestId={visitRequestId}",
                 MetadataJson: urgent
                     ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
                         PEMS.Application.Notifications.Common.NotificationEventKeys.VisitPrivacyConsentWithdrawn,

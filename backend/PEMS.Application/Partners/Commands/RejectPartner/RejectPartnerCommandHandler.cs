@@ -83,7 +83,7 @@ public sealed class RejectPartnerCommandHandler : IRequestHandler<RejectPartnerC
                     Title: "Đối tác bị từ chối",
                     Message: $"Hồ sơ đối tác \"{partner.Name}\" bị từ chối. Lý do: {partner.ReviewNote}",
                     NotificationType: NotificationTypes.PartnerReviewed,
-                    RelatedType: "Partner",
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.Partner,
                     RelatedId: partner.PartnerId,
                     ActorUserId: _currentUser.UserId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Partner,

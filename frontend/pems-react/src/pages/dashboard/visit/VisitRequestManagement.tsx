@@ -70,6 +70,16 @@ import { formatLocalizedDate, formatLocalizedDateTime, type UiLanguage } from '.
 import { getApiErrorMessage, showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 type Tab = 'responsible' | 'attending' | 'registered' | 'hosted' | 'all';
 
+/**
+ * Entry contexts a `VISIT_READONLY_DETAIL`-classified notification must never open, no matter what
+ * the recipient's CURRENT relation says (plan RC-08/R-07) — all four are operational/reviewer-
+ * authority screens, not read-only detail. `CONTRIBUTION` is deliberately absent: it is the
+ * participant's own harmless, self-scoped screen, not an authority escalation.
+ */
+const READONLY_DETAIL_EXCLUDED_ENTRIES = new Set<VisitEntryContext>([
+  'HOST_PROCESS', 'PROCESS_SUMMARY', 'RECEPTION_DETAIL', 'CAMPUS_REVIEW',
+]);
+
 /** Which of the two layouts an element belongs to — both are in the DOM, CSS picks one. */
 type RowVariant = 'desktop' | 'mobile';
 
@@ -1077,11 +1087,22 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
    * result (deleted, or no relation to it any more) is reported and nothing is guessed from the
    * notification's own title/message text.
    */
+  /**
+   * Stale-response guard (same shape as `loadDelegations`'s own `requestVersionRef`, live-verification
+   * round — a slower EARLIER notification click must never overwrite what a faster LATER one already
+   * opened. Live-reproduced: click a slow notification A, then a fast notification B on the same
+   * mounted route before A resolves — A's own resolution landing afterward re-opened A's target,
+   * silently replacing whatever B had just opened. Every call claims a new version; only the
+   * still-current one is allowed to act on what it fetched.
+   */
+  const notificationTargetVersionRef = React.useRef(0);
+
   const resolveAndOpenNotificationTarget = async (
     requestId: number, instanceId: number | null, intent: NotificationNavigationIntent | null,
   ) => {
     if (isAdmin) return;
     const resolveTab: Tab = canUseAllTab ? 'all' : (isStudent || isDept) ? 'attending' : 'responsible';
+    const version = ++notificationTargetVersionRef.current;
     try {
       const response = await delegationsApi.getVisitRequestManagementList({
         tab: resolveTab,
@@ -1091,12 +1112,33 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         sortBy: 'plannedStartAt',
         sortOrder: 'desc',
       });
+      if (version !== notificationTargetVersionRef.current) return; // superseded by a later click
       const items: VisitRequestManagementItem[] = response?.items || [];
       if (items.length === 0) {
         showErrorToast(null, 'Không tìm thấy đoàn được nhắc trong thông báo, hoặc bạn không còn quyền xem đoàn này.');
         return;
       }
-      const matched = (instanceId != null && items.find((it) => it.visitInstanceId === instanceId)) || items[0];
+
+      // Multi-campus request + the notification didn't name the exact campus: `items[0]` would be a
+      // GUESS at which campus's screen to open (plan RC-10/MC-02) — an approve/Host Process control
+      // resolved onto the WRONG campus is worse than not auto-opening one at all. Only when the id
+      // names an exact row, or there is only one row to begin with, is picking it unambiguous.
+      let matched: VisitRequestManagementItem;
+      let ambiguousCampus = false;
+      if (instanceId != null) {
+        const exact = items.find((it) => it.visitInstanceId === instanceId);
+        if (!exact) {
+          showErrorToast(null, 'Không tìm thấy đúng cơ sở được nhắc trong thông báo — có thể đã thay đổi.');
+          return;
+        }
+        matched = exact;
+      } else if (items.length === 1) {
+        matched = items[0];
+      } else {
+        matched = items[0];
+        ambiguousCampus = true;
+      }
+
       const row: Row = {
         ...matched,
         id: matched.visitInstanceId || matched.visitRequestId,
@@ -1109,20 +1151,65 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         statusText: getVietnameseStatus(matched.requestStatus, matched.campusStatus),
       };
 
+      // LEGACY POLICY (pinned — stabilization round 2, RULE-03/§4-5): a notification whose intent
+      // cannot be classified at all (no eventKey, an unrecognized eventKey, or an unrecognized
+      // `notificationIntent` on the URL — see the parsing guard below) carries NO EVIDENCE of what it
+      // originally meant. It must NEVER auto-open ANY relation-specific or mutation-oriented screen —
+      // Approve/Reject/Assign Host, Host Process, Invitation, Contribution — EVEN WHEN the CURRENT
+      // backend state would otherwise allow it (the recipient genuinely still is the reviewer/Host/
+      // participant). The only safe destination is the plain request/campus detail. Unlike every
+      // intent-specific branch below (which still falls back to `navigateByRelation` when full detail
+      // access is unavailable — that fallback can itself land on an invitation/contribution/process-
+      // summary screen), this is deliberately stricter: no such fallback, an outright failure report
+      // instead. Checked before the ambiguous-multi-campus branch too, so both paths get the exact
+      // same conservative treatment regardless of how many campuses the request has.
+      if (intent == null) {
+        if (row.canViewRequestDetail !== false) {
+          openRequestForm(row);
+        } else {
+          showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
+        }
+        return;
+      }
+
+      if (ambiguousCampus) {
+        // Safe, campus-agnostic landing: the request detail is correct regardless of which campus
+        // the notification actually meant. No approve control, no Host Process — those need the one
+        // specific campus this event was about, which is exactly the piece that is missing here.
+        // VISIT_HISTORY is itself already request-level (its own branch below never opens a
+        // per-campus screen either), so it still gets its `#history` anchor even here. `intent` is
+        // never null here (handled above), so this only ever sees a real explicit intent.
+        if (row.canViewRequestDetail === false) {
+          if (!navigateByRelation(row)) {
+            showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
+          }
+        } else if (intent === 'VISIT_HISTORY') {
+          navTo(`${resolveVisitRowRoutes(row.visitRequestId).detailRoute}#history`);
+        } else {
+          openRequestForm(row);
+        }
+        return;
+      }
+
       // Same trigger the row's own primary button uses (renderRowActions) — gated on the CURRENT,
       // freshly-fetched allowedActions, so this only opens when the decision is still actually
       // pending. `openEntryContext`'s own CAMPUS_REVIEW branch only opens the read-only submitted
       // form (no approve control lives there); this is the one place the notification flow adds
       // navigation, and it still reuses the exact existing approve mechanism rather than inventing one.
       //
-      // GATED BY INTENT (plan §7/§45): the notification's own eventKey sets the MAXIMUM interaction
-      // level this click may open — current pending state may only ever downgrade it, never upgrade
-      // it into this approve control. `VISIT_REVIEW` (VISIT_REQUEST_WAITING_APPROVAL) may escalate;
-      // `VISIT_HISTORY` (VISIT_REQUEST_UPDATED_PENDING/RESUBMITTED/AMENDMENT_*) etc. never may, even
-      // when the campus is still genuinely pending + the viewer still has APPROVE_AND_ASSIGN_HOST.
-      // `intent === null` (no classifiable eventKey/actionType — a link that predates this scheme, or
-      // was typed by hand) keeps the pre-existing behavior for backward compatibility.
-      const mayEscalateToReview = intent == null || intent === 'VISIT_REVIEW';
+      // GATED BY INTENT (plan §7/§45, hardened per the reported live bug — see
+      // PEMS_FIX_NOTIFICATION_SEMANTIC_ROUTING_SYSTEM_WIDE.md §3/§4): the notification's own eventKey
+      // sets the MAXIMUM interaction level this click may open — current pending state may only ever
+      // downgrade it, never upgrade it into this approve control. `VISIT_REVIEW`
+      // (VISIT_REQUEST_WAITING_APPROVAL) is the ONLY intent that may escalate; every other intent —
+      // `VISIT_HISTORY` (VISIT_REQUEST_UPDATED_PENDING/RESUBMITTED/AMENDMENT_*), and `null` — never
+      // may, even when the campus is still genuinely pending + the viewer still has
+      // APPROVE_AND_ASSIGN_HOST. `intent === null` used to also escalate here (kept for "backward
+      // compatibility" with pre-semantic notifications) — that is exactly what let a HISTORICAL
+      // "Visitor đã cập nhật đơn"/"Thông tin cơ sở chờ duyệt đã được cập nhật" row (created before its
+      // producer set an eventKey) fall through to `null` and open the live approve/assign-host modal.
+      // A notification whose meaning cannot be classified must land on safe detail, never a mutation.
+      const mayEscalateToReview = intent === 'VISIT_REVIEW';
       if (mayEscalateToReview && row.primaryEntryContext === 'CAMPUS_REVIEW'
         && (row.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST')) {
         setAssign({ open: true, row, mode: 'approve' });
@@ -1138,10 +1225,52 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
         return;
       }
 
+      // Read-only ceiling (plan RC-08/R-07): a notification classified VISIT_READONLY_DETAIL —
+      // closed/cancelled/HO-visibility/consent-withdrawn events, all deliberately non-mutating —
+      // must never open an operational or reviewer-authority screen just because the recipient's
+      // CURRENT relation happens to allow it (e.g. later assigned Host of this same instance for an
+      // unrelated reason). Current state may only ever DOWNGRADE a notification's own meaning, never
+      // upgrade it — `openEntryContext` alone does not know that distinction, since it always
+      // follows whatever the row's live `primaryEntryContext` says.
+      if (intent === 'VISIT_READONLY_DETAIL' && row.primaryEntryContext
+        && READONLY_DETAIL_EXCLUDED_ENTRIES.has(row.primaryEntryContext)) {
+        if (row.canViewRequestDetail !== false) {
+          openRequestForm(row);
+        } else if (!navigateByRelation(row)) {
+          showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
+        }
+        return;
+      }
+
+      // VISIT_INVITATION / CONTRIBUTION (plan STABILIZATION §10.6/10.7, §30 multi-relation
+      // collision): must open the CALLER'S OWN participant screen via the exact `participantId`
+      // already resolved onto this row — never whichever relation `primaryEntryContext` happens to
+      // rank highest. A Staff Leader who is simultaneously CAMPUS_REVIEWER + PARTICIPANT on the same
+      // request has CAMPUS_REVIEW win that priority contest (see ViewGuestDelegationListQueryHandler
+      // .CandidateRank/MergeCandidateInto — the backend deliberately keeps `participantId` on the
+      // merged row for exactly this reason), but a PARTICIPATION_INVITED notification's own meaning
+      // is "you were invited", never "go review" — falling into the generic entry-context dispatch
+      // below would silently open the review/request form instead. `openParticipantScreen` itself
+      // already falls back to the contribution screen (OPEN_CONTRIBUTION) when there is no
+      // participantId at all, so this covers both intents identically. If neither is available (the
+      // invitation/participation relation itself no longer exists — declined/removed), downgrade to
+      // safe detail, never the CAMPUS_REVIEW/HOST_PROCESS screen a co-existing relation might offer.
+      if (intent === 'VISIT_INVITATION' || intent === 'CONTRIBUTION') {
+        const instanceId = entryContextInstanceId(row) ?? row.visitInstanceId ?? null;
+        if (openParticipantScreen(row, instanceId)) return;
+        if (row.canViewRequestDetail !== false) {
+          openRequestForm(row);
+        } else if (!navigateByRelation(row)) {
+          showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
+        }
+        return;
+      }
+
       if (openEntryContext(row)) return;
       if (navigateByRelation(row)) return;
       showErrorToast(null, 'Không thể mở đoàn này từ thông báo — có thể bạn không còn quyền truy cập.');
     } catch (e) {
+      if (version !== notificationTargetVersionRef.current) return; // superseded by a later click
       console.error('Failed to resolve notification target', e);
       showErrorToast(e, 'Không thể mở nội dung từ thông báo. Vui lòng thử lại.');
     }

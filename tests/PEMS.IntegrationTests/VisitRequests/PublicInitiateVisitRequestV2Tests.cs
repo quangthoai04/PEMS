@@ -100,7 +100,7 @@ public sealed class PublicInitiateVisitRequestV2Tests
 
     private sealed class FakeProvision : IUserProvisionService
     {
-        public Task<ulong> EnsureVisitorAccountAsync(string email, string fullName, string? phone, DateTime utcNow, CancellationToken ct = default)
+        public Task<ulong> EnsureVisitorAccountAsync(string email, string fullName, string? phone, string? nationality, DateTime utcNow, CancellationToken ct = default)
             => Task.FromResult(SeedRegistrant);
         public Task ValidateContactEmailCanBeUsedForVisitorAsync(string email, CancellationToken ct = default) => Task.CompletedTask;
         public Task ValidateRegistrantEmailUsableForPublicFlowAsync(string email, CancellationToken ct = default) => Task.CompletedTask;

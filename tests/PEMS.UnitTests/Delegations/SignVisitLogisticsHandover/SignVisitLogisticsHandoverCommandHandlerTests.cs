@@ -1,3 +1,4 @@
+using Moq;
 using PEMS.Application.Delegations.Commands.SignVisitLogisticsHandover;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
@@ -99,5 +100,33 @@ public class SignVisitLogisticsHandoverCommandHandlerTests
         var item = Assert.Single(db.VisitLogisticsItems);
         Assert.Equal(LogisticsItemStatus.Done, item.Status);
         Assert.NotNull(item.CompletedAt);
+    }
+
+    // Producer contract (stabilization round 2 §3/§23): this producer and its sibling
+    // SignLogisticsHandoverCommand (DepartmentReceptionTasks) both emit the SAME eventKey
+    // (LogisticsHandoverSigned) — an ActionType here that outranked the eventKey with a DIFFERENT
+    // classification than the sibling's would make the same real-world event route two different
+    // ways depending on which side signed. Pins the fix directly rather than relying only on the
+    // frontend's static coverage table (which cannot see which producer emits which ActionType).
+    [Fact]
+    public async Task NotifiesTheDepartmentAssignee_WithActionTypeMatchingItsSiblingProducer()
+    {
+        const ulong AssigneeId = 950;
+        var (db, handler, _, mocks) = CreateSut();
+        db.VisitLogisticsItems.Single().AssignedToUserId = AssigneeId;
+        db.SaveChanges();
+
+        await handler.Handle(
+            new PEMS.Application.Delegations.Commands.SignVisitLogisticsHandover.SignVisitLogisticsHandoverCommand(
+                DelegationsTestData.VisitInstanceId, ItemId, LogisticsHandoverTypes.Return, "GOOD", null),
+            default);
+
+        mocks.Notifications.Verify(
+            n => n.CreateAsync(
+                It.Is<PEMS.Application.Notifications.Common.CreateNotificationRequest>(r =>
+                    r.RecipientUserId == AssigneeId
+                    && r.ActionType == PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHandoverDetail),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 }

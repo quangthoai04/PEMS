@@ -185,7 +185,12 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
                     ActorUserId: actorId,
                     Category: PEMS.Application.Notifications.Common.NotificationCategories.Handover,
                     VisitInstanceId: instance.VisitInstanceId,
-                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    // OpenHandoverDetail, not OpenLogisticsDetail (producer contract audit, stabilization
+                    // round 2 §3/§23): this is the SAME eventKey (LogisticsHandoverSigned) its sibling
+                    // producer SignLogisticsHandoverCommand.cs emits with OpenHandoverDetail — a mismatched
+                    // ActionType here would outrank the eventKey (modern ActionTypes take precedence) and
+                    // silently classify this recipient's copy of the SAME event differently.
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenHandoverDetail,
                     ActionUrl: deptHandoverUrl ?? $"/dashboard/visit/process/{instance.VisitInstanceId}",
                     MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
                         PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsHandoverSigned,

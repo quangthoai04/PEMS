@@ -17,7 +17,7 @@ export const CAMPUS_HCM = 2;
 export const HN_HOST_USER_ID = 3;
 
 export const OWNER_USER = {
-  userId: '8', fullName: 'External Visitor Main', email: 'visitor@example.com',
+  userId: '8', fullName: 'Kim Min Jae', email: 'kim.minjae@seoultech.example',
   roleCode: 'VISITOR', mustChangePassword: false, mustSetPassword: false,
 };
 
@@ -121,7 +121,7 @@ export async function fillOperationalOrganization(page: Page, cardIndex: number,
  * (confirmation source REGISTRANT_SELF_MATCH). The gate itself is covered by the contact journeys,
  * which drive their own distinct contact.
  */
-export const FIXTURE_REGISTRANT_EMAIL = 'visitor@example.com';
+export const FIXTURE_REGISTRANT_EMAIL = 'kim.minjae@seoultech.example';
 
 /** A campus visit block for the v2 create payload (schedule well past the 24h/30-min rules). */
 export function campusBlock(code: string, dayOffset: number, delegation: string, tag: string) {
@@ -165,7 +165,7 @@ export async function createMixedRequest(
     headers: hdr('visitor_owner'),
     data: {
       submissionId: `WF${tag}`,
-      registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: 'visitor@example.com' },
+      registrant: { fullName: 'Owner E2E', nationality: 'VN', organization: 'Org', jobTitle: 'Mgr', phone: '+84900000000', email: FIXTURE_REGISTRANT_EMAIL },
       partnerId: null,
       campusVisits: [campusBlock('HN', 0, hnName, tag), campusBlock('HCM', 1, hcmName, tag)],
     },
@@ -186,12 +186,24 @@ export async function readDetail(request: APIRequestContext, requestId: number, 
 export const campusOf = (detail: any, campusId: number) =>
   detail.campusVisits.find((c: any) => c.campusId === campusId);
 
+/** The campus instance's CURRENT rowVersion, read through the owner's always-authorized view --
+ * `ApproveCampusInstanceCommand`/`RejectCampusInstanceCommand` both require `ExpectedInstanceRowVersion`
+ * (400 VISIT_INSTANCE_VERSION_REQUIRED otherwise), and neither approver profile can be assumed to have
+ * its own read access to the v2 detail before a decision exists on their campus. */
+async function currentInstanceRowVersion(request: APIRequestContext, requestId: number, instanceId: number): Promise<number> {
+  const detail = await readDetail(request, requestId, 'visitor_owner');
+  const row = detail.campusVisits.find((c: any) => c.visitInstanceId === instanceId);
+  if (!row) throw new Error(`instance ${instanceId} not found on request ${requestId}`);
+  return row.rowVersion as number;
+}
+
 /** Precondition: a campus leader approves their campus (→ ASSIGNED). */
 export async function approveCampus(
   request: APIRequestContext, requestId: number, instanceId: number, leaderKey: string, hostUserId = HN_HOST_USER_ID,
 ) {
+  const expectedInstanceRowVersion = await currentInstanceRowVersion(request, requestId, instanceId);
   const res = await request.post(`${API_BASE}/delegations/${requestId}/campuses/${instanceId}/approve`, {
-    headers: hdr(leaderKey), data: { hostUserId, decisionNote: 'assign' },
+    headers: hdr(leaderKey), data: { hostUserId, decisionNote: 'assign', expectedInstanceRowVersion },
   });
   expect(res.ok(), `campus approve failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   return res.json();
@@ -220,8 +232,9 @@ export async function startPreparation(
 export async function rejectCampus(
   request: APIRequestContext, requestId: number, instanceId: number, leaderKey: string,
 ) {
+  const expectedInstanceRowVersion = await currentInstanceRowVersion(request, requestId, instanceId);
   const res = await request.post(`${API_BASE}/delegations/${requestId}/campuses/${instanceId}/reject`, {
-    headers: hdr(leaderKey), data: { reason: 'Chua dat yeu cau' },
+    headers: hdr(leaderKey), data: { reason: 'Chua dat yeu cau', expectedInstanceRowVersion },
   });
   expect(res.ok(), `campus reject failed: ${res.status()} ${await res.text()}`).toBeTruthy();
   return res.json();

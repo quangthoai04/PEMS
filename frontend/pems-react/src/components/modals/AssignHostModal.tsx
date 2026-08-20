@@ -156,6 +156,7 @@ export function AssignHostModal({
           </div>
           <button
             type="button"
+            data-testid="assign-host-modal-close"
             onClick={onClose}
             disabled={isSubmitting}
             className="text-white/85 hover:text-white transition-colors hover:bg-white/10 rounded-full p-1.5 cursor-pointer"

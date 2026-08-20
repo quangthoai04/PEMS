@@ -109,12 +109,12 @@ describe('the currently-broken pattern: plain visit list + visitRequestId', () =
     expect(link).toBe('/dashboard/visit?visitRequestId=123');
   });
 
-  it('leaves a link with extra query params alone (not the exact pattern this rewrite targets)', () => {
+  it('rewrites a link carrying an extra query param too (plan RC-02 — shape-agnostic, not a regex pin)', () => {
     const link = resolveNotificationDestination(
       item({ targetUrl: '/dashboard/visit?visitRequestId=123&tab=all', visitRequestId: 123 }),
       staffLeader,
     );
-    expect(link).toBe('/dashboard/visit?visitRequestId=123&tab=all');
+    expect(link).toBe('/dashboard/visit?openVisitRequestId=123');
   });
 });
 
@@ -149,17 +149,29 @@ describe('existing role-specific rewrites keep working', () => {
     expect(link).toBe('/dashboard/visit?taskId=77&itemType=REQUEST');
   });
 
-  it('Visitor process-detail links still rewrite to visitRequestId (unrelated pattern, own branch)', () => {
+  it('Visitor direct process-detail links now go through the one-shot command too (plan RC-03/04)', () => {
+    // Previously rewrote straight to a filtered list (`?visitRequestId=123`), bypassing current-state
+    // resolution entirely. A stale direct link must be re-resolved the same as every other role's.
     const link = resolveNotificationDestination(
       item({ targetUrl: '/dashboard/visit/process/900', visitRequestId: 123 }),
       visitor,
     );
-    expect(link).toBe('/dashboard/visit?visitRequestId=123');
+    expect(link).toBe('/dashboard/visit?openVisitRequestId=123');
   });
 
-  it('Student contribution links still route to the contribution screen', () => {
+  it('Student direct process-detail links also go through the one-shot command (plan RC-03/04)', () => {
+    // The `/dashboard/visit/contribution/{id}` fallback below only matters when `visitRequestId`
+    // itself is absent — every producer sets it, so this is the common path in practice.
     const link = resolveNotificationDestination(
       item({ targetUrl: '/dashboard/visit/process/900', visitInstanceId: 456 }),
+      student,
+    );
+    expect(link).toBe('/dashboard/visit?openVisitRequestId=123&openVisitInstanceId=456');
+  });
+
+  it('Student contribution fallback still fires when visitRequestId itself is missing', () => {
+    const link = resolveNotificationDestination(
+      item({ targetUrl: '/dashboard/visit/process/900', visitRequestId: null, visitInstanceId: 456 }),
       student,
     );
     expect(link).toBe('/dashboard/visit/contribution/456');
@@ -234,8 +246,8 @@ describe('classifyNotificationIntent pins every current eventKey to a navigation
     ['PARTNER_APPROVED', 'PARTNER_DETAIL'],
     ['PARTNER_REJECTED', 'PARTNER_DETAIL'],
     ['HOST_FEEDBACK_INVITE', 'FEEDBACK_MODAL'],
-    ['VISITOR_FEEDBACK_RECEIVED', 'VISIT_DETAIL'],
-    ['HOST_FEEDBACK_RECEIVED', 'VISIT_DETAIL'],
+    ['VISITOR_FEEDBACK_RECEIVED', 'FEEDBACK_MODAL'],
+    ['HOST_FEEDBACK_RECEIVED', 'FEEDBACK_MODAL'],
     ['VISIT_REMINDER', 'VISIT_DETAIL'],
     ['ACCOUNT_STATUS_ACTIVATED', 'ACCOUNT_DETAIL'],
     ['ACCOUNT_STATUS_DEACTIVATED', 'ACCOUNT_DETAIL'],
@@ -256,6 +268,23 @@ describe('classifyNotificationIntent pins every current eventKey to a navigation
   it('an explicit modern actionType outranks the eventKey', () => {
     const conflicting = withEvent('VISIT_REQUEST_WAITING_APPROVAL', { actionType: 'OPEN_VISIT_HISTORY' });
     expect(classifyNotificationIntent(conflicting)).toBe('VISIT_HISTORY');
+  });
+
+  // Plan RC-05/RM-01..03: VisitReminderDispatchService.SendInAppAsync now sets a per-recipient
+  // actionType — the current Host gets OPEN_HOST_PROCESS, every other recipient gets
+  // OPEN_CONTRIBUTION — instead of one shared eventKey-only classification for everyone.
+  it('a Host VISIT_REMINDER (actionType=OPEN_HOST_PROCESS) classifies as HOST_PROCESS, not VISIT_DETAIL', () => {
+    const hostReminder = withEvent('VISIT_REMINDER', { actionType: 'OPEN_HOST_PROCESS' });
+    expect(classifyNotificationIntent(hostReminder)).toBe('HOST_PROCESS');
+  });
+
+  it('a participant VISIT_REMINDER (actionType=OPEN_CONTRIBUTION) classifies as CONTRIBUTION, never HOST_PROCESS', () => {
+    const participantReminder = withEvent('VISIT_REMINDER', { actionType: 'OPEN_CONTRIBUTION' });
+    expect(classifyNotificationIntent(participantReminder)).toBe('CONTRIBUTION');
+  });
+
+  it('a pre-fix legacy VISIT_REMINDER row (no actionType) still falls back to the conservative VISIT_DETAIL', () => {
+    expect(classifyNotificationIntent(withEvent('VISIT_REMINDER'))).toBe('VISIT_DETAIL');
   });
 
   it('does not depend on the active UI language — same item, same intent regardless of caller locale', () => {
@@ -300,37 +329,29 @@ describe('the UPDATED_PENDING bug: intent travels into the one-shot command URL'
   });
 });
 
-// ── PARTICIPATION_INVITED: current backend ActionUrl shape (plan-continuation §9/DL-09) ─────────────
+// ── PARTICIPATION_INVITED: current backend ActionUrl shape (plan RC-06) ─────────────────────────────
 
-describe('PARTICIPATION_INVITED still routes through the OPEN_VISIT_INVITATION rewrite', () => {
-  // Producer (InviteVisitParticipantCommandHandler): the non-dept-routed ActionUrl now carries
-  // ?tab=participants&participantId=N (InviteVisitParticipantCommandHandler.cs L275) — this asserts
-  // the existing role-agnostic rewrite still fires for that CURRENT shape, not just a bare
-  // /dashboard/visit/process/{id}.
-  it('rewrites to the attending-tab list regardless of role, per the OPEN_VISIT_INVITATION branch', () => {
-    const link = resolveNotificationDestination(
-      withEvent('PARTICIPATION_INVITED', {
-        actionType: 'OPEN_VISIT_INVITATION',
-        targetUrl: '/dashboard/visit/process/456?tab=participants&participantId=789',
-        visitRequestId: 123,
-        visitInstanceId: 456,
-      }),
-      student,
-    );
-    expect(link).toBe('/dashboard/visit?visitRequestId=123&tab=attending');
-  });
-
-  it('does not go through the openVisitRequestId one-shot command for this ActionUrl shape', () => {
-    const link = resolveNotificationDestination(
-      withEvent('PARTICIPATION_INVITED', {
-        actionType: 'OPEN_VISIT_INVITATION',
-        targetUrl: '/dashboard/visit/process/456?tab=participants&participantId=789',
-        visitRequestId: 123,
-        visitInstanceId: 456,
-      }),
-      staffLeader,
-    );
-    expect(link).not.toContain('openVisitRequestId');
+describe('PARTICIPATION_INVITED now routes through the one-shot command, never the generic tab', () => {
+  // Producer (InviteVisitParticipantCommandHandler): the non-dept-routed ActionUrl carries
+  // ?tab=participants&participantId=N (InviteVisitParticipantCommandHandler.cs L275). The OLD
+  // rewrite discarded that participantId entirely and sent everyone to the generic attending-tab
+  // list to "find it again" — exactly the RC-06 bug. The fix folds this into the same one-shot
+  // command every other Visit-command intent uses: VisitRequestManagement re-resolves the CURRENT
+  // participant row (with its real, live participantId) and opens the exact invitation screen —
+  // never a client-side scan, and never a stale id parsed off this URL.
+  it('rewrites to the one-shot command carrying notificationIntent=VISIT_INVITATION, for every role', () => {
+    for (const u of [student, staffLeader]) {
+      const link = resolveNotificationDestination(
+        withEvent('PARTICIPATION_INVITED', {
+          actionType: 'OPEN_VISIT_INVITATION',
+          targetUrl: '/dashboard/visit/process/456?tab=participants&participantId=789',
+          visitRequestId: 123,
+          visitInstanceId: 456,
+        }),
+        u,
+      );
+      expect(link).toBe('/dashboard/visit?openVisitRequestId=123&openVisitInstanceId=456&notificationIntent=VISIT_INVITATION');
+    }
   });
 });
 

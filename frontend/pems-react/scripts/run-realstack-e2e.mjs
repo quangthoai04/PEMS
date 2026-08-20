@@ -166,9 +166,9 @@ const writeAuthProfiles = () => {
     "SELECT u.user_id, u.email, r.role_code, COALESCE(u.sub_role,''), COALESCE(u.primary_campus_id,''), " +
     "COALESCE(u.department_id,'') " +
     "FROM users u JOIN roles r ON r.role_id = u.role_id WHERE u.email IN " +
-    "('ho@fpt.edu.vn','staff.leader.hn@fpt.edu.vn','staff.leader.hcm@fpt.edu.vn','visitor@example.com'," +
+    "('ho@fpt.edu.vn','staff.leader.hn@fpt.edu.vn','staff.leader.hcm@fpt.edu.vn','kim.minjae@seoultech.example'," +
     "'dept.leader.hn@fpt.edu.vn','dept.hn@fpt.edu.vn'," +
-    "'facilities.leader.hn@fpt.edu.vn','facilities.staff.hn@fpt.edu.vn')"],
+    "'facilities.leader.hn@fpt.edu.vn','facilities.staff.hn@fpt.edu.vn','staff.hn@fpt.edu.vn')"],
     { encoding: 'utf8' });
   if (q.status !== 0) throw new Error(`auth profile seed query failed: ${q.stderr}`);
   const byEmail = {};
@@ -189,7 +189,7 @@ const writeAuthProfiles = () => {
     pick('ho_viewer', 'ho@fpt.edu.vn'),
     pick('campus_leader_hn', 'staff.leader.hn@fpt.edu.vn'),
     pick('campus_leader_hcm', 'staff.leader.hcm@fpt.edu.vn'),
-    pick('visitor_owner', 'visitor@example.com'),
+    pick('visitor_owner', 'kim.minjae@seoultech.example'),
     // Two GENERAL departments on campus 1, each with its own Leader and Staff. Two are needed rather
     // than one: cross-department refusal is only a real test when the other department actually exists
     // and is populated, otherwise "no data" and "correctly denied" look identical from the browser.
@@ -197,6 +197,11 @@ const writeAuthProfiles = () => {
     pick('dept_staff_hn', 'dept.hn@fpt.edu.vn'),
     pick('facilities_leader_hn', 'facilities.leader.hn@fpt.edu.vn'), // Cơ sở vật chất HN
     pick('facilities_staff_hn', 'facilities.staff.hn@fpt.edu.vn'),
+    // A second HN IC Staff member distinct from the campus Staff Leader -- needed for host-transfer
+    // journeys: TransferVisitHostCommandHandler suppresses the notification to whichever side IS the
+    // actor ("you already know"), and only the Staff Leader may call it, so a real incoming/outgoing
+    // notification can only ever land on a DIFFERENT IC Staff member's own account.
+    pick('staff_hn', 'staff.hn@fpt.edu.vn'),
   ];
   // Seed an ACTIVE session per profile so the real SessionValidationMiddleware accepts the E2E actor exactly
   // like a logged-in user (no production middleware bypass). login_portal follows the account kind.
