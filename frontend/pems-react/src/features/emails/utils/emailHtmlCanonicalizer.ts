@@ -17,8 +17,14 @@
  * structure and the surviving style declarations are all significant; only the notation is normalised.
  */
 
-/** Declarations Quill and the CSS parser reorder or re-spell without changing what is rendered. */
-function canonicalStyle(style: string): string {
+/**
+ * Declarations Quill and the CSS parser reorder or re-spell without changing what is rendered.
+ *
+ * Exported so callout-preset classification (`emailEditorCalloutPresets.ts`) can compare an observed
+ * container style against a canonical preset using the same normalisation this file already uses for
+ * dirty-state comparison — never a second, independently-drifting CSS normalizer.
+ */
+export function canonicalStyle(style: string): string {
   return style
     .split(';')
     .map((d) => d.trim())

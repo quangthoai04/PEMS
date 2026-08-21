@@ -1,4 +1,9 @@
 using System.Diagnostics;
+using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -24,6 +29,7 @@ public sealed class TestApiIntegrationCommandHandler
     private readonly IFaceDetectionProvider _faceDetectionProvider;
     private readonly ISecretProtector _secretProtector;
     private readonly IGoogleDriveStorageService _googleDrive;
+    private readonly IHttpClientFactory _httpClientFactory;
 
     public TestApiIntegrationCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
@@ -31,7 +37,8 @@ public sealed class TestApiIntegrationCommandHandler
         PEMS.Application.News.Services.INewsTranslationService translationService,
         IFaceDetectionProvider faceDetectionProvider,
         ISecretProtector secretProtector,
-        IGoogleDriveStorageService googleDrive)
+        IGoogleDriveStorageService googleDrive,
+        IHttpClientFactory httpClientFactory)
     {
         _db = db;
         _currentUser = currentUser;
@@ -42,6 +49,7 @@ public sealed class TestApiIntegrationCommandHandler
         _faceDetectionProvider = faceDetectionProvider;
         _secretProtector = secretProtector;
         _googleDrive = googleDrive;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<ApiConnectionTestResultDto> Handle(
@@ -230,54 +238,81 @@ public sealed class TestApiIntegrationCommandHandler
         }
     }
 
+    /// <summary>
+    /// Exercises exactly the same HTTP call <see cref="PEMS.Infrastructure.Email.ResendEmailService"/>
+    /// makes for a real send — same base URL, same auth header, same
+    /// <see cref="ResendDeliveryClassifier"/> — so this button can never disagree with what a real send
+    /// would report. It does not retry: Test Connection is a diagnostic the admin presses once and reads
+    /// once, and auto-retrying here would mask exactly the causes (quota, auth) this button exists to
+    /// surface immediately.
+    /// </summary>
     private async Task<(bool Success, string Message, string? ErrorCode)> ExecuteResendTestAsync(
         ApiConfiguration config, string adminEmail, CancellationToken cancellationToken)
     {
+        string apiKey;
         try
         {
-            var apiKey = _secretProtector.Unprotect(config.BearerTokenEncrypted!);
-            var settings = ResendProviderSettings.Parse(config.SettingsJson);
-            var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? ResendEmailConstants.BaseUrl : config.BaseUrl.TrimEnd('/');
+            apiKey = _secretProtector.Unprotect(config.BearerTokenEncrypted!);
+        }
+        catch (Exception)
+        {
+            return (false, "Không thể giải mã Resend API key.", EmailDeliveryCodes.ResendCredentialError);
+        }
 
-            var fromEmail = !string.IsNullOrWhiteSpace(settings.FromEmail) ? settings.FromEmail : "no-reply@mail.pems-fpt.site";
-            var fromName = !string.IsNullOrWhiteSpace(settings.FromName) ? settings.FromName : "PEMS";
-            var from = !string.IsNullOrWhiteSpace(fromName) ? $"{fromName} <{fromEmail}>" : fromEmail;
+        var settings = ResendProviderSettings.Parse(config.SettingsJson);
+        var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? ResendEmailConstants.BaseUrl : config.BaseUrl.TrimEnd('/');
 
-            var payload = new
-            {
-                from = from,
-                to = new[] { adminEmail },
-                subject = "PEMS — Kiểm tra kết nối Resend",
-                html = "<p>Email kiểm tra kết nối từ hệ thống PEMS tới Resend API thành công.</p>"
-            };
+        var fromEmail = !string.IsNullOrWhiteSpace(settings.FromEmail) ? settings.FromEmail : "no-reply@mail.pems-fpt.site";
+        var fromName = !string.IsNullOrWhiteSpace(settings.FromName) ? settings.FromName : "PEMS";
+        var from = !string.IsNullOrWhiteSpace(fromName) ? $"{fromName} <{fromEmail}>" : fromEmail;
 
-            using var client = new System.Net.Http.HttpClient();
+        var payload = new
+        {
+            from,
+            to = new[] { adminEmail },
+            subject = "PEMS — Kiểm tra kết nối Resend",
+            html = "<p>Email kiểm tra kết nối từ hệ thống PEMS tới Resend API thành công.</p>"
+        };
+
+        try
+        {
+            using var client = _httpClientFactory.CreateClient("ResendEmailService");
             client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 30);
 
-            using var httpRequest = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, $"{baseUrl}/emails");
-            httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            httpRequest.Content = new System.Net.Http.StringContent(
-                System.Text.Json.JsonSerializer.Serialize(payload),
-                System.Text.Encoding.UTF8,
-                "application/json");
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/emails");
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            httpRequest.Content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
             var response = await client.SendAsync(httpRequest, cancellationToken);
             var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (response.IsSuccessStatusCode)
             {
-                using var doc = System.Text.Json.JsonDocument.Parse(responseText);
+                using var doc = JsonDocument.Parse(responseText);
                 if (doc.RootElement.TryGetProperty("id", out var idProp) && !string.IsNullOrEmpty(idProp.GetString()))
                 {
                     return (true, $"Kết nối Resend thành công. Email test đã gửi tới {adminEmail} (ID: {idProp.GetString()}).", null);
                 }
+
+                // A 2xx with no usable id is still not proof of acceptance — classify it rather than
+                // reporting a success PEMS cannot back up.
+                var unclassified = ResendDeliveryClassifier.ClassifyResponse((int)response.StatusCode, responseText, null);
+                return (false, unclassified.SafeMessage, unclassified.Code);
             }
 
-            return (false, "Resend API phản hồi không thành công.", "RESEND_TEST_FAILED");
+            var retryAfterRaw = response.Headers.TryGetValues("Retry-After", out var values)
+                ? values.FirstOrDefault()
+                : null;
+            var classified = ResendDeliveryClassifier.ClassifyResponse(
+                (int)response.StatusCode, responseText, retryAfterRaw);
+
+            return (false, classified.SafeMessage, classified.Code);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return (false, $"Lỗi kiểm tra kết nối Resend: {ex.Message}", "RESEND_TEST_EXCEPTION");
+            var classified = ResendDeliveryClassifier.ClassifyException(ex);
+            return (false, classified.SafeMessage, classified.Code);
         }
     }
 }

@@ -242,9 +242,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                     TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
                     {
                         [EmailTrustedBlocks.ActionBlock] = EmailComposition.DetailLinkBlock(
-                            detailUrl,
-                            "Xem chi tiết trong hệ thống",
-                            "Đăng nhập để xem chi tiết đề xuất và quyết định Chấp nhận / Từ chối trong hệ thống."),
+                            detailUrl, "Xem chi tiết trong hệ thống"),
                     },
                     RelatedType: EmailActionTargetTypes.LogisticsItem,
                     RelatedId: l.LogisticsItemId,

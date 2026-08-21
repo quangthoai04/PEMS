@@ -263,6 +263,10 @@ public sealed class SystemEmailDispatcher : ISystemEmailDispatcher
             IsHtml = prepared.IsHtml,
             TemplateCode = prepared.TemplateCode,
             Attachments = prepared.Attachments,
+            // Derived from the SentEmail row PrepareAsync already committed — stable across every retry of
+            // THIS logical message, so a provider transport that retries a network-ambiguous outcome can
+            // never create a second copy of it.
+            DeliveryIdempotencyKey = $"pems-system-{prepared.SentEmailId}",
         }, cancellationToken);
 
         // Provider acceptance is SENT and nothing more: PEMS has no delivery webhook, so DELIVERED would

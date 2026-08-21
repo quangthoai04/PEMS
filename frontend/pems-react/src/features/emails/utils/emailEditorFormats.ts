@@ -23,6 +23,7 @@ import { registerSystemActionBlot } from './emailEditorSystemNodes';
 import { registerVariableChipBlot } from './emailEditorVariableChips';
 import { registerEmailTableBlot } from './emailEditorTable';
 import { registerTemplateBlockBlot } from './emailEditorTemplateBlocks';
+import { registerEmailCalloutBlot, CALLOUT_BLOT_NAME } from './emailEditorCallouts';
 
 /**
  * V4 §6.2. Bare family names rather than full stacks: the value has to survive a round trip through the
@@ -132,6 +133,9 @@ export function registerEmailEditorFormats(): boolean {
   // The TEMPLATE spelling of a system block — `{{actionBlock}}` as an object. Registered here with the
   // rest so a template opened before it existed cannot lose one: Quill drops what it has no blot for.
   registerTemplateBlockBlot();
+  // Styled callout/panel containers (V4 Phase A) — see emailEditorCallouts.ts for why this is an atomic
+  // node rather than a live Container.
+  registerEmailCalloutBlot();
 
   registered = true;
   return true;
@@ -155,4 +159,5 @@ export const EMAIL_EDITOR_FORMATS = [
   'pemsTemplateBlock',
   'pemsVariable',
   'pemsEmailTable',
+  CALLOUT_BLOT_NAME,
 ];

@@ -10,6 +10,15 @@ public static class ResendEmailConstants
     public const string Purpose = "EMAIL_DELIVERY";
     public const string BaseUrl = "https://api.resend.com";
     public const string AuthType = "BEARER_TOKEN";
+
+    /// <summary>
+    /// The HTTP header Resend uses to de-duplicate a request at the provider: two POSTs carrying the same
+    /// key and the same body are treated as one send. This is a TRANSPORT header sent to Resend itself —
+    /// unrelated to PEMS's own client-facing <c>Idempotency-Key</c> (see
+    /// <c>PEMS.Application.Emails.Idempotency.IdempotencyKey</c>), which protects a report/invoice send
+    /// endpoint against a duplicate HTTP request from the browser.
+    /// </summary>
+    public const string IdempotencyHeaderName = "Idempotency-Key";
 }
 
 public sealed class ResendProviderSettings

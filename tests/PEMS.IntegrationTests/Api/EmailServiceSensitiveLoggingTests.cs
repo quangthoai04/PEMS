@@ -103,4 +103,46 @@ public sealed class EmailServiceSensitiveLoggingTests
         Assert.Contains("partner.example.com", log);  // recipient DOMAIN is allowed metadata
         Assert.Contains("Xác thực", log);             // the fixed subject/template identifier, not a secret
     }
+
+    /// <summary>An <see cref="EmailService"/> whose SMTP dispatch always throws a given exception.</summary>
+    private sealed class ThrowingEmailService : EmailService
+    {
+        private readonly Exception _exception;
+        public ThrowingEmailService(IConfiguration config, ILogger<EmailService> logger, Exception exception)
+            : base(config, logger, new FakeHostEnvironment("Development"),
+                   Microsoft.Extensions.Options.Options.Create(new EmailRecipientOptions()))
+            => _exception = exception;
+
+        protected override Task DispatchAsync(
+            System.Net.Mail.MailMessage message, SmtpConfig config, System.Threading.CancellationToken cancellationToken)
+            => throw _exception;
+    }
+
+    /// <summary>
+    /// Phase D: a rejected-recipient exception's own <c>FailedRecipient</c> property is the rejected
+    /// address itself (a real SMTP server routinely echoes it back, e.g. "550 mailbox unavailable:
+    /// victim@example.com") — the classifier's SafeMessage never carries it, and EmailService's log line
+    /// must not either, even though the exception object it received is holding the address in the clear.
+    /// </summary>
+    [Fact]
+    public async Task A_rejected_recipient_exception_is_logged_without_the_unmasked_address()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Smtp:Enabled"] = "true", ["Smtp:Host"] = "smtp.example.test",
+            })
+            .Build();
+        var logger = new CapturingLogger<EmailService>();
+        var svc = new ThrowingEmailService(config, logger, new System.Net.Mail.SmtpFailedRecipientException(
+            System.Net.Mail.SmtpStatusCode.MailboxUnavailable,
+            "victim.person@partner.example.com",
+            "550 mailbox unavailable: victim.person@partner.example.com"));
+
+        await svc.TrySendAsync("victim.person@partner.example.com", "Subject", "<b>body</b>");
+
+        var log = string.Join("\n", logger.Messages);
+        Assert.DoesNotContain("victim.person", log);
+        Assert.Contains(EmailDeliveryCodes.SmtpRecipientRejected, log);
+    }
 }

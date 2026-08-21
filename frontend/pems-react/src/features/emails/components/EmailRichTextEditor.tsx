@@ -36,7 +36,7 @@ import {
   Undo2, Redo2, Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight,
   List, ListOrdered, IndentDecrease, IndentIncrease, Link2, ImageIcon, Minus, Eraser,
   Maximize2, Minimize2, Braces, MousePointerClick, Baseline, PaintBucket, Table as TableIcon,
-  TableProperties,
+  TableProperties, SquarePen, Palette, Trash2, Frame as FrameIcon,
 } from 'lucide-react';
 import {
   DIVIDER_BLOT_NAME, EMAIL_EDITOR_FORMATS, EMAIL_FONTS, EMAIL_INDENTS, EMAIL_SIZES,
@@ -48,22 +48,24 @@ import {
 import {
   SPACE_RUN_WARNING, hasSpaceRun, htmlHasSpaceRun, sanitizePastedFragment,
 } from '../utils/emailEditorPaste';
-import { isSameEmailHtml } from '../utils/emailHtmlCanonicalizer';
-import { fromEditorHtml, toEditorHtml } from '../utils/emailEditorSystemNodes';
 import { countSystemActionNodes } from '../utils/systemActionNode';
-import {
-  VARIABLE_CHIP_CLASS, chipsToVariables, variablesToChips,
-} from '../utils/emailEditorVariableChips';
+import { VARIABLE_CHIP_CLASS, variablesToChips } from '../utils/emailEditorVariableChips';
 import {
   type EmailTableModel,
-  TABLE_BLOT_NAME, TABLE_WRAPPER_CLASS, applyTableEdit, buildEmailTable, nodesToTables,
-  parseEmailTable, tablesToNodes,
+  TABLE_BLOT_NAME, TABLE_WRAPPER_CLASS, applyTableEdit, buildEmailTable,
+  parseEmailTable,
 } from '../utils/emailEditorTable';
 import {
-  TEMPLATE_BLOCK_ATTRIBUTE, TEMPLATE_BLOCK_BLOT_NAME, TEMPLATE_BLOCK_CLASS,
-  countTemplateBlocks, nodesToTemplateBlocks, templateBlockLabel, templateBlocksToNodes,
+  TEMPLATE_BLOCK_BLOT_NAME, TEMPLATE_BLOCK_CLASS,
+  countTemplateBlocks, templateBlockLabel,
 } from '../utils/emailEditorTemplateBlocks';
+import { CALLOUT_BLOT_NAME, CALLOUT_WRAPPER_CLASS } from '../utils/emailEditorCallouts';
+import { editorHtmlToStored, storedToEditorHtml } from '../utils/emailEditorConversion';
+import {
+  CALLOUT_KIND_ORDER, CALLOUT_PRESETS, type CalloutKind, calloutKindLabel, classifyCalloutStyle,
+} from '../utils/emailEditorCalloutPresets';
 import { EmailTableDialog } from './EmailTableDialog';
+import { EmailCalloutContentDialog } from './EmailCalloutContentDialog';
 
 // Before any editor is constructed: Quill drops what it has no blot for, so a late registration means the
 // first document opened loses its action block and its dividers.
@@ -143,60 +145,6 @@ export interface EmailRichTextEditorProps {
   'data-testid'?: string;
 }
 
-/** True for a block a caret cannot go inside, and therefore cannot go after when it ends a document. */
-function isBlockObject(el: Element | null | undefined): boolean {
-  if (!el) return false;
-  return el.tagName === 'HR'
-    || el.tagName === 'TABLE'
-    || el.classList.contains(TABLE_WRAPPER_CLASS)
-    || el.hasAttribute('data-system-block')
-    || el.hasAttribute(TEMPLATE_BLOCK_ATTRIBUTE)
-    || !!el.querySelector?.(`table, hr, [data-system-block], [${TEMPLATE_BLOCK_ATTRIBUTE}]`);
-}
-
-/**
- * True for a block with no text in it at all — `<p></p>` and Quill's `<p><br></p>`, and nothing else.
- *
- * Deliberately NOT "looks empty". A paragraph holding a space or a `&nbsp;` is a line the author put
- * there, and Quill keeps it: its delta ends with a character, so the trailing-newline rule below does
- * not apply to it. Treating it as blank here would delete a spacer line from somebody's template.
- */
-function isBlankBlock(el: Element | null | undefined): boolean {
-  if (!el || !/^(P|DIV)$/.test(el.tagName)) return false;
-  if (el.querySelector('img, table, hr, [data-system-block], [data-variable]')) return false;
-  return (el.textContent ?? '').replace(/[﻿​]/g, '') === '';
-}
-
-/**
- * Drops one trailing blank block — the one Quill is going to drop anyway.
- *
- * <b>The defect this closes, which is a performance one.</b> `clipboard.convert` deletes exactly one
- * trailing newline when it parses a document, so a body stored as `…</table><p></p>` arrives in the
- * editor WITHOUT that paragraph. react-quill-new then compares the value it was given against what the
- * editor actually holds — on every render — and re-runs `setContents` whenever they differ. A difference
- * the parse itself creates can never be reconciled, so that comparison answers "different" forever: the
- * whole document is rebuilt on every keystroke, every DOM node is replaced under whatever was holding
- * one, and the caret goes with it. Measured on quill 2.0.3 with a body ending in a table and an empty
- * paragraph — a shape a person makes by pressing Enter after a table and saving.
- *
- * `onlyAfterObject` is for the OTHER direction. On the way IN this matches Quill's own rule exactly, so
- * what is handed over is what will be held. On the way OUT only the blank line that follows a table, a
- * divider or the action block is removed — the one `caretAfterBlock` adds so the author has somewhere to
- * type — because a blank line an author left at the end of ordinary prose is theirs while they are still
- * editing, and taking it out from under them mid-session is an edit nobody asked for.
- */
-function dropTrailingBlank(html: string, onlyAfterObject = false): string {
-  if (!html || typeof window === 'undefined' || !window.DOMParser) return html;
-
-  const doc = new window.DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  const last = doc.body.lastElementChild;
-  if (!isBlankBlock(last)) return html;
-  if (onlyAfterObject && !isBlockObject(last!.previousElementSibling)) return html;
-
-  last!.remove();
-  return doc.body.innerHTML;
-}
-
 /*
  * A note on the line AFTER a table, because the obvious repair is a trap.
  *
@@ -222,6 +170,63 @@ function tableNodeAt(q: any, index: number): HTMLElement | null {
   const [blot] = q.getLine?.(index) ?? [];
   const node: unknown = blot?.domNode;
   return node instanceof HTMLElement && node.classList.contains(TABLE_WRAPPER_CLASS) ? node : null;
+}
+
+/** The callout wrapper living at `index`, or null if that position holds something else — same reasoning
+ * as {@link tableNodeAt}. */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function calloutNodeAt(q: any, index: number): HTMLElement | null {
+  const [blot] = q.getLine?.(index) ?? [];
+  const node: unknown = blot?.domNode;
+  return node instanceof HTMLElement && node.classList.contains(CALLOUT_WRAPPER_CLASS) ? node : null;
+}
+
+/**
+ * Whether `[index, length)` may safely become a callout frame (Add Frame — email callout frames plan).
+ *
+ * A single boundary check rejects every "partial" case for free: tables, system-blocks, template-blocks
+ * and callouts are all `BlockEmbed`s — one indivisible LINE each in Quill's Delta model — so a selection
+ * whose edges land exactly on line boundaries can never include half of one. Proven empirically against
+ * the real bundled quill 2.0.3 (`getLine`/`getLines` boundary offsets behave exactly as assumed here,
+ * including at the edges of every embed type in play) before this was relied on.
+ *
+ * The one case this boundary check does NOT cover on its own — wrapping a selection that already contains
+ * an existing callout — is checked explicitly, since "no nested callouts" is a hard invariant, not merely
+ * a partial-selection safety concern.
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function safeCalloutSelection(q: any, index: number, length: number): boolean {
+  if (length <= 0) return false;
+
+  const [, startOffset] = q.getLine(index);
+  if (startOffset !== 0) return false;
+
+  const endIndex = index + length;
+  if (endIndex < q.getLength() - 1) {
+    const [, endOffset] = q.getLine(endIndex);
+    if (endOffset !== 0) return false;
+  }
+
+  return (q.getLines(index, length) as any[])
+    .every((line) => !line.domNode?.classList?.contains(CALLOUT_WRAPPER_CLASS));
+}
+
+/**
+ * The real, already-rendered HTML of every whole line in `[index, length)` — NOT `quill.getSemanticHTML()`.
+ *
+ * Measured against the real bundled quill 2.0.3: `getSemanticHTML` re-serializes plain text and escapes
+ * every ordinary space as `&nbsp;` (`Name: value` → `Name:&nbsp;value`), which no other conversion in this
+ * editor does — `q.root.innerHTML` (what every other edit path here reads) keeps real spaces. Using
+ * `getSemanticHTML` for Add Frame would have made a wrapped paragraph's spacing silently diverge from the
+ * same paragraph's spacing anywhere else in the document. Reading each line's own `domNode.outerHTML`
+ * instead — safe here specifically because {@link safeCalloutSelection} already guarantees whole-line
+ * boundaries — carries no such risk: it is the same DOM the editor is already showing.
+ */
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+function extractLinesHtml(q: any, index: number, length: number): string {
+  return (q.getLines(index, length) as any[])
+    .map((line) => (line.domNode instanceof HTMLElement ? line.domNode.outerHTML : ''))
+    .join('');
 }
 
 /** A toolbar button. Kept tiny and unstyled-by-default so the group markup below stays readable. */
@@ -276,6 +281,14 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     [mode, capabilities],
   );
 
+  /**
+   * In TEMPLATE mode a `{{systemBlock}}` is an object, not a variable — and the ORDER used everywhere this
+   * feeds into (`toEditor`/`fromEditor`, and the callout-content dialog's own conversions below) is what
+   * makes that true: `variablesToChips` matches any `{{name}}`, so a block reaching it first becomes a
+   * data chip labelled "actionBlock" and stops being recognisable as something the backend builds.
+   */
+  const isTemplate = mode === 'TEMPLATE';
+
   const quillRef = useRef<any>(null);
 
   /**
@@ -303,6 +316,12 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
   const [active, setActive] = useState<Record<string, any>>({});
   const [showVariables, setShowVariables] = useState(false);
   const [showBlocks, setShowBlocks] = useState(false);
+  const [showCalloutTypeMenu, setShowCalloutTypeMenu] = useState(false);
+  const [showAddFrameMenu, setShowAddFrameMenu] = useState(false);
+  /** Whether the current selection is non-empty — what enables "Thêm khung" (a caret alone cannot be
+   * framed; a real range is required). Tracked as state, not read from `lastRange` directly, because a
+   * disabled prop must re-render when selection changes, and a ref update alone would not. */
+  const [hasRangeSelection, setHasRangeSelection] = useState(false);
 
   /**
    * The last caret the editor actually had.
@@ -706,6 +725,189 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
     };
   }, [editor, openTableDialog, disabled, selectTable]);
 
+  // ── Callout frames: Edit content / Add / Remove / Change type ──
+  //
+  // Both TEMPLATE and COMPOSE main editors keep full frame authoring (`caps.allowCalloutAuthoring`); only
+  // the nested callout-content mini-editor instance below disables it — that, plus its own
+  // `preserveCallouts: false`, is what actually prevents a callout from ever nesting inside another.
+  //
+  // Selection tracking mirrors the table pattern exactly (element + index, index survives a controlled-
+  // Quill rebuild the element itself does not — see the note above `selectedTableIndex`).
+
+  const [selectedCallout, setSelectedCallout] = useState<HTMLElement | null>(null);
+  const selectedCalloutIndex = useRef<number | null>(null);
+
+  const selectCallout = useCallback((el: HTMLElement | null) => {
+    setSelectedCallout(el);
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = el ? (Quill as any)?.find?.(el) : null;
+    const q = editor();
+    selectedCalloutIndex.current = blot && q ? q.getIndex(blot) : null;
+  }, [editor]);
+
+  const liveSelectedCallout = useCallback((): HTMLElement | null => {
+    if (selectedCallout?.isConnected) return selectedCallout;
+    const q = editor();
+    const at = selectedCalloutIndex.current;
+    return q && at !== null ? calloutNodeAt(q, at) : null;
+  }, [selectedCallout, editor]);
+
+  /**
+   * The callout's own inner content, converted from what the blot stores (editor spelling — chips,
+   * resolved system-block nodes, a template-block node for `{{actionBlock}}`) into the genuine STORED
+   * spelling the mini-editor's `value` prop contract requires — using the SAME shared conversion functions
+   * the main editor itself uses, never a bespoke copy (correction 3).
+   *
+   * `preserveCallouts: false` here is deliberate and load-bearing, independent of the main editor's own
+   * (always `true`) setting: this converts only the callout's OWN inner fragment, and that fragment must
+   * never be allowed to grow a nested callout embed no matter what content passes through it — see the
+   * dedicated regression test for the paste-a-styled-div case this specifically guards against.
+   */
+  const [calloutEdit, setCalloutEdit] = useState<{
+    el: HTMLElement | null; at: number | null; style: string; draftStoredHtml: string;
+  } | null>(null);
+
+  const openCalloutEdit = useCallback((el: HTMLElement) => {
+    const style = el.getAttribute('data-pems-callout-style') ?? '';
+    const draftStoredHtml = editorHtmlToStored(el.innerHTML, {
+      isTemplate, preserveCallouts: false, onlyTrailingAfterObject: true,
+    });
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = (Quill as any)?.find?.(el);
+    const q = editor();
+    setCalloutEdit({ el, at: blot && q ? q.getIndex(blot) : null, style, draftStoredHtml });
+  }, [editor, isTemplate]);
+
+  const cancelCalloutEdit = useCallback(() => setCalloutEdit(null), []);
+
+  const applyCalloutEdit = useCallback(() => {
+    const target = calloutEdit;
+    setCalloutEdit(null);
+    if (!target) return;
+
+    const q = editor();
+    if (!q) return;
+
+    const newEditorHtml = storedToEditorHtml(target.draftStoredHtml, {
+      isTemplate, labelOf, preserveCallouts: false,
+    });
+
+    // Resolved at APPLY time, not remembered from when the dialog opened — same defensive pattern as
+    // `applyTable`, for the same reason: an edit elsewhere while a modal dialog is open should not exist
+    // in practice, but trusting a stale element/index would be how it silently corrupts the wrong block.
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = target.el?.isConnected ? (Quill as any)?.find?.(target.el) : null;
+    const index = blot ? q.getIndex(blot) : target.at;
+
+    if (index === null || !calloutNodeAt(q, index)) {
+      onNotice?.('Khung đã thay đổi trong lúc chỉnh sửa. Vui lòng mở lại và áp dụng lần nữa.');
+      return;
+    }
+
+    q.deleteText(index, 1, 'user');
+    q.insertEmbed(index, CALLOUT_BLOT_NAME, { style: target.style, html: newEditorHtml }, 'user');
+    selectCallout(calloutNodeAt(q, index));
+  }, [calloutEdit, editor, isTemplate, labelOf, onNotice, selectCallout]);
+
+  const removeFrame = useCallback(() => {
+    const live = liveSelectedCallout();
+    const q = editor();
+    if (!live || !q) return;
+
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = (Quill as any)?.find?.(live);
+    const index = blot ? q.getIndex(blot) : null;
+    if (index === null) return;
+
+    const innerHtml = live.innerHTML;
+    q.deleteText(index, 1, 'user');
+    // Same primitive the paste handler uses two effects up — content flows back into ordinary, editable
+    // Quill blocks; only the wrapper's presentation disappears.
+    q.clipboard.dangerouslyPasteHTML(index, innerHtml, 'user');
+    selectCallout(null);
+  }, [liveSelectedCallout, editor, selectCallout]);
+
+  const changeFrameType = useCallback((kind: CalloutKind) => {
+    setShowCalloutTypeMenu(false);
+    if (kind === 'LegacyCustom') return;
+
+    const live = liveSelectedCallout();
+    const q = editor();
+    if (!live || !q) return;
+
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    const blot = (Quill as any)?.find?.(live);
+    const index = blot ? q.getIndex(blot) : null;
+    if (index === null) return;
+
+    // Metadata-only: `html` is never touched, so content/variables/the action block cannot be affected.
+    const html = live.innerHTML;
+    q.deleteText(index, 1, 'user');
+    q.insertEmbed(index, CALLOUT_BLOT_NAME, { style: CALLOUT_PRESETS[kind].style, html }, 'user');
+    selectCallout(calloutNodeAt(q, index));
+  }, [liveSelectedCallout, editor, selectCallout]);
+
+  const addFrame = useCallback((kind: CalloutKind) => {
+    setShowAddFrameMenu(false);
+    if (kind === 'LegacyCustom') return;
+
+    const q = editor();
+    if (!q) return;
+
+    const range = lastRange.current ?? q.getSelection();
+    if (!range || !safeCalloutSelection(q, range.index, range.length)) {
+      onNotice?.('Không thể tạo khung với nội dung đã chọn. Vui lòng chọn trọn vẹn một hoặc nhiều đoạn/khối.');
+      return;
+    }
+
+    const html = extractLinesHtml(q, range.index, range.length);
+    q.deleteText(range.index, range.length, 'user');
+    q.insertEmbed(range.index, CALLOUT_BLOT_NAME, { style: CALLOUT_PRESETS[kind].style, html }, 'user');
+    caretAfterBlock(q, range.index);
+    selectCallout(calloutNodeAt(q, range.index));
+  }, [editor, onNotice, caretAfterBlock, selectCallout]);
+
+  // Click selects a callout; double-click opens its content editor directly — mirrors the table.
+  useEffect(() => {
+    if (!caps.allowCalloutAuthoring) return undefined;
+    const q = editor();
+    const node: HTMLElement | undefined = q?.root;
+    if (!node || typeof node.addEventListener !== 'function') return undefined;
+
+    const wrapperOf = (e: Event): HTMLElement | null => {
+      const t = e.target as HTMLElement | null;
+      return t?.closest?.(`.${CALLOUT_WRAPPER_CLASS}`) ?? null;
+    };
+
+    const onClick = (e: Event) => selectCallout(wrapperOf(e));
+    const onDouble = (e: Event) => {
+      const el = wrapperOf(e);
+      if (!el || disabled) return;
+      selectCallout(el);
+      openCalloutEdit(el);
+    };
+
+    node.addEventListener('click', onClick);
+    node.addEventListener('dblclick', onDouble);
+    return () => {
+      node.removeEventListener('click', onClick);
+      node.removeEventListener('dblclick', onDouble);
+    };
+  }, [editor, disabled, selectCallout, openCalloutEdit, caps.allowCalloutAuthoring]);
+
+  // Paints the selected callout's highlight — same mechanism as the table's `data-selected`.
+  useEffect(() => {
+    if (!caps.allowCalloutAuthoring) return;
+    const root: HTMLElement | undefined = editor()?.root;
+    if (!root || typeof root.querySelectorAll !== 'function') return;
+
+    const live = liveSelectedCallout();
+    for (const el of Array.from(root.querySelectorAll(`.${CALLOUT_WRAPPER_CLASS}[data-selected]`))) {
+      if (el !== live) el.removeAttribute('data-selected');
+    }
+    live?.setAttribute('data-selected', 'true');
+  }, [selectedCallout, liveSelectedCallout, editor, value, caps.allowCalloutAuthoring]);
+
   const clearFormatting = useCallback(() => {
     withEditor((q) => {
       const range = q.getSelection(true);
@@ -765,33 +967,18 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
    * Parchment matches it. Neither side ever sees the other's spelling.
    */
 
-  /**
-   * In TEMPLATE mode a `{{systemBlock}}` is an object, not a variable — and the ORDER below is what makes
-   * that true: `variablesToChips` matches any `{{name}}`, so a block reaching it first becomes a data
-   * chip labelled "actionBlock" and stops being recognisable as something the backend builds.
-   */
-  const isTemplate = mode === 'TEMPLATE';
-
   const toEditor = useCallback(
-    (stored: string) => dropTrailingBlank(
-      tablesToNodes(variablesToChips(
-        isTemplate ? templateBlocksToNodes(toEditorHtml(stored)) : toEditorHtml(stored),
-        labelOf,
-      )),
-    ),
-    [labelOf, isTemplate],
+    (stored: string) => storedToEditorHtml(stored, {
+      isTemplate, labelOf, preserveCallouts: caps.preserveCallouts,
+    }),
+    [labelOf, isTemplate, caps.preserveCallouts],
   );
 
   const fromEditor = useCallback(
-    (html: string) => {
-      const withoutChips = chipsToVariables(html);
-      const canonical = isTemplate ? nodesToTemplateBlocks(withoutChips) : withoutChips;
-      return dropTrailingBlank(
-        fromEditorHtml(nodesToTables(canonical)),
-        true,
-      );
-    },
-    [isTemplate],
+    (html: string) => editorHtmlToStored(html, {
+      isTemplate, preserveCallouts: caps.preserveCallouts, onlyTrailingAfterObject: true,
+    }),
+    [isTemplate, caps.preserveCallouts],
   );
 
   /**
@@ -988,16 +1175,93 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
         {caps.allowImages && onUploadImage && (
           <TB onClick={insertImage} title="Chèn ảnh" disabled={disabled}><ImageIcon className="h-4 w-4" /></TB>
         )}
-        <TB onClick={insertTable} title="Chèn bảng" disabled={disabled}><TableIcon className="h-4 w-4" /></TB>
-        <TB
-          onClick={editSelectedTable}
-          title="Chỉnh sửa bảng"
-          disabled={disabled || !selectedTable}
-        >
-          <TableProperties className="h-4 w-4" />
-        </TB>
-        <TB onClick={insertDivider} title="Chèn đường kẻ ngang" disabled={disabled}><Minus className="h-4 w-4" /></TB>
+        {caps.allowTables && (
+          <>
+            <TB onClick={insertTable} title="Chèn bảng" disabled={disabled}><TableIcon className="h-4 w-4" /></TB>
+            <TB
+              onClick={editSelectedTable}
+              title="Chỉnh sửa bảng"
+              disabled={disabled || !selectedTable}
+            >
+              <TableProperties className="h-4 w-4" />
+            </TB>
+          </>
+        )}
+        {caps.allowDividers && (
+          <TB onClick={insertDivider} title="Chèn đường kẻ ngang" disabled={disabled}><Minus className="h-4 w-4" /></TB>
+        )}
         <TB onClick={clearFormatting} title="Xóa định dạng" disabled={disabled}><Eraser className="h-4 w-4" /></TB>
+
+        {/*
+          Callout frames (email callout frames plan). Both TEMPLATE and COMPOSE keep full authoring —
+          `allowCalloutAuthoring` is `false` only for the nested callout-content mini-editor, which is what
+          actually prevents a frame from ever nesting inside another.
+        */}
+        {caps.allowCalloutAuthoring && (
+          <>
+            <TB
+              onClick={() => selectedCallout && openCalloutEdit(selectedCallout)}
+              title="Sửa nội dung khung"
+              disabled={disabled || !selectedCallout}
+            >
+              <SquarePen className="h-4 w-4" />
+            </TB>
+            <div className="relative">
+              <TB
+                onClick={() => setShowCalloutTypeMenu((s) => !s)}
+                title="Đổi kiểu khung"
+                active={showCalloutTypeMenu}
+                disabled={disabled || !selectedCallout}
+              >
+                <Palette className="h-4 w-4" />
+              </TB>
+              {showCalloutTypeMenu && selectedCallout && (
+                <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
+                  <div className="px-2.5 py-1 text-[11px] text-gray-400">
+                    {`Hiện tại: ${calloutKindLabel(classifyCalloutStyle(selectedCallout.getAttribute('data-pems-callout-style') ?? ''))}`}
+                  </div>
+                  {CALLOUT_KIND_ORDER.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => changeFrameType(kind)}
+                      className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      {CALLOUT_PRESETS[kind].label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <TB onClick={removeFrame} title="Xóa khung" disabled={disabled || !selectedCallout}>
+              <Trash2 className="h-4 w-4" />
+            </TB>
+            <div className="relative">
+              <TB
+                onClick={() => setShowAddFrameMenu((s) => !s)}
+                title="Thêm khung"
+                active={showAddFrameMenu}
+                disabled={disabled || !hasRangeSelection}
+              >
+                <FrameIcon className="h-4 w-4" />
+              </TB>
+              {showAddFrameMenu && (
+                <div className="absolute right-0 z-20 mt-1 w-48 rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
+                  {CALLOUT_KIND_ORDER.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => addFrame(kind)}
+                      className="block w-full rounded-lg px-2.5 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      {CALLOUT_PRESETS[kind].label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
         {/*
           COMPOSE inserts the position node; TEMPLATE inserts a placeholder the renderer substitutes.
@@ -1134,6 +1398,23 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
             color: #92400e; font-size: 12px; font-weight: 600; text-align: center;
             cursor: move; user-select: none;
           }
+          /*
+            A styled callout/panel (V4 Phase A): atomic, so it renders its OWN real border/background —
+            never overridden here — but is movable-whole like every other system node, not typed into.
+          */
+          .pems-email-editor .ql-editor .${CALLOUT_WRAPPER_CLASS} {
+            cursor: move;
+          }
+          .pems-email-editor .ql-editor .${CALLOUT_WRAPPER_CLASS}:hover {
+            outline: 1px dashed #94a3b8;
+            outline-offset: 2px;
+          }
+          /* Which callout the frame toolbar buttons would act on — editor furniture, stripped on the way
+             to stored content by the very same conversion that unwraps the callout node itself. */
+          .pems-email-editor .ql-editor .${CALLOUT_WRAPPER_CLASS}[data-selected="true"] {
+            outline: 2px solid #004c91;
+            outline-offset: 2px;
+          }
         `}</style>
         <div className="pems-email-editor">
           <ReactQuill
@@ -1171,6 +1452,7 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
               if (!range || source === 'api') return;
 
               lastRange.current = { index: range.index, length: range.length };
+              setHasRangeSelection(range.length > 0);
               // A caret inside this editor IS the signal that the body is what the operator is
               // writing in — one signal for both facts, so the two cannot disagree. The `onFocus`
               // below is a second route to the same statement, not the primary one: a click that
@@ -1198,6 +1480,31 @@ export const EmailRichTextEditor = forwardRef<EmailRichTextEditorHandle, EmailRi
           onCancel={() => setTableEdit(null)}
           onApply={applyTable}
         />
+      )}
+
+      {/*
+        The callout-content mini-editor (email callout frames plan). `EmailCalloutContentDialog` is a dumb
+        modal shell — it never imports `EmailRichTextEditor`, so there is no module import cycle; THIS
+        component creates the nested instance itself (a same-module recursive JSX reference, not a
+        cross-module cycle) and hands it to the dialog as `children`.
+
+        `preserveCallouts: false, allowCalloutAuthoring: false` are the two settings that make nesting
+        structurally impossible — see the doc comment on those capability fields.
+      */}
+      {calloutEdit && (
+        <EmailCalloutContentDialog onCancel={cancelCalloutEdit} onApply={applyCalloutEdit}>
+          <EmailRichTextEditor
+            mode={mode}
+            value={calloutEdit.draftStoredHtml}
+            onChange={(html) => setCalloutEdit((c) => (c ? { ...c, draftStoredHtml: html } : c))}
+            variables={variables}
+            capabilities={{
+              allowTables: false, allowDividers: false, allowSystemBlockInsert: false,
+              preserveCallouts: false, allowCalloutAuthoring: false,
+            }}
+            minHeight={160}
+          />
+        </EmailCalloutContentDialog>
       )}
     </div>
   );

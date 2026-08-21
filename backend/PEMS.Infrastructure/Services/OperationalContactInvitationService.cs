@@ -151,6 +151,10 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                 // in step.
                 ["plannedTime"] =
                     $"{campus.PlannedStartAt:HH:mm dd/MM/yyyy} - {campus.PlannedEndAt:HH:mm dd/MM/yyyy}",
+                // The specific deadline for THIS invitation's one-time links — genuinely per-send data, so
+                // it belongs in the template as a variable rather than baked into the action block (see
+                // EmailComposition.ContactRoleInvitationBlock).
+                ["contactExpiresAt"] = change.ExpiresAt.ToString("HH:mm dd/MM/yyyy"),
             };
             if (isTransfer)
                 // Naming the person handing the role over is what makes an unexpected invitation
@@ -168,7 +172,7 @@ public sealed class OperationalContactInvitationService : IOperationalContactInv
                     // The single-use link exists only inside the action block, which is also why the
                     // rendered body is not kept in the email history.
                     [EmailTrustedBlocks.ActionBlock] =
-                        EmailComposition.ContactRoleInvitationBlock(url, declineUrl, change.ExpiresAt),
+                        EmailComposition.ContactRoleInvitationBlock(url, declineUrl),
                 },
                 RelatedType: "VisitRequestIdentityChange",
                 RelatedId: change.IdentityChangeId), cancellationToken);

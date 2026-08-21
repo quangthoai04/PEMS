@@ -25,17 +25,24 @@ public sealed class EmailServiceDeliveryOutcomeTests
     private sealed class TestEmailService : EmailService
     {
         private readonly bool _throwOnDispatch;
+        private readonly Func<Exception>? _exceptionFactory;
         public bool Dispatched { get; private set; }
+        public int DispatchCount { get; private set; }
 
-        public TestEmailService(IConfiguration config, IHostEnvironment env, bool throwOnDispatch)
+        public TestEmailService(IConfiguration config, IHostEnvironment env, bool throwOnDispatch,
+            Func<Exception>? exceptionFactory = null)
             : base(config, NullLogger<EmailService>.Instance, env,
                    Options.Create(new PEMS.Application.Emails.Common.EmailRecipientOptions()))
-            => _throwOnDispatch = throwOnDispatch;
+        {
+            _throwOnDispatch = throwOnDispatch;
+            _exceptionFactory = exceptionFactory;
+        }
 
         protected override Task DispatchAsync(MailMessage message, SmtpConfig config, CancellationToken cancellationToken)
         {
             Dispatched = true;
-            if (_throwOnDispatch) throw new InvalidOperationException("simulated provider failure");
+            DispatchCount++;
+            if (_throwOnDispatch) throw _exceptionFactory?.Invoke() ?? new InvalidOperationException("simulated provider failure");
             return Task.CompletedTask;
         }
     }
@@ -132,5 +139,62 @@ public sealed class EmailServiceDeliveryOutcomeTests
         // Development disabled → skipped, so the void contract returns normally (no false failure).
         var dev = Service("Development", enabled: false);
         await dev.SendAsync("user@example.com", "s", "<b>b</b>");   // must not throw
+    }
+
+    // ── Phase D: SMTP diagnostics — SendCoreAsync classifies, retries never, propagates cancellation ──
+
+    [Fact]
+    public async Task A_recipient_rejection_is_classified_with_the_granular_code_not_the_generic_fallback()
+    {
+        var svc = new TestEmailService(
+            Config(enabled: true), new FakeHostEnvironment("Development"), throwOnDispatch: true,
+            () => new System.Net.Mail.SmtpFailedRecipientException(
+                System.Net.Mail.SmtpStatusCode.MailboxUnavailable, "user@example.com", "550 mailbox unavailable"));
+
+        var result = await svc.TrySendAsync("user@example.com", "Subject", "<b>body</b>");
+
+        Assert.Equal(EmailDeliveryStatus.Failed, result.Status);
+        Assert.Equal(EmailDeliveryCodes.SmtpRecipientRejected, result.Code);
+        Assert.NotEqual(EmailDeliveryCodes.SmtpSendFailed, result.Code);
+    }
+
+    [Fact]
+    public async Task An_unrecognized_exception_falls_back_to_network_unknown_not_the_legacy_catch_all()
+    {
+        var svc = Service("Development", enabled: true, throwOnDispatch: true);
+
+        var result = await svc.TrySendAsync("user@example.com", "Subject", "<b>body</b>");
+
+        // InvalidOperationException carries no typed or textual SMTP evidence at all — the safe ambiguous
+        // default, not the pre-granular-classification catch-all every SMTP exception used to share.
+        Assert.Equal(EmailDeliveryCodes.SmtpNetworkUnknown, result.Code);
+    }
+
+    [Fact]
+    public async Task A_failed_send_dispatches_exactly_once_no_automatic_retry()
+    {
+        var svc = new TestEmailService(
+            Config(enabled: true), new FakeHostEnvironment("Development"), throwOnDispatch: true,
+            () => new System.Net.Sockets.SocketException());
+
+        await svc.TrySendAsync("user@example.com", "Subject", "<b>body</b>");
+
+        Assert.Equal(1, svc.DispatchCount);
+    }
+
+    [Fact]
+    public async Task Caller_cancellation_propagates_and_is_never_reported_as_a_timeout()
+    {
+        var svc = new TestEmailService(
+            Config(enabled: true), new FakeHostEnvironment("Development"), throwOnDispatch: true,
+            () => new OperationCanceledException());
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // The caller's own token is already cancelled when DispatchAsync throws — EmailService must
+        // rethrow rather than hand back a classified (and therefore misleading) Failed result.
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => svc.TrySendAsync("user@example.com", "Subject", "<b>body</b>", cts.Token));
     }
 }

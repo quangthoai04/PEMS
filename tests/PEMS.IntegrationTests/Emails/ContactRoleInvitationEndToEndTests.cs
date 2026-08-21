@@ -55,11 +55,12 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
             ["delegationName"] = "Đoàn Đại học Kyoto",
             ["campusName"] = Campus,
             ["plannedTime"] = PlannedTime,
+            ["contactExpiresAt"] = Expires.ToString("HH:mm dd/MM/yyyy"),
         },
         TrustedBlocks: new Dictionary<string, string>
         {
             [EmailTrustedBlocks.ActionBlock] =
-                EmailComposition.ContactRoleInvitationBlock(ClaimUrl, ClaimDeclineUrl, Expires),
+                EmailComposition.ContactRoleInvitationBlock(ClaimUrl, ClaimDeclineUrl),
         },
         RelatedType: "VisitRequestIdentityChange",
         RelatedId: 4242);
@@ -75,11 +76,12 @@ public sealed class ContactRoleInvitationEndToEndTests : IDisposable
             ["campusName"] = Campus,
             ["plannedTime"] = PlannedTime,
             ["currentContactName"] = "Trần Thị Đầu Mối",
+            ["contactExpiresAt"] = Expires.ToString("HH:mm dd/MM/yyyy"),
         },
         TrustedBlocks: new Dictionary<string, string>
         {
             [EmailTrustedBlocks.ActionBlock] =
-                EmailComposition.ContactRoleInvitationBlock(TransferUrl, TransferDeclineUrl, Expires),
+                EmailComposition.ContactRoleInvitationBlock(TransferUrl, TransferDeclineUrl),
         },
         RelatedType: "VisitRequestIdentityChange",
         RelatedId: 4243);

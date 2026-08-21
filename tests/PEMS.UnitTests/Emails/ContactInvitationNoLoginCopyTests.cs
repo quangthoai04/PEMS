@@ -78,8 +78,15 @@ public sealed class ContactInvitationNoLoginCopyTests
     public void The_security_note_speaks_of_both_links(string code)
     {
         var t = EmailTemplateDefaults.For(code)!;
-        Assert.Contains("Các liên kết có thời hạn và mỗi liên kết chỉ dùng được một lần.", t.BodyVi);
-        Assert.Contains("The links expire and each can be used once.", t.BodyEn);
+        // The specific deadline replaced a generic "has an expiry" sentence (Phase B of the email fidelity
+        // plan): the exact moment is per-send data, so it is a template variable now rather than a runtime
+        // block owning a vague "has an expiry" claim it could not put a number on.
+        Assert.Contains("Các liên kết có hiệu lực đến", t.BodyVi);
+        Assert.Contains("mỗi liên kết chỉ dùng được một lần.", t.BodyVi);
+        Assert.Contains("{{contactExpiresAt}}", t.BodyVi);
+        Assert.Contains("The links are valid until", t.BodyEn);
+        Assert.Contains("each can be used once.", t.BodyEn);
+        Assert.Contains("{{contactExpiresAt}}", t.BodyEn);
     }
 
     /// <summary>
@@ -104,9 +111,13 @@ public sealed class ContactInvitationNoLoginCopyTests
     }
 
     /// <summary>
-    /// The rewrite was content-only: neither template may have gained a variable, because the renderer
-    /// fails closed on a declared variable the sender does not supply — a new name here would stop every
-    /// invitation from rendering at all.
+    /// Pinned to the exact set, deliberately including <c>contactExpiresAt</c> (Phase B of the email
+    /// fidelity plan): the runtime action block used to embed a fixed expiry moment itself, which the
+    /// preview could never show accurately. The exact deadline is per-send data, so it moved into the
+    /// template as a real variable rather than staying hidden runtime prose — a genuine, deliberate
+    /// addition, not the "no variable may be added" contract this test enforced before that change. Any
+    /// OTHER new name here should still fail until it too is a deliberate decision: the renderer fails
+    /// closed on a declared variable the sender does not supply.
     /// </summary>
     [Theory]
     [MemberData(nameof(Invitations))]
@@ -118,12 +129,14 @@ public sealed class ContactInvitationNoLoginCopyTests
             ? new[]
             {
                 "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime",
+                "contactExpiresAt",
                 "senderName", "senderRole", "senderEmail", "senderPhone", "senderDepartment", "senderCampus",
             }
             : new[]
             {
                 "contactFullName", "currentContactName", "requestCode", "delegationName", "campusName",
-                "plannedTime", "senderName", "senderRole", "senderEmail", "senderPhone", "senderDepartment",
+                "plannedTime", "contactExpiresAt",
+                "senderName", "senderRole", "senderEmail", "senderPhone", "senderDepartment",
                 "senderCampus",
             };
 

@@ -3,6 +3,30 @@ using PEMS.Application.Common.Interfaces;
 namespace PEMS.Application.Emails.Common;
 
 /// <summary>
+/// Which concrete button/link SHAPE a template's action block draws — the single source both the real
+/// send and the preview stand-in read from, so which buttons a template shows can never be decided
+/// twice and disagree (Phase C of the email fidelity plan). Replaces the boolean-flag-plus-templateCode
+/// special-casing <see cref="EmailActionTemplates.DisabledBlockFor"/> used to do its own dispatch with.
+/// </summary>
+public enum ActionPresentationKind
+{
+    /// <summary>One button around a one-time account-activation token.</summary>
+    Confirm,
+    /// <summary>Two buttons: Accept / Decline.</summary>
+    AcceptDecline,
+    /// <summary>Three buttons: Accept / Decline / Assign staff.</summary>
+    AcceptDeclineAssign,
+    /// <summary>Two buttons: Confirm / Decline (the operational-contact invitation's own wording).</summary>
+    ContactRoleInvitation,
+    /// <summary>Three buttons: Agree / Decline / a login-required detail link.</summary>
+    LogisticsAction,
+    /// <summary>Three buttons: Accept task / Decline task / a login-required detail link.</summary>
+    LogisticsAssignee,
+    /// <summary>One login-required detail link, no one-time token.</summary>
+    DetailOnly,
+}
+
+/// <summary>
 /// Declares, per template code, which system action block the backend injects at send time. This is
 /// what lets the preview show a read-only action area and the send path append real tokens to the
 /// (possibly edited) content. Codes not listed are plain templates with no system action.
@@ -15,6 +39,7 @@ public sealed record EmailTemplateActionSpec(
     bool HasLogisticsAction,
     string SystemActionDescription,
     string[] RequiredActionPlaceholders,
+    ActionPresentationKind PresentationKind,
     /// <summary>
     /// A single confirm-email button around a one-time activation token. Its own kind rather than a
     /// detail link: a detail link asks the recipient to sign in to a page they already have access to,
@@ -41,9 +66,6 @@ public static class EmailActionTemplates
         "Nút Chấp nhận / Từ chối sẽ được hệ thống tự gắn (kèm liên kết một lần) khi gửi email.";
     private const string AcceptDeclineAssignDesc =
         "Nút Chấp nhận / Từ chối và liên kết Gán nhân sự sẽ được hệ thống tự gắn khi gửi email.";
-    private const string DetailDesc =
-        "Nút \"Mở yêu cầu để xử lý\" (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email. " +
-        "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi.";
     private const string LogisticsActionDesc =
         "Nút Đồng ý / Từ chối / Hành động khác sẽ được hệ thống tự gắn (kèm liên kết một lần) khi gửi email.";
 
@@ -95,43 +117,72 @@ public static class EmailActionTemplates
     public static string ConfirmEmailLabel(string language)
         => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Confirm email" : "Xác nhận email";
 
+    // ── Button labels by presentation kind — the ONE place a button's words are decided. Both
+    // EmailComposition.Real*Block and its Disabled* counterpart read from here, in both languages, so
+    // an operator's preview and a recipient's inbox can never show different words for the same button
+    // (Phase C). Every label here is what production code ACTUALLY sends today; a new label belongs
+    // here, never typed directly into a block builder again.
+
+    public static string AcceptLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Accept" : "Chấp nhận";
+    public static string DeclineLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Decline" : "Từ chối";
+    public static string AssignStaffLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Assign staff" : "Gán nhân sự";
+    public static string ContactConfirmLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Confirm" : "Xác nhận";
+    public static string ContactDeclineLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Decline" : "Từ chối";
+    /// <summary>The logistics-request direct-action "yes" button — a distinct word from
+    /// <see cref="AcceptLabel"/> in both languages, matching the two different real sends.</summary>
+    public static string LogisticsAgreeLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Agree" : "Đồng ý";
+    public static string LogisticsAssigneeAcceptLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Accept task" : "Chấp nhận nhiệm vụ";
+    public static string LogisticsAssigneeDeclineLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Decline task" : "Từ chối nhiệm vụ";
+    public static string LogisticsOtherActionLabel(string language)
+        => EmailLanguages.Normalize(language) == EmailLanguages.En ? "Other action" : "Hành động khác";
+
     public static EmailTemplateActionSpec? For(string templateCode) => templateCode switch
     {
         // Registered so the preview shows the real button. This changes NO token or route logic: the
         // confirm URL is still minted by IAccountEmailConfirmationService and injected as a trusted
         // block by the send path — the registry only says which button that block draws.
         AccountEmailConfirmation => new(true, false, false, false, false, ConfirmEmailDesc,
-            System.Array.Empty<string>(), HasConfirmAction: true),
+            System.Array.Empty<string>(), ActionPresentationKind.Confirm, HasConfirmAction: true),
 
         ParticipantInvitation or StudentInvitation => new(true, true, false, false, false, AcceptDeclineDesc,
-            new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
+            new[] { "{{acceptUrl}}", "{{declineUrl}}" }, ActionPresentationKind.AcceptDecline),
         DepartmentLeaderInvitation => new(true, true, true, false, false, AcceptDeclineAssignDesc,
-            new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{assignUrl}}" }),
+            new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{assignUrl}}" }, ActionPresentationKind.AcceptDeclineAssign),
         // The Department Leader assigns a named person, and that person still answers for themselves:
         // the mail mints their own accept/decline tokens exactly like an invitation does.
         DepartmentStaffAssignment => new(true, true, false, false, false, AcceptDeclineDesc,
-            new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
-        LogisticsAssigneeAssignment => new(true, true, false, false, false, AcceptDeclineDesc,
-            new[] { "{{acceptUrl}}", "{{declineUrl}}" }),
+            new[] { "{{acceptUrl}}", "{{declineUrl}}" }, ActionPresentationKind.AcceptDecline),
+        // 3-button real send (Accept/Decline/Detail via LogisticsAssigneeActionBlock) — its own kind, not
+        // the generic 2-button AcceptDecline (BUG-09).
+        LogisticsAssigneeAssignment => new(true, true, false, true, false, AcceptDeclineDesc,
+            new[] { "{{acceptUrl}}", "{{declineUrl}}" }, ActionPresentationKind.LogisticsAssignee),
         LogisticsRequestToDepartment => new(true, false, false, true, true, LogisticsActionDesc,
-            new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{detailUrl}}" }),
+            new[] { "{{acceptUrl}}", "{{declineUrl}}", "{{detailUrl}}" }, ActionPresentationKind.LogisticsAction),
         VisitReminderHost or VisitReminderParticipants => new(true, false, false, true, false, VisitReminderDesc,
-            System.Array.Empty<string>()),
+            System.Array.Empty<string>(), ActionPresentationKind.DetailOnly),
         LogisticsExpenseReportReminder => new(true, false, false, true, false, ExpenseReminderDesc,
-            System.Array.Empty<string>()),
+            System.Array.Empty<string>(), ActionPresentationKind.DetailOnly),
 
         // One button around a one-time claim URL. No RequiredActionPlaceholders: the URL never appears
         // in the stored body — the backend builds the whole block — which is the same reason the
         // reminders above declare none either. Only the templates whose body historically interpolated
         // {{acceptUrl}}-style placeholders declare them.
         VisitContactClaim or VisitContactTransfer => new(true, false, false, false, false,
-            ContactRoleInvitationDesc, System.Array.Empty<string>()),
+            ContactRoleInvitationDesc, System.Array.Empty<string>(), ActionPresentationKind.ContactRoleInvitation),
 
         // Detail-only, login-required (spec BUG-07) — a proposal decision is Portal-only, so this is
         // NOT an accept/decline nor a logistics-action template despite the business meaning; it is
         // shaped exactly like VisitReminderHost/LogisticsExpenseReportReminder.
         LogisticsChangeProposalToHost => new(true, false, false, true, false,
-            LogisticsProposalDesc, System.Array.Empty<string>()),
+            LogisticsProposalDesc, System.Array.Empty<string>(), ActionPresentationKind.DetailOnly),
 
         // VISIT_REQUEST_OTP is deliberately NOT here. Its message is the code itself; no send path
         // supplies an action block for it, so registering it would make the contract demand a
@@ -140,62 +191,67 @@ public static class EmailActionTemplates
     };
 
     /// <summary>
-    /// The label the real send puts on this template's detail button, so a preview shows the same words
-    /// rather than a generic stand-in. Null for templates whose block is not a single detail link.
+    /// The label the real send puts on this template's detail button, in the requested language, so a
+    /// preview shows the same words rather than a generic stand-in. Null for templates whose block is
+    /// not a single detail link.
     /// </summary>
-    public static string? DetailLinkLabelFor(string templateCode) => templateCode switch
+    public static string? DetailLinkLabelFor(string templateCode, string language)
     {
-        VisitReminderHost or VisitReminderParticipants => "Xem chi tiết chuyến tiếp khách",
-        LogisticsExpenseReportReminder => "Mở biên bản để kê khai chi phí",
-        LogisticsRequestToDepartment => "Mở yêu cầu để xử lý",
-        LogisticsChangeProposalToHost => "Xem chi tiết trong hệ thống",
-        _ => null,
-    };
+        var en = EmailLanguages.Normalize(language) == EmailLanguages.En;
+        return templateCode switch
+        {
+            VisitReminderHost or VisitReminderParticipants
+                => en ? "View visit details" : "Xem chi tiết chuyến tiếp khách",
+            LogisticsExpenseReportReminder
+                => en ? "Open report to declare expenses" : "Mở biên bản để kê khai chi phí",
+            LogisticsRequestToDepartment
+                => en ? "Open request to process" : "Mở yêu cầu để xử lý",
+            LogisticsChangeProposalToHost or LogisticsAssigneeAssignment
+                => en ? "View details in the system" : "Xem chi tiết trong hệ thống",
+            _ => null,
+        };
+    }
 
     /// <summary>
-    /// The inert action block a preview shows for this template — no live URL, no token.
+    /// The inert action block a preview shows for this template — no live URL, no token, same visible
+    /// text/labels/colours as the real send in the same language.
     ///
     /// <para>
     /// The single place this choice is made. It was previously written out three times — in the preview
     /// modal's handler, in the contract the editor fetches, and again in the tests — which is how the
     /// editor's pane and the preview modal could show different buttons for the same template while every
-    /// test agreed with whichever copy it had been written against. One helper, one answer.
+    /// test agreed with whichever copy it had been written against. One helper, one answer — dispatched
+    /// by <see cref="ActionPresentationKind"/>, the same value a real send would need to pick its
+    /// builder, rather than by re-deriving the shape from templateCode/flags a second time.
     /// </para>
     /// </summary>
     public static string DisabledBlockFor(string templateCode, string language)
     {
         var spec = For(templateCode);
-
         if (spec is null) return EmailComposition.DisabledUnspecifiedActionBlock(language);
-        if (spec.HasConfirmAction)
-            return EmailComposition.DisabledConfirmEmailBlock(ConfirmEmailLabel(language));
 
-        // Two blocks the boolean flags cannot tell apart from their neighbours, so they are matched by
-        // code: an operator must read the words their real recipient will read, and "Chấp nhận / Từ chối"
-        // is not what either of these sends. Matched before the flags below, which are deliberately
-        // coarse.
-        switch (templateCode)
+        return spec.PresentationKind switch
         {
-            case VisitContactClaim:
-            case VisitContactTransfer:
-                return EmailComposition.DisabledContactRoleInvitationBlock();
-            // Detail-only preview matching the portal-only real send (spec BUG-07) — no more
-            // Approve/Reject stand-in buttons for a proposal.
-            case LogisticsChangeProposalToHost:
-                return EmailComposition.DisabledDetailLinkBlock(
-                    DetailLinkLabelFor(templateCode) ?? "Xem chi tiết trong hệ thống");
-            // 3-button real send (Accept/Decline/Detail via LogisticsAssigneeActionBlock) — the generic
-            // HasAcceptDecline fallback below only knows 2 buttons, so this needs its own case (BUG-09).
-            case LogisticsAssigneeAssignment:
-                return EmailComposition.DisabledLogisticsAssigneeActionBlock(
-                    DetailLinkLabelFor(templateCode) ?? "Xem chi tiết trong hệ thống");
-        }
-
-        if (spec.HasLogisticsAction) return EmailComposition.DisabledLogisticsActionBlock();
-        if (spec.HasDetailLink)
-            return EmailComposition.DisabledDetailLinkBlock(
-                DetailLinkLabelFor(templateCode) ?? "Mở yêu cầu để xử lý");
-
-        return EmailComposition.DisabledAcceptDeclineBlock(spec.HasAssignLink);
+            ActionPresentationKind.Confirm =>
+                EmailComposition.DisabledConfirmEmailBlock(ConfirmEmailLabel(language)),
+            ActionPresentationKind.ContactRoleInvitation =>
+                EmailComposition.DisabledContactRoleInvitationBlock(language),
+            ActionPresentationKind.LogisticsAssignee =>
+                EmailComposition.DisabledLogisticsAssigneeActionBlock(
+                    language, DetailLinkLabelFor(templateCode, language) ?? "Xem chi tiết trong hệ thống"),
+            ActionPresentationKind.LogisticsAction =>
+                EmailComposition.DisabledLogisticsActionBlock(language),
+            // VisitReminderHost/Participants' real send is VisitDetailBlock, not DetailLinkBlock — its own
+            // padding (12px 24px vs 12px 22px), so it needs its own matching disabled stand-in rather
+            // than the generic one every other DetailOnly template shares.
+            ActionPresentationKind.DetailOnly when templateCode is VisitReminderHost or VisitReminderParticipants =>
+                EmailComposition.DisabledVisitDetailBlock(language),
+            ActionPresentationKind.DetailOnly =>
+                EmailComposition.DisabledDetailLinkBlock(
+                    DetailLinkLabelFor(templateCode, language) ?? "Mở yêu cầu để xử lý"),
+            ActionPresentationKind.AcceptDeclineAssign =>
+                EmailComposition.DisabledAcceptDeclineBlock(language, withAssign: true),
+            _ => EmailComposition.DisabledAcceptDeclineBlock(language, withAssign: false),
+        };
     }
 }

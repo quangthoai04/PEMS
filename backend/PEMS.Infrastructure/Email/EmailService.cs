@@ -238,14 +238,38 @@ public class EmailService : IEmailService
                 message.Subject, message.Attachments.Count);
             return EmailDeliveryResult.Sent();
         }
+        // The caller's own cancellation is not a delivery outcome at all — propagate it before the
+        // classifier ever sees it, so a request the CALLER gave up on can never be misreported as
+        // EmailDeliveryCodes.SmtpTimeout (see SmtpDeliveryClassifier's class doc).
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            // Log the failure WITHOUT the body/recipient local-part/secret. The SmtpClient exception text is
-            // operational (host/status), never a user secret, but the safe message returned stays generic.
-            _logger.LogError(ex,
-                "[EmailService] SMTP send FAILED. To:{To} Subject:{Subject}",
+            var classified = SmtpDeliveryClassifier.Classify(ex);
+
+            // Deliberately NOT logging `ex` itself: SmtpFailedRecipientException.FailedRecipient, and
+            // routinely the plain SmtpException.Message too, echo back the rejected recipient's own
+            // address verbatim ("550 mailbox unavailable: user@example.com") — exactly the kind of
+            // detail that must never reach a log line untouched. Only the classified, non-secret shape
+            // is logged; the masked recipient below is the closest this gets to naming who was rejected.
+            var failedRecipient = ex switch
+            {
+                // SmtpFailedRecipientsException extends SmtpFailedRecipientException, so the more
+                // specific multi-recipient arm must come first or the single-recipient arm below would
+                // always match instead.
+                SmtpFailedRecipientsException multi when multi.InnerExceptions.Length > 0
+                    => MaskEmail(multi.InnerExceptions[0].FailedRecipient),
+                SmtpFailedRecipientException single => MaskEmail(single.FailedRecipient),
+                _ => "(n/a)",
+            };
+            _logger.LogError(
+                "[EmailService] SMTP send FAILED. Code:{Code} ExceptionType:{ExceptionType} " +
+                "FailedRecipient:{FailedRecipient} To:{To} Subject:{Subject}",
+                classified.Code, ex.GetType().Name, failedRecipient,
                 MaskAll(envelope.To), message.Subject);
-            return EmailDeliveryResult.Failed(EmailDeliveryCodes.SmtpSendFailed, "Email delivery failed.");
+            return EmailDeliveryResult.Failed(classified.Code, classified.SafeMessage);
         }
     }
 

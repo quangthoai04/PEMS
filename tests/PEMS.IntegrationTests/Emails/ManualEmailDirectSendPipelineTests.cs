@@ -333,6 +333,31 @@ public sealed class ManualEmailDirectSendPipelineTests : IDisposable
         await CleanupRowsAsync(db);
     }
 
+    /// <summary>
+    /// Phase E of the email fidelity plan: system-template mail's Final Preview must show the same
+    /// branded shell (header/footer) the real send wraps it in — but manual compose is a deliberately
+    /// separate pipeline that was never in scope for that, and must not silently start being wrapped in
+    /// it as a side effect of making system-template previews accurate. A real send inspected as real
+    /// MIME (not a mock) is the only way to disprove a wrapper this handler never asked for.
+    /// </summary>
+    [Fact]
+    public async Task Manual_compose_is_never_wrapped_in_the_system_branded_shell()
+    {
+        EmailEvidenceHarness.RequireDb();
+        using var db = EmailEvidenceHarness.NewContext();
+        await SeedAsync(db);
+        _h.ClearMessages();
+
+        await Compose(db, Author).Handle(FullEnvelope(), CancellationToken.None);
+
+        var eml = _h.OnlyMessage();
+        Assert.DoesNotContain("PEMS — Campus Visit", eml.Body);
+        Assert.DoesNotContain("linear-gradient(135deg,#004c91", eml.Body);
+        Assert.DoesNotContain("Không trả lời email này", eml.Body);
+
+        await CleanupRowsAsync(db);
+    }
+
     // ── Attachments now travel with the command ──────────────────────────────
 
     /// <summary>
@@ -458,8 +483,15 @@ public sealed class ManualEmailDirectSendPipelineTests : IDisposable
         Assert.Null(sent.DeliveredAt);
         Assert.All(rows, r => Assert.Equal("FAILED", r.DeliveryStatus));
 
-        // A safe sentence, not the SMTP exception text.
-        Assert.Equal("Email delivery failed.", sent.ErrorMessage);
+        // A safe sentence carrying the machine code (EmailAttemptRecord.Format) — not the SMTP exception
+        // text. The prefix is what lets a recovery sweep tell a proven-not-dispatched failure apart from
+        // an ambiguous one once this row is the only thing left (see EmailDeliveryCodes.ProvesNothingWasSent).
+        //
+        // A connection attempt to 127.0.0.1 with nothing listening throws a SocketException, which
+        // SmtpDeliveryClassifier now classifies as the granular SMTP_CONNECTION_FAILED rather than the
+        // pre-Phase-D catch-all SMTP_SEND_FAILED (email fidelity plan, Phase D) — this test's own
+        // expectation moved with it, deliberately, not a regression.
+        Assert.Equal("[SMTP_CONNECTION_FAILED] Không thể kết nối tới máy chủ SMTP.", sent.ErrorMessage);
         Assert.DoesNotContain("SmtpException", sent.ErrorMessage ?? "");
         Assert.DoesNotContain("127.0.0.1", sent.ErrorMessage ?? "");
 

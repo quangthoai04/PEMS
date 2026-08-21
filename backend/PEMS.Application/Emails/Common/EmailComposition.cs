@@ -47,49 +47,35 @@ public static class EmailComposition
 
     // ── Real action blocks (with live URLs) ──
 
-    public static string AcceptDeclineBlock(string acceptUrl, string declineUrl, string? assignUrl = null)
+    public static string AcceptDeclineBlock(
+        string acceptUrl, string declineUrl, string? assignUrl = null, string language = EmailLanguages.Vi)
     {
         var assign = string.IsNullOrEmpty(assignUrl) ? string.Empty
-            : $@"<a href=""{HE(assignUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Gán nhân sự</a>";
-        var assignNote = string.IsNullOrEmpty(assignUrl) ? string.Empty
-            : @"<p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: thao tác <strong>Gán nhân sự</strong> yêu cầu đăng nhập hệ thống.</p>";
+            : $@"<a href=""{HE(assignUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.AssignStaffLabel(language))}</a>";
         return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận</a>
-            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.AcceptLabel(language))}</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.DeclineLabel(language))}</a>
             {assign}
-        </div>{assignNote}
-        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
+        </div>");
     }
 
-    /// <summary>
-    /// A single login-required link. <paramref name="note"/> is the sentence printed under the button and
-    /// MUST describe what this particular recipient can do there — the default names the Department
-    /// Leader's options because that is the flow this block was written for, and it is wrong for every
-    /// other caller. The expense reminder passes its own; a caller that has nothing to add passes "".
-    /// </summary>
-    public static string DetailLinkBlock(
-        string detailUrl,
-        string label = "Mở yêu cầu để xử lý",
-        string note = "Sau khi đăng nhập, Trưởng phòng có thể chấp nhận xử lý, từ chối yêu cầu, gán nhân sự hoặc đề xuất thay đổi. Thao tác xử lý yêu cầu yêu cầu đăng nhập hệ thống.")
-    {
-        var noteHtml = string.IsNullOrWhiteSpace(note)
-            ? string.Empty
-            : $@"<p style=""color:#6b7280;font-size:12px;margin-top:8px"">{HE(note)}</p>";
-
-        return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
+    /// <summary>A single login-required link. The label is the only recipient-facing text this block owns —
+    /// what happens after login is the template's business prose, not this builder's.</summary>
+    public static string DetailLinkBlock(string detailUrl, string label = "Mở yêu cầu để xử lý")
+        => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
-        </div>{noteHtml}");
-    }
+        </div>");
 
-    public static string LogisticsActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Hành động khác")
+    public static string LogisticsActionBlock(
+        string acceptUrl, string declineUrl, string detailUrl,
+        string? detailLabel = null, string language = EmailLanguages.Vi)
     {
+        var label = detailLabel ?? EmailActionTemplates.LogisticsOtherActionLabel(language);
         return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Đồng ý</a>
-            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
-            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: <strong>Đồng ý / Từ chối</strong> là thao tác trực tiếp (không yêu cầu đăng nhập). <strong>Hành động khác</strong> (như gán nhân sự, thảo luận thêm) yêu cầu đăng nhập hệ thống.</p>
-        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAgreeLabel(language))}</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.DeclineLabel(language))}</a>
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
+        </div>");
     }
 
     /// <summary>Host approve/reject of a Department change proposal (LOGISTICS_PROPOSAL_RESPONSE).</summary>
@@ -104,15 +90,16 @@ public static class EmailComposition
         <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
     }
 
-    public static string LogisticsAssigneeActionBlock(string acceptUrl, string declineUrl, string detailUrl, string detailLabel = "Xem chi tiết trong hệ thống")
+    public static string LogisticsAssigneeActionBlock(
+        string acceptUrl, string declineUrl, string detailUrl,
+        string? detailLabel = null, string language = EmailLanguages.Vi)
     {
+        var label = detailLabel ?? "Xem chi tiết trong hệ thống";
         return WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận nhiệm vụ</a>
-            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối nhiệm vụ</a>
-            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;margin-top:8px"">Lưu ý: Thao tác <strong>Xem chi tiết / Đề xuất thay đổi</strong> yêu cầu đăng nhập hệ thống.</p>
-        <p style=""color:#9ca3af;font-size:12px;margin-top:12px"">Liên kết phản hồi trực tiếp sẽ hết hạn sau 14 ngày và chỉ sử dụng được một lần.</p>");
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAssigneeAcceptLabel(language))}</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAssigneeDeclineLabel(language))}</a>
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</a>
+        </div>");
     }
 
     /// <summary>
@@ -120,11 +107,10 @@ public static class EmailComposition
     /// consume, nothing that grants access on its own. That is why a reminder's body is kept in full in
     /// the email history while the token-bearing mails have theirs stripped.
     /// </summary>
-    public static string VisitDetailBlock(string detailUrl)
+    public static string VisitDetailBlock(string detailUrl, string language = EmailLanguages.Vi)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Xem chi tiết chuyến tiếp khách</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px"">Liên kết yêu cầu đăng nhập hệ thống PEMS.</p>");
+            <a href=""{HE(detailUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(EmailLanguages.Normalize(language) == EmailLanguages.En ? "View visit details" : "Xem chi tiết chuyến tiếp khách")}</a>
+        </div>");
 
     // ── Account action blocks ──
     // The URL is built by the backend from App:FrontendBaseUrl and, for confirmation, carries a
@@ -143,21 +129,14 @@ public static class EmailComposition
     public static string ConfirmEmailBlock(string confirmUrl, string? label = null)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
             <a href=""{HE(confirmUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(label ?? EmailActionTemplates.ConfirmEmailLabel(EmailLanguages.Vi))}</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(confirmUrl)}</p>");
+        </div>");
 
     /// <summary>Sign-in button for the activated-account notice. No token — just the portal address.</summary>
-    public static string LoginBlock(string loginUrl)
+    public static string LoginBlock(string loginUrl, string language = EmailLanguages.Vi)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(loginUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Đăng nhập Internal Portal</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px"">Đăng nhập bằng chính địa chỉ email này qua SSO / Google / FEID.</p>");
+            <a href=""{HE(loginUrl)}"" style=""display:inline-block;background:#004c91;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(EmailLanguages.Normalize(language) == EmailLanguages.En ? "Sign in to Internal Portal" : "Đăng nhập Internal Portal")}</a>
+        </div>");
 
-    /// <summary>
-    /// The claim/transfer invitation button: one link to a page that asks the reader to sign in with the
-    /// Google account of THIS address before accepting or declining. Deliberately not a direct-execute
-    /// link — opening a mail preview must not accept a role on somebody's behalf.
-    /// </summary>
     /// <summary>
     /// The operational-contact invitation's two actions.
     ///
@@ -173,17 +152,25 @@ public static class EmailComposition
     /// trusting a query parameter — and so a scanner that follows the decline link cannot be used to
     /// accept. Signing in is not required for either.
     /// </para>
+    /// <para>
+    /// The exact expiry moment is per-send data, not a fixed string this builder can own — it is the
+    /// caller's job to put it in the template as <c>{{contactExpiresAt}}</c> (see
+    /// <c>OperationalContactInvitationService</c>), not this block's.
+    /// </para>
     /// </summary>
-    public static string ContactRoleInvitationBlock(string acceptUrl, string declineUrl, DateTime expiresAt)
+    public static string ContactRoleInvitationBlock(string acceptUrl, string declineUrl, string language = EmailLanguages.Vi)
         => WrapActionBlock($@"<div style=""text-align:center;margin:24px 0"">
-            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Xác nhận</a>
-            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</a>
-        </div>
-        <p style=""color:#6b7280;font-size:12px;word-break:break-all"">Hoặc mở liên kết: {HE(acceptUrl)}</p>
-        <p style=""color:#6b7280;font-size:12px"">Liên kết có hiệu lực đến <strong>{expiresAt:HH:mm dd/MM/yyyy}</strong> và chỉ dùng được một lần. Bạn <strong>không cần đăng nhập</strong> — hệ thống sẽ mở trang xác nhận để bạn xem thông tin mới nhất trước khi quyết định.</p>
-        <p style=""color:#6b7280;font-size:12px"">Thông tin chuyến thăm có thể được người đăng ký cập nhật. Vui lòng xem thông tin mới nhất tại trang xác nhận.</p>");
+            <a href=""{HE(acceptUrl)}"" style=""display:inline-block;background:#10b981;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.ContactConfirmLabel(language))}</a>
+            <a href=""{HE(declineUrl)}"" style=""display:inline-block;background:#ef4444;color:#fff;text-decoration:none;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.ContactDeclineLabel(language))}</a>
+        </div>");
 
     // ── Disabled action blocks (preview only — no live URLs/tokens) ──
+
+    // Every Disabled* block below uses the SAME background colours as its Real* counterpart (Phase C):
+    // preview and runtime must be visually identical except for clickability. What marks a button as a
+    // preview stand-in is being a <span> (no href, no token) rather than an <a> — never a desaturated
+    // colour. If the surrounding screen needs to tell an operator "these are inert", that sentence
+    // belongs in the UI chrome around the email content, not inside the email itself.
 
     /// <summary>
     /// Preview stand-in for <see cref="ConfirmEmailBlock"/> — no token is minted, and no anchor exists,
@@ -191,31 +178,42 @@ public static class EmailComposition
     /// </summary>
     public static string DisabledConfirmEmailBlock(string? label = null)
         => $@"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(label ?? EmailActionTemplates.ConfirmEmailLabel(EmailLanguages.Vi))}</span>
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(label ?? EmailActionTemplates.ConfirmEmailLabel(EmailLanguages.Vi))}</span>
         </div>";
 
     /// <summary>Preview stand-in for <see cref="LoginBlock"/>.</summary>
-    public static string DisabledLoginBlock()
-        => @"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">Đăng nhập Internal Portal</span>
+    public static string DisabledLoginBlock(string language = EmailLanguages.Vi)
+        => $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(EmailLanguages.Normalize(language) == EmailLanguages.En ? "Sign in to Internal Portal" : "Đăng nhập Internal Portal")}</span>
         </div>";
 
-
-    public static string DisabledAcceptDeclineBlock(bool withAssign = false)
+    public static string DisabledAcceptDeclineBlock(string language = EmailLanguages.Vi, bool withAssign = false)
     {
         var assign = withAssign
-            ? @"<span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Gán nhân sự</span>"
+            ? $@"<span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.AssignStaffLabel(language))}</span>"
             : string.Empty;
         return $@"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</span>
+            <span style=""display:inline-block;background:#10b981;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.AcceptLabel(language))}</span>
+            <span style=""display:inline-block;background:#ef4444;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.DeclineLabel(language))}</span>
             {assign}
         </div>";
     }
 
     public static string DisabledDetailLinkBlock(string label = "Mở yêu cầu để xử lý")
         => $@"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
+        </div>";
+
+    /// <summary>
+    /// Preview stand-in for <see cref="VisitDetailBlock"/> — its own padding (12px 24px, matching
+    /// <see cref="ConfirmEmailBlock"/>'s single-button style), not <see cref="DisabledDetailLinkBlock"/>'s
+    /// (12px 22px). The two real builders were never the same button style, so sharing one disabled
+    /// stand-in between them was a genuine preview/runtime visual mismatch (found by
+    /// ActionBlockPreviewSendParityTests, Phase C of the email fidelity plan) — not a stylistic choice.
+    /// </summary>
+    public static string DisabledVisitDetailBlock(string language = EmailLanguages.Vi)
+        => $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 24px;border-radius:10px"">{HE(EmailLanguages.Normalize(language) == EmailLanguages.En ? "View visit details" : "Xem chi tiết chuyến tiếp khách")}</span>
         </div>";
 
     /// <summary>
@@ -277,10 +275,10 @@ public static class EmailComposition
     /// Preview stand-in for <see cref="ContactRoleInvitationBlock"/> — same single button, same words, no
     /// anchor and no minted claim URL.
     /// </summary>
-    public static string DisabledContactRoleInvitationBlock()
-        => @"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Xác nhận</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</span>
+    public static string DisabledContactRoleInvitationBlock(string language = EmailLanguages.Vi)
+        => $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#10b981;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.ContactConfirmLabel(language))}</span>
+            <span style=""display:inline-block;background:#ef4444;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.ContactDeclineLabel(language))}</span>
         </div>";
 
     /// <summary>
@@ -303,21 +301,23 @@ public static class EmailComposition
     /// (Accept/Decline/Detail), matching the real send exactly instead of falling back to the generic
     /// 2-button <see cref="DisabledAcceptDeclineBlock"/>.
     /// </summary>
-    public static string DisabledLogisticsAssigneeActionBlock(string detailLabel = "Xem chi tiết trong hệ thống")
+    public static string DisabledLogisticsAssigneeActionBlock(string language = EmailLanguages.Vi, string? detailLabel = null)
     {
+        var label = detailLabel ?? "Xem chi tiết trong hệ thống";
         return $@"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận nhiệm vụ</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối nhiệm vụ</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</span>
+            <span style=""display:inline-block;background:#10b981;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAssigneeAcceptLabel(language))}</span>
+            <span style=""display:inline-block;background:#ef4444;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAssigneeDeclineLabel(language))}</span>
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
     }
 
-    public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
+    public static string DisabledLogisticsActionBlock(string language = EmailLanguages.Vi, string? detailLabel = null)
     {
+        var label = detailLabel ?? EmailActionTemplates.LogisticsOtherActionLabel(language);
         return $@"<div style=""text-align:center;margin:24px 0"">
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Đồng ý</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối</span>
-            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</span>
+            <span style=""display:inline-block;background:#10b981;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.LogisticsAgreeLabel(language))}</span>
+            <span style=""display:inline-block;background:#ef4444;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(EmailActionTemplates.DeclineLabel(language))}</span>
+            <span style=""display:inline-block;background:#004c91;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(label)}</span>
         </div>";
     }
 

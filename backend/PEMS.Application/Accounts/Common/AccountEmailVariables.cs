@@ -106,8 +106,8 @@ public static class AccountEmailVariables
         };
 
     /// <summary>The sign-in button on the activated-account notice.</summary>
-    public static Dictionary<string, string> LoginBlocks(string loginUrl)
-        => new() { [EmailTrustedBlocks.ActionBlock] = EmailComposition.LoginBlock(loginUrl) };
+    public static Dictionary<string, string> LoginBlocks(string loginUrl, string language = EmailLanguages.Vi)
+        => new() { [EmailTrustedBlocks.ActionBlock] = EmailComposition.LoginBlock(loginUrl, language) };
 
     /// <summary>
     /// Masks an address for display: <c>ha.nguyen@fpt.edu.vn</c> becomes <c>ha***@fpt.edu.vn</c>. Used

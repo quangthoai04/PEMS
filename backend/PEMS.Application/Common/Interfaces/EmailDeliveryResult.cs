@@ -64,8 +64,52 @@ public static class EmailDeliveryCodes
     /// <summary>No host and no pickup directory. Nothing was attempted.</summary>
     public const string SmtpMisconfigured = "SMTP_MISCONFIGURED";
 
-    /// <summary>The SMTP client threw. What the provider did with the message is NOT known.</summary>
+    /// <summary>
+    /// The SMTP client threw and no more specific classification applied. Kept as the last-resort
+    /// fallback (see <see cref="PEMS.Infrastructure.Email.SmtpDeliveryClassifier"/>) — no longer the
+    /// default outcome for every SMTP exception the way it was before granular classification.
+    /// </summary>
     public const string SmtpSendFailed = "SMTP_SEND_FAILED";
+
+    // ── Granular SMTP outcomes (mirrors the RESEND_* codes' granularity) ──────────────────────────
+    // All produced by SmtpDeliveryClassifier, never inferred here. None of these prove the whole
+    // envelope (TO+CC+BCC, one SMTP transaction) was never submitted UNLESS explicitly noted below —
+    // see ProvesNothingWasSent's closed list, which is deliberately conservative about which of these
+    // qualify.
+
+    /// <summary>Explicit authentication-specific evidence (typed exception, or a message naming
+    /// credentials/authentication) — never inferred from a bare status code alone.</summary>
+    public const string SmtpAuthFailed = "SMTP_AUTH_FAILED";
+
+    /// <summary>The server named a specific rejected recipient (<c>SmtpFailedRecipient(s)Exception</c>).
+    /// Message-level AMBIGUOUS: other recipients in the same TO+CC+BCC envelope may already have been
+    /// accepted, so this is not proof the whole send produced no side effect.</summary>
+    public const string SmtpRecipientRejected = "SMTP_RECIPIENT_REJECTED";
+
+    /// <summary>Explicit provider throttling/rate-limit evidence.</summary>
+    public const string SmtpRateLimited = "SMTP_RATE_LIMITED";
+
+    /// <summary>Explicit sending-quota/daily-limit evidence — distinct from a short-term rate limit.</summary>
+    public const string SmtpQuotaExceeded = "SMTP_QUOTA_EXCEEDED";
+
+    /// <summary>A generic temporary/4xx-shaped rejection (mailbox busy, insufficient storage) with no
+    /// explicit rate or quota evidence either way.</summary>
+    public const string SmtpTemporaryRejected = "SMTP_TEMPORARY_REJECTED";
+
+    /// <summary>TLS/STARTTLS negotiation failed.</summary>
+    public const string SmtpTlsFailed = "SMTP_TLS_FAILED";
+
+    /// <summary>The socket/connection itself failed (refused, DNS, unreachable).</summary>
+    public const string SmtpConnectionFailed = "SMTP_CONNECTION_FAILED";
+
+    /// <summary>A genuine (non-caller-cancelled) timeout.</summary>
+    public const string SmtpTimeout = "SMTP_TIMEOUT";
+
+    /// <summary>A well-formed SMTP rejection that fits no more specific category above.</summary>
+    public const string SmtpProviderRejected = "SMTP_PROVIDER_REJECTED";
+
+    /// <summary>An exception shape the classifier does not recognize — never proof of anything.</summary>
+    public const string SmtpNetworkUnknown = "SMTP_NETWORK_UNKNOWN";
 
     /// <summary>Resend is off or has no API key. The HTTP call was never made.</summary>
     public const string ResendMisconfigured = "RESEND_MISCONFIGURED";
@@ -74,14 +118,28 @@ public static class EmailDeliveryCodes
     public const string ResendCredentialError = "RESEND_CREDENTIAL_ERROR";
 
     /// <summary>
-    /// Resend rejected the request OR the connection to it failed. The two share a code, so the second
-    /// case — a socket that died after the request was written — keeps the whole code ambiguous.
+    /// Superseded by the granular <c>RESEND_*</c> codes in
+    /// <see cref="PEMS.Application.ApiIntegrations.Common.ResendDeliveryClassifier"/>
+    /// (rate limit, quota, auth, sender, request-invalid, provider-rejected, server-error,
+    /// network-unknown) — a Resend rejection and a dead socket used to share this one code, which made
+    /// every Resend failure look alike to anything reading <c>sent_emails</c> later. Kept only so
+    /// <see cref="EmailAttemptRecord.Classify"/> still reads pre-existing rows correctly; nothing produces
+    /// it anymore.
     /// </summary>
+    [Obsolete("Replaced by the granular RESEND_* codes in ResendDeliveryClassifier. Kept to classify pre-existing sent_emails rows only.")]
     public const string ResendSendFailed = "RESEND_SEND_FAILED";
 
     /// <summary>
     /// True only for outcomes decided before the provider was contacted. Deliberately a closed list:
     /// a code nobody has classified reads as "unknown", which is the safe direction to be wrong in.
+    ///
+    /// <para>
+    /// <see cref="PEMS.Application.ApiIntegrations.Common.ResendDeliveryCodes.NetworkUnknown"/> is
+    /// deliberately NOT in this list — a transport exception never proves the request did not reach
+    /// Resend. Nor are the Resend rejection codes (rate limit, quota, auth, sender, request-invalid,
+    /// provider-rejected, server-error): the HTTP request WAS sent, so whatever Resend decided with it is
+    /// not "nothing was sent" — it is a real outcome, just not <see cref="EmailDeliveryStatus.Sent"/>.
+    /// </para>
     /// </summary>
     public static bool ProvesNothingWasSent(EmailDeliveryResult delivery)
         => delivery.Status == EmailDeliveryStatus.Skipped

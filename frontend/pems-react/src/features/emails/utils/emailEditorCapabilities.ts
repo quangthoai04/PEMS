@@ -26,6 +26,27 @@ export interface EmailEditorCapabilities {
   allowSystemBlockMove: boolean;
   /** May remove the action node entirely. Refused where the message IS the action. */
   allowSystemBlockDelete: boolean;
+  /** May insert/edit an atomic table. `false` inside the callout-content mini-editor only — a table
+   * nested inside an atomic callout embed is untested surface no product requirement asks for. */
+  allowTables: boolean;
+  /** May insert a divider. Same reasoning and same one exception as `allowTables`. */
+  allowDividers: boolean;
+  /**
+   * Whether an existing styled `<div>` container round-trips as the atomic `pemsEmailCallout` embed at
+   * all (the callout frames plan's fidelity fix). `true` for both real editing screens — an existing
+   * frame must always survive their own load/save cycle. `false` only for the callout-content
+   * mini-editor's own inner fragment, so that fragment's conversion can never manufacture a NESTED
+   * callout from a stray styled div (there is no legitimate reason for one to exist there, and no
+   * shipped template ever produces one).
+   */
+  preserveCallouts: boolean;
+  /**
+   * Whether this editor instance may itself manage frames — Add/Edit-content/Change-type/Remove. `true`
+   * for both TEMPLATE and COMPOSE main editors (an operator may reshape presentation in either stage).
+   * `false` only for the callout-content mini-editor, which is what actually prevents nesting: it may
+   * edit what is already inside a callout, but may never wrap, retype, or unwrap a frame of its own.
+   */
+  allowCalloutAuthoring: boolean;
   /**
    * Always false. Present as a field rather than omitted so that "can the user write raw HTML?" has an
    * explicit, greppable answer of no (V4 §5.4, §6.4) instead of being an absence somebody might read as
@@ -46,6 +67,10 @@ export const TEMPLATE_CAPABILITIES: EmailEditorCapabilities = {
   allowSystemBlockInsert: true,
   allowSystemBlockMove: true,
   allowSystemBlockDelete: true,
+  allowTables: true,
+  allowDividers: true,
+  preserveCallouts: true,
+  allowCalloutAuthoring: true,
   allowRawHtml: false,
 };
 
@@ -65,6 +90,10 @@ export const COMPOSE_CAPABILITIES: EmailEditorCapabilities = {
   allowSystemBlockInsert: false,
   allowSystemBlockMove: true,
   allowSystemBlockDelete: false,
+  allowTables: true,
+  allowDividers: true,
+  preserveCallouts: true,
+  allowCalloutAuthoring: true,
   allowRawHtml: false,
 };
 

@@ -173,10 +173,11 @@ public static class SystemEmailTemplates
             // per campus, so one request can send the same person two invitations. Without the campus and
             // the window there is nothing in the message that tells them apart.
             Single(VisitContactClaim, EmailTemplatePurposes.VisitRequest, sensitive: true,
-                "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime"),
+                "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime",
+                "contactExpiresAt"),
             Single(VisitContactTransfer, EmailTemplatePurposes.VisitRequest, sensitive: true,
                 "contactFullName", "requestCode", "delegationName", "campusName", "plannedTime",
-                "currentContactName"),
+                "currentContactName", "contactExpiresAt"),
             // Neither of the two below carries a token or a personal link, so neither is "sensitive".
             // Both are still one-per-person: they name a campus decision and a contact's address, which
             // is content about a particular request rather than an announcement.

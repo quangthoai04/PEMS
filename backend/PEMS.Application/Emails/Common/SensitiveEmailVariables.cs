@@ -46,6 +46,9 @@ public static class SensitiveEmailVariables
             // classification it used to carry still holds for the block's contents — a work address the
             // guest is being told to write to authorises nothing, so it may stay in the stored body and
             // in the email history — but there is no variable left here to classify.
+            // The deadline for the contact-invitation links themselves — a timestamp only, grants nothing
+            // on its own (the tokens in the action block do that), same reasoning as expiresInHours below.
+            "contactExpiresAt",
             "expireMinutes", "expiresInHours", "fullName", "hostMessage", "hostName", "itemTitle",
             // The Host's instructions for the logistics item — what to prepare, how, and any caveat.
             // Operational content of exactly the kind `proposedDescription` already is: it authorises

@@ -84,6 +84,8 @@ public static class EmailVariableCatalog
               "Pending contact email (masked)", "b***@partner.edu.vn", "b***@partner.edu.vn"),
             V("expiresInHours", "Hiệu lực (giờ)", "Valid for (hours)", "24", "24"),
             V("expireMinutes", "Hiệu lực (phút)", "Valid for (minutes)", "10", "10"),
+            V("contactExpiresAt", "Liên kết đầu mối hết hạn lúc", "Contact link expires at",
+              "17:00 ngày 25/08/2026", "25 Aug 2026, 17:00"),
 
             // The only credential in the catalog. The sample is a fixed, obviously-fake string and is
             // never generated: a preview that minted a real code would be a preview that leaks one.

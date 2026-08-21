@@ -82,6 +82,28 @@ public sealed class OutboundEmail
     /// </summary>
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
 
+    /// <summary>
+    /// Stable identity for this exact logical send, handed to a provider transport that supports request
+    /// de-duplication (Resend's <c>Idempotency-Key</c> HTTP header) so an automatic retry of THIS message
+    /// — same recipients, same subject, same body — cannot create a second copy at the provider.
+    ///
+    /// <para>
+    /// Deliberately a typed property and not a <see cref="Headers"/> entry: <see cref="Headers"/> is MIME
+    /// headers that end up inside the message Resend/SMTP send, while this is a TRANSPORT-level control the
+    /// HTTP call itself carries and the recipient never sees. It is also unrelated to PEMS's own
+    /// client-facing <c>Idempotency-Key</c> (<c>PEMS.Application.Emails.Idempotency.IdempotencyKey</c>),
+    /// which guards a report/invoice send endpoint against a duplicate HTTP request from the browser —
+    /// this one guards one already-recorded message against a duplicate HTTP request to Resend.
+    /// </para>
+    /// <para>
+    /// Callers derive it from a durable identity written BEFORE the send is attempted — the
+    /// <c>sent_emails</c> row's id — so every retry of the same logical email reuses the same key. Null
+    /// means the transport must not retry a network-ambiguous outcome, because there is nothing durable to
+    /// prove a retry is the same message.
+    /// </para>
+    /// </summary>
+    public string? DeliveryIdempotencyKey { get; init; }
+
     /// <summary>Every addressee across all three groups, in TO → CC → BCC order.</summary>
     public IEnumerable<EmailRecipient> AllRecipients => To.Concat(Cc).Concat(Bcc);
 

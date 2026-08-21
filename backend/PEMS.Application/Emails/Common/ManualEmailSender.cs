@@ -154,6 +154,9 @@ public sealed class ManualEmailSender : IManualEmailSender
             // choice here, which is exactly the freedom the single-recipient system templates deny.
             MessageId = messageId,
             Headers = BuildThreadHeaders(message.InReplyTo),
+            // Derived from the SentEmail row just committed above — stable across every retry of THIS
+            // logical message, same reason as SystemEmailDispatcher.
+            DeliveryIdempotencyKey = $"pems-manual-{sentEmail.SentEmailId}",
         }, cancellationToken);
 
         // ── 3. Write back what actually happened ──────────────────────────────
@@ -171,13 +174,17 @@ public sealed class ManualEmailSender : IManualEmailSender
 
             case EmailDeliveryStatus.Failed:
                 sentEmail.Status = "FAILED";
-                sentEmail.ErrorMessage = delivery.SafeMessage;
+                // The machine code travels with the human message (EmailAttemptRecord.Format) — the same
+                // convention SystemEmailDispatcher uses — so a recovery sweep reading this row later can
+                // still tell a proven-not-dispatched failure from an ambiguous one. Losing the code here
+                // was the gap: every manual-send failure read as "Unknown" regardless of cause.
+                sentEmail.ErrorMessage = EmailAttemptRecord.Format(delivery);
                 SetRecipientOutcome(sentEmail, "FAILED", sentAt: null, error: delivery.SafeMessage);
                 break;
 
             default: // Skipped — never handed to a provider, so it is still queued, not sent and not failed.
                 sentEmail.Status = "QUEUED";
-                sentEmail.ErrorMessage = delivery.SafeMessage;
+                sentEmail.ErrorMessage = EmailAttemptRecord.Format(delivery);
                 SetRecipientOutcome(sentEmail, "QUEUED", sentAt: null, error: null);
                 break;
         }

@@ -753,8 +753,19 @@ public static class CanonicalSqlScript
     // 2026-08-21: email_action_tokens.action_context gained 'PARTICIPATION_ASSIGNMENT_RESPONSE' —
     // the Department-Staff delegated-assignment email context, distinct from the direct-invitation
     // PARTICIPATION_RESPONSE (spec BUG-02, see pems_patch_participation_assignment_response_token_context.sql).
+    //
+    // (2026-08-21) Re-pinned for the email template fidelity plan's Phase B (hidden recipient-facing
+    // prose removed from runtime action-block builders, moved into the templates that own it). NOT a
+    // schema change — email_templates.body_vi/body_en updated for 12 templates
+    // (ACCOUNT_ACTIVATED and ACCOUNT_EMAIL_CONFIRMATION needed no body edit: their bodies already said
+    // everything the runtime block used to add), and variables_text for VISIT_CONTACT_CLAIM /
+    // VISIT_CONTACT_TRANSFER gained contactExpiresAt (the invitation's own expiry moment is per-send
+    // data, so it moved from a fixed runtime string into a real template variable). Base tables,
+    // triggers and foreign keys are unchanged. An already-imported database is brought up by
+    // docs/database/scripts/patches/2026-08-21_email_hidden_prose_and_contact_expiry.sql (additive,
+    // idempotent — see that file for the exact REPLACE-based updates).
     public const string ExpectedSha256 =
-        "e41bb40054701f3da8ff46d5447779b11f621996b85ae325608450424e861695";
+        "bcd170b34350787b028e80637ce09bde29f9193ecfcd28199657e4165163f8ac";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

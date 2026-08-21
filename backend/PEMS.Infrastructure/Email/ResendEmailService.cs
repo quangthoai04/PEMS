@@ -99,57 +99,124 @@ public class ResendEmailService : IEmailService
         var baseUrl = string.IsNullOrWhiteSpace(config.BaseUrl) ? ResendEmailConstants.BaseUrl : config.BaseUrl.TrimEnd('/');
 
         var payload = BuildResendPayload(email, envelope, settings);
-
-        try
+        // Serialized ONCE and replayed unchanged on every retry — a retry that re-serialized the payload
+        // would risk sending a different body under the same Idempotency-Key if anything upstream were
+        // ever non-deterministic, and the whole point of the key is "same key, same payload".
+        var jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions
         {
-            using var client = _httpClientFactory.CreateClient("ResendEmailService");
-            client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 30);
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        });
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/emails");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        using var client = _httpClientFactory.CreateClient("ResendEmailService");
+        client.Timeout = TimeSpan.FromSeconds(config.TimeoutSeconds > 0 ? config.TimeoutSeconds : 30);
 
-            var jsonPayload = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        // Retries only happen for a message that carries a durable idempotency key (see
+        // OutboundEmail.DeliveryIdempotencyKey) — without one there is no way to prove a retry cannot
+        // create a duplicate at Resend, so the loop below runs exactly once for such a message regardless
+        // of RetryEnabled/MaxRetries.
+        var canEverRetry = config.RetryEnabled && !string.IsNullOrWhiteSpace(email.DeliveryIdempotencyKey);
+        var maxAttempts = canEverRetry ? 1 + (int)Math.Min(config.MaxRetries, 10) : 1;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
             {
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-            });
-
-            request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-
-            var response = await client.SendAsync(request, cancellationToken);
-            var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            if (response.IsSuccessStatusCode)
-            {
-                using var doc = JsonDocument.Parse(responseText);
-                string? messageId = null;
-                if (doc.RootElement.TryGetProperty("id", out var idProp))
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/emails");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                if (!string.IsNullOrWhiteSpace(email.DeliveryIdempotencyKey))
                 {
-                    messageId = idProp.GetString();
+                    request.Headers.TryAddWithoutValidation(
+                        ResendEmailConstants.IdempotencyHeaderName, email.DeliveryIdempotencyKey);
                 }
 
-                _logger.LogInformation(
-                    "[ResendEmailService] Email sent successfully. ResendId:{ResendId} To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject}",
-                    messageId, MaskAll(envelope.To), MaskAll(envelope.Cc), MaskAll(envelope.Bcc), email.Subject);
+                request.Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
 
-                return EmailDeliveryResult.Sent(messageId);
-            }
-            else
-            {
+                var response = await client.SendAsync(request, cancellationToken);
+                var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(responseText);
+                    string? messageId = doc.RootElement.TryGetProperty("id", out var idProp)
+                        ? idProp.GetString()
+                        : null;
+
+                    _logger.LogInformation(
+                        "[ResendEmailService] Email sent successfully. Attempt:{Attempt} ResendId:{ResendId} "
+                        + "To:{To} Cc:{Cc} Bcc:{Bcc} Subject:{Subject}",
+                        attempt, messageId, MaskAll(envelope.To), MaskAll(envelope.Cc), MaskAll(envelope.Bcc),
+                        email.Subject);
+
+                    return EmailDeliveryResult.Sent(messageId);
+                }
+
+                var retryAfterRaw = response.Headers.TryGetValues("Retry-After", out var values)
+                    ? values.FirstOrDefault()
+                    : null;
+                var classified = ResendDeliveryClassifier.ClassifyResponse(
+                    (int)response.StatusCode, responseText, retryAfterRaw);
+
                 _logger.LogError(
-                    "[ResendEmailService] Resend API error HttpStatusCode:{StatusCode}. To:{To} Subject:{Subject}",
-                    (int)response.StatusCode, MaskAll(envelope.To), email.Subject);
+                    "[ResendEmailService] Resend API error. Attempt:{Attempt} HttpStatusCode:{StatusCode} "
+                    + "Code:{Code} RetryAfterSeconds:{RetryAfterSeconds} To:{To} Subject:{Subject}",
+                    attempt, (int)response.StatusCode, classified.Code,
+                    classified.RetryAfter?.TotalSeconds, MaskAll(envelope.To), email.Subject);
 
-                return EmailDeliveryResult.Failed("RESEND_SEND_FAILED", "Resend API từ chối yêu cầu gửi email.");
+                if (!ShouldRetry(classified, canEverRetry, attempt, maxAttempts))
+                    return EmailDeliveryResult.Failed(classified.Code, classified.SafeMessage);
+
+                if (!await DelayBeforeRetryAsync(classified.RetryAfter, attempt, cancellationToken))
+                    return EmailDeliveryResult.Failed(classified.Code, classified.SafeMessage);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // The caller asked us to stop — never turn that into a delivery result the caller did not
+                // ask for.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var classified = ResendDeliveryClassifier.ClassifyException(ex);
+
+                _logger.LogError(ex,
+                    "[ResendEmailService] Resend send FAILED due to exception. Attempt:{Attempt} "
+                    + "Code:{Code} To:{To} Subject:{Subject}",
+                    attempt, classified.Code, MaskAll(envelope.To), email.Subject);
+
+                if (!ShouldRetry(classified, canEverRetry, attempt, maxAttempts))
+                    return EmailDeliveryResult.Failed(classified.Code, classified.SafeMessage);
+
+                if (!await DelayBeforeRetryAsync(classified.RetryAfter, attempt, cancellationToken))
+                    return EmailDeliveryResult.Failed(classified.Code, classified.SafeMessage);
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex,
-                "[ResendEmailService] Resend send FAILED due to exception. To:{To} Subject:{Subject}",
-                MaskAll(envelope.To), email.Subject);
 
-            return EmailDeliveryResult.Failed("RESEND_SEND_FAILED", "Lỗi kết nối tới Resend API.");
-        }
+        // Unreachable: the loop above always returns on its last iteration. Kept only so the compiler sees
+        // every path return a value.
+        return EmailDeliveryResult.Failed(
+            ResendDeliveryCodes.NetworkUnknown,
+            "Không xác định được Resend đã nhận yêu cầu hay chưa (lỗi kết nối/timeout).");
+    }
+
+    /// <summary>Whether the classified outcome earns another attempt, given what is left of the budget.</summary>
+    private static bool ShouldRetry(
+        ResendClassifiedError classified, bool canEverRetry, int attempt, int maxAttempts)
+        => canEverRetry && classified.IsRetryable && attempt < maxAttempts;
+
+    /// <summary>
+    /// Waits out one retry using <see cref="ResendRetryPolicy"/> — the provider's own Retry-After when it
+    /// gave one, otherwise a bounded exponential backoff. Returns false (never sleeps) when the computed
+    /// delay exceeds <see cref="ResendRetryPolicy.MaxSingleDelay"/>: a caller told to wait longer than that
+    /// should treat the attempt as exhausted rather than block a request thread on it.
+    /// </summary>
+    private static async Task<bool> DelayBeforeRetryAsync(
+        TimeSpan? retryAfter, int attempt, CancellationToken cancellationToken)
+    {
+        var delay = ResendRetryPolicy.ComputeDelay(attempt, retryAfter);
+        if (delay > ResendRetryPolicy.MaxSingleDelay) return false;
+
+        await Task.Delay(delay, cancellationToken);
+        return true;
     }
 
     public async Task SendAsync(OutboundEmail email, CancellationToken cancellationToken = default)

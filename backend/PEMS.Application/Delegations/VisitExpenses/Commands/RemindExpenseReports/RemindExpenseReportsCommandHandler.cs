@@ -162,15 +162,12 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                             TrustedBlocks: new Dictionary<string, string>
                             {
                                 // A login-required detail link, not a one-time token: this reminder grants
-                                // nothing on its own, which is why its body is kept in full. The note is
-                                // supplied explicitly — the block's default sentence describes the
-                                // Department Leader's accept/reject/assign options, which is a different
-                                // flow and would tell this recipient to do something that is not there.
+                                // nothing on its own, which is why its body is kept in full. What happens
+                                // after login is the template's own business prose (see
+                                // LOGISTICS_EXPENSE_REPORT_REMINDER's body), not this block's.
                                 [EmailTrustedBlocks.ActionBlock] =
                                     EmailComposition.DetailLinkBlock(
-                                        detailUrl,
-                                        "Mở biên bản để kê khai chi phí",
-                                        "Sau khi đăng nhập, bạn có thể nhập chi phí hoặc xác nhận \"Không có chi phí\" cho hạng mục này."),
+                                        detailUrl, "Mở biên bản để kê khai chi phí"),
                             },
                             RelatedType: EmailActionTargetTypes.LogisticsItem,
                             RelatedId: item.LogisticsItemId,
