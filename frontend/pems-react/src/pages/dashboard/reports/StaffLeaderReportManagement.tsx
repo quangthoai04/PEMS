@@ -461,7 +461,7 @@ export function StaffLeaderReportManagement() {
         </div>
 
         {/* Nút xuất báo cáo — chọn phần + 3 định dạng */}
-        <div className="relative">
+        <div className="relative mr-6">
           <button
             type="button"
             onClick={() => setExportMenuOpen((v) => !v)}

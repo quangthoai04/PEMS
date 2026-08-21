@@ -404,7 +404,7 @@ export function DeptReportManagement() {
           </p>
         </div>
 
-        <div className="relative">
+        <div className="relative mr-6">
           <button
             type="button"
             onClick={() => setExportMenuOpen((v) => !v)}
