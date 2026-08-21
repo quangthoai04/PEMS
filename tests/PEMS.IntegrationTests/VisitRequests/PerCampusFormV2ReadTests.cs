@@ -794,35 +794,40 @@ public sealed class PerCampusFormV2ReadTests
     }
 
     /// <summary>
-    /// The two ways a campus's contact can change are windowed by the campus DECISION, not by whether
-    /// somebody holds the role: before a decision the registrant simply REPLACEs the contact, and once
-    /// the campus has been decided the seat is handed over by TRANSFER, which the new holder has to
-    /// accept. Both sides of that boundary are asserted here so it cannot drift.
+    /// The two ways a campus's contact can change are windowed by whether somebody already holds the
+    /// role, not by the campus DECISION: a confirmed holder means TRANSFER territory whether or not a
+    /// Staff Leader has decided the campus yet, and only a campus with NO confirmed holder is REPLACE
+    /// territory. Before this fix the boundary was drawn on decision status instead, which meant a
+    /// confirmed holder on an undecided campus still got offered REPLACE — the button that destroyed
+    /// them outright. Both the undecided and decided cases are asserted here, with the SAME confirmed
+    /// holder throughout, so that boundary cannot drift back.
     /// </summary>
     [Fact]
-    public async Task Replace_is_offered_before_the_decision_and_transfer_after_it()
+    public async Task Transfer_is_offered_whenever_a_confirmed_holder_exists_undecided_or_decided()
     {
         RequireDb();
         using var db = NewContext();
         using var tx = await db.Database.BeginTransactionAsync();
 
-        // Seed default: contact confirmed, campus NOT yet decided, earliest start +20d, nothing pending.
+        // Seed default: contact confirmed, campus NOT yet decided, earliest start +20d, nothing
+        // pending. A real, confirmed holder — this is handover territory even though nobody has
+        // decided the campus yet.
         var (undecided, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false);
         var beforeDecision = CampusActions(
             await Resolver(db, Owner()).ResolveAsync(undecided.VisitRequestId, CancellationToken.None));
 
-        Assert.Contains(VisitFormActions.ReplaceOperationalContact, beforeDecision);
-        Assert.DoesNotContain(VisitFormActions.InitiateOperationalContactTransfer, beforeDecision);
+        Assert.Contains(VisitFormActions.InitiateOperationalContactTransfer, beforeDecision);
+        Assert.DoesNotContain(VisitFormActions.ReplaceOperationalContact, beforeDecision);
         Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, beforeDecision);
         Assert.DoesNotContain(VisitFormActions.CancelOperationalContactChange, beforeDecision);
 
-        // host0 drives the campus to ASSIGNED — decided, Host has not started preparation.
+        // host0 drives the campus to ASSIGNED — decided, Host has not started preparation. Same
+        // confirmed-holder invariant, now also decided: the verdict does not change at all.
         var (decided, _) = await SeedV2Async(db, new[] { Campus1 }, mixed: false, host0: IcStaffC1);
         var afterDecision = CampusActions(
             await Resolver(db, Owner()).ResolveAsync(decided.VisitRequestId, CancellationToken.None));
 
         Assert.Contains(VisitFormActions.InitiateOperationalContactTransfer, afterDecision);
-        // Replace is over: the campus has a decision, so the seat can only be handed over.
         Assert.DoesNotContain(VisitFormActions.ReplaceOperationalContact, afterDecision);
         Assert.DoesNotContain(VisitFormActions.ResendOperationalContactConfirmation, afterDecision);
         Assert.DoesNotContain(VisitFormActions.CancelOperationalContactChange, afterDecision);
@@ -863,11 +868,10 @@ public sealed class PerCampusFormV2ReadTests
     }
 
     /// <summary>
-    /// Seeded on a DECIDED campus, because that is the only place a transfer can exist: an undecided
-    /// campus is replace territory, and its contact is changed outright rather than handed over. The
-    /// seed used to leave the campus at WAITING_REQUEST_APPROVAL, which made the resend it asserted a
-    /// call the handler would have refused — the read model now asks the same lifecycle question the
-    /// resend handler does, so the fixture has to describe a state that can actually occur.
+    /// Seeded on a DECIDED campus — a transfer can equally exist on an undecided one now (see
+    /// <see cref="Transfer_is_offered_whenever_a_confirmed_holder_exists_undecided_or_decided"/>), but
+    /// this fixture keeps the ASSIGNED seed so the resend/cancel assertions below are exercised
+    /// alongside a real decision rather than duplicating that coverage.
     /// </summary>
     [Fact]
     public async Task A_pending_transfer_replaces_initiation_with_resend_and_cancel()

@@ -128,8 +128,9 @@ const fieldCls = (hasError?: boolean) =>
  *
  * - same address → the details are corrected. Nothing is emailed, nothing is invited, nobody's
  *   authority moves, and an approved campus starting tomorrow is still allowed it.
- * - different address → somebody has to accept. Before the campus is decided that is a replace; after,
- *   a transfer in which the current contact keeps every right until the new person says yes.
+ * - different address → somebody has to accept. While nobody holds the campus yet that is a replace;
+ *   once somebody does — whether or not a Staff Leader has decided the campus — a transfer, in which
+ *   the current contact keeps every right until the new person says yes.
  *
  * The panel does not classify the edit itself — it cannot know the stored address for certain, and a
  * wrong guess either emails a stranger about a typo or hands over a campus silently. It only warns,
@@ -155,7 +156,8 @@ export default function ContactIdentityActions({
     /** Whether changing the ADDRESS is on the table, as opposed to correcting the details only. */
     changeIdentity: hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
       || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-    /** After a decision, a new address is a handover rather than a correction — worth saying so. */
+    /** Once somebody already holds the campus, a new address is a handover rather than a correction —
+     *  worth saying so, regardless of whether the campus itself has been decided yet. */
     transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
       && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
     resend: hasAction(allowedActions, VisitV2Action.ResendContactConfirmation),
@@ -499,7 +501,8 @@ export default function ContactIdentityActions({
       </div>
 
       {/* The reason travels with a handover, so it is asked for only when the address has actually
-          changed on a decided campus — which is the only branch that stores it. */}
+          changed on a campus that already has a confirmed holder — which is the only branch that
+          stores it, whether or not the campus has been decided yet. */}
       {identityChanging && can.transferOnly && (
         <div className="mt-4 max-w-2xl" data-testid="contact-form-reason">
           <label htmlFor="ci-reason" className={labelCls}>

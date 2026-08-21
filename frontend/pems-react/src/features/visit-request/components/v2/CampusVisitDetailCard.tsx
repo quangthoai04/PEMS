@@ -11,6 +11,7 @@ import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid, type InfoRow } from './shared/ReadOnlyInfoGrid';
 import { PersonListTable } from './shared/PersonListTable';
 import { resolveCampusRevisionState } from './shared/campusRevisionState';
+import { hasConfirmedOperationalContact } from '../../utils/visitV2Actions';
 
 interface Props {
   campus: ResolvedCampusVisit;
@@ -207,7 +208,7 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             <ContactIdentityActions
               visitRequestId={visitRequestId}
               visitInstanceId={campus.visitInstanceId}
-              contactConfirmed={campus.operationalContact.confirmationStatus === 'CONFIRMED'}
+              contactConfirmed={hasConfirmedOperationalContact(campus.operationalContact.confirmationStatus)}
               contact={campus.operationalContact}
               rowVersion={campus.rowVersion}
               allowedActions={campus.allowedActions}

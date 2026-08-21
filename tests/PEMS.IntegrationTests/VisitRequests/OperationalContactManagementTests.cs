@@ -575,11 +575,14 @@ public sealed class OperationalContactManagementTests
     // ── Path B: changed address ───────────────────────────────────────────────────
 
     /// <summary>
-    /// TC-IDENTITY-01. Before a decision, a new address is a replace: the campus loses its contact, a
-    /// fresh INITIAL_CONFIRMATION goes out, and the old invitation is superseded rather than left live.
+    /// TC-IDENTITY-01. While nobody has confirmed the campus yet, a new address is a replace: the
+    /// campus loses its (still unconfirmed) contact, a fresh INITIAL_CONFIRMATION goes out, and the old
+    /// invitation is superseded rather than left live. This fixture never lets anybody accept, so there
+    /// is no confirmed holder to protect — that case is TC-IDENTITY-02A below, where the same edit must
+    /// route to TRANSFER instead and leave the confirmed holder untouched.
     /// </summary>
     [Fact]
-    public async Task A_changed_address_before_a_decision_runs_the_canonical_replace()
+    public async Task A_changed_address_with_no_confirmed_holder_runs_the_canonical_replace()
     {
         RequireDb();
         ulong requestId = 0;
@@ -615,6 +618,167 @@ public sealed class OperationalContactManagementTests
             Assert.Null(campus.ContactUserId);                                   // the gate re-closes
             Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, campus.Status);
             Assert.Equal(successor, (await DetailAsync(before.InstanceId)).OperationalContactEmail);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-IDENTITY-02A (spec Matrix A2). This is the defect the whole change fixes: a campus with a
+    /// CONFIRMED holder that has not been decided yet must still route to TRANSFER, not REPLACE — the
+    /// old rule keyed the branch off campus STATUS, so this exact scenario (confirmed A,
+    /// WAITING_REQUEST_APPROVAL) fell into the replace branch above and destroyed A before B ever
+    /// answered. Nothing may move here: A stays the holder, the snapshot stays A's, the campus stays
+    /// WAITING_REQUEST_APPROVAL.
+    /// </summary>
+    [Fact]
+    public async Task A_changed_address_with_a_confirmed_holder_proposes_a_transfer_even_before_a_decision()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            var claimMail = new FakeEmail();
+            string acceptToken;
+            using (var db = NewContext())
+                acceptToken = await IssueInvitationAsync(db, claimMail, invitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, claimMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var confirmed = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, confirmed.Status);
+            Assert.Equal(contactId, confirmed.ContactUserId);   // a real, confirmed holder — no decision yet
+
+            var detail = await DetailAsync(confirmed.InstanceId);
+            var successor = "oc-handover-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var handoverMail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, handoverMail).Handle(
+                    SaveOf(requestId, confirmed.InstanceId, detail,
+                        fullName: "Người nhận bàn giao", email: successor),
+                    CancellationToken.None);
+
+            // A TRANSFER was raised — not a REPLACE — and it went to the proposed successor.
+            var pending = (await ChangesAsync(requestId))
+                .Single(c => c.Status == IdentityChangeStatuses.Pending);
+            Assert.Equal(IdentityChangeKinds.Transfer, pending.ChangeKind);
+            Assert.Equal(successor, pending.NewEmailNormalized);
+            Assert.Equal(contactId, pending.OldUserId);
+            Assert.Equal(successor, Assert.Single(handoverMail.Sent).To);
+
+            // Nothing moved. A is still the holder, the campus is still undecided, the snapshot is A's.
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(contactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after.Status);
+            var snapshot = await DetailAsync(confirmed.InstanceId);
+            Assert.Equal(detail.OperationalContactEmail, snapshot.OperationalContactEmail);
+            Assert.Equal(detail.OperationalContactFullName, snapshot.OperationalContactFullName);
+
+            // The request-wide gate does not re-close over a pending transfer.
+            using (var db = NewContext())
+            {
+                var request = await db.VisitRequests.AsNoTracking()
+                    .SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.NotEqual(VisitRequestStatuses.PendingContactConfirmation, request.Status);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Spec Matrix E (multi-campus isolation). HN has a confirmed holder and a pending transfer to a
+    /// successor; HCM has its own, unrelated confirmed holder. Proposing HN's handover must not alter
+    /// HCM's contact, status, or identity-change history in any way, and the request-wide gate — already
+    /// open because both campuses have a confirmed holder — must stay open throughout.
+    /// </summary>
+    [Fact]
+    public async Task A_pending_transfer_on_one_campus_never_touches_a_confirmed_sibling()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactHn, contactHcm;
+            string emailHn, emailHcm;
+            using (var db = NewContext())
+            {
+                (contactHn, emailHn) = await VisitorUserAsync(db);
+                (contactHcm, emailHcm) = await SuccessorUserAsync(db);
+            }
+
+            requestId = await CreateAsync(Campus("HN", emailHn), Campus("HCM", emailHcm));
+
+            ulong hnInstanceId, hcmInstanceId;
+            using (var db = NewContext())
+            {
+                var rows = await db.VisitRequestCampuses.AsNoTracking()
+                    .Include(c => c.FormDetail)
+                    .Where(c => c.VisitRequestId == requestId)
+                    .ToListAsync();
+                hnInstanceId = rows.Single(c => c.FormDetail!.OperationalContactEmail == emailHn).VisitInstanceId;
+                hcmInstanceId = rows.Single(c => c.FormDetail!.OperationalContactEmail == emailHcm).VisitInstanceId;
+            }
+
+            // Both campuses confirm their own contact — the request-wide gate opens.
+            var changes = await ChangesAsync(requestId);
+            var hnInvitation = changes.Single(c => c.VisitInstanceId == hnInstanceId);
+            var hcmInvitation = changes.Single(c => c.VisitInstanceId == hcmInstanceId);
+
+            var claimMail = new FakeEmail();
+            string hnAcceptToken, hcmAcceptToken;
+            using (var db = NewContext())
+                hnAcceptToken = await IssueInvitationAsync(db, claimMail, hnInvitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactHn, emailHn, claimMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(hnAcceptToken), CancellationToken.None);
+
+            using (var db = NewContext())
+                hcmAcceptToken = await IssueInvitationAsync(db, claimMail, hcmInvitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactHcm, emailHcm, claimMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(hcmAcceptToken), CancellationToken.None);
+
+            // Propose HN's handover while both campuses are still undecided.
+            var detail = await DetailAsync(hnInstanceId);
+            var successor = "oc-sibling-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+            var handoverMail = new FakeEmail();
+            using (var db = NewContext())
+                await Save(db, Registrant, handoverMail).Handle(
+                    SaveOf(requestId, hnInstanceId, detail, fullName: "Người nhận bàn giao", email: successor),
+                    CancellationToken.None);
+
+            // HN got its transfer...
+            var hnPending = (await ChangesAsync(requestId))
+                .Single(c => c.VisitInstanceId == hnInstanceId && c.Status == IdentityChangeStatuses.Pending);
+            Assert.Equal(IdentityChangeKinds.Transfer, hnPending.ChangeKind);
+            Assert.Equal(successor, hnPending.NewEmailNormalized);
+
+            // ...and HCM never noticed: same holder, same status, no new identity-change row, gate open.
+            using (var db = NewContext())
+            {
+                var hcm = await db.VisitRequestCampuses.AsNoTracking().Include(c => c.FormDetail)
+                    .SingleAsync(c => c.VisitInstanceId == hcmInstanceId);
+                Assert.Equal(contactHcm, hcm.OperationalContactUserId);
+                Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, hcm.Status);
+                Assert.Equal(emailHcm, hcm.FormDetail!.OperationalContactEmail);
+
+                var hcmChanges = await db.VisitRequestIdentityChanges.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == hcmInstanceId).ToListAsync();
+                var onlyHcmChange = Assert.Single(hcmChanges);
+                Assert.Equal(IdentityChangeStatuses.Applied, onlyHcmChange.Status);
+
+                var request = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.NotEqual(VisitRequestStatuses.PendingContactConfirmation, request.Status);
+            }
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -1242,12 +1406,14 @@ public sealed class OperationalContactManagementTests
     }
 
     /// <summary>
-    /// C3-3. Replacing a SETTLED contact (no pending invitation in flight) with an external address:
-    /// exactly one business event for the new invitation, the OPERATIONAL_CONTACT_REPLACED audit
-    /// exists (scoped, per Fix Group D item 9) but is never itself surfaced for this outcome.
+    /// C3-3. Handing over a SETTLED contact (a real confirmed holder, no pending invitation in flight)
+    /// to an external address is a TRANSFER, not a replace — the holder does not move on save, and
+    /// exactly one business event represents the invitation that was raised. Before the fix this
+    /// scenario (confirmed holder, undecided campus) fell into the replace branch instead and cleared
+    /// the holder outright; this is the regression pin for that.
     /// </summary>
     [Fact]
-    public async Task C3_3_External_replace_produces_exactly_one_invitation_event_no_duplicate()
+    public async Task C3_3_External_handover_of_a_confirmed_contact_produces_exactly_one_transfer_event()
     {
         RequireDb();
         ulong requestId = 0;
@@ -1272,31 +1438,29 @@ public sealed class OperationalContactManagementTests
                     CancellationToken.None);
 
             var afterCampus = await CampusStateAsync(requestId);
-            Assert.Null(afterCampus.ContactUserId);
-            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, afterCampus.Status);
+            Assert.Equal(initialUserId, afterCampus.ContactUserId);   // the holder does not move on save
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, afterCampus.Status);
             var invitation = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(IdentityChangeKinds.Transfer, invitation.ChangeKind);
             Assert.Equal(IdentityChangeStatuses.Pending, invitation.Status);
+            Assert.Equal(initialUserId, invitation.OldUserId);
             Assert.Equal(detail.FormRevision, (await DetailAsync(before.InstanceId)).FormRevision);
 
             using var read = NewContext();
-            var replacedAudit = await read.AuditLogs.AsNoTracking()
-                .Where(a => a.VisitRequestId == requestId && a.Action == OperationalContactHistoryAudit.Replaced)
+            var transferAudit = await read.AuditLogs.AsNoTracking()
+                .Where(a => a.VisitRequestId == requestId && a.Action == "OPERATIONAL_CONTACT_TRANSFER_REQUESTED")
                 .FirstAsync();
-            Assert.Equal(before.InstanceId, replacedAudit.VisitInstanceId); // Fix Group D item 9
-            Assert.NotNull(replacedAudit.CampusId);
+            Assert.Equal(before.InstanceId, transferAudit.EntityId);
+            Assert.Equal(before.InstanceId, transferAudit.VisitInstanceId);
+            Assert.NotNull(transferAudit.CampusId);
 
             var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
                 new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
             Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant);
             var created = Assert.Single(result.Entries, e =>
-                e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+                e.EventCode == VisitHistoryEventCodes.ContactTransferRequested
                 && e.VisitInstanceId == before.InstanceId);
             Assert.NotNull(created.EventId);
-
-            // A guessed id for the un-surfaced REPLACED audit must 404 like anything out of scope.
-            var guessedId = VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, replacedAudit.AuditLogId);
-            await Assert.ThrowsAsync<NotFoundException>(() => HistoryDetailHandler(read, new FakeUser(Registrant))
-                .Handle(new GetVisitHistoryDetailQuery(requestId, guessedId), CancellationToken.None));
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -1359,11 +1523,13 @@ public sealed class OperationalContactManagementTests
     }
 
     /// <summary>
-    /// C3-5. Replacing a settled contact with the registrant's OWN verified address: linked
-    /// immediately, no invitation of any kind, and exactly one history event represents it.
+    /// C3-5. Handing over a settled contact to the registrant's OWN verified address is STILL a
+    /// transfer — once somebody already holds the campus, moving the role to anybody, even the
+    /// registrant, happens only on accept, never instantly on save. The self-match shortcut stays
+    /// reserved for the case nobody has confirmed anything yet (see the Path A self-match tests above).
     /// </summary>
     [Fact]
-    public async Task C3_5_Self_match_replacement_produces_exactly_one_history_event_no_invitation()
+    public async Task C3_5_Handover_to_the_registrants_own_address_still_requires_acceptance()
     {
         RequireDb();
         ulong requestId = 0;
@@ -1385,35 +1551,22 @@ public sealed class OperationalContactManagementTests
                     CancellationToken.None);
 
             var afterCampus = await CampusStateAsync(requestId);
-            Assert.Equal(Registrant, afterCampus.ContactUserId);
+            Assert.Equal(externalUserId, afterCampus.ContactUserId);   // still the original holder
             Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, afterCampus.Status);
-            Assert.Empty(await ChangesAsync(requestId)); // no invitation of any kind was created
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+            Assert.Equal(IdentityChangeKinds.Transfer, invitation.ChangeKind);
+            Assert.Equal(IdentityChangeStatuses.Pending, invitation.Status);
+            Assert.Equal(externalUserId, invitation.OldUserId);
+            Assert.Equal(registrantEmail, invitation.NewEmailNormalized, ignoreCase: true);
             Assert.Equal(detail.FormRevision, (await DetailAsync(before.InstanceId)).FormRevision);
 
             using var read = NewContext();
-            var replacedAudit = await read.AuditLogs.AsNoTracking()
-                .Where(a => a.VisitRequestId == requestId && a.Action == OperationalContactHistoryAudit.Replaced)
-                .FirstAsync();
-            var campusId = await read.VisitRequestCampuses.AsNoTracking()
-                .Where(c => c.VisitInstanceId == before.InstanceId).Select(c => c.CampusId).FirstAsync();
-            Assert.Equal(before.InstanceId, replacedAudit.VisitInstanceId);
-            Assert.Equal(campusId, replacedAudit.CampusId);
-
             var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
                 new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
-            var contactEntries = result.Entries.Where(e => e.VisitInstanceId == before.InstanceId
-                && (e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant
-                    || e.EventCode == VisitHistoryEventCodes.ContactIdentityChanged
-                    || e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated)).ToList();
-            var entry = Assert.Single(contactEntries);
-            Assert.Equal(VisitHistoryEventCodes.ContactReplacedWithRegistrant, entry.EventCode);
-
-            var drawer = await HistoryDetailHandler(read, new FakeUser(Registrant)).Handle(
-                new GetVisitHistoryDetailQuery(requestId, entry.EventId!), CancellationToken.None);
-            Assert.Equal(VisitHistoryEventCodes.ContactReplacedWithRegistrant, drawer.EventCode);
-            var emailField = Assert.Single(drawer.FieldChanges, f => f.FieldCode == "contactEmailMasked");
-            Assert.NotNull(emailField.BeforeValue);
-            Assert.NotNull(emailField.AfterValue);
+            var entry = Assert.Single(result.Entries, e =>
+                e.VisitInstanceId == before.InstanceId
+                && e.EventCode == VisitHistoryEventCodes.ContactTransferRequested);
+            Assert.NotNull(entry.EventId);
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -1571,9 +1724,9 @@ public sealed class OperationalContactManagementTests
         finally { await CleanupAsync(requestId); }
     }
 
-    /// <summary>C3-R4. External replacement of a settled contact still reads as a fresh invitation, never a reinvite.</summary>
+    /// <summary>C3-R4. External handover of a settled contact reads as a transfer, never a reinvite or a fresh confirmation.</summary>
     [Fact]
-    public async Task C3_R4_External_replacement_is_never_classified_as_reinvite()
+    public async Task C3_R4_External_handover_is_never_classified_as_reinvite_or_initial_confirmation()
     {
         RequireDb();
         ulong requestId = 0;
@@ -1600,9 +1753,11 @@ public sealed class OperationalContactManagementTests
             using var read = NewContext();
             var result = await HistoryHandler(read, new FakeUser(Registrant)).Handle(
                 new GetVisitRequestHistoryQuery(requestId), CancellationToken.None);
-            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+            Assert.Single(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactTransferRequested
                 && e.VisitInstanceId == before.InstanceId);
             Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReinvited);
+            Assert.DoesNotContain(result.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactInitialConfirmationCreated
+                && e.VisitInstanceId == before.InstanceId);
         }
         finally { await CleanupAsync(requestId); }
     }

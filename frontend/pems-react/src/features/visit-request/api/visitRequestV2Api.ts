@@ -795,9 +795,9 @@ export const reinviteOperationalContactConfirmation = (visitRequestId: number, v
  *
  * - same address → the person's details are corrected. No invitation, no email, no change to who holds
  *   the campus, no effect on approval.
- * - different address → the canonical identity workflow. A replace while the campus is undecided, a
- *   transfer once it has been decided — and in a transfer nothing moves until the invited person
- *   accepts.
+ * - different address → the canonical identity workflow. A replace while nobody holds the campus yet, a
+ *   transfer once somebody already does — regardless of whether the campus has been decided — and in a
+ *   transfer nothing moves until the invited person accepts.
  *
  * The client deliberately does NOT classify the edit. It cannot: only the stored address decides, and a
  * client that guessed wrong would either email somebody about a corrected phone number or change who
@@ -816,7 +816,8 @@ export const saveOperationalContact = (
       `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact`, body)
     .then(r => r.data);
 
-/** Hand a DECIDED campus to a new address. Nothing moves until that person accepts. */
+/** Hand a campus that already has a confirmed contact to a new address, before it has started —
+ *  whether or not it has been decided. Nothing moves until that person accepts. */
 export const initiateOperationalContactTransfer = (
   visitRequestId: number, visitInstanceId: number, body: OperationalContactInput & { reason?: string },
 ) =>

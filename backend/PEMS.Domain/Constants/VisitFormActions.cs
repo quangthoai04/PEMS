@@ -96,9 +96,9 @@ public static class VisitFormActions
     /// has a live invitation or it does not.
     /// </summary>
     public const string ReinviteOperationalContactConfirmation = "REINVITE_OPERATIONAL_CONTACT_CONFIRMATION";
-    /// <summary>Registrant may correct THIS campus's contact outright while the campus is undecided.</summary>
+    /// <summary>Registrant may correct THIS campus's contact outright while nobody holds the role yet.</summary>
     public const string ReplaceOperationalContact = "REPLACE_OPERATIONAL_CONTACT";
-    /// <summary>Registrant / this campus's confirmed contact may hand the campus to someone else after its decision.</summary>
+    /// <summary>Registrant / this campus's confirmed contact may hand the campus to someone else once somebody already holds the role.</summary>
     public const string InitiateOperationalContactTransfer = "INITIATE_OPERATIONAL_CONTACT_TRANSFER";
     /// <summary>Registrant / this campus's confirmed contact may close the outstanding invitation.</summary>
     public const string CancelOperationalContactChange = "CANCEL_OPERATIONAL_CONTACT_CHANGE";

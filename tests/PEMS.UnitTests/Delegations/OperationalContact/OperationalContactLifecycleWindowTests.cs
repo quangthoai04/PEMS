@@ -106,12 +106,19 @@ public class OperationalContactLifecycleWindowTests
         => OperationalContactGuards.EnsureProfileUpdateAllowed(
             LiveRequest(), Campus(VisitInstanceStatuses.BeforeVisit, startsInHours));
 
-    // ── Transfer: decided and not started ───────────────────────────────────
+    // ── Transfer: a confirmed holder exists, and the campus has not started ──
 
+    /// <summary>
+    /// WAITING_REQUEST_APPROVAL belongs here, not with the "nothing to hand over yet" refusals below:
+    /// a campus never reaches that status without a confirmed <c>operational_contact_user_id</c> (the
+    /// database enforces it), so a real holder is always there to hand something over, whether or not a
+    /// Staff Leader has decided the campus yet.
+    /// </summary>
     [Theory]
+    [InlineData(VisitInstanceStatuses.WaitingRequestApproval)]
     [InlineData(VisitInstanceStatuses.Assigned)]
     [InlineData(VisitInstanceStatuses.BeforeVisit)]
-    public void A_handover_may_be_proposed_while_the_campus_is_decided_and_not_started(string status)
+    public void A_handover_may_be_proposed_once_a_confirmed_holder_exists_and_the_campus_has_not_started(string status)
         => OperationalContactGuards.EnsureTransferWindowOpen(LiveRequest(), Campus(status));
 
     [Theory]
@@ -129,20 +136,19 @@ public class OperationalContactLifecycleWindowTests
     }
 
     /// <summary>
-    /// An undecided campus is refused too, but for the opposite reason — there is nothing to hand over
-    /// yet, so the message routes the caller to replacing the contact outright rather than implying the
-    /// window has closed.
+    /// WAITING_CONTACT_CONFIRMATION is the one status left where a transfer is refused for the opposite
+    /// reason from the Theory above — there is nothing to hand over yet, so the message routes the
+    /// caller to replacing the contact outright rather than implying the window has closed.
     /// </summary>
-    [Theory]
-    [InlineData(VisitInstanceStatuses.WaitingContactConfirmation)]
-    [InlineData(VisitInstanceStatuses.WaitingRequestApproval)]
-    public void An_undecided_campus_is_sent_to_replace_rather_than_to_handover(string status)
+    [Fact]
+    public void A_campus_with_no_confirmed_holder_is_sent_to_replace_rather_than_to_handover()
     {
         var ex = Assert.Throws<ConflictException>(
-            () => OperationalContactGuards.EnsureTransferWindowOpen(LiveRequest(), Campus(status)));
+            () => OperationalContactGuards.EnsureTransferWindowOpen(
+                LiveRequest(), Campus(VisitInstanceStatuses.WaitingContactConfirmation)));
 
         Assert.Equal(OperationalContactErrorCodes.ChangeConflict, ex.ErrorCode);
-        Assert.Contains("chưa được duyệt", ex.Message);
+        Assert.Contains("chưa có đầu mối vận hành", ex.Message);
     }
 
     // ── The point of the change: lifecycle, not clock ────────────────────────

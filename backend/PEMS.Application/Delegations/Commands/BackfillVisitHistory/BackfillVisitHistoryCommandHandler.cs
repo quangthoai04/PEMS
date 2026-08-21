@@ -43,7 +43,16 @@ public sealed class BackfillVisitHistoryCommandHandler
         { CampusDecisionAudit.Approved, CampusDecisionAudit.ApprovedWithScheduleWarning, CampusDecisionAudit.Rejected };
 
     private static readonly string[] ContactCandidateActions =
-        { OperationalContactHistoryAudit.ProfileUpdated, OperationalContactHistoryAudit.Replaced };
+        {
+            OperationalContactHistoryAudit.ProfileUpdated, OperationalContactHistoryAudit.Replaced,
+            // Not named in OperationalContactHistoryAudit — that vocabulary is deliberately scoped to
+            // the two actions whose USER-FACING history comes from AuditLog itself (see its own doc
+            // comment); transfer's timeline entry already comes from a fully-scoped
+            // VisitRequestIdentityChangeEvent. This literal exists only so a legacy AuditLog row missing
+            // CampusId/VisitInstanceId (pre-fix InitiateOperationalContactTransferCommandHandler) is
+            // still findable by an admin filtering the raw audit trail by campus.
+            "OPERATIONAL_CONTACT_TRANSFER_REQUESTED",
+        };
 
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;

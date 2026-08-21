@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using PEMS.Application.Admin.Queries.GetAdminAuditLogs;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.BackfillVisitHistory;
@@ -615,6 +616,88 @@ public sealed class BackfillVisitHistoryTests
             // Still not rendered — scope backfill recovers METADATA, never changes what the reader
             // chooses to surface.
             Assert.DoesNotContain(history.Entries, e => e.EventCode == VisitHistoryEventCodes.ContactReplacedWithRegistrant);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── BF-7B: legacy transfer-requested audit, scope recovered and isolated per campus ──
+
+    /// <summary>
+    /// Before the fix, InitiateOperationalContactTransferCommandHandler set VisitRequestId but never
+    /// CampusId/VisitInstanceId on its own audit row — invisible to GetAdminAuditLogsQueryHandler's
+    /// campus filter. Two campuses on one request, each with its own legacy unscoped row, prove the
+    /// backfill recovers each one from ITS OWN campus (via the deterministic EntityId join) rather than
+    /// cross-attributing — the exact multi-campus isolation "OPERATIONAL_CONTACT_TRANSFER_REQUESTED" is
+    /// not named in OperationalContactHistoryAudit needs to keep proving.
+    /// </summary>
+    [Fact]
+    public async Task BF7B_Old_transfer_requested_audit_scope_recovered_and_isolated_per_campus()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            using var db = NewContext();
+            var (id, instances) = await SeedRequestAsync(
+                db,
+                (Campus1, VisitInstanceStatuses.WaitingRequestApproval),
+                (Campus2, VisitInstanceStatuses.WaitingRequestApproval));
+            requestId = id;
+            var instanceHn = instances[0];
+            var instanceHcm = instances[1];
+            var now = DateTime.Now;
+
+            var legacyHn = new AuditLog
+            {
+                ActorUserId = Registrant, Action = "OPERATIONAL_CONTACT_TRANSFER_REQUESTED",
+                EntityType = "VisitRequestCampus", EntityId = instanceHn,
+                VisitRequestId = requestId, SourceType = "IDENTITY", CreatedAt = now,
+                // CampusId / VisitInstanceId deliberately left null — the exact pre-fix shape.
+            };
+            var legacyHcm = new AuditLog
+            {
+                ActorUserId = Registrant, Action = "OPERATIONAL_CONTACT_TRANSFER_REQUESTED",
+                EntityType = "VisitRequestCampus", EntityId = instanceHcm,
+                VisitRequestId = requestId, SourceType = "IDENTITY", CreatedAt = now,
+            };
+            db.AuditLogs.AddRange(legacyHn, legacyHcm);
+            await db.SaveChangesAsync();
+
+            var dry = await RunAsync(dryRun: true);
+            Assert.Equal(2, dry.ContactAuditsScoped);
+
+            var result = await RunAsync(dryRun: false);
+            Assert.Equal(2, result.ContactAuditsScoped);
+
+            var reloadedHn = await LoadAuditAsync(legacyHn.AuditLogId);
+            var reloadedHcm = await LoadAuditAsync(legacyHcm.AuditLogId);
+            Assert.Equal(instanceHn, reloadedHn.VisitInstanceId);
+            Assert.Equal(Campus1, reloadedHn.CampusId);
+            Assert.Equal(instanceHcm, reloadedHcm.VisitInstanceId);
+            Assert.Equal(Campus2, reloadedHcm.CampusId);
+
+            // The multi-campus proof: filtering the admin audit trail by ONE campus returns only that
+            // campus's transfer-requested row — the very query this scope gap made blind.
+            using var read = NewContext();
+            var hnOnly = await new GetAdminAuditLogsQueryHandler(read, Admin()).Handle(
+                new GetAdminAuditLogsQuery
+                {
+                    CampusId = Campus1, Action = "OPERATIONAL_CONTACT_TRANSFER_REQUESTED", PageSize = 100,
+                },
+                CancellationToken.None);
+            var hnIds = hnOnly.Items.Select(i => i.AuditLogId).ToList();
+            Assert.Contains(legacyHn.AuditLogId, hnIds);
+            Assert.DoesNotContain(legacyHcm.AuditLogId, hnIds);
+
+            var hcmOnly = await new GetAdminAuditLogsQueryHandler(read, Admin()).Handle(
+                new GetAdminAuditLogsQuery
+                {
+                    CampusId = Campus2, Action = "OPERATIONAL_CONTACT_TRANSFER_REQUESTED", PageSize = 100,
+                },
+                CancellationToken.None);
+            var hcmIds = hcmOnly.Items.Select(i => i.AuditLogId).ToList();
+            Assert.Contains(legacyHcm.AuditLogId, hcmIds);
+            Assert.DoesNotContain(legacyHn.AuditLogId, hcmIds);
         }
         finally { await CleanupAsync(requestId); }
     }

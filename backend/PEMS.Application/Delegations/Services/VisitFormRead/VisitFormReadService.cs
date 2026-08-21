@@ -737,10 +737,14 @@ public sealed class VisitFormReadService : IVisitFormReadService
     /// transfer button because a sibling had already started.
     /// </para>
     /// <para>
-    /// Every MUTATION verdict is decided by the persisted campus status alone — the same whitelist the
-    /// guards apply. The clock is consulted for one thing only: whether an outstanding invitation has
-    /// run out. That split is deliberate; a read model that answered "may this be changed" with a
-    /// countdown could disagree with the handler over a campus neither had looked at.
+    /// Every MUTATION verdict mirrors its handler's guard exactly, which for REPLACE vs TRANSFER is now
+    /// two facts, not one: the persisted campus status (the same whitelist the guards apply), AND
+    /// whether a confirmed holder already exists — <c>OperationalContactUserId</c>. A campus can sit at
+    /// WAITING_REQUEST_APPROVAL with a real, confirmed contact (that is how it got there), so status
+    /// alone can no longer tell REPLACE territory apart from TRANSFER territory. The clock is consulted
+    /// for one thing only: whether an outstanding invitation has run out. That split is deliberate; a
+    /// read model that answered "may this be changed" with a countdown could disagree with the handler
+    /// over a campus neither had looked at.
     /// </para>
     /// </summary>
     private List<string> ContactActionsFor(
@@ -793,17 +797,26 @@ public sealed class VisitFormReadService : IVisitFormReadService
         if (contactMutable)
             actions.Add(VisitFormActions.UpdateOperationalContactProfile);
 
-        // ── Undecided campus → REPLACE territory (registrant only; EnsureReplaceWindowOpen). ──
+        // ── No confirmed holder → REPLACE territory (registrant only; EnsureReplaceWindowOpen). Whether
+        //    a campus has a confirmed holder — not its decision status — is what separates REPLACE from
+        //    TRANSFER: a WAITING_REQUEST_APPROVAL campus already has a real holder (that is how it got
+        //    there), so it is handover territory exactly like an ASSIGNED one. ──
+        var hasConfirmedHolder = instance.OperationalContactUserId is not null;
         var replaceable = instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
             or VisitInstanceStatuses.WaitingRequestApproval;
-        if (isRegistrant && replaceable)
+        if (isRegistrant && replaceable && !hasConfirmedHolder)
             actions.Add(VisitFormActions.ReplaceOperationalContact);
 
-        // ── Decided but not started → TRANSFER territory (registrant or the current holder). ──
-        // Mirrors EnsureTransferWindowOpen: lifecycle ONLY, no clock. A handover a minute before the
-        // start is offered while the campus still reads BEFORE_VISIT, because the handler accepts it.
-        var transferable = VisitInstanceStatuses.DecidedNotStarted.Contains(instance.Status);
-        if (transferable && pending is null)
+        // ── Confirmed holder, not yet started → TRANSFER territory (registrant or the current holder).
+        //    Mirrors EnsureTransferWindowOpen: lifecycle ONLY, no clock, and no requirement that the
+        //    campus be decided. A handover a minute before the start is offered while the campus still
+        //    reads BEFORE_VISIT, because the handler accepts it. Deliberately NOT
+        //    VisitInstanceStatuses.DecidedNotStarted — that constant is shared with the unrelated
+        //    Host-transfer feature (TRANSFER_HOST), and widening it would change host-transfer
+        //    eligibility too. ──
+        var transferable = instance.Status is VisitInstanceStatuses.WaitingRequestApproval
+            or VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit;
+        if (hasConfirmedHolder && transferable && pending is null)
             actions.Add(VisitFormActions.InitiateOperationalContactTransfer);
 
         if (pending is null)
@@ -813,10 +826,8 @@ public sealed class VisitFormReadService : IVisitFormReadService
             //    contact form re-saved with the same address is classified as an unchanged address, so
             //    it mints no token and sends no mail, and the registrant was stuck with a campus that
             //    could never confirm. Offered only where ReinviteOperationalContactConfirmation would
-            //    accept the call: registrant, undecided campus, no confirmed contact. ──
-            if (isRegistrant
-                && replaceable
-                && instance.OperationalContactUserId is null)
+            //    accept the call: registrant, replace window open, no confirmed contact. ──
+            if (isRegistrant && replaceable && !hasConfirmedHolder)
                 actions.Add(VisitFormActions.ReinviteOperationalContactConfirmation);
             return actions;
         }

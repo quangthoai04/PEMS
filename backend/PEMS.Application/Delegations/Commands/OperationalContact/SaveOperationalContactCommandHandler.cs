@@ -18,8 +18,8 @@ namespace PEMS.Application.Delegations.Commands.OperationalContact;
 ///
 /// <code>
 /// Normalize(new) == Normalize(stored)  → UpdateOperationalContactProfile   (no token, no mail)
-/// Normalize(new) != Normalize(stored)  → campus undecided → ReplaceOperationalContact
-///                                      → campus decided   → InitiateOperationalContactTransfer
+/// Normalize(new) != Normalize(stored)  → no confirmed holder yet → ReplaceOperationalContact
+///                                      → a confirmed holder exists → InitiateOperationalContactTransfer
 /// </code>
 ///
 /// <para>
@@ -65,7 +65,7 @@ public sealed class SaveOperationalContactCommandHandler
         var campus = await _db.VisitRequestCampuses.AsNoTracking()
             .Where(c => c.VisitInstanceId == request.VisitInstanceId
                         && c.VisitRequestId == request.VisitRequestId)
-            .Select(c => new { c.Status, Email = c.FormDetail!.OperationalContactEmail })
+            .Select(c => new { c.OperationalContactUserId, Email = c.FormDetail!.OperationalContactEmail })
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new ConflictException(
                 "Cơ sở này không thuộc đơn đăng ký đã chọn.",
@@ -82,15 +82,15 @@ public sealed class SaveOperationalContactCommandHandler
                     request.ExpectedRowVersion),
                 cancellationToken);
 
-        // ── The address changed, so somebody has to accept it. WHICH handshake is the campus's own
-        //    state to decide, and only the two undecided states are replace territory: everything else
-        //    either has a Staff Leader's commitment behind it (transfer) or is finished, and the
-        //    transfer handler's own window guard produces the right refusal for the latter. Deciding
-        //    that here as well would put the lifecycle rule in two places. ──
-        var undecided = campus.Status is VisitInstanceStatuses.WaitingContactConfirmation
-            or VisitInstanceStatuses.WaitingRequestApproval;
+        // ── The address changed, so somebody has to accept it. WHICH handshake is decided by whether
+        //    anyone currently holds the campus, not by whether it has been DECIDED: a campus with a
+        //    confirmed holder is handover territory even before any Staff Leader has acted on it, and a
+        //    campus with nobody confirmed yet is replace territory even if its lifecycle window has
+        //    since closed — the destination handler's own guard produces the right refusal for the
+        //    latter. Deciding lifecycle here as well would put that rule in two places. ──
+        var hasConfirmedHolder = campus.OperationalContactUserId is not null;
 
-        return undecided
+        return !hasConfirmedHolder
             ? await _sender.Send(
                 new ReplaceOperationalContactCommand(
                     request.VisitRequestId, request.VisitInstanceId,

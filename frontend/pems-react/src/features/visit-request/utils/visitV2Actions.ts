@@ -85,6 +85,18 @@ export type VisitV2ActionCode = (typeof VisitV2Action)[keyof typeof VisitV2Actio
 export const hasAction = (actions: string[] | undefined | null, action: VisitV2ActionCode): boolean =>
   Array.isArray(actions) && actions.includes(action);
 
+/**
+ * True once a confirmed operational-contact holder exists for the campus — `CONFIRMED`, or
+ * `TRANSFER_PENDING` (a handover has been proposed, but the current holder keeps every right until it
+ * is actually accepted). A campus with no holder yet (`PENDING` / `NO_ACTIVE_INVITATION` / `DECLINED` /
+ * `EXPIRED`) is not confirmed. Mirrors the backend's own holder-based read (`ContactConfirmationStatusOf`
+ * in `VisitFormReadService`) — `confirmationStatus === 'CONFIRMED'` alone used to misread a pending
+ * handover as "nobody confirmed", which showed a confirmed campus's current-contact panel as if the
+ * campus were still waiting on its very first invitation.
+ */
+export const hasConfirmedOperationalContact = (status: string | undefined | null): boolean =>
+  status === 'CONFIRMED' || status === 'TRANSFER_PENDING';
+
 // ── Structured capabilities ─────────────────────────────────────────────────
 // `allowedActions` answers "may I?"; a capability additionally answers "why not, and until when".
 // Both come from the same backend verdict, so they cannot disagree.

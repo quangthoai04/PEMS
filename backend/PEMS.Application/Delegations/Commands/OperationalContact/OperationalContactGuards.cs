@@ -142,9 +142,14 @@ internal static class OperationalContactGuards
     }
 
     /// <summary>
-    /// The campus is still undecided, so its contact may be replaced outright (plan §3.3). A decided
-    /// campus is transfer territory — replacing a contact under a Staff Leader who already committed
-    /// resources is exactly what the transfer handshake exists to prevent.
+    /// The campus is still in the pre-start status window, so its contact MAY be replaced outright — but
+    /// only when nobody actually holds it yet. This guard is lifecycle-only and does not read
+    /// <c>OperationalContactUserId</c>; the caller (<c>ReplaceOperationalContactCommandHandler</c>) adds
+    /// the holder check as a separate, explicit refusal, because whether a campus has been DECIDED and
+    /// whether it has a CONFIRMED HOLDER are different facts. A campus at WAITING_REQUEST_APPROVAL always
+    /// has a holder (the database enforces it), so in practice only WAITING_CONTACT_CONFIRMATION ever
+    /// reaches a real replace — this window stays as written so the handler's own refusal, not this one,
+    /// is what tells the caller to use transfer instead.
     /// </summary>
     public static void EnsureReplaceWindowOpen(VisitRequest visit, VisitRequestCampus instance)
     {
@@ -197,10 +202,17 @@ internal static class OperationalContactGuards
     }
 
     /// <summary>
-    /// The campus has a decision and has not started, so its contact may be handed over.
+    /// A confirmed holder exists and the campus has not started, so its contact may be handed over.
     ///
     /// <para>
-    /// Decided by the persisted status ALONE — <c>ASSIGNED</c> or <c>BEFORE_VISIT</c> and nothing else.
+    /// Decided by the persisted status ALONE — <c>WAITING_REQUEST_APPROVAL</c>, <c>ASSIGNED</c> or
+    /// <c>BEFORE_VISIT</c> and nothing else. WAITING_REQUEST_APPROVAL belongs here even though the
+    /// campus has no decision yet: a campus never reaches that status without a confirmed
+    /// <c>operational_contact_user_id</c> (the database enforces this — see
+    /// <c>trg_visit_campuses_op_contact_guard_bi/bu</c>), so a real holder always exists to hand
+    /// something over. The campus's DECISION is a separate question this guard does not ask.
+    /// </para>
+    /// <para>
     /// There is deliberately no pre-start cutoff: a handover proposed a minute before the visit begins
     /// is allowed while the campus still reads BEFORE_VISIT, and one proposed a week out is refused if
     /// the campus has somehow already been moved to DURING_VISIT. The old 24-hour lead time answered
@@ -216,13 +228,13 @@ internal static class OperationalContactGuards
     {
         EnsureRequestLive(visit);
 
-        if (instance.Status is VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit)
+        if (instance.Status is VisitInstanceStatuses.WaitingRequestApproval
+            or VisitInstanceStatuses.Assigned or VisitInstanceStatuses.BeforeVisit)
             return;
 
         throw new ConflictException(
-            instance.Status is VisitInstanceStatuses.WaitingContactConfirmation
-                or VisitInstanceStatuses.WaitingRequestApproval
-                ? "Cơ sở này chưa được duyệt. Hãy đổi trực tiếp đầu mối vận hành thay vì chuyển giao."
+            instance.Status == VisitInstanceStatuses.WaitingContactConfirmation
+                ? "Cơ sở này chưa có đầu mối vận hành nên chưa thể chuyển giao. Hãy mời xác nhận trước."
                 : "Chuyến thăm tại cơ sở này đã bắt đầu nên không thể chuyển giao đầu mối vận hành.",
             OperationalContactErrorCodes.ChangeConflict);
     }

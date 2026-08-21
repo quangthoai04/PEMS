@@ -190,9 +190,9 @@ public sealed record ResendOperationalContactConfirmationCommand(ulong VisitRequ
 /// the campus's identity history to achieve what this command does in one honest step.
 /// </para>
 /// <para>
-/// It never changes WHO the contact is — that is replace (undecided) or transfer (decided). It only
-/// re-opens the confirmation for the address already on the campus, so it is refused when the campus
-/// already has a confirmed contact or already has an invitation in flight.
+/// It never changes WHO the contact is — that is replace (no confirmed holder) or transfer (a confirmed
+/// holder already exists). It only re-opens the confirmation for the address already on the campus, so
+/// it is refused when the campus already has a confirmed contact or already has an invitation in flight.
 /// </para>
 /// </summary>
 public sealed record ReinviteOperationalContactConfirmationCommand(
@@ -200,11 +200,12 @@ public sealed record ReinviteOperationalContactConfirmationCommand(
     : IRequest<OperationalContactManageResponse>;
 
 /// <summary>
-/// Replaces the operational contact of ONE campus BEFORE that campus has been decided (plan §3.3).
-/// Rewrites the campus's contact snapshot and then either links the registrant immediately (the new
-/// address is their own verified one) or clears the campus relation and invites the new address —
-/// which closes the global gate again and stops every Staff Leader, on every campus, until it is
-/// answered. Once the campus has a decision this command is refused: that case is a transfer.
+/// Replaces the operational contact of ONE campus while nobody currently holds it. Rewrites the
+/// campus's contact snapshot and then either links the registrant immediately (the new address is their
+/// own verified one) or clears the campus relation and invites the new address — which closes the
+/// global gate again and stops every Staff Leader, on every campus, until it is answered. Once a
+/// confirmed holder exists this command is refused, regardless of whether the campus has a decision:
+/// that case is a transfer.
 /// </summary>
 public sealed record ReplaceOperationalContactCommand(
     ulong VisitRequestId,
@@ -216,9 +217,10 @@ public sealed record ReplaceOperationalContactCommand(
     string Email) : IRequest<OperationalContactManageResponse>;
 
 /// <summary>
-/// Hands ONE campus's operational-contact role to a new address AFTER that campus has been decided.
-/// Nothing moves until the invited person accepts: the current contact keeps every right, the campus
-/// decision, host and schedule are untouched, and sibling campuses never notice.
+/// Hands ONE campus's operational-contact role to a new address, once the campus already has a
+/// confirmed holder and before the campus has started — whether or not it has been decided yet. Nothing
+/// moves until the invited person accepts: the current contact keeps every right, the campus decision
+/// (if there is one), host and schedule are untouched, and sibling campuses never notice.
 /// </summary>
 public sealed record InitiateOperationalContactTransferCommand(
     ulong VisitRequestId,
@@ -280,8 +282,8 @@ public sealed record UpdateOperationalContactProfileCommand(
 /// The user fills in five fields and presses save; which of the three canonical workflows that means is
 /// decided HERE, from the data, rather than by asking the user to classify their own edit in advance.
 /// The address decides: unchanged (normalised) is a profile update, changed is an identity change, and
-/// the campus's own state then decides whether that identity change is a pre-decision replace or a
-/// post-decision transfer.
+/// whether a confirmed holder already exists then decides whether that identity change is a replace
+/// (nobody holds the campus yet) or a transfer (somebody does).
 /// </para>
 /// <para>
 /// It implements no workflow of its own. Each branch dispatches the existing command, so the guards,

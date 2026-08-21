@@ -5,6 +5,7 @@ using PEMS.Api.Filters;
 using PEMS.Application.Admin.Commands.RevokeSession;
 using PEMS.Application.Admin.Commands.RevokeUserSessions;
 using PEMS.Application.Delegations.Commands.BackfillVisitHistory;
+using PEMS.Application.Delegations.Commands.RepairLegacyOperationalContact;
 using PEMS.Application.Admin.Queries.GetAdminAuditLogDetail;
 using PEMS.Application.Admin.Queries.GetAdminAuditLogs;
 using PEMS.Application.Admin.Queries.GetAdminDashboardSummary;
@@ -112,5 +113,17 @@ namespace PEMS.Api.Controllers
         public async Task<IActionResult> BackfillVisitHistory(
             [FromQuery] bool dryRun, CancellationToken cancellationToken)
             => Ok(await _mediator.Send(new BackfillVisitHistoryCommand(dryRun), cancellationToken));
+
+        // ── Legacy confirmed-contact repair (forensic, one-off) ─────────────────────────────────
+        // Read-only by default. `mode` MUST be the exact literal "APPLY" to write anything — an
+        // omitted, empty, or misspelled value is always a dry run. Never bound as a bool: a bool query
+        // parameter defaults to false when omitted, which would make "forgot the flag" silently mean
+        // "apply", exactly the mistake this endpoint refuses to make possible.
+
+        [HttpPost("legacy-contact-repair")]
+        public async Task<IActionResult> RepairLegacyOperationalContact(
+            [FromQuery] string? mode, CancellationToken cancellationToken)
+            => Ok(await _mediator.Send(
+                new RepairLegacyOperationalContactCommand(mode), cancellationToken));
     }
 }

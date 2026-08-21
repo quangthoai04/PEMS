@@ -716,12 +716,14 @@ public sealed class OperationalContactConfirmationWorkflowTests
     // ── Replace ───────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Replacing a CONFIRMED contact before any campus has been decided re-closes the global gate:
-    /// the campus loses its owner until the new address answers, and every Staff Leader stops seeing
-    /// the request again.
+    /// A direct call to REPLACE against a campus that already has a CONFIRMED contact is refused
+    /// outright, whether or not the campus has been decided — this is the defense-in-depth guard that
+    /// stops a caller from bypassing the router's holder-based classification and destructively
+    /// clearing a confirmed holder the way the old rule did. The gate, already open from the accept,
+    /// must not re-close over a refused call that changed nothing.
     /// </summary>
     [Fact]
-    public async Task Replacing_a_confirmed_contact_re_closes_the_gate()
+    public async Task Replacing_a_confirmed_contact_is_refused_and_the_gate_stays_open()
     {
         RequireDb();
         ulong requestId = 0;
@@ -741,25 +743,36 @@ public sealed class OperationalContactConfirmationWorkflowTests
                     new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
             }
 
-            using (var db = NewContext())
+            using var before = NewContext();
+            var instanceBefore = await before.VisitRequestCampuses.AsNoTracking()
+                .SingleAsync(c => c.VisitInstanceId == instanceId);
+            var requestBefore = await before.VisitRequests.AsNoTracking()
+                .SingleAsync(v => v.VisitRequestId == requestId);
+            var changesBefore = await before.VisitRequestIdentityChanges.AsNoTracking()
+                .CountAsync(c => c.VisitInstanceId == instanceId);
+
+            var refusal = await Assert.ThrowsAsync<ConflictException>(async () =>
             {
+                using var db = NewContext();
                 await ReplaceHandler(db, Registrant, new FakeEmail()).Handle(
                     new ReplaceOperationalContactCommand(
                         requestId, instanceId, "Đầu mối mới", "OrgC", "Điều phối viên", "+8493", newEmail),
                     CancellationToken.None);
-            }
+            });
+            Assert.Equal(OperationalContactErrorCodes.ChangeConflict, refusal.ErrorCode);
 
             using var check = NewContext();
             var instance = await check.VisitRequestCampuses.AsNoTracking()
                 .SingleAsync(c => c.VisitInstanceId == instanceId);
-            Assert.Null(instance.OperationalContactUserId);
-            Assert.Equal(VisitInstanceStatuses.WaitingContactConfirmation, instance.Status);
+            Assert.Equal(contactId, instance.OperationalContactUserId);
+            Assert.Equal(instanceBefore.Status, instance.Status);
+            // No new invitation was raised on the way to the refusal — only the accepted original row.
+            Assert.Equal(changesBefore, await check.VisitRequestIdentityChanges.AsNoTracking()
+                .CountAsync(c => c.VisitInstanceId == instanceId));
 
             var request = await check.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
-            Assert.Equal(VisitRequestStatuses.PendingContactConfirmation, request.Status);
-            // Opened once on the accept, closed again here — both transitions bump the revision, so a
-            // re-opening can mail the Staff Leaders again instead of being deduped against the first.
-            Assert.True(request.ContactGateRevision >= 2);
+            Assert.Equal(requestBefore.Status, request.Status);
+            Assert.Equal(requestBefore.ContactGateRevision, request.ContactGateRevision);
         }
         finally { await CleanupAsync(requestId); }
     }

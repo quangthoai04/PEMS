@@ -18,15 +18,17 @@ using PEMS.Shared;
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
 
 /// <summary>
-/// Proposes handing ONE decided campus to a new address (plan §3.3).
+/// Proposes handing ONE campus with a confirmed operational-contact holder to a new address, before the
+/// campus has started.
 ///
-/// NOTHING changes here. The current contact keeps every right, the campus keeps its decision, its
-/// host and its schedule, the request keeps its aggregate status, and the sibling campuses are not
-/// even read. The only thing this writes is an invitation — the swap happens on accept, or never.
+/// NOTHING changes here. The current contact keeps every right, the campus keeps whatever decision it
+/// has (or has not) been given, its host and its schedule, the request keeps its aggregate status, and
+/// the sibling campuses are not even read. The only thing this writes is an invitation — the swap
+/// happens on accept, or never.
 ///
-/// That is the difference from replacing a contact: a campus nobody has committed resources to can be
-/// re-pointed outright, but a campus a Staff Leader has already approved must not lose its contact on
-/// the say-so of someone who has not answered yet.
+/// That is the difference from replacing a contact: a campus nobody has confirmed can be re-pointed
+/// outright, but a campus that already has a real, confirmed holder must not lose them on the say-so
+/// of someone who has not answered yet — whether or not a Staff Leader has approved the campus.
 /// </summary>
 public sealed class InitiateOperationalContactTransferCommandHandler
     : IRequestHandler<InitiateOperationalContactTransferCommand, OperationalContactManageResponse>
@@ -194,6 +196,8 @@ public sealed class InitiateOperationalContactTransferCommandHandler
                 EntityType = "VisitRequestCampus",
                 EntityId = instance.VisitInstanceId,
                 VisitRequestId = visit.VisitRequestId,
+                CampusId = instance.CampusId,
+                VisitInstanceId = instance.VisitInstanceId,
                 CorrelationId = correlationId,
                 SourceType = "IDENTITY",
                 Reason = reason,

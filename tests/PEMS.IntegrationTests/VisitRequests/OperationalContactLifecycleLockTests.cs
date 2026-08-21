@@ -15,6 +15,7 @@ using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.OperationalContact;
 using PEMS.Application.Delegations.Services;
+using PEMS.Application.Delegations.VisitNotifications;
 using PEMS.Application.Emails.Common;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
@@ -107,6 +108,43 @@ public sealed class OperationalContactLifecycleLockTests
         public Task CreateAsync(ulong r, string t, string? m, string nt, string? rt, ulong? ri, CancellationToken ct) => Task.CompletedTask;
         public Task CreateAsync(CreateNotificationRequest r, CancellationToken ct) => Task.CompletedTask;
     }
+
+    /// <summary>Captures what the expiry sweep would have sent, without rendering or delivering anything.</summary>
+    private sealed class RecordingDispatcher : ISystemEmailDispatcher
+    {
+        public Task<SystemEmailDispatchResult> SendAsync(
+            SystemEmailRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new SystemEmailDispatchResult(
+                EmailDeliveryResult.Sent(), SentEmailId: 0, EmailTemplateId: 0));
+
+        public Task<PreparedSystemEmail> PrepareAsync(
+            SystemEmailRequest request, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<EmailDeliveryResult> DeliverAsync(
+            PreparedSystemEmail prepared, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>The claim always succeeds here: one sweep at a time, no cross-process race to narrow.</summary>
+    private sealed class GrantingLock : IEmailRecoveryLock
+    {
+        public Task<IAsyncDisposable?> TryAcquireAsync(string key, CancellationToken ct)
+            => Task.FromResult<IAsyncDisposable?>(new Handle());
+
+        private sealed class Handle : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>The real maintenance sweep, wired the way the container wires it.</summary>
+    private static OperationalContactMaintenanceService Sweeper(ApplicationDbContext db, RecordingDispatcher mail)
+        => new(db, NullLogger<OperationalContactMaintenanceService>.Instance,
+            new ContactInvitationExpiryEmail(db),
+            new RecoverableVisitEmailSender(
+                db, mail, new GrantingLock(), new FixedClock(),
+                NullLogger<RecoverableVisitEmailSender>.Instance));
 
     private sealed class FakeEmail : IEmailService
     {
@@ -501,6 +539,50 @@ public sealed class OperationalContactLifecycleLockTests
         var started = await CampusStateAsync(requestId);
         Assert.Equal(startedStatus, started.Status);
         Assert.Equal(contactId, started.ContactUserId);
+
+        _ = successorId;
+        return (requestId, created.InstanceId, contactId, transfer.IdentityChangeId, links.Accept, links.Decline);
+    }
+
+    /// <summary>
+    /// A campus at WAITING_REQUEST_APPROVAL whose contact is <c>contactId</c> and which has a PENDING
+    /// transfer to a successor — the state every "pre-approval handover" test below starts from. No
+    /// decision has been made yet; this is exactly where the destructive REPLACE bug used to strike.
+    /// </summary>
+    private static async Task<(ulong RequestId, ulong InstanceId, ulong ContactId, ulong ChangeId, string AcceptToken, string DeclineToken)>
+        PendingTransferOnUndecidedCampusAsync(FakeEmail mail)
+    {
+        ulong contactId, successorId;
+        string contactEmail, successorEmail;
+        using (var db = NewContext())
+        {
+            (contactId, contactEmail) = await VisitorUserAsync(db);
+            (successorId, successorEmail) = await VisitorUserAsync(db, contactId);
+        }
+
+        var requestId = await CreateAsync(Campus("HN", contactEmail));
+        var created = await CampusStateAsync(requestId);
+        var invitation = Assert.Single(await ChangesAsync(requestId));
+
+        var acceptToken = await IssueInvitationAsync(mail, invitation.IdentityChangeId);
+        using (var db = NewContext())
+            await Accept(db, contactId, contactEmail, mail).Handle(
+                new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+        Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, (await CampusStateAsync(requestId)).Status);
+
+        // A handover proposed before any decision. The handler mints and sends its own links inside its
+        // transaction, so they are read back from the invitation that went out.
+        using (var db = NewContext())
+            await Transfer(db, Registrant, mail).Handle(
+                new InitiateOperationalContactTransferCommand(
+                    requestId, created.InstanceId, "Người nhận bàn giao", "OrgC", "Trưởng phòng",
+                    "+84900000123", successorEmail, "Đầu mối cũ bận"),
+                CancellationToken.None);
+
+        var transfer = await PendingTransferAsync(requestId);
+        Assert.Equal(successorEmail, mail.Sent.Last().To);
+        var links = mail.LastInvitationLinks();
 
         _ = successorId;
         return (requestId, created.InstanceId, contactId, transfer.IdentityChangeId, links.Accept, links.Decline);
@@ -1011,6 +1093,233 @@ public sealed class OperationalContactLifecycleLockTests
             var after = await CampusStateAsync(requestId);
             Assert.Equal(setup.ContactId, after.ContactUserId);
             Assert.Equal(VisitInstanceStatuses.DuringVisit, after.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── 5. Pre-approval handover: the defect this fix closes ──────────────────────
+    //
+    // A campus reaches WAITING_REQUEST_APPROVAL only through a confirmed contact (the database
+    // enforces it), so it always has a real holder to hand over — whether or not a Staff Leader has
+    // acted on it yet. Before the fix, this exact state routed through REPLACE instead: the holder was
+    // cleared, the snapshot was overwritten, and the campus was forced back to WAITING_CONTACT_
+    // CONFIRMATION before anybody had accepted anything. Every outcome below (initiate, accept, cancel,
+    // decline, expire) must leave the ORIGINAL holder in place unless and until somebody actually
+    // accepts the handover — and approval, if it happens in between, must neither block nor settle it.
+
+    /// <summary>
+    /// TC-PRE-01. The defect this whole change fixes: a campus with a confirmed contact but no decision
+    /// yet is handover territory too, not replace territory.
+    /// </summary>
+    [Fact]
+    public async Task A_handover_may_be_proposed_on_an_undecided_campus_once_it_has_a_confirmed_contact()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            var state = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, state.Status);
+            Assert.Equal(setup.ContactId, state.ContactUserId);   // A still holds it — nothing moved yet
+
+            var change = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeKinds.Transfer, change.ChangeKind);
+            Assert.Equal(IdentityChangeStatuses.Pending, change.Status);
+            Assert.Equal(setup.ContactId, change.OldUserId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-PRE-02 (spec Matrix B4). Accepting a handover proposed before any decision moves ONLY the
+    /// contact. The campus must not be nudged toward ASSIGNED as a side effect — that would fabricate
+    /// an approval nobody made.
+    /// </summary>
+    [Fact]
+    public async Task A_pending_transfer_on_an_undecided_campus_can_be_accepted_and_the_campus_stays_waiting_for_approval()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            ulong successorId;
+            string successorEmail;
+            using (var db = NewContext())
+                (successorId, successorEmail) = await VisitorUserAsync(db, setup.ContactId);
+
+            using (var db = NewContext())
+                await Accept(db, successorId, successorEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(setup.AcceptToken), CancellationToken.None);
+
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(successorId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after.Status);   // no decision fabricated
+
+            var change = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeStatuses.Applied, change.Status);
+            Assert.NotNull(change.AppliedAt);
+            Assert.Equal(successorId, change.NewUserId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>TC-PRE-03 (spec Matrix B1). Cancel settles the invitation; the original holder is untouched.</summary>
+    [Fact]
+    public async Task A_pending_transfer_on_an_undecided_campus_can_be_cancelled_and_leaves_the_holder_unchanged()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            using (var db = NewContext())
+                await Cancel(db, Registrant, mail).Handle(
+                    new CancelOperationalContactChangeCommand(
+                        requestId, setup.InstanceId, "Đổi ý trước khi duyệt"),
+                    CancellationToken.None);
+
+            var change = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeStatuses.Cancelled, change.Status);
+            Assert.Equal(0, await LiveTokenCountAsync(setup.ChangeId));
+
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(setup.ContactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>TC-PRE-04 (spec Matrix B2). Decline settles the invitation; the original holder is untouched.</summary>
+    [Fact]
+    public async Task A_pending_transfer_on_an_undecided_campus_can_be_declined_and_leaves_the_holder_unchanged()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            ulong successorId;
+            string successorEmail;
+            using (var db = NewContext())
+                (successorId, successorEmail) = await VisitorUserAsync(db, setup.ContactId);
+
+            using (var db = NewContext())
+                await Decline(db, successorId, successorEmail, mail).Handle(
+                    new DeclineOperationalContactConfirmationCommand(setup.DeclineToken, "Không nhận lời mời"),
+                    CancellationToken.None);
+
+            var change = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeStatuses.Declined, change.Status);
+            Assert.Equal(0, await LiveTokenCountAsync(setup.ChangeId));
+
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(setup.ContactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-PRE-05 (spec Matrix B3). Letting a pre-approval handover lapse is cleanup, exactly like
+    /// cancel and decline above — the real maintenance sweep settles the invitation and never touches
+    /// who holds the campus.
+    /// </summary>
+    [Fact]
+    public async Task A_pending_transfer_on_an_undecided_campus_expires_and_leaves_the_holder_unchanged()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_identity_changes SET expires_at = {0} WHERE identity_change_id = {1}",
+                    Now.AddMinutes(-1), setup.ChangeId);
+
+            using (var db = NewContext())
+                await Sweeper(db, new RecordingDispatcher()).RunOnceAsync(Now, 100, CancellationToken.None);
+
+            var change = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeStatuses.Expired, change.Status);
+            Assert.Equal(0, await LiveTokenCountAsync(setup.ChangeId));
+
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(setup.ContactId, after.ContactUserId);
+            Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, after.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// TC-PRE-06 (spec §11 / Matrix C1-C2, approval crossover). A Staff Leader may approve a campus
+    /// while a handover is pending — the confirmed contact it has right now is real, so the decision is
+    /// not blocked on somebody who has not even accepted a proposal yet, and approving must neither
+    /// settle nor block the pending transfer. The decision must then survive the handover once it IS
+    /// accepted: only the operational contact moves, never the host or the decision.
+    /// </summary>
+    [Fact]
+    public async Task A_pending_transfer_survives_approval_and_the_decision_survives_the_transfer()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var mail = new FakeEmail();
+            var setup = await PendingTransferOnUndecidedCampusAsync(mail);
+            requestId = setup.RequestId;
+
+            await DriveToAssignedAsync(setup.InstanceId);
+
+            var decided = await CampusStateAsync(requestId);
+            Assert.Equal(VisitInstanceStatuses.Assigned, decided.Status);
+            Assert.Equal(setup.ContactId, decided.ContactUserId);   // approval did not touch the contact
+
+            var stillPending = (await ChangesAsync(requestId)).Single(c => c.IdentityChangeId == setup.ChangeId);
+            Assert.Equal(IdentityChangeStatuses.Pending, stillPending.Status);   // approval did not settle it
+
+            async Task<(ulong? Host, ulong? DecidedBy, DateTime? DecidedAt, string? Note)> DecisionSnapshotAsync()
+            {
+                using var snap = NewContext();
+                var row = await snap.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == setup.InstanceId)
+                    .Select(c => new { c.CurrentHostUserId, c.DecidedBy, c.DecidedAt, c.DecisionNote })
+                    .SingleAsync();
+                return (row.CurrentHostUserId, row.DecidedBy, row.DecidedAt, row.DecisionNote);
+            }
+            var before = await DecisionSnapshotAsync();
+
+            ulong successorId;
+            string successorEmail;
+            using (var db = NewContext())
+                (successorId, successorEmail) = await VisitorUserAsync(db, setup.ContactId);
+
+            using (var db = NewContext())
+                await Accept(db, successorId, successorEmail, mail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(setup.AcceptToken), CancellationToken.None);
+
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(successorId, after.ContactUserId);              // the contact moved
+            Assert.Equal(VisitInstanceStatuses.Assigned, after.Status);  // the decision did not
+
+            Assert.Equal(before, await DecisionSnapshotAsync());
         }
         finally { await CleanupAsync(requestId); }
     }

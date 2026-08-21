@@ -19,19 +19,18 @@ using PEMS.Shared;
 namespace PEMS.Application.Delegations.Commands.OperationalContact;
 
 /// <summary>
-/// The registrant changes the operational contact of ONE campus, before that campus has been decided
-/// (plan §3.3).
+/// The registrant changes the operational contact of ONE campus, while nobody currently holds it.
 ///
 /// Two outcomes, decided by the address alone:
 ///   • the registrant's own verified address → linked immediately, no invitation, no email. The
 ///     registrant already proved that address at submit time, so asking them to confirm it again by
 ///     email would be theatre.
 ///   • anything else → the campus relation is CLEARED and a fresh invitation goes out. Clearing it is
-///     the important half: a campus with an unconfirmed contact re-closes the global gate, and every
-///     Staff Leader on every campus of the request stops seeing it until the new person answers. That
-///     is the intended cost of changing your mind, and it is why this command is refused once the
-///     campus has a decision — at that point the handover is a transfer, which moves nothing until
-///     the new person accepts.
+///     safe here specifically because there was nothing confirmed to clear — the campus re-closes the
+///     global gate exactly as it would if the first invitation had never been answered. That is the
+///     intended cost of changing your mind before anyone accepted, and it is why this command is
+///     refused outright once a confirmed holder exists — at that point the handover is a transfer,
+///     which moves nothing until the new person accepts.
 ///
 /// Identity is never taken from the form. The address written here only says where an invitation may
 /// be sent; who may act comes from <c>operational_contact_user_id</c>, and nothing else.
@@ -90,6 +89,15 @@ public sealed class ReplaceOperationalContactCommandHandler
 
             OperationalContactGuards.EnsureMayManageContact(visit, instance, actorId, allowCurrentContact: false);
             OperationalContactGuards.EnsureReplaceWindowOpen(visit, instance);
+
+            // ── Defense in depth: the router only ever sends a REPLACE here when nobody is confirmed,
+            //    but this handler is reachable directly too, and REPLACE must never be the door that
+            //    destroys a confirmed holder — that handshake is a transfer, which moves nothing until
+            //    the new person accepts. ──
+            if (instance.OperationalContactUserId is not null)
+                throw new ConflictException(
+                    "Cơ sở này đã có đầu mối vận hành xác nhận nên phải qua quy trình chuyển giao.",
+                    OperationalContactErrorCodes.ChangeConflict);
 
             // The address has to be an external one. Checked BEFORE anything is written, so a refused
             // replacement leaves the campus exactly as it was — with its current contact, its current
@@ -239,9 +247,9 @@ public sealed class ReplaceOperationalContactCommandHandler
                         invitation.IdentityChangeId, cancellationToken),
                     invitation.IdentityChangeId);
 
-                message = previousContactId is null
-                    ? "Đã cập nhật đầu mối vận hành và gửi lời mời xác nhận tới email mới."
-                    : "Đã đổi đầu mối vận hành của cơ sở. Cơ sở này chờ người mới xác nhận, và toàn bộ đơn tạm dừng ở cổng xác nhận cho tới khi đủ đầu mối.";
+                // previousContactId is always null here — the defense-in-depth guard above already
+                // refused this call for any campus that had a confirmed holder to lose.
+                message = "Đã cập nhật đầu mối vận hành và gửi lời mời xác nhận tới email mới.";
             }
 
             instance.RowVersion += 1;
