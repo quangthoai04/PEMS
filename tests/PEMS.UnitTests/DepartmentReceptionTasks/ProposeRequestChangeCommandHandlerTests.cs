@@ -63,7 +63,8 @@ public class ProposeRequestChangeCommandHandlerTests
         var mocks = new DelegationsHandlerMocks();
         var dispatcher = mocks.DispatcherFor(db);
         var handler = new ProposeRequestChangeCommandHandler(
-            db, user, dispatcher, mocks.Tokens.Object, mocks.Normalizer.Object, mocks.Notifications.Object);
+            db, user, dispatcher, mocks.Tokens.Object, mocks.Normalizer.Object, mocks.Notifications.Object,
+            new PEMS.UnitTests.TestInfrastructure.RecordingUserMutationLockService());
 
         return (db, handler, user, mocks, dispatcher);
     }
@@ -110,33 +111,21 @@ public class ProposeRequestChangeCommandHandlerTests
     }
 
     [Fact]
-    public async Task The_approve_and_reject_tokens_belong_to_the_message_and_the_host()
+    public async Task The_proposal_email_mints_no_public_token_and_carries_only_a_login_required_link()
     {
+        // Portal-only decision (spec BUG-07): the proposal email must never grant a public
+        // Approve/Reject action — only a login-required detail link to the Host's own visit process
+        // screen.
         var (db, handler, _, _, dispatcher) = CreateSut();
 
         await handler.Handle(Command(), default);
 
-        var sentEmail = Assert.Single(db.SentEmails);
-        var tokens = db.EmailActionTokens
-            .Where(t => t.ResultStatus == EmailActionResultStatuses.Pending).ToList();
-
-        Assert.Equal(2, tokens.Count);
-        Assert.All(tokens, t =>
-        {
-            Assert.Equal(sentEmail.SentEmailId, t.SentEmailId);
-            Assert.Equal(EmailActionContexts.LogisticsProposalResponse, t.ActionContext);
-            Assert.Equal(EmailActionTargetTypes.LogisticsItem, t.TargetType);
-            Assert.Equal(ItemId, t.TargetId);
-            Assert.Equal(DelegationsTestData.HostUserId, t.RecipientUserId);
-        });
-        Assert.Single(tokens.Where(t => t.IntendedAction == EmailIntendedActions.ApproveProposal));
-        Assert.Single(tokens.Where(t => t.IntendedAction == EmailIntendedActions.RejectProposal));
+        Assert.Empty(db.EmailActionTokens.Where(t => t.ActionContext == EmailActionContexts.LogisticsProposalResponse));
 
         var block = dispatcher.Single(SystemEmailTemplates.LogisticsChangeProposalToHost)
             .TrustedBlocks![EmailTrustedBlocks.ActionBlock];
-        Assert.Contains("https://pems.test/email-actions/raw-token-1", block);
-        Assert.Contains("https://pems.test/email-actions/raw-token-2", block);
-        Assert.Contains($"https://pems.test/logistics/{ItemId}", block);
+        Assert.DoesNotContain("email-actions", block);
+        Assert.Contains($"https://pems.test/visit/process/{DelegationsTestData.VisitInstanceId}", block);
     }
 
     [Fact]
@@ -176,6 +165,7 @@ public class ProposeRequestChangeCommandHandlerTests
 
         Assert.Equal("CHANGE_PROPOSED", db.VisitLogisticsItems.Single().Status);
         Assert.Equal("FAILED", Assert.Single(db.SentEmails).Status);
-        Assert.Equal(2, db.EmailActionTokens.Count());
+        // Portal-only proposal (spec BUG-07): no public token is ever minted for this context.
+        Assert.Empty(db.EmailActionTokens);
     }
 }

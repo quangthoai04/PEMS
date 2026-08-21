@@ -154,7 +154,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
     private static AcceptOperationalContactConfirmationCommandHandler Accept(
         ApplicationDbContext db, ulong actor, string? actorEmail = null)
         => new(db, new FakeUser(actor, actorEmail), new FixedClock(), Tokens(), Invitations(db),
-            new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db),
+            new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)),
             new NoopNotifications(),
             NullLogger<AcceptOperationalContactConfirmationCommandHandler>.Instance, WriteOn);
 
@@ -234,7 +234,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
         return created.VisitRequestId;
@@ -295,7 +295,7 @@ public sealed class OperationalContactConfirmationWorkflowTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var created = await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None);
         return created.VisitRequestId;

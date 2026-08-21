@@ -87,7 +87,10 @@ public sealed class InviteVisitParticipantCommandHandler
         var actorId = _currentUser.UserId.Value;
         var type = (request.ParticipantType ?? string.Empty).Trim().ToUpperInvariant();
 
-        var instance = await _db.VisitRequestCampuses
+        // AsNoTracking: pre-transaction fast-path/display read only (see the tier 2-4 lock + fresh
+        // reload inside the transaction below) — a tracked load here would make EF's identity map hand
+        // back this same stale instance instead of re-hitting the database after the lock is taken.
+        var instance = await _db.VisitRequestCampuses.AsNoTracking()
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
             ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
@@ -102,7 +105,9 @@ public sealed class InviteVisitParticipantCommandHandler
             await ResolveInviteeAsync(type, request, instance, cancellationToken);
 
         // ── Duplicate handling (unique (visit_instance_id, user_id)) ──
-        var existing = await _db.VisitParticipants
+        // AsNoTracking — same reason as the instance load above; re-verified fresh inside the
+        // transaction once the row (if any) is actually locked.
+        var existing = await _db.VisitParticipants.AsNoTracking()
             .FirstOrDefaultAsync(p => p.VisitInstanceId == instance.VisitInstanceId && p.UserId == targetUserId,
                 cancellationToken);
         if (existing != null
@@ -161,7 +166,7 @@ public sealed class InviteVisitParticipantCommandHandler
         VisitParticipant participant;
         PreparedSystemEmail prepared;
 
-        await using (var transaction = await _db.BeginTransactionAsync(cancellationToken))
+        await using (var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken))
         {
             // ── 0) Shared lock protocol (see IUserMutationLockService). The invitee's eligibility
             //    was resolved above without a lock; a role change could have committed in between,
@@ -170,6 +175,34 @@ public sealed class InviteVisitParticipantCommandHandler
             //    state — a Staff Leader's role change either lost the race and now sees this
             //    invitation as a blocker, or won it and this invite is refused. ──
             await _lockService.LockUsersAsync(new[] { targetUserId }, cancellationToken);
+
+            // Tiers 2-4 of the shared lock hierarchy (VisitRequest → VisitRequestCampus →
+            // VisitParticipant), so this cannot race a concurrent cancellation or response on the same
+            // rows. The target participant row is locked too when one already exists (its id is known
+            // from the pre-transaction peek above); a not-yet-existing row relies on the unique key on
+            // (visit_instance_id, user_id) instead, same as AssignDepartmentStaffCommandHandler.
+            await _lockService.LockVisitRequestsAsync(new[] { instance.VisitRequestId }, cancellationToken);
+            await _lockService.LockVisitRequestCampusesAsync(new[] { instance.VisitInstanceId }, cancellationToken);
+            if (existing != null)
+                await _lockService.LockVisitParticipantsAsync(new[] { existing.ParticipantId }, cancellationToken);
+
+            // Re-read fresh under the lock — the pre-transaction reads above were AsNoTracking fast
+            // paths only.
+            instance = await _db.VisitRequestCampuses
+                .Include(c => c.VisitRequest)
+                .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
+                ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
+            VisitPreparationGate.EnsurePreparationOpen(instance.Status, "mời thành phần tham gia");
+            existing = await _db.VisitParticipants
+                .FirstOrDefaultAsync(p => p.VisitInstanceId == instance.VisitInstanceId && p.UserId == targetUserId,
+                    cancellationToken);
+            if (existing != null
+                && (existing.Status == ParticipantStatuses.Invited
+                    || existing.Status == ParticipantStatuses.Accepted
+                    || existing.Status == ParticipantStatuses.Assigned))
+            {
+                throw new ConflictException("Người này đã có trong danh sách tham gia của đoàn.");
+            }
 
             var reconfirmed = await ResolveInviteeAsync(type, request, instance, cancellationToken);
             if (reconfirmed.UserId != targetUserId || reconfirmed.ParticipantRole != participantRole)
@@ -220,7 +253,7 @@ public sealed class InviteVisitParticipantCommandHandler
             var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
             var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
             var assignUrl = participantRole == ParticipantRoles.DeptSupport
-                ? _tokens.BuildDepartmentAssignmentUrl(instance.VisitInstanceId, participant.ParticipantId)
+                ? _tokens.BuildVisitParticipantAssignmentUrl(participant.ParticipantId)
                 : null;
 
             // 3) Render + record, inside this transaction. Nothing is sent yet: the tokens below must be

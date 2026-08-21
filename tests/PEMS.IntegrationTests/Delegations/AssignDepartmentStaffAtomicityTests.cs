@@ -433,6 +433,7 @@ public sealed class AssignDepartmentStaffAtomicityTests : IClassFixture<PemsWebA
             sp.GetRequiredService<IFileStorageService>(),
             sp.GetRequiredService<IVisitFormReadService>(),
             new MySqlUserMutationLockService(db),
+            sp.GetRequiredService<PEMS.Application.Notifications.Common.INotificationService>(),
             sp.GetRequiredService<PEMS.Application.Emails.Preview.IApprovedEmailContentResolver>());
     }
 

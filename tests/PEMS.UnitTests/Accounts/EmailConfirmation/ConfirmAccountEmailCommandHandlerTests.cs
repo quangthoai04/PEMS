@@ -25,9 +25,10 @@ public class ConfirmAccountEmailCommandHandlerTests
         public string GenerateRawToken() => Guid.NewGuid().ToString("N");
         public string Hash(string rawToken) => "h:" + rawToken;
         public string BuildPublicActionUrl(string rawToken) => "http://x/" + rawToken;
-        public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId) => "http://x";
-        public string BuildLogisticsDetailUrl(ulong logisticsItemId) => "http://x";
-        public string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId) => "http://x";
+        public string BuildVisitParticipantAssignmentUrl(ulong participantId) => "http://x";
+        public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId) => "http://x";
+        public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "http://x";
+        public string BuildHostVisitProcessUrl(ulong visitInstanceId) => "http://x";
     }
 
     private const ulong UserId = 700;

@@ -121,7 +121,11 @@ public class RemindExpenseReportsCommandHandler : IRequestHandler<RemindExpenseR
                 var actionUrl = item.RequestedToDepartmentId.HasValue
                     ? $"/dashboard/departments/{item.RequestedToDepartmentId.Value}/tasks/{item.LogisticsItemId}"
                     : $"/dashboard/visit/process/{item.VisitInstanceId}";
-                var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
+                // recipients is either the one assignee (Staff) or the department's Leaders — never
+                // mixed for one item — so the role that decides the detail-link shape is known here.
+                var detailUrl = item.AssignedToUserId.HasValue
+                    ? _tokens.BuildDepartmentStaffLogisticsTaskUrl(item.LogisticsItemId)
+                    : _tokens.BuildDepartmentLeaderLogisticsTaskUrl(item.LogisticsItemId);
 
                 foreach (var recipient in recipients)
                 {

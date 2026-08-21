@@ -121,7 +121,7 @@ public sealed class CancelAndInvitationResponseV2Tests
 
     private static CancelVisitRequestCommandHandler CancelHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
-        => new(db, actor, new FixedClock(), notifications);
+        => new(db, actor, new FixedClock(), notifications, new MySqlUserMutationLockService(db));
 
     private static RespondVisitParticipantInvitationCommandHandler RespondHandler(
         ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications)
@@ -162,7 +162,7 @@ public sealed class CancelAndInvitationResponseV2Tests
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "CX" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),

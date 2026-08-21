@@ -120,7 +120,7 @@ public sealed class CreateVisitRequestV2CommandTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = read }, new PerCampusFormV2WriteOptions { Enabled = write },
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
     private static VisitRequestFormDataV2 Form(string submissionId)
     {

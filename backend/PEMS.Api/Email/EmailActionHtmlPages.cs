@@ -17,13 +17,12 @@ public static class EmailActionHtmlPages
     public static string RenderLanding(EmailActionInfoResult info)
     {
         if (info.Status != EmailActionViewStatuses.Valid)
-            return RenderMessage(TerminalTitle(info.Status, info.Action, info.CurrentResponse),
-                TerminalBody(info.Status, info.CurrentResponse), TerminalAccent(info.Status));
+            return RenderMessage(TerminalTitle(info.Status, info.Context, info.Action, info.CurrentResponse),
+                TerminalBody(info.Status, info.Context, info.CurrentResponse), TerminalAccent(info.Status));
 
         var isAccept = info.Action == "ACCEPT";
         var accent = isAccept ? "#10b981" : "#ef4444";
-        var isLogisticsRequest = info.Context == EmailActionContexts.LogisticsRequestResponse;
-        var roleLineLabel = isLogisticsRequest ? "Hạng mục" : "Vai trò";
+        var wording = PresentationFor(info.Context);
 
         var details = $@"
       <div style=""background:#f0f7ff;border-left:4px solid #004c91;border-radius:8px;padding:16px 20px;margin:20px 0;text-align:left"">
@@ -31,46 +30,90 @@ public static class EmailActionHtmlPages
           <li><strong>Đoàn khách:</strong> {HE(info.DelegationName)}</li>
           <li><strong>Cơ sở:</strong> {HE(info.CampusName)}</li>
           <li><strong>Thời gian:</strong> {HE(info.PlannedTimeText)}</li>
-          <li><strong>{roleLineLabel}:</strong> {HE(info.ParticipantRoleLabel)}</li>
+          <li><strong>{wording.RoleLineLabel}:</strong> {HE(info.ParticipantRoleLabel)}</li>
         </ul>
       </div>";
 
         // DECLINE: render the reason form. The reason is mandatory and only the POST applies it.
         if (!isAccept)
         {
-            var declineTitle = isLogisticsRequest ? "Từ chối yêu cầu logistics" : "Từ chối lời mời tham gia";
-            var declineIntro = isLogisticsRequest
-                ? "Bạn sắp <strong>từ chối</strong> yêu cầu hậu cần dưới đây. Vui lòng cho biết lý do từ chối để Host/bộ phận điều phối cập nhật kế hoạch."
-                : "Bạn sắp <strong>từ chối</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.";
-            var declinePlaceholder = isLogisticsRequest
-                ? "Nhập lý do từ chối yêu cầu logistics..."
-                : "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...";
-            var declineButton = isLogisticsRequest ? "Xác nhận từ chối" : "Gửi phản hồi từ chối";
             var declineContent = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">{declineIntro}</p>
+      <p style=""color:#374151;font-size:14px"">{wording.DeclineIntro}</p>
       {details}
-      {DeclineForm(null, null, declinePlaceholder, declineButton)}";
-            return Layout(declineTitle, declineContent, accent);
+      {DeclineForm(null, null, wording.DeclinePlaceholder, wording.DeclineButton)}";
+            return Layout(wording.DeclineTitle, declineContent, accent);
         }
 
         // ACCEPT: one-click confirm.
-        var acceptTitle = isLogisticsRequest ? "Xác nhận tiếp nhận yêu cầu logistics" : "Xác nhận chấp nhận lời mời";
-        var acceptIntro = isLogisticsRequest
-            ? "Bạn sắp <strong>tiếp nhận</strong> yêu cầu hậu cần dưới đây."
-            : "Bạn sắp <strong>chấp nhận</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.";
-        var acceptButton = isLogisticsRequest ? "Xác nhận tiếp nhận" : "Xác nhận chấp nhận";
         var content = $@"
       <p style=""color:#374151;font-size:15px"">Xin chào <strong>{HE(info.RecipientName)}</strong>,</p>
-      <p style=""color:#374151;font-size:14px"">{acceptIntro}</p>
+      <p style=""color:#374151;font-size:14px"">{wording.AcceptIntro}</p>
       {details}
       <form method=""post"" style=""margin-top:8px"">
-        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(acceptButton)}</button>
+        <button type=""submit"" style=""display:inline-block;background:{accent};color:#fff;border:none;cursor:pointer;font-weight:bold;font-size:15px;padding:14px 28px;border-radius:10px"">{HE(wording.AcceptButton)}</button>
       </form>
       <p style=""color:#9ca3af;font-size:12px;margin-top:14px"">Liên kết này chỉ sử dụng được một lần.</p>";
 
-        return Layout(acceptTitle, content, accent);
+        return Layout(wording.AcceptTitle, content, accent);
     }
+
+    /// <summary>
+    /// Wording for one public context, replacing the single <c>isLogisticsRequest</c> boolean that used
+    /// to collapse every non-logistics-request context (direct invite, Department-Staff assignment,
+    /// logistics assignee) into the same participant-invitation copy. Unknown/legacy contexts (e.g. a
+    /// surviving LOGISTICS_PROPOSAL_RESPONSE token — proposals are Portal-only, spec BUG-07) fall back
+    /// to the direct-invitation wording only because RenderLanding is never reached for them: GET/POST
+    /// both resolve those to a terminal status before this is called.
+    /// </summary>
+    private readonly record struct Presentation(
+        string RoleLineLabel, string AcceptTitle, string AcceptIntro, string AcceptButton,
+        string DeclineTitle, string DeclineIntro, string DeclinePlaceholder, string DeclineButton,
+        string AlreadyRespondedBody);
+
+    private static Presentation PresentationFor(string? context) => context switch
+    {
+        EmailActionContexts.ParticipationAssignmentResponse => new(
+            RoleLineLabel: "Nhiệm vụ",
+            AcceptTitle: "Xác nhận nhận nhiệm vụ",
+            AcceptIntro: "Bạn sắp <strong>xác nhận nhận</strong> nhiệm vụ tham gia hỗ trợ tiếp khách được phân công dưới đây.",
+            AcceptButton: "Xác nhận nhận nhiệm vụ",
+            DeclineTitle: "Từ chối nhiệm vụ được phân công",
+            DeclineIntro: "Bạn sắp <strong>từ chối</strong> nhiệm vụ tham gia hỗ trợ tiếp khách được phân công dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.",
+            DeclinePlaceholder: "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...",
+            DeclineButton: "Gửi phản hồi từ chối",
+            AlreadyRespondedBody: "Bạn đã phản hồi nhiệm vụ được phân công này rồi"),
+        EmailActionContexts.LogisticsRequestResponse => new(
+            RoleLineLabel: "Hạng mục",
+            AcceptTitle: "Xác nhận tiếp nhận yêu cầu logistics",
+            AcceptIntro: "Bạn sắp <strong>tiếp nhận</strong> yêu cầu hậu cần dưới đây.",
+            AcceptButton: "Xác nhận tiếp nhận",
+            DeclineTitle: "Từ chối yêu cầu logistics",
+            DeclineIntro: "Bạn sắp <strong>từ chối</strong> yêu cầu hậu cần dưới đây. Vui lòng cho biết lý do từ chối để Host/bộ phận điều phối cập nhật kế hoạch.",
+            DeclinePlaceholder: "Nhập lý do từ chối yêu cầu logistics...",
+            DeclineButton: "Xác nhận từ chối",
+            AlreadyRespondedBody: "Bạn đã phản hồi yêu cầu logistics này rồi"),
+        EmailActionContexts.LogisticsAssigneeResponse => new(
+            RoleLineLabel: "Nhiệm vụ hậu cần",
+            AcceptTitle: "Xác nhận nhận nhiệm vụ hậu cần",
+            AcceptIntro: "Bạn sắp <strong>xác nhận nhận</strong> nhiệm vụ hậu cần dưới đây.",
+            AcceptButton: "Xác nhận nhận nhiệm vụ",
+            DeclineTitle: "Từ chối nhiệm vụ hậu cần",
+            DeclineIntro: "Bạn sắp <strong>từ chối</strong> nhiệm vụ hậu cần dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.",
+            DeclinePlaceholder: "Nhập lý do từ chối nhiệm vụ hậu cần...",
+            DeclineButton: "Xác nhận từ chối",
+            AlreadyRespondedBody: "Bạn đã phản hồi nhiệm vụ hậu cần này rồi"),
+        _ => new( // PARTICIPATION_RESPONSE (direct invitation) — also the safe default
+            RoleLineLabel: "Vai trò",
+            AcceptTitle: "Xác nhận chấp nhận lời mời",
+            AcceptIntro: "Bạn sắp <strong>chấp nhận</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây.",
+            AcceptButton: "Xác nhận chấp nhận",
+            DeclineTitle: "Từ chối lời mời tham gia",
+            DeclineIntro: "Bạn sắp <strong>từ chối</strong> lời mời tham gia hỗ trợ tiếp khách dưới đây. Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.",
+            DeclinePlaceholder: "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...",
+            DeclineButton: "Gửi phản hồi từ chối",
+            AlreadyRespondedBody: "Bạn đã trả lời lời mời này rồi"),
+    };
 
     /// <summary>The POST result page after the token is consumed.</summary>
     public static string RenderResult(EmailActionExecuteResult res)
@@ -78,14 +121,11 @@ public static class EmailActionHtmlPages
         // Decline reason missing/invalid → token was NOT consumed; re-render the form with the error.
         if (res.Status == EmailActionViewStatuses.ReasonRequired)
         {
-            var isLogisticsRequest = res.Context == EmailActionContexts.LogisticsRequestResponse;
-            var reasonTitle = isLogisticsRequest ? "Từ chối yêu cầu logistics" : "Từ chối lời mời tham gia";
-            var reasonPlaceholder = isLogisticsRequest ? "Nhập lý do từ chối yêu cầu logistics..." : "Ví dụ: Tôi bận lịch cá nhân vào thời gian này...";
-            var reasonButton = isLogisticsRequest ? "Xác nhận từ chối" : "Gửi phản hồi từ chối";
+            var wording = PresentationFor(res.Context);
             var content = $@"
       <p style=""color:#374151;font-size:14px"">Vui lòng cho biết lý do từ chối để bộ phận điều phối cập nhật kế hoạch.</p>
-      {DeclineForm(res.SubmittedReason, res.Message, reasonPlaceholder, reasonButton)}";
-            return Layout(reasonTitle, content, "#ef4444");
+      {DeclineForm(res.SubmittedReason, res.Message, wording.DeclinePlaceholder, wording.DeclineButton)}";
+            return Layout(wording.DeclineTitle, content, "#ef4444");
         }
 
         var accent = res.Status switch
@@ -134,19 +174,19 @@ public static class EmailActionHtmlPages
       </form>";
     }
 
-    private static string TerminalTitle(string status, string? action, string? currentResponse) => status switch
+    private static string TerminalTitle(string status, string? context, string? action, string? currentResponse) => status switch
     {
         EmailActionViewStatuses.AlreadyResponded => "Đã phản hồi trước đó",
         EmailActionViewStatuses.Expired => "Liên kết đã hết hạn",
         _ => "Liên kết không hợp lệ",
     };
 
-    private static string TerminalBody(string status, string? currentResponse) => status switch
+    private static string TerminalBody(string status, string? context, string? currentResponse) => status switch
     {
         EmailActionViewStatuses.AlreadyResponded =>
-            $@"<p style=""color:#374151;font-size:15px"">Bạn đã trả lời lời mời này rồi{(currentResponse == "ACCEPTED" ? " (Chấp nhận)" : currentResponse == "DECLINED" ? " (Từ chối)" : string.Empty)}.</p>",
+            $@"<p style=""color:#374151;font-size:15px"">{HE(PresentationFor(context).AlreadyRespondedBody)}{(currentResponse == "ACCEPTED" ? " (Chấp nhận)" : currentResponse == "DECLINED" ? " (Từ chối)" : string.Empty)}.</p>",
         EmailActionViewStatuses.Expired =>
-            @"<p style=""color:#374151;font-size:15px"">Liên kết phản hồi đã hết hạn. Vui lòng liên hệ Host để được gửi lại lời mời.</p>",
+            @"<p style=""color:#374151;font-size:15px"">Liên kết phản hồi đã hết hạn. Vui lòng liên hệ người gửi để được hỗ trợ.</p>",
         _ =>
             @"<p style=""color:#374151;font-size:15px"">Liên kết không hợp lệ hoặc đã bị thu hồi.</p>",
     };

@@ -32,4 +32,31 @@ public interface IUserMutationLockService
 
     /// <summary>Same contract as <see cref="LockUsersAsync"/> for <c>departments</c> rows.</summary>
     Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lock hierarchy (tiers 2-5) for anything that mutates a <c>VisitParticipant</c> or
+    /// <c>VisitLogisticsItem</c> row, or that must serialize against such a mutation — Portal and
+    /// Email response handlers, delegation/assignment handlers, and cancellation/completion cascades
+    /// all take these in the same fixed order (VisitRequest → VisitRequestCampus → business target →
+    /// EmailActionToken group) so any two of them serialize instead of racing on a stale read.
+    /// Same ascending-order, ignore-unknown-ids, no-op-on-empty contract as <see cref="LockUsersAsync"/>.
+    /// </summary>
+    Task LockVisitRequestsAsync(IReadOnlyCollection<ulong> visitRequestIds, CancellationToken cancellationToken);
+
+    /// <summary>Tier 3 — locks <c>visit_request_campuses</c> rows by <c>visit_instance_id</c>.</summary>
+    Task LockVisitRequestCampusesAsync(IReadOnlyCollection<ulong> visitInstanceIds, CancellationToken cancellationToken);
+
+    /// <summary>Tier 4 — locks <c>visit_participants</c> rows by <c>participant_id</c>.</summary>
+    Task LockVisitParticipantsAsync(IReadOnlyCollection<ulong> participantIds, CancellationToken cancellationToken);
+
+    /// <summary>Tier 4 — locks <c>visit_logistics_items</c> rows by <c>logistics_item_id</c>.</summary>
+    Task LockVisitLogisticsItemsAsync(IReadOnlyCollection<ulong> logisticsItemIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Tier 5 — locks every <c>email_action_tokens</c> row sharing the given <c>action_group_key</c>
+    /// (the Accept/Decline/etc. tokens minted together for one business action). Must be re-acquired
+    /// and re-read inside the same transaction right before consuming/burning tokens — never trust a
+    /// token object fetched before the transaction opened. No-op for an empty/null key.
+    /// </summary>
+    Task LockEmailActionTokenGroupAsync(string? actionGroupKey, CancellationToken cancellationToken);
 }

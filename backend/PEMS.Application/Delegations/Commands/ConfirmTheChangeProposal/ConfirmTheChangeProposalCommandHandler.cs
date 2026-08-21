@@ -15,12 +15,17 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IUserMutationLockService _lockService;
 
-    public ConfirmTheChangeProposalCommandHandler(IApplicationDbContext db, ICurrentUserService currentUser, PEMS.Application.Notifications.Common.INotificationService notificationService)
+    public ConfirmTheChangeProposalCommandHandler(
+        IApplicationDbContext db, ICurrentUserService currentUser,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
         _notificationService = notificationService;
+        _lockService = lockService;
     }
 
     public async Task<ConfirmTheChangeProposalResponse> Handle(ConfirmTheChangeProposalCommand request, CancellationToken cancellationToken)
@@ -31,6 +36,26 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
         // ra lỗi hệ thống" for what is, in every case, an ordinary and expected outcome.
         if (_currentUser.UserId is null)
             throw new ForbiddenException("Bạn cần đăng nhập để phản hồi đề xuất.");
+
+        var visitInstanceId = await _db.VisitLogisticsItems
+            .Where(x => x.LogisticsItemId == request.LogisticsItemId)
+            .Select(x => (ulong?)x.VisitInstanceId)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (visitInstanceId is null)
+            throw new NotFoundException("Không tìm thấy đơn yêu cầu.", LogisticsTaskErrorCodes.RequestNotFound);
+        var visitRequestId = await _db.VisitRequestCampuses
+            .Where(c => c.VisitInstanceId == visitInstanceId)
+            .Select(c => (ulong?)c.VisitRequestId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy chuyến tiếp khách.");
+
+        // Lock hierarchy (see IUserMutationLockService) — this handler previously took no lock and no
+        // transaction at all; a Portal proposal decision is the last remaining channel for this item
+        // (spec BUG-07), so a double-click here needs the same protection every other response gets.
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
+        await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { visitInstanceId.Value }, cancellationToken);
+        await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
         var item = await _db.VisitLogisticsItems
             .Include(x => x.VisitInstance)
@@ -153,6 +178,8 @@ public sealed class ConfirmTheChangeProposalCommandHandler : IRequestHandler<Con
         {
             await _notificationService.CreateManyAsync(notifications, cancellationToken);
         }
+
+        await transaction.CommitAsync(cancellationToken);
 
         return new ConfirmTheChangeProposalResponse
         {

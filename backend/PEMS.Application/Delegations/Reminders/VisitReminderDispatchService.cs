@@ -305,7 +305,7 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
         var detailBlock = new Dictionary<string, string>
         {
             [EmailTrustedBlocks.ActionBlock] = EmailComposition.VisitDetailBlock(
-                _urls.BuildVisitInstanceDetailUrl(instance.VisitRequestId, instance.VisitInstanceId)),
+                _urls.BuildHostVisitProcessUrl(instance.VisitInstanceId)),
         };
 
         var plannedStart = Moment(instance.PlannedStartAt);

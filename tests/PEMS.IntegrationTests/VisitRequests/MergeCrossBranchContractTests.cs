@@ -123,7 +123,7 @@ public sealed class MergeCrossBranchContractTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var form = new VisitRequestFormDataV2(
             "XB" + Guid.NewGuid().ToString("N"),

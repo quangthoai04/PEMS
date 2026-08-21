@@ -298,6 +298,20 @@ public static class EmailComposition
         </div>";
     }
 
+    /// <summary>
+    /// Preview stand-in for <see cref="LogisticsAssigneeActionBlock"/> (BUG-09) — 3 buttons
+    /// (Accept/Decline/Detail), matching the real send exactly instead of falling back to the generic
+    /// 2-button <see cref="DisabledAcceptDeclineBlock"/>.
+    /// </summary>
+    public static string DisabledLogisticsAssigneeActionBlock(string detailLabel = "Xem chi tiết trong hệ thống")
+    {
+        return $@"<div style=""text-align:center;margin:24px 0"">
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Chấp nhận nhiệm vụ</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">Từ chối nhiệm vụ</span>
+            <span style=""display:inline-block;background:#9aa6b2;color:#fff;font-weight:bold;font-size:14px;padding:12px 22px;border-radius:10px;margin:6px"">{HE(detailLabel)}</span>
+        </div>";
+    }
+
     public static string DisabledLogisticsActionBlock(string detailLabel = "Hành động khác")
     {
         return $@"<div style=""text-align:center;margin:24px 0"">

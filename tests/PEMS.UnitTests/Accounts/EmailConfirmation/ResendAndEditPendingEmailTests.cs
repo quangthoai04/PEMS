@@ -749,9 +749,10 @@ public class PendingEmailEditTokenLifecycleTests
         public string Hash(string rawToken)
             => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant();
         public string BuildPublicActionUrl(string rawToken) => $"http://x/action?token={rawToken}";
-        public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId) => "http://x/assign";
-        public string BuildLogisticsDetailUrl(ulong logisticsItemId) => "http://x/logistics";
-        public string BuildVisitInstanceDetailUrl(ulong visitInstanceId, ulong campusId) => "http://x/visit";
+        public string BuildVisitParticipantAssignmentUrl(ulong participantId) => "http://x/assign";
+        public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId) => "http://x/logistics-staff";
+        public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "http://x/logistics-leader";
+        public string BuildHostVisitProcessUrl(ulong visitInstanceId) => "http://x/visit";
     }
 
     /// <summary>

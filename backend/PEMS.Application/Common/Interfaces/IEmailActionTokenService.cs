@@ -18,18 +18,30 @@ public interface IEmailActionTokenService
     /// executes). Same URL for ACCEPT and DECLINE — the action is encoded in the token itself.</summary>
     string BuildPublicActionUrl(string rawToken);
 
-    /// <summary>Internal, login-required URL for the Department-Leader "Gán nhân sự" action (never a
-    /// public token — assignment requires authentication).</summary>
-    string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId);
-
-    /// <summary>Internal, login-required URL to a logistics request's detail page (Department flow).
-    /// Used by the logistics-request email — no public token (reject/assign require authentication).</summary>
-    string BuildLogisticsDetailUrl(ulong logisticsItemId);
+    /// <summary>
+    /// Internal, login-required URL for a Department Staff member's own participant-assignment row
+    /// (accept/decline "Gán nhân sự", and the Department-Leader "Gán nhân sự" action) — the one route
+    /// that actually exists for it in the SPA (<c>/dashboard/visit/department-tasks/:participantId</c>).
+    /// </summary>
+    string BuildVisitParticipantAssignmentUrl(ulong participantId);
 
     /// <summary>
-    /// Internal, login-required URL to a campus visit instance. Used by the reminder emails, which carry
-    /// no one-time token at all: a reminder asks somebody to look at something they already have access
-    /// to, so there is nothing for a token to grant.
+    /// Internal, login-required URL to a logistics item for a Department **Staff** recipient — the
+    /// dashboard query-param shape <c>DeptStaffDashboard</c> actually consumes.
     /// </summary>
-    string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId);
+    string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId);
+
+    /// <summary>
+    /// Internal, login-required URL to a logistics item for a Department **Leader** recipient — the
+    /// dashboard query-param shape <c>SharedDashboardView</c> (under the Leader's visit tasks page)
+    /// actually consumes.
+    /// </summary>
+    string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId);
+
+    /// <summary>
+    /// Internal, login-required URL to a campus visit instance's process screen — the single-id route
+    /// (<c>/dashboard/visit/process/:id</c>) that actually exists. Used for Host-facing detail links:
+    /// reminders, and the now-detail-only logistics-proposal email.
+    /// </summary>
+    string BuildHostVisitProcessUrl(ulong visitInstanceId);
 }

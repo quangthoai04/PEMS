@@ -35,11 +35,26 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ConfirmRequest
         {
             ulong userId = _currentUserService.UserId.Value;
 
+            // Structural FKs, safe to peek unlocked (see VisitInvitationResponse.ApplyCoreAsync).
+            var visitInstanceId = await _context.VisitLogisticsItems
+                .Where(x => x.LogisticsItemId == request.LogisticsItemId)
+                .Select(x => (ulong?)x.VisitInstanceId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (visitInstanceId is null) throw new NotFoundException("Không tìm thấy đơn yêu cầu");
+            var visitRequestId = await _context.VisitRequestCampuses
+                .Where(c => c.VisitInstanceId == visitInstanceId)
+                .Select(c => (ulong?)c.VisitRequestId)
+                .FirstOrDefaultAsync(cancellationToken) ?? throw new NotFoundException("Không tìm thấy chuyến tiếp khách");
+
             // Taking the item makes the caller its assignee — a live responsibility. The shared lock
             // (see IUserMutationLockService) serializes that against a Staff Leader changing this
-            // very account's role at the same moment.
-            await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+            // very account's role at the same moment. Tiers 2-4 (VisitRequest → VisitRequestCampus →
+            // VisitLogisticsItem) join the same hierarchy every writer of this aggregate follows.
+            await using var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken);
             await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
+            await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+            await _lockService.LockVisitRequestCampusesAsync(new[] { visitInstanceId.Value }, cancellationToken);
+            await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);

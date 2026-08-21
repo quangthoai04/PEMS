@@ -117,7 +117,7 @@ public sealed class LogisticsCancelScopeV2Tests
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
         var form = new VisitRequestFormDataV2(
             "LG" + Guid.NewGuid().ToString("N"),
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
@@ -185,7 +185,8 @@ public sealed class LogisticsCancelScopeV2Tests
     }
 
     private static CancelVisitLogisticsItemCommandHandler Handler(ApplicationDbContext db, ulong actor)
-        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock());
+        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Staff, CampusHn), new FixedClock(),
+            new MySqlUserMutationLockService(db));
 
     private static async Task CleanupAsync(ulong requestId)
     {

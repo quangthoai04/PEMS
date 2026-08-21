@@ -17,14 +17,18 @@ public sealed class CancelVisitRequestCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IUserMutationLockService _lockService;
 
     public CancelVisitRequestCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _notificationService = notificationService;
+        _lockService = lockService;
     }
 
     public async Task<CancelVisitRequestResponse> Handle(
@@ -91,7 +95,18 @@ public sealed class CancelVisitRequestCommandHandler
                     VisitRequestErrorCodes.VisitCancelWindowExpired);
 
             var nowPending = _clock.VietnamNow;
-            await using var txPending = await _db.BeginTransactionAsync(cancellationToken);
+            await using var txPending = await _db.BeginSerializedTransactionAsync(cancellationToken);
+
+            // Lock hierarchy (see IUserMutationLockService): the parent request row, and every
+            // campus-instance row this cascade is about to touch, ascending order — so a concurrent
+            // participant/logistics response for one of these instances is forced to serialize against
+            // this cancellation instead of committing on a pre-cancel snapshot.
+            await _lockService.LockVisitRequestsAsync(new[] { visit.VisitRequestId }, cancellationToken);
+            var pendingInstanceIds = visit.CampusInstances
+                .Where(c => c.Status == VisitInstanceStatus.WaitingRequestApproval)
+                .Select(c => c.VisitInstanceId).Distinct().OrderBy(id => id).ToArray();
+            if (pendingInstanceIds.Length > 0)
+                await _lockService.LockVisitRequestCampusesAsync(pendingInstanceIds, cancellationToken);
 
             // Phase 1 — flip the request FIRST. The visit_request_campuses cancel trigger only
             // allows a WAITING_REQUEST_APPROVAL instance to become CANCELLED when the parent
@@ -340,7 +355,15 @@ public sealed class CancelVisitRequestCommandHandler
         // the owning request to be APPROVED at the moment a campus moves to CANCELLED. Only then
         // is the parent request flipped to CANCELLED. The whole thing runs in one transaction so
         // it commits atomically (no half-cancelled state if the second step fails). ──
-        await using var tx = await _db.BeginTransactionAsync(cancellationToken);
+        await using var tx = await _db.BeginSerializedTransactionAsync(cancellationToken);
+
+        // Lock hierarchy (see IUserMutationLockService): the parent request row and every campus-
+        // instance row about to be cancelled, ascending order — the point at which a concurrent
+        // participant/logistics response for one of these instances is forced to serialize against
+        // this cancellation rather than each side deciding from its own pre-cancel snapshot.
+        await _lockService.LockVisitRequestsAsync(new[] { visit.VisitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(
+            targets.Select(t => t.VisitInstanceId).Distinct().OrderBy(id => id).ToArray(), cancellationToken);
 
         var cancelled = new List<CancelledCampusDto>();
         foreach (var instance in targets)
@@ -378,6 +401,12 @@ public sealed class CancelVisitRequestCommandHandler
             .Where(l => targetInstanceIds.Contains(l.VisitInstanceId)
                         && !terminalLogisticsStatuses.Contains(l.Status))
             .ToListAsync(cancellationToken);
+        // Tier 4 — every logistics item this cascade is about to cancel, ascending order, same
+        // reasoning as the campus-instance lock above (a concurrent Portal/Email accept/decline on one
+        // of these items must serialize against this cancellation, not race it).
+        if (logisticsToCancel.Count > 0)
+            await _lockService.LockVisitLogisticsItemsAsync(
+                logisticsToCancel.Select(l => l.LogisticsItemId).Distinct().OrderBy(id => id).ToArray(), cancellationToken);
         foreach (var item in logisticsToCancel)
         {
             item.Status = LogisticsItemStatus.Cancelled;

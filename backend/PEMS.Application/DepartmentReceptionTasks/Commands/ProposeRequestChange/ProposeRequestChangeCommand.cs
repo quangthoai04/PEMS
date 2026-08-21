@@ -48,12 +48,14 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
         private readonly IEmailActionTokenService _tokens;
         private readonly PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer _normalizer;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
         public ProposeRequestChangeCommandHandler(
             IApplicationDbContext context, ICurrentUserService currentUserService,
             ISystemEmailDispatcher dispatcher, IEmailActionTokenService tokens,
             PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer normalizer,
-            PEMS.Application.Notifications.Common.INotificationService notificationService)
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
             _context = context;
             _currentUserService = currentUserService;
@@ -61,6 +63,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
             _tokens = tokens;
             _normalizer = normalizer;
             _notificationService = notificationService;
+            _lockService = lockService;
         }
 
         public async Task<bool> Handle(ProposeRequestChangeCommand request, CancellationToken cancellationToken)
@@ -76,6 +79,27 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 throw new ValidationException(
                     "Số lượng đề xuất phải là số nguyên ≥ 1.",
                     LogisticsTaskErrorCodes.ProposalQuantityInvalid);
+
+            var visitInstanceId = await _context.VisitLogisticsItems
+                .Where(x => x.LogisticsItemId == request.LogisticsItemId)
+                .Select(x => (ulong?)x.VisitInstanceId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (visitInstanceId is null)
+                throw new NotFoundException(
+                    "Không tìm thấy yêu cầu hậu cần.", LogisticsTaskErrorCodes.RequestNotFound);
+            var visitRequestId = await _context.VisitRequestCampuses
+                .Where(c => c.VisitInstanceId == visitInstanceId)
+                .Select(c => (ulong?)c.VisitRequestId)
+                .FirstOrDefaultAsync(cancellationToken)
+                ?? throw new NotFoundException("Không tìm thấy chuyến tiếp khách.");
+
+            // Lock hierarchy (see IUserMutationLockService) — this handler previously took no lock and
+            // wrapped only the email-sending half in a transaction, leaving the item mutation itself
+            // uncovered.
+            await using var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken);
+            await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+            await _lockService.LockVisitRequestCampusesAsync(new[] { visitInstanceId.Value }, cancellationToken);
+            await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
             var l = await _context.VisitLogisticsItems
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
@@ -151,20 +175,32 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 _context, EmailActionTargetTypes.LogisticsItem, l.LogisticsItemId,
                 "Yêu cầu đang chờ Host phản hồi đề xuất thay đổi.", now, cancellationToken);
 
-            await _context.SaveChangesAsync(cancellationToken);
+            PreparedSystemEmail? prepared = await PrepareProposalEmailAsync(l, userId, now, cancellationToken);
 
-            // Email the Host (the requester) with APPROVE/REJECT proposal buttons. The proposal is already
-            // persisted; an SMTP failure never rolls it back (the Host can still respond from the portal).
-            await SendProposalEmailAsync(l, userId, now, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            // Best-effort, same as every other system email here: the proposal is already committed,
+            // and the Host can still respond from the Portal, so a delivery failure is recorded rather
+            // than thrown.
+            if (prepared is not null)
+                await _dispatcher.DeliverAsync(prepared, cancellationToken);
             return true;
         }
 
-        private async Task SendProposalEmailAsync(
+        /// <summary>
+        /// Records (but does not send) the Host-facing proposal notice. Per the business rule (spec
+        /// BUG-07), a proposal decision is Portal-only: this email carries NO public Approve/Reject
+        /// token — only a login-required "Xem chi tiết trong hệ thống" link — so there is nothing here
+        /// for a mail scanner or a forwarded email to act on. Returns null (nothing to send) when there
+        /// is no Host on record, matching the previous portal-only-proposal behavior.
+        /// </summary>
+        private async Task<PreparedSystemEmail?> PrepareProposalEmailAsync(
             Domain.Entities.Delegations.VisitLogisticsItem l, ulong proposerUserId, DateTime now, CancellationToken cancellationToken)
         {
-            if (!l.RequestedBy.HasValue) return; // no Host on record → portal-only proposal
+            if (!l.RequestedBy.HasValue) return null; // no Host on record → portal-only proposal
             var host = await _context.Users.FirstOrDefaultAsync(u => u.UserId == l.RequestedBy.Value, cancellationToken);
-            if (host == null || string.IsNullOrWhiteSpace(host.Email)) return;
+            if (host == null || string.IsNullOrWhiteSpace(host.Email)) return null;
 
             // Mixed per-campus v2: the in-app notification names THIS instance's delegation.
             var delegationName = (await Delegations.Services.VisitFormRead.VisitInstanceEffectiveName
@@ -177,107 +213,70 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.ProposeRequestChang
                 .Where(d => d.DepartmentId == l.RequestedToDepartmentId.Value).Select(d => d.Name)
                 .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban xử lý";
 
-            PreparedSystemEmail prepared;
+            var detailUrl = _tokens.BuildHostVisitProcessUrl(l.VisitInstanceId);
 
-            await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
-            {
-                var approveRaw = _tokens.GenerateRawToken();
-                var rejectRaw = _tokens.GenerateRawToken();
-                var groupKey = Guid.NewGuid().ToString("N");
-                var approveUrl = _tokens.BuildPublicActionUrl(approveRaw);
-                var rejectUrl = _tokens.BuildPublicActionUrl(rejectRaw);
-                var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
-
-                prepared = await _dispatcher.PrepareAsync(
-                    new SystemEmailRequest(
-                        SystemEmailTemplates.LogisticsChangeProposalToHost,
-                        new EmailRecipient(host.Email, host.FullName),
-                        new System.Collections.Generic.Dictionary<string, string>
-                        {
-                            ["hostName"] = host.FullName,
-                            ["logisticsTitle"] = l.Title,
-                            ["departmentName"] = departmentName,
-                            ["delegationName"] = delegationName,
-                            // A proposal is a counter-offer, so the mail states WHAT is being proposed,
-                            // not just why. Sending the rationale alone forced the Host into the portal
-                            // to discover the numbers they were being asked to approve.
-                            ["originalQuantity"] = l.Quantity?.ToString() ?? Unchanged,
-                            ["proposedQuantity"] = l.ProposedQuantity?.ToString() ?? Unchanged,
-                            ["proposedUsageStartAt"] = FormatMoment(l.ProposedUsageStartAt),
-                            ["proposedUsageEndAt"] = FormatMoment(l.ProposedUsageEndAt),
-                            ["proposedDescription"] = string.IsNullOrWhiteSpace(l.ProposedDescription)
-                                ? Unchanged
-                                : l.ProposedDescription!,
-                            // Guaranteed non-empty by the caller: the rationale is mandatory, and falls
-                            // back to the proposed description before this point.
-                            ["proposalNote"] = l.ProposalNote ?? string.Empty,
-                        },
-                        TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
-                        {
-                            [EmailTrustedBlocks.ActionBlock] =
-                                EmailComposition.LogisticsProposalActionBlock(approveUrl, rejectUrl, detailUrl),
-                        },
-                        RelatedType: EmailActionTargetTypes.LogisticsItem,
-                        RelatedId: l.LogisticsItemId,
-                        SentBy: proposerUserId)
+            var prepared = await _dispatcher.PrepareAsync(
+                new SystemEmailRequest(
+                    SystemEmailTemplates.LogisticsChangeProposalToHost,
+                    new EmailRecipient(host.Email, host.FullName),
+                    new System.Collections.Generic.Dictionary<string, string>
                     {
-                        // The department never edits this message — it is a system notice, and there is no
-                        // screen offering to rewrite it.
-                        Content = SystemEmailContent.FromTemplate.Instance,
+                        ["hostName"] = host.FullName,
+                        ["logisticsTitle"] = l.Title,
+                        ["departmentName"] = departmentName,
+                        ["delegationName"] = delegationName,
+                        // A proposal is a counter-offer, so the mail states WHAT is being proposed,
+                        // not just why. Sending the rationale alone forced the Host into the portal
+                        // to discover the numbers they were being asked to approve.
+                        ["originalQuantity"] = l.Quantity?.ToString() ?? Unchanged,
+                        ["proposedQuantity"] = l.ProposedQuantity?.ToString() ?? Unchanged,
+                        ["proposedUsageStartAt"] = FormatMoment(l.ProposedUsageStartAt),
+                        ["proposedUsageEndAt"] = FormatMoment(l.ProposedUsageEndAt),
+                        ["proposedDescription"] = string.IsNullOrWhiteSpace(l.ProposedDescription)
+                            ? Unchanged
+                            : l.ProposedDescription!,
+                        // Guaranteed non-empty by the caller: the rationale is mandatory, and falls
+                        // back to the proposed description before this point.
+                        ["proposalNote"] = l.ProposalNote ?? string.Empty,
                     },
-                    cancellationToken);
+                    TrustedBlocks: new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        [EmailTrustedBlocks.ActionBlock] = EmailComposition.DetailLinkBlock(
+                            detailUrl,
+                            "Xem chi tiết trong hệ thống",
+                            "Đăng nhập để xem chi tiết đề xuất và quyết định Chấp nhận / Từ chối trong hệ thống."),
+                    },
+                    RelatedType: EmailActionTargetTypes.LogisticsItem,
+                    RelatedId: l.LogisticsItemId,
+                    SentBy: proposerUserId)
+                {
+                    // The department never edits this message — it is a system notice, and there is no
+                    // screen offering to rewrite it.
+                    Content = SystemEmailContent.FromTemplate.Instance,
+                },
+                cancellationToken);
 
-                _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(approveRaw), EmailIntendedActions.ApproveProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
-                _context.EmailActionTokens.Add(NewProposalToken(_tokens.Hash(rejectRaw), EmailIntendedActions.RejectProposal, groupKey, l.LogisticsItemId, host.UserId, host.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
+            await _notificationService.CreateAsync(
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: host.UserId,
+                    Title: "Phòng ban đề xuất thay đổi hậu cần",
+                    Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: l.LogisticsItemId,
+                    ActorUserId: proposerUserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    IsActionRequired: true,
+                    VisitInstanceId: l.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}",
+                    MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                        PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsProposalCreated,
+                        new { delegationName, departmentName })),
+                cancellationToken
+            );
 
-                await _notificationService.CreateAsync(
-                    new PEMS.Application.Notifications.Common.CreateNotificationRequest(
-                        RecipientUserId: host.UserId,
-                        Title: "Phòng ban đề xuất thay đổi hậu cần",
-                        Message: $"Phòng ban đề xuất thay đổi cho yêu cầu \"{l.Title}\" của đoàn {delegationName}.",
-                        NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.LogisticsProposalCreated,
-                        RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
-                        RelatedId: l.LogisticsItemId,
-                        ActorUserId: proposerUserId,
-                        Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
-                        IsActionRequired: true,
-                        VisitInstanceId: l.VisitInstanceId,
-                        ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
-                        ActionUrl: $"/dashboard/visit/process/{l.VisitInstanceId}",
-                        MetadataJson: PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
-                            PEMS.Application.Notifications.Common.NotificationEventKeys.LogisticsProposalCreated,
-                            new { delegationName, departmentName })),
-                    cancellationToken
-                );
-                await _context.SaveChangesAsync(cancellationToken);
-
-                await transaction.CommitAsync(cancellationToken);
-            }
-
-            // Best-effort, exactly as before: the proposal is already persisted and the Host can still
-            // respond from the portal, so a delivery failure is recorded rather than thrown.
-            await _dispatcher.DeliverAsync(prepared, cancellationToken);
+            return prepared;
         }
-
-        private static EmailActionToken NewProposalToken(
-            string tokenHash, string intendedAction, string groupKey, ulong logisticsItemId,
-            ulong recipientUserId, string recipientEmail, ulong sentEmailId, ulong sentEmailRecipientId, DateTime now)
-            => new()
-            {
-                TokenHash = tokenHash,
-                ActionGroupKey = groupKey,
-                ActionContext = EmailActionContexts.LogisticsProposalResponse,
-                TargetType = EmailActionTargetTypes.LogisticsItem,
-                TargetId = logisticsItemId,
-                IntendedAction = intendedAction,
-                RecipientUserId = recipientUserId,
-                RecipientEmail = recipientEmail,
-                SentEmailId = sentEmailId,
-                SentEmailRecipientId = sentEmailRecipientId,
-                ExpiresAt = now.Add(TokenTtl),
-                ResultStatus = EmailActionResultStatuses.Pending,
-                CreatedAt = now,
-            };
-
     }
 }

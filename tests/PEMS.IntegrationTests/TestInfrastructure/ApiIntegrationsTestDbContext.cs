@@ -215,4 +215,8 @@ public sealed class ApiIntegrationsTestDbContext : DbContext, IApplicationDbCont
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 }

@@ -275,6 +275,10 @@ public class OperationalContactTestDbContext : DbContext, IApplicationDbContext
             => new JournallingTransaction(await Database.BeginTransactionAsync(ct), Journal);
     }
 
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => BeginTransactionAsync(cancellationToken);
+
     private sealed class JournallingTransaction : Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction
     {
         private readonly Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction _inner;

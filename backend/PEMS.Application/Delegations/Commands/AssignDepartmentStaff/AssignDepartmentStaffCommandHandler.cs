@@ -55,6 +55,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
     private readonly IFileStorageService _storage;
     private readonly IVisitFormReadService _formReadService;
     private readonly IUserMutationLockService _lockService;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
     private readonly PEMS.Application.Emails.Preview.IApprovedEmailContentResolver _approvedContent;
 
     public AssignDepartmentStaffCommandHandler(
@@ -67,6 +68,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         IFileStorageService storage,
         IVisitFormReadService formReadService,
         IUserMutationLockService lockService,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
         PEMS.Application.Emails.Preview.IApprovedEmailContentResolver approvedContent)
     {
         _approvedContent = approvedContent;
@@ -79,6 +81,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         _storage = storage;
         _formReadService = formReadService;
         _lockService = lockService;
+        _notificationService = notificationService;
     }
 
     public async Task<ulong> Handle(AssignDepartmentStaffCommand request, CancellationToken cancellationToken)
@@ -88,7 +91,21 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
 
         var userId = _currentUser.UserId.Value;
 
-        // Assigning the staff member creates an ASSIGNED participant row for them — a live
+        // The FKs below are structural (never change on an existing row), so peeking at them unlocked
+        // to discover which lifecycle rows to lock is safe — see VisitInvitationResponse.ApplyCoreAsync
+        // for the same pattern.
+        var leaderVisitInstanceId = await _db.VisitParticipants
+            .Where(p => p.ParticipantId == request.ParticipantId)
+            .Select(p => (ulong?)p.VisitInstanceId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("VisitParticipant", request.ParticipantId);
+        var visitRequestId = await _db.VisitRequestCampuses
+            .Where(c => c.VisitInstanceId == leaderVisitInstanceId)
+            .Select(c => (ulong?)c.VisitRequestId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", leaderVisitInstanceId);
+
+        // Assigning the staff member creates/mutates an ASSIGNED participant row for them — a live
         // responsibility. Lock the account first (see IUserMutationLockService) so this cannot
         // interleave with a role change; every eligibility read below then sees committed state.
         //
@@ -98,8 +115,18 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         // which takes the same lock and expects assignment flows to contend on it; without the
         // transaction the participant row, tokens and notification commit separately, so a failure
         // part-way through can leave somebody assigned with no way to accept or decline.
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        //
+        // Tiers 2-3 (VisitRequest → VisitRequestCampus) join the same lock hierarchy every writer of
+        // this visit follows, so this cannot commit an assignment based on a lifecycle snapshot a
+        // concurrent cancellation has already invalidated. Tier 4 locks the LEADER's own participant
+        // row now (its id is already known); the TARGET's participant row is locked further down once
+        // we know whether it exists — a row that doesn't exist yet cannot be FOR-UPDATE'd, so the
+        // create-if-missing path relies on the DB's unique key on (visit_instance_id, user_id) instead.
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
         await _lockService.LockUsersAsync(new[] { request.DepartmentStaffUserId }, cancellationToken);
+        await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { leaderVisitInstanceId }, cancellationToken);
+        await _lockService.LockVisitParticipantsAsync(new[] { request.ParticipantId }, cancellationToken);
 
         var leaderParticipant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.ParticipantId == request.ParticipantId, cancellationToken)
@@ -109,7 +136,7 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         if (_currentUser.RoleCode != RoleCodes.Department || _currentUser.SubRole != UserSubRoles.Leader)
             throw new ForbiddenException("Chỉ Department Leader mới được giao việc xuống Staff.");
 
-        // SEC-13: ownership — mirrors VisitInvitationResponse.ApplyAsync's own pattern. Without this,
+        // SEC-13: ownership — mirrors VisitInvitationResponse.ApplyCoreAsync's own pattern. Without this,
         // any Department Leader could pass ANY participant id belonging to their department (not
         // necessarily their own row — e.g. a different member's, or a stale row from before a
         // leadership handover) and mutate ITS status/assignment history as if it were the caller's
@@ -132,6 +159,11 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         // Kiểm tra target user cũng phải là DEPT và cùng department
         if (targetStaff.Role?.RoleCode != RoleCodes.Department || targetStaff.DepartmentId != _currentUser.DepartmentId)
             throw new ConflictException("Người được phân công phải thuộc cùng phòng ban.");
+
+        // A Leader hands work DOWN to a Staff member, never sideways to another Leader — nothing above
+        // checked this, so a Leader could until now "assign" a peer Leader as if they were Staff.
+        if (targetStaff.SubRole != UserSubRoles.Staff)
+            throw new ConflictException("Chỉ có thể giao nhiệm vụ cho Department Staff, không phải Department Leader.");
 
         // Read under the lock taken at the top of Handle, so this sees committed state. Role and department alone are
         // not enough: a deactivated, locked or not-yet-confirmed account holds no effective authority
@@ -190,24 +222,77 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
             .Where(d => d.DepartmentId == targetStaff.DepartmentId).Select(d => d.Name)
             .FirstOrDefaultAsync(cancellationToken) ?? "Phòng ban";
 
-        var existingParticipant = await _db.VisitParticipants
-            .FirstOrDefaultAsync(p => p.VisitInstanceId == leaderParticipant.VisitInstanceId && p.UserId == targetStaff.UserId, cancellationToken);
+        // Existence-peek only — not yet under the participant lock (a not-yet-existing row cannot be
+        // locked). Whatever this finds is re-verified below: if it names a row, that row is locked and
+        // reloaded before any decision is made from it; if it finds nothing, the create path below
+        // relies on the DB's unique key (visit_instance_id, user_id) rather than this peek.
+        var existingParticipantId = await _db.VisitParticipants
+            .Where(p => p.VisitInstanceId == leaderParticipant.VisitInstanceId && p.UserId == targetStaff.UserId)
+            .Select(p => (ulong?)p.ParticipantId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existingParticipantId.HasValue)
+        {
+            // Deterministic ascending-id lock for the two participant rows this request touches, so a
+            // concurrent request touching the same two rows in the opposite discovery order can never
+            // form a lock cycle with this one.
+            var idsToLock = new[] { request.ParticipantId, existingParticipantId.Value }
+                .Distinct().OrderBy(id => id).ToArray();
+            await _lockService.LockVisitParticipantsAsync(idsToLock, cancellationToken);
+        }
+
+        var existingParticipant = existingParticipantId.HasValue
+            ? await _db.VisitParticipants.FirstOrDefaultAsync(p => p.ParticipantId == existingParticipantId.Value, cancellationToken)
+            : null;
 
         VisitParticipant assignedParticipant;
+        var isIdempotentResend = false;
         if (existingParticipant != null)
         {
-            // Nếu đã tham gia, cập nhật role và status nếu cần thiết
-            existingParticipant.ParticipantRole = ParticipantRoles.DeptSupport;
-            existingParticipant.Status = ParticipantStatuses.Assigned;
-            existingParticipant.AssignedBy = userId;
-            existingParticipant.AssignedAt = now;
-            existingParticipant.UpdatedAt = now;
-            existingParticipant.UpdatedBy = userId;
+            // Fail closed on every existing status except an exact retry of the same assignment: a new
+            // assign request must never silently overwrite what the target has already done, or what a
+            // DIFFERENT leader already put in flight. Re-read (above, under the lock) is what this
+            // decision is made from — never the pre-lock peek.
+            switch (existingParticipant.Status)
+            {
+                case ParticipantStatuses.Accepted:
+                    throw new ConflictException("Nhân viên này đã chấp nhận nhiệm vụ, không thể phân công lại.");
+                case ParticipantStatuses.Declined:
+                    throw new ConflictException("Nhân viên này đã từ chối nhiệm vụ này trước đó.");
+                case ParticipantStatuses.Removed:
+                    throw new ConflictException("Nhân viên này đã bị gỡ khỏi đoàn, không thể tự động khôi phục.");
+                case ParticipantStatuses.Assigned when existingParticipant.AssignedBy != userId:
+                    // No source evidence of a leadership-handover/explicit-reassign flow — fail closed
+                    // rather than invent one. The other Leader's assignment stays authoritative until
+                    // the Staff member answers it or it is withdrawn through a dedicated flow.
+                    throw new ConflictException("Nhân viên này đang chờ phản hồi một nhiệm vụ do Trưởng phòng khác giao, không thể ghi đè.");
+                case ParticipantStatuses.Assigned:
+                    // Same leader, same target, still ASSIGNED — a retry/double-click of the identical
+                    // assignment. Idempotent: touch UpdatedAt only, do not re-mint tokens or resend mail.
+                    existingParticipant.UpdatedAt = now;
+                    existingParticipant.UpdatedBy = userId;
+                    isIdempotentResend = true;
+                    break;
+                case ParticipantStatuses.Invited:
+                    // First formal delegation of an existing direct invite — sanctioned by the business
+                    // rule (INVITED → ASSIGNED "nếu đúng nghiệp vụ delegation").
+                    existingParticipant.ParticipantRole = ParticipantRoles.DeptSupport;
+                    existingParticipant.Status = ParticipantStatuses.Assigned;
+                    existingParticipant.AssignedBy = userId;
+                    existingParticipant.AssignedAt = now;
+                    existingParticipant.UpdatedAt = now;
+                    existingParticipant.UpdatedBy = userId;
+                    break;
+                default:
+                    throw new ConflictException("Trạng thái tham gia hiện tại không hợp lệ để phân công.");
+            }
             assignedParticipant = existingParticipant;
         }
         else
         {
-            // Tạo participant mới cho Staff
+            // Tạo participant mới cho Staff. A concurrent identical first-time assignment can still win
+            // the race here — the DB's unique key on (visit_instance_id, user_id) is the real guard,
+            // not this branch, since there is no existing row to lock.
             assignedParticipant = new VisitParticipant
             {
                 VisitInstanceId = leaderParticipant.VisitInstanceId,
@@ -235,6 +320,15 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         leaderParticipant.UpdatedAt = now;
         leaderParticipant.UpdatedBy = userId;
 
+        if (isIdempotentResend)
+        {
+            // Nothing else changed: no new token, no new email, no new notification for a retry of the
+            // exact same pending assignment.
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return assignedParticipant.ParticipantId;
+        }
+
         if (existingParticipant != null)
         {
             await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
@@ -244,7 +338,21 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
             _db, EmailActionTargetTypes.VisitParticipant, leaderParticipant.ParticipantId, "Thành phần tham gia đã được phân công trực tiếp.", now, cancellationToken);
 
-        await _db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException) when (existingParticipant is null)
+        {
+            // Lost the create race to a concurrent identical request between the existence-peek above
+            // and this save — the unique key on (visit_instance_id, user_id) is what actually caught
+            // it, not a lock (there was no row to lock). Remove()-ing a not-yet-saved Added entity is
+            // EF's own way to detach it (IApplicationDbContext exposes no direct Entry/State access);
+            // refuse rather than silently retrying as an overwrite — the caller can resubmit and will
+            // now find the row that won and go through the normal existing-participant decision above.
+            _db.VisitParticipants.Remove(assignedParticipant);
+            throw new ConflictException("Nhân viên này vừa được phân công bởi một yêu cầu khác, vui lòng thử lại.");
+        }
 
         var acceptRaw = _tokens.GenerateRawToken();
         var declineRaw = _tokens.GenerateRawToken();
@@ -282,21 +390,29 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
 
         _db.EmailActionTokens.Add(NewToken(_tokens.Hash(acceptRaw), EmailIntendedActions.Accept, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
         _db.EmailActionTokens.Add(NewToken(_tokens.Hash(declineRaw), EmailIntendedActions.Decline, groupKey, assignedParticipant.ParticipantId, targetStaff.UserId, targetStaff.Email, prepared.SentEmailId, prepared.SentEmailRecipientId, now));
-        _db.Notifications.Add(new Notification
-        {
-            RecipientUserId = targetStaff.UserId,
-            NotificationType = "VISIT_INVITATION_ASSIGNED",
-            Title = "Bạn được ủy quyền tham gia đón tiếp",
-            Message = $"Bạn được ủy quyền tham gia đón tiếp đoàn {delegationName}.",
-            RelatedType = "VisitParticipant",
-            RelatedId = assignedParticipant.ParticipantId,
-            VisitRequestId = instanceInfo?.VisitRequestId,
-            VisitInstanceId = leaderParticipant.VisitInstanceId,
-            ActionType = "OPEN_VISIT_INVITATION",
-            ActionUrl = $"/dashboard/departments/{_currentUser.DepartmentId}/invitations/{assignedParticipant.ParticipantId}",
-            IsRead = false,
-            CreatedAt = now,
-        });
+
+        // Same semantic shape every other Delegations notification uses (Category/ActionType/ActionUrl
+        // via the canonical builder), not a bare entity insert with none of those set.
+        await _notificationService.CreateAsync(
+            new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                RecipientUserId: targetStaff.UserId,
+                Title: "Bạn được ủy quyền tham gia đón tiếp",
+                Message: $"Bạn được ủy quyền tham gia đón tiếp đoàn {delegationName}.",
+                NotificationType: "VISIT_INVITATION_ASSIGNED",
+                RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                RelatedId: assignedParticipant.ParticipantId,
+                ActorUserId: userId,
+                Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
+                VisitRequestId: instanceInfo?.VisitRequestId,
+                VisitInstanceId: leaderParticipant.VisitInstanceId,
+                ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitInvitation,
+                // In-app ActionUrl is a relative SPA route (the frontend router navigates to it
+                // directly) — unlike the email builders on IEmailActionTokenService, which return
+                // absolute URLs for an <a href>. The route itself is the same real, existing one
+                // (/dashboard/visit/department-tasks/:participantId) the email link now also uses.
+                ActionUrl: $"/dashboard/visit/department-tasks/{assignedParticipant.ParticipantId}"),
+            cancellationToken);
+
         await _db.SaveChangesAsync(cancellationToken);
 
         // Durable before the email goes out: a transient SMTP failure must never lose the assignment.
@@ -384,7 +500,10 @@ public sealed class AssignDepartmentStaffCommandHandler : IRequestHandler<Assign
         {
             TokenHash = tokenHash,
             ActionGroupKey = groupKey,
-            ActionContext = EmailActionContexts.ParticipationResponse,
+            // Distinct from a direct invitation (ParticipationResponse): this token is minted for a
+            // participant row that is already ASSIGNED, and only the assignment context accepts that
+            // as its valid starting status (see EmailActionContexts.ParticipationAssignmentResponse).
+            ActionContext = EmailActionContexts.ParticipationAssignmentResponse,
             TargetType = EmailActionTargetTypes.VisitParticipant,
             TargetId = participantId,
             IntendedAction = intendedAction,

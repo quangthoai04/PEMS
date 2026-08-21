@@ -134,7 +134,7 @@ public sealed class VisitRequestRevisionSnapshotHistoryTests
             new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance, ReadOn, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
         var shifted = campuses.Select(c => c with { PlannedStartAt = c.PlannedStartAt + shift, PlannedEndAt = c.PlannedEndAt + shift }).ToList();
         var form = new VisitRequestFormDataV2(
             "HR" + Guid.NewGuid().ToString("N"),

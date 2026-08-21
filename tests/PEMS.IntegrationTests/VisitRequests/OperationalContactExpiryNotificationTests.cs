@@ -169,7 +169,7 @@ public sealed class OperationalContactExpiryNotificationTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var form = new VisitRequestFormDataV2(
             "OX" + Guid.NewGuid().ToString("N"),

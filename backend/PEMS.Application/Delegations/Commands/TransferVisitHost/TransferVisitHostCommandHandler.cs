@@ -109,8 +109,12 @@ public sealed class TransferVisitHostCommandHandler
         //    change on that same account. Both ids are handed to the lock service together, which
         //    orders them ascending — locking "outgoing then incoming" here and the reverse elsewhere
         //    is exactly the deadlock spec §13.4 rules out. ──
-        await using var tx = await _db.BeginTransactionAsync(ct);
+        await using var tx = await _db.BeginSerializedTransactionAsync(ct);
         await _lockService.LockUsersAsync(new[] { previousHostId, command.NewHostUserId }, ct);
+        // Tiers 2-3 of the shared lock hierarchy, so a handover cannot commit against a lifecycle
+        // snapshot a concurrent cancellation is in the middle of invalidating.
+        await _lockService.LockVisitRequestsAsync(new[] { instance.VisitRequestId }, ct);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { instance.VisitInstanceId }, ct);
 
         var (eligibility, newHost) = await VisitHostEligibility.EvaluateAsync(
             _db, command.NewHostUserId, instance.CampusId, actorId, ct);
@@ -148,6 +152,19 @@ public sealed class TransferVisitHostCommandHandler
         var participants = await _db.VisitParticipants
             .Where(p => p.VisitInstanceId == instance.VisitInstanceId)
             .ToListAsync(ct);
+
+        // Tier 4 — every participant row this handover is about to touch (the outgoing host's row(s)
+        // and the incoming host's row, if it already exists), ascending order so a concurrent flow
+        // touching the same two rows in the opposite discovery order can never form a lock cycle.
+        var touchedParticipantIds = VisitParticipantRelation.HostRowsOf(participants, previousHostId)
+            .Select(p => p.ParticipantId)
+            .Concat(VisitParticipantRelation.RowOf(participants, command.NewHostUserId) is { } incomingPeek
+                ? new[] { incomingPeek.ParticipantId }
+                : Array.Empty<ulong>())
+            .Distinct()
+            .ToArray();
+        if (touchedParticipantIds.Length > 0)
+            await _lockService.LockVisitParticipantsAsync(touchedParticipantIds, ct);
 
         // Only the row that actually CARRIES the host role is demoted (see VisitParticipantRelation) —
         // matching on user id alone would rewrite whatever other relation that person held here, and

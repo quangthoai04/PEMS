@@ -41,18 +41,25 @@ public sealed class RespondVisitParticipantInvitationCommandHandler
         // role change, so this transition creates no new blocker — but the flow still joins the
         // shared lock protocol (see IUserMutationLockService) so every participant write in the
         // system serializes against role changes the same way (spec §14).
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
         await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
 
         var now = _clock.VietnamNow;
 
-        // Ownership, role, current status, lifecycle, the write itself, the audit entry and the emailed
-        // token invalidation all live in the shared transition (see VisitInvitationResponse) — the
-        // department screens go through exactly the same call, so one business action has one
-        // implementation. The validator guarantees a non-empty 5–1000 char decline reason here.
-        var participant = await VisitInvitationResponse.ApplyAsync(
-            _db, userId, request.ParticipantId, request.Accept, request.DeclineReason, now, cancellationToken);
+        // Ownership, role, current status, lifecycle, the write itself and the audit entry all live in
+        // the shared transition (see VisitInvitationResponse) — the department screens go through
+        // exactly the same call, so one business action has one implementation. The validator
+        // guarantees a non-empty 5–1000 char decline reason here.
+        var participant = await VisitInvitationResponse.ApplyCoreAsync(
+            _db, _lockService, userId, request.ParticipantId, requiredStatus: null,
+            request.Accept, request.DeclineReason, now, cancellationToken);
         var newStatus = participant.Status;
+
+        // A Portal response retires any pending emailed link for this row (the token side effect is
+        // channel-specific — see VisitInvitationResponse's class remarks).
+        await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+            _db, PEMS.Domain.Constants.EmailActionTargetTypes.VisitParticipant, participant.ParticipantId,
+            "Lời mời này đã được phản hồi.", now, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);

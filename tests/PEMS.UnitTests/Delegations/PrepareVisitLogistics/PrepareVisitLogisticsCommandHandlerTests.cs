@@ -330,7 +330,7 @@ public class PrepareVisitLogisticsCommandHandlerTests
             .TrustedBlocks![EmailTrustedBlocks.ActionBlock];
         Assert.Contains("https://pems.test/email-actions/raw-token-1", block);
         Assert.Contains("https://pems.test/email-actions/raw-token-2", block);
-        Assert.Contains($"https://pems.test/logistics/{response.LogisticsItemId}", block);
+        Assert.Contains($"https://pems.test/dashboard/visit?taskId={response.LogisticsItemId}&amp;itemType=REQUEST", block);
 
         var sentEmail = Assert.Single(db.SentEmails);
         var tokens = db.EmailActionTokens.Where(t => t.TargetId == response.LogisticsItemId).ToList();

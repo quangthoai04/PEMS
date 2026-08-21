@@ -33,6 +33,30 @@ public sealed class MySqlUserMutationLockService : IUserMutationLockService
     public Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken cancellationToken)
         => LockAsync("departments", "department_id", departmentIds, cancellationToken);
 
+    public Task LockVisitRequestsAsync(IReadOnlyCollection<ulong> visitRequestIds, CancellationToken cancellationToken)
+        => LockAsync("visit_requests", "visit_request_id", visitRequestIds, cancellationToken);
+
+    public Task LockVisitRequestCampusesAsync(IReadOnlyCollection<ulong> visitInstanceIds, CancellationToken cancellationToken)
+        => LockAsync("visit_request_campuses", "visit_instance_id", visitInstanceIds, cancellationToken);
+
+    public Task LockVisitParticipantsAsync(IReadOnlyCollection<ulong> participantIds, CancellationToken cancellationToken)
+        => LockAsync("visit_participants", "participant_id", participantIds, cancellationToken);
+
+    public Task LockVisitLogisticsItemsAsync(IReadOnlyCollection<ulong> logisticsItemIds, CancellationToken cancellationToken)
+        => LockAsync("visit_logistics_items", "logistics_item_id", logisticsItemIds, cancellationToken);
+
+    public async Task LockEmailActionTokenGroupAsync(string? actionGroupKey, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(actionGroupKey)) return;
+        if (!_db.Database.IsRelational()) return;
+
+        // action_group_key is attacker-adjacent (round-tripped through a public email link), so unlike
+        // the numeric-id fast path above this one is parameterised rather than formatted inline.
+        await _db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT email_action_token_id FROM email_action_tokens WHERE action_group_key = {actionGroupKey} ORDER BY email_action_token_id FOR UPDATE",
+            cancellationToken);
+    }
+
     private async Task LockAsync(
         string table, string keyColumn, IReadOnlyCollection<ulong> ids, CancellationToken cancellationToken)
     {

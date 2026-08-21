@@ -20,11 +20,10 @@ var generatedDevJwtKey = PEMS.Api.Extensions.SecretConfigurationValidator.TryPro
     builder.Configuration, builder.Configuration, builder.Environment);
 PEMS.Api.Extensions.SecretConfigurationValidator.ValidateSecrets(builder.Configuration, builder.Environment);
 
-var frontendBaseUrl = builder.Configuration["App:FrontendBaseUrl"];
-if (builder.Environment.IsProduction() && (string.IsNullOrEmpty(frontendBaseUrl) || frontendBaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase) || frontendBaseUrl.Contains("127.0.0.1")))
-{
-    throw new InvalidOperationException("Production environment cannot use 'localhost' as FrontendBaseUrl.");
-}
+// Production refuses to start unless both public base URLs (email-action links + SPA deep-links) are
+// real, absolute, HTTPS, non-loopback domains — see BaseUrlConfigurationValidator for why a bad value
+// here is a silent, delayed failure rather than a loud one.
+PEMS.Api.Extensions.BaseUrlConfigurationValidator.ValidateBaseUrls(builder.Configuration, builder.Environment);
 
 // ── Application / Infrastructure services ────────────────────────────────────
 builder.Services.AddApplication();

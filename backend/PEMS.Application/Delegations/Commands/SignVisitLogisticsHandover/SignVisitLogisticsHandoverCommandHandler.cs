@@ -21,14 +21,18 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IUserMutationLockService _lockService;
 
     public SignVisitLogisticsHandoverCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _notificationService = notificationService;
+        _lockService = lockService;
     }
 
     public async Task<SignVisitLogisticsHandoverResponse> Handle(
@@ -49,6 +53,21 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
         var note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         if (condition != null && HandoverItemConditions.RequireNote.Contains(condition) && string.IsNullOrEmpty(note))
             throw new BusinessRuleException("Vui lòng nhập ghi chú tình trạng tài sản khi tài sản không ở trạng thái tốt.");
+
+        // Structural FK, safe to peek unlocked (see VisitInvitationResponse.ApplyCoreAsync).
+        var visitRequestId = await _db.VisitRequestCampuses
+            .Where(c => c.VisitInstanceId == request.VisitInstanceId)
+            .Select(c => (ulong?)c.VisitRequestId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
+
+        // Handover signing can transition item.Status (DONE) and races the department-side signer
+        // (SignLogisticsHandoverCommand) plus Portal/Email accept-decline on the same item — join the
+        // same lock hierarchy (VisitRequest → VisitRequestCampus → VisitLogisticsItem).
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
+        await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { request.VisitInstanceId }, cancellationToken);
+        await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
         var instance = await _db.VisitRequestCampuses
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
@@ -164,6 +183,7 @@ public sealed class SignVisitLogisticsHandoverCommandHandler
         });
 
         await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         var deptHandoverUrl = item.RequestedToDepartmentId.HasValue
             ? $"/dashboard/departments/{item.RequestedToDepartmentId.Value}/tasks/{item.LogisticsItemId}"

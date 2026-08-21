@@ -18,13 +18,16 @@ public sealed class CancelVisitLogisticsItemCommandHandler
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
+    private readonly IUserMutationLockService _lockService;
 
     public CancelVisitLogisticsItemCommandHandler(
-        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock)
+        IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
+        IUserMutationLockService lockService)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
+        _lockService = lockService;
     }
 
     public async Task<CancelVisitLogisticsItemResponse> Handle(
@@ -41,6 +44,18 @@ public sealed class CancelVisitLogisticsItemCommandHandler
             throw new BusinessRuleException("Vui lòng nhập lý do hủy yêu cầu logistics.");
         if (reason.Length > 1000)
             throw new BusinessRuleException("Lý do hủy không được vượt quá 1000 ký tự.");
+
+        var instancePeek = await _db.VisitRequestCampuses.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
+            ?? throw new NotFoundException("VisitRequestCampus", request.VisitInstanceId);
+
+        // Lock hierarchy (see IUserMutationLockService), so a cancel cannot commit past a Portal/Email
+        // response that is concurrently in flight for the same item — this handler previously took no
+        // lock and no transaction at all.
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
+        await _lockService.LockVisitRequestsAsync(new[] { instancePeek.VisitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { instancePeek.VisitInstanceId }, cancellationToken);
+        await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
         var instance = await _db.VisitRequestCampuses
             .FirstOrDefaultAsync(c => c.VisitInstanceId == request.VisitInstanceId, cancellationToken)
@@ -90,6 +105,7 @@ public sealed class CancelVisitLogisticsItemCommandHandler
             _db, EmailActionTargetTypes.LogisticsItem, item.LogisticsItemId, "Yêu cầu hậu cần này đã bị hủy.", now, cancellationToken);
 
         await _db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return new CancelVisitLogisticsItemResponse(true, item.LogisticsItemId, item.Status, "Đã hủy yêu cầu hậu cần.");
     }

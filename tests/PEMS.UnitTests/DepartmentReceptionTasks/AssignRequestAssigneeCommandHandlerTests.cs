@@ -133,7 +133,7 @@ public class AssignRequestAssigneeCommandHandlerTests
             .TrustedBlocks![EmailTrustedBlocks.ActionBlock];
         Assert.Contains("https://pems.test/email-actions/raw-token-1", block);
         Assert.Contains("https://pems.test/email-actions/raw-token-2", block);
-        Assert.Contains($"https://pems.test/logistics/{ItemId}", block);
+        Assert.Contains($"https://pems.test/dashboard?taskId={ItemId}&amp;itemType=REQUEST", block);
     }
 
     [Fact]

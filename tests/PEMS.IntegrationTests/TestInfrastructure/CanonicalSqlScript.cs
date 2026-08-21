@@ -750,8 +750,11 @@ public static class CanonicalSqlScript
     // moves backwards. The handler re-derives the badge on save and on read (MinuteContactBadge),
     // which is what actually fixed the defect. Weigh the schema cost against a case the lifecycle
     // already forbids before adding it back.
+    // 2026-08-21: email_action_tokens.action_context gained 'PARTICIPATION_ASSIGNMENT_RESPONSE' —
+    // the Department-Staff delegated-assignment email context, distinct from the direct-invitation
+    // PARTICIPATION_RESPONSE (spec BUG-02, see pems_patch_participation_assignment_response_token_context.sql).
     public const string ExpectedSha256 =
-        "6508394fe87d934a8dfcb07e072a61fbffb42ed5af53fb973cf60106d6c74d50";
+        "e41bb40054701f3da8ff46d5447779b11f621996b85ae325608450424e861695";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

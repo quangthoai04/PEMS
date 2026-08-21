@@ -4,6 +4,15 @@ namespace PEMS.Domain.Constants;
 public static class EmailActionContexts
 {
     public const string ParticipationResponse = "PARTICIPATION_RESPONSE";
+
+    // Department Leader delegates a visit participation to a Department Staff member (spec BUG-02).
+    // Distinct from ParticipationResponse because the valid starting participant status is the
+    // opposite: this context is only ever minted once the row is already ASSIGNED, and must accept
+    // exactly that status, while a direct invitation only ever starts at INVITED. Keeping them as two
+    // contexts is what lets the renderer show "nhận nhiệm vụ" instead of "lời mời" wording, and lets
+    // the token-validity ladder reject an ASSIGNED row for one context and accept it for the other.
+    public const string ParticipationAssignmentResponse = "PARTICIPATION_ASSIGNMENT_RESPONSE";
+
     public const string LogisticsRequestResponse = "LOGISTICS_REQUEST_RESPONSE";
     public const string LogisticsAssigneeResponse = "LOGISTICS_ASSIGNEE_RESPONSE";
     public const string LogisticsNegotiation = "LOGISTICS_NEGOTIATION";
@@ -19,8 +28,9 @@ public static class EmailActionContexts
 
     public static readonly string[] All =
     {
-        ParticipationResponse, LogisticsRequestResponse, LogisticsAssigneeResponse, LogisticsNegotiation,
-        LogisticsProposalResponse, LogisticsHandoverSignature,
+        ParticipationResponse, ParticipationAssignmentResponse, LogisticsRequestResponse,
+        LogisticsAssigneeResponse, LogisticsNegotiation, LogisticsProposalResponse,
+        LogisticsHandoverSignature,
     };
 }
 

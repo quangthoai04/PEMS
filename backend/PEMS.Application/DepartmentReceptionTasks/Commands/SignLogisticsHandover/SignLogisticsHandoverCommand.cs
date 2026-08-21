@@ -34,12 +34,17 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUserService;
     private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+    private readonly IUserMutationLockService _lockService;
 
-    public SignLogisticsHandoverCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService, PEMS.Application.Notifications.Common.INotificationService notificationService)
+    public SignLogisticsHandoverCommandHandler(
+        IApplicationDbContext context, ICurrentUserService currentUserService,
+        PEMS.Application.Notifications.Common.INotificationService notificationService,
+        IUserMutationLockService lockService)
     {
         _context = context;
         _currentUserService = currentUserService;
         _notificationService = notificationService;
+        _lockService = lockService;
     }
 
     public async Task<SignLogisticsHandoverResponse> Handle(SignLogisticsHandoverCommand request, CancellationToken cancellationToken)
@@ -52,6 +57,24 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
             throw new Exception("Loại biên bản không hợp lệ.");
         if (!HandoverSignerSides.All.Contains(signerSide))
             throw new Exception("Bên ký không hợp lệ.");
+
+        // Structural FKs, safe to peek unlocked (see VisitInvitationResponse.ApplyCoreAsync).
+        var visitInstanceId = await _context.VisitLogisticsItems
+            .Where(x => x.LogisticsItemId == request.LogisticsItemId)
+            .Select(x => (ulong?)x.VisitInstanceId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new Exception("Không tìm thấy đơn yêu cầu.");
+        var visitRequestId = await _context.VisitRequestCampuses
+            .Where(c => c.VisitInstanceId == visitInstanceId)
+            .Select(c => (ulong?)c.VisitRequestId)
+            .FirstOrDefaultAsync(cancellationToken) ?? throw new Exception("Không tìm thấy chuyến tiếp khách.");
+
+        // Handover signing both reads and can transition item.Status (IN_PROGRESS/DONE), so it joins
+        // the same lock hierarchy as every other VisitLogisticsItem writer (spec §13/§16).
+        await using var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken);
+        await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { visitInstanceId }, cancellationToken);
+        await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken)
@@ -140,6 +163,7 @@ public class SignLogisticsHandoverCommandHandler : IRequestHandler<SignLogistics
         item.UpdatedAt = now;
 
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         if (item.VisitInstance?.CurrentHostUserId != null)
         {

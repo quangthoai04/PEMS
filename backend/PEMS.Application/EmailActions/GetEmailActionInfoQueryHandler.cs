@@ -66,7 +66,16 @@ public sealed class GetEmailActionInfoQueryHandler
         if (token.ActionContext == EmailActionContexts.ParticipationResponse
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
         {
-            return await HandleParticipantAsync(token, result, cancellationToken);
+            // A direct invitation only ever starts respondable at INVITED.
+            return await HandleParticipantAsync(token, result, ParticipantStatuses.Invited, cancellationToken);
+        }
+
+        if (token.ActionContext == EmailActionContexts.ParticipationAssignmentResponse
+            && token.TargetType == EmailActionTargetTypes.VisitParticipant)
+        {
+            // A Department-Staff delegation is minted only once the row is already ASSIGNED, and only
+            // that status is valid for this context — the opposite of the direct-invitation case above.
+            return await HandleParticipantAsync(token, result, ParticipantStatuses.Assigned, cancellationToken);
         }
 
         if (token.ActionContext == EmailActionContexts.LogisticsRequestResponse
@@ -85,7 +94,8 @@ public sealed class GetEmailActionInfoQueryHandler
     }
 
     private async Task<EmailActionInfoResult> HandleParticipantAsync(
-        Domain.Entities.Emails.EmailActionToken token, EmailActionInfoResult result, CancellationToken cancellationToken)
+        Domain.Entities.Emails.EmailActionToken token, EmailActionInfoResult result,
+        string requiredStatus, CancellationToken cancellationToken)
     {
         var participant = await _db.VisitParticipants
             .FirstOrDefaultAsync(p => p.ParticipantId == token.TargetId, cancellationToken);
@@ -126,7 +136,7 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.Invalid; // Parent invalid
         }
-        else if (participant.Status == ParticipantStatuses.Removed || participant.Status == ParticipantStatuses.Assigned)
+        else if (participant.Status == ParticipantStatuses.Removed)
         {
             result.Status = EmailActionViewStatuses.Invalid;
         }
@@ -134,8 +144,11 @@ public sealed class GetEmailActionInfoQueryHandler
         {
             result.Status = EmailActionViewStatuses.AlreadyResponded;
         }
-        else if (participant.Status != ParticipantStatuses.Invited)
+        else if (participant.Status != requiredStatus)
         {
+            // A direct-invite token seeing ASSIGNED (delegated meanwhile), or an assignment token
+            // seeing INVITED (should never happen — assignment tokens are only minted once the row is
+            // already ASSIGNED), is invalid: the token no longer describes what the row actually is.
             result.Status = EmailActionViewStatuses.Invalid;
         }
         else

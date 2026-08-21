@@ -54,6 +54,7 @@ Chỉ hiển thị link "Xem chi tiết trong hệ thống". IC/Host bắt buộ
 - Staff nhận email báo đã được phân công (Trạng thái: `ASSIGNED`).
 - Staff bấm Chấp nhận -> Trạng thái đổi thành `ACCEPTED`.
 - Staff bấm Từ chối -> Render form lấy lý do -> Đổi thành `DECLINED`. (Lưu ý: REJECTED là dành cho Department Leader từ chối IC/Host).
+- `DECLINED` là trạng thái **kết thúc (terminal)**: hệ thống không tự động hay cho phép gán lại nhiệm vụ đã bị Staff từ chối cho một Staff khác — Leader phải tạo lại yêu cầu logistics mới nếu vẫn cần xử lý. Không có nhánh "phân công người khác" từ `DECLINED`.
 - Gửi đề xuất thay đổi yêu cầu thông qua giao diện hệ thống. Không được gửi đề xuất hay gán người khác qua email.
 
 ## 7. IC/Host proposal response flow
@@ -65,12 +66,27 @@ Khi có đề xuất thay đổi từ Department Leader/Staff:
 ## 8. Status matrix
 
 ### 8.1. Participant invitation matrix
-| Current DB Status | Token Action   | Result Code       | Ghi chú                                   |
-|-------------------|----------------|-------------------|-------------------------------------------|
-| INVITED           | ACCEPT/DECLINE | SUCCESS           | Thao tác hợp lệ                           |
-| ACCEPTED/DECLINED | ACCEPT/DECLINE | ALREADY_RESPONDED | Đã phản hồi trước đó                      |
-| REMOVED           | ACCEPT/DECLINE | INVALID           | Lời mời bị thu hồi                        |
-| ASSIGNED          | ACCEPT/DECLINE | INVALID           | Lời mời đã được phân công cho người khác  |
+Có 2 loại "lời mời tham gia" khác hẳn nhau, mint token dưới 2 action context riêng — token của loại này
+KHÔNG hợp lệ với dòng đang ở trạng thái của loại kia:
+
+- **Lời mời trực tiếp** (Host/Leader mời thẳng một người) — context `PARTICIPATION_RESPONSE`, chỉ hợp lệ
+  khi participant đang `INVITED`.
+- **Phân công qua Department** (Leader gán một Staff xử lý thay) — context
+  `PARTICIPATION_ASSIGNMENT_RESPONSE`, chỉ hợp lệ khi participant đang `ASSIGNED`.
+
+| Current DB Status | Token context                       | Token Action   | Result Code       | Ghi chú                                                  |
+|--------------------|-------------------------------------|----------------|-------------------|-----------------------------------------------------------|
+| INVITED            | PARTICIPATION_RESPONSE              | ACCEPT/DECLINE | SUCCESS           | Thao tác hợp lệ (lời mời trực tiếp)                       |
+| ASSIGNED           | PARTICIPATION_ASSIGNMENT_RESPONSE   | ACCEPT/DECLINE | SUCCESS           | Thao tác hợp lệ (Staff xác nhận/từ chối nhiệm vụ được phân công) |
+| INVITED            | PARTICIPATION_ASSIGNMENT_RESPONSE   | ACCEPT/DECLINE | INVALID           | Token phân công dùng cho dòng còn ở lời mời trực tiếp — không đúng ngữ cảnh |
+| ASSIGNED           | PARTICIPATION_RESPONSE              | ACCEPT/DECLINE | INVALID           | Token lời mời trực tiếp dùng cho dòng đã được phân công — không đúng ngữ cảnh |
+| ACCEPTED/DECLINED  | (cả 2 context)                      | ACCEPT/DECLINE | ALREADY_RESPONDED | Đã phản hồi trước đó                                       |
+| REMOVED            | (cả 2 context)                      | ACCEPT/DECLINE | INVALID           | Lời mời/nhiệm vụ đã bị thu hồi                             |
+
+Quy tắc gán lại (`AssignDepartmentStaffCommandHandler`, xem BUG-02/BUG-03): một dòng đang `ASSIGNED` chỉ
+được ghi đè bởi đúng Leader đã gán (idempotent, không mint token mới); Leader khác, hoặc dòng đã
+`ACCEPTED`/`DECLINED`/`REMOVED`, đều bị từ chối (`ConflictException`) — không có khái niệm "gán lại" ngầm
+định cho các trạng thái này.
 
 ### 8.2. Logistics request response matrix (Dành cho Leader)
 | Current DB Status                   | Token Action   | Result Code       | Ghi chú                                 |
@@ -97,14 +113,15 @@ Nếu `VisitRequestCampus.Status` ở trạng thái CANCELLED hoặc CLOSED:
 
 ## 9. Email action contexts
 Các Action Context đang được hệ thống PEMS mint token và sử dụng thực tế:
-- `PARTICIPATION_RESPONSE`: Gửi lời mời tham gia vào visit.
+- `PARTICIPATION_RESPONSE`: Gửi lời mời tham gia trực tiếp vào visit (Host/Leader mời thẳng một người).
+- `PARTICIPATION_ASSIGNMENT_RESPONSE`: Gửi phân công tham gia qua Department (Leader gán một Staff xử lý thay) — token riêng, không lẫn với lời mời trực tiếp (xem Mục 8.1).
 - `LOGISTICS_REQUEST_RESPONSE`: Gửi yêu cầu hậu cần cho Department Leader.
 - `LOGISTICS_ASSIGNEE_RESPONSE`: Gửi phân công công việc hậu cần cho Department Staff.
 
-Các Action Context **bị vô hiệu hóa / chưa sử dụng public token**:
+Các Action Context **bị vô hiệu hóa / không còn mint public token** (Portal-only):
+- `LOGISTICS_PROPOSAL_RESPONSE`: đã ngừng mint token public (trước đây có mint) — quyết định Chấp nhận/Từ chối đề xuất bắt buộc thực hiện trong hệ thống sau khi đăng nhập, không còn nút Approve/Reject qua email cho IC/Host (xem Mục 4.3/7). Token cũ (mint trước khi đổi luồng) khi được click chỉ trả `INVALID` kèm hướng dẫn đăng nhập, không bao giờ mutate dữ liệu.
 - `LOGISTICS_NEGOTIATION`
-- `LOGISTICS_PROPOSAL_RESPONSE`
-- `LOGISTICS_HANDOVER_SIGNATURE`
+- `LOGISTICS_HANDOVER_SIGNATURE`: Chưa triển khai mint token chữ ký bàn giao qua email.
 
 ## 10. Token guard rules
 Trong `ExecuteEmailActionCommandHandler` và `GetEmailActionInfoQueryHandler`:
@@ -202,7 +219,12 @@ WHERE t.result_status = 'PENDING' AND vrc.status IN ('CANCELLED', 'CLOSED');
 - [x] Đổi assignee -> Staff cũ bấm email cũ -> INVALID.
 - [x] Cancel item -> mọi token cũ -> INVALID.
 - [x] Parent CANCELLED/CLOSED -> mọi token logistics cũ -> INVALID.
+- [x] Department-Staff phân công (ASSIGNED) trả lời được qua Email (`PARTICIPATION_ASSIGNMENT_RESPONSE`) — trước đây bị từ chối nhầm (BUG-02).
+- [x] Portal và Email race trên cùng 1 dòng participant/logistics — chỉ đúng 1 bên thắng, không có mutation từ phía thua (concurrency test thật trên MySQL 2 kết nối).
+- [x] Response race với Campus Cancel — response thua lock không commit trên snapshot cũ (parent-lifecycle concurrency test).
+- [x] Đề xuất thay đổi (proposal) không còn mint public token — email chỉ có link "Xem chi tiết trong hệ thống" (BUG-07).
+- [x] CSP Production: route `/api/public/email-actions/*` cho phép form/style inline; mọi route khác giữ `form-action 'none'`.
 
 ## 16. Known limitations / pending confirmations
-- `LOGISTICS_PROPOSAL_RESPONSE`: Hiện tại token public của tính năng này chưa được phát hành (mint) vì lý do bảo mật. Mọi tác vụ Proposal đều yêu cầu user đăng nhập hệ thống để xử lý. Nếu cần bật, phải implement method Handler cho Proposal Token.
+- `LOGISTICS_PROPOSAL_RESPONSE`: **Quyết định thiết kế cố định**, không phải tính năng còn thiếu — proposal Chấp nhận/Từ chối chỉ được thực hiện trong hệ thống sau khi đăng nhập; không mint public token nữa (xem Mục 9). Không có kế hoạch "bật lại" mint token cho context này.
 - `LOGISTICS_HANDOVER_SIGNATURE`: Chưa triển khai mint token chữ ký bàn giao qua email.

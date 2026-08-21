@@ -118,4 +118,29 @@ public interface IApplicationDbContext
     /// consume OTP → provision visitor → insert request + campuses + guests) commits atomically.
     /// </summary>
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Begins a transaction for a lock-protected flow — one that calls
+    /// <see cref="IUserMutationLockService"/> to lock the tier 2-5 hierarchy before deciding on and
+    /// writing a VisitParticipant/VisitLogisticsItem/cancellation outcome — at READ COMMITTED isolation
+    /// instead of the provider's REPEATABLE READ default.
+    ///
+    /// <para>
+    /// A <c>SELECT ... FOR UPDATE</c> that blocks and then wins the row does not, by itself, make a
+    /// LATER plain read inside the same transaction see the fresh data on MySQL/InnoDB: REPEATABLE READ
+    /// pins the transaction's consistent-read snapshot at its first query — including a locking read
+    /// that had to block, which pins it at the moment it finally executes, i.e. fine on its own. The
+    /// trap is a transaction whose FIRST query is a DIFFERENT lock that does NOT block (e.g.
+    /// <c>LockUsersAsync</c> on an uncontended row, which typically runs first per the tier-1 hierarchy)
+    /// — that pins the snapshot EARLY, before the tier 2-4 lock even attempts to block, so once it
+    /// finally unblocks, the plain reload used for the actual status decision (e.g.
+    /// <c>VisitInvitationResponse.ApplyCoreAsync</c>'s participant/instance/request reload) still reads
+    /// the PRE-lock snapshot even though the row is provably, currently locked and fresh. READ COMMITTED
+    /// gives every plain read in the transaction its own fresh snapshot, closing that gap regardless of
+    /// query order. Falls back to the provider's default transaction on a non-relational context (EF
+    /// InMemory has no isolation levels and the unit suite is single-threaded, so there is nothing to
+    /// close there).
+    /// </para>
+    /// </summary>
+    Task<IDbContextTransaction> BeginSerializedTransactionAsync(CancellationToken cancellationToken = default);
 }

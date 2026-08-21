@@ -153,6 +153,10 @@ public sealed class PartnersTestDbContext : DbContext, IApplicationDbContext
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 }
 
 /// <summary>Minimal-object builders for partner/campus fixtures used by the public partner tests.</summary>

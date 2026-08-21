@@ -219,7 +219,7 @@ public sealed class OperationalContactLifecycleLockTests
     private static AcceptOperationalContactConfirmationCommandHandler Accept(
         ApplicationDbContext db, ulong actor, string actorEmail, FakeEmail email)
         => new(db, new FakeUser(actor, actorEmail), new FixedClock(), Tokens(), Invitations(db, email),
-            new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db),
+            new VisitRequestAggregateStatusService(db), new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)),
             new NoopNotifications(),
             NullLogger<AcceptOperationalContactConfirmationCommandHandler>.Instance, WriteOn);
 
@@ -274,7 +274,7 @@ public sealed class OperationalContactLifecycleLockTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var form = new VisitRequestFormDataV2(
             "LL" + Guid.NewGuid().ToString("N"),

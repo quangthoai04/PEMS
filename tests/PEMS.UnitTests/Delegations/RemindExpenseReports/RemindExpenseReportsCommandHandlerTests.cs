@@ -107,7 +107,9 @@ public class RemindExpenseReportsCommandHandlerTests
 
         var block = dispatcher.Single(SystemEmailTemplates.LogisticsExpenseReportReminder)
             .TrustedBlocks![EmailTrustedBlocks.ActionBlock];
-        Assert.Contains("https://pems.test/logistics/901", block);
+        // Item(901, AssigneeId) has an assignee, so recipients is the one Staff assignee — the
+        // Staff-shaped detail link, not the Leader one.
+        Assert.Contains("https://pems.test/dashboard?taskId=901&amp;itemType=REQUEST", block);
         Assert.DoesNotContain("email-actions", block);
     }
 

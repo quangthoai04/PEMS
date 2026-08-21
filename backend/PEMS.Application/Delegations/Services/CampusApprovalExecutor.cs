@@ -128,6 +128,16 @@ public sealed class CampusApprovalExecutor : ICampusApprovalExecutor
         // which is exactly the responsibility a concurrent role change must not step over. Whichever
         // transaction locks first wins, and the loser re-reads the committed state.
         await _lockService.LockUsersAsync(new[] { hostUserId }, cancellationToken);
+        // Tiers 2-3 of the shared lock hierarchy (see IUserMutationLockService), so this cannot commit
+        // an approval that a concurrent cancellation is in the middle of invalidating. Unlike the
+        // participant-response path, this does not re-read/re-check instance/visit after the lock: the
+        // host participant row this creates is IC_HOST, which VisitInvitationResponse.ApplyCoreAsync
+        // categorically excludes from ever being a pending email/portal response target — so there is
+        // no "stale response committed against this row" scenario for the lock+reload pattern to close
+        // here, only the ordinary commit-ordering the lock alone already provides against a concurrent
+        // cancellation of the SAME instance.
+        await _lockService.LockVisitRequestsAsync(new[] { visit.VisitRequestId }, cancellationToken);
+        await _lockService.LockVisitRequestCampusesAsync(new[] { instance.VisitInstanceId }, cancellationToken);
 
         // Host eligibility — the SHARED rule, so the transfer path that runs after approval cannot admit
         // somebody this path would refuse.

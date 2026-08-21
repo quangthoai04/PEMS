@@ -61,7 +61,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
 
             // Same lock protocol as every other participant write (see IUserMutationLockService), so an
             // accept cannot interleave with a role change on the same account.
-            await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+            await using var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken);
             await _lockService.LockUsersAsync(new[] { userId }, cancellationToken);
 
             // Screen-specific pre-check: this calendar knows what else the caller has already agreed to,
@@ -85,8 +85,15 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptInvitation
                 }
             }
 
-            var p = await VisitInvitationResponse.ApplyAsync(
-                _context, userId, request.ParticipantId, accept: true, declineReason: null, now, cancellationToken);
+            var p = await VisitInvitationResponse.ApplyCoreAsync(
+                _context, _lockService, userId, request.ParticipantId, requiredStatus: null,
+                accept: true, declineReason: null, now, cancellationToken);
+
+            // A Portal response retires any pending emailed link for this row (the token side effect is
+            // channel-specific — see VisitInvitationResponse's class remarks).
+            await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                _context, PEMS.Domain.Constants.EmailActionTargetTypes.VisitParticipant, p.ParticipantId,
+                "Lời mời này đã được phản hồi.", now, cancellationToken);
 
             await _context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

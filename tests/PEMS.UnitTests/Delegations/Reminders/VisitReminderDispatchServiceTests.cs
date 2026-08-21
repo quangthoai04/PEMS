@@ -47,8 +47,8 @@ public class VisitReminderDispatchServiceTests
         db.SaveChanges();
 
         var mocks = new DelegationsHandlerMocks();
-        mocks.Tokens.Setup(t => t.BuildVisitInstanceDetailUrl(It.IsAny<ulong>(), It.IsAny<ulong>()))
-            .Returns((ulong rq, ulong inst) => $"https://pems.test/dashboard/visit/process/{rq}/{inst}");
+        mocks.Tokens.Setup(t => t.BuildHostVisitProcessUrl(It.IsAny<ulong>()))
+            .Returns((ulong inst) => $"https://pems.test/dashboard/visit/process/{inst}");
 
         var dispatcher = mocks.DispatcherFor(db);
         var service = new VisitReminderDispatchService(

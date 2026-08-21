@@ -51,7 +51,7 @@ public class SignVisitLogisticsHandoverCommandHandlerTests
 
         var user = new FakeDelegationsCurrentUser(); // defaults to the seeded instance host
         var mocks = new DelegationsHandlerMocks();
-        var handler = new SignVisitLogisticsHandoverCommandHandler(db, user, mocks.Clock, mocks.Notifications.Object);
+        var handler = new SignVisitLogisticsHandoverCommandHandler(db, user, mocks.Clock, mocks.Notifications.Object, mocks.Locks);
         return (db, handler, user, mocks);
     }
 

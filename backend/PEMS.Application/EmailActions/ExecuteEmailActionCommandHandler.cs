@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
@@ -20,15 +21,20 @@ public sealed class ExecuteEmailActionCommandHandler
     private readonly IDateTimeService _clock;
     private readonly IEmailActionTokenService _tokens;
     private readonly IVisitFormReadService _formReadService;
+    private readonly IUserMutationLockService _locks;
+    private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
 
     public ExecuteEmailActionCommandHandler(
         IApplicationDbContext db, IDateTimeService clock, IEmailActionTokenService tokens,
-        IVisitFormReadService formReadService)
+        IVisitFormReadService formReadService, IUserMutationLockService locks,
+        PEMS.Application.Notifications.Common.INotificationService notificationService)
     {
         _db = db;
         _clock = clock;
         _tokens = tokens;
         _formReadService = formReadService;
+        _locks = locks;
+        _notificationService = notificationService;
     }
 
     // The action is bound to ONE campus instance (token → participant/logistics item → instance), so it shows
@@ -80,7 +86,11 @@ public sealed class ExecuteEmailActionCommandHandler
 
         if (token.ActionContext == EmailActionContexts.ParticipationResponse
             && token.TargetType == EmailActionTargetTypes.VisitParticipant)
-            return await HandleParticipantAsync(request, token, result, cancellationToken);
+            return await HandleParticipantAsync(request, token, result, ParticipantStatuses.Invited, cancellationToken);
+
+        if (token.ActionContext == EmailActionContexts.ParticipationAssignmentResponse
+            && token.TargetType == EmailActionTargetTypes.VisitParticipant)
+            return await HandleParticipantAsync(request, token, result, ParticipantStatuses.Assigned, cancellationToken);
 
         if (token.ActionContext == EmailActionContexts.LogisticsRequestResponse
             && token.TargetType == EmailActionTargetTypes.LogisticsItem)
@@ -99,12 +109,21 @@ public sealed class ExecuteEmailActionCommandHandler
         return result;
     }
 
-    // ── Participation accept/decline (UC-27 email path) ──
+    // ── Participation accept/decline (UC-27 email path + Department-Staff assignment email path) ──
+    // requiredStatus is the ONE participant status this specific token's context is valid from —
+    // Invited for a direct invitation, Assigned for a delegated Staff assignment (see
+    // EmailActionContexts.ParticipationAssignmentResponse). The checks below using it are a fast,
+    // pre-transaction UX path only (so an obviously-dead token doesn't need a transaction at all); the
+    // AUTHORITATIVE check is inside VisitInvitationResponse.ApplyCoreAsync, evaluated after the row is
+    // locked — a race between this pre-check and the lock is caught there, not trusted here.
     private async Task<EmailActionExecuteResult> HandleParticipantAsync(
         ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
-        EmailActionExecuteResult result, CancellationToken cancellationToken)
+        EmailActionExecuteResult result, string requiredStatus, CancellationToken cancellationToken)
     {
-        var participant = await _db.VisitParticipants
+        // AsNoTracking: this is a pre-transaction fast-path/display read only. Loading it tracked would
+        // make EF's identity map hand ApplyCoreAsync's later, lock-protected re-query this SAME stale
+        // instance instead of re-hitting the database — silently defeating the whole point of locking.
+        var participant = await _db.VisitParticipants.AsNoTracking()
             .FirstOrDefaultAsync(p => p.ParticipantId == token.TargetId, cancellationToken);
         if (participant is null)
         {
@@ -113,10 +132,10 @@ public sealed class ExecuteEmailActionCommandHandler
             return result;
         }
 
-        var instance = await _db.VisitRequestCampuses
+        var instance = await _db.VisitRequestCampuses.AsNoTracking()
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == participant.VisitInstanceId, cancellationToken);
-        
+
         result.DelegationName = await ResolveDelegationNameAsync(instance, cancellationToken);
         result.RecipientName = await _db.Users
             .Where(u => u.UserId == participant.UserId).Select(u => u.FullName)
@@ -147,14 +166,12 @@ public sealed class ExecuteEmailActionCommandHandler
             return await MarkInvalidAsync(token, request, now, result,
                 "Chuyến thăm đã bắt đầu hoặc kết thúc, không thể phản hồi lời mời.", cancellationToken);
 
-        // Strict target status validation
+        // Fast-path target status validation (see method remarks — re-verified under lock below).
         if (participant.Status == ParticipantStatuses.Removed)
             return await MarkInvalidAsync(token, request, now, result, "Lời mời này đã bị thu hồi hoặc không còn hiệu lực.", cancellationToken);
-        if (participant.Status == ParticipantStatuses.Assigned)
-            return await MarkInvalidAsync(token, request, now, result, "Thành phần tham gia đã được phân công trực tiếp, không thể phản hồi qua email.", cancellationToken);
         if (participant.Status == ParticipantStatuses.Accepted || participant.Status == ParticipantStatuses.Declined)
             return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
-        if (participant.Status != ParticipantStatuses.Invited)
+        if (participant.Status != requiredStatus)
             return await MarkInvalidAsync(token, request, now, result, "Trạng thái lời mời không hợp lệ.", cancellationToken);
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
@@ -174,13 +191,55 @@ public sealed class ExecuteEmailActionCommandHandler
             declineNote = request.DeclineReason!.Trim();
         }
 
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
 
-        participant.Status = isAccept ? ParticipantStatuses.Accepted : ParticipantStatuses.Declined;
-        if (!isAccept)
-            participant.Note = declineNote; // store the decline reason
-        participant.RespondedAt = now;
-        participant.UpdatedAt = now;
+        PEMS.Domain.Entities.Delegations.VisitParticipant respondedParticipant;
+        try
+        {
+            // Locks the tier 2-4 hierarchy (VisitRequest → VisitRequestCampus → VisitParticipant),
+            // re-validates ownership/role/lifecycle/status on that just-locked read, mutates and writes
+            // the ONE audit row — the exact same transition Portal uses. The token itself is untouched
+            // by this call; token-side effects are this method's own responsibility (below), not
+            // ApplyCoreAsync's, because Email's token bookkeeping differs from Portal's (see
+            // VisitInvitationResponse's class remarks).
+            respondedParticipant = await PEMS.Application.Delegations.Common.VisitInvitationResponse.ApplyCoreAsync(
+                _db, _locks, actorUserId: participant.UserId, participant.ParticipantId, requiredStatus,
+                isAccept, declineNote, now, cancellationToken);
+        }
+        catch (ConflictException)
+        {
+            // The locked, fresh read disagreed with the fast pre-check above — almost always because a
+            // concurrent response (Portal or another Email click) landed in between. Report it as
+            // already-responded rather than letting an unhandled exception surface.
+            await transaction.RollbackAsync(cancellationToken);
+            return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+        }
+        catch (Exception ex) when (ex is ForbiddenException or NotFoundException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return await MarkInvalidAsync(token, request, now, result, "Liên kết không còn hợp lệ.", cancellationToken);
+        }
+
+        // Tier 5 — re-lock and re-read the token group INSIDE the transaction, right before consuming
+        // it. Never trust the token object fetched before the transaction opened: a concurrent Portal
+        // response's invalidation, or a second Email click on a sibling token, could have committed
+        // against these exact rows between that earlier read and now.
+        await _locks.LockEmailActionTokenGroupAsync(token.ActionGroupKey, cancellationToken);
+        // `token` is already tracked (loaded at the top of Handle, before any lock), so re-querying by
+        // its id through the normal DbSet would just hand back that SAME stale tracked instance via
+        // EF's identity map, not fresh data. IApplicationDbContext deliberately doesn't expose
+        // DbContext.Entry/ReloadAsync, so an AsNoTracking projection is the independent fresh read —
+        // once that confirms the row is still genuinely pending, mutating the tracked `token` below is
+        // safe (nothing about it was read from a stale snapshot; only written to one now known-current).
+        var freshTokenState = await _db.EmailActionTokens.AsNoTracking()
+            .Where(t => t.EmailActionTokenId == token.EmailActionTokenId)
+            .Select(t => new { t.ResultStatus, t.UsedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (freshTokenState is null || freshTokenState.ResultStatus != EmailActionResultStatuses.Pending || freshTokenState.UsedAt != null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AlreadyResponded(result);
+        }
 
         ConsumeToken(token, now, request, isAccept ? "Đã chấp nhận lời mời." : "Đã từ chối lời mời.");
         await BurnSiblingsAsync(token, now, cancellationToken);
@@ -188,30 +247,27 @@ public sealed class ExecuteEmailActionCommandHandler
         if (instance?.CurrentHostUserId is { } hostUserId)
         {
             var verb = isAccept ? "đã chấp nhận" : "đã từ chối";
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = hostUserId,
-                NotificationType = "VISIT_PARTICIPANT_RESPONSE",
-                Title = "Phản hồi lời mời tham gia",
-                Message = $"{result.RecipientName ?? "Người được mời"} {verb} lời mời tham gia đoàn {result.DelegationName ?? string.Empty}.".Trim(),
-                RelatedType = "VisitParticipant",
-                RelatedId = participant.ParticipantId,
-                IsRead = false,
-                CreatedAt = now,
-            });
+            await _notificationService.CreateAsync(
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: hostUserId,
+                    Title: "Phản hồi lời mời tham gia",
+                    Message: $"{result.RecipientName ?? "Người được mời"} {verb} lời mời tham gia đoàn {result.DelegationName ?? string.Empty}.".Trim(),
+                    NotificationType: PEMS.Application.Notifications.Common.NotificationTypes.ParticipationResponded,
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.VisitParticipant,
+                    RelatedId: respondedParticipant.ParticipantId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Invitation,
+                    VisitInstanceId: respondedParticipant.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenVisitDetail,
+                    ActionUrl: $"/dashboard/visit/process/{respondedParticipant.VisitInstanceId}",
+                    MetadataJson: isAccept
+                        ? PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationAccepted,
+                            new { delegationName = result.DelegationName, participantName = result.RecipientName })
+                        : PEMS.Application.Notifications.Common.NotificationEventKeys.BuildMetadata(
+                            PEMS.Application.Notifications.Common.NotificationEventKeys.ParticipationDeclined,
+                            new { delegationName = result.DelegationName, participantName = result.RecipientName, reason = declineNote })),
+                cancellationToken);
         }
-
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = participant.UserId,
-            CampusId = instance?.CampusId,
-            Action = isAccept ? "PARTICIPANT_RESPONSE_ACCEPT" : "PARTICIPANT_RESPONSE_DECLINE",
-            EntityType = "VisitParticipant",
-            EntityId = participant.ParticipantId,
-            IpAddress = request.Ip,
-            UserAgent = Truncate(request.UserAgent, 500),
-            CreatedAt = now,
-        });
 
         await _db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -228,7 +284,9 @@ public sealed class ExecuteEmailActionCommandHandler
         ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
         EmailActionExecuteResult result, CancellationToken cancellationToken)
     {
-        var item = await _db.VisitLogisticsItems
+        // AsNoTracking — pre-transaction fast-path/display read only (see the lock hierarchy + fresh
+        // reload inside the transaction below).
+        var item = await _db.VisitLogisticsItems.AsNoTracking()
             .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
         if (item is null)
         {
@@ -237,7 +295,7 @@ public sealed class ExecuteEmailActionCommandHandler
             return result;
         }
 
-        var instance = await _db.VisitRequestCampuses
+        var instance = await _db.VisitRequestCampuses.AsNoTracking()
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
 
@@ -288,7 +346,24 @@ public sealed class ExecuteEmailActionCommandHandler
             declineNote = request.DeclineReason!.Trim();
         }
 
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
+
+        // Lock hierarchy (VisitRequest → VisitRequestCampus → VisitLogisticsItem), then re-read the
+        // item tracked and fresh — the earlier read was AsNoTracking, and a concurrent Portal response
+        // or cancellation could have moved its status in between.
+        await _locks.LockVisitRequestsAsync(new[] { instance!.VisitRequestId }, cancellationToken);
+        await _locks.LockVisitRequestCampusesAsync(new[] { instance.VisitInstanceId }, cancellationToken);
+        await _locks.LockVisitLogisticsItemsAsync(new[] { item.LogisticsItemId }, cancellationToken);
+        item = await _db.VisitLogisticsItems
+            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken)
+            ?? throw new NotFoundException("VisitLogisticsItem", token.TargetId);
+        if (item.Status != LogisticsItemStatus.Requested)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return item.Status is LogisticsItemStatus.Assigned or LogisticsItemStatus.Accepted or LogisticsItemStatus.Done
+                ? await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken)
+                : await MarkInvalidAsync(token, request, now, result, "Yêu cầu hậu cần này không còn ở trạng thái chờ phòng ban phản hồi.", cancellationToken);
+        }
 
         if (isAccept)
         {
@@ -302,23 +377,40 @@ public sealed class ExecuteEmailActionCommandHandler
         item.UpdatedAt = now;
         item.UpdatedBy = token.RecipientUserId;
 
+        // Tier 5 — re-lock and independently re-verify the token group is still pending, right before
+        // consuming it (see HandleParticipantAsync's remarks for why this can't just reload `token`
+        // via EF's identity map).
+        await _locks.LockEmailActionTokenGroupAsync(token.ActionGroupKey, cancellationToken);
+        var freshTokenState = await _db.EmailActionTokens.AsNoTracking()
+            .Where(t => t.EmailActionTokenId == token.EmailActionTokenId)
+            .Select(t => new { t.ResultStatus, t.UsedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (freshTokenState is null || freshTokenState.ResultStatus != EmailActionResultStatuses.Pending || freshTokenState.UsedAt != null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AlreadyResponded(result);
+        }
+
         ConsumeToken(token, now, request, isAccept ? "Phòng ban đã tiếp nhận yêu cầu." : "Phòng ban đã từ chối yêu cầu.");
         await BurnSiblingsAsync(token, now, cancellationToken);
 
         if (item.RequestedBy.HasValue)
         {
             var verb = isAccept ? "đã tiếp nhận" : "đã từ chối";
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = item.RequestedBy.Value,
-                NotificationType = isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_REJECTED",
-                Title = isAccept ? "Yêu cầu hậu cần được tiếp nhận" : "Yêu cầu hậu cần bị từ chối",
-                Message = $"{result.RecipientName ?? "Phòng ban"} {verb} yêu cầu \"{item.Title}\".",
-                RelatedType = "LOGISTICS_ITEM",
-                RelatedId = item.LogisticsItemId,
-                IsRead = false,
-                CreatedAt = now,
-            });
+            await _notificationService.CreateAsync(
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: item.RequestedBy.Value,
+                    Title: isAccept ? "Yêu cầu hậu cần được tiếp nhận" : "Yêu cầu hậu cần bị từ chối",
+                    Message: $"{result.RecipientName ?? "Phòng ban"} {verb} yêu cầu \"{item.Title}\".",
+                    NotificationType: isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_REJECTED",
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: item.LogisticsItemId,
+                    ActorUserId: token.RecipientUserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    VisitInstanceId: item.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: $"/dashboard/visit/process/{item.VisitInstanceId}"),
+                cancellationToken);
         }
 
         _db.AuditLogs.Add(new AuditLog
@@ -345,7 +437,9 @@ public sealed class ExecuteEmailActionCommandHandler
         ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
         EmailActionExecuteResult result, CancellationToken cancellationToken)
     {
-        var item = await _db.VisitLogisticsItems
+        // AsNoTracking — pre-transaction fast-path/display read only, same reasoning as
+        // HandleLogisticsRequestAsync.
+        var item = await _db.VisitLogisticsItems.AsNoTracking()
             .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
         if (item is null)
         {
@@ -354,7 +448,7 @@ public sealed class ExecuteEmailActionCommandHandler
             return result;
         }
 
-        var instance = await _db.VisitRequestCampuses
+        var instance = await _db.VisitRequestCampuses.AsNoTracking()
             .Include(c => c.VisitRequest)
             .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
 
@@ -380,8 +474,11 @@ public sealed class ExecuteEmailActionCommandHandler
         if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
             return await MarkInvalidAsync(token, request, now, result, "Chuyến tiếp khách này đã bị hủy hoặc đã đóng, liên kết không còn hiệu lực.", cancellationToken);
 
-        // Strict validation based on action context
-        if (item.Status == LogisticsItemStatus.Accepted)
+        // Strict validation based on action context. Declined is a terminal STAFF decision on this
+        // same item (spec §1.2/§6) — like Accepted, a stale link arriving afterward is "you already
+        // responded", not "invalid", matching this method's own post-lock re-check below and
+        // HandleParticipantAsync's fast path.
+        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Declined)
             return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
         if (item.Status == LogisticsItemStatus.Cancelled || item.Status == LogisticsItemStatus.Rejected || item.Status == LogisticsItemStatus.Done)
             return await MarkInvalidAsync(token, request, now, result, "Nhiệm vụ hậu cần đã bị hủy, từ chối hoặc đã hoàn thành.", cancellationToken);
@@ -398,7 +495,26 @@ public sealed class ExecuteEmailActionCommandHandler
 
         var isAccept = token.IntendedAction == EmailIntendedActions.Accept;
 
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _db.BeginSerializedTransactionAsync(cancellationToken);
+
+        // Lock hierarchy, then re-read the item tracked and fresh — same reasoning as
+        // HandleLogisticsRequestAsync.
+        await _locks.LockVisitRequestsAsync(new[] { instance!.VisitRequestId }, cancellationToken);
+        await _locks.LockVisitRequestCampusesAsync(new[] { instance.VisitInstanceId }, cancellationToken);
+        await _locks.LockVisitLogisticsItemsAsync(new[] { item.LogisticsItemId }, cancellationToken);
+        item = await _db.VisitLogisticsItems
+            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken)
+            ?? throw new NotFoundException("VisitLogisticsItem", token.TargetId);
+        if (item.Status == LogisticsItemStatus.Accepted || item.Status == LogisticsItemStatus.Declined)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
+        }
+        if (item.Status != LogisticsItemStatus.Assigned || item.AssignedToUserId != token.RecipientUserId)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return await MarkInvalidAsync(token, request, now, result, "Trạng thái nhiệm vụ hậu cần không hợp lệ để phản hồi.", cancellationToken);
+        }
 
         if (isAccept)
         {
@@ -426,6 +542,18 @@ public sealed class ExecuteEmailActionCommandHandler
             attempt.UpdatedAt = now;
         }
 
+        // Tier 5 — same independent re-verify as HandleLogisticsRequestAsync/HandleParticipantAsync.
+        await _locks.LockEmailActionTokenGroupAsync(token.ActionGroupKey, cancellationToken);
+        var freshTokenState = await _db.EmailActionTokens.AsNoTracking()
+            .Where(t => t.EmailActionTokenId == token.EmailActionTokenId)
+            .Select(t => new { t.ResultStatus, t.UsedAt })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (freshTokenState is null || freshTokenState.ResultStatus != EmailActionResultStatuses.Pending || freshTokenState.UsedAt != null)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return AlreadyResponded(result);
+        }
+
         ConsumeToken(token, now, request, isAccept ? "Đã xác nhận yêu cầu/nhiệm vụ." : "Đã từ chối yêu cầu/nhiệm vụ.");
         await BurnSiblingsAsync(token, now, cancellationToken);
 
@@ -433,17 +561,20 @@ public sealed class ExecuteEmailActionCommandHandler
         if (notifyUserId.HasValue)
         {
             var verb = isAccept ? "đã nhận/chấp nhận" : "đã từ chối";
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = notifyUserId.Value,
-                NotificationType = isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_DECLINED",
-                Title = isAccept ? "Phản hồi yêu cầu hậu cần (Đồng ý)" : "Phản hồi yêu cầu hậu cần (Từ chối)",
-                Message = $"{result.RecipientName ?? "Phòng ban/Nhân sự"} {verb} yêu cầu \"{item.Title}\".",
-                RelatedType = "LOGISTICS_ITEM",
-                RelatedId = item.LogisticsItemId,
-                IsRead = false,
-                CreatedAt = now,
-            });
+            await _notificationService.CreateAsync(
+                new PEMS.Application.Notifications.Common.CreateNotificationRequest(
+                    RecipientUserId: notifyUserId.Value,
+                    Title: isAccept ? "Phản hồi yêu cầu hậu cần (Đồng ý)" : "Phản hồi yêu cầu hậu cần (Từ chối)",
+                    Message: $"{result.RecipientName ?? "Phòng ban/Nhân sự"} {verb} yêu cầu \"{item.Title}\".",
+                    NotificationType: isAccept ? "VISIT_LOGISTICS_ACCEPTED" : "VISIT_LOGISTICS_DECLINED",
+                    RelatedType: PEMS.Application.Notifications.Common.NotificationRelatedTypes.LogisticsItem,
+                    RelatedId: item.LogisticsItemId,
+                    ActorUserId: token.RecipientUserId,
+                    Category: PEMS.Application.Notifications.Common.NotificationCategories.Logistics,
+                    VisitInstanceId: item.VisitInstanceId,
+                    ActionType: PEMS.Application.Notifications.Common.NotificationActionTypes.OpenLogisticsDetail,
+                    ActionUrl: $"/dashboard/visit/process/{item.VisitInstanceId}"),
+                cancellationToken);
         }
 
         _db.AuditLogs.Add(new AuditLog
@@ -465,117 +596,26 @@ public sealed class ExecuteEmailActionCommandHandler
         return result;
     }
 
-    // ── Host approve/reject of a Department change proposal (LOGISTICS_PROPOSAL_RESPONSE email path) ──
-    // Mirrors ConfirmTheChangeProposalCommandHandler so the email and portal paths behave identically.
+    // ── Legacy proposal tokens only (LOGISTICS_PROPOSAL_RESPONSE email path) ──
+    // Proposal decisions are Portal-only (spec BUG-07): ProposeRequestChangeCommand no longer mints
+    // tokens in this context, so only a token minted before that fix can still reach this branch. It
+    // must never mutate — the whole point of the business rule is that a proposal can only be decided
+    // after the Host logs in, and a legacy public token bypassing that would be exactly the gap the
+    // rule closes. This always resolves to Invalid (via MarkInvalidAsync) or AlreadyResponded, and
+    // points the recipient at the Portal instead.
     private async Task<EmailActionExecuteResult> HandleLogisticsProposalAsync(
         ExecuteEmailActionCommand request, Domain.Entities.Emails.EmailActionToken token,
         EmailActionExecuteResult result, CancellationToken cancellationToken)
     {
-        var item = await _db.VisitLogisticsItems
-            .FirstOrDefaultAsync(x => x.LogisticsItemId == token.TargetId, cancellationToken);
-        if (item is null)
-        {
-            result.Status = EmailActionViewStatuses.Invalid;
-            result.Message = "Không tìm thấy yêu cầu hậu cần tương ứng.";
-            return result;
-        }
-
-        var instance = await _db.VisitRequestCampuses
-            .Include(c => c.VisitRequest)
-            .FirstOrDefaultAsync(c => c.VisitInstanceId == item.VisitInstanceId, cancellationToken);
-
-        result.DelegationName = await ResolveDelegationNameAsync(instance, cancellationToken);
-        result.RecipientName = token.RecipientUserId.HasValue
-            ? await _db.Users.Where(u => u.UserId == token.RecipientUserId.Value).Select(u => u.FullName).FirstOrDefaultAsync(cancellationToken)
-            : null;
-
         var now = _clock.VietnamNow;
 
-        if (token.ResultStatus == EmailActionResultStatuses.Invalid)
-        {
-            result.Status = EmailActionViewStatuses.Invalid;
-            result.Message = token.ResultMessage ?? "Liên kết không còn hiệu lực.";
-            return result;
-        }
-        if (token.ResultStatus == EmailActionResultStatuses.Expired || token.ExpiresAt < now)
-            return await ExpireAsync(token, result, cancellationToken);
         if (token.ResultStatus == EmailActionResultStatuses.AlreadyResponded || token.UsedAt != null || token.ResultStatus == EmailActionResultStatuses.Success)
             return AlreadyResponded(result);
 
-        if (instance == null || instance.Status == VisitInstanceStatus.Cancelled || instance.Status == VisitInstanceStatus.Closed)
-            return await MarkInvalidAsync(token, request, now, result, "Chuyến tiếp khách này đã bị hủy hoặc đã đóng, liên kết không còn hiệu lực.", cancellationToken);
-
-        // The proposal must still be pending a Host decision.
-        if (item.Status != LogisticsItemStatus.ChangeProposed)
-        {
-            if (item.ProposalResponse != null)
-                return await MarkAlreadyRespondedAsync(token, request, now, result, cancellationToken);
-            return await MarkInvalidAsync(token, request, now, result, "Đề xuất thay đổi này không còn ở trạng thái chờ phản hồi.", cancellationToken);
-        }
-
-        var isApprove = token.IntendedAction == EmailIntendedActions.ApproveProposal;
-
-        await using var transaction = await _db.BeginTransactionAsync(cancellationToken);
-
-        item.ProposalResponse = isApprove ? "ACCEPTED" : "REJECTED";
-        item.ProposalRespondedBy = token.RecipientUserId;
-        item.ProposalRespondedAt = now;
-        item.UpdatedBy = token.RecipientUserId;
-        item.UpdatedAt = now;
-
-        if (isApprove)
-        {
-            // Apply the proposed time/description onto the originals (quantity stays the PLANNED figure;
-            // the final quantity is derived from proposed_quantity when accepted — never overwritten).
-            if (item.ProposedUsageStartAt.HasValue) item.UsageStartAt = item.ProposedUsageStartAt.Value;
-            if (item.ProposedUsageEndAt.HasValue) item.UsageEndAt = item.ProposedUsageEndAt.Value;
-            if (!string.IsNullOrWhiteSpace(item.ProposedDescription)) item.Description = item.ProposedDescription;
-            item.Status = LogisticsItemStatus.Accepted;
-        }
-        else
-        {
-            item.Status = LogisticsItemStatus.Rejected;
-            item.DecisionNote = "Host từ chối đề xuất thay đổi (qua email).";
-        }
-
-        ConsumeToken(token, now, request, isApprove ? "Host đã chấp nhận đề xuất thay đổi." : "Host đã từ chối đề xuất thay đổi.");
-        await BurnSiblingsAsync(token, now, cancellationToken);
-
-        // Notify whoever raised the proposal (department side).
-        var notifyUserId = item.ProposedBy ?? item.AssignedToUserId ?? item.AssignedBy;
-        if (notifyUserId.HasValue)
-        {
-            var verb = isApprove ? "đã chấp nhận" : "đã từ chối";
-            _db.Notifications.Add(new Notification
-            {
-                RecipientUserId = notifyUserId.Value,
-                NotificationType = isApprove ? "VISIT_LOGISTICS_PROPOSAL_ACCEPTED" : "VISIT_LOGISTICS_PROPOSAL_REJECTED",
-                Title = isApprove ? "Đề xuất thay đổi được chấp nhận" : "Đề xuất thay đổi bị từ chối",
-                Message = $"{result.RecipientName ?? "Host"} {verb} đề xuất thay đổi cho yêu cầu \"{item.Title}\".",
-                RelatedType = "LOGISTICS_ITEM",
-                RelatedId = item.LogisticsItemId,
-                IsRead = false,
-                CreatedAt = now,
-            });
-        }
-
-        _db.AuditLogs.Add(new AuditLog
-        {
-            ActorUserId = token.RecipientUserId,
-            Action = isApprove ? "LOGISTICS_PROPOSAL_APPROVE" : "LOGISTICS_PROPOSAL_REJECT",
-            EntityType = "VisitLogisticsItem",
-            EntityId = item.LogisticsItemId,
-            IpAddress = request.Ip,
-            UserAgent = Truncate(request.UserAgent, 500),
-            CreatedAt = now,
-        });
-
-        await _db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
-        result.Status = EmailActionViewStatuses.Success;
-        result.Message = isApprove ? "Bạn đã chấp nhận đề xuất thay đổi." : "Bạn đã từ chối đề xuất thay đổi.";
-        return result;
+        return await MarkInvalidAsync(
+            token, request, now, result,
+            "Đề xuất thay đổi hậu cần chỉ có thể được xử lý sau khi đăng nhập vào hệ thống. Vui lòng đăng nhập và mở mục Hậu cần để Chấp nhận / Từ chối đề xuất.",
+            cancellationToken);
     }
 
     // ── shared helpers ──

@@ -221,6 +221,10 @@ public class ScheduleReportTestDbContext : DbContext, IApplicationDbContext
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 }
 
 /// <summary>Fixture builders for the schedule-report tests. One campus (id 1), a host (STAFF, id 100)

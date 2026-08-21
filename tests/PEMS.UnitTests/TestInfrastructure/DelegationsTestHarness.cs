@@ -296,6 +296,10 @@ public class DelegationsTestDbContext : DbContext, IApplicationDbContext
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 }
 
 /// <summary>
@@ -477,6 +481,7 @@ public sealed class DelegationsHandlerMocks
     public Mock<IFileStorageService> Storage { get; } = new(MockBehavior.Loose);
     public Mock<PEMS.Application.Emails.Utils.IEmailImageLayoutNormalizer> Normalizer { get; } = new(MockBehavior.Loose);
     public Mock<PEMS.Application.Notifications.Common.INotificationService> Notifications { get; } = new(MockBehavior.Loose);
+    public RecordingUserMutationLockService Locks { get; } = new();
     public FakeDateTimeService Clock { get; } = new();
 
     public List<OutboundEmail> SentEmails { get; } = new();
@@ -488,10 +493,14 @@ public sealed class DelegationsHandlerMocks
         Tokens.Setup(t => t.GenerateRawToken()).Returns(() => $"raw-token-{++seq}");
         Tokens.Setup(t => t.Hash(It.IsAny<string>())).Returns<string>(raw => $"hash({raw})");
         Tokens.Setup(t => t.BuildPublicActionUrl(It.IsAny<string>())).Returns<string>(raw => $"https://pems.test/email-actions/{raw}");
-        Tokens.Setup(t => t.BuildDepartmentAssignmentUrl(It.IsAny<ulong>(), It.IsAny<ulong>()))
-            .Returns((ulong i, ulong p) => $"https://pems.test/departments/assign/{i}/{p}");
-        Tokens.Setup(t => t.BuildLogisticsDetailUrl(It.IsAny<ulong>()))
-            .Returns((ulong id) => $"https://pems.test/logistics/{id}");
+        Tokens.Setup(t => t.BuildVisitParticipantAssignmentUrl(It.IsAny<ulong>()))
+            .Returns((ulong p) => $"https://pems.test/departments/assign/{p}");
+        Tokens.Setup(t => t.BuildDepartmentStaffLogisticsTaskUrl(It.IsAny<ulong>()))
+            .Returns((ulong id) => $"https://pems.test/dashboard?taskId={id}&itemType=REQUEST");
+        Tokens.Setup(t => t.BuildDepartmentLeaderLogisticsTaskUrl(It.IsAny<ulong>()))
+            .Returns((ulong id) => $"https://pems.test/dashboard/visit?taskId={id}&itemType=REQUEST");
+        Tokens.Setup(t => t.BuildHostVisitProcessUrl(It.IsAny<ulong>()))
+            .Returns((ulong id) => $"https://pems.test/visit/process/{id}");
 
         Normalizer.Setup(n => n.NormalizeHtmlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string html, CancellationToken _) => html);

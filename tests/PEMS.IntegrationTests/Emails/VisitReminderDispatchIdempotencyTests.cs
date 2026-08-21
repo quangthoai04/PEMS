@@ -780,10 +780,11 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         public string GenerateRawToken() => Guid.NewGuid().ToString("N");
         public string Hash(string rawToken) => "h:" + rawToken;
         public string BuildPublicActionUrl(string rawToken) => "https://pems.test/public/" + rawToken;
-        public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId) => "https://pems.test/assign";
-        public string BuildLogisticsDetailUrl(ulong logisticsItemId) => "https://pems.test/logistics";
-        public string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId)
-            => $"https://pems.test/dashboard/visit/process/{visitRequestId}/{visitInstanceId}";
+        public string BuildVisitParticipantAssignmentUrl(ulong participantId) => "https://pems.test/assign";
+        public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId) => "https://pems.test/logistics-staff";
+        public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "https://pems.test/logistics-leader";
+        public string BuildHostVisitProcessUrl(ulong visitInstanceId)
+            => $"https://pems.test/dashboard/visit/process/{visitInstanceId}";
     }
 
     private sealed class NoNotifications : INotificationService

@@ -217,6 +217,10 @@ public sealed class TestApplicationDbContext : DbContext, IApplicationDbContext
     public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(
         CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
+
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginSerializedTransactionAsync(
+        CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
 }
 
 /// <summary>Deterministic Staff Leader identity (mutable so tests can impersonate other actors).</summary>
@@ -263,6 +267,42 @@ public sealed class RecordingUserMutationLockService : IUserMutationLockService
     public Task LockDepartmentsAsync(IReadOnlyCollection<ulong> departmentIds, CancellationToken cancellationToken)
     {
         LockedDepartmentBatches.Add(departmentIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public List<ulong[]> LockedVisitRequestBatches { get; } = new();
+    public List<ulong[]> LockedVisitRequestCampusBatches { get; } = new();
+    public List<ulong[]> LockedVisitParticipantBatches { get; } = new();
+    public List<ulong[]> LockedVisitLogisticsItemBatches { get; } = new();
+    public List<string> LockedActionGroupKeys { get; } = new();
+
+    public Task LockVisitRequestsAsync(IReadOnlyCollection<ulong> visitRequestIds, CancellationToken cancellationToken)
+    {
+        LockedVisitRequestBatches.Add(visitRequestIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public Task LockVisitRequestCampusesAsync(IReadOnlyCollection<ulong> visitInstanceIds, CancellationToken cancellationToken)
+    {
+        LockedVisitRequestCampusBatches.Add(visitInstanceIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public Task LockVisitParticipantsAsync(IReadOnlyCollection<ulong> participantIds, CancellationToken cancellationToken)
+    {
+        LockedVisitParticipantBatches.Add(participantIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public Task LockVisitLogisticsItemsAsync(IReadOnlyCollection<ulong> logisticsItemIds, CancellationToken cancellationToken)
+    {
+        LockedVisitLogisticsItemBatches.Add(logisticsItemIds.ToArray());
+        return Task.CompletedTask;
+    }
+
+    public Task LockEmailActionTokenGroupAsync(string? actionGroupKey, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrEmpty(actionGroupKey)) LockedActionGroupKeys.Add(actionGroupKey);
         return Task.CompletedTask;
     }
 }

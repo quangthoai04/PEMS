@@ -119,7 +119,7 @@ public sealed class InstanceResubmitAuthorizationTests
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
             new PerCampusFormV2Options { Enabled = true }, WriteOn,
             new VisitRequestAggregateStatusService(db),
-            new ProposedHostActivationService(db), new MySqlUserMutationLockService(db));
+            new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
         var form = new VisitRequestFormDataV2(
             "IR" + Guid.NewGuid().ToString("N"),

@@ -237,7 +237,7 @@ public sealed class PrepareVisitLogisticsCommandHandler
 
                 var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
                 var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
-                var detailUrl = _tokens.BuildLogisticsDetailUrl(item.LogisticsItemId);
+                var detailUrl = _tokens.BuildDepartmentLeaderLogisticsTaskUrl(item.LogisticsItemId);
 
                 // Render + record, inside this transaction. The caller supplies the FINAL display value
                 // for every declared variable: a renderer that substitutes "Chưa có thông tin" for a

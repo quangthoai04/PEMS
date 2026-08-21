@@ -40,12 +40,15 @@ public sealed class EmailActionTokenService : IEmailActionTokenService
     public string BuildPublicActionUrl(string rawToken)
         => $"{_publicApiBaseUrl}/api/public/email-actions/{Uri.EscapeDataString(rawToken)}";
 
-    public string BuildDepartmentAssignmentUrl(ulong visitInstanceId, ulong participantId)
+    public string BuildVisitParticipantAssignmentUrl(ulong participantId)
         => $"{_frontendBaseUrl}/dashboard/visit/department-tasks/{participantId}";
 
-    public string BuildLogisticsDetailUrl(ulong logisticsItemId)
-        => $"{_frontendBaseUrl}/dashboard/departments/tasks/{logisticsItemId}";
+    public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId)
+        => $"{_frontendBaseUrl}/dashboard?taskId={logisticsItemId}&itemType=REQUEST";
 
-    public string BuildVisitInstanceDetailUrl(ulong visitRequestId, ulong visitInstanceId)
-        => $"{_frontendBaseUrl}/dashboard/visit/process/{visitRequestId}/{visitInstanceId}";
+    public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId)
+        => $"{_frontendBaseUrl}/dashboard/visit?taskId={logisticsItemId}&itemType=REQUEST";
+
+    public string BuildHostVisitProcessUrl(ulong visitInstanceId)
+        => $"{_frontendBaseUrl}/dashboard/visit/process/{visitInstanceId}";
 }

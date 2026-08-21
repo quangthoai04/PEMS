@@ -57,9 +57,11 @@ public static class EmailActionTemplates
         "Hai nút \"Xác nhận\" / \"Từ chối\" (mỗi nút một liên kết dùng một lần) sẽ được hệ thống tự gắn " +
         "khi gửi email. Liên kết có hạn, KHÔNG yêu cầu đăng nhập, và mở trang xác nhận để người nhận " +
         "xem thông tin mới nhất trước khi quyết định.";
+    // Proposal decisions are Portal-only (spec BUG-07): the email carries no public token, only a
+    // login-required detail link — Host signs in and Accepts/Rejects from the Portal.
     private const string LogisticsProposalDesc =
-        "Nút Chấp nhận đề xuất / Từ chối đề xuất (kèm liên kết một lần, không cần đăng nhập) và " +
-        "\"Xem chi tiết trong hệ thống\" sẽ được hệ thống tự gắn khi gửi email.";
+        "Nút \"Xem chi tiết trong hệ thống\" (yêu cầu đăng nhập) sẽ được hệ thống tự gắn khi gửi email. " +
+        "Đề xuất không mang liên kết dùng một lần — Host đăng nhập và Chấp nhận/Từ chối trong hệ thống.";
 
     // The three below carry NO one-time token. Their block is a plain login-required link to a page the
     // recipient already has access to, so there is nothing for a token to grant — which is also why
@@ -125,9 +127,10 @@ public static class EmailActionTemplates
         VisitContactClaim or VisitContactTransfer => new(true, false, false, false, false,
             ContactRoleInvitationDesc, System.Array.Empty<string>()),
 
-        // Accept / reject / detail, like LogisticsRequestToDepartment — but its own wording, because the
-        // Host is answering a change PROPOSAL, not a new request.
-        LogisticsChangeProposalToHost => new(true, false, false, true, true,
+        // Detail-only, login-required (spec BUG-07) — a proposal decision is Portal-only, so this is
+        // NOT an accept/decline nor a logistics-action template despite the business meaning; it is
+        // shaped exactly like VisitReminderHost/LogisticsExpenseReportReminder.
+        LogisticsChangeProposalToHost => new(true, false, false, true, false,
             LogisticsProposalDesc, System.Array.Empty<string>()),
 
         // VISIT_REQUEST_OTP is deliberately NOT here. Its message is the code itself; no send path
@@ -176,8 +179,15 @@ public static class EmailActionTemplates
             case VisitContactClaim:
             case VisitContactTransfer:
                 return EmailComposition.DisabledContactRoleInvitationBlock();
+            // Detail-only preview matching the portal-only real send (spec BUG-07) — no more
+            // Approve/Reject stand-in buttons for a proposal.
             case LogisticsChangeProposalToHost:
-                return EmailComposition.DisabledLogisticsProposalActionBlock(
+                return EmailComposition.DisabledDetailLinkBlock(
+                    DetailLinkLabelFor(templateCode) ?? "Xem chi tiết trong hệ thống");
+            // 3-button real send (Accept/Decline/Detail via LogisticsAssigneeActionBlock) — the generic
+            // HasAcceptDecline fallback below only knows 2 buttons, so this needs its own case (BUG-09).
+            case LogisticsAssigneeAssignment:
+                return EmailComposition.DisabledLogisticsAssigneeActionBlock(
                     DetailLinkLabelFor(templateCode) ?? "Xem chi tiết trong hệ thống");
         }
 

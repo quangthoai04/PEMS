@@ -143,6 +143,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
         => Database.BeginTransactionAsync(cancellationToken);
 
+    public Task<IDbContextTransaction> BeginSerializedTransactionAsync(CancellationToken cancellationToken = default)
+        => Database.IsRelational()
+            ? Database.BeginTransactionAsync(System.Data.IsolationLevel.ReadCommitted, cancellationToken)
+            : Database.BeginTransactionAsync(cancellationToken);
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder

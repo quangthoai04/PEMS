@@ -77,7 +77,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
             var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId, cancellationToken);
             if (user == null) throw new ForbiddenException("Không xác định được người dùng hiện tại.");
 
-            var l = await _context.VisitLogisticsItems
+            // AsNoTracking: pre-transaction fast-path/content-resolution read only — re-read tracked
+            // and fresh inside the transaction once the row is actually locked (see below).
+            var l = await _context.VisitLogisticsItems.AsNoTracking()
                 .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken);
             if (l == null)
                 throw new NotFoundException(
@@ -151,13 +153,23 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
 
             PreparedSystemEmail prepared;
 
-            await using (var transaction = await _context.BeginTransactionAsync(cancellationToken))
+            await using (var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken))
             {
                 // Shared lock protocol (see IUserMutationLockService): an assignment hands this
                 // account a live logistics responsibility, so it must serialize against a role change
                 // on the same account. The eligibility read above was unlocked — re-read the
-                // department/status under the lock before writing.
+                // department/status under the lock before writing. Tiers 2-4 (VisitRequest →
+                // VisitRequestCampus → VisitLogisticsItem) join the same hierarchy every writer of
+                // this aggregate follows, so this cannot commit against a lifecycle snapshot a
+                // concurrent cancellation is invalidating, or a status a concurrent Email
+                // accept/decline already moved past.
                 await _lockService.LockUsersAsync(new[] { request.AssigneeUserId }, cancellationToken);
+                if (campus != null)
+                {
+                    await _lockService.LockVisitRequestsAsync(new[] { campus.VisitRequestId }, cancellationToken);
+                    await _lockService.LockVisitRequestCampusesAsync(new[] { campus.VisitInstanceId }, cancellationToken);
+                }
+                await _lockService.LockVisitLogisticsItemsAsync(new[] { l.LogisticsItemId }, cancellationToken);
 
                 var stillEligible = await _context.Users.AsNoTracking().AnyAsync(
                     u => u.UserId == request.AssigneeUserId
@@ -167,6 +179,16 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 if (!stillEligible)
                     throw new ConflictException(
                         "Vai trò hoặc phòng ban của nhân sự này vừa thay đổi. Vui lòng tải lại và phân công lại.");
+
+                // Re-read the item tracked and fresh now that it is locked — the earlier read was
+                // AsNoTracking, and a concurrent transaction could have moved its status in between.
+                l = await _context.VisitLogisticsItems
+                    .FirstOrDefaultAsync(x => x.LogisticsItemId == request.LogisticsItemId, cancellationToken)
+                    ?? throw new NotFoundException("Không tìm thấy yêu cầu hậu cần.", LogisticsTaskErrorCodes.RequestNotFound);
+                if (blockedStatuses.Contains(l.Status))
+                    throw new ConflictException(
+                        "Không thể phân công khi nhiệm vụ đang ở trạng thái: " + l.Status,
+                        LogisticsTaskErrorCodes.AssignmentStatusNotAssignable);
 
                 _context.VisitLogisticsAssignmentAttempts.Add(new VisitLogisticsAssignmentAttempt
                 {
@@ -197,7 +219,7 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AssignRequestAssign
                 var acceptUrl = _tokens.BuildPublicActionUrl(acceptRaw);
                 var declineUrl = _tokens.BuildPublicActionUrl(declineRaw);
 
-                var detailUrl = _tokens.BuildLogisticsDetailUrl(l.LogisticsItemId);
+                var detailUrl = _tokens.BuildDepartmentStaffLogisticsTaskUrl(l.LogisticsItemId);
 
                 prepared = await _dispatcher.PrepareAsync(
                     new SystemEmailRequest(

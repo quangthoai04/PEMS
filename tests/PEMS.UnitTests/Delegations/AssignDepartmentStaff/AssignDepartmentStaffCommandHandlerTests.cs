@@ -56,6 +56,42 @@ public class AssignDepartmentStaffCommandHandlerTests
             DepartmentLockCalls.Add(departmentIds.ToArray());
             return Task.CompletedTask;
         }
+
+        public List<ulong[]> VisitRequestLockCalls { get; } = new();
+        public List<ulong[]> VisitRequestCampusLockCalls { get; } = new();
+        public List<ulong[]> VisitParticipantLockCalls { get; } = new();
+        public List<ulong[]> VisitLogisticsItemLockCalls { get; } = new();
+        public List<string> ActionGroupKeyLockCalls { get; } = new();
+
+        public Task LockVisitRequestsAsync(IReadOnlyCollection<ulong> visitRequestIds, CancellationToken ct = default)
+        {
+            VisitRequestLockCalls.Add(visitRequestIds.ToArray());
+            return Task.CompletedTask;
+        }
+
+        public Task LockVisitRequestCampusesAsync(IReadOnlyCollection<ulong> visitInstanceIds, CancellationToken ct = default)
+        {
+            VisitRequestCampusLockCalls.Add(visitInstanceIds.ToArray());
+            return Task.CompletedTask;
+        }
+
+        public Task LockVisitParticipantsAsync(IReadOnlyCollection<ulong> participantIds, CancellationToken ct = default)
+        {
+            VisitParticipantLockCalls.Add(participantIds.ToArray());
+            return Task.CompletedTask;
+        }
+
+        public Task LockVisitLogisticsItemsAsync(IReadOnlyCollection<ulong> logisticsItemIds, CancellationToken ct = default)
+        {
+            VisitLogisticsItemLockCalls.Add(logisticsItemIds.ToArray());
+            return Task.CompletedTask;
+        }
+
+        public Task LockEmailActionTokenGroupAsync(string? actionGroupKey, CancellationToken ct = default)
+        {
+            if (!string.IsNullOrEmpty(actionGroupKey)) ActionGroupKeyLockCalls.Add(actionGroupKey);
+            return Task.CompletedTask;
+        }
     }
 
     private static (DelegationsTestDbContext Db, AssignDepartmentStaffCommandHandler Handler,
@@ -105,7 +141,7 @@ public class AssignDepartmentStaffCommandHandlerTests
         var locks = new RecordingLockService();
         var handler = new AssignDepartmentStaffCommandHandler(
             db, user, mocks.Clock, dispatcher, mocks.Tokens.Object, mocks.Sanitizer.Object,
-            mocks.Storage.Object, formRead.Object, locks,
+            mocks.Storage.Object, formRead.Object, locks, mocks.Notifications.Object,
             new StubApprovedEmailContentResolver(mocks.Sanitizer.Object));
 
         return (db, handler, user, mocks, dispatcher, locks);
@@ -163,7 +199,9 @@ public class AssignDepartmentStaffCommandHandlerTests
             // Never null: the row is written only after the message exists.
             Assert.Equal(sentEmail.SentEmailId, t.SentEmailId);
             Assert.Equal(EmailActionResultStatuses.Pending, t.ResultStatus);
-            Assert.Equal(EmailActionContexts.ParticipationResponse, t.ActionContext);
+            // Distinct from a direct invitation: a delegated Staff assignment starts the participant
+            // row at ASSIGNED, which only PARTICIPATION_ASSIGNMENT_RESPONSE accepts (BUG-02 fix).
+            Assert.Equal(EmailActionContexts.ParticipationAssignmentResponse, t.ActionContext);
             Assert.Equal($"user{StaffId}@test.local", t.RecipientEmail);
         });
         Assert.Single(tokens.Where(t => t.IntendedAction == EmailIntendedActions.Accept));
@@ -369,27 +407,89 @@ public class AssignDepartmentStaffCommandHandlerTests
     // ── Reassignment supersedes the previous response links ─────────────────
 
     [Fact]
-    public async Task Reassigning_invalidates_the_pending_tokens_of_the_previous_round()
+    public async Task Retrying_the_same_pending_assignment_is_idempotent()
     {
+        // Same Leader, same target, still ASSIGNED — a retry/double-click of the identical assignment
+        // must not silently reset RespondedAt-adjacent state, mint a second token pair or send a
+        // second email (fail-closed table, "ASSIGNED, same AssignedBy" row).
         var (db, handler, _, _, _, _locks) = CreateSut();
 
         var firstId = await handler.Handle(Command(), default);
         var firstRoundHashes = db.EmailActionTokens
-            .Where(t => t.TargetId == firstId).Select(t => t.TokenHash).ToList();
+            .Where(t => t.TargetId == firstId).Select(t => t.TokenHash).OrderBy(h => h).ToList();
 
         var secondId = await handler.Handle(Command(), default);
         Assert.Equal(firstId, secondId);   // the same person, the same slot
 
-        // The links from the first message must stop working — otherwise two live accept links exist
-        // for one assignment and the last one clicked wins.
-        var superseded = db.EmailActionTokens
-            .Where(t => firstRoundHashes.Contains(t.TokenHash)).ToList();
-        Assert.All(superseded, t => Assert.NotEqual(EmailActionResultStatuses.Pending, t.ResultStatus));
+        Assert.Single(db.SentEmails);
+        var tokens = db.EmailActionTokens.Where(t => t.TargetId == firstId).ToList();
+        Assert.Equal(2, tokens.Count);
+        Assert.Equal(firstRoundHashes, tokens.Select(t => t.TokenHash).OrderBy(h => h));
+        Assert.All(tokens, t => Assert.Equal(EmailActionResultStatuses.Pending, t.ResultStatus));
+    }
 
-        var latest = db.EmailActionTokens
-            .Where(t => t.ResultStatus == EmailActionResultStatuses.Pending).ToList();
-        Assert.Equal(2, latest.Count);
-        Assert.All(latest, t => Assert.Equal(db.SentEmails.OrderBy(e => e.SentEmailId).Last().SentEmailId, t.SentEmailId));
+    [Fact]
+    public async Task An_assignment_already_accepted_cannot_be_reset_to_assigned()
+    {
+        var (db, handler, _, _, _, _locks) = CreateSut();
+
+        var participantId = await handler.Handle(Command(), default);
+        var participant = db.VisitParticipants.Single(p => p.ParticipantId == participantId);
+        participant.Status = ParticipantStatuses.Accepted;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        Assert.Equal(ParticipantStatuses.Accepted, db.VisitParticipants.Single(p => p.ParticipantId == participantId).Status);
+    }
+
+    [Fact]
+    public async Task An_assignment_already_declined_cannot_be_reset_to_assigned()
+    {
+        var (db, handler, _, _, _, _locks) = CreateSut();
+
+        var participantId = await handler.Handle(Command(), default);
+        var participant = db.VisitParticipants.Single(p => p.ParticipantId == participantId);
+        participant.Status = ParticipantStatuses.Declined;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        Assert.Equal(ParticipantStatuses.Declined, db.VisitParticipants.Single(p => p.ParticipantId == participantId).Status);
+    }
+
+    [Fact]
+    public async Task A_removed_assignment_is_not_auto_revived()
+    {
+        var (db, handler, _, _, _, _locks) = CreateSut();
+
+        var participantId = await handler.Handle(Command(), default);
+        var participant = db.VisitParticipants.Single(p => p.ParticipantId == participantId);
+        participant.Status = ParticipantStatuses.Removed;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        Assert.Equal(ParticipantStatuses.Removed, db.VisitParticipants.Single(p => p.ParticipantId == participantId).Status);
+    }
+
+    [Fact]
+    public async Task An_assignment_pending_from_a_different_leader_is_not_overwritten()
+    {
+        var (db, handler, _, _, _, _locks) = CreateSut();
+
+        var participantId = await handler.Handle(Command(), default);
+        var participant = db.VisitParticipants.Single(p => p.ParticipantId == participantId);
+        // A different leader "assigned" it — simulated directly, since no source flow exists that
+        // legitimately lets a second leader take over a pending assignment.
+        participant.AssignedBy = 999_001;
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ConflictException>(() => handler.Handle(Command(), default));
+
+        var stillPending = db.VisitParticipants.Single(p => p.ParticipantId == participantId);
+        Assert.Equal(ParticipantStatuses.Assigned, stillPending.Status);
+        Assert.Equal(999_001UL, stillPending.AssignedBy);
     }
 
     // ── A failed send does not lose the assignment ───────────────────────────

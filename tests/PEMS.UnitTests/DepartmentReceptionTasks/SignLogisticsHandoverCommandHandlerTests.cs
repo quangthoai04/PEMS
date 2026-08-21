@@ -62,7 +62,7 @@ public class SignLogisticsHandoverCommandHandlerTests
             DepartmentId = DeptId,
         };
         var mocks = new DelegationsHandlerMocks();
-        var handler = new SignLogisticsHandoverCommandHandler(db, user, mocks.Notifications.Object);
+        var handler = new SignLogisticsHandoverCommandHandler(db, user, mocks.Notifications.Object, mocks.Locks);
         return (db, handler, user, mocks);
     }
 

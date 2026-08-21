@@ -73,8 +73,13 @@ public interface IProposedHostActivationService
 public sealed class ProposedHostActivationService : IProposedHostActivationService
 {
     private readonly IApplicationDbContext _db;
+    private readonly IUserMutationLockService _lockService;
 
-    public ProposedHostActivationService(IApplicationDbContext db) => _db = db;
+    public ProposedHostActivationService(IApplicationDbContext db, IUserMutationLockService lockService)
+    {
+        _db = db;
+        _lockService = lockService;
+    }
 
     public async Task<IReadOnlyList<ProposedHostActivation>> ActivateAsync(
         VisitRequest visit, DateTime now, CancellationToken cancellationToken)
@@ -94,6 +99,19 @@ public sealed class ProposedHostActivationService : IProposedHostActivationServi
             // way round and deadlock instead of interleaving.
             .OrderBy(c => c.VisitInstanceId)
             .ToList();
+
+        // Tiers 2-3 of the shared lock hierarchy (see IUserMutationLockService), taken for the whole
+        // batch up front in the same ascending order `candidates` is already sorted in — the comment
+        // above predates an actual lock call existing; this is that call. As with CampusApprovalExecutor,
+        // the host participant row this activates is IC_HOST, categorically excluded from ever being a
+        // pending email/portal response target, so no re-read/re-check after the lock is needed to close
+        // a response-vs-write race here — only ordinary commit-ordering against a concurrent cancellation.
+        if (candidates.Count > 0)
+        {
+            await _lockService.LockVisitRequestsAsync(new[] { visit.VisitRequestId }, cancellationToken);
+            await _lockService.LockVisitRequestCampusesAsync(
+                candidates.Select(c => c.VisitInstanceId).ToArray(), cancellationToken);
+        }
 
         foreach (var instance in candidates)
         {

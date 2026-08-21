@@ -19,17 +19,43 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
         private readonly IApplicationDbContext _context;
         private readonly ICurrentUserService _currentUserService;
         private readonly PEMS.Application.Notifications.Common.INotificationService _notificationService;
+        private readonly IUserMutationLockService _lockService;
 
-        public AcceptAssignedLogisticsTaskCommandHandler(IApplicationDbContext context, ICurrentUserService currentUserService, PEMS.Application.Notifications.Common.INotificationService notificationService)
+        public AcceptAssignedLogisticsTaskCommandHandler(
+            IApplicationDbContext context, ICurrentUserService currentUserService,
+            PEMS.Application.Notifications.Common.INotificationService notificationService,
+            IUserMutationLockService lockService)
         {
             _context = context;
             _currentUserService = currentUserService;
             _notificationService = notificationService;
+            _lockService = lockService;
         }
 
         public async Task<bool> Handle(AcceptAssignedLogisticsTaskCommand request, CancellationToken cancellationToken)
         {
             ulong userId = _currentUserService.UserId.Value;
+
+            // Structural FKs, safe to peek unlocked before the row exists to be locked (see
+            // VisitInvitationResponse.ApplyCoreAsync for the same pattern).
+            var visitInstanceId = await _context.VisitLogisticsItems
+                .Where(x => x.LogisticsItemId == request.LogisticsItemId)
+                .Select(x => (ulong?)x.VisitInstanceId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (visitInstanceId is null) throw new Exception("Không tìm thấy nhiệm vụ");
+            var visitRequestId = await _context.VisitRequestCampuses
+                .Where(c => c.VisitInstanceId == visitInstanceId)
+                .Select(c => (ulong?)c.VisitRequestId)
+                .FirstOrDefaultAsync(cancellationToken) ?? throw new Exception("Không tìm thấy chuyến tiếp khách");
+
+            // Lock hierarchy (VisitRequest → VisitRequestCampus → VisitLogisticsItem), so this cannot
+            // commit an accept against a lifecycle snapshot a concurrent cancellation is invalidating,
+            // and cannot race a concurrent Email accept/decline for the same item — previously this
+            // handler took no lock and no transaction at all.
+            await using var transaction = await _context.BeginSerializedTransactionAsync(cancellationToken);
+            await _lockService.LockVisitRequestsAsync(new[] { visitRequestId }, cancellationToken);
+            await _lockService.LockVisitRequestCampusesAsync(new[] { visitInstanceId.Value }, cancellationToken);
+            await _lockService.LockVisitLogisticsItemsAsync(new[] { request.LogisticsItemId }, cancellationToken);
 
             var l = await _context.VisitLogisticsItems
                 .Include(x => x.VisitInstance)
@@ -64,7 +90,11 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             l.UpdatedBy = userId;
             l.UpdatedAt = VietnamTime.Now();
 
-            await _context.SaveChangesAsync(cancellationToken);
+            // A Portal response retires any pending emailed accept/decline link for this item (BUG-05)
+            // — the token side effect is channel-specific, same split as VisitInvitationResponse.
+            await PEMS.Application.EmailActions.EmailTokenInvalidationHelper.InvalidatePendingEmailActionTokensAsync(
+                _context, PEMS.Domain.Constants.EmailActionTargetTypes.LogisticsItem, l.LogisticsItemId,
+                "Nhiệm vụ đã được xử lý trong hệ thống.", VietnamTime.Now(), cancellationToken);
 
             var notifications = new System.Collections.Generic.List<PEMS.Application.Notifications.Common.CreateNotificationRequest>();
             var assignedBy = l.AssignedBy; // Department Leader who assigned this
@@ -120,6 +150,9 @@ namespace PEMS.Application.DepartmentReceptionTasks.Commands.AcceptAssignedLogis
             {
                 await _notificationService.CreateManyAsync(notifications, cancellationToken);
             }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             return true;
         }
