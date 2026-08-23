@@ -952,7 +952,7 @@
       },
       "approved": {
         "label": "Approved",
-        "description": "Approved (including preparing, in progress, awaiting your feedback or completed)"
+        "description": "Approved and has an assigned host, preparation not started yet"
       },
       "beforeVisit": {
         "label": "Preparing",

@@ -28,12 +28,18 @@ const FOCUSABLE = [
  * "Collapsed" is detected through `.hidden` rather than layout, because the campus cards hide their
  * body with exactly that class — and layout-based visibility checks (`offsetParent`) report nothing
  * useful in jsdom, so a test could not prove this works.
+ *
+ * A GROUP/LIST error (e.g. "Danh sách khách" with zero rows) has no row input to land on — its
+ * container falls back to `[data-error-focus-target="true"]` (the "Thêm khách" button) instead. This
+ * fallback is opt-in per element rather than adding `button` to `FOCUSABLE` globally: a container can
+ * legitimately hold other buttons (Excel import/download, replace-all) that must never steal focus.
  */
 export function focusFirstInvalidField(root: ParentNode = document): HTMLElement | null {
   const containers = Array.from(root.querySelectorAll<HTMLElement>('[data-field-error="true"]'));
   for (const container of containers) {
     if (container.closest('.hidden, [hidden]')) continue;
-    const control = container.querySelector<HTMLElement>(FOCUSABLE);
+    const control = container.querySelector<HTMLElement>(FOCUSABLE)
+      ?? container.querySelector<HTMLElement>('[data-error-focus-target="true"]:not([disabled])');
     if (!control || control.closest('.hidden, [hidden]')) continue;
     control.focus();
     if (typeof control.scrollIntoView === 'function') {

@@ -314,7 +314,12 @@ describe('VisitRequestV2DetailView', () => {
   });
 
   it('overview states the request and its outcome without repeating sections 1 and 2', async () => {
-    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    // Two visible campuses so the outcome summary has something to say — see the gating tests below
+    // for the single-campus case, where the summary is deliberately absent.
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      requestOutcome: { code: 'ALL_WAITING', total: 2, accepted: 0, inProgress: 0, waiting: 2, rejected: 0, cancelled: 0, closed: 0 },
+      campusVisits: [campusFixture(), campusFixture({ visitInstanceId: 11, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh' })],
+    }));
     render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
     expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
 
@@ -325,6 +330,69 @@ describe('VisitRequestV2DetailView', () => {
     // exists, because a request has no single contact.
     expect(screen.queryAllByText('Đầu Mối').length).toBeLessThanOrEqual(1);
     // …and the overview now answers "where has this got to" instead.
+    expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
+  });
+
+  // ── "Tình trạng hiện tại" is gated on VISIBLE campus count, never on visitScope or role ──────
+  // A single visible campus already has its state on the request badge, the campus count badge and
+  // the campus card's own status badge — the summary would only repeat those. What decides "visible"
+  // is exactly what the backend chose to put in campusVisits, so the gate reads that array's length
+  // and nothing about who is looking or how big the underlying request actually is.
+
+  it('single visible campus (an honest single-campus request): the outcome summary does not render', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture());
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.queryByTestId('visit-outcome-summary')).not.toBeInTheDocument();
+  });
+
+  it('MULTI_CAMPUS request scoped down to one visible campus (Staff Leader): the outcome summary does not render', async () => {
+    // The request itself spans several campuses, but the backend scoped this Staff Leader to just
+    // one of them. The gate must read campusVisits.length (1), not visitScope (MULTI_CAMPUS).
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      hasMixedCampusDetails: true,
+      visitScope: 'MULTI_CAMPUS',
+      requestOutcome: null,
+      campusVisits: [campusFixture()],
+      viewer: { relation: 'STAFF_LEADER', canViewAllCampuses: false, isReadOnly: false, allowedActions: ['VIEW'] },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.queryByTestId('visit-outcome-summary')).not.toBeInTheDocument();
+  });
+
+  it('two visible campuses: the outcome summary renders', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      hasMixedCampusDetails: true,
+      visitScope: 'MULTI_CAMPUS',
+      requestOutcome: { code: 'MIXED', total: 2, accepted: 1, inProgress: 0, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
+      campusVisits: [
+        campusFixture({ instanceStatus: 'ASSIGNED' }),
+        campusFixture({ visitInstanceId: 11, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh', instanceStatus: 'WAITING_REQUEST_APPROVAL' }),
+      ],
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
+    expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
+  });
+
+  it('HO with canViewAllCampuses and 2+ campuses: the outcome summary renders', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(formFixture({
+      visitScope: 'MULTI_CAMPUS',
+      requestOutcome: { code: 'MIXED', total: 3, accepted: 1, inProgress: 1, waiting: 1, rejected: 0, cancelled: 0, closed: 0 },
+      campusVisits: [
+        campusFixture({ instanceStatus: 'ASSIGNED' }),
+        campusFixture({ visitInstanceId: 11, campusCode: 'DN', campusName: 'FPTU Đà Nẵng', instanceStatus: 'DURING_VISIT' }),
+        campusFixture({ visitInstanceId: 12, campusCode: 'HCM', campusName: 'FPTU Hồ Chí Minh', instanceStatus: 'WAITING_REQUEST_APPROVAL' }),
+      ],
+      viewer: { relation: 'HO', canViewAllCampuses: true, isReadOnly: true, allowedActions: ['VIEW'] },
+    }));
+    render(<MemoryRouter><VisitRequestV2DetailView visitRequestId={1} /></MemoryRouter>);
+    expect(await screen.findByText('VR-2026-001')).toBeInTheDocument();
+
     expect(screen.getByTestId('visit-outcome-summary')).toBeInTheDocument();
   });
 

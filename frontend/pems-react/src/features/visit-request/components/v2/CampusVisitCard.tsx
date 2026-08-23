@@ -763,14 +763,25 @@ export const CampusVisitCard: React.FC<Props> = ({
       if (!node || typeof node !== 'object') return undefined;
       node = (node as Record<string, unknown>)[s];
     }
-    const msg = (node as { message?: unknown } | undefined)?.message;
-    return typeof msg === 'string' ? msg : undefined;
+    const record = node as { message?: unknown; root?: { message?: unknown } } | undefined;
+    const msg = record?.message;
+    if (typeof msg === 'string') return msg;
+    // React Hook Form's useFieldArray puts an array-LEVEL error (e.g. visitors.min(1)) at
+    // `<path>.root.message`, not `<path>.message` — without this fallback, an empty required
+    // list correctly counts toward the top summary (countFieldErrors walks .root too) but never
+    // renders here, leaving the user with "1 field needs fixing" and no visible reason why.
+    const rootMsg = record?.root?.message;
+    return typeof rootMsg === 'string' ? rootMsg : undefined;
   };
 
   const bodyId = `campus-card-body-${clientKey}`;
 
   const cellError = (msg?: string) =>
     msg ? <p className="px-2 pb-1 text-xs font-normal text-red-600">{msg}</p> : null;
+
+  // Array-level "at least 1 visitor" error (visitRequestV2.schema.ts's .min(1)) — read once so the
+  // fieldset wrapper, the message and the focus-target button all agree on the same value.
+  const visitorsListError = fieldError('visitors');
 
   /**
    * Name / job title are plain text; organization and nationality reuse the SAME searchable
@@ -1444,7 +1455,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         )}
 
         {/* Visitors */}
-        <fieldset>
+        <fieldset data-field-error={visitorsListError ? 'true' : undefined}>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.visitors')} <span className="text-red-500">*</span>
             <span className="text-xs font-normal text-slate-400">
@@ -1481,8 +1492,8 @@ export const CampusVisitCard: React.FC<Props> = ({
               e.target.value = '';
             }}
           />
-          {fieldError('visitors') && (
-            <p className="mb-2 text-xs font-normal text-red-600">{fieldError('visitors')}</p>
+          {visitorsListError && (
+            <p role="alert" className="mb-2 text-xs font-normal text-red-600">{visitorsListError}</p>
           )}
           <ExcelImportPanel
             testId="v2-excel-visitors"
@@ -1512,6 +1523,7 @@ export const CampusVisitCard: React.FC<Props> = ({
           )}
           <button
             type="button"
+            data-error-focus-target={visitorsListError ? 'true' : undefined}
             className="mt-4 inline-flex items-center justify-center gap-2 w-full sm:w-auto rounded-xl border-2 border-dashed border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:opacity-40"
             disabled={visitorFields.fields.length >= V2_MAX_MEMBERS_PER_CAMPUS}
             onClick={() => visitorFields.append(createEmptyMember())}

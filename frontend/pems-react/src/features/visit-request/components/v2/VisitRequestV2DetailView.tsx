@@ -308,9 +308,15 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
           <span className="font-normal text-slate-700">{formatVietnamDateTime(data.submittedAt)}</span>
         </p>
 
-        <div className="mt-3">
-          <VisitOutcomeSummary form={data} />
-        </div>
+        {/* Gated on the same "more than one VISIBLE campus" fact as the accordion below, not on
+            visitScope or viewer.relation: a Staff Leader scoped to one campus of a MULTI_CAMPUS
+            request gets campusVisits.length === 1 same as an honest single-campus request, and the
+            summary has nothing to add over the badges/card already on screen for that one campus. */}
+        {multipleCampuses && (
+          <div className="mt-3">
+            <VisitOutcomeSummary form={data} />
+          </div>
+        )}
       </header>
 
       {/* ── ① Registrant ── */}

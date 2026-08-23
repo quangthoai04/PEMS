@@ -173,6 +173,16 @@ public sealed class VisitRequestManagementItemDto
     // the audience to do nothing.
     /// <summary>Process status in Vietnamese, resolved from the campus status (or the request aggregate for request-level rows).</summary>
     public string? StatusLabel { get; set; }
+    /// <summary>
+    /// The canonical status CODE <see cref="StatusLabel"/> was resolved from — see
+    /// <c>VisitRowLabels.EffectiveCode</c>. One of the 9 <c>VisitInstanceStatus</c> values, or
+    /// <c>EffectiveStatusCodes.PartiallyApproved</c>/<c>EffectiveStatusCodes.ApprovedNoLiveCampus</c>
+    /// for the two request-aggregate-only cases. Filtering on this code (the query's
+    /// <c>EffectiveStatus</c>/<c>EffectiveStatuses</c> params) is guaranteed to agree with what this
+    /// field says and what <see cref="StatusLabel"/> renders — both come from the same resolution,
+    /// which is exactly the guarantee P0-01 (filter/badge disagreeing) needed.
+    /// </summary>
+    public string? EffectiveStatusCode { get; set; }
     /// <summary>What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …).</summary>
     public string? RelationLabel { get; set; }
     /// <summary>What this particular reader should do next. Never derived from status alone — see <see cref="VisitNextTaskDto"/>.</summary>

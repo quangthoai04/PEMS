@@ -1203,6 +1203,13 @@ export interface VisitRequestManagementItem {
   // ── The three layers a row keeps apart: where it IS, what I am to it, what I should DO ──
   /** Process status in Vietnamese, resolved server-side from the campus status (or the aggregate). */
   statusLabel?: string | null;
+  /**
+   * The canonical status CODE `statusLabel` was resolved from (backend VisitRowLabels.EffectiveCode).
+   * Filtering on `effectiveStatus`/`effectiveStatuses` matches this exact field, so a row can never
+   * pass a status filter while showing a different badge (P0-01). Prefer this over re-deriving a
+   * badge kind from `requestStatus`/`campusStatus` on the client.
+   */
+  effectiveStatusCode?: string | null;
   /** What the signed-in user is to this row ("Bạn phụ trách tiếp đón", "Chỉ theo dõi", …). */
   relationLabel?: string | null;
   /**
@@ -1515,14 +1522,37 @@ export type VisitStatusFilterOption = {
   value: string;
   label: string;
   description?: string;
+  /**
+   * Canonical status filter — matches a row's own `effectiveStatusCode`/`statusLabel` exactly (see
+   * backend `ViewGuestDelegationListQuery.EffectiveStatus`), so filter and badge can never disagree
+   * (P0-01). Every option in this file should set this (or `effectiveStatuses` for a deliberate
+   * group of several codes) instead of the legacy fields below, which stay only for backward compat.
+   */
+  effectiveStatus?: string;
+  /**
+   * Comma-separated union of `effectiveStatus` codes — ONLY for codes that render the SAME badge
+   * text (e.g. Visitor/default-fallback's "Từ chối" reads the same for a couple of edge codes).
+   * Never a lifecycle grouping across DIFFERENT badge text (e.g. must not also include BEFORE_VISIT/
+   * DURING_VISIT/AFTER_VISIT/CLOSED under "Đã duyệt" — those have their own distinct badge text and
+   * their own option). "Đã duyệt" itself is a SINGLE code (`effectiveStatus: 'ASSIGNED'`, not a
+   * union — dropped the `ASSIGNED,APPROVED` aggregate union 2026-08-23): request-level views (HO,
+   * Visitor, "registered", "all") match "any campus instance carries this exact status"
+   * (REQUEST_ANY_CAMPUS — docs/CanhIter3FixBug/GopYCQuyen/PEMS_ROLE_TAB_STATUS_FILTER_COMPREHENSIVE_
+   * FIX_PLAN.md), so a multi-campus request straddling two stages correctly appears under BOTH of
+   * their filters at once instead of being force-collapsed into one canonical bucket.
+   */
+  effectiveStatuses?: string;
+  /** @deprecated Legacy — kept working for any caller not yet on effectiveStatus; superseded by it. */
   requestStatus?: string;
+  /** @deprecated Legacy — kept working for any caller not yet on effectiveStatus; superseded by it. */
   campusStatus?: string;
   campusStatuses?: string[];
   visitScope?: string;
+  /** @deprecated Legacy — superseded by `effectiveStatus: 'CANCELLED'`, which additionally requires the row's own badge to actually read "Đã hủy" (not merely that some sibling campus was cancelled). */
   cancelledOnly?: boolean;
-  /** HO's merged "Chờ duyệt" row — union of WAITING_REQUEST_APPROVAL campus + PARTIALLY_APPROVED request. */
+  /** @deprecated HO's old merged "Chờ duyệt" row — superseded by `effectiveStatus: 'WAITING_REQUEST_APPROVAL'`. */
   pendingApprovalAny?: boolean;
-  /** HO's merged "Đã duyệt" row — union of ASSIGNED campus + APPROVED request. */
+  /** @deprecated HO's old merged "Đã duyệt" row — superseded by `effectiveStatus: 'ASSIGNED'` (single code, no aggregate union). */
   approvedAny?: boolean;
   relation?: string;
   readOnlyOnly?: boolean;

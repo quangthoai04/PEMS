@@ -69,6 +69,36 @@ public static class VisitInstanceStatuses
         { WaitingContactConfirmation, WaitingRequestApproval };
 }
 
+/// <summary>
+/// The canonical status CODE vocabulary a visit-request list row's filter and badge both resolve
+/// through — see <c>VisitRowLabels.EffectiveCode</c>. 9 of the 11 total values are exactly the
+/// <see cref="VisitInstanceStatuses"/> values: a campus-driven row always resolves to its own campus
+/// status, with zero role/aggregate logic layered on top. These two constants are the only codes that
+/// exist purely at the request-AGGREGATE level (no single campus instance carries them), reusing
+/// <see cref="VisitRequestStatuses"/>' own string values rather than inventing new literals.
+/// </summary>
+public static class EffectiveStatusCodes
+{
+    /// <summary>
+    /// A multi-campus summary row read by anyone OTHER than HO while its request aggregate is
+    /// PARTIALLY_APPROVED. HO reads the very same row as <see cref="VisitInstanceStatuses.WaitingRequestApproval"/>
+    /// instead (see the HO-merge branch in <c>VisitRowLabels.Status</c>/<c>Resolve</c>), so this code
+    /// is only ever produced for a non-HO caller.
+    /// </summary>
+    public const string PartiallyApproved = VisitRequestStatuses.PartiallyApproved;
+
+    /// <summary>
+    /// A multi-campus summary row whose aggregate reads APPROVED but every one of its campus
+    /// instances has since been individually cancelled/rejected — the aggregate is never re-derived
+    /// once every campus leaves the denominator (see <c>VisitRequestAggregateStatusService.Compute</c>),
+    /// so <c>VisitRowLabels.MultiCampusProgress</c> finds no live campus to rank and the plain
+    /// aggregate reading is used. Rare, but kept as its own code — distinct from
+    /// <see cref="VisitInstanceStatuses.Assigned"/> — so a filter meaning "has a live host, hasn't
+    /// started prep" never silently picks up a zombie all-cancelled row that merely shares the label.
+    /// </summary>
+    public const string ApprovedNoLiveCampus = VisitRequestStatuses.Approved;
+}
+
 // CampusSubmissionModes (SEND_FOR_REVIEW / SELF_HOST / ASSIGN_HOST) was removed with direct
 // processing. Its replacement is HostSelectionModes (SELF / SELECTED / WAIT_FOR_LATER) in
 // PEMS.Domain.Enums: those values name an INTENTION recorded at submit, not a decision taken there.

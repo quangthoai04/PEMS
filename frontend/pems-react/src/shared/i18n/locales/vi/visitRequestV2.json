@@ -952,7 +952,7 @@
       },
       "approved": {
         "label": "Đã duyệt",
-        "description": "Đơn đã được duyệt (bao gồm đang chuẩn bị, đang diễn ra, chờ đánh giá hoặc đã hoàn tất)"
+        "description": "Đơn đã được duyệt và có người phụ trách, chưa bắt đầu chuẩn bị"
       },
       "beforeVisit": {
         "label": "Đang chuẩn bị",

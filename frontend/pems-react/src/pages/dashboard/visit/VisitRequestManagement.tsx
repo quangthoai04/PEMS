@@ -754,11 +754,20 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
 
       if (targetFilters.status) {
         const option = filterConfig.statusOptions.find((o) => o.value === targetFilters.status);
-        if (option?.cancelledOnly) params.cancelledOnly = true;
-        if (option?.pendingApprovalAny) params.pendingApprovalAny = true;
-        if (option?.approvedAny) params.approvedAny = true;
-        if (option?.requestStatus) params.requestStatus = option.requestStatus;
-        if (option?.campusStatus) params.campusStatus = option.campusStatus;
+        // Canonical status filter (P0-01): matches a row's own effectiveStatusCode/statusLabel
+        // exactly, so the filter and the rendered badge can never disagree. Every option in
+        // visitRequestFilterConfig.ts now sets effectiveStatus/effectiveStatuses; the legacy
+        // fields below only fire for an option that hasn't been migrated (none currently), kept
+        // for backward compatibility rather than deleted outright.
+        if (option?.effectiveStatus) params.effectiveStatus = option.effectiveStatus;
+        else if (option?.effectiveStatuses) params.effectiveStatuses = option.effectiveStatuses;
+        else {
+          if (option?.cancelledOnly) params.cancelledOnly = true;
+          if (option?.pendingApprovalAny) params.pendingApprovalAny = true;
+          if (option?.approvedAny) params.approvedAny = true;
+          if (option?.requestStatus) params.requestStatus = option.requestStatus;
+          if (option?.campusStatus) params.campusStatus = option.campusStatus;
+        }
         if (option?.visitScope) params.visitScope = option.visitScope;
         if (option?.readOnlyOnly) params.readOnlyOnly = true;
         if (option?.actionableOnly) params.actionableOnly = true;
@@ -892,7 +901,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
           host: item.hostName || '',
           sender: item.visitorName || '',
           time: formatDateTimeShort(item.plannedStartAt),
-          statusText: getVietnameseStatus(item.requestStatus, item.campusStatus),
+          // P0-01: prefer the backend's own resolution (same source EffectiveStatusCode/the
+          // status filter both read) over re-deriving it here; getVietnameseStatus stays only as
+          // the documented fallback for a row that predates statusLabel.
+          statusText: item.statusLabel || getVietnameseStatus(item.requestStatus, item.campusStatus),
         }));
         // `params.visitRequestId` above already narrowed this to the exact target server-side — no
         // client re-filter needed, and `response.totalItems` is already the exact (0 or 1+) count.
@@ -1212,7 +1224,7 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
             host: matched.hostName || '',
             sender: matched.visitorName || '',
             time: formatDateTimeShort(matched.plannedStartAt),
-            statusText: getVietnameseStatus(matched.requestStatus, matched.campusStatus),
+            statusText: matched.statusLabel || getVietnameseStatus(matched.requestStatus, matched.campusStatus),
           };
           setAssign({ open: true, row, mode: 'approve' });
           return;
@@ -1901,41 +1913,69 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     // statusLabel backend, đã role-aware).
     type StatusKind = 'pending' | 'pendingRequest' | 'rejected' | 'cancelled' | 'assigned'
       | 'before' | 'during' | 'after' | 'closed' | 'approved' | 'awaitingConfirmation';
-    let kind: StatusKind;
-    // Chờ xác nhận đứng trước mọi nhánh khác — khớp thứ tự ưu tiên của
-    // VisitRowLabels.Status backend: đầu mối chưa xác nhận thì mọi trạng thái bên dưới đều chưa
-    // có ý nghĩa, TRỪ khi đã bị hủy trước khi kịp xác nhận. Tín hiệu là trạng thái TỪNG CƠ SỞ
-    // (hoặc aggregate của đơn) — KHÔNG phải một đầu mối cấp đơn.
-    if ((row.campusStatus === 'WAITING_CONTACT_CONFIRMATION'
-        || (!row.campusStatus && row.requestStatus === 'PENDING_CONTACT_CONFIRMATION'))
-      && row.requestStatus !== 'CANCELLED' && row.campusStatus !== 'CANCELLED') {
-      kind = 'awaitingConfirmation';
-    }
-    else if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') kind = 'cancelled';
-    else if (row.campusStatus === 'REJECTED') kind = 'rejected';
-    else if (row.campusStatus === 'WAITING_REQUEST_APPROVAL') kind = 'pending';
-    else if (row.campusStatus === 'ASSIGNED') kind = 'assigned';
-    else if (row.campusStatus === 'BEFORE_VISIT') kind = 'before';
-    else if (row.campusStatus === 'DURING_VISIT') kind = 'during';
-    else if (row.campusStatus === 'AFTER_VISIT') kind = 'after';
-    else if (row.campusStatus === 'CLOSED') kind = 'closed';
-    // Request-level rows (không có campusStatus): aggregate.
-    else if (row.requestStatus === 'REJECTED') kind = 'rejected';
-    else if (row.requestStatus === 'APPROVED') kind = 'approved';
-    else kind = 'pendingRequest'; // gồm cả PENDING_APPROVAL và PARTIALLY_APPROVED
 
-    // Đơn liên cơ sở (dòng tổng hợp, không có campusStatus riêng): "approved" chỉ nói "đã duyệt
-    // xong", không nói cơ sở nào đang ở đâu — quy về cơ sở CHẬM NHẤT trong campusProgressItems,
-    // khớp VisitRowLabels.MultiCampusProgress backend (đơn chỉ "Đã hoàn tất" khi MỌI cơ sở xong).
-    if (kind === 'approved' && row.campusProgressItems && row.campusProgressItems.length > 0) {
-      const progressOrder: Record<string, number> = { ASSIGNED: 0, BEFORE_VISIT: 1, DURING_VISIT: 2, AFTER_VISIT: 3, CLOSED: 4 };
-      const kindByCode: Record<string, StatusKind> = { ASSIGNED: 'assigned', BEFORE_VISIT: 'before', DURING_VISIT: 'during', AFTER_VISIT: 'after', CLOSED: 'closed' };
-      let leastCode: string | null = null;
-      for (const cp of row.campusProgressItems) {
-        if (!(cp.instanceStatus in progressOrder)) continue;
-        if (leastCode === null || progressOrder[cp.instanceStatus] < progressOrder[leastCode]) leastCode = cp.instanceStatus;
+    // Canonical status → badge kind (P0-01). The backend now ships `effectiveStatusCode`,
+    // resolved from the EXACT SAME switch that produces `statusLabel` (VisitRowLabels.Resolve) —
+    // reading it here means the badge COLOR can never disagree with the badge TEXT (`statusText`
+    // below already prefers `statusLabel`), and neither can disagree with what a status filter
+    // just matched the row on. `PARTIALLY_APPROVED` reuses the `pendingRequest` kind (same yellow
+    // "still not fully decided" color; the text itself still comes from backend `statusLabel`,
+    // "Duyệt một phần") rather than adding a new kind/i18n key pair for a color-only distinction.
+    const kindByEffectiveCode: Record<string, StatusKind> = {
+      WAITING_CONTACT_CONFIRMATION: 'awaitingConfirmation',
+      WAITING_REQUEST_APPROVAL: 'pending',
+      PARTIALLY_APPROVED: 'pendingRequest',
+      ASSIGNED: 'assigned',
+      BEFORE_VISIT: 'before',
+      DURING_VISIT: 'during',
+      AFTER_VISIT: 'after',
+      CLOSED: 'closed',
+      APPROVED: 'approved',
+      REJECTED: 'rejected',
+      CANCELLED: 'cancelled',
+    };
+
+    let kind: StatusKind;
+    if (row.effectiveStatusCode && kindByEffectiveCode[row.effectiveStatusCode]) {
+      kind = kindByEffectiveCode[row.effectiveStatusCode];
+    } else {
+      // ── Fallback ONLY: a row that somehow lacks effectiveStatusCode (older cached data, or a
+      // surface this list doesn't cover yet) re-derives it manually, same as before this change. ──
+      // Chờ xác nhận đứng trước mọi nhánh khác — khớp thứ tự ưu tiên của
+      // VisitRowLabels.Status backend: đầu mối chưa xác nhận thì mọi trạng thái bên dưới đều chưa
+      // có ý nghĩa, TRỪ khi đã bị hủy trước khi kịp xác nhận. Tín hiệu là trạng thái TỪNG CƠ SỞ
+      // (hoặc aggregate của đơn) — KHÔNG phải một đầu mối cấp đơn.
+      if ((row.campusStatus === 'WAITING_CONTACT_CONFIRMATION'
+          || (!row.campusStatus && row.requestStatus === 'PENDING_CONTACT_CONFIRMATION'))
+        && row.requestStatus !== 'CANCELLED' && row.campusStatus !== 'CANCELLED') {
+        kind = 'awaitingConfirmation';
       }
-      if (leastCode) kind = kindByCode[leastCode];
+      else if (row.requestStatus === 'CANCELLED' || row.campusStatus === 'CANCELLED') kind = 'cancelled';
+      else if (row.campusStatus === 'REJECTED') kind = 'rejected';
+      else if (row.campusStatus === 'WAITING_REQUEST_APPROVAL') kind = 'pending';
+      else if (row.campusStatus === 'ASSIGNED') kind = 'assigned';
+      else if (row.campusStatus === 'BEFORE_VISIT') kind = 'before';
+      else if (row.campusStatus === 'DURING_VISIT') kind = 'during';
+      else if (row.campusStatus === 'AFTER_VISIT') kind = 'after';
+      else if (row.campusStatus === 'CLOSED') kind = 'closed';
+      // Request-level rows (không có campusStatus): aggregate.
+      else if (row.requestStatus === 'REJECTED') kind = 'rejected';
+      else if (row.requestStatus === 'APPROVED') kind = 'approved';
+      else kind = 'pendingRequest'; // gồm cả PENDING_APPROVAL và PARTIALLY_APPROVED
+
+      // Đơn liên cơ sở (dòng tổng hợp, không có campusStatus riêng): "approved" chỉ nói "đã duyệt
+      // xong", không nói cơ sở nào đang ở đâu — quy về cơ sở CHẬM NHẤT trong campusProgressItems,
+      // khớp VisitRowLabels.MultiCampusProgress backend (đơn chỉ "Đã hoàn tất" khi MỌI cơ sở xong).
+      if (kind === 'approved' && row.campusProgressItems && row.campusProgressItems.length > 0) {
+        const progressOrder: Record<string, number> = { ASSIGNED: 0, BEFORE_VISIT: 1, DURING_VISIT: 2, AFTER_VISIT: 3, CLOSED: 4 };
+        const kindByCode: Record<string, StatusKind> = { ASSIGNED: 'assigned', BEFORE_VISIT: 'before', DURING_VISIT: 'during', AFTER_VISIT: 'after', CLOSED: 'closed' };
+        let leastCode: string | null = null;
+        for (const cp of row.campusProgressItems) {
+          if (!(cp.instanceStatus in progressOrder)) continue;
+          if (leastCode === null || progressOrder[cp.instanceStatus] < progressOrder[leastCode]) leastCode = cp.instanceStatus;
+        }
+        if (leastCode) kind = kindByCode[leastCode];
+      }
     }
 
     let cancelledText = tt('visitRequestV2:list.statusBadge.cancelled.label');

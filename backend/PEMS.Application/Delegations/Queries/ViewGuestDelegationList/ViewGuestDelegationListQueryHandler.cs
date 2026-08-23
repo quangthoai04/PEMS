@@ -10,6 +10,7 @@ using PEMS.Application.Common.Models;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
 using PEMS.Shared;
 
@@ -213,6 +214,9 @@ public sealed class ViewGuestDelegationListQueryHandler
                     item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus), roleCode);
                 if (progressLabel is not null) item.StatusLabel = progressLabel;
             }
+            // Same override, factored into one place (EffectiveStatusCodeFor) so this can never drift
+            // from what QueryAllMergedAsync's post-merge status filter already resolved for tab=all.
+            item.EffectiveStatusCode = EffectiveStatusCodeFor(item, roleCode);
             // Read-only when no mutating action is available (only VIEW_DETAIL, or none).
             item.IsReadOnly = !item.AllowedActions.Any(a => a != VisitListActions.ViewDetail);
         }
@@ -300,6 +304,26 @@ public sealed class ViewGuestDelegationListQueryHandler
             tabByItem[primary.Item] = primary.Tab;
         }
 
+        // REQUEST_ANY_CAMPUS status filter (see docs/CanhIter3FixBug/GopYCQuyen/
+        // PEMS_ROLE_TAB_STATUS_FILTER_COMPREHENSIVE_FIX_PLAN.md §3.6), applied HERE — after every
+        // source has contributed to the merge/rank/fold above, before sort+paginate — never per-source
+        // (see CloneForMerge's doc comment for why filtering pre-merge would risk silently losing a
+        // relation, not just a row). Matches on the merged row's OWN campus data (RowMatchesAnyCampusStatus)
+        // rather than the single EffectiveStatusCodeFor bucket: a merged row that carries a multi-campus
+        // CampusProgressItems accordion (a registrant/HO-shaped candidate won or donated it) must surface
+        // under every status any of ITS campuses actually has, not just whichever one the merge picked as
+        // "the" bucket — the plain instance-level shape (no progress items — a Staff member's own single
+        // hosted/attending instance) still matches on that one instance's own status, unchanged.
+        if (!string.IsNullOrWhiteSpace(request.EffectiveStatus) || !string.IsNullOrWhiteSpace(request.EffectiveStatuses))
+        {
+            var wanted = !string.IsNullOrWhiteSpace(request.EffectiveStatus)
+                ? new HashSet<string> { request.EffectiveStatus }
+                : request.EffectiveStatuses!.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(s => s.Trim()).Where(s => s.Length > 0).ToHashSet();
+            if (wanted.Count > 0)
+                merged = merged.Where(item => RowMatchesAnyCampusStatus(item, wanted)).ToList();
+        }
+
         var sorted = request.SortOrder?.ToLower() == "asc"
             ? merged.OrderBy(i => i.PlannedStartAt ?? DateTime.MaxValue).ThenBy(i => i.VisitRequestId).ToList()
             : merged.OrderByDescending(i => i.PlannedStartAt ?? DateTime.MinValue).ThenByDescending(i => i.VisitRequestId).ToList();
@@ -308,6 +332,48 @@ public sealed class ViewGuestDelegationListQueryHandler
         var paged = sorted.Skip((request.Page - 1) * request.PageSize).Take(request.PageSize).ToList();
 
         return (paged, total, tabByItem);
+    }
+
+    /// <summary>
+    /// The <c>EffectiveStatusCode</c> a row would get from the SAME override <c>Handle</c>'s
+    /// enrichment loop applies when setting <see cref="VisitRequestManagementItemDto.EffectiveStatusCode"/>
+    /// (the multi-campus "least-progressed live campus" override) — factored out here so
+    /// <see cref="QueryAllMergedAsync"/>'s post-merge status filter, which necessarily runs BEFORE
+    /// that enrichment loop, resolves the exact same code rather than a second hand-copied version of
+    /// the same override condition drifting out of step with it.
+    /// </summary>
+    private static string EffectiveStatusCodeFor(VisitRequestManagementItemDto item, string? roleCode)
+    {
+        var code = VisitRowLabels.EffectiveCode(item.RequestStatus, item.CampusStatus, roleCode);
+        if (item.CampusStatus is null && item.RequestStatus == VisitRequestStatuses.Approved
+            && item.CampusProgressItems.Count > 0)
+        {
+            var progressCode = VisitRowLabels.MultiCampusProgressCode(
+                item.CampusProgressItems.Select(cp => (string?)cp.InstanceStatus), roleCode);
+            if (progressCode is not null) return progressCode;
+        }
+        return code;
+    }
+
+    /// <summary>
+    /// REQUEST_ANY_CAMPUS match for an already-merged "all"-tab row (see
+    /// docs/CanhIter3FixBug/GopYCQuyen/PEMS_ROLE_TAB_STATUS_FILTER_COMPREHENSIVE_FIX_PLAN.md §3.6):
+    /// INCLUDED iff at least one of the row's own campuses carries EXACTLY one of <paramref name="codes"/>.
+    /// A merged row that carries the multi-campus accordion (<see cref="VisitRequestManagementItemDto.CampusProgressItems"/>
+    /// non-empty — a registrant/HO-shaped candidate won the merge or donated it via
+    /// <see cref="MergeCandidateInto"/>) matches on EVERY one of those campuses, never just the single
+    /// bucket <see cref="EffectiveStatusCodeFor"/> would have picked. A plain instance-level row (no
+    /// progress items — a Staff member's own single hosted/attending instance) falls back to matching
+    /// its own <see cref="VisitRequestManagementItemDto.CampusStatus"/> directly, which is exactly
+    /// INSTANCE_EXACT semantics for the one campus it is about.
+    /// </summary>
+    private static bool RowMatchesAnyCampusStatus(VisitRequestManagementItemDto item, HashSet<string> codes)
+    {
+        if (item.CampusProgressItems.Count > 0)
+            return item.CampusProgressItems.Any(cp => codes.Contains(cp.InstanceStatus));
+        if (item.CampusStatus is not null)
+            return codes.Contains(item.CampusStatus);
+        return codes.Contains(VisitInstanceStatus.Cancelled) && item.RequestStatus == VisitRequestStatuses.Cancelled;
     }
 
     /// <summary>
@@ -633,7 +699,25 @@ public sealed class ViewGuestDelegationListQueryHandler
         return (pick.EntryContext, pick.VisitInstanceId);
     }
 
-    /// <summary>Shallow copy with Page/PageSize overridden — used to fetch a merge source unpaginated.</summary>
+    /// <summary>
+    /// Shallow copy with Page/PageSize overridden — used to fetch a merge source unpaginated.
+    ///
+    /// <para>
+    /// Deliberately does NOT copy <see cref="ViewGuestDelegationListQuery.EffectiveStatus"/>/
+    /// <see cref="ViewGuestDelegationListQuery.EffectiveStatuses"/>: a status filter applied to one
+    /// source BEFORE the merge/rank/fold step below can silently exclude that source's candidate for
+    /// a request while a different source's candidate for the SAME request still passes — which
+    /// changes which relation wins the merge (<see cref="CandidateRank"/>) or drops a relation's data
+    /// entirely (<see cref="MergeCandidateInto"/>), not merely which rows are visible. The canonical
+    /// filter is applied AFTER merging instead — see <see cref="QueryAllMergedAsync"/>.
+    /// </para>
+    /// <para>
+    /// <see cref="ViewGuestDelegationListQuery.ApprovedAny"/>/<see cref="ViewGuestDelegationListQuery.PendingApprovalAny"/>/
+    /// <see cref="ViewGuestDelegationListQuery.Timing"/> WERE silently dropped here (a real, separate
+    /// bug — HO's quick filters were no-ops whenever merged with an "all"-tab fetch); they are legacy,
+    /// pre-merge-safe params so they belong here same as the others.
+    /// </para>
+    /// </summary>
     private static ViewGuestDelegationListQuery CloneForMerge(ViewGuestDelegationListQuery source, int pageSize) => new()
     {
         Tab = source.Tab,
@@ -649,6 +733,8 @@ public sealed class ViewGuestDelegationListQueryHandler
         FromDate = source.FromDate,
         ToDate = source.ToDate,
         CancelledOnly = source.CancelledOnly,
+        PendingApprovalAny = source.PendingApprovalAny,
+        ApprovedAny = source.ApprovedAny,
         Relation = source.Relation,
         ReadOnlyOnly = source.ReadOnlyOnly,
         ActionableOnly = source.ActionableOnly,
@@ -934,6 +1020,23 @@ public sealed class ViewGuestDelegationListQueryHandler
                 q = q.Where(x => x.vr.Status == request.RequestStatus);
             if (!string.IsNullOrWhiteSpace(request.CampusStatus))
                 q = q.Where(x => x.c.Status == request.CampusStatus);
+        }
+
+        // Canonical status filter (P0-01). Every row here is rooted on visit_request_campuses, so
+        // EffectiveCode is always exactly this campus's own status (VisitRowLabels.Resolve never
+        // applies role/aggregate logic once campusStatus is non-null) — a straight passthrough, same
+        // shape as the legacy CampusStatus filter above. Purely additive: applied on top of whatever
+        // legacy params the caller also sent.
+        if (!string.IsNullOrWhiteSpace(request.EffectiveStatus))
+        {
+            q = q.Where(x => x.c.Status == request.EffectiveStatus);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.EffectiveStatuses))
+        {
+            var effectiveCodes = request.EffectiveStatuses.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
+            if (effectiveCodes.Count > 0)
+                q = q.Where(x => effectiveCodes.Contains(x.c.Status));
         }
 
         if (request.CampusId.HasValue)
@@ -1355,6 +1458,76 @@ public sealed class ViewGuestDelegationListQueryHandler
         }
     }
 
+    // ── REQUEST_ANY_CAMPUS status filter for request-level rows ─────────────────────────────────
+    // Every caller of QueryRequestLevelAsync — HO monitoring, Visitor's own contact-owner view, and
+    // the "registered" tab for any role — tracks the WHOLE request across every campus of it, so this
+    // is role-agnostic (see docs/CanhIter3FixBug/GopYCQuyen/PEMS_ROLE_TAB_STATUS_FILTER_COMPREHENSIVE_
+    // FIX_PLAN.md §3.1/3.2/3.5). Built as a real WHERE-clause predicate (not an in-memory
+    // fetch-then-filter) so pagination/COUNT stay exactly where they are today.
+
+    /// <summary>
+    /// A request is INCLUDED under a chosen status iff AT LEAST ONE of its own campus instances
+    /// carries EXACTLY that status (<c>CampusInstances.Any(i => codes.Contains(i.Status))</c>) — covers
+    /// SINGLE_CAMPUS and MULTI_CAMPUS identically, with no role/aggregate bucket resolution to keep
+    /// hand-synced against <c>VisitRowLabels.Resolve</c>. A request with Hà Nội ASSIGNED and Đà Nẵng
+    /// still WAITING_REQUEST_APPROVAL must appear under BOTH "Đã duyệt" and "Chờ duyệt" — the caller
+    /// tracks every campus of the request, not whichever one bucket a single-canonical resolution would
+    /// have picked. This filter only ever narrows WHICH rows appear — it must never be read back into
+    /// <c>EffectiveStatusCode</c>/<c>StatusLabel</c>, which stay the single aggregate badge
+    /// <c>VisitRowLabels.Resolve</c> already computes for display (see the plan's §7.3/§8: the parent
+    /// badge may still summarize, but must never be the thing that decides this filter).
+    ///
+    /// <para>
+    /// The one exception mirrors the identical override already applied a few lines above to the
+    /// <see cref="ViewGuestDelegationListQuery.CancelledOnly"/> quick filter: a request CANCELLED at the
+    /// request level still counts for the CANCELLED bucket even on the rare legacy row where no single
+    /// campus instance itself carries CANCELLED.
+    /// </para>
+    /// <para>
+    /// Also folds in <see cref="ViewGuestDelegationListQuery.CampusId"/>/<see cref="ViewGuestDelegationListQuery.FromDate"/>/
+    /// <see cref="ViewGuestDelegationListQuery.ToDate"/> as an ADDITIONAL same-instance constraint when
+    /// any of them is set — the plan's §12/§13 existential-mismatch guard. Those three filters are also
+    /// applied further down this method as independent <c>.Any()</c> predicates over the campus
+    /// collection; on their own, "Campus=HN + Status=ASSIGNED" could true-positive on HN matching the
+    /// campus half and a SIBLING campus (DN) matching the status half. The extra predicate here requires
+    /// campus AND date AND status on the SAME <c>ci</c>, which is strictly NARROWER than — and therefore
+    /// safe to AND alongside — those separate filters: a witness satisfying the combined predicate
+    /// trivially satisfies each of them alone, so this can only exclude the mismatch case, never wrongly
+    /// exclude a genuine match.
+    /// </para>
+    /// </summary>
+    private static IQueryable<VisitRequest> ApplyRequestLevelAnyCampusStatusFilter(
+        IQueryable<VisitRequest> source, ViewGuestDelegationListQuery request)
+    {
+        List<string> codes;
+        if (!string.IsNullOrWhiteSpace(request.EffectiveStatus))
+        {
+            codes = new List<string> { request.EffectiveStatus };
+        }
+        else if (!string.IsNullOrWhiteSpace(request.EffectiveStatuses))
+        {
+            codes = request.EffectiveStatuses.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim()).Where(s => s.Length > 0).Distinct().ToList();
+        }
+        else
+        {
+            return source;
+        }
+        if (codes.Count == 0) return source;
+
+        var matchesCancelledAggregate = codes.Contains(VisitInstanceStatus.Cancelled);
+        var campusId = request.CampusId;
+        DateTime? from = request.FromDate?.Date;
+        DateTime? to = request.ToDate?.Date.AddDays(1).AddTicks(-1);
+
+        return source.Where(vr =>
+            (vr.CampusInstances.Any(i => codes.Contains(i.Status)
+                    && (!campusId.HasValue || i.CampusId == campusId.Value)
+                    && (!from.HasValue || i.PlannedEndAt >= from.Value)
+                    && (!to.HasValue || i.PlannedStartAt <= to.Value))
+                || (matchesCancelledAggregate && vr.Status == VisitRequestStatuses.Cancelled)));
+    }
+
     // ── Request-level: responsible tab for Visitor & HO, and the REGISTERED tab
     // (registeredView: rows where the caller is the registrant — full stop) ──
     private async Task<(List<VisitRequestManagementItemDto> Items, int Total)> QueryRequestLevelAsync(
@@ -1424,6 +1597,13 @@ public sealed class ViewGuestDelegationListQueryHandler
             // assigned a host, or a request whose aggregate is fully approved).
             q = q.Where(vr => vr.Status == VisitRequestStatuses.Approved
                 || vr.CampusInstances.Any(i => i.Status == VisitInstanceStatus.Assigned));
+        }
+        else if (!string.IsNullOrWhiteSpace(request.EffectiveStatus) || !string.IsNullOrWhiteSpace(request.EffectiveStatuses))
+        {
+            // REQUEST_ANY_CAMPUS status filter — role-agnostic; see
+            // ApplyRequestLevelAnyCampusStatusFilter's own doc comment for why every caller of this
+            // method (HO, Visitor's own view, and "registered" for any role) wants this semantics.
+            q = ApplyRequestLevelAnyCampusStatusFilter(q, request);
         }
         else
         {

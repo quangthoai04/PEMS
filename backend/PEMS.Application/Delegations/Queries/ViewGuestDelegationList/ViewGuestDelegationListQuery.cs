@@ -25,6 +25,23 @@ public class ViewGuestDelegationListQuery : IRequest<PaginatedResult<VisitReques
     public ulong? VisitRequestId { get; init; }
     public string? RequestStatus { get; init; }
     public string? CampusStatus { get; init; }
+    /// <summary>
+    /// Canonical status filter (see <c>VisitRowLabels.EffectiveCode</c>/<c>EffectiveStatusCodes</c>) —
+    /// matches a row on the SAME code its badge (<c>StatusLabel</c>/<c>EffectiveStatusCode</c>) was
+    /// resolved from, so a row can never pass this filter while showing a different status (P0-01).
+    /// Purely additive: <see cref="RequestStatus"/>/<see cref="CampusStatus"/>/<see cref="ApprovedAny"/>/
+    /// <see cref="PendingApprovalAny"/> keep working unchanged for any caller that still sends them;
+    /// this is evaluated first when present (see the handler's filter branch ordering).
+    /// </summary>
+    public string? EffectiveStatus { get; init; }
+    /// <summary>
+    /// Comma-separated union of <see cref="EffectiveStatus"/> codes — needed because at least one
+    /// existing UI grouping (Visitor's "Đã duyệt", which its own description already says covers
+    /// "đang chuẩn bị, đang diễn ra, chờ đánh giá hoặc đã hoàn tất") is a deliberate union of several
+    /// canonical codes, not one. Mirrors the existing <see cref="VisitScopes"/> comma-list pattern.
+    /// Ignored when <see cref="EffectiveStatus"/> is also set (single code wins).
+    /// </summary>
+    public string? EffectiveStatuses { get; init; }
     public ulong? CampusId { get; init; }
     public string? VisitScope { get; init; }
     public string? VisitScopes { get; init; }

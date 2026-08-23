@@ -590,9 +590,18 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         title={t('visitRequestV2:sections.campuses')}
         description={t('visitRequestV2:sections.campusesDesc')}
       >
-        {typeof errors.campusVisits?.message === 'string' && (
-          <p className="mb-3 text-sm font-normal text-red-600" role="alert">{errors.campusVisits.message}</p>
-        )}
+        {(() => {
+          // Same array-root shape as CampusVisitCard's visitors/.min(1) fix: RHF's useFieldArray
+          // puts a list-level error at `.root.message`, not `.message`. Currently unreachable in
+          // the shipped UI (both the row's remove button and useVisitRequestFormV2's
+          // removeCampusVisit independently refuse to drop below 1 campus), but hardened here too
+          // so it can't silently reproduce the moment either guard changes.
+          const campusVisitsError = errors.campusVisits as { message?: unknown; root?: { message?: unknown } } | undefined;
+          const msg = campusVisitsError?.message ?? campusVisitsError?.root?.message;
+          return typeof msg === 'string' && (
+            <p className="mb-3 text-sm font-normal text-red-600" role="alert">{msg}</p>
+          );
+        })()}
         <div className="space-y-4">
           {campusVisitFields.fields.map((field, index) => {
             const clientKey = form.getValues(`campusVisits.${index}.clientKey`) || (field as any).clientKey || field.id;
