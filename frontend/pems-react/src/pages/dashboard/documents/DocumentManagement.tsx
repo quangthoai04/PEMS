@@ -10,7 +10,6 @@ import { useAuth } from '../../../shared/hooks/useAuth';
 import { useCampusFilterOptions } from '../../../features/campus-management/hooks/useCampusManagement';
 import { DocumentOwnerType, DocumentStatus, StorageProvider, DocumentListItem } from '../../../features/documents/types/documents.types';
 import { DocumentDetailModal } from './DocumentDetailModal';
-import { DocumentSummaryCompact } from '../../../features/documents/components/DocumentSummaryCompact';
 import { DocumentFilterBar } from '../../../features/documents/components/DocumentFilterBar';
 import { DocumentTable } from '../../../features/documents/components/DocumentTable';
 
@@ -82,16 +81,7 @@ export function DocumentManagement() {
   };
 
   const docs = documentData?.items || [];
-  const totalCount = documentData?.totalCount || 0;
   const totalPages = documentData?.totalPages || 1;
-
-  // Summaries calculation on current page for demo - if backend returns stats, use them instead.
-  const summary = {
-    total: totalCount,
-    draft: docs.filter(d => d.status === 'DRAFT').length,
-    published: docs.filter(d => d.status === 'PUBLISHED').length,
-    archived: docs.filter(d => d.status === 'ARCHIVED').length,
-  };
 
   return (
     <div className="w-full pb-12 flex flex-col space-y-4 animate-in fade-in duration-300">
@@ -107,14 +97,6 @@ export function DocumentManagement() {
           <h1 className="text-3xl font-bold text-[#004c91]">Quản lý tài liệu</h1>
         </div>
       </div>
-
-      {/* Summary compact */}
-      <DocumentSummaryCompact
-        total={summary.total}
-        draft={summary.draft}
-        published={summary.published}
-        archived={summary.archived}
-      />
 
       {/* 2. Filter Bar */}
       <DocumentFilterBar
