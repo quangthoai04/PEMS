@@ -129,6 +129,14 @@ const buildPersonSchema = (t: ValidationTranslator, role: 'visitor' | 'support')
      * mints one for every row it creates or restores, so a submitted payload always carries them.</p>
      */
     clientMemberKey: z.string().optional(),
+    /**
+     * This row's STABLE database identity, or null/undefined for a row with no id yet (a new row this
+     * session, or any row on the CREATE form). Restored on load, unaffected by editing the row's own
+     * fields — only removing the row clears it. What lets the operational-contact relation be set by
+     * PERSISTENT id instead of the ephemeral `clientMemberKey` when the member list itself is
+     * unchanged (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn không?").
+     */
+    guestMemberId: z.number().nullable().optional(),
     fullName: bounded(
       z.string().trim().min(1, t('requiredField', { field: label('FullName') })), 150, label('FullName'), t),
     jobTitle: bounded(

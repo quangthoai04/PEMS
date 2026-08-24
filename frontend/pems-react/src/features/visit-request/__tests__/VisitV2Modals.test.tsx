@@ -154,7 +154,12 @@ describe('VisitAmendmentSubmitModal — member list', () => {
         organizationPartnerId: 42, jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
     });
     openWithReason(campus);
-    const orgInput = within(screen.getByTestId(/amendment-visitors-organization-/)).getByRole('combobox');
+    // Anchored to exclude the sibling "-known" test id: removing `isCell` (plan FIX-E) un-suppresses
+    // OrganizationCombobox's own "picked from list" indicator paragraph, which now legitimately renders
+    // here too and shares the same prefix.
+    const orgInput = within(
+      screen.getByTestId(/^amendment-visitors-organization-(?!.*-known$)/),
+    ).getByRole('combobox');
     fireEvent.change(orgInput, { target: { value: 'Đơn vị khác' } });
     fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
 
@@ -163,28 +168,30 @@ describe('VisitAmendmentSubmitModal — member list', () => {
     expect(payload.visitors[0].organizationPartnerId).toBeNull();
   });
 
-  // AM-NEW: the contact PROFILE has exactly one editable door left — "Manage the contact role" — so
-  // this modal renders it read-only and never lets the submitted payload diverge from what the
-  // backend already has on file, no matter what the picker below it does.
-  it('shows the contact profile as read-only and offers no editable contact-profile inputs', async () => {
+  // U1-U3 (plan CanhIter3FixBug §3/§21/§27-A): the general "Đề xuất thay đổi" modal shows NO
+  // Operational Contact surface at all any more — not the profile, read-only or otherwise, and not a
+  // relation picker. That workflow moved to Operational Contact Management (plan §5) so it is never
+  // read as "this is where you change who the contact is".
+  it('renders no Operational Contact section — no profile block, no relation picker', async () => {
     vi.mocked(submitAmendment).mockResolvedValue({} as never);
     const campus = campusFixture();
     openWithReason(campus);
 
-    expect(screen.getByTestId('amendment-contact-fullname-readonly')).toHaveTextContent('Đầu Mối HN');
-    expect(screen.getByTestId('amendment-contact-jobtitle-readonly')).toHaveTextContent('Trưởng phòng');
-    expect(screen.getByTestId('amendment-contact-organization-readonly')).toHaveTextContent('ĐH ABC');
-    expect(screen.getByTestId('amendment-contact-phone-readonly')).toHaveTextContent('+84912345678');
-    expect(screen.getByTestId('amendment-contact-email-readonly')).toHaveTextContent('dm@x.vn');
+    expect(screen.queryByTestId('amendment-contact-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-profile-display')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-fullname-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-jobtitle-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-organization-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-phone-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-email-readonly')).toBeNull();
+    expect(screen.queryByTestId('amendment-contact-pick')).toBeNull();
+    // Neither the profile's own values nor the contact-block heading text appear anywhere on the modal.
+    expect(screen.queryByText('Đầu Mối HN')).toBeNull();
+    expect(screen.queryByText('dm@x.vn')).toBeNull();
 
-    // No input/select/combobox anywhere in this block lets the user type over any of the five fields —
-    // the ONLY interactive control inside it is the contact-member picker, added separately below.
-    expect(screen.queryByTestId('amendment-contact-organization')).toBeNull();
-    expect(screen.queryByRole('textbox', { name: /email/i })).toBeNull();
-    const readonlyBlock = screen.getByTestId('amendment-contact-profile-display');
-    expect(within(readonlyBlock).queryAllByRole('textbox')).toHaveLength(0);
-    expect(within(readonlyBlock).queryAllByRole('combobox')).toHaveLength(0);
-
+    // U4: even with nothing on screen for it, the submitted payload still carries the contact
+    // EXACTLY as persisted — the backend's unchanged-profile check must keep passing for a proposal
+    // built by this modal, same as before the UI moved.
     fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
     await waitFor(() => expect(submitAmendment).toHaveBeenCalledTimes(1));
     const [, , payload] = vi.mocked(submitAmendment).mock.calls[0];
@@ -194,21 +201,10 @@ describe('VisitAmendmentSubmitModal — member list', () => {
     });
   });
 
-  // AM-NEW: the picker still lets a proposal say WHO the contact is — a relationship, not a
-  // description — and both Guest and External Support rows are eligible picks (plan PEMS_CONTACT_ONE_DOOR).
-  it('offers both guest and support members in the contact-member picker', () => {
-    const campus = campusFixture({
-      supportMembers: [
-        { guestMemberId: 2, memberType: 'EXTERNAL_SUPPORT', fullName: 'Hỗ Trợ Một', organization: 'Org S', jobTitle: 'Trợ lý', nationality: 'VN', displayOrder: 1 },
-      ],
-    });
-    openWithReason(campus);
-    const picker = screen.getByTestId('amendment-contact-pick');
-    expect(within(picker).getByText(/Khách Một.*Guest/)).toBeInTheDocument();
-    expect(within(picker).getByText(/Hỗ Trợ Một.*Support staff/)).toBeInTheDocument();
-  });
-
-  it('preselects the contact picker from the resolved operational contact link', () => {
+  // Plan CanhIter3FixBug §4/§27-B: removing the VISIBLE picker must not remove the underlying relation
+  // tracking — a general amendment (schedule/purpose/members/...) still has to preserve WHO the contact
+  // is, silently, exactly as it stood before the proposal, so it never gets read as a relation change.
+  it('silently preserves the persisted contact relation in the payload with no UI to change it', async () => {
     const campus = campusFixture({
       visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
       operationalContact: {
@@ -218,14 +214,31 @@ describe('VisitAmendmentSubmitModal — member list', () => {
       },
     });
     openWithReason(campus);
-    const picker = screen.getByTestId('amendment-contact-pick') as HTMLSelectElement;
-    expect(picker.value).not.toBe('');
-    // Scoped to the picker itself: the read-only contact block above ALSO shows "Khách Một" (it is
-    // the contact's own snapshot name), so an unscoped query now matches more than one element.
-    expect(within(picker).getByText(/Khách Một/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
+
+    await waitFor(() => expect(submitAmendment).toHaveBeenCalledTimes(1));
+    const [, , payload] = vi.mocked(submitAmendment).mock.calls[0];
+    // The member list is UNCHANGED, so the persistent id is what carries the (unchanged) relation.
+    expect(payload.operationalContactGuestMemberId).toBe(1);
   });
 
-  it('clears the contact pick when the member holding it is removed', () => {
+  it('sends null relation fields when the contact starts outside the delegation', async () => {
+    const campus = campusFixture({
+      visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
+    });
+    openWithReason(campus); // default fixture's operationalContact carries no guestMemberId
+    fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
+
+    await waitFor(() => expect(submitAmendment).toHaveBeenCalledTimes(1));
+    const [, , payload] = vi.mocked(submitAmendment).mock.calls[0];
+    expect(payload.operationalContactClientMemberKey).toBeNull();
+    expect(payload.operationalContactGuestMemberId).toBeNull();
+  });
+
+  // FIX-C (plan CanhIter3FixBug §19/§26): removing the member who IS the operational contact must
+  // still be blocked outright, even with no picker on screen to re-point the relation first — the
+  // guard is on the delete action itself, not on the (now-removed) picker's presence.
+  it('still blocks removing the member who is the operational contact, with no picker on screen', () => {
     const campus = campusFixture({
       visitors: [{ guestMemberId: 1, memberType: 'VISITOR', fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', nationality: 'VN', displayOrder: 1 }],
       operationalContact: {
@@ -235,11 +248,12 @@ describe('VisitAmendmentSubmitModal — member list', () => {
       },
     });
     openWithReason(campus);
-    const picker = () => screen.getByTestId('amendment-contact-pick') as HTMLSelectElement;
-    expect(picker().value).not.toBe('');
-    fireEvent.click(screen.getByRole('button', { name: 'Add guest' })); // keeps ≥1 visitor so removal is allowed
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove row' })[0]);
-    expect(picker().value).toBe('');
+    expect(screen.queryByTestId('amendment-contact-pick')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Add guest' })); // keeps ≥1 visitor so removal isn't disabled
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove row' })[0]); // targets Khách Một's row
+
+    // Blocked, not silently applied: the row is still there.
+    expect(screen.getByDisplayValue('Khách Một')).toBeInTheDocument();
   });
 });
 
@@ -342,6 +356,22 @@ describe('VisitAmendmentSubmitModal — validation highlighting', () => {
     expect(container).not.toBeNull();
     expect(end).toHaveAttribute('aria-invalid', 'true');
     expect(within(container as HTMLElement).getByRole('alert')).toHaveTextContent(/end time must be after/i);
+  });
+
+  // FIX-D (plan CanhIter3FixBug): WorkingContent had no frontend validation at all before — the backend
+  // requires it, so a blank submission just round-tripped as a generic server refusal with nothing to
+  // point at.
+  it('FIX-D: a blank working content blocks submit and highlights the field', () => {
+    openWithReason();
+    const workingContent = screen.getByLabelText(/Working content/i);
+    fireEvent.change(workingContent, { target: { value: '   ' } }); // whitespace-only counts as blank
+    fireEvent.click(screen.getByRole('button', { name: 'Submit proposal' }));
+
+    expect(submitAmendment).not.toHaveBeenCalled();
+    const container = workingContent.closest('[data-field-error="true"]');
+    expect(container).not.toBeNull();
+    expect(workingContent).toHaveAttribute('aria-invalid', 'true');
+    expect(within(container as HTMLElement).getByRole('alert')).toBeInTheDocument();
   });
 
   it('AM-VAL-08: fixing a field clears its own error immediately, without a second Submit', () => {
@@ -634,26 +664,448 @@ describe('VisitSafeEditModal', () => {
     expect(payload.registrant?.nationality).not.toBe('VN');
   });
 
-  // QE: the campus contact profile has exactly one editable door left — "Manage the contact role" —
-  // so Quick Edit points at it instead of offering a second one (plan PEMS_CONTACT_ONE_DOOR).
-  it('points to "Manage the contact role" instead of offering editable contact-profile fields', async () => {
+  // ── Registrant UX hardening (GitHub "SAFE EDIT REGISTRANT UX HARDENING") ─────────────────────────
+  // Authority stays exactly `canEditShared` (form.viewer.allowedActions) — these tests pin only the
+  // PRESENTATION of that backend verdict (info icon, exact reason, dynamic lead-hours) and that the
+  // custom controls inside the registrant fieldset are genuinely locked, not merely wrapped by one.
+
+  /** A GRANTED request-level capability entry, mirroring what the backend attaches for a registrant
+   *  whose request qualifies — used to prove the tooltip/notice render the BACKEND's own numbers. */
+  const grantedSafeEditCapability = {
+    code: 'SUBMIT_SAFE_EDIT', scope: 'REQUEST' as const, visitInstanceId: null, enabled: true,
+    disabledReasonCode: null, disabledReason: null, cutoffAt: '2026-07-25T15:00:00',
+    plannedStartAt: '2026-08-01T09:00:00', campusName: 'FPTU Hà Nội', requiredLeadHours: 6,
+  };
+
+  it('TEST A: shows the info icon and every registrant control enabled when the request-level capability is granted', () => {
+    const f = form();
+    f.viewer.capabilities = [grantedSafeEditCapability];
+    render(<VisitSafeEditModal form={f} onClose={() => {}} onSaved={() => {}} />);
+
+    expect(screen.getByTestId('safe-edit-registrant-tooltip')).toBeInTheDocument();
+    expect(screen.getByTestId('safe-edit-shared-fields')).not.toBeDisabled();
+    expect(within(screen.getByTestId('safe-edit-registrant-organization')).getByRole('textbox')).not.toBeDisabled();
+    // react-select drops its `combobox` role from the accessibility-role query once disabled (still
+    // present as a raw attribute, per the DOM dump seen while developing this test) — queried as a
+    // plain node instead, which is robust either way.
+    expect(screen.getByTestId('safe-edit-registrant-nationality').querySelector('input')).not.toBeDisabled();
+    expect(screen.getByTestId('safe-edit-registrant-phone-input')).not.toBeDisabled();
+    expect(screen.queryByTestId('safe-edit-shared-locked')).not.toBeInTheDocument();
+  });
+
+  it('TEST B (main regression): a locked registrant block never disables an eligible sibling campus, and its own custom controls are truly disabled — not just the wrapping fieldset', async () => {
     vi.mocked(patchSafeDetails).mockResolvedValue({
       visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
     });
+    // Hà Nội already approved and well ahead; TP.HCM still pending its own decision — a genuine MIXED
+    // request. The registrant block is shared by both, so it is correctly locked; HN's own fields must
+    // stay usable regardless.
+    const mixed = form();
+    mixed.viewer.allowedActions = ['VIEW']; // no request-level SUBMIT_SAFE_EDIT
+    mixed.viewer.capabilities = [{
+      code: 'SUBMIT_SAFE_EDIT', scope: 'REQUEST', visitInstanceId: null, enabled: false,
+      disabledReasonCode: 'VISIT_MUTATION_LIFECYCLE_NOT_ALLOWED',
+      disabledReason: 'Cơ sở FPTU HCM chưa được duyệt; hãy dùng chức năng sửa thông tin cơ sở đang chờ duyệt.',
+      cutoffAt: null, plannedStartAt: '2026-08-03T09:00:00', campusName: 'FPTU HCM', requiredLeadHours: 6,
+    }];
+    mixed.campusVisits = [
+      campusFixture(),
+      campusFixture({
+        visitInstanceId: 11, campusId: 2, campusName: 'FPTU HCM',
+        instanceStatus: 'WAITING_REQUEST_APPROVAL', allowedActions: [],
+      }),
+    ];
+    render(<VisitSafeEditModal form={mixed} onClose={() => {}} onSaved={() => {}} />);
+
+    // Presentation: icon always present, locked notice shows the EXACT backend reason verbatim —
+    // never a frontend reconstruction of "why" from campus statuses.
+    expect(screen.getByTestId('safe-edit-registrant-tooltip')).toBeInTheDocument();
+    expect(screen.getByTestId('safe-edit-shared-locked')).toBeInTheDocument();
+    expect(screen.getByTestId('safe-edit-shared-locked-reason')).toHaveTextContent('FPTU HCM chưa được duyệt');
+    expect(screen.getByTestId('safe-edit-locked-campuses')).toHaveTextContent('FPTU HCM');
+
+    // The custom widgets are ACTUALLY locked — not only the ambient <fieldset disabled> around them,
+    // which does not by itself stop a react-select-style control's own click-driven menu.
+    expect(within(screen.getByTestId('safe-edit-registrant-organization')).getByRole('textbox')).toBeDisabled();
+    expect(screen.getByTestId('safe-edit-registrant-nationality').querySelector('input')).toBeDisabled();
+    expect(screen.getByTestId('safe-edit-registrant-phone-input')).toBeDisabled();
+
+    // HN stays fully usable and saves on its own — a locked shared block must never disable a sibling
+    // campus that is independently eligible.
+    fireEvent.change(screen.getByTestId('safe-edit-transportation-10'), { target: { value: 'Xe 29 chỗ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.registrant).toBeNull();
+    expect(payload.instances).toHaveLength(1);
+    expect(payload.instances?.[0].visitInstanceId).toBe(10);
+  });
+
+  it('TEST C: a request-level CUTOFF reason renders verbatim, while a sibling campus still inside its own window stays editable', () => {
+    // A valid, non-invented multi-campus shape: the campus that governs the request-level deadline
+    // (VisitMutationPolicy.RequestLevelScope / the read model's `Governing` helper) has itself just
+    // crossed its own cutoff — so its OWN per-instance capability is refused too, and it offers no
+    // fields at all — while a LATER sibling, days out, is still comfortably inside its own window.
+    const mixed = form();
+    mixed.viewer.allowedActions = ['VIEW'];
+    mixed.viewer.capabilities = [{
+      code: 'SUBMIT_SAFE_EDIT', scope: 'REQUEST', visitInstanceId: null, enabled: false,
+      disabledReasonCode: 'VISIT_MUTATION_CUTOFF_REACHED',
+      disabledReason: 'Thao tác này chỉ được thực hiện ít nhất 6 giờ trước khi chuyến thăm bắt đầu.',
+      cutoffAt: '2026-07-31T15:00:00', plannedStartAt: '2026-07-31T21:00:00', campusName: 'FPTU Hà Nội',
+      requiredLeadHours: 6,
+    }];
+    mixed.campusVisits = [
+      campusFixture({ allowedActions: [] }), // HN — past its own cutoff too, hence the request-level block
+      campusFixture({ visitInstanceId: 11, campusId: 2, campusName: 'FPTU HCM', plannedStartAt: '2026-08-05T09:00:00' }),
+    ];
+    render(<VisitSafeEditModal form={mixed} onClose={() => {}} onSaved={() => {}} />);
+
+    expect(screen.getByTestId('safe-edit-shared-locked-reason'))
+      .toHaveTextContent('ít nhất 6 giờ trước khi chuyến thăm bắt đầu');
+    expect(screen.getByTestId('safe-edit-transportation-11')).not.toBeDisabled();
+    expect(screen.queryByTestId('safe-edit-transportation-10')).toBeNull(); // HN offers nothing at all now
+    expect(screen.getByTestId('safe-edit-locked-campuses')).toHaveTextContent('FPTU Hà Nội');
+  });
+
+  it('TEST D: a non-registrant whose OWN campus is editable never gains registrant authority (no privilege escalation)', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    // Mirrors a campus's own confirmed operational contact opening Quick Edit for their campus: the
+    // backend only ever attaches a request-level SUBMIT_SAFE_EDIT capability for the registrant
+    // (VisitFormReadService, `if (isRegistrant && instances.Count > 0)`), so this actor's
+    // `viewer.capabilities` is simply ABSENT — never a disabled entry with a reason. The general
+    // explanation must still render without crashing, and the registrant block must stay locked even
+    // though this actor's own campus is fully editable.
+    const asContact = form();
+    asContact.viewer.allowedActions = ['VIEW'];
+    asContact.viewer.capabilities = undefined;
+    render(<VisitSafeEditModal form={asContact} onClose={() => {}} onSaved={() => {}} />);
+
+    expect(screen.getByTestId('safe-edit-shared-locked')).toBeInTheDocument();
+    expect(screen.queryByTestId('safe-edit-shared-locked-reason')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('safe-edit-registrant-organization')).getByRole('textbox')).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId('safe-edit-transportation-10'), { target: { value: 'Ghi chú riêng của HN' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.registrant).toBeNull();
+    expect(payload.instances).toEqual([
+      { visitInstanceId: 10, expectedRowVersion: 3, transportationNote: 'Ghi chú riêng của HN' },
+    ]);
+  });
+
+  it('TEST E: the info icon exposes its help text on keyboard focus, not only on mouse hover', () => {
+    const f = form();
+    f.viewer.capabilities = [grantedSafeEditCapability];
+    render(<VisitSafeEditModal form={f} onClose={() => {}} onSaved={() => {}} />);
+    const trigger = screen.getByTestId('safe-edit-registrant-tooltip');
+
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger).toHaveAttribute('type', 'button');
+    expect(trigger).toHaveAttribute('aria-label', 'Registrant'); // visitRequestV2:summary.registrant (en)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.focus(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    const describedBy = trigger.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const tooltip = document.getElementById(describedBy!);
+    expect(tooltip).not.toBeNull();
+    expect(tooltip).toHaveTextContent(/shared across every campus/i);
+    // Dynamic lead-hours sentence, sourced from the backend capability — never a hardcoded literal.
+    expect(tooltip).toHaveTextContent(/6 hours/i);
+
+    fireEvent.blur(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  // CONTACT (plan CanhIter3FixBug §4-§6) — same-person operational-contact metadata + relation now
+  // live directly in Sửa nhanh, gated by UPDATE_OPERATIONAL_CONTACT_PROFILE independently of
+  // SUBMIT_SAFE_EDIT (decision M).
+
+  it('CONTACT-01: renders the contact block, disabled when the campus lacks UpdateContactProfile', () => {
+    // campusFixture()'s default allowedActions is SUBMIT_SAFE_EDIT + SUBMIT_AMENDMENT only.
     render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
 
-    expect(screen.getByTestId('safe-edit-contact-managed-elsewhere-10')).toBeInTheDocument();
-    // No test id, input or combobox anywhere in the modal offers to edit the contact's name,
-    // organization or phone any more.
-    expect(screen.queryByTestId(/safe-edit-contact-(name|org|phone)-/)).toBeNull();
+    const block = screen.getByTestId('safe-edit-contact-10');
+    expect(block).toBeDisabled();
+    // Email is never an <input> — it is always static/readonly, regardless of capability.
+    expect(screen.getByTestId('safe-edit-contact-email-10')).toHaveTextContent('dm@x.vn');
+    expect(screen.queryByRole('textbox', { name: /^email$/i })).toBeNull();
+  });
+
+  it('CONTACT-02: a campus with UpdateContactProfile (even without SubmitSafeEdit) still shows an editable contact block', () => {
+    const withContactOnly = form();
+    withContactOnly.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'], // no SUBMIT_SAFE_EDIT — e.g. WAITING_REQUEST_APPROVAL
+    });
+    render(<VisitSafeEditModal form={withContactOnly} onClose={() => {}} onSaved={() => {}} />);
+
+    // Still included in the modal (decision M: canGenericSafe || canEditContact).
+    expect(screen.getByTestId('safe-edit-contact-10')).not.toBeDisabled();
+    // Generic Notes field stays disabled — the two capabilities are independent.
+    expect(screen.getByTestId('safe-edit-notes-10')).toBeDisabled();
+  });
+
+  it('CONTACT-03: saving a metadata-only change sends operationalContact without a memberLink wrapper', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-phone-10'), { target: { value: '+84900000099' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact).toMatchObject({
+      phone: '+84900000099', email: 'dm@x.vn',
+    });
+    expect(payload.instances?.[0]?.operationalContact).not.toHaveProperty('memberLink');
+  });
+
+  it('CONTACT-04: explicit unlink sends memberLink: { guestMemberId: null }, not an omitted field', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+      operationalContact: {
+        fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+        guestMemberId: 1,
+      },
+    });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    const picker = screen.getByTestId('safe-edit-contact-relation-10') as HTMLSelectElement;
+    expect(picker.value).toBe('1');
+    fireEvent.change(picker, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact?.memberLink).toEqual({ guestMemberId: null });
+  });
+
+  it('CONTACT-05: a mismatching relation pick blocks Save with an inline error, never a generic toast', () => {
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    // "Khách Một" (guestMemberId 1) does not match the contact snapshot "Đầu Mối HN".
+    const picker = screen.getByTestId('safe-edit-contact-relation-10') as HTMLSelectElement;
+    fireEvent.change(picker, { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(screen.getByTestId('safe-edit-contact-mismatch-10')).toBeInTheDocument();
+    expect(patchSafeDetails).not.toHaveBeenCalled();
+  });
+
+  it('CONTACT-06: no "Đồng bộ theo thành viên đã chọn" (sync) button exists anywhere in the modal', () => {
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-relation-10'), { target: { value: '1' } });
+    expect(screen.queryByRole('button', { name: /đồng bộ|sync/i })).toBeNull();
+  });
+
+  it('CONTACT-07: the forbidden relation helper paragraph never renders', () => {
+    render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
+    expect(screen.queryByText(/không thay đổi họ tên, chức vụ, đơn vị/i)).toBeNull();
+    expect(screen.queryByTestId('safe-edit-contact-managed-elsewhere-10')).toBeNull();
+  });
+
+  it('CONTACT-08: changing only Notes omits operationalContact from the payload entirely', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['SUBMIT_SAFE_EDIT', 'UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+    });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
 
     editOneCampusNote('Xe 45 chỗ');
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
     const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
-    // Structurally impossible to smuggle a contact-profile field in: the payload type carries none.
     expect(payload.instances?.[0]).not.toHaveProperty('operationalContact');
+  });
+
+  // PHONE (GitHub bug report, CanhIter3FixBug live-UI repro): "The Phone field is required." on a
+  // relation/name-only Safe Edit. Phone is OPTIONAL end to end — these pin the exact payload shape so a
+  // regression here fails a frontend test, not just a live click-through.
+
+  it('F1: changing FullName only still echoes the ON-FILE phone in the payload (not omitted, not blanked)', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-fullName-10'), { target: { value: 'Đầu Mối HN (đã sửa)' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact).toMatchObject({
+      fullName: 'Đầu Mối HN (đã sửa)', phone: '+84912345678',
+    });
+  });
+
+  it('F2: changing relation only still echoes the ON-FILE phone in the payload', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+      operationalContact: {
+        fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+        guestMemberId: null,
+      },
+    });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-relation-10'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact?.memberLink).toEqual({ guestMemberId: 1 });
+    expect(payload.instances?.[0]?.operationalContact?.phone).toBe('+84912345678');
+  });
+
+  it('F3: current phone null — FullName-only change sends phone: null (not omitted, not "")', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+      operationalContact: {
+        fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng', phone: null, email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+      },
+    });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-fullName-10'), { target: { value: 'Đầu Mối HN (đã sửa)' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact?.phone).toBeNull();
+  });
+
+  it('F4: current phone null — relation-only change sends phone: null', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+      operationalContact: {
+        fullName: 'Khách Một', organization: 'ĐH ABC', jobTitle: 'GV', phone: null, email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+        guestMemberId: null,
+      },
+    });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-relation-10'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact?.phone).toBeNull();
+  });
+
+  it('F5: clearing an on-file phone sends phone: null as a genuine change', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-phone-10'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    expect(payload.instances?.[0]?.operationalContact?.phone).toBeNull();
+  });
+
+  it('F7: multi-campus — changing HN contact only leaves HCM operationalContact entirely absent', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const multi = form();
+    multi.hasMixedCampusDetails = true;
+    multi.visitScope = 'MULTI_CAMPUS';
+    multi.campusVisits = [
+      campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] }),
+      campusFixture({
+        visitInstanceId: 20, campusId: 2, campusCode: 'HCM', campusName: 'FPTU HCM',
+        allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'],
+        operationalContact: {
+          fullName: 'Đầu Mối HCM', organization: 'ĐH XYZ', jobTitle: 'Trưởng phòng',
+          phone: null, email: 'dm.hcm@x.vn',
+          confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+        },
+      }),
+    ];
+    render(<VisitSafeEditModal form={multi} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-fullName-10'), { target: { value: 'Đầu Mối HN (đã sửa)' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    const [, payload] = vi.mocked(patchSafeDetails).mock.calls[0];
+    const hcmPatch = payload.instances?.find(i => i.visitInstanceId === 20);
+    expect(hcmPatch).toBeUndefined(); // HCM never touched — not even as an empty entry
+  });
+
+  it('F8: an invalid non-blank contact phone blocks Save with an inline error, never round-trips to the API', () => {
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-phone-10'), { target: { value: '123-not-a-phone' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(screen.getByTestId('safe-edit-contact-phone-error-10')).toBeInTheDocument();
+    expect(patchSafeDetails).not.toHaveBeenCalled();
+  });
+
+  it('F9: a blank contact phone never shows a "required" error and does not block Save', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
+    const editable = form();
+    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
+
+    fireEvent.change(screen.getByTestId('safe-edit-contact-phone-10'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId('safe-edit-contact-phone-error-10')).toBeNull();
+    expect(screen.queryByText(/required/i)).toBeNull();
   });
 
   // TOAST: `appliedCount` used to be one hard-coded string ("Applied {{count}} change(s).") for every

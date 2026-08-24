@@ -403,6 +403,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
                       canDecide={canDecide}
                       canWithdraw={canWithdraw}
                       onChanged={() => void reloadWithHistory()}
+                      // So a relationship-only change (plan CanhIter3FixBug) can resolve OLD/NEW
+                      // GuestMemberId values to names for display — the member SET is provably
+                      // unchanged for that kind of amendment, so the CURRENT campus roster already
+                      // names everyone either value could refer to (see VisitAmendmentPanel's own
+                      // resolver for the "member since removed" fallback).
+                      members={[...cv.visitors, ...cv.supportMembers]}
                     />
                   )}
                   <div className="flex flex-wrap items-start gap-2">

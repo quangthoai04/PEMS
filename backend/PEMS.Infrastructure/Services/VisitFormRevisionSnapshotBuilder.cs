@@ -46,13 +46,25 @@ internal static class VisitFormRevisionSnapshotBuilder
             d.OperationalContactJobTitle,
             d.OperationalContactPhone,
             d.OperationalContactEmail,
+            // WHICH delegation member (if any) the contact IS — plan CanhIter3FixBug "Đầu mối hiện tại
+            // có nằm trong danh sách đoàn không?". Missing from every snapshot before this fix, exactly
+            // like the schedule fields below used to be: an amendment could move this relationship (via
+            // a member-list replace OR, now, on its own) and the history would show the member list and
+            // the free-text profile snapshot but never say who among them was the contact.
+            d.OperationalContactGuestMemberId,
             // The schedule belongs to the campus row rather than the form detail, and was missing from
             // every snapshot — so a pending edit that moved a visit by a day left no trace of the day
             // it used to be on.
             instance.PlannedStartAt,
             instance.PlannedEndAt,
             Members = members
-                .Select(m => new { m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder })
+                .Select(m => new {
+                    m.FullName, m.Organization, m.JobTitle, m.Nationality, m.MemberType, m.DisplayOrder,
+                    // WHICH row this is, in the database's own terms — without it, nothing reading this
+                    // snapshot back can resolve OperationalContactGuestMemberId to a name: it names a
+                    // member by id, and the member list used to have no ids at all to match against.
+                    m.GuestMemberId,
+                })
                 .ToList(),
         }, Json);
 

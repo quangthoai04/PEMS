@@ -66,11 +66,16 @@ describe('cloneCampusVisitContent', () => {
     expect(result.expectedRowVersion).toBe(3);
     expect(result.delegationName).toBe('Đoàn HN');
     // Same PEOPLE, different identities: the copy becomes its own guest_member rows on the server,
-    // so re-using the source's member keys would make one key name two rows (NP-03).
-    expect(result.visitors.map(v => ({ ...v, clientMemberKey: undefined })))
-      .toEqual(source.visitors.map(v => ({ ...v, clientMemberKey: undefined })));
+    // so re-using the source's member keys — or its persisted guestMemberId, if the source campus
+    // was an existing one — would make one identity name two rows (NP-03 / CanhIter3FixBug).
+    expect(result.visitors.map(v => ({ ...v, clientMemberKey: undefined, guestMemberId: undefined })))
+      .toEqual(source.visitors.map(v => ({ ...v, clientMemberKey: undefined, guestMemberId: undefined })));
     expect(result.visitors[0].clientMemberKey).toBeTruthy();
     expect(result.visitors[0].clientMemberKey).not.toBe(source.visitors[0].clientMemberKey);
+    // The copy has no persisted identity of its own yet on the TARGET campus, even if the source row
+    // did on the source campus — carrying that id over would silently point the copy's relation pick
+    // at a VisitGuestMember row that belongs to a different instance entirely.
+    expect(result.visitors[0].guestMemberId ?? null).toBeNull();
   });
 
   it('re-points the contact pick at the COPY of the person it named', () => {

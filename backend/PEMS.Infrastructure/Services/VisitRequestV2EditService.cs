@@ -8,6 +8,7 @@ using PEMS.Application.Campuses.Common;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Partners.Common;
 using PEMS.Application.Partners.VisitLinks.Common;
@@ -181,7 +182,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         {
             var scheduleMoves = instance.PlannedStartAt != content.PlannedStartAt
                                 || instance.PlannedEndAt != content.PlannedEndAt;
-            ValidateSchedule(content, now, enforceLeadTime: scheduleMoves);
+            ValidateSchedule(content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now, enforceLeadTime: scheduleMoves);
         }
 
         // ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +223,18 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                                  != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
             var scheduleChanged = instance.PlannedStartAt != content.PlannedStartAt
                                   || instance.PlannedEndAt != content.PlannedEndAt;
-            if (!contentChanged && !scheduleChanged)
+            // RELATIONSHIP-ONLY (plan CanhIter3FixBug) — see the single-instance path's identical
+            // comment and CampusVisitEditV2Dto.OperationalContactGuestMemberId's doc for why this
+            // cannot be folded into contentChanged: the relation is deliberately not part of
+            // CanonicalContent, so a campus whose ONLY change this save carries is who the contact is
+            // would otherwise be silently skipped by the `continue` below — one sibling among many in
+            // this multi-campus payload, dropped with no error at all.
+            var relationChanged = !contentChanged
+                && detail.OperationalContactGuestMemberId != content.OperationalContactGuestMemberId;
+            if (relationChanged && content.OperationalContactGuestMemberId is { } proposedRelationId)
+                OperationalContactLink.EnsureGuestMemberIdEligible(
+                    V2CanonicalRefresh.MembersOf(request, instance), proposedRelationId);
+            if (!contentChanged && !scheduleChanged && !relationChanged)
                 continue; // untouched sibling: no member churn, no revision bump, no row-version bump
 
             // This campus IS about to move to revision N+1. Capture revision N first if the chain is
@@ -261,8 +273,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             }
             else
             {
-                // Schedule-only: still a save on this campus, so it still advances FormRevision by
-                // one — the member list is untouched, so ApplyFormDetail (which would rewrite
+                // Schedule-only and/or relationship-only: still a save on this campus, so it still
+                // advances FormRevision by exactly one regardless of how many of these two moved
+                // together — the member list is untouched, so ApplyFormDetail (which would rewrite
                 // content fields) is deliberately not called here.
                 audit.Changes.Add(new AuditLogChange
                 {
@@ -275,6 +288,21 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 detail.RowVersion += 1;
                 detail.UpdatedAt = now;
                 detail.UpdatedBy = actorId;
+            }
+
+            // Relationship-only application — see the single-instance path's identical block for why
+            // this is a direct assignment rather than StageReplaceMembers/LinkMembers, and why it gets
+            // its own audit entry distinguishable from an actual-contact replace/transfer.
+            if (relationChanged)
+            {
+                audit.Changes.Add(new AuditLogChange
+                {
+                    FieldName = $"instance[{instance.VisitInstanceId}].operational_contact_relation",
+                    OldValueText = detail.OperationalContactGuestMemberId?.ToString() ?? "null",
+                    NewValueText = content.OperationalContactGuestMemberId?.ToString() ?? "null",
+                    CreatedAt = now,
+                });
+                detail.OperationalContactGuestMemberId = content.OperationalContactGuestMemberId;
             }
 
             instance.RowVersion += 1;
@@ -691,7 +719,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var oldStart = instance.PlannedStartAt;
         var oldEnd = instance.PlannedEndAt;
         ValidateSchedule(
-            content, now,
+            content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now,
             enforceLeadTime: scheduleChanged,
             leaderMayOverride: actorIsCampusLeader,
             overrideConfirmed: overrideLeadTimeConfirmed);
@@ -705,7 +733,26 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         var contentChanged = VisitRequestV2Canonical.CanonicalContent(CurrentContentOf(request, instance, detail))
                              != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
-        if (!contentChanged && !scheduleChanged)
+
+        // RELATIONSHIP-ONLY (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn
+        // không?", pending-edit stage). The relation is deliberately NOT part of CanonicalContent
+        // (see CampusVisitEditV2Dto.OperationalContactGuestMemberId's own doc), so a save that ONLY
+        // repoints who the contact is inside an UNCHANGED delegation would otherwise compute
+        // contentChanged=false, scheduleChanged=false, and fall straight into the "nothing to save"
+        // refusal below — silently dropping a real business change. Only meaningful when the member
+        // list itself is untouched: a content-changed save always re-links via
+        // OperationalContactClientMemberKey instead (copy-on-write mints new ids, so the persistent
+        // one the client echoed back is already stale by the time it would be read).
+        var relationChanged = !contentChanged
+            && detail.OperationalContactGuestMemberId != content.OperationalContactGuestMemberId;
+        // Fail-closed BEFORE anything is mutated: a candidate naming nobody, a deleted row, or a
+        // sibling campus's member is refused here exactly like the amendment path's own check —
+        // never silently coerced to null, never guessed by name.
+        if (relationChanged && content.OperationalContactGuestMemberId is { } proposedRelationId)
+            OperationalContactLink.EnsureGuestMemberIdEligible(
+                V2CanonicalRefresh.MembersOf(request, instance), proposedRelationId);
+
+        if (!contentChanged && !scheduleChanged && !relationChanged)
         {
             // "Lưu và duyệt" carries two intents — an edit and a decision — and having nothing to
             // EDIT does not mean there is nothing to DECIDE. The caller still has an approval to run
@@ -760,8 +807,9 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         }
         else
         {
-            // Schedule-only (the only other way this method reaches here — see the throw above):
-            // this campus is still being saved, so FormRevision still advances by one. Members are
+            // Schedule-only and/or relationship-only (the only other ways this method reaches here —
+            // see the throw above): this campus is still being saved, so FormRevision still advances
+            // by exactly one regardless of how many of these two moved together. Members are
             // untouched, so ApplyFormDetail — which would rewrite content fields — is not called.
             audit.Changes.Add(new AuditLogChange
             {
@@ -787,6 +835,24 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             });
             instance.PlannedStartAt = content.PlannedStartAt;
             instance.PlannedEndAt = content.PlannedEndAt;
+        }
+
+        // Relationship-only application — a direct assignment, never StageReplaceMembers/LinkMembers:
+        // the member list is untouched (relationChanged is only ever true when contentChanged is
+        // false), so nothing about the delegation itself needs to move. Its own audit action code
+        // keeps this distinguishable from an actual-contact replace/transfer, which is a different
+        // workflow entirely (plan §24) — this never touches OperationalContactFullName/Organization/
+        // JobTitle/Phone/Email, only the relation column.
+        if (relationChanged)
+        {
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = $"instance[{instance.VisitInstanceId}].operational_contact_relation",
+                OldValueText = detail.OperationalContactGuestMemberId?.ToString() ?? "null",
+                NewValueText = content.OperationalContactGuestMemberId?.ToString() ?? "null",
+                CreatedAt = now,
+            });
+            detail.OperationalContactGuestMemberId = content.OperationalContactGuestMemberId;
         }
 
         // An override is a decision somebody took, not a validation that happened to pass. It gets its
@@ -861,12 +927,23 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// SCHEDULE-ONLY (plan CanhIter3FixBug FIX-G/H). The old version of this method took a full
+    /// <see cref="CampusVisitEditV2Dto"/> and called <c>ApplyFormDetail</c> + <c>StageReplaceMembers</c>
+    /// + <c>LinkMembers</c> + <c>ResolvePartnerLinksAsync</c> — a full content/member copy-on-write
+    /// replace — even though the UI (<c>InstanceResubmitPanel.tsx</c>) only ever offered the two dates
+    /// for editing and echoed the rest back. That echo silently dropped every guest's
+    /// <c>OrganizationPartnerId</c> (the panel's payload never carried it), which then wrote NULL onto
+    /// the freshly copy-on-written member rows, and forced the operational-contact link to re-resolve by
+    /// name/org/title fingerprint on every resubmit instead of staying pinned to the same member. This
+    /// version does not call any of those four — member rows, their partner ids and the
+    /// operational-contact link are never staged, linked or resolved, so there is nothing for them to
+    /// lose.
+    /// </remarks>
     public async Task<V2EditResult> ApplyInstanceResubmitAsync(
-        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        VisitRequest request, VisitRequestCampus instance, InstanceResubmitScheduleDto content,
         ulong actorId, DateTime now, CancellationToken ct)
     {
-        await EnsureMemberOrganizationsSelectableAsync(new[] { content }, ct);
-
         // ── 1. Only THIS campus need be rejected. Deliberately not the whole-request gate: a campus
         //       refused beside one that was approved is exactly the case this exists for. ──
         if (request.Status == VisitRequestStatuses.Cancelled)
@@ -893,20 +970,23 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         // ── 3. Optimistic concurrency on the INSTANCE. The request row version is deliberately not the
         //       guard here: a sibling campus being decided bumps it, and that must not brick a resubmit
-        //       of this one. ──
-        if (content.ExpectedRowVersion is null || content.ExpectedRowVersion != instance.RowVersion)
-            throw new ConflictException(
-                "Lịch thăm tại cơ sở này đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
-                VisitRequestErrorCodes.InstanceVersionConflict);
+        //       of this one.
+        //
+        //       LOCKED first, same as every other instance-scoped mutation in this class
+        //       (AssertCurrentInstanceVersionAsync's own doc: row_version is a plain int with no EF
+        //       concurrency token, so two callers who both read the same version would both pass a bare
+        //       comparison and the second would silently overwrite the first). A bare compare against the
+        //       already-loaded `instance` used to stand here instead — it could not actually catch two
+        //       genuinely concurrent resubmits, only a caller replaying a version it saw before this
+        //       method ran at all. ──
+        await AssertCurrentInstanceVersionAsync(instance, content.ExpectedRowVersion, ct);
 
-        // Resubmit rewrites content wholesale, which makes it another path a contact edit could sneak
-        // through. Same guard, same codes, before any write.
-        if (instance.FormDetail is not null)
-            EnsureContactSnapshotUnchanged(instance.FormDetail, content.OperationalContact);
+        // No EnsureContactSnapshotUnchanged / EnsureMemberOrganizationsSelectableAsync here any more —
+        // the payload carries no contact and no member data at all for either of those guards to check.
 
         // ── 4. Registration lead time. This IS a resubmit, so the 72h floor applies to the new start
         //       (plan §17) — measured from now, never from when the request was first filed. ──
-        ValidateSchedule(content, now);
+        ValidateSchedule(content.CampusId, content.PlannedStartAt, content.PlannedEndAt, now);
 
         // ── 5. The campus must still be able to take a visit at all — same bar as create. ──
         var availability = await CampusAvailabilityEvaluator.EvaluateAsync(_db, new[] { instance.CampusId }, ct);
@@ -919,6 +999,10 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             throw new BusinessRuleException($"Cơ sở {snapshot.Name} chưa có Staff Leader đang hoạt động nên chưa thể tiếp nhận lại yêu cầu.", VisitRequestErrorCodes.CampusHasNoActiveStaffLeader);
         if (!snapshot.IsAvailableForVisitRegistration)
             throw new BusinessRuleException($"Cấu hình tiếp nhận của cơ sở {snapshot.Name} không hợp lệ.", VisitRequestErrorCodes.CampusStaffLeaderConfigurationInvalid);
+
+        var detail = instance.FormDetail
+            ?? throw new ConflictException(
+                "Đơn thiếu dữ liệu chi tiết theo cơ sở (v2).", VisitFormV2ErrorCodes.VisitFormDetailMissing);
 
         // ─────────────────────────────────────────────────────────────────────────────
         // Apply. The rejection is snapshotted to audit before it is cleared — the DB refuses to hold
@@ -963,12 +1047,24 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         });
         _db.AuditLogs.Add(audit);
 
-        // ── Phase 1: THIS campus only. Every sibling's status, decision, host and schedule are
-        //    untouched — the loop that would have reset them does not exist here. ──
-        VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
-        var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
-            _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
+        // Revision N+1 is about to be written for this campus. Capture N first if the chain is missing
+        // it, exactly like every other schedule-only save site in this class (ApplyPendingEditAsync's
+        // and ApplyInstancePendingEditAsync's schedule-only branches) — while the detail, the schedule
+        // and the member links are all still pre-resubmit.
+        await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
+            _db, request, instance, detail, actorId, now, ct);
 
+        // ── Phase 1: THIS campus only, schedule + lifecycle. Content, members and the
+        //    operational-contact link are never touched — see the class remarks above. Every sibling's
+        //    status, decision, host and schedule are untouched too — the loop that would have reset them
+        //    does not exist here. ──
+        audit.Changes.Add(new AuditLogChange
+        {
+            FieldName = $"instance[{instance.VisitInstanceId}].schedule",
+            OldValueText = $"{instance.PlannedStartAt:yyyy-MM-dd HH:mm}..{instance.PlannedEndAt:yyyy-MM-dd HH:mm}",
+            NewValueText = $"{content.PlannedStartAt:yyyy-MM-dd HH:mm}..{content.PlannedEndAt:yyyy-MM-dd HH:mm}",
+            CreatedAt = now,
+        });
         instance.PlannedStartAt = content.PlannedStartAt;
         instance.PlannedEndAt = content.PlannedEndAt;
         instance.Status = VisitInstanceStatuses.WaitingRequestApproval;
@@ -992,6 +1088,14 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         instance.UpdatedAt = now;
         instance.UpdatedBy = actorId;
 
+        // The campus is still being saved (its schedule moved), so FormRevision still advances by one —
+        // the same convention every other schedule-only branch in this class follows. Content and
+        // members are untouched, so ApplyFormDetail (which would rewrite content fields) is never called.
+        detail.FormRevision += 1;
+        detail.RowVersion += 1;
+        detail.UpdatedAt = now;
+        detail.UpdatedBy = actorId;
+
         // ── Phase 2: recompute the aggregate FROM the campuses, never assumed. With a sibling already
         //    approved this lands on PARTIALLY_APPROVED; with the rest still rejected, PENDING_APPROVAL.
         //    The same answer the AFTER UPDATE trigger computes, so EF's write and the trigger's agree. ──
@@ -1008,25 +1112,25 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
 
         await _db.SaveChangesAsync(ct);
 
-        // ── Phase 3: member links + a RESUBMIT revision snapshot for THIS instance. ──
-        VisitRequestV2EditOps.LinkMembers(
-            _db, request, instance, newMembers, now, actorId,
-            VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
+        // ── Phase 3: a RESUBMIT revision snapshot for THIS instance, built from the CURRENT, still-
+        //    linked members — never StageReplaceMembers/LinkMembers/ResolvePartnerLinksAsync. Nothing
+        //    about the member list or the partner links moved, so nothing here may write them; the
+        //    snapshot must still reflect who is actually linked, never an empty list. ──
+        var currentMembers = V2CanonicalRefresh.MembersOf(request, instance);
         _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
         {
             VisitRequestId = request.VisitRequestId,
             VisitInstanceId = instance.VisitInstanceId,
-            FormRevision = instance.FormDetail!.FormRevision,
-            ApprovalRevision = instance.FormDetail.ApprovalRevision,
+            FormRevision = detail.FormRevision,
+            ApprovalRevision = detail.ApprovalRevision,
             SourceType = "RESUBMIT",
-            SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, instance.FormDetail, newMembers),
+            SnapshotJson = VisitFormRevisionSnapshotBuilder.Instance(instance, detail, currentMembers),
             AppliedBy = actorId,
             AppliedAt = now,
             Reason = correlationId,
         });
 
         await _db.SaveChangesAsync(ct);
-        await ResolvePartnerLinksAsync(request.VisitRequestId, now, actorId, ct);
 
         return new V2EditResult(request.VisitScope, request.HasMixedCampusDetails, request.RowVersion);
     }
@@ -1063,16 +1167,22 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// else, because the flag alone grants nothing.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Takes the three schedule primitives rather than a <see cref="CampusVisitEditV2Dto"/> so it can be
+    /// shared by every caller that validates a schedule — including
+    /// <see cref="InstanceResubmitScheduleDto"/>, which has no content fields to build a whole edit DTO
+    /// from.
+    /// </summary>
     private static void ValidateSchedule(
-        CampusVisitEditV2Dto content, DateTime now, bool enforceLeadTime = true,
-        bool leaderMayOverride = false, bool overrideConfirmed = false)
+        string campusId, DateTime plannedStartAt, DateTime plannedEndAt, DateTime now,
+        bool enforceLeadTime = true, bool leaderMayOverride = false, bool overrideConfirmed = false)
     {
-        var campus = (content.CampusId ?? string.Empty).Trim().ToUpperInvariant();
-        if (content.PlannedEndAt <= content.PlannedStartAt)
+        var campus = (campusId ?? string.Empty).Trim().ToUpperInvariant();
+        if (plannedEndAt <= plannedStartAt)
             throw new BusinessRuleException(
                 $"Cơ sở {campus}: thời gian kết thúc phải sau thời gian bắt đầu.",
                 VisitRequestErrorCodes.InvalidVisitTime);
-        if ((content.PlannedEndAt - content.PlannedStartAt).TotalMinutes < MinDurationMinutes)
+        if ((plannedEndAt - plannedStartAt).TotalMinutes < MinDurationMinutes)
             throw new BusinessRuleException(
                 $"Cơ sở {campus}: thời lượng tối thiểu là {MinDurationMinutes} phút.",
                 VisitRequestErrorCodes.InvalidVisitTime);
@@ -1080,7 +1190,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             return;
 
         var lead = VisitMutationPolicy.EvaluateScheduleLeadTime(
-            content.PlannedStartAt, now, leaderMayOverride, overrideConfirmed);
+            plannedStartAt, now, leaderMayOverride, overrideConfirmed);
         if (lead.Allowed)
             return;
         if (lead.ConfirmationRequired)

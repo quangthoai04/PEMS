@@ -3,6 +3,7 @@ using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Validation;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
@@ -14,17 +15,44 @@ using PEMS.Shared;
 namespace PEMS.Infrastructure.Services;
 
 /// <summary>See <see cref="IVisitSafeEditService"/>. The classifier (<see cref="VisitFieldClassifier"/>)
-/// is the single gate: anything outside SAFE/PRIVACY_URGENT fails closed here regardless of what the
-/// endpoint accepted structurally.</summary>
+/// is the single gate for GENERIC safe fields — anything outside SAFE/PRIVACY_URGENT fails closed here
+/// regardless of what the endpoint accepted structurally. Operational-contact same-person metadata and
+/// relation (plan CanhIter3FixBug) are a SEPARATE, dedicated domain mutation applied directly by this
+/// service — they intentionally never pass through the classifier (see <see cref="VisitFieldClassifier"/>'s
+/// own doc for why those fields stay classified <c>ApprovalSensitive</c> regardless).</summary>
 public sealed class VisitSafeEditService : IVisitSafeEditService
 {
     private readonly IApplicationDbContext _db;
+    private readonly IOperationalContactInvitationService _invitations;
 
-    public VisitSafeEditService(IApplicationDbContext db) => _db = db;
+    public VisitSafeEditService(IApplicationDbContext db, IOperationalContactInvitationService invitations)
+    {
+        _db = db;
+        _invitations = invitations;
+    }
 
     private sealed record Change(
         string FieldPath, ulong? InstanceId, string? OldValue, string? NewValue, string Class,
         Action Apply);
+
+    /// <summary>
+    /// ONE instance's staged same-person contact-metadata/relation edit (plan CanhIter3FixBug). Built
+    /// entirely during the VALIDATE/PLAN pass — every field here is already resolved (normalized profile,
+    /// eligibility, mismatch check, old/new relation display names) — and applied only in the APPLY pass,
+    /// strictly after <c>VisitRevisionBaselineGuard</c> has captured this instance's "before" snapshot
+    /// (decision T: contact mutation must never happen before baseline capture, or the "before" the
+    /// history renderer shows would already be the "after"). <see cref="Instance"/>/<see cref="Detail"/>
+    /// are read-only references at plan time; they are not written to until <c>ApplyContactPlan</c> runs.
+    /// </summary>
+    private sealed record ContactMutationPlan(
+        VisitRequestCampus Instance,
+        VisitInstanceFormDetail Detail,
+        bool ProfileChanged,
+        OperationalContactProfileMutation.NormalizedProfile NormalizedProfile,
+        AuditLog? ProfileAudit,
+        bool RelationChanged,
+        ulong? NewRelationId,
+        AuditLog? RelationAudit);
 
     public async Task<VisitRequestSafeEditResponse> ApplySafeEditAsync(
         VisitRequest request, VisitRequestSafeEditDto patch, ulong actorId, DateTime now,
@@ -124,30 +152,31 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
         }
 
         // ── 2. Per-instance safe subset ──
+        // correlationId is minted here (not later) so contact-metadata/relation audits built during the
+        // VALIDATE/PLAN pass below already carry it — same value the generic VISIT_SAFE_FIELDS_UPDATED
+        // audit and every revision-history row use, per call.
+        var correlationId = Guid.NewGuid().ToString("N");
         var touchedInstances = new List<VisitRequestCampus>();
-        foreach (var ip in patch.Instances ?? new List<SafeInstancePatchDto>())
+        var contactPlans = new List<ContactMutationPlan>();
+        var contactAppliedChanges = new List<SafeEditAppliedChange>();
+        // Deterministic order (plan CanhIter3FixBug, decision W) — so two concurrent multi-instance Safe
+        // Edit calls touching an overlapping instance set can never lock those instances in different
+        // orders against each other.
+        foreach (var ip in (patch.Instances ?? new List<SafeInstancePatchDto>())
+                     .OrderBy(i => i.VisitInstanceId))
         {
             var instance = request.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == ip.VisitInstanceId)
                 ?? throw new BusinessRuleException("Cơ sở được sửa không thuộc đơn này.",
                     VisitFormV2ErrorCodes.VisitInstanceScopeForbidden);
-            if (ip.ExpectedRowVersion != instance.RowVersion)
-                throw new ConflictException(
-                    "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
-                    VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
 
-            // LIFECYCLE + CUTOFF for THIS campus only — a sibling that is under way says nothing about a
-            // campus still days out, and coupling them is what let one campus's timing freeze another's
-            // notes. Both halves are checked here, in one call: the cutoff used to be deferred until the
-            // changes were known so a privacy-urgent media withdrawal could skip it, and that exception
-            // is gone (§38) — every safe edit answers to the same six hours.
-            //
-            // WAITING_REQUEST_APPROVAL is deliberately NOT accepted here: a still-pending campus belongs
-            // to per-campus pending-edit, which can change anything. Offering the narrow tool as well
-            // only made it unclear which one to reach for.
-            VisitMutationGuard.EnsureAllowed(
-                VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
-                VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitRequestNotEditable,
-                campusNames);
+            // Authoritative per-instance concurrency (plan CanhIter3FixBug, decision R): a bare in-memory
+            // comparison would let a concurrent UpdateOperationalContactProfile edit on the SAME instance
+            // silently win or lose depending on load order — row_version is a plain int with no EF
+            // concurrency token behind it (confirmed: IsConcurrencyToken is used nowhere in this
+            // codebase). Replicates VisitInstanceConcurrencyGuard's SELECT ... FOR UPDATE re-read logic
+            // (rather than calling it directly) so this endpoint keeps its existing
+            // VisitFormConcurrencyConflict code, which VisitSafeEditV2Tests already asserts.
+            await EnsureInstanceUnchangedAsync(instance, ip.ExpectedRowVersion, ct);
 
             var detail = instance.FormDetail
                 ?? throw new ConflictException("Thiếu dữ liệu biểu mẫu theo cơ sở.",
@@ -157,6 +186,24 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                 throw new BusinessRuleException("Trạng thái truyền thông không hợp lệ.",
                     VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
+            // ── GENERIC Safe fields answer to the classifier/lifecycle gate below — but ONLY when this
+            //    instance's patch actually touches one of them (plan CanhIter3FixBug, decision M). A
+            //    contact-only patch must never be refused by a lifecycle window (Assigned/BeforeVisit
+            //    only) that has nothing to do with contact editing's own, wider window — that check
+            //    happens separately, inside PlanContactMutation, only when OperationalContact is present.
+            //
+            //    LIFECYCLE + CUTOFF for THIS campus only — a sibling that is under way says nothing about
+            //    a campus still days out, and coupling them is what let one campus's timing freeze
+            //    another's notes. WAITING_REQUEST_APPROVAL is deliberately NOT accepted here: a still-
+            //    pending campus belongs to per-campus pending-edit, which can change everything. ──
+            var hasGenericField = ip.TransportationNote is not null || ip.Notes is not null
+                || ip.MediaConsentStatus is not null;
+            if (hasGenericField)
+                VisitMutationGuard.EnsureAllowed(
+                    VisitMutationAction.SubmitSafeEdit, request.Status, instance, now,
+                    VisitViewerRelations.Requester, VisitRequestErrorCodes.VisitRequestNotEditable,
+                    campusNames);
+
             // Every instance field is OPTIONAL: null means "not part of this edit", which is how the
             // client sends only what changed. Previously all four were mandatory, so a one-word note
             // correction re-submitted the media-consent decision of every campus in the request — and a
@@ -165,15 +212,6 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
             if (ip.TransportationNote is not null)
                 Diff(changes, VisitFieldClassifier.TransportationNote, instance.VisitInstanceId,
                     detail.TransportationNote, Clean(ip.TransportationNote), v => detail.TransportationNote = v);
-            // RETIRED (plan PEMS_CONTACT_ONE_DOOR): the contact profile has exactly one door now —
-            // "Manage the contact role". The current client never sends this; an old/handcrafted
-            // client that still does is refused outright rather than applied or silently dropped, so a
-            // stale caller finds out immediately instead of believing a correction went through.
-            if (ip.OperationalContact is not null)
-                throw new BusinessRuleException(
-                    "Thông tin đầu mối vận hành (họ tên/tổ chức/chức danh/điện thoại) không thể sửa qua Sửa nhanh. " +
-                    "Hãy dùng chức năng \"Chỉnh sửa đầu mối\" của cơ sở.",
-                    VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
             if (ip.Notes is not null)
                 Diff(changes, VisitFieldClassifier.Notes, instance.VisitInstanceId,
                     detail.Notes, Clean(ip.Notes), v => detail.Notes = v);
@@ -182,9 +220,35 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     detail.MediaConsentStatus, ip.MediaConsentStatus, v => detail.MediaConsentStatus = v!);
             if (changes.Count > before)
                 touchedInstances.Add(instance);
+
+            // ── Same-person operational-contact correction (plan CanhIter3FixBug) — a dedicated domain
+            //    mutation orchestrated here, never routed through the classifier above (those fields stay
+            //    ApprovalSensitive there for legacy/general-Amendment compatibility — see
+            //    VisitFieldClassifier). VALIDATE/PLAN ONLY: nothing on `detail`/`instance` is written by
+            //    PlanContactMutation — every field it touches is read-only at this point. The actual
+            //    mutation happens later, in the apply phase, strictly after this call's baselines are
+            //    captured (decision T) — see ApplyContactPlanAsync. ──
+            if (ip.OperationalContact is { } cp)
+            {
+                var plan = PlanContactMutation(request, instance, detail, cp, actorId, now, correlationId);
+                if (plan is not null)
+                {
+                    contactPlans.Add(plan);
+                    if (plan.ProfileChanged)
+                        contactAppliedChanges.Add(new SafeEditAppliedChange(
+                            "instance.operationalContact.profile", instance.VisitInstanceId,
+                            AmendmentChangeClasses.Contact));
+                    if (plan.RelationChanged)
+                        contactAppliedChanges.Add(new SafeEditAppliedChange(
+                            VisitFieldClassifier.OperationalContactGuestMemberId, instance.VisitInstanceId,
+                            AmendmentChangeClasses.Contact));
+                    if (!touchedInstances.Contains(instance))
+                        touchedInstances.Add(instance);
+                }
+            }
         }
 
-        if (changes.Count == 0)
+        if (changes.Count == 0 && contactPlans.Count == 0)
             throw new BusinessRuleException("Không có thay đổi nào để áp dụng.",
                 VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
 
@@ -214,13 +278,15 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
         }
 
         // ── 5. Apply + revisions + audit, one commit ──
-        var correlationId = Guid.NewGuid().ToString("N");
 
-        // Baselines BEFORE `Apply()` writes anything. Every touched campus is about to reach revision
-        // N+1, and the request block is about to be rewritten — so this is the last point at which the
-        // "before" values still exist to be recorded. A safe edit is exactly the case that used to
-        // produce an empty drawer: it changes a note or a phone number, and with no revision N to diff
-        // against, the history reported "no recorded changes" for a change the user had just made.
+        // Baselines BEFORE anything writes. Every touched campus is about to reach revision N+1 (or, for
+        // a contact-only touch, just a RowVersion bump — decision B), and the request block is about to
+        // be rewritten — so this is the last point at which the "before" values still exist to be
+        // recorded. A safe edit is exactly the case that used to produce an empty drawer: it changes a
+        // note or a phone number, and with no revision N to diff against, the history reported "no
+        // recorded changes" for a change the user had just made. Nothing from the per-instance loop above
+        // (generic `changes` closures, staged `contactPlans`) has written to any entity yet — this is the
+        // barrier decision T requires.
         var requestBaselineJson = VisitRevisionBaselineGuard.CaptureRequestSnapshot(request);
         foreach (var instance in touchedInstances)
             if (instance.FormDetail is { } beforeDetail)
@@ -228,17 +294,30 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
                     _db, request, instance, beforeDetail, actorId, now, ct);
 
         foreach (var c in changes) c.Apply();
+        foreach (var plan in contactPlans)
+            await ApplyContactPlanAsync(plan, ct);
 
         foreach (var instance in touchedInstances)
         {
             var detail = instance.FormDetail!;
-            detail.FormRevision += 1;
+            // Whether THIS instance had a genuine generic-Safe field change (Notes/TransportationNote/
+            // MediaConsentStatus) — independent of whether it also had a contact-only touch. Only a
+            // genuine form-content change bumps FormRevision/inserts revision history (decision B); a
+            // contact-only touch still gets its RowVersion bumps below, unconditionally.
+            var hasFormContentChange = changes.Any(c => c.InstanceId == instance.VisitInstanceId);
+
+            if (hasFormContentChange)
+                detail.FormRevision += 1;
             detail.RowVersion += 1;
             detail.UpdatedAt = now;
             detail.UpdatedBy = actorId;
             instance.RowVersion += 1;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
+
+            if (!hasFormContentChange)
+                continue; // contact-only: FormRevision did not move, so a revision-history row here would
+                          // collide with the unique (VisitInstanceId, FormRevision) index (decision B).
 
             var members = MembersOf(request, instance);
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
@@ -286,35 +365,207 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
         request.UpdatedAt = now;
         request.UpdatedBy = actorId;
 
-        var audit = new AuditLog
+        // No empty generic audit (plan CanhIter3FixBug, decision G): a contact-only call has nothing to
+        // report here — its ProfileUpdated/RelationUpdated audits were already staged onto _db.AuditLogs
+        // by ApplyContactPlanAsync above.
+        if (changes.Count > 0)
         {
-            ActorUserId = actorId,
-            Action = "VISIT_SAFE_FIELDS_UPDATED",
-            EntityType = "VisitRequest",
-            EntityId = request.VisitRequestId,
-            VisitRequestId = request.VisitRequestId,
-            CorrelationId = correlationId,
-            SourceType = FormRevisionSourceTypes.SafeEdit,
-            CreatedAt = now,
-        };
-        foreach (var c in changes)
-            audit.Changes.Add(new AuditLogChange
+            var audit = new AuditLog
             {
-                FieldName = c.InstanceId is null ? c.FieldPath : $"{c.FieldPath}#{c.InstanceId}",
-                OldValueText = c.OldValue,
-                NewValueText = c.NewValue,
+                ActorUserId = actorId,
+                Action = "VISIT_SAFE_FIELDS_UPDATED",
+                EntityType = "VisitRequest",
+                EntityId = request.VisitRequestId,
+                VisitRequestId = request.VisitRequestId,
+                CorrelationId = correlationId,
+                SourceType = FormRevisionSourceTypes.SafeEdit,
                 CreatedAt = now,
-            });
-        _db.AuditLogs.Add(audit);
+            };
+            foreach (var c in changes)
+                audit.Changes.Add(new AuditLogChange
+                {
+                    FieldName = c.InstanceId is null ? c.FieldPath : $"{c.FieldPath}#{c.InstanceId}",
+                    OldValueText = c.OldValue,
+                    NewValueText = c.NewValue,
+                    CreatedAt = now,
+                });
+            _db.AuditLogs.Add(audit);
+        }
 
         await _db.SaveChangesAsync(ct);
 
         return new VisitRequestSafeEditResponse(
             request.VisitRequestId,
-            changes.Select(c => new SafeEditAppliedChange(c.FieldPath, c.InstanceId, c.Class)).ToList(),
+            changes.Select(c => new SafeEditAppliedChange(c.FieldPath, c.InstanceId, c.Class))
+                .Concat(contactAppliedChanges)
+                .ToList(),
             request.RowVersion,
             request.CampusInstances.ToDictionary(c => c.VisitInstanceId, c => c.RowVersion),
             "Đã cập nhật các thông tin cho phép sửa nhanh.");
+    }
+
+    /// <summary>
+    /// VALIDATE/PLAN pass for ONE instance's same-person contact-metadata/relation edit (plan
+    /// CanhIter3FixBug). Returns null when the block is a genuine no-op (neither metadata nor relation
+    /// actually differs) — that is never an error by itself (decision O); the caller's top-level guard
+    /// is the only place a truly empty whole-request edit is refused. Everything here is read-only against
+    /// <paramref name="detail"/>/<paramref name="instance"/> — see <see cref="ApplyContactPlanAsync"/> for
+    /// the actual mutation, deferred until after this call's baselines are captured.
+    /// </summary>
+    private ContactMutationPlan? PlanContactMutation(
+        VisitRequest request, VisitRequestCampus instance, VisitInstanceFormDetail detail,
+        SafeContactPatchDto cp, ulong actorId, DateTime now, string correlationId)
+    {
+        // Contact-specific lifecycle (plan CanhIter3FixBug, decision M) — WIDER than generic Safe Edit's
+        // Assigned/BeforeVisit-only window (WaitingContactConfirmation/WaitingRequestApproval/Assigned/
+        // BeforeVisit), shared with UpdateOperationalContactProfileCommandHandler via OperationalContactLink
+        // so the two doors cannot drift on this rule.
+        OperationalContactLink.EnsureProfileUpdateLifecycleAllowed(request, instance);
+
+        // The address is not this door's to move — same invariant UpdateOperationalContactProfileCommandHandler
+        // enforces.
+        var currentEmail = VisitRequestFingerprintBuilder.NormalizeEmail(detail.OperationalContactEmail);
+        var incomingEmail = VisitRequestFingerprintBuilder.NormalizeEmail(cp.Email);
+        if (!string.Equals(currentEmail, incomingEmail, StringComparison.Ordinal))
+            throw new ConflictException(
+                "Email đầu mối vận hành đã thay đổi. Đổi email là thay đổi người phụ trách và phải qua bước xác nhận.",
+                OperationalContactErrorCodes.ChangeConflict);
+
+        // FullName/JobTitle are NotEmpty at the FluentValidation layer already (Phase 1); Organization is
+        // not (mirrors the Nationality manual-check pattern already used for the registrant block above).
+        if (string.IsNullOrWhiteSpace(cp.Organization))
+            throw new BusinessRuleException("Đơn vị công tác đầu mối vận hành không được để trống.",
+                VisitFormV2ErrorCodes.SafeEditFieldNotAllowed);
+
+        var normalized = OperationalContactProfileMutation.Normalize(cp.FullName, cp.Organization, cp.JobTitle, cp.Phone);
+
+        var profileAudit = new AuditLog
+        {
+            ActorUserId = actorId,
+            Action = OperationalContactHistoryAudit.ProfileUpdated,
+            EntityType = "VisitRequestCampus",
+            EntityId = instance.VisitInstanceId,
+            CampusId = instance.CampusId,
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            CorrelationId = correlationId,
+            SourceType = "IDENTITY",
+            CreatedAt = now,
+        };
+        var profileChanged = OperationalContactProfileMutation.AddProfileChanges(profileAudit, detail, normalized, now);
+
+        // Effective-relation invariant (plan CanhIter3FixBug, decision N) — checked whenever the contact
+        // block is present, NOT only inside an "if MemberLink supplied" branch: a metadata edit that
+        // leaves the relation field untouched must still be proven consistent with whichever member the
+        // contact is CURRENTLY linked to, or a typo fix could silently desync an existing, correct link.
+        var effectiveRelationId = cp.MemberLink is { } link ? link.GuestMemberId : detail.OperationalContactGuestMemberId;
+        var members = V2CanonicalRefresh.MembersOf(request, instance);
+        if (effectiveRelationId is { } relId)
+        {
+            OperationalContactLink.EnsureGuestMemberIdEligible(members, relId);
+            var member = members.First(m => m.GuestMemberId == relId);
+            var proposedKey = PersonIdentity.Key(normalized.FullName, normalized.JobTitle, normalized.Organization);
+            var memberKey = PersonIdentity.Key(member.FullName, member.JobTitle, member.Organization);
+            if (!string.Equals(proposedKey, memberKey, StringComparison.Ordinal))
+                throw new BusinessRuleException(
+                    "Thông tin thành viên được chọn không khớp với đầu mối hiện tại. Hãy kiểm tra lại thông tin hoặc chọn đúng người.",
+                    OperationalContactErrorCodes.RelationProfileMismatch);
+        }
+
+        var relationChanged = effectiveRelationId != detail.OperationalContactGuestMemberId;
+        AuditLog? relationAudit = null;
+        if (relationChanged)
+        {
+            // Durable human-readable snapshot (plan CanhIter3FixBug, decision D) — resolved NOW, while the
+            // old value is still readable, and stored as plain text so later copy-on-write replacement of
+            // the member row can never make this history entry unresolvable.
+            var oldName = ResolveMemberDisplayName(detail.OperationalContactGuestMemberId, members);
+            var newName = ResolveMemberDisplayName(effectiveRelationId, members);
+            relationAudit = new AuditLog
+            {
+                ActorUserId = actorId,
+                Action = OperationalContactHistoryAudit.RelationUpdated,
+                EntityType = "VisitRequestCampus",
+                EntityId = instance.VisitInstanceId,
+                CampusId = instance.CampusId,
+                VisitRequestId = request.VisitRequestId,
+                VisitInstanceId = instance.VisitInstanceId,
+                CorrelationId = correlationId,
+                SourceType = "IDENTITY",
+                CreatedAt = now,
+            };
+            relationAudit.Changes.Add(new AuditLogChange
+            {
+                FieldName = "operational_contact_relation",
+                OldValueText = oldName,
+                NewValueText = newName,
+                CreatedAt = now,
+            });
+        }
+
+        if (!profileChanged && !relationChanged)
+            return null;
+
+        return new ContactMutationPlan(
+            instance, detail, profileChanged, normalized, profileChanged ? profileAudit : null,
+            relationChanged, effectiveRelationId, relationAudit);
+    }
+
+    /// <summary>
+    /// APPLY pass for one staged <see cref="ContactMutationPlan"/> — the only place
+    /// <c>detail.OperationalContact*</c> is actually written. Called after baselines are captured
+    /// (decision T).
+    /// </summary>
+    private async Task ApplyContactPlanAsync(ContactMutationPlan plan, CancellationToken ct)
+    {
+        if (plan.ProfileChanged)
+        {
+            OperationalContactProfileMutation.Apply(plan.Detail, plan.NormalizedProfile);
+            _db.AuditLogs.Add(plan.ProfileAudit!);
+            await OperationalContactProfileMutation.RefreshPendingInvitationSnapshotAsync(
+                _invitations, plan.Instance, plan.Detail, ct);
+        }
+        if (plan.RelationChanged)
+        {
+            plan.Detail.OperationalContactGuestMemberId = plan.NewRelationId;
+            _db.AuditLogs.Add(plan.RelationAudit!);
+        }
+    }
+
+    /// <summary>Human-readable relation-history text (decision D) — never a raw id.</summary>
+    private static string ResolveMemberDisplayName(ulong? guestMemberId, IReadOnlyList<VisitGuestMember> members)
+    {
+        if (guestMemberId is null) return "Không nằm trong danh sách đoàn";
+        return members.FirstOrDefault(m => m.GuestMemberId == guestMemberId)?.FullName
+            ?? "Không nằm trong danh sách đoàn";
+    }
+
+    /// <summary>
+    /// Authoritative per-instance concurrency check (plan CanhIter3FixBug, decision R) — a real
+    /// SELECT ... FOR UPDATE re-read, replicating <c>VisitInstanceConcurrencyGuard</c>'s logic inline
+    /// (row_version is a plain int with no EF concurrency token behind it: IsConcurrencyToken is used
+    /// nowhere in this codebase) while keeping this endpoint's EXISTING VisitFormConcurrencyConflict
+    /// error code — VisitSafeEditV2Tests already asserts that code, and swapping it for
+    /// VisitInstanceConcurrencyGuard's InstanceVersionConflict would be an unrelated breaking change to
+    /// an established contract.
+    /// </summary>
+    private async Task EnsureInstanceUnchangedAsync(
+        VisitRequestCampus instance, int expectedRowVersion, CancellationToken ct)
+    {
+        var rows = await _db.VisitRequestCampuses
+            .FromSqlRaw("SELECT * FROM visit_request_campuses WHERE visit_instance_id = {0} FOR UPDATE",
+                instance.VisitInstanceId)
+            .AsNoTracking()
+            .ToListAsync(ct);
+        var current = rows.Count == 1 ? rows[0].RowVersion : (int?)null;
+        if (current is null)
+            throw new NotFoundException("VisitRequestCampus", instance.VisitInstanceId);
+
+        var stale = instance.RowVersion != current.Value || expectedRowVersion != current.Value;
+        if (stale)
+            throw new ConflictException(
+                "Lịch thăm tại một cơ sở đã được thay đổi bởi thao tác khác. Vui lòng tải lại và thử lại.",
+                VisitFormV2ErrorCodes.VisitFormConcurrencyConflict);
     }
 
     /// <summary>True when the safe edit contains a PRIVACY_URGENT media withdrawal (for HIGH-priority notify).</summary>

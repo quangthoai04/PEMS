@@ -38,8 +38,38 @@ public sealed record VisitAmendmentProposalDto(
     /// <c>CampusVisitFormDto.OperationalContactClientMemberKey</c> used by create/edit. Names one of
     /// <see cref="Visitors"/>/<see cref="ExternalSupportMembers"/>' own <c>ClientMemberKey</c> values —
     /// null/absent means "outside the delegation". Never a fallback string-match target.
+    ///
+    /// <para>
+    /// EPHEMERAL: only meaningful in the SAME proposal as a genuine member-list change, since a
+    /// <c>ClientMemberKey</c> is minted fresh by the submitting form and resolves only against the
+    /// rows THIS proposal is about to insert. When <see cref="Visitors"/>/<see
+    /// cref="ExternalSupportMembers"/> are unchanged, use <see cref="OperationalContactGuestMemberId"/>
+    /// instead — see its own doc comment for why the two cannot substitute for each other.
+    /// </para>
     /// </summary>
-    string? OperationalContactClientMemberKey = null);
+    string? OperationalContactClientMemberKey = null,
+
+    /// <summary>
+    /// PERSISTENT "who in the delegation the operational contact IS" reference (plan CanhIter3FixBug
+    /// "Đầu mối hiện tại có nằm trong danh sách đoàn không?"). Names an EXISTING member of this
+    /// instance by its stable <c>GuestMemberId</c> — null means "outside the delegation".
+    ///
+    /// <para>
+    /// This is the field that makes "same members, different relationship pick" a real, submittable
+    /// amendment. Before it existed, the ONLY way to record who the contact is were the member-list
+    /// change rows themselves (via <see cref="OperationalContactClientMemberKey"/>), which are written
+    /// ONLY when the member list actually changed — so a user who left the delegation exactly as it
+    /// was and only changed the relationship pick produced zero change rows at all, and the whole
+    /// amendment was refused as "no changes" even though a real business fact had changed.
+    /// </para>
+    /// <para>
+    /// The backend uses this field's value ONLY when the member lists are unchanged; when they DID
+    /// change, <see cref="OperationalContactClientMemberKey"/> is authoritative instead, because a
+    /// replaced row has no persistent id yet to be named by. The two are never both consulted for the
+    /// same amendment — see <c>VisitAmendmentService.BuildChangeRows</c>.
+    /// </para>
+    /// </summary>
+    ulong? OperationalContactGuestMemberId = null);
 
 public sealed record VisitAmendmentChangeDto(
     string FieldPath,

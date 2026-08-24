@@ -96,6 +96,17 @@ public static class AmendmentChangeClasses
     public const string PrivacyUrgent = "PRIVACY_URGENT";
     public const string ApprovalSensitive = "APPROVAL_SENSITIVE";
     public const string Structural = "STRUCTURAL";
+
+    /// <summary>
+    /// Same-person operational-contact metadata/relation changes applied directly by
+    /// <c>VisitSafeEditService</c> (plan CanhIter3FixBug). Never routed through
+    /// <c>VisitFieldClassifier</c>'s SAFE/PrivacyUrgent gate — these entries exist only so the Safe Edit
+    /// response's <c>AppliedChanges</c> (and therefore <c>SubmitVisitSafeEditCommandHandler</c>'s
+    /// post-commit notification targeting) can name the exact instance a contact edit touched. Never
+    /// notification-worthy on its own: <c>NotifyAfterCommitAsync</c> filters to <see cref="Safe"/>/
+    /// <see cref="PrivacyUrgent"/> only.
+    /// </summary>
+    public const string Contact = "CONTACT";
 }
 
 // Stable error codes for per-campus form v2 read paths (surfaced as response.errorCode).
@@ -213,6 +224,15 @@ public static class OperationalContactErrorCodes
     /// own side (GUEST / EXTERNAL_SUPPORT); FPTU's host and internal participants are not eligible.
     /// </summary>
     public const string MemberNotEligible = "OPERATIONAL_CONTACT_MEMBER_NOT_ELIGIBLE";
+
+    /// <summary>
+    /// The relation names a member whose FullName/JobTitle/Organization does not match the contact
+    /// snapshot's (<see cref="PEMS.Shared.PersonIdentity.Key"/>-equal) — plan CanhIter3FixBug §5/§6.
+    /// Distinct from <see cref="MemberNotEligible"/> (wrong TYPE of member) and
+    /// <see cref="MemberNotFound"/> (no such member at all): this one names a real, eligible member of
+    /// the right campus who is simply a different person than the contact snapshot describes.
+    /// </summary>
+    public const string RelationProfileMismatch = "OPERATIONAL_CONTACT_RELATION_PROFILE_MISMATCH";
 }
 
 /// <summary>

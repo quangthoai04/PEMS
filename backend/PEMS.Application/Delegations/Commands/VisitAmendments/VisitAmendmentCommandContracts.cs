@@ -27,16 +27,20 @@ public sealed class SubmitVisitSafeEditCommandValidator : AbstractValidator<Subm
         });
         RuleForEach(x => x.Patch.Instances).ChildRules(i =>
         {
-            // RETIRED (plan PEMS_CONTACT_ONE_DOOR): the contact profile has exactly one door now —
-            // "Manage the contact role". There used to be per-field rules here (FullName/Organization/
-            // Phone), but they were dead weight that actively lied about the contract: the handler
-            // (VisitSafeEditService.ApplySafeEditAsync) now refuses ANY non-null OperationalContact
-            // outright, before those rules could matter for a well-formed payload — and for a
-            // payload that also failed one of them (e.g. a blank Phone), FluentValidation would have
-            // reported "Phone is required", which is false everywhere else in this feature (phone is
-            // always optional) and would have hidden the real, correct refusal behind a misleading
-            // message. Nothing here validates OperationalContact any more; an old/handcrafted client
-            // that still sends it is refused by the handler with SafeEditFieldNotAllowed.
+            // Same-person operational-contact correction (plan CanhIter3FixBug §4/§8.1) — validated only
+            // when present; a sparse patch that doesn't touch the contact never reaches these rules.
+            // Organization has no NotEmpty rule here deliberately: VisitSafeEditService trims and
+            // manually requires it non-blank, mirroring the Nationality pattern already in this file, so
+            // an omitted-vs-blank distinction never needs to exist at the FluentValidation layer.
+            i.When(p => p.OperationalContact is not null, () =>
+            {
+                i.RuleFor(p => p.OperationalContact!.FullName).NotEmpty().MaximumLength(150);
+                i.RuleFor(p => p.OperationalContact!.JobTitle).NotEmpty().MaximumLength(150);
+                i.RuleFor(p => p.OperationalContact!.Organization).MaximumLength(200);
+                i.RuleFor(p => p.OperationalContact!.Phone)
+                    .MustBeAPhoneNumber("Số điện thoại đầu mối vận hành không hợp lệ.");
+                i.RuleFor(p => p.OperationalContact!.Email).NotEmpty().MaximumLength(150);
+            });
             i.RuleFor(p => p.TransportationNote)
                 .MaximumLength(2000)
                 .Must(n => string.IsNullOrEmpty(n) || (!n.Contains('<') && !n.Contains('>')))
@@ -265,6 +269,11 @@ public static class VisitHistoryEventCodes
     /// Contact* identity/role transition above.
     /// </summary>
     public const string ContactProfileUpdated = "CONTACT_PROFILE_UPDATED";
+    /// <summary>
+    /// A campus's contact's link to a delegation member changed (null→A / A→null / A→B) via Safe Edit's
+    /// direct relation update (plan CanhIter3FixBug) — never an amendment.
+    /// </summary>
+    public const string ContactRelationUpdated = "CONTACT_RELATION_UPDATED";
     /// <summary>
     /// The operational contact was replaced by an address that immediately self-matched the
     /// registrant's own verified account — linked at once, no invitation, no separate confirmation

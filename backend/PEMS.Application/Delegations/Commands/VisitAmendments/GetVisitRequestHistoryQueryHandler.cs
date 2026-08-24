@@ -426,6 +426,7 @@ public sealed class GetVisitRequestHistoryQueryHandler
                             && a.VisitInstanceId != null
                             && visibleInstanceIds.Contains(a.VisitInstanceId!.Value)
                             && (a.Action == OperationalContactHistoryAudit.ProfileUpdated
+                                || a.Action == OperationalContactHistoryAudit.RelationUpdated
                                 || a.Action == OperationalContactHistoryAudit.Replaced))
                 .Select(a => new
                 {
@@ -440,6 +441,10 @@ public sealed class GetVisitRequestHistoryQueryHandler
                 if (a.Action == OperationalContactHistoryAudit.ProfileUpdated)
                 {
                     eventCode = VisitHistoryEventCodes.ContactProfileUpdated;
+                }
+                else if (a.Action == OperationalContactHistoryAudit.RelationUpdated)
+                {
+                    eventCode = VisitHistoryEventCodes.ContactRelationUpdated;
                 }
                 else
                 {

@@ -223,7 +223,8 @@ public sealed class OperationalContactLifecycleLockTests
             {
                 UpdateOperationalContactProfileCommand c => Cast<TResponse>(
                     new UpdateOperationalContactProfileCommandHandler(
-                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email), WriteOn)
+                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email),
+                        new CanonicalContentRefresher(_db), WriteOn)
                         .Handle(c, ct)),
                 ReplaceOperationalContactCommand c => Cast<TResponse>(
                     new ReplaceOperationalContactCommandHandler(

@@ -230,6 +230,7 @@ export const SCOPED_FILES = [
   'shared/utils/galleryShare.ts',
   'shared/utils/nameInitials.ts',
   'shared/utils/passwordPolicy.ts',
+  'shared/utils/personIdentity.ts',
   'shared/utils/phoneNumber.ts',
   'shared/utils/resolveFileUrl.ts',
   'shared/utils/youtube.ts',

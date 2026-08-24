@@ -1,30 +1,30 @@
 using FluentValidation.TestHelper;
-using PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Delegations.Commands.OperationalContact;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Partners.Commands.CreatePartner;
-using PEMS.Application.Partners.Contacts.Commands.CreatePartnerContact;
-using PEMS.Application.Partners.Contacts.Commands.UpdatePartnerContact;
 using Xunit;
 
 namespace PEMS.UnitTests.Validation;
 
 /// <summary>
-/// PEMS_FIELD_CONTRACT_VALIDATION_HISTORY_REMEDIATION_MASTER_PLAN Patch 3 (§8, P3.8) — every user-write
-/// path that accepts a phone number now goes through the SAME canonical rule
-/// (<c>PEMS.Shared.PhoneNumber</c> / <c>PhoneNumberRules.MustBeAPhoneNumber</c>) instead of
+/// PEMS_FIELD_CONTRACT_VALIDATION_HISTORY_REMEDIATION_MASTER_PLAN Patch 3 (§8, P3.8) — every
+/// IDENTITY/AUTHENTICATION-adjacent user-write path that accepts a phone number goes through the SAME
+/// canonical rule (<c>PEMS.Shared.PhoneNumber</c> / <c>PhoneNumberRules.MustBeAPhoneNumber</c>) instead of
 /// <c>MaximumLength</c> alone. Before this suite, a direct API call to Safe Edit, Manage Operational
-/// Contact, Partner Contact create/update, the Partner initial-contact payload, Business Card OCR
-/// confirmation or the legacy registrant-info endpoint could all persist a value like
-/// "+821012340001123213sd" — 23 characters, all letters/digits, comfortably under every
+/// Contact, the Partner initial-contact payload, or the legacy registrant-info endpoint could all persist
+/// a value like "+821012340001123213sd" — 23 characters, all letters/digits, comfortably under every
 /// <c>MaximumLength(50)</c> cap — because none of those validators checked phone SHAPE, only length.
 ///
 /// Every validator below is exercised against the same matrix (P3.8): blank (optional fields only),
 /// valid VN local, valid +84, valid non-VN international, letters, the exact regression value, and
 /// too-short. Phone is optional everywhere covered here (no command in this list requires it), so blank
 /// always passes and only a NON-BLANK malformed value is ever rejected.
+///
+/// Partner Contact create/update and Business Card OCR confirm are DELIBERATELY not in this file —
+/// see <c>PartnerContactContractTests.cs</c> (plan CanhIter3FixBug): that data is external
+/// business-card/partner-supplied text, not an identity field, and is intentionally NOT format-checked.
 /// </summary>
 public class PhoneContractTests
 {
@@ -159,44 +159,12 @@ public class PhoneContractTests
         else result.ShouldHaveValidationErrorFor(x => x.Phone);
     }
 
-    // ── Partner Contact — create/update ──────────────────────────────────────────────────────────────
-
-    private static readonly CreatePartnerContactCommandValidator CreateContactValidator = new();
-    private static readonly UpdatePartnerContactCommandValidator UpdateContactValidator = new();
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData("0912345678", true)]
-    [InlineData("+84912345678", true)]
-    [InlineData("+1 202 555 0134", true)]
-    [InlineData("abcdefgh", false)]
-    [InlineData(ExactRegressionValue, false)]
-    [InlineData("+8412", false)]
-    public void CreatePartnerContact_phone_matrix(string? phone, bool valid)
-    {
-        var cmd = new CreatePartnerContactCommand { PartnerId = 1, FullName = "Nguyễn Văn A", Phone = phone };
-        var result = CreateContactValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Phone);
-        else result.ShouldHaveValidationErrorFor(x => x.Phone);
-    }
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData("0912345678", true)]
-    [InlineData("+84912345678", true)]
-    [InlineData("+1 202 555 0134", true)]
-    [InlineData("abcdefgh", false)]
-    [InlineData(ExactRegressionValue, false)]
-    [InlineData("+8412", false)]
-    public void UpdatePartnerContact_phone_matrix(string? phone, bool valid)
-    {
-        var cmd = new UpdatePartnerContactCommand { PartnerId = 1, ContactId = 5, FullName = "Nguyễn Văn A", Phone = phone };
-        var result = UpdateContactValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Phone);
-        else result.ShouldHaveValidationErrorFor(x => x.Phone);
-    }
+    // Partner Contact create/update (CreatePartnerContactCommandValidator/UpdatePartnerContactCommandValidator)
+    // and Business Card OCR confirm (ConfirmBusinessCardContactCommandValidator) are DELIBERATELY no
+    // longer governed by this matrix — see PartnerContactContractTests.cs (plan CanhIter3FixBug "Partner
+    // Contact / Business Card Data Capture") and PhoneValidatorDiscoveryTests' ExemptWithReason entries
+    // for those three. Partner Contact is external business-card/partner-supplied data, not an identity
+    // field; this matrix's E.164-ish shape rule rejected real foreign numbers a card can print.
 
     // ── Partner create — InitialContact.Phone (previously had NO rule at all, not even length) ──────
 
@@ -221,27 +189,6 @@ public class PhoneContractTests
         var result = CreatePartnerValidator.TestValidate(cmd);
         if (valid) result.ShouldNotHaveValidationErrorFor(x => x.InitialContact!.Phone);
         else result.ShouldHaveValidationErrorFor(x => x.InitialContact!.Phone);
-    }
-
-    // ── Business Card OCR confirmation ───────────────────────────────────────────────────────────────
-
-    private static readonly ConfirmBusinessCardContactCommandValidator OcrValidator = new();
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData("0912345678", true)]
-    [InlineData("+84912345678", true)]
-    [InlineData("+1 202 555 0134", true)]
-    [InlineData("abcdefgh", false)]
-    [InlineData(ExactRegressionValue, false)]
-    [InlineData("+8412", false)]
-    public void ConfirmBusinessCardContact_phone_matrix(string? phone, bool valid)
-    {
-        var cmd = new ConfirmBusinessCardContactCommand { OcrJobId = 1, PartnerId = 1, FullName = "Nguyễn Văn A", Phone = phone };
-        var result = OcrValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Phone);
-        else result.ShouldHaveValidationErrorFor(x => x.Phone);
     }
 
     // ── Legacy registrant-info endpoint ──────────────────────────────────────────────────────────────

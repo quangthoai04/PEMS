@@ -198,6 +198,19 @@ public sealed class VisitAmendmentV2Tests
                     m.OrganizationPartnerId)).ToList(),
             // Defaults to the address on record, which is what the real modal sends back untouched.
             ContactEmail = d.OperationalContactEmail ?? "",
+            // Echoes the GENUINE DB value — including a real null — rather than coercing it to "".
+            // A `?? ""` here used to mask FIX-A's asymmetric-normalization bug: it made every baseline
+            // proposal's phone compare EQUAL to a null DB phone by accident (both sides read "" through
+            // the old code path), so no test in this suite could ever have caught it. Tests that want the
+            // masked behavior can still opt in via `mutate`.
+            ContactPhone = d.OperationalContactPhone,
+            // Echoes the CURRENT relationship unchanged, same reasoning as ContactPhone above: a
+            // baseline proposal exists to change NOTHING unless `mutate` says otherwise, so it must
+            // start from what is actually persisted (usually null in this fixture — the seeded
+            // contact self-matches the REGISTRANT's own account, which is not a delegation member at
+            // all) rather than a hardcoded default that would silently propose "no contact" against a
+            // campus that already has one.
+            ContactGuestMemberId = d.OperationalContactGuestMemberId,
         };
         mutate?.Invoke(b);
 
@@ -206,10 +219,11 @@ public sealed class VisitAmendmentV2Tests
             b.DelegationName, d.VisitType ?? "MEETING", d.VisitTypeOther, b.Purpose, b.WorkingContent,
             d.WorkingLanguage ?? "EN",
             new ContactPointDto(d.OperationalContactFullName ?? "", d.OperationalContactOrganization ?? "", "Trưởng phòng Hợp tác",
-                d.OperationalContactPhone ?? "", b.ContactEmail ?? ""),
+                b.ContactPhone, b.ContactEmail ?? ""),
             b.Visitors,
             new List<SupportTeamMemberDto>(),
-            b.PlannedStartAt, b.PlannedEndAt);
+            b.PlannedStartAt, b.PlannedEndAt,
+            OperationalContactGuestMemberId: b.ContactGuestMemberId);
     }
 
     private sealed class Baseline
@@ -221,6 +235,8 @@ public sealed class VisitAmendmentV2Tests
         public DateTime PlannedEndAt;
         public List<VisitorDto> Visitors = new();
         public string? ContactEmail;
+        public string? ContactPhone;
+        public ulong? ContactGuestMemberId;
     }
 
     private static async Task CleanupAsync(ulong requestId)
@@ -1253,6 +1269,85 @@ public sealed class VisitAmendmentV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    // FIX-A/B regression: a campus whose operational-contact phone is genuinely NULL on both the active
+    // detail and the proposal must not be mistaken for a contact-profile change. Before the fix,
+    // PhoneNumber.NormalizeOrOriginal(null) on the DB side ("") was compared against a null-preserving
+    // ternary on the proposal side (null), so "" != null threw ContactProfileNotAmendable on ANY
+    // amendment of a campus with no phone on file — even one that only touched Purpose.
+    [Fact]
+    public async Task Amendment_with_null_phone_on_both_sides_is_not_a_contact_profile_change()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(10));
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                detail.OperationalContactPhone = null;
+                await db.SaveChangesAsync();
+            }
+
+            // ContactPhone defaults to the genuine (now null) DB value — see BaselineProposalAsync.
+            var proposal = await BaselineProposalAsync(instanceA, b => b.Purpose = "Đổi mục đích duy nhất");
+            Assert.Null(proposal.OperationalContact.Phone);
+
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                // Succeeded at all (no ContactProfileNotAmendable) — and, same as the ordinary case,
+                // records no contact-profile change row: only Purpose actually moved.
+                Assert.DoesNotContain(dto.Changes, c =>
+                    c.FieldPath == VisitFieldClassifier.OperationalContactFullName
+                    || c.FieldPath == VisitFieldClassifier.OperationalContactOrganization
+                    || c.FieldPath == VisitFieldClassifier.OperationalContactJobTitle
+                    || c.FieldPath == VisitFieldClassifier.OperationalContactPhone);
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.Purpose);
+            }
+
+            // The active detail must be untouched until approval — a null-phone amendment is not special.
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceA);
+                Assert.Null(detail.OperationalContactPhone);
+                Assert.NotEqual("Đổi mục đích duy nhất", detail.Purpose);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // FIX-A guardrail: the null/blank symmetry fix must not weaken the rule for a REAL difference — a
+    // campus with no phone on file, proposed a real one, is still a genuine profile change and must
+    // still be refused (never silently accepted as "no value ~ no value").
+    [Fact]
+    public async Task Amendment_proposing_a_real_phone_over_a_null_one_still_refuses_at_submit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(10));
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                detail.OperationalContactPhone = null;
+                await db.SaveChangesAsync();
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactPhone = "+84987654321");
+
+            using var db2 = NewContext();
+            var refused = await Assert.ThrowsAnyAsync<BusinessRuleException>(() =>
+                Submit(db2, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.ContactProfileNotAmendable, refused.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
     // AM-NEW-06: the durable contact-member link also resolves onto an EXTERNAL_SUPPORT row, not just
     // a GUEST one — the picker treats both kinds as eligible (plan §16 / PEMS_CONTACT_ONE_DOOR item 6).
     [Fact]
@@ -1427,6 +1522,566 @@ public sealed class VisitAmendmentV2Tests
             var dto = await Submit(db2, Registrant).Handle(
                 new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
             Assert.True(dto.AmendmentId > 0);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Relationship-only amendments (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách
+    //    đoàn không?") — member list UNCHANGED, only WHO the contact is (by persistent GuestMemberId)
+    //    moves. §20 CASE 1–13. ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>Approves a member-replacement amendment that gives ONE campus two named guests, then
+    /// returns their real DB ids in submission order — the fixture every relationship-only test below
+    /// builds on. Uses the EXISTING, already-proven ClientMemberKey/member-replace mechanism (unchanged
+    /// by this fix) purely as setup.</summary>
+    private async Task<(ulong GuestAId, ulong GuestBId)> SeedTwoGuestMembersAsync(ulong requestId, ulong instanceId)
+    {
+        var proposal = await BaselineProposalAsync(instanceId, b =>
+            b.Visitors = new List<VisitorDto>
+            {
+                new("Guest A", "VN", "Guest", "GuestOrg", ClientMemberKey: "seed-a"),
+                new("Guest B", "JP", "Manager", "OrgJP", ClientMemberKey: "seed-b"),
+            });
+        ulong amendmentId, hostId, campusId;
+        using (var db = NewContext())
+        {
+            var dto = await Submit(db, Registrant).Handle(
+                new SubmitVisitAmendmentCommand(requestId, instanceId, proposal), CancellationToken.None);
+            amendmentId = dto.AmendmentId;
+            var row = await db.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceId)
+                .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+            hostId = row.CurrentHostUserId!.Value;
+            campusId = row.CampusId;
+        }
+        using (var db = NewContext())
+            await Decide(db, new FakeUser(hostId, RoleCodes.Staff, UserSubRoles.Leader, campusId)).Handle(
+                new ApproveVisitAmendmentCommand(instanceId, amendmentId, "OK"), CancellationToken.None);
+
+        using var db2 = NewContext();
+        var links = await db2.VisitInstanceGuestMembers.AsNoTracking()
+            .Where(l => l.VisitInstanceId == instanceId).Select(l => l.GuestMemberId).ToListAsync();
+        var members = await db2.VisitGuestMembers.AsNoTracking()
+            .Where(m => links.Contains(m.GuestMemberId)).ToListAsync();
+        return (members.Single(m => m.FullName == "Guest A").GuestMemberId,
+                members.Single(m => m.FullName == "Guest B").GuestMemberId);
+    }
+
+    /// <summary>Submits, then approves (as the campus's current Host), a relationship-only proposal.
+    /// Returns the FormRevision/ApprovalRevision BEFORE the amendment, so callers can assert "+1
+    /// exactly" without hardcoding a number that would drift as fixtures change.</summary>
+    private async Task<(uint FormRevisionBefore, uint ApprovalRevisionBefore)> SubmitAndApproveAsync(
+        ulong requestId, ulong instanceId, VisitAmendmentProposalDto proposal)
+    {
+        uint formBefore, approvalBefore;
+        using (var db0 = NewContext())
+        {
+            var before = await db0.VisitInstanceFormDetails.AsNoTracking()
+                .SingleAsync(d => d.VisitInstanceId == instanceId);
+            formBefore = before.FormRevision;
+            approvalBefore = before.ApprovalRevision;
+        }
+
+        ulong amendmentId, hostId, campusId;
+        using (var db = NewContext())
+        {
+            var dto = await Submit(db, Registrant).Handle(
+                new SubmitVisitAmendmentCommand(requestId, instanceId, proposal), CancellationToken.None);
+            amendmentId = dto.AmendmentId;
+            var row = await db.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceId)
+                .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+            hostId = row.CurrentHostUserId!.Value;
+            campusId = row.CampusId;
+        }
+        using (var db = NewContext())
+            await Decide(db, new FakeUser(hostId, RoleCodes.Staff, UserSubRoles.Leader, campusId)).Handle(
+                new ApproveVisitAmendmentCommand(instanceId, amendmentId, "OK"), CancellationToken.None);
+        return (formBefore, approvalBefore);
+    }
+
+    // CASE 1: outside → existing Guest A, member list unchanged.
+    [Fact]
+    public async Task RelationshipOnly_Case1_Outside_to_existing_member_registers_and_applies()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(20));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+            using (var db = NewContext())
+                Assert.Null((await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceA)).OperationalContactGuestMemberId);
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            Assert.Equal(2, proposal.Visitors.Count); // member list echoed back UNCHANGED
+
+            ulong amendmentId;
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                amendmentId = dto.AmendmentId;
+                // Real business change — recorded on the RELATIONSHIP path only. Never the member-list
+                // paths and never the ephemeral-key path (this amendment does not replace anything).
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.OperationalContactGuestMemberId);
+                Assert.DoesNotContain(dto.Changes, c => c.FieldPath == VisitFieldClassifier.Visitors);
+                Assert.DoesNotContain(dto.Changes, c => c.FieldPath == VisitFieldClassifier.SupportMembers);
+                Assert.DoesNotContain(dto.Changes, c => c.FieldPath == VisitFieldClassifier.OperationalContactMemberKey);
+            }
+
+            var (formBefore, approvalBefore) = (0u, 0u);
+            using (var db = NewContext())
+            {
+                var before = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+                formBefore = before.FormRevision;
+                approvalBefore = before.ApprovalRevision;
+            }
+            ulong hostForCase1;
+            ulong campusForCase1;
+            using (var db = NewContext())
+            {
+                var row = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instanceA)
+                    .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+                hostForCase1 = row.CurrentHostUserId!.Value;
+                campusForCase1 = row.CampusId;
+            }
+            using (var db = NewContext())
+            {
+                // CASE 8: FormRevision/ApprovalRevision advance by EXACTLY one on a relationship-only approve.
+                var res = await Decide(db, new FakeUser(hostForCase1, RoleCodes.Staff, UserSubRoles.Leader, campusForCase1))
+                    .Handle(new ApproveVisitAmendmentCommand(instanceA, amendmentId, "OK"), CancellationToken.None);
+                Assert.Equal(formBefore + 1, res.NewFormRevision);
+                Assert.Equal(approvalBefore + 1, res.NewApprovalRevision);
+            }
+
+            using var db2 = NewContext();
+            var detail = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Equal(guestA, detail.OperationalContactGuestMemberId);
+            var linkedIds = await db2.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == instanceA).Select(l => l.GuestMemberId).ToListAsync();
+            Assert.Equal(2, linkedIds.Count); // member set physically untouched
+
+            // CASE 8 (cont'd): revision snapshot carries the new relationship.
+            var snapshot = await db2.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .Where(r => r.VisitInstanceId == instanceA).OrderByDescending(r => r.FormRevision).FirstAsync();
+            Assert.Contains(guestA.ToString(), snapshot.SnapshotJson);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 2: Guest A → outside.
+    [Fact]
+    public async Task RelationshipOnly_Case2_Existing_member_to_outside_clears_the_relation_and_keeps_the_member()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(21));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                detail.OperationalContactGuestMemberId = guestA;
+                await db.SaveChangesAsync();
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = null);
+            await SubmitAndApproveAsync(requestId, instanceA, proposal);
+
+            using var db2 = NewContext();
+            var after = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Null(after.OperationalContactGuestMemberId);
+            // Guest A themself was never touched — still linked to the campus, still named "Guest A".
+            var stillLinked = await db2.VisitInstanceGuestMembers.AsNoTracking()
+                .AnyAsync(l => l.VisitInstanceId == instanceA && l.GuestMemberId == guestA);
+            Assert.True(stillLinked);
+            Assert.Equal("Guest A", (await db2.VisitGuestMembers.AsNoTracking().SingleAsync(m => m.GuestMemberId == guestA)).FullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 3: Guest A → Guest B.
+    [Fact]
+    public async Task RelationshipOnly_Case3_Switching_between_two_existing_members_moves_the_relation_only()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(22));
+            var (guestA, guestB) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                detail.OperationalContactGuestMemberId = guestA;
+                await db.SaveChangesAsync();
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestB);
+            await SubmitAndApproveAsync(requestId, instanceA, proposal);
+
+            using var db2 = NewContext();
+            var after = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Equal(guestB, after.OperationalContactGuestMemberId);
+            // Both members keep their OWN original ids — nobody was deleted or re-inserted.
+            var members = await db2.VisitGuestMembers.AsNoTracking()
+                .Where(m => m.GuestMemberId == guestA || m.GuestMemberId == guestB).ToListAsync();
+            Assert.Equal(2, members.Count);
+            Assert.Contains(members, m => m.GuestMemberId == guestA && m.FullName == "Guest A");
+            Assert.Contains(members, m => m.GuestMemberId == guestB && m.FullName == "Guest B");
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 4: Guest A → Guest A, reason changed only → AmendmentNoChanges.
+    [Fact]
+    public async Task RelationshipOnly_Case4_Unchanged_relationship_with_only_a_new_reason_is_refused_as_no_changes()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(23));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceA);
+                detail.OperationalContactGuestMemberId = guestA;
+                await db.SaveChangesAsync();
+            }
+
+            // Same relation, same everything else — only the free-text reason differs. Reason alone is
+            // NEVER a business change (BuildChangeRows never diffs it into a change row at all).
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            proposal = proposal with { Reason = "Một lý do bất kỳ, không đổi gì khác" };
+
+            using var db2 = NewContext();
+            var refused = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Submit(db2, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.AmendmentNoChanges, refused.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 5: proposed GuestMemberId belongs to a SIBLING campus → reject at submit.
+    [Fact]
+    public async Task RelationshipOnly_Case5_A_sibling_campuss_member_id_is_refused_at_submit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, var instanceB) = await CreateApprovedAsync(Now.AddDays(24));
+            // instanceB's own seeded guest — never a member of instanceA.
+            List<ulong> linksB;
+            using (var db = NewContext())
+                linksB = await db.VisitInstanceGuestMembers.AsNoTracking()
+                    .Where(l => l.VisitInstanceId == instanceB).Select(l => l.GuestMemberId).ToListAsync();
+            var siblingMemberId = linksB.Single();
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = siblingMemberId);
+
+            using var db2 = NewContext();
+            var refused = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Submit(db2, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None));
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, refused.ErrorCode);
+
+            // Refused cleanly — no amendment row, no relationship change, no side effects.
+            Assert.False(await db2.VisitInstanceAmendments.AsNoTracking().AnyAsync(a => a.VisitInstanceId == instanceA));
+            var detailA = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Null(detailA.OperationalContactGuestMemberId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 6: proposed GuestMemberId does not exist at all → reject at submit.
+    [Fact]
+    public async Task RelationshipOnly_Case6_A_nonexistent_member_id_is_refused_at_submit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(25));
+            const ulong bogusId = 999_999_999UL;
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = bogusId);
+
+            using var db = NewContext();
+            var refused = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None));
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, refused.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 7: member list changed (new member C added) + C picked as contact → the EXISTING
+    // ClientMemberKey replacement flow still handles it (untouched by this fix).
+    [Fact]
+    public async Task RelationshipOnly_Case7_A_brand_new_member_picked_as_contact_still_uses_the_ephemeral_key_flow()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(26));
+            var proposal = await BaselineProposalAsync(instanceA, b =>
+                b.Visitors = new List<VisitorDto>(b.Visitors) { new("Guest C", "KR", "Director", "OrgKR", ClientMemberKey: "c-key") });
+            proposal = proposal with { OperationalContactClientMemberKey = "c-key" };
+            // A genuine member-list change is present, so the RELATIONSHIP path must NOT be used even
+            // though OperationalContactGuestMemberId defaults to null on this DTO.
+
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.Visitors);
+                Assert.Contains(dto.Changes, c => c.FieldPath == VisitFieldClassifier.OperationalContactMemberKey);
+                Assert.DoesNotContain(dto.Changes, c => c.FieldPath == VisitFieldClassifier.OperationalContactGuestMemberId);
+            }
+
+            using var db2 = NewContext();
+            var amendment = await db2.VisitInstanceAmendments.AsNoTracking()
+                .Include(a => a.Changes).SingleAsync(a => a.VisitInstanceId == instanceA);
+            var row = await db2.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceA)
+                .Select(c => new { c.CurrentHostUserId, c.CampusId }).SingleAsync();
+            using (var db3 = NewContext())
+                await Decide(db3, new FakeUser(row.CurrentHostUserId!.Value, RoleCodes.Staff, UserSubRoles.Leader, row.CampusId))
+                    .Handle(new ApproveVisitAmendmentCommand(instanceA, amendment.AmendmentId, "OK"), CancellationToken.None);
+
+            using var db4 = NewContext();
+            var detail = await db4.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            var linkedIds = await db4.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == instanceA).Select(l => l.GuestMemberId).ToListAsync();
+            var newC = await db4.VisitGuestMembers.AsNoTracking()
+                .SingleAsync(m => linkedIds.Contains(m.GuestMemberId) && m.FullName == "Guest C");
+            Assert.Equal(newC.GuestMemberId, detail.OperationalContactGuestMemberId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 9: relationship-only amendment leaves member ids, OrganizationPartnerId and partner links
+    // completely untouched.
+    [Fact]
+    public async Task RelationshipOnly_Case9_Preserves_member_ids_partner_id_and_partner_link_row()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        const ulong approvedPublicPartnerId = 103; // ACTIVE + APPROVED + PUBLIC (see RequestFormPartnerSelectableTests)
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(27));
+            var (guestA, guestB) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+
+            ulong linkId;
+            using (var db = NewContext())
+            {
+                var member = await db.VisitGuestMembers.SingleAsync(m => m.GuestMemberId == guestA);
+                member.OrganizationPartnerId = approvedPublicPartnerId;
+                await db.SaveChangesAsync();
+
+                db.VisitGuestPartnerLinks.Add(new PEMS.Domain.Entities.Partners.VisitGuestPartnerLink
+                {
+                    VisitRequestId = requestId,
+                    VisitInstanceId = instanceA,
+                    GuestMemberId = guestA,
+                    PartnerId = approvedPublicPartnerId,
+                    MatchSource = PEMS.Application.Partners.Common.PartnerLinkMatchSources.Manual,
+                    MatchStatus = PEMS.Application.Partners.Common.PartnerLinkMatchStatuses.Confirmed,
+                    CreatedAt = Now,
+                    CreatedBy = Registrant,
+                });
+                await db.SaveChangesAsync();
+                linkId = (await db.VisitGuestPartnerLinks.SingleAsync(l => l.GuestMemberId == guestA)).LinkId;
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestB);
+            await SubmitAndApproveAsync(requestId, instanceA, proposal);
+
+            using var db2 = NewContext();
+            var memberAfter = await db2.VisitGuestMembers.AsNoTracking().SingleAsync(m => m.GuestMemberId == guestA);
+            Assert.Equal(approvedPublicPartnerId, memberAfter.OrganizationPartnerId);
+            var linkAfter = await db2.VisitGuestPartnerLinks.AsNoTracking().SingleAsync(l => l.GuestMemberId == guestA);
+            Assert.Equal(linkId, linkAfter.LinkId); // same row — never orphaned/reseeded
+            var linkedIds = await db2.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == instanceA).Select(l => l.GuestMemberId).ToListAsync();
+            Assert.Equal(new[] { guestA, guestB }.OrderBy(x => x), linkedIds.OrderBy(x => x));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 10: a relationship-only pick can never smuggle a profile mutation through, and a genuine
+    // profile mutation bundled with a relationship pick is still refused, never partially applied.
+    [Fact]
+    public async Task RelationshipOnly_Case10_Never_copies_the_picked_members_details_onto_the_contact_profile()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(28));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+            string originalFullName;
+            using (var db = NewContext())
+                originalFullName = (await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceA)).OperationalContactFullName ?? "";
+
+            // A genuine relationship change succeeds on its own...
+            var relationshipOnly = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            await SubmitAndApproveAsync(requestId, instanceA, relationshipOnly);
+            using (var db = NewContext())
+                Assert.Equal(originalFullName,
+                    (await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA))
+                        .OperationalContactFullName);
+
+            // ...but bundling it with an attempted profile rewrite (borrowing Guest A's own name) is
+            // still refused outright — the relationship pick does not open a side door onto the profile.
+            var withProfileRewrite = await BaselineProposalAsync(instanceA, b => { });
+            withProfileRewrite = withProfileRewrite with
+            {
+                OperationalContact = withProfileRewrite.OperationalContact with { FullName = "Guest A" },
+            };
+            using var db2 = NewContext();
+            var refused = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                Submit(db2, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, withProfileRewrite), CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.ContactProfileNotAmendable, refused.ErrorCode);
+            // Refused BEFORE any amendment was created — no partial application.
+            Assert.False(await db2.VisitInstanceAmendments.AsNoTracking()
+                .AnyAsync(a => a.VisitInstanceId == instanceA && a.Status == AmendmentStatuses.PendingApproval));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 11: self-approved relationship-only amendment (requester is also the campus's current Host).
+    [Fact]
+    public async Task RelationshipOnly_Case11_Self_approved_path_applies_the_relationship_in_the_same_call()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(29));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+
+            ulong selfActor;
+            using (var db = NewContext())
+            {
+                var a = await db.VisitRequestCampuses.SingleAsync(c => c.VisitInstanceId == instanceA);
+                selfActor = a.CurrentHostUserId!.Value;
+                a.OperationalContactUserId = selfActor;
+                a.OperationalContactConfirmedAt = Now;
+                a.OperationalContactConfirmationSource = OperationalContactSources.Transfer;
+                a.RowVersion += 1;
+                await db.SaveChangesAsync();
+            }
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            using (var db = NewContext())
+            {
+                var dto = await Submit(db, selfActor).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, proposal), CancellationToken.None);
+                Assert.Equal(AmendmentStatuses.Approved, dto.Status); // applied in the same call
+            }
+
+            using var db2 = NewContext();
+            var detail = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Equal(guestA, detail.OperationalContactGuestMemberId);
+            Assert.False(await db2.VisitInstanceAmendments.AsNoTracking()
+                .AnyAsync(a => a.VisitInstanceId == instanceA && a.Status == AmendmentStatuses.PendingApproval));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 12: a relationship-only proposal built from a STALE snapshot is refused, exactly like any
+    // other amendment — the base-revision/row-version guards run before BuildChangeRows is even reached.
+    [Fact]
+    public async Task RelationshipOnly_Case12_A_stale_base_revision_is_refused_as_a_conflict()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, _) = await CreateApprovedAsync(Now.AddDays(30));
+            var (guestA, guestB) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+
+            var stale = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            // Move the campus on (another relationship-only amendment, approved) so `stale`'s base
+            // revision/version now describe a state that no longer exists. Approving ANY amendment
+            // bumps instance.RowVersion together with FormRevision/ApprovalRevision in this codebase
+            // (they are never independently stale-able through a normal flow), so the concurrency
+            // guard — checked first in SubmitAsync, before the base-revision guard — is the one that
+            // actually fires here. Both guards exist for the same reason (refuse a proposal built from
+            // a snapshot that no longer describes reality); this proves the relationship-only path
+            // answers to the SAME guard order as every other amendment, not a weaker one.
+            var advance = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestB);
+            await SubmitAndApproveAsync(requestId, instanceA, advance);
+
+            using var db = NewContext();
+            var refused = await Assert.ThrowsAsync<ConflictException>(() =>
+                Submit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instanceA, stale), CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.VisitFormConcurrencyConflict, refused.ErrorCode);
+
+            // The winner's relationship stands — the stale loser never touched anything.
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceA);
+            Assert.Equal(guestB, detail.OperationalContactGuestMemberId);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // CASE 13: a relationship-only amendment on ONE campus leaves an untouched sibling byte-for-byte
+    // the same — status, host, decision, members, and its own relationship.
+    [Fact]
+    public async Task RelationshipOnly_Case13_A_sibling_campus_is_completely_unaffected()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceA, var instanceB) = await CreateApprovedAsync(Now.AddDays(31));
+            var (guestA, _) = await SeedTwoGuestMembersAsync(requestId, instanceA);
+
+            ulong siblingContactBefore;
+            using (var db = NewContext())
+            {
+                var detailB = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instanceB);
+                var linkB = await db.VisitInstanceGuestMembers.AsNoTracking()
+                    .Where(l => l.VisitInstanceId == instanceB).Select(l => l.GuestMemberId).SingleAsync();
+                detailB.OperationalContactGuestMemberId = linkB;
+                await db.SaveChangesAsync();
+                siblingContactBefore = linkB;
+            }
+            using var dbSnap = NewContext();
+            var siblingBefore = await dbSnap.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceB)
+                .Select(c => new { c.Status, c.CurrentHostUserId, c.DecidedBy, c.RowVersion }).SingleAsync();
+            var siblingFormRevBefore = (await dbSnap.VisitInstanceFormDetails.AsNoTracking()
+                .SingleAsync(d => d.VisitInstanceId == instanceB)).FormRevision;
+            var siblingRevisionCountBefore = await dbSnap.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .CountAsync(r => r.VisitInstanceId == instanceB);
+
+            var proposal = await BaselineProposalAsync(instanceA, b => b.ContactGuestMemberId = guestA);
+            await SubmitAndApproveAsync(requestId, instanceA, proposal);
+
+            using var db2 = NewContext();
+            var siblingAfter = await db2.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instanceB)
+                .Select(c => new { c.Status, c.CurrentHostUserId, c.DecidedBy, c.RowVersion }).SingleAsync();
+            Assert.Equal(siblingBefore, siblingAfter);
+            var detailBAfter = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instanceB);
+            Assert.Equal(siblingFormRevBefore, detailBAfter.FormRevision);
+            Assert.Equal(siblingContactBefore, detailBAfter.OperationalContactGuestMemberId);
+            var siblingRevisionCountAfter = await db2.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .CountAsync(r => r.VisitInstanceId == instanceB);
+            Assert.Equal(siblingRevisionCountBefore, siblingRevisionCountAfter);
         }
         finally { await CleanupAsync(requestId); }
     }

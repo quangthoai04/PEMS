@@ -40,10 +40,7 @@ public class EmailValidatorDiscoveryTests
         "UpdateOperationalContactProfileCommandValidator",
         "SaveOperationalContactCommandValidator",
         "InitiateOperationalContactTransferCommandValidator",
-        "CreatePartnerContactCommandValidator",
-        "UpdatePartnerContactCommandValidator",
         "CreatePartnerCommandValidator",           // InitialContact.Email — nested, see note below
-        "ConfirmBusinessCardContactCommandValidator",
         "UpdateRegistrantInfoCommandValidator",
         "ResendVisitRequestOtpCommandValidator",
     };
@@ -89,6 +86,17 @@ public class EmailValidatorDiscoveryTests
         // same reasoning Patch 3/7.5 already applied to this domain for phone.
         "AddNewCampusCommandValidator",
         "UpdateCampusCommandValidator",
+
+        // Partner Contact / Business Card capture (plan CanhIter3FixBug) — DELIBERATELY exempted, same
+        // reasoning as PhoneValidatorDiscoveryTests' own Partner Contact exemption: external
+        // business-card/partner-supplied data, never an authentication/identity email. .EmailAddress()
+        // rejected real nonstandard values a card can print. Now only MaximumLength-bound to the actual
+        // DB column (partner_contacts.email VARCHAR(150)) and stored as user-confirmed raw trimmed text
+        // (never lowercased — EnsureEmailUniqueAsync normalizes for COMPARISON only). Covered by
+        // PEMS.UnitTests.Validation.PartnerContactEmailContractTests, not EmailContractTests.
+        "CreatePartnerContactCommandValidator",
+        "UpdatePartnerContactCommandValidator",
+        "ConfirmBusinessCardContactCommandValidator",
     };
 
     private static bool HasEmailProperty(System.Type validatedType)

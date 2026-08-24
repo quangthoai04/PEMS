@@ -28,6 +28,15 @@ public static class OperationalContactHistoryAudit
     public const string ProfileUpdated = "OPERATIONAL_CONTACT_PROFILE_UPDATED";
 
     /// <summary>
+    /// Written by VisitSafeEditService's contact branch (plan CanhIter3FixBug) whenever which delegation
+    /// member the operational contact IS changes (null→A / A→null / A→B) — a direct metadata update,
+    /// never an amendment. The single AuditLogChange row's OldValueText/NewValueText already carry
+    /// human-readable display names (or the neutral "not in delegation" phrase) resolved at mutation
+    /// time, not a raw GuestMemberId.
+    /// </summary>
+    public const string RelationUpdated = "OPERATIONAL_CONTACT_RELATION_UPDATED";
+
+    /// <summary>
     /// Written by ReplaceOperationalContactCommandHandler for BOTH of its outcomes (external address
     /// → new invitation; registrant self-match → linked immediately). The two are NOT told apart by
     /// Action — both use this same string — but by whether the audit's own

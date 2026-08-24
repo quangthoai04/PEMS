@@ -64,8 +64,20 @@ export default function VisitHistoryDetailDrawer({ visitRequestId, eventId, even
    * rather than being hidden.
    */
   const statusText = (fieldCode: string, raw: string | null): string | null => {
+    if (fieldCode === 'operationalContactGuestMemberId') return relationText(raw);
     if (fieldCode !== 'identityChangeStatus' || !raw) return raw;
     return t(`visitRequestV2:historyDetail.identityStatus.${raw}`, { defaultValue: raw });
+  };
+
+  /**
+   * The backend already resolved the relation to a NAME using that snapshot's own member list, or to
+   * one of two stable codes when there is no name to give (plan CanhIter3FixBug §12) — never a raw
+   * `GuestMemberId`. `NOT_IN_DELEGATION`/`UNRESOLVABLE` are translated the same way an identity status
+   * code is; anything else is already the display text and passes through untouched.
+   */
+  const relationText = (raw: string | null): string | null => {
+    if (raw !== 'NOT_IN_DELEGATION' && raw !== 'UNRESOLVABLE') return raw;
+    return t(`visitRequestV2:historyDetail.relationStatus.${raw}`, { defaultValue: raw });
   };
 
   /**

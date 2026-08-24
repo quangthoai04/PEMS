@@ -1,27 +1,24 @@
 using FluentValidation.TestHelper;
-using PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
 using PEMS.Application.Delegations.Commands.OperationalContact;
 using PEMS.Application.Delegations.Commands.ResendVisitRequestOtp;
 using PEMS.Application.Delegations.Commands.UpdateRegistrantInfo;
 using PEMS.Application.Partners.Commands.CreatePartner;
-using PEMS.Application.Partners.Contacts.Commands.CreatePartnerContact;
-using PEMS.Application.Partners.Contacts.Commands.UpdatePartnerContact;
 using Xunit;
 
 namespace PEMS.UnitTests.Validation;
 
 /// <summary>
 /// Patch 5 (email validation consolidation) — mirrors <c>PhoneContractTests</c>' matrix approach
-/// (Patch 3). Every user-write path that accepts a FRESH email value goes through the SAME canonical
-/// rule (FluentValidation's built-in <c>EmailAddress()</c>) — this suite proves the same malformed
-/// input (E-1/E-2) is rejected everywhere, that valid input including whitespace/casing variants
-/// (E-3/E-4/E-5) is accepted everywhere, and that Partner Contact / OCR confirm (E-10/E-11) and a
-/// direct validator call with no frontend involved at all (E-12) land on the same verdict.
+/// (Patch 3). Every IDENTITY/CONTACT-adjacent user-write path that accepts a FRESH email value goes
+/// through the SAME canonical rule (FluentValidation's built-in <c>EmailAddress()</c>) — this suite
+/// proves the same malformed input (E-1/E-2) is rejected everywhere, that valid input including
+/// whitespace/casing variants (E-3/E-4/E-5) is accepted everywhere, and that a direct validator call
+/// with no frontend involved at all (E-12) lands on the same verdict.
 ///
 /// <para>
-/// Two validators are DELIBERATELY different from this matrix — documented here so the difference
+/// Several validators are DELIBERATELY different from this matrix — documented here so the difference
 /// reads as intentional, not as a gap Patch 5 missed:
 /// </para>
 /// <list type="bullet">
@@ -34,6 +31,10 @@ namespace PEMS.UnitTests.Validation;
 /// mirrored on the frontend by <c>loginEmailValidation.ts</c>) — a materially stricter, SEPARATE rule
 /// (domain whitelist, no <c>+</c>-aliasing) for a different business concept than a visit/contact
 /// email. Out of Patch 5's scope; not touched, not collapsed into this matrix.</item>
+/// <item>Partner Contact create/update and Business Card OCR confirm (plan CanhIter3FixBug) — moved
+/// OUT of this matrix into <c>PartnerContactContractTests.cs</c>: external business-card/partner-supplied
+/// text is not an identity field, and <c>EmailAddress()</c> rejected real nonstandard values a card can
+/// print.</item>
 /// </list>
 /// </summary>
 public class EmailContractTests
@@ -153,38 +154,9 @@ public class EmailContractTests
         else result.ShouldHaveValidationErrorFor(x => x.Email);
     }
 
-    // ── Partner Contact — create/update (E-10, optional field) ──────────────────────────────────────
-
-    private static readonly CreatePartnerContactCommandValidator CreateContactValidator = new();
-    private static readonly UpdatePartnerContactCommandValidator UpdateContactValidator = new();
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData(NoAtSign, false)]
-    [InlineData(EmptyDomain, false)]
-    [InlineData(ValidStandard, true)]
-    public void CreatePartnerContact_email_matrix(string? email, bool valid)
-    {
-        var cmd = new CreatePartnerContactCommand { PartnerId = 1, FullName = "Nguyễn Văn A", Email = email };
-        var result = CreateContactValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Email);
-        else result.ShouldHaveValidationErrorFor(x => x.Email);
-    }
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData(NoAtSign, false)]
-    [InlineData(EmptyDomain, false)]
-    [InlineData(ValidStandard, true)]
-    public void UpdatePartnerContact_email_matrix(string? email, bool valid)
-    {
-        var cmd = new UpdatePartnerContactCommand { PartnerId = 1, ContactId = 5, FullName = "Nguyễn Văn A", Email = email };
-        var result = UpdateContactValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Email);
-        else result.ShouldHaveValidationErrorFor(x => x.Email);
-    }
+    // Partner Contact create/update and Business Card OCR confirm are DELIBERATELY no longer governed
+    // by this matrix — see PartnerContactContractTests.cs (plan CanhIter3FixBug) and
+    // EmailValidatorDiscoveryTests' ExemptWithReason entries for those three.
 
     // ── Partner create — InitialContact.Email ────────────────────────────────────────────────────────
 
@@ -206,25 +178,6 @@ public class EmailContractTests
         var result = CreatePartnerValidator.TestValidate(cmd);
         if (valid) result.ShouldNotHaveValidationErrorFor(x => x.InitialContact!.Email);
         else result.ShouldHaveValidationErrorFor(x => x.InitialContact!.Email);
-    }
-
-    // ── Business Card OCR confirmation (E-11 — user-reviewed write, distinct from the raw OCR
-    //    candidate in BusinessCardOcrJob.ParsedEmail, which is never format-checked by design) ───────
-
-    private static readonly ConfirmBusinessCardContactCommandValidator OcrValidator = new();
-
-    [Theory]
-    [InlineData(null, true)]
-    [InlineData("", true)]
-    [InlineData(NoAtSign, false)]
-    [InlineData(EmptyDomain, false)]
-    [InlineData(ValidStandard, true)]
-    public void ConfirmBusinessCardContact_email_matrix(string? email, bool valid)
-    {
-        var cmd = new ConfirmBusinessCardContactCommand { OcrJobId = 1, PartnerId = 1, FullName = "Nguyễn Văn A", Email = email };
-        var result = OcrValidator.TestValidate(cmd);
-        if (valid) result.ShouldNotHaveValidationErrorFor(x => x.Email);
-        else result.ShouldHaveValidationErrorFor(x => x.Email);
     }
 
     // ── Legacy registrant-info endpoint (staff-entered request; email CAN change here — see its own

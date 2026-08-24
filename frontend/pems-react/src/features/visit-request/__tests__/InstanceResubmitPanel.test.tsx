@@ -174,6 +174,72 @@ describe('InstanceResubmitPanel', () => {
     expect(resubmitVisitRequestV2).not.toHaveBeenCalled();
   });
 
+  it('FIX-G/H: the payload carries ONLY the schedule fields — no content, members or contact', async () => {
+    render(
+      <InstanceResubmitPanel
+        visitRequestId={1}
+        campusVisit={campus(['RESUBMIT_REJECTED_INSTANCE'])}
+        onResubmitted={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId('instance-resubmit-open-31'));
+    await userEvent.click(screen.getByTestId('instance-resubmit-submit-31'));
+
+    await waitFor(() => expect(resubmitVisitInstance).toHaveBeenCalledTimes(1));
+    const [, , payload] = vi.mocked(resubmitVisitInstance).mock.calls[0];
+
+    expect(Object.keys(payload as object).sort()).toEqual(
+      ['campusId', 'expectedRowVersion', 'plannedEndAt', 'plannedStartAt'].sort(),
+    );
+    // Never again: dropping organizationPartnerId was the root cause of FIX-H's data loss.
+    expect(payload).not.toHaveProperty('visitors');
+    expect(payload).not.toHaveProperty('externalSupportMembers');
+    expect(payload).not.toHaveProperty('operationalContact');
+    expect(payload).not.toHaveProperty('delegationName');
+    expect(payload).not.toHaveProperty('visitInstanceId');
+  });
+
+  it('FIX-I: the submitted schedule is the same Vietnam wall-clock regardless of host timezone', async () => {
+    // process.env.TZ is what new Date(...).getHours()/toISOString() actually key off — the exact
+    // dependency this fix removes. Faking Intl.DateTimeFormat().resolvedOptions() would prove nothing:
+    // the buggy code never consulted it, only the host TZ.
+    const withHostTimeZone = async (timeZone: string) => {
+      vi.stubEnv('TZ', timeZone);
+      vi.mocked(resubmitVisitInstance).mockClear();
+      const { unmount } = render(
+        <InstanceResubmitPanel
+          visitRequestId={1}
+          campusVisit={campus(['RESUBMIT_REJECTED_INSTANCE'])}
+          onResubmitted={vi.fn()}
+        />,
+      );
+      await userEvent.click(screen.getByTestId('instance-resubmit-open-31'));
+      await userEvent.click(screen.getByTestId('instance-resubmit-submit-31'));
+      await waitFor(() => expect(resubmitVisitInstance).toHaveBeenCalledTimes(1));
+      const [, , payload] = vi.mocked(resubmitVisitInstance).mock.calls[0];
+      unmount();
+      return payload as { plannedStartAt: string; plannedEndAt: string };
+    };
+
+    try {
+      const utc = await withHostTimeZone('UTC');
+      const losAngeles = await withHostTimeZone('America/Los_Angeles');
+      const hanoi = await withHostTimeZone('Asia/Ho_Chi_Minh');
+
+      // campus.plannedStartAt is "2026-10-01T09:00:00" — a bare Vietnam wall-clock reading, unchanged
+      // by any host timezone once hydration and submit both go through the pure helpers (never
+      // new Date(iso).getHours()/toISOString(), which each pick up the HOST's own offset).
+      expect(utc.plannedStartAt).toBe(hanoi.plannedStartAt);
+      expect(losAngeles.plannedStartAt).toBe(hanoi.plannedStartAt);
+      expect(utc.plannedEndAt).toBe(hanoi.plannedEndAt);
+      expect(losAngeles.plannedEndAt).toBe(hanoi.plannedEndAt);
+      expect(hanoi.plannedStartAt.startsWith('2026-10-01T09:00')).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('FE-RESUBMIT-05: a successful resubmit raises exactly one toast', async () => {
     const onResubmitted = vi.fn();
     render(

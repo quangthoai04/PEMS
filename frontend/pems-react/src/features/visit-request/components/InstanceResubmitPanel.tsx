@@ -4,6 +4,7 @@ import { RotateCcw } from 'lucide-react';
 import { resubmitVisitInstance, type ResolvedCampusVisit } from '../api/visitRequestV2Api';
 import { hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import { showErrorToast, showSuccessToast } from '../../../shared/utils/toast';
+import { fromDateTimeLocalInput, toVietnamDateTimeLocalInput } from '../../../shared/utils/vietnamTime';
 
 interface Props {
   visitRequestId: number;
@@ -25,18 +26,20 @@ interface Props {
  * campus be rejected and resets all of them, which would pull an approved sibling — its host, its
  * schedule — back into review because a different campus said no.</p>
  *
- * <p>The schedule is the only thing offered for editing here. It is what a refusal is usually about,
- * it is genuinely instance-local, and the 72-hour floor that applies to a resubmission is a rule about
- * exactly this field. Everything else is sent back unchanged, so a resubmission cannot quietly become
- * a rewrite of the delegation.</p>
+ * <p>The schedule is the only thing offered for editing here, and (plan CanhIter3FixBug FIX-G/H) it is
+ * now the only thing the payload carries at all — content, member lists and the operational contact are
+ * never sent, because the backend never reads them for this action any more. A resubmission cannot
+ * become a rewrite of the delegation because there is nothing left in the request for it to rewrite
+ * with: `OrganizationPartnerId`, every member's identity and the contact link all stay exactly the rows
+ * they already were.</p>
  */
 export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onResubmitted }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'errors']);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [startAt, setStartAt] = useState(() => toLocalInput(campusVisit.plannedStartAt));
-  const [endAt, setEndAt] = useState(() => toLocalInput(campusVisit.plannedEndAt));
+  const [startAt, setStartAt] = useState(() => toVietnamDateTimeLocalInput(campusVisit.plannedStartAt));
+  const [endAt, setEndAt] = useState(() => toVietnamDateTimeLocalInput(campusVisit.plannedEndAt));
 
   if (!hasAction(campusVisit.allowedActions, VisitV2Action.ResubmitRejectedInstance)) return null;
 
@@ -44,44 +47,19 @@ export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onR
     setBusy(true);
     setError(null);
     try {
+      // SCHEDULE-ONLY (plan FIX-G/H): this is the whole payload now. The backend no longer reads
+      // content/member/contact fields for a resubmit at all, so nothing here echoes them back —
+      // there is no snapshot left to go stale, drop a partner id, or re-guess a contact link from.
       await resubmitVisitInstance(visitRequestId, campusVisit.visitInstanceId, {
         // The instance's OWN version, which is what the backend guards on: a sibling campus being
         // decided bumps the REQUEST version and must not make this submission look stale.
-        visitInstanceId: campusVisit.visitInstanceId,
         expectedRowVersion: campusVisit.rowVersion,
         campusId: campusVisit.campusCode,
-        plannedStartAt: new Date(startAt).toISOString(),
-        plannedEndAt: new Date(endAt).toISOString(),
-        delegationName: campusVisit.delegationName,
-        visitType: campusVisit.visitType,
-        visitTypeOther: campusVisit.visitTypeOther,
-        purpose: campusVisit.purpose,
-        workingContent: campusVisit.workingContent,
-        visitors: campusVisit.visitors.map((v) => ({
-          fullName: v.fullName,
-          nationality: v.nationality,
-          jobTitle: v.jobTitle,
-          organization: v.organization,
-        })),
-        externalSupportMembers: campusVisit.supportMembers.map((m) => ({
-          fullName: m.fullName,
-          nationality: m.nationality,
-          jobTitle: m.jobTitle,
-          organization: m.organization,
-        })),
-        // Sent back exactly as stored. The contact snapshot is managed in its own workflow, and the
-        // backend refuses a resubmission that tries to change it.
-        operationalContact: {
-          fullName: campusVisit.operationalContact.fullName ?? '',
-          organization: campusVisit.operationalContact.organization ?? '',
-          jobTitle: campusVisit.operationalContact.jobTitle ?? '',
-          phone: campusVisit.operationalContact.phone ?? '',
-          email: campusVisit.operationalContact.email ?? '',
-        },
-        workingLanguage: campusVisit.workingLanguage,
-        transportationNote: campusVisit.transportationNote,
-        mediaConsentStatus: campusVisit.mediaConsentStatus,
-        notes: campusVisit.notes,
+        // Bare Vietnam wall-clock strings — never new Date(...).toISOString(), which would reinterpret
+        // the datetime-local value through the BROWSER's own timezone and shift the visit's actual time
+        // for anyone not on Asia/Ho_Chi_Minh (plan FIX-I).
+        plannedStartAt: fromDateTimeLocalInput(startAt) ?? startAt,
+        plannedEndAt: fromDateTimeLocalInput(endAt) ?? endAt,
       });
 
       // One toast, raised here where the call succeeded — not by a parent that also re-renders.
@@ -192,14 +170,6 @@ export default function InstanceResubmitPanel({ visitRequestId, campusVisit, onR
       )}
     </div>
   );
-}
-
-/** ISO instant → the `datetime-local` shape, without dragging in a date library. */
-function toLocalInput(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** The server's own message, which for a lead-time refusal names the earliest legal start. */

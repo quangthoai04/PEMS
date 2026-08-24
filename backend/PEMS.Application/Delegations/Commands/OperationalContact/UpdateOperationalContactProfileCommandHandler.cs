@@ -1,8 +1,8 @@
 using System;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
@@ -37,23 +37,23 @@ namespace PEMS.Application.Delegations.Commands.OperationalContact;
 public sealed class UpdateOperationalContactProfileCommandHandler
     : IRequestHandler<UpdateOperationalContactProfileCommand, OperationalContactManageResponse>
 {
-    private static readonly JsonSerializerOptions Json =
-        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-
     private readonly IApplicationDbContext _db;
     private readonly ICurrentUserService _currentUser;
     private readonly IDateTimeService _clock;
     private readonly IOperationalContactInvitationService _invitations;
+    private readonly ICanonicalContentRefresher _canonical;
     private readonly PerCampusFormV2WriteOptions _writeFlag;
 
     public UpdateOperationalContactProfileCommandHandler(
         IApplicationDbContext db, ICurrentUserService currentUser, IDateTimeService clock,
-        IOperationalContactInvitationService invitations, PerCampusFormV2WriteOptions writeFlag)
+        IOperationalContactInvitationService invitations, ICanonicalContentRefresher canonical,
+        PerCampusFormV2WriteOptions writeFlag)
     {
         _db = db;
         _currentUser = currentUser;
         _clock = clock;
         _invitations = invitations;
+        _canonical = canonical;
         _writeFlag = writeFlag;
     }
 
@@ -66,8 +66,20 @@ public sealed class UpdateOperationalContactProfileCommandHandler
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
+        // ── Request-level lock FIRST, same order VisitSafeEditService uses (plan CanhIter3FixBug,
+        //    decisions V/W) — this handler now writes request-level canonical content below, so it needs
+        //    the same request-then-instance lock discipline to avoid racing a concurrent Safe Edit's own
+        //    canonical recompute on the same VisitRequest row. Uncomposed FromSqlRaw: composing would
+        //    wrap the statement in a derived table and MySQL would not lock through it. ──
+        await _db.VisitRequests
+            .FromSqlRaw("SELECT * FROM visit_requests WHERE visit_request_id = {0} FOR UPDATE",
+                request.VisitRequestId)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
         var (visit, instance) = await OperationalContactGuards.LoadCampusInRequestAsync(
-            _db, request.VisitRequestId, request.VisitInstanceId, cancellationToken);
+            _db, request.VisitRequestId, request.VisitInstanceId, cancellationToken,
+            includeMembersForCanonical: true);
 
         // The registrant, or the person currently holding THIS campus correcting their own details.
         OperationalContactGuards.EnsureMayManageContact(visit, instance, actorId, allowCurrentContact: true);
@@ -86,20 +98,19 @@ public sealed class UpdateOperationalContactProfileCommandHandler
                 "Email đầu mối vận hành đã thay đổi. Đổi email là thay đổi người phụ trách và phải qua bước xác nhận.",
                 OperationalContactErrorCodes.ChangeConflict);
 
-        // ── A stale modal must not overwrite newer contact information (plan §16). Only checked when
-        //    the caller offered a version — see the command's own remarks. ──
-        if (request.ExpectedRowVersion is { } expected && expected != instance.RowVersion)
-            throw new ConflictException(
-                "Thông tin đầu mối vận hành đã được cập nhật bởi thao tác khác. Vui lòng tải lại và thử lại.",
-                VisitRequestErrorCodes.InstanceVersionConflict);
+        // ── Authoritative per-instance concurrency (plan CanhIter3FixBug, decision U): a bare in-memory
+        //    comparison here would let a concurrent VisitSafeEditService contact edit on the SAME
+        //    instance silently win or lose depending on load order — row_version is a plain int with no
+        //    EF concurrency token behind it (confirmed: IsConcurrencyToken is used nowhere in this
+        //    codebase). VisitInstanceConcurrencyGuard does a real SELECT ... FOR UPDATE re-read. A caller
+        //    with no stated expectation (older/internal client, ExpectedRowVersion null) is still
+        //    protected — the TRACKED value becomes the fallback baseline, so a row that moved since load
+        //    is still caught, just without the extra guarantee that the caller personally read it. ──
+        await VisitInstanceConcurrencyGuard.EnsureUnchangedAsync(
+            _db, instance, request.ExpectedRowVersion ?? instance.RowVersion, cancellationToken);
 
-        var newFullName = request.FullName.Trim();
-        // Required by the validator like FullName/JobTitle — a blank value never reaches here.
-        var newOrganization = request.Organization!.Trim();
-        var newJobTitle = request.JobTitle.Trim();
-        var newPhone = string.IsNullOrWhiteSpace(request.Phone)
-            ? null
-            : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim());
+        var profile = OperationalContactProfileMutation.Normalize(
+            request.FullName, request.Organization, request.JobTitle, request.Phone);
 
         var audit = new AuditLog
         {
@@ -114,22 +125,14 @@ public sealed class UpdateOperationalContactProfileCommandHandler
             SourceType = "IDENTITY",
             CreatedAt = now,
         };
-        // Field-by-field, and only what actually moved: an audit entry that lists four rows every time
-        // cannot be read for what somebody changed. The address is never among them.
-        AddChange(audit, "operational_contact_full_name", detail.OperationalContactFullName, newFullName, now);
-        AddChange(audit, "operational_contact_organization", detail.OperationalContactOrganization, newOrganization, now);
-        AddChange(audit, "operational_contact_job_title", detail.OperationalContactJobTitle, newJobTitle, now);
-        AddChange(audit, "operational_contact_phone", detail.OperationalContactPhone, newPhone, now);
+        var anyChanged = OperationalContactProfileMutation.AddProfileChanges(audit, detail, profile, now);
 
-        if (audit.Changes.Count == 0)
+        if (!anyChanged)
             throw new BusinessRuleException(
                 "Không có thay đổi nào để lưu cho đầu mối vận hành của cơ sở này.",
                 OperationalContactErrorCodes.ProfileNoChanges);
 
-        detail.OperationalContactFullName = newFullName;
-        detail.OperationalContactOrganization = newOrganization;
-        detail.OperationalContactJobTitle = newJobTitle;
-        detail.OperationalContactPhone = newPhone;
+        OperationalContactProfileMutation.Apply(detail, profile);
         // operational_contact_guest_member_id is deliberately UNTOUCHED, unlike the replace and
         // transfer paths which clear it. This corrects the DETAILS of the person already holding the
         // role — a misspelt name, a new phone — and correcting somebody's spelling does not make them
@@ -143,6 +146,15 @@ public sealed class UpdateOperationalContactProfileCommandHandler
         // form_revision is deliberately NOT bumped. It counts revisions of what the campus is being
         // ASKED to host — the delegation, the schedule, the people — and a Staff Leader reading
         // "phiên bản 3" should be looking at three versions of the ask, not at a corrected phone number.
+
+        // ── Canonical content (VisitScope/HasMixedCampusDetails/BusinessFingerprint) includes contact
+        //    FullName/Organization/JobTitle/Phone (plan CanhIter3FixBug, decision V) — VisitSafeEditService
+        //    already recomputes this after any touched instance, so a metadata correction made through
+        //    THIS door must leave the same derived state, not a stale one. Recomputed here rather than
+        //    request.RowVersion also being bumped: this handler has never touched that counter, and
+        //    recomputing derived content is a read-model-freshness fix orthogonal to the optimistic-lock
+        //    counter's own semantics. Not called when nothing actually changed. ──
+        await _canonical.RecomputeAsync(visit, cancellationToken);
 
         // One lock, one pass: refresh the invitation's snapshot if it is about this address, and take
         // the view the response reports. Reading it back after the commit would mean a second
@@ -203,14 +215,7 @@ public sealed class UpdateOperationalContactProfileCommandHandler
                 StringComparison.Ordinal))
             return view;
 
-        pending.PendingSnapshotJson = JsonSerializer.Serialize(new
-        {
-            fullName = detail.OperationalContactFullName,
-            organization = detail.OperationalContactOrganization,
-            jobTitle = detail.OperationalContactJobTitle,
-            phone = detail.OperationalContactPhone,
-            email = invited,
-        }, Json);
+        pending.PendingSnapshotJson = OperationalContactProfileMutation.BuildPendingSnapshotJson(detail, invited);
 
         return view;
     }
@@ -218,21 +223,4 @@ public sealed class UpdateOperationalContactProfileCommandHandler
     private sealed record PendingChangeView(
         string? Kind, string? Status, string? EmailMasked, DateTime? ExpiresAt,
         uint ResendCount, uint TokenVersion);
-
-    private static void AddChange(
-        AuditLog audit, string field, string? oldValue, string? newValue, DateTime now)
-    {
-        var before = oldValue ?? string.Empty;
-        var after = newValue ?? string.Empty;
-        if (string.Equals(before, after, StringComparison.Ordinal))
-            return;
-
-        audit.Changes.Add(new AuditLogChange
-        {
-            FieldName = field,
-            OldValueText = oldValue,
-            NewValueText = newValue,
-            CreatedAt = now,
-        });
-    }
 }

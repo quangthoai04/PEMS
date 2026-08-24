@@ -637,6 +637,7 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                        <div className="sm:col-span-2 space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Building2 className="w-3.5 h-3.5" /> Tên đối tác, công ty</label>
                          <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#f37021] outline-none" value={scannedInfo.company} onChange={e => setScannedInfo({...scannedInfo, company: e.target.value})} />
+                         <p className="text-[11px] text-gray-400">Chỉ để tham khảo — chọn đối tác lưu trữ ở mục bên dưới, không tự lấy từ trường này.</p>
                        </div>
                        <div className="space-y-1.5">
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Phone className="w-3.5 h-3.5" /> SĐT</label>
@@ -646,16 +647,18 @@ export function VisitDuringTab({ isReadOnly = false, isDept = false, visitInstan
                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-600"><Mail className="w-3.5 h-3.5" /> Email</label>
                          <input type="email" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.email} onChange={e => setScannedInfo({...scannedInfo, email: e.target.value})} />
                         </div>
-                        
-                        {/* New Website field */}
+
+                        {/* Website/Address — OCR reference only. Neither partner_contacts nor partner is
+                            written to from these two fields on this screen (unlike PartnerDetail's OCR
+                            scan modal, which sends them when creating a brand-new partner) — the label
+                            says so plainly rather than implying "Lưu thông tin liên hệ" persists them. */}
                         <div className="space-y-1.5 font-sans">
-                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><Link2 className="w-3.5 h-3.5" /> Link website</label>
+                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><Link2 className="w-3.5 h-3.5" /> Link website <span className="font-normal text-gray-400 normal-case">(chỉ tham khảo, không lưu)</span></label>
                           <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.website || ''} onChange={e => setScannedInfo({...scannedInfo, website: e.target.value})} />
                         </div>
 
-                        {/* New Address field */}
                         <div className="space-y-1.5 font-sans">
-                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><MapPin className="w-3.5 h-3.5" /> Địa chỉ</label>
+                          <label className="flex items-center gap-1.5 text-xs font-bold text-gray-650"><MapPin className="w-3.5 h-3.5" /> Địa chỉ <span className="font-normal text-gray-400 normal-case">(chỉ tham khảo, không lưu)</span></label>
                           <input type="text" className="w-full px-3 py-2.5 rounded-xl border border-gray-300 text-sm font-normal focus:border-[#004c91] outline-none" value={scannedInfo.address || ''} onChange={e => setScannedInfo({...scannedInfo, address: e.target.value})} />
                         </div>
 

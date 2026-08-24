@@ -17,7 +17,9 @@ using PEMS.Application.Delegations.Commands.VisitAmendments;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
+using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Partners;
 using NotificationTypes = PEMS.Application.Notifications.Common.NotificationTypes;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -139,7 +141,7 @@ public sealed class CampusApprovalDecisionV2Tests
                 NullLogger<PEMS.Application.Delegations.VisitNotifications.RecoverableVisitEmailSender>.Instance));
 
     private static ResubmitRejectedVisitInstanceV2CommandHandler ResubmitHandler(
-        ApplicationDbContext db, FakeUser actor, RecordingNotifications notifications, IDateTimeService? clock = null)
+        ApplicationDbContext db, FakeUser actor, INotificationService notifications, IDateTimeService? clock = null)
         => new(db, actor, clock ?? new FixedClock(),
             new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db)),
             notifications, NullLogger<ResubmitRejectedVisitInstanceV2CommandHandler>.Instance, WriteOn);
@@ -162,16 +164,10 @@ public sealed class CampusApprovalDecisionV2Tests
         public DateTime VietnamNow => _start.AddMinutes(_ticks++);
     }
 
-    /// <summary>Resubmit payload for ONE previously-rejected instance — same shape as <c>Content</c> in
-    /// the per-campus pending-edit suite, built from the lightweight <see cref="InstanceState"/> read
-    /// projection this file already uses instead of a tracked entity.</summary>
-    private static CampusVisitEditV2Dto ResubmitContent(InstanceState state, CampusVisitFormDto content)
-        => new(state.VisitInstanceId, state.RowVersion,
-            content.CampusId, content.PlannedStartAt, content.PlannedEndAt,
-            content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
-            content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
-            content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.Notes);
+    /// <summary>Resubmit payload for ONE previously-rejected instance: SCHEDULE-ONLY (plan FIX-G/H) —
+    /// its own row version, campus code and the new start/end from <paramref name="content"/>.</summary>
+    private static InstanceResubmitScheduleDto ResubmitContent(InstanceState state, CampusVisitFormDto content)
+        => new(state.RowVersion, content.CampusId, content.PlannedStartAt, content.PlannedEndAt);
 
     /// <summary>Always grants: these tests send one message at a time.</summary>
     private sealed class GrantingLock : PEMS.Application.Delegations.VisitNotifications.IEmailRecoveryLock
@@ -1009,6 +1005,302 @@ public sealed class CampusApprovalDecisionV2Tests
             Assert.Equal(2, rejections.Select(e => e.EventId).Distinct().Count());
         }
         finally { await CleanupAsync(requestId); }
+    }
+
+    // ── FIX-G/H regression (plan CanhIter3FixBug): schedule-only instance resubmit must never touch
+    //    member identity, partner links or a sibling campus. ─────────────────────────────────────────
+
+    [Fact]
+    public async Task FixGH_Instance_resubmit_preserves_member_id_partner_id_and_partner_link_row()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        const ulong approvedPublicPartnerId = 103; // ACTIVE + APPROVED + PUBLIC (see RequestFormPartnerSelectableTests)
+        try
+        {
+            var start = Now.AddDays(44);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn giữ nguyên"));
+            var before = await StateAsync(requestId);
+            var instanceId = before[CampusHn].VisitInstanceId;
+
+            ulong guestMemberId;
+            ulong linkId;
+            using (var db = NewContext())
+            {
+                var linkedIds = await db.VisitInstanceGuestMembers.Where(l => l.VisitInstanceId == instanceId)
+                    .Select(l => l.GuestMemberId).ToListAsync();
+                var member = await db.VisitGuestMembers.SingleAsync(m => linkedIds.Contains(m.GuestMemberId));
+                member.OrganizationPartnerId = approvedPublicPartnerId;
+                guestMemberId = member.GuestMemberId;
+                await db.SaveChangesAsync();
+
+                db.VisitGuestPartnerLinks.Add(new VisitGuestPartnerLink
+                {
+                    VisitRequestId = requestId,
+                    VisitInstanceId = instanceId,
+                    GuestMemberId = guestMemberId,
+                    PartnerId = approvedPublicPartnerId,
+                    MatchSource = PartnerLinkMatchSources.Manual,
+                    MatchStatus = PartnerLinkMatchStatuses.Confirmed,
+                    CreatedAt = Now,
+                    CreatedBy = Registrant,
+                });
+                await db.SaveChangesAsync();
+                linkId = (await db.VisitGuestPartnerLinks.SingleAsync(l => l.GuestMemberId == guestMemberId)).LinkId;
+            }
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, instanceId, "Cần sửa lịch",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), new RecordingNotifications()).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, instanceId,
+                        new InstanceResubmitScheduleDto(
+                            afterReject[CampusHn].RowVersion, "HN", start.AddDays(5), start.AddDays(5).AddMinutes(120))),
+                    CancellationToken.None);
+
+            using var db2 = NewContext();
+            // The SAME member row — never deleted and copy-on-write-replaced by a schedule-only resubmit.
+            var memberAfter = await db2.VisitGuestMembers.AsNoTracking().SingleAsync(m => m.GuestMemberId == guestMemberId);
+            Assert.Equal(approvedPublicPartnerId, memberAfter.OrganizationPartnerId);
+
+            // The SAME link row — not orphaned-and-reseeded by GuestPartnerLinkResolver, because
+            // ApplyInstanceResubmitAsync never calls it any more (nothing about the member changed).
+            var linkAfter = await db2.VisitGuestPartnerLinks.AsNoTracking().SingleAsync(l => l.GuestMemberId == guestMemberId);
+            Assert.Equal(linkId, linkAfter.LinkId);
+            Assert.Equal(PartnerLinkMatchStatuses.Confirmed, linkAfter.MatchStatus);
+            Assert.Equal(approvedPublicPartnerId, linkAfter.PartnerId);
+
+            var linkedIdsAfter = await db2.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == instanceId).Select(l => l.GuestMemberId).ToListAsync();
+            Assert.Contains(guestMemberId, linkedIdsAfter);
+
+            // FormRevision advanced exactly once (schedule-only save, same convention as every other
+            // schedule-only branch in VisitRequestV2EditService).
+            var afterResubmit = await StateAsync(requestId);
+            Assert.Equal(before[CampusHn].FormRevision + 1, afterResubmit[CampusHn].FormRevision);
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, afterResubmit[CampusHn].Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task FixGH_Instance_resubmit_of_one_campus_leaves_an_approved_and_a_waiting_sibling_byte_for_byte_untouched()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(45);
+            requestId = await CreateAsync(
+                Campus("HN", start, "Đoàn HN"),
+                Campus("DN", start.AddDays(1), "Đoàn DN"),
+                Campus("HCM", start.AddDays(2), "Đoàn HCM"));
+            var before = await StateAsync(requestId);
+
+            // DN → APPROVED (self-hosted by its own leader), HN → REJECTED, HCM stays WAITING.
+            using (var db = NewContext())
+                await ApproveHandler(db, Leader(LeaderDn, CampusDn), new RecordingNotifications()).Handle(
+                    new ApproveCampusInstanceCommand(requestId, before[CampusDn].VisitInstanceId, LeaderDn, "OK",
+                        before[CampusDn].RowVersion),
+                    CancellationToken.None);
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Không thu xếp được",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterDecisions = await StateAsync(requestId);
+            Assert.Equal(VisitInstanceStatus.Assigned, afterDecisions[CampusDn].Status);
+            Assert.Equal(VisitInstanceStatus.Rejected, afterDecisions[CampusHn].Status);
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, afterDecisions[CampusHcm].Status);
+            Assert.Equal(VisitRequestStatuses.PartiallyApproved, await RequestStatusAsync(requestId));
+
+            // Resubmit ONLY HN's schedule.
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), new RecordingNotifications()).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, afterDecisions[CampusHn].VisitInstanceId,
+                        new InstanceResubmitScheduleDto(
+                            afterDecisions[CampusHn].RowVersion, "HN", start.AddDays(10), start.AddDays(10).AddMinutes(120))),
+                    CancellationToken.None);
+
+            var after = await StateAsync(requestId);
+
+            // HN: back in review, decision cleared, revision/row-version advanced.
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, after[CampusHn].Status);
+            Assert.Null(after[CampusHn].DecidedBy);
+            Assert.Null(after[CampusHn].DecisionNote);
+            Assert.Equal(afterDecisions[CampusHn].FormRevision + 1, after[CampusHn].FormRevision);
+            Assert.True(after[CampusHn].RowVersion > afterDecisions[CampusHn].RowVersion);
+
+            // DN: byte-for-byte what it was — status, host (via DecidedBy check below), decision note,
+            // form revision, row version. No sibling write exists in the schedule-only resubmit path.
+            Assert.Equal(afterDecisions[CampusDn], after[CampusDn]);
+            Assert.Equal(VisitInstanceStatus.Assigned, after[CampusDn].Status);
+
+            // HCM: fully untouched too — a third campus that was never named in the resubmit at all.
+            Assert.Equal(afterDecisions[CampusHcm], after[CampusHcm]);
+
+            // Aggregate recomputed from the real campus states — one approved, one back in review, one
+            // waiting — never a hardcoded value and never a reset of the whole request.
+            Assert.Equal(VisitRequestStatuses.PartiallyApproved, await RequestStatusAsync(requestId));
+
+            // DN's guest member links, partner links and revision-history row count are untouched.
+            using var db2 = NewContext();
+            var dnRevisionCount = await db2.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .CountAsync(h => h.VisitInstanceId == after[CampusDn].VisitInstanceId);
+            var dnRevisionCountBefore = await db2.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .CountAsync(h => h.VisitInstanceId == afterDecisions[CampusDn].VisitInstanceId);
+            Assert.Equal(dnRevisionCountBefore, dnRevisionCount);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task FixGH_Concurrent_instance_resubmits_on_the_same_campus_yield_exactly_one_winner()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(46);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn đua"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Từ chối",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject = await StateAsync(requestId);
+            var instanceId = afterReject[CampusHn].VisitInstanceId;
+            var sharedExpectedVersion = afterReject[CampusHn].RowVersion;
+
+            // Two actors independently load the SAME pre-race state (Status=Rejected, RowVersion=N) from
+            // two SEPARATE contexts, before either writes anything — this is the deterministic equivalent
+            // of two truly concurrent requests that both read before either commits. A bare Task.WhenAll
+            // of two real handler calls was tried first and rejected: against a fast local MySQL instance
+            // it is not reliably interleaved (the whole first request, commit included, routinely
+            // finishes before the second's very first query lands, which then correctly refuses for an
+            // entirely different, equally legitimate reason — "not rejected any more" — because by then
+            // it genuinely is not). Calling the SERVICE directly on two independently-loaded entity graphs
+            // reproduces the actual race window instead of hoping the task scheduler cooperates.
+            async Task<(PEMS.Infrastructure.Persistence.ApplicationDbContext Db, PEMS.Domain.Entities.Delegations.VisitRequest Request, PEMS.Domain.Entities.Delegations.VisitRequestCampus Instance)> LoadAsync()
+            {
+                var db = NewContext();
+                var request = await db.VisitRequests
+                    .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+                    .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
+                    .Include(v => v.GuestMembers)
+                    .FirstAsync(v => v.VisitRequestId == requestId);
+                var instance = request.CampusInstances.Single(c => c.VisitInstanceId == instanceId);
+                return (db, request, instance);
+            }
+
+            var (dbA, requestA, instanceA) = await LoadAsync();
+            var (dbB, requestB, instanceB) = await LoadAsync();
+            try
+            {
+                var editA = new VisitRequestV2EditService(dbA, new VisitRequestAggregateStatusService(dbA));
+                var editB = new VisitRequestV2EditService(dbB, new VisitRequestAggregateStatusService(dbB));
+
+                // Winner: applies first and commits.
+                await using (var txA = await dbA.BeginTransactionAsync(CancellationToken.None))
+                {
+                    await editA.ApplyInstanceResubmitAsync(requestA, instanceA,
+                        new InstanceResubmitScheduleDto(
+                            sharedExpectedVersion, "HN", start.AddDays(6), start.AddDays(6).AddMinutes(120)),
+                        Registrant, Now, CancellationToken.None);
+                    await txA.CommitAsync(CancellationToken.None);
+                }
+
+                // Loser: its in-memory `instanceB` still reads Status=Rejected (loaded before A committed,
+                // never re-fetched), so it passes the lifecycle gate exactly as a truly-concurrent second
+                // request would — and is then refused by the FRESH `SELECT … FOR UPDATE` row read inside
+                // AssertCurrentInstanceVersionAsync, which sees A's committed bump and rejects the stale
+                // version. This is the specific code path a bare Task.WhenAll could not reliably reach.
+                await using (var txB = await dbB.BeginTransactionAsync(CancellationToken.None))
+                {
+                    var loser = await Assert.ThrowsAsync<ConflictException>(() =>
+                        editB.ApplyInstanceResubmitAsync(requestB, instanceB,
+                            new InstanceResubmitScheduleDto(
+                                sharedExpectedVersion, "HN", start.AddDays(7), start.AddDays(7).AddMinutes(120)),
+                            Registrant, Now, CancellationToken.None));
+                    Assert.Equal(VisitRequestErrorCodes.InstanceVersionConflict, loser.ErrorCode);
+                    await txB.RollbackAsync(CancellationToken.None);
+                }
+            }
+            finally
+            {
+                await dbA.DisposeAsync();
+                await dbB.DisposeAsync();
+            }
+
+            var after = await StateAsync(requestId);
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, after[CampusHn].Status);
+            // Exactly the WINNER's single row-version bump was applied — the loser's write never landed.
+            Assert.Equal(sharedExpectedVersion + 1, after[CampusHn].RowVersion);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task FixGH_Instance_resubmit_notifies_only_the_target_campus_leader_and_commit_survives_a_notification_failure()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(47);
+            requestId = await CreateAsync(Campus("HN", start, "Đoàn HN"), Campus("DN", start.AddDays(1), "Đoàn DN"));
+            var before = await StateAsync(requestId);
+
+            using (var db = NewContext())
+                await RejectHandler(db, Leader(LeaderHn, CampusHn), new RecordingNotifications()).Handle(
+                    new RejectCampusInstanceCommand(requestId, before[CampusHn].VisitInstanceId, "Từ chối",
+                        before[CampusHn].RowVersion),
+                    CancellationToken.None);
+            var afterReject = await StateAsync(requestId);
+
+            var throwing = new ThrowingNotifications();
+            using (var db = NewContext())
+                await ResubmitHandler(db, new FakeUser(Registrant), throwing).Handle(
+                    new ResubmitRejectedVisitInstanceV2Command(requestId, afterReject[CampusHn].VisitInstanceId,
+                        new InstanceResubmitScheduleDto(
+                            afterReject[CampusHn].RowVersion, "HN", start.AddDays(8), start.AddDays(8).AddMinutes(120))),
+                    CancellationToken.None);
+            // The notification failed (ThrowingNotifications always throws) but the resubmit — a DB
+            // transaction that already committed — is unaffected: notification is post-commit best-effort.
+            Assert.True(throwing.WasCalled);
+
+            var after = await StateAsync(requestId);
+            Assert.Equal(VisitInstanceStatus.WaitingRequestApproval, after[CampusHn].Status);
+            Assert.Equal(afterReject[CampusHn].FormRevision + 1, after[CampusHn].FormRevision);
+
+            // DN was never named in the resubmit and gets no notification at all.
+            Assert.Equal(0, throwing.AttemptedRecipients.Count(r => r == before[CampusDn].VisitInstanceId));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>Always throws from CreateAsync — proves NotifyLeaderAsync's post-commit try/catch really
+    /// swallows a notification failure rather than the resubmit having quietly not reached that code.</summary>
+    private sealed class ThrowingNotifications : INotificationService
+    {
+        public bool WasCalled;
+        public List<ulong?> AttemptedRecipients { get; } = new();
+        public Task CreateManyAsync(IEnumerable<CreateNotificationRequest> requests, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateManyAsync(IEnumerable<CreateNotificationItem> items, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateAsync(ulong recipientUserId, string title, string? message, string notificationType, string? relatedType, ulong? relatedId, CancellationToken ct) => Task.CompletedTask;
+        public Task CreateAsync(CreateNotificationRequest request, CancellationToken ct)
+        {
+            WasCalled = true;
+            AttemptedRecipients.Add(request.VisitInstanceId);
+            throw new InvalidOperationException("simulated notification failure");
+        }
     }
 
     [Fact]

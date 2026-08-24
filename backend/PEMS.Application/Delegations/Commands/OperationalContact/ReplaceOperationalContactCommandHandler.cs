@@ -110,8 +110,20 @@ public sealed class ReplaceOperationalContactCommandHandler
             var detail = instance.FormDetail
                 ?? throw new NotFoundException("Chi tiết đơn của cơ sở này", instance.VisitInstanceId);
 
-            var oldMasked = VisitRequestFingerprintBuilder.MaskEmail(
-                VisitRequestFingerprintBuilder.NormalizeEmail(detail.OperationalContactEmail));
+            // ── Defense in depth (plan CanhIter3FixBug §17.2/§33), mirrors
+            //    InitiateOperationalContactTransferCommandHandler's own same-address guard: the UI only
+            //    ever reaches this command with an address the user typed into a BLANK "Chuyển đầu mối"
+            //    form, so a call naming the campus's own current address is either a stale/handcrafted
+            //    call or a user who meant to correct a typo, not change who holds the campus — either
+            //    way, silently treating it as a replace would clear the campus's contact relation and
+            //    fire an invitation nobody needs. Checked before anything is written. ──
+            var currentEmail = VisitRequestFingerprintBuilder.NormalizeEmail(detail.OperationalContactEmail);
+            if (newEmail == currentEmail)
+                throw new BusinessRuleException(
+                    "Email mới trùng với email đầu mối vận hành hiện tại của cơ sở này.",
+                    OperationalContactErrorCodes.ChangeConflict);
+
+            var oldMasked = VisitRequestFingerprintBuilder.MaskEmail(currentEmail);
             var previousContactId = instance.OperationalContactUserId;
 
             // ── Any in-flight invitation for THIS campus is superseded. A sibling campus's invitation

@@ -9,6 +9,14 @@ interface HelpTooltipProps {
   label?: string;
   /** Test hook for the trigger, so a test can open the tooltip the way a user does. */
   testId?: string;
+  /**
+   * Which side of the trigger the bubble opens on. Defaults to `'top'` (unchanged behavior for every
+   * existing caller). A trigger sitting near the top of a scrollable panel — e.g. right under a modal's
+   * fixed header — has no room to open upward: the bubble renders past the edge of the viewport and its
+   * first line is clipped, which is illegible rather than merely ugly. Pass `'bottom'` for any trigger
+   * in that position.
+   */
+  placement?: 'top' | 'bottom';
 }
 
 let tooltipSeq = 0;
@@ -27,7 +35,7 @@ let tooltipSeq = 0;
  * makes the text part of the field's description rather than decoration — the HTML <c>title</c>
  * attribute is deliberately not used, since it is unreachable by keyboard and unreliable on touch.</p>
  */
-export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '', label, testId }) => {
+export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '', label, testId, placement = 'top' }) => {
   const { t } = useTranslation('common');
   const [open, setOpen] = React.useState(false);
   // Stable across renders; `useId` is React 18+, and this file is imported by tests that render
@@ -66,11 +74,21 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '
         id={id}
         role="tooltip"
         hidden={!open}
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-max max-w-xs -translate-x-1/2"
+        className={
+          'pointer-events-none absolute left-1/2 z-50 w-max max-w-xs -translate-x-1/2 '
+          + (placement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2')
+        }
       >
         <div className="relative rounded-lg bg-slate-800 px-3 py-2 text-center text-xs leading-5 text-white shadow-xl">
           {content}
-          <div className="absolute left-1/2 top-full -mt-px -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+          <div
+            className={
+              'absolute left-1/2 -translate-x-1/2 border-4 border-transparent '
+              + (placement === 'bottom'
+                ? 'bottom-full -mb-px border-b-slate-800'
+                : 'top-full -mt-px border-t-slate-800')
+            }
+          />
         </div>
       </div>
     </div>

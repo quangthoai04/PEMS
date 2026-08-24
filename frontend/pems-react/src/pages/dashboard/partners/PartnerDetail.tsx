@@ -31,8 +31,6 @@ import { API_ENDPOINTS } from '../../../shared/api/endpoints';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
 import { downloadAuthenticatedFile } from '../../../shared/utils/fileDownload';
 import { formatVietnamDate, formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
-import { isValidPhone } from '../../../shared/utils/phoneNumber';
-import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import { FilePreviewModal } from '../../../shared/components/files/FilePreviewModal';
 import {
   showLoadingToast,
@@ -51,7 +49,8 @@ const inputCls =
   'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91] text-gray-700 bg-white';
 
 /** Người liên hệ: 5 field mirror đúng rule backend (`CreatePartnerContactCommandValidator` /
- * `UpdatePartnerContactCommandValidator`) — chỉ Họ tên bắt buộc, Email đúng định dạng nếu có nhập. */
+ * `UpdatePartnerContactCommandValidator`) — chỉ Họ tên bắt buộc. Email/Phone là dữ liệu bên ngoài
+ * (đối tác/danh thiếp), không kiểm tra định dạng, chỉ giới hạn độ dài (backend chặn theo cột DB). */
 type ContactFieldKey = 'fullName' | 'email' | 'phone' | 'jobTitle' | 'departmentName';
 type ContactFieldErrors = Partial<Record<ContactFieldKey, string>>;
 /** Tên property C# đúng như FluentValidation trả về trong `errors` dict — case-insensitive lookup. */
@@ -317,15 +316,18 @@ export function PartnerDetail() {
     setContactFieldErrors({});
   };
 
-  /** Mirror phía client của rule backend — chỉ để UX, backend vẫn validate lại toàn bộ. */
+  /**
+   * Mirror phía client của rule backend — chỉ để UX, backend vẫn validate lại toàn bộ.
+   *
+   * Partner Contact là dữ liệu người liên hệ bên ngoài (đối tác, danh thiếp), không phải định danh
+   * đăng nhập — Email/Phone KHÔNG bị kiểm tra định dạng ở đây nữa (plan CanhIter3FixBug "Partner
+   * Contact / Business Card Data Capture"): một số điện thoại nước ngoài có số máy lẻ, hoặc chữ ký
+   * email không chuẩn ghi trên danh thiếp, vẫn phải lưu được nguyên văn sau khi user xác nhận. Chỉ Họ
+   * tên còn bắt buộc; độ dài tối đa vẫn do backend chặn theo đúng cột DB.
+   */
   const validateContactForm = (): ContactFieldErrors => {
     const errors: ContactFieldErrors = {};
     if (!cName.trim()) errors.fullName = 'Họ tên người liên hệ là bắt buộc.';
-    const email = cEmail.trim();
-    if (email && !isValidEmailSyntax(email)) errors.email = 'Email không hợp lệ.';
-    const phone = cPhone.trim();
-    if (phone && !isValidPhone(phone))
-      errors.phone = 'Số điện thoại không hợp lệ. Nhập số Việt Nam dạng 0912345678 hoặc số quốc tế dạng +84912345678. Không nhập số máy lẻ.';
     return errors;
   };
 
@@ -333,7 +335,6 @@ export function PartnerDetail() {
   const clearContactFieldError = (key: ContactFieldKey, value: string) => {
     if (!contactFieldErrors[key]) return;
     if (key === 'fullName' && !value.trim()) return;
-    if (key === 'email' && value.trim() && !isValidEmailSyntax(value)) return;
     setContactFieldErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 

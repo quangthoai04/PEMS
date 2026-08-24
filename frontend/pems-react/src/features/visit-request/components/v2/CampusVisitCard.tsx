@@ -543,6 +543,12 @@ export const CampusVisitCard: React.FC<Props> = ({
     organizationPartnerId: number | null;
     /** Whether every field the role needs is filled in — an incomplete row is shown but not pickable. */
     complete: boolean;
+    /**
+     * This row's PERSISTENT database id, or null for a row with none yet (freshly added this
+     * session). Read by the relationship-only picker (plan CanhIter3FixBug) so a pick on an
+     * EXISTING campus can be sent by durable id instead of the ephemeral key alone.
+     */
+    guestMemberId: number | null;
   }
 
   /**
@@ -569,6 +575,7 @@ export const CampusVisitCard: React.FC<Props> = ({
         jobTitle,
         organization,
         organizationPartnerId: m?.organizationPartnerId ?? null,
+        guestMemberId: m?.guestMemberId ?? null,
         // The same three fields the contact snapshot needs. A row missing any of them cannot
         // describe a contact, so it is listed as "chưa hoàn tất" rather than silently omitted —
         // omitting it left the user hunting for a person they had definitely typed in.
@@ -678,6 +685,27 @@ export const CampusVisitCard: React.FC<Props> = ({
     form.setValue(`${base}.operationalContactClientMemberKey`, key, { shouldDirty: true });
     syncContactFromMember(member, { touch: true });
     setQuickFilledFrom(null);
+  };
+
+  /**
+   * RELATIONSHIP-ONLY pick, for an EXISTING campus (`contactReadOnly`) — plan CanhIter3FixBug "Đầu
+   * mối hiện tại có nằm trong danh sách đoàn không?".
+   *
+   * <p>Deliberately the ONLY difference from {@link pickContactFromDelegation}: no
+   * {@link syncContactFromMember} call. The contact's five snapshot fields are not just
+   * unavailable to edit here (see the `contactReadOnly` branch below) — they must never move as a
+   * SIDE EFFECT of this pick either, or "which delegation member is this" would silently become
+   * "replace the operational contact", which is a different, actual-contact-holder-changing
+   * workflow (Replace/Transfer) that this control must never reach into.</p>
+   */
+  const pickRelationOnly = (key: string) => {
+    if (key === '') {
+      form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
+      return;
+    }
+    const member = eligibleMembers.find(m => m.key === key);
+    if (!member || !member.complete) return;
+    form.setValue(`${base}.operationalContactClientMemberKey`, key, { shouldDirty: true });
   };
 
   /**
@@ -1717,6 +1745,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               standing paragraph: it is guidance for the person who wonders, not a caption the same
               reader has to scroll past on every campus of every visit (plan §6). */}
           {contactReadOnly ? (
+            <>
             <div
               data-testid={`campus-opcontact-readonly-${index}`}
               className="rounded-xl border border-slate-200 bg-slate-50 p-3"
@@ -1755,6 +1784,59 @@ export const CampusVisitCard: React.FC<Props> = ({
                 </p>
               )}
             </div>
+
+            {/* ── Liên kết với danh sách đoàn (plan CanhIter3FixBug) ────────────────────────
+                A SEPARATE control from the read-only profile above: it answers "is the current
+                contact also one of the people travelling with this delegation, and if so, which
+                one" — it never touches the five fields above. Kept out of the general Amendment
+                modal on purpose (plan §14) — that surface bundles schedule/purpose/members and
+                bundling this pick there read as "change who the contact is". This is the SAME
+                underlying relation as the create-mode picker above, on the same field
+                (operationalContactClientMemberKey); only the mechanism differs by whether the
+                member list this save touches is changing (ephemeral key, unaffected) or not
+                (durable id, resolved from this same key at submit time — see toApiCampusVisit). */}
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <div className="mb-1.5 flex items-center">
+                <label
+                  htmlFor={`campus-opcontact-relation-pick-${index}`}
+                  className="block text-xs font-bold text-slate-700"
+                >
+                  {t('visitRequestV2:amend.contactPickLabel')}
+                </label>
+                <HelpTooltip
+                  testId={`campus-opcontact-relation-pick-help-${index}`}
+                  label={t('visitRequestV2:amend.contactPickLabel')}
+                  content={t('visitRequestV2:amend.contactPickHint')}
+                />
+              </div>
+              <select
+                id={`campus-opcontact-relation-pick-${index}`}
+                data-testid={`campus-opcontact-relation-pick-${index}`}
+                value={contactMemberKey ?? ''}
+                onChange={e => pickRelationOnly(e.target.value)}
+                className={inputCls(false, contactMemberKey !== null, false)}
+              >
+                <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
+                {eligibleMembers.map(m => (
+                  <option
+                    key={m.key || `${m.kind}-${m.rowIndex}`}
+                    value={m.key}
+                    disabled={!m.complete}
+                  >
+                    {memberLabel(m)}
+                  </option>
+                ))}
+              </select>
+              {pickedMember && (
+                <p
+                  data-testid={`campus-opcontact-relation-picked-${index}`}
+                  className="mt-1.5 text-xs text-slate-500"
+                >
+                  {t('visitRequestV2:card.contactRelationPickedNotice', { name: pickedMember.fullName })}
+                </p>
+              )}
+            </div>
+            </>
           ) : (
           <>
           {quickFilledFrom && (

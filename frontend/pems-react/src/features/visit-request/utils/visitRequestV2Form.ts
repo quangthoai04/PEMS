@@ -33,6 +33,7 @@ type MemberRow = CampusVisitSchema['visitors'][number];
  */
 export const createEmptyMember = (): MemberRow => ({
   clientMemberKey: newClientKey(),
+  guestMemberId: null,
   fullName: '',
   jobTitle: '',
   organization: '',
@@ -120,7 +121,10 @@ const remintMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
     rows.map(row => {
       const next = newClientKey();
       if (row.clientMemberKey) mapping.set(row.clientMemberKey, next);
-      return { ...row, clientMemberKey: next };
+      // The copy is a row on a DIFFERENT campus's delegation — the source's own guestMemberId names
+      // a VisitGuestMember that belongs to the SOURCE instance and cannot be carried over; the copy
+      // has no persisted identity of its own yet, same as any other freshly added row.
+      return { ...row, clientMemberKey: next, guestMemberId: null };
     });
 
   const visitors = remint(cv.visitors ?? []);
@@ -237,6 +241,7 @@ const toApiCampusVisit = (
     organizationPartnerId: v.organizationPartnerId ?? null,
     nationality: (v.nationality ?? '').trim(),
     clientMemberKey: v.clientMemberKey ?? null,
+    guestMemberId: v.guestMemberId ?? null,
   })),
   externalSupportMembers: (cv.supportTeam ?? []).map(s => ({
     fullName: (s.fullName ?? '').trim(),
@@ -245,6 +250,7 @@ const toApiCampusVisit = (
     organizationPartnerId: s.organizationPartnerId ?? null,
     nationality: (s.nationality ?? '').trim(),
     clientMemberKey: s.clientMemberKey ?? null,
+    guestMemberId: s.guestMemberId ?? null,
   })),
   operationalContact: {
     fullName: (cv.operationalContact?.fullName ?? '').trim(),
@@ -262,6 +268,16 @@ const toApiCampusVisit = (
       && [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])]
         .some(m => m.clientMemberKey === cv.operationalContactClientMemberKey)
       ? cv.operationalContactClientMemberKey
+      : null,
+  // The same pick, named by its PERSISTENT id when the row that holds it has one (plan
+  // CanhIter3FixBug). Derived from the SAME source of truth as the key above — there is no separate
+  // "relation" state to keep in sync — so null here means either "not in the delegation" or "the
+  // picked row is itself brand new this session"; the backend tells the two apart from its own
+  // contentChanged, never from which of these two fields is null.
+  operationalContactGuestMemberId:
+    cv.operationalContactClientMemberKey
+      ? [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])]
+        .find(m => m.clientMemberKey === cv.operationalContactClientMemberKey)?.guestMemberId ?? null
       : null,
   workingLanguage: cv.workingLanguage,
   transportationNote: trimOrNull(cv.transportationNote),
@@ -404,6 +420,9 @@ export const resolvedFormToV2Schema = (
         keyByGuestMemberId.set(m.guestMemberId, clientMemberKey);
         return {
           clientMemberKey,
+          // The row's own PERSISTENT id, restored alongside the ephemeral key (plan CanhIter3FixBug)
+          // — never regenerated, unaffected by editing this row's own fields.
+          guestMemberId: m.guestMemberId,
           fullName: m.fullName, jobTitle: m.jobTitle, organization: m.organization,
           organizationPartnerId: m.organizationPartnerId ?? null, nationality: m.nationality,
         };

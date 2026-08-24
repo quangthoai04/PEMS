@@ -392,4 +392,181 @@ public sealed class VisitHistoryDetailDiffV2Tests
 
         await tx.RollbackAsync();
     }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // Operational-contact ↔ delegation-member RELATION (plan CanhIter3FixBug §11–§14) — the drawer
+    // must never print a raw GuestMemberId, must resolve it to a name using THAT SNAPSHOT's own
+    // member list (never the live roster), and must never fabricate a "before" state a legacy
+    // snapshot never actually recorded.
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    /// <summary>A minimal member-array fragment carrying the fields the differ actually reads.</summary>
+    private static string MemberJson(string name, ulong? guestMemberId) =>
+        "{\"fullName\":\"" + name + "\",\"memberType\":\"GUEST\",\"displayOrder\":1"
+        + (guestMemberId is { } id ? ",\"guestMemberId\":" + id : "") + "}";
+
+    [Fact]
+    public async Task H1_A_legacy_snapshot_with_no_relation_field_at_all_does_not_crash_the_reader()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        // Neither side ever recorded the relation — the field genuinely does not exist in either shape.
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            """{"delegationName":"DELEG","members":[""" + MemberJson("Khách A", null) + "]}",
+            """{"delegationName":"DELEG2","members":[""" + MemberJson("Khách A", null) + "]}");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        // Reached without throwing, and the relation genuinely produced no row — it never appeared on
+        // either side, which is the honest "no history for this field" outcome (plan §13), not an
+        // error.
+        Assert.Null(Field(detail, "operationalContactGuestMemberId"));
+        Assert.NotNull(Field(detail, "delegationName"));
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task H2_A_relation_appearing_for_the_first_time_is_BeforeUnknown_not_a_fabricated_null()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        // BEFORE: an old-shape snapshot that predates the relation field entirely (no key at all).
+        // AFTER: today's shape, with the relation now pointing at a real member.
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            """{"delegationName":"DELEG","members":[""" + MemberJson("Khách A", 501) + "]}",
+            """{"delegationName":"DELEG","operationalContactGuestMemberId":501,"members":["""
+                + MemberJson("Khách A", 501) + "]}");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        var relation = Field(detail, "operationalContactGuestMemberId");
+        Assert.NotNull(relation);
+        // The field genuinely has no recorded "before" — BeforeUnknown, and BeforeValue null. It must
+        // NEVER read as "Không nằm trong danh sách đoàn → Khách A" (that would assert the OLD snapshot
+        // positively recorded "outside the delegation", which it never did — plan §13's exact trap).
+        Assert.True(relation!.BeforeUnknown);
+        Assert.Null(relation.BeforeValue);
+        Assert.Equal("Khách A", relation.AfterValue);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task H3_A_to_B_resolves_both_sides_to_the_names_that_snapshot_actually_recorded()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        var membersJson = "[" + MemberJson("Khách A", 501) + "," + MemberJson("Khách B", 502) + "]";
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":501,"members":{{membersJson}}}""",
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":502,"members":{{membersJson}}}""");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        var relation = Field(detail, "operationalContactGuestMemberId");
+        Assert.NotNull(relation);
+        Assert.False(relation!.BeforeUnknown);
+        Assert.Equal("Khách A", relation.BeforeValue);
+        Assert.Equal("Khách B", relation.AfterValue);
+        // The raw ids must never leak into either cell.
+        Assert.DoesNotContain("501", relation.BeforeValue);
+        Assert.DoesNotContain("502", relation.AfterValue);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task H4_A_to_outside_resolves_to_the_name_then_the_stable_not_in_delegation_code()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        var membersJson = "[" + MemberJson("Khách A", 501) + "]";
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":501,"members":{{membersJson}}}""",
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":null,"members":{{membersJson}}}""");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        var relation = Field(detail, "operationalContactGuestMemberId");
+        Assert.NotNull(relation);
+        Assert.False(relation!.BeforeUnknown);
+        Assert.Equal("Khách A", relation.BeforeValue);
+        // A STABLE code, for the frontend to translate — never a raw null/blank that could be confused
+        // with "no history", and never a guessed name.
+        Assert.Equal("NOT_IN_DELEGATION", relation.AfterValue);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task H5_Outside_to_A_resolves_the_stable_code_then_the_name()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        var membersJson = "[" + MemberJson("Khách A", 501) + "]";
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":null,"members":{{membersJson}}}""",
+            $$"""{"delegationName":"DELEG","operationalContactGuestMemberId":501,"members":{{membersJson}}}""");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        var relation = Field(detail, "operationalContactGuestMemberId");
+        Assert.NotNull(relation);
+        Assert.False(relation!.BeforeUnknown);
+        Assert.Equal("NOT_IN_DELEGATION", relation.BeforeValue);
+        Assert.Equal("Khách A", relation.AfterValue);
+
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task H6_A_relation_id_that_predates_per_member_ids_resolves_to_a_stable_code_never_a_guess()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var (req, inst) = await SeedAsync(db);
+        // Transitional shape: the top-level relation field exists, but the member rows carry no
+        // guestMemberId at all (a snapshot written between the two additions in this feature). There is
+        // exactly one member, and the temptation is to assume the id must mean THAT one — the reader
+        // must resist it: an id it cannot verify is unresolvable, not "the only candidate".
+        var eventId = await TwoRevisionsAsync(db, req, inst,
+            """{"delegationName":"DELEG","operationalContactGuestMemberId":null,"members":[""" + MemberJson("Khách A", null) + "]}",
+            """{"delegationName":"DELEG","operationalContactGuestMemberId":999,"members":[""" + MemberJson("Khách A", null) + "]}");
+
+        var detail = await Handler(db, Owner()).Handle(
+            new GetVisitHistoryDetailQuery(req.VisitRequestId, eventId), CancellationToken.None);
+
+        var relation = Field(detail, "operationalContactGuestMemberId");
+        Assert.NotNull(relation);
+        Assert.Equal("NOT_IN_DELEGATION", relation!.BeforeValue);
+        // Never "Khách A" (a guess) and never the raw "999".
+        Assert.Equal("UNRESOLVABLE", relation.AfterValue);
+        Assert.DoesNotContain("999", relation.AfterValue);
+        Assert.NotEqual("Khách A", relation.AfterValue);
+
+        await tx.RollbackAsync();
+    }
 }

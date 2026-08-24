@@ -178,6 +178,9 @@ public static class DependencyInjection
         // Per-campus v2 safe edit + amendments (plan §16.6, Phase E).
         services.AddScoped<IVisitSafeEditService, VisitSafeEditService>();
         services.AddScoped<IVisitAmendmentService, VisitAmendmentService>();
+        // Canonical-content recompute port (plan CanhIter3FixBug, decision V) — lets the Application-layer
+        // UpdateOperationalContactProfileCommandHandler reuse V2CanonicalRefresh without a layer inversion.
+        services.AddScoped<PEMS.Application.Delegations.Common.ICanonicalContentRefresher, CanonicalContentRefresher>();
 
         // External services (scaffolded)
         services.AddScoped<IFaceRecognitionService, FaceRecognitionService>();

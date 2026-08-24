@@ -95,8 +95,21 @@ public sealed class VisitRequestRevisionSnapshotHistoryTests
     private static readonly PerCampusFormV2WriteOptions WriteOn = new() { Enabled = true };
 
     private static SubmitVisitSafeEditCommandHandler SafeEditHandler(ApplicationDbContext db, ulong actor)
-        => new(db, new FakeUser(actor), new FixedClock(), new VisitSafeEditService(db),
+        => new(db, new FakeUser(actor), new FixedClock(), new VisitSafeEditService(db, new NoopInvitations()),
             new RecordingNotifications(), NullLogger<SubmitVisitSafeEditCommandHandler>.Instance, ReadOn, WriteOn);
+
+    /// <summary>No-op invitation service — these tests never exercise the pending-snapshot refresh.</summary>
+    private sealed class NoopInvitations : IOperationalContactInvitationService
+    {
+        public Task<OperationalContactInvitationTokens?> MintInvitationTokensAsync(
+            ulong identityChangeId, CancellationToken ct) => Task.FromResult<OperationalContactInvitationTokens?>(null);
+        public Task DispatchInvitationEmailAsync(
+            ulong identityChangeId, OperationalContactInvitationTokens tokens, CancellationToken ct) => Task.CompletedTask;
+        public Task<VisitRequestIdentityChange?> LockChangeAsync(ulong identityChangeId, CancellationToken ct)
+            => Task.FromResult<VisitRequestIdentityChange?>(null);
+        public Task<VisitRequestIdentityChange?> LockPendingChangeForInstanceAsync(
+            ulong visitInstanceId, CancellationToken ct) => Task.FromResult<VisitRequestIdentityChange?>(null);
+    }
 
     private static GetVisitHistoryDetailQueryHandler DetailHandler(ApplicationDbContext db, ulong actor)
         => new(db, new FakeUser(actor), ReadOn);

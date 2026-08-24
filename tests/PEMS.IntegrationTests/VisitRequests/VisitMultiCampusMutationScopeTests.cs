@@ -15,6 +15,7 @@ using PEMS.Application.Delegations.Services;
 using PEMS.Application.Delegations.Services.VisitFormRead;
 using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
+using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
 using PEMS.Infrastructure.Persistence;
 using PEMS.Infrastructure.Services;
@@ -96,8 +97,21 @@ public sealed class VisitMultiCampusMutationScopeTests
             "EN", null, "DECLINED", null, null);
 
     private static SubmitVisitSafeEditCommandHandler SafeEdit(ApplicationDbContext db)
-        => new(db, new FakeUser { UserId = Registrant }, new FixedClock(), new VisitSafeEditService(db),
+        => new(db, new FakeUser { UserId = Registrant }, new FixedClock(), new VisitSafeEditService(db, new NoopInvitations()),
             new NoopNotifications(), NullLogger<SubmitVisitSafeEditCommandHandler>.Instance, ReadOn, WriteOn);
+
+    /// <summary>No-op invitation service — these tests never exercise the pending-snapshot refresh.</summary>
+    private sealed class NoopInvitations : IOperationalContactInvitationService
+    {
+        public Task<OperationalContactInvitationTokens?> MintInvitationTokensAsync(
+            ulong identityChangeId, CancellationToken ct) => Task.FromResult<OperationalContactInvitationTokens?>(null);
+        public Task DispatchInvitationEmailAsync(
+            ulong identityChangeId, OperationalContactInvitationTokens tokens, CancellationToken ct) => Task.CompletedTask;
+        public Task<VisitRequestIdentityChange?> LockChangeAsync(ulong identityChangeId, CancellationToken ct)
+            => Task.FromResult<VisitRequestIdentityChange?>(null);
+        public Task<VisitRequestIdentityChange?> LockPendingChangeForInstanceAsync(
+            ulong visitInstanceId, CancellationToken ct) => Task.FromResult<VisitRequestIdentityChange?>(null);
+    }
 
     /// <summary>
     /// A two-campus request where HN is <paramref name="hnStatus"/> and CT is <paramref name="ctStatus"/>,

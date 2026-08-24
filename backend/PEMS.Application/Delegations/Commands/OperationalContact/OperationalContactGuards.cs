@@ -107,12 +107,25 @@ internal static class OperationalContactGuards
     /// proving it belongs to that request first. Naming a sibling campus — or somebody else's campus —
     /// fails here with a stable code instead of being silently accepted.
     /// </summary>
+    /// <param name="includeMembersForCanonical">
+    /// Also loads every campus's <c>GuestMemberLinks</c> and the request's <c>GuestMembers</c> — needed
+    /// only by a caller that goes on to call <see cref="ICanonicalContentRefresher.RecomputeAsync"/>
+    /// (currently <c>UpdateOperationalContactProfileCommandHandler</c>, plan CanhIter3FixBug decision V).
+    /// Left false for the other five callers of this method so their query stays exactly as it was.
+    /// </param>
     public static async Task<(VisitRequest Visit, VisitRequestCampus Instance)> LoadCampusInRequestAsync(
-        IApplicationDbContext db, ulong visitRequestId, ulong visitInstanceId, CancellationToken ct)
+        IApplicationDbContext db, ulong visitRequestId, ulong visitInstanceId, CancellationToken ct,
+        bool includeMembersForCanonical = false)
     {
-        var visit = await db.VisitRequests
+        var query = db.VisitRequests
             .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
-            .FirstOrDefaultAsync(v => v.VisitRequestId == visitRequestId, ct)
+            .AsQueryable();
+        if (includeMembersForCanonical)
+            query = query
+                .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
+                .Include(v => v.GuestMembers);
+
+        var visit = await query.FirstOrDefaultAsync(v => v.VisitRequestId == visitRequestId, ct)
             ?? throw new NotFoundException("Đơn đăng ký tham quan", visitRequestId);
 
         var instance = visit.CampusInstances.FirstOrDefault(c => c.VisitInstanceId == visitInstanceId)
@@ -184,22 +197,11 @@ internal static class OperationalContactGuards
     /// </para>
     /// </summary>
     public static void EnsureProfileUpdateAllowed(VisitRequest visit, VisitRequestCampus instance)
-    {
-        EnsureRequestLive(visit);
-
-        if (instance.Status is
-            VisitInstanceStatuses.WaitingContactConfirmation
-            or VisitInstanceStatuses.WaitingRequestApproval
-            or VisitInstanceStatuses.Assigned
-            or VisitInstanceStatuses.BeforeVisit)
-            return;
-
-        throw new ConflictException(
-            instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected
-                ? "Lịch thăm tại cơ sở này đã kết thúc quy trình nên không thể sửa thông tin đầu mối vận hành."
-                : "Chuyến thăm tại cơ sở này đã bắt đầu nên không thể sửa thông tin đầu mối vận hành.",
-            OperationalContactErrorCodes.ChangeConflict);
-    }
+        // Delegates to the PUBLIC implementation on OperationalContactLink (PEMS.Application.Delegations
+        // .Common) so VisitSafeEditService (PEMS.Infrastructure, a different assembly, cannot reach this
+        // internal type) shares the exact same rule instead of a second copy — plan CanhIter3FixBug,
+        // decision M. Identical behavior/messages/codes for this method's own callers.
+        => OperationalContactLink.EnsureProfileUpdateLifecycleAllowed(visit, instance);
 
     /// <summary>
     /// A confirmed holder exists and the campus has not started, so its contact may be handed over.

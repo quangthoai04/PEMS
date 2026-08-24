@@ -121,7 +121,12 @@ describe('PartnerDetail — contact form validation highlighting', () => {
     await waitFor(() => expect(nameInput.closest('[data-field-error="true"]')).toBeNull());
   });
 
-  it('rejects an invalid email format client-side, leaving fullName untouched', async () => {
+  // Plan CanhIter3FixBug "Partner Contact / Business Card Data Capture" — Partner Contact is external
+  // business-card/partner-supplied data, not an identity field. F1-F9: Email/Phone format is no longer
+  // client-side blocked, only FullName remains required; the backend mirrors this (relaxed validators).
+
+  it('F5: does not reject a nonstandard email client-side, and submits it verbatim', async () => {
+    vi.mocked(partnersApi.createContact).mockResolvedValue(contact({ email: 'not-an-email' }));
     renderPage();
     fireEvent.click(await screen.findByText('Thêm liên hệ'));
     fireEvent.change(await screen.findByTestId('partner-contact-field-fullName'), { target: { value: 'Trần Thị B' } });
@@ -129,9 +134,36 @@ describe('PartnerDetail — contact form validation highlighting', () => {
     fireEvent.change(emailInput, { target: { value: 'not-an-email' } });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
 
-    await waitFor(() => expect(emailInput.closest('[data-field-error="true"]')).not.toBeNull());
-    expect(screen.getByTestId('partner-contact-field-fullName').closest('[data-field-error="true"]')).toBeNull();
-    expect(partnersApi.createContact).not.toHaveBeenCalled();
+    await waitFor(() => expect(partnersApi.createContact).toHaveBeenCalledTimes(1));
+    expect(emailInput.closest('[data-field-error="true"]')).toBeNull();
+    expect(partnersApi.createContact).toHaveBeenCalledWith('1', expect.objectContaining({ email: 'not-an-email' }));
+  });
+
+  it('F1/F2/F3: does not reject an arbitrary phone client-side (extension/foreign format/garbled), submits verbatim', async () => {
+    vi.mocked(partnersApi.createContact).mockResolvedValue(contact({ phone: '+1 (212) 555-1234 ext. 208' }));
+    renderPage();
+    fireEvent.click(await screen.findByText('Thêm liên hệ'));
+    fireEvent.change(await screen.findByTestId('partner-contact-field-fullName'), { target: { value: 'Trần Thị B' } });
+    const phoneInput = screen.getByTestId('partner-contact-field-phone');
+    fireEvent.change(phoneInput, { target: { value: '+1 (212) 555-1234 ext. 208' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+
+    await waitFor(() => expect(partnersApi.createContact).toHaveBeenCalledTimes(1));
+    expect(phoneInput.closest('[data-field-error="true"]')).toBeNull();
+    expect(partnersApi.createContact).toHaveBeenCalledWith('1',
+      expect.objectContaining({ phone: '+1 (212) 555-1234 ext. 208' }));
+  });
+
+  it('F4/F9: a blank phone submits as null, never shows a "required"/format error', async () => {
+    vi.mocked(partnersApi.createContact).mockResolvedValue(contact({ phone: null }));
+    renderPage();
+    fireEvent.click(await screen.findByText('Thêm liên hệ'));
+    fireEvent.change(await screen.findByTestId('partner-contact-field-fullName'), { target: { value: 'Trần Thị B' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+
+    await waitFor(() => expect(partnersApi.createContact).toHaveBeenCalledTimes(1));
+    expect(partnersApi.createContact).toHaveBeenCalledWith('1', expect.objectContaining({ phone: null }));
+    expect(screen.queryByText(/không hợp lệ/i)).toBeNull();
   });
 
   it('maps a backend FullName validation error onto the field on create', async () => {
@@ -147,6 +179,25 @@ describe('PartnerDetail — contact form validation highlighting', () => {
     const errorText = await screen.findByText('Họ tên người liên hệ là bắt buộc.');
     expect(errorText).toHaveAttribute('role', 'alert');
     expect(screen.getByTestId('partner-contact-field-fullName')).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('F8: Update accepts the same arbitrary phone/email Create does — identical rule', async () => {
+    vi.mocked(partnersApi.updateContact).mockResolvedValue(contact({ phone: 'ádsad', email: 'một giá trị user nhập' }));
+    renderPage();
+    await screen.findByText('Nguyễn Văn A');
+    fireEvent.click(screen.getByTitle('Sửa'));
+
+    const phoneInput = await screen.findByTestId('partner-contact-field-phone');
+    fireEvent.change(phoneInput, { target: { value: 'ádsad' } });
+    const emailInput = screen.getByTestId('partner-contact-field-email');
+    fireEvent.change(emailInput, { target: { value: 'một giá trị user nhập' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu' }));
+
+    await waitFor(() => expect(partnersApi.updateContact).toHaveBeenCalledTimes(1));
+    expect(phoneInput.closest('[data-field-error="true"]')).toBeNull();
+    expect(emailInput.closest('[data-field-error="true"]')).toBeNull();
+    expect(partnersApi.updateContact).toHaveBeenCalledWith('1', 9,
+      expect.objectContaining({ phone: 'ádsad', email: 'một giá trị user nhập' }));
   });
 
   it('submits a valid edit exactly once and closes the form', async () => {

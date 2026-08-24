@@ -33,26 +33,34 @@ public sealed record SafeRegistrantPatchDto(
     ulong? PartnerId = null);
 
 /// <summary>
-/// The display half of ONE campus's operational-contact snapshot.
+/// Tri-state relation patch (plan CanhIter3FixBug §8.1) — distinguishes "not part of this edit" from
+/// "explicitly clear it" from "explicitly link this member", which a single nullable <c>ulong?</c>
+/// cannot: <c>MemberLink == null</c> means the relation is untouched by this edit;
+/// <c>MemberLink is not null &amp;&amp; GuestMemberId == null</c> means explicit unlink;
+/// <c>MemberLink.GuestMemberId == X</c> means explicit link to member X.
 /// </summary>
-/// <remarks>
-/// RETIRED (plan PEMS_CONTACT_ONE_DOOR): the contact profile has exactly one door now — "Manage the
-/// contact role" — so <see cref="SafeInstancePatchDto.OperationalContact"/> is never populated by the
-/// current client any more. The record stays only so an old client's payload still DESERIALIZES;
-/// <c>VisitSafeEditService</c> refuses the request outright (fail closed) the moment this is non-null,
-/// rather than silently applying or silently dropping it.
-/// </remarks>
+public sealed record SafeContactMemberLinkPatchDto(ulong? GuestMemberId);
+
+/// <summary>
+/// ONE campus's same-person operational-contact correction — metadata plus, optionally, which
+/// delegation member the contact IS (plan CanhIter3FixBug). The address travels here too, but only so
+/// the backend can PROVE it is unchanged (<c>VisitSafeEditService</c> rejects outright if it differs);
+/// this is never how the address itself is changed — that is Replace/Transfer's job.
+/// </summary>
+/// <param name="MemberLink">Tri-state — see <see cref="SafeContactMemberLinkPatchDto"/>. Null = relation not part of this edit.</param>
 public sealed record SafeContactPatchDto(
     string FullName,
     string? Organization,
-    string? JobTitle,
-    string Phone);
+    string JobTitle,
+    string? Phone,
+    string Email,
+    SafeContactMemberLinkPatchDto? MemberLink);
 
 /// <summary>
 /// Per-instance safe subset, sparse: null = this field is not part of the edit, "" = clear it.
 /// A campus that changed nothing must not appear in <see cref="VisitRequestSafeEditDto.Instances"/> at all.
 /// </summary>
-/// <param name="OperationalContact">RETIRED — see <see cref="SafeContactPatchDto"/>. Must be null; a non-null value is refused.</param>
+/// <param name="OperationalContact">This campus's same-person contact correction, or null if this edit does not touch it.</param>
 public sealed record SafeInstancePatchDto(
     ulong VisitInstanceId,
     int ExpectedRowVersion,

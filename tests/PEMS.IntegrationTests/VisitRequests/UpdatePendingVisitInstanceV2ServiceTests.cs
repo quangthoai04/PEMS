@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
+using PEMS.Application.Delegations.Services;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Policies;
@@ -74,13 +76,16 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             null, campuses.ToList());
 
     /// <summary>The per-campus payload: the campus's full content plus ITS OWN row version.</summary>
-    private static CampusVisitEditV2Dto Content(VisitRequestCampus instance, CampusVisitFormDto content)
+    private static CampusVisitEditV2Dto Content(
+        VisitRequestCampus instance, CampusVisitFormDto content,
+        ulong? operationalContactGuestMemberId = null)
         => new(instance.VisitInstanceId, instance.RowVersion,
             content.CampusId, content.PlannedStartAt, content.PlannedEndAt,
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.Notes);
+            content.Notes, OperationalContactClientMemberKey: null,
+            OperationalContactGuestMemberId: operationalContactGuestMemberId);
 
     private static async Task RunAsync(
         Func<ApplicationDbContext, VisitRequestV2CreateService, VisitRequestV2EditService, Task> body)
@@ -563,5 +568,442 @@ public sealed class UpdatePendingVisitInstanceV2ServiceTests
             Assert.Equal("Legacy Unrecognized Value", savedNationality);
             Assert.Equal("Mục đích mới", hn.FormDetail!.Purpose);
         });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // "Đầu mối hiện tại có nằm trong danh sách đoàn không?" — plan CanhIter3FixBug, pending-edit
+    // lifecycle stage. Root gap: the relation is deliberately NOT part of CanonicalContent, so a
+    // save that ONLY repoints who the contact is (member list otherwise untouched) used to compute
+    // contentChanged=false, scheduleChanged=false and be refused as PendingCampusNoContentChanges —
+    // silently dropping a real business change. Every test below proves the fix without going
+    // through StageReplaceMembers/LinkMembers: the member list is never replaced by these saves.
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task RelationOnly_outside_to_existing_member_registers_and_applies()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            Assert.Null(hn.FormDetail!.OperationalContactGuestMemberId);
+            var revisionBefore = hn.FormDetail.FormRevision;
+            var rowVersionBefore = hn.RowVersion;
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: guestId), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
+
+            Assert.Equal(guestId, hn.FormDetail.OperationalContactGuestMemberId);
+            // Exactly +1 — a relationship-only save is still one save (plan §21), never zero, never two.
+            Assert.Equal(revisionBefore + 1, hn.FormDetail.FormRevision);
+            Assert.Equal(rowVersionBefore + 1, hn.RowVersion);
+            // The member itself was never touched: still the same one row, same id.
+            Assert.Equal(guestId, hn.GuestMemberLinks.Single().GuestMemberId);
+            Assert.True(await db.AuditLogs.AnyAsync(a =>
+                a.VisitInstanceId == hn.VisitInstanceId
+                && a.Changes.Any(c => c.FieldName == $"instance[{hn.VisitInstanceId}].operational_contact_relation")));
+            Assert.True(await db.VisitInstanceFormRevisionHistories.AnyAsync(h =>
+                h.VisitInstanceId == hn.VisitInstanceId && h.FormRevision == hn.FormDetail.FormRevision));
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_existing_member_to_outside_clears_the_relation_and_keeps_the_member()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = guestId;
+            await db.SaveChangesAsync();
+            var revisionBefore = hn.FormDetail.FormRevision;
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: null), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
+
+            Assert.Null(hn.FormDetail.OperationalContactGuestMemberId);
+            Assert.Equal(revisionBefore + 1, hn.FormDetail.FormRevision);
+            // The member still exists — clearing the relation is not deleting the person.
+            Assert.Equal(guestId, hn.GuestMemberLinks.Single().GuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_switching_between_two_existing_members_moves_the_relation_only()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var twoVisitors = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto>
+                {
+                    new("Guest A", "Việt Nam", "Guest", "GuestOrg"),
+                    new("Guest B", "Việt Nam", "Guest", "GuestOrg"),
+                },
+            };
+            var r = await create.CreateV2Async(CreateForm(twoVisitors), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var ids = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            var (guestA, guestB) = (ids[0], ids[1]);
+            hn.FormDetail!.OperationalContactGuestMemberId = guestA;
+            await db.SaveChangesAsync();
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, twoVisitors, operationalContactGuestMemberId: guestB), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
+
+            Assert.Equal(guestB, hn.FormDetail.OperationalContactGuestMemberId);
+            // Both rows survive, unchanged ids — this was never a member-list edit.
+            Assert.Equal(ids, hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList());
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_unchanged_relation_with_nothing_else_changed_is_refused_as_no_content_changes()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = guestId;
+            await db.SaveChangesAsync();
+            var revisionBefore = hn.FormDetail.FormRevision;
+
+            // Echoes the SAME relation back — a reason/UI interaction alone is never a business change.
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyInstancePendingEditAsync(
+                    r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: guestId), Registrant, Now,
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
+
+            Assert.Equal(VisitFormV2ErrorCodes.PendingCampusNoContentChanges, ex.ErrorCode);
+            Assert.Equal(revisionBefore, hn.FormDetail.FormRevision);
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_a_nonexistent_member_id_is_refused_at_submit_with_zero_mutation()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var revisionBefore = hn.FormDetail!.FormRevision;
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyInstancePendingEditAsync(
+                    r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: 9_999_999UL), Registrant, Now,
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Equal(revisionBefore, hn.FormDetail.FormRevision);
+            Assert.Null(hn.FormDetail.OperationalContactGuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_a_sibling_campuss_member_id_is_refused_never_accepted_because_it_exists_elsewhere()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM", visitorName: "Guest HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            MarkWaitingApproval(hn, Registrant);
+            MarkWaitingApproval(hcm, Registrant);
+            var hcmGuestId = hcm.GuestMemberLinks.Single().GuestMemberId;
+            var revisionBefore = hn.FormDetail!.FormRevision;
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyInstancePendingEditAsync(
+                    r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: hcmGuestId), Registrant, Now,
+                    actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Equal(revisionBefore, hn.FormDetail.FormRevision);
+            // HCM itself is completely unaffected by HN's refused edit.
+            Assert.Equal(hcmGuestId, hcm.GuestMemberLinks.Single().GuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_never_mutates_the_contact_profile_or_partner_links()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            MarkWaitingApproval(hn, Registrant);
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var profileBefore = (
+                hn.FormDetail!.OperationalContactFullName, hn.FormDetail.OperationalContactOrganization,
+                hn.FormDetail.OperationalContactJobTitle, hn.FormDetail.OperationalContactPhone,
+                hn.FormDetail.OperationalContactEmail);
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: guestId), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
+
+            var profileAfter = (
+                hn.FormDetail.OperationalContactFullName, hn.FormDetail.OperationalContactOrganization,
+                hn.FormDetail.OperationalContactJobTitle, hn.FormDetail.OperationalContactPhone,
+                hn.FormDetail.OperationalContactEmail);
+            // The one thing this whole feature must never do: turn "which member is this" into
+            // "redescribe the contact". The picked member's own name/org/job title never touch the
+            // profile columns — picking "Guest A" must not make the contact BECOME "Guest A".
+            Assert.Equal(profileBefore, profileAfter);
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_a_sibling_campus_is_completely_unaffected()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM", visitorName: "Guest HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            MarkWaitingApproval(hn, Registrant);
+            MarkWaitingApproval(hcm, Registrant);
+            await db.SaveChangesAsync();
+            MarkAssigned(hcm, hcm.CoordinatorUserId!.Value);
+            var hcmBefore = Snapshot(hcm);
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+
+            await edit.ApplyInstancePendingEditAsync(
+                r, hn, Content(hn, Campus("HN"), operationalContactGuestMemberId: guestId), Registrant, Now,
+                actorIsCampusLeader: false, overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, default);
+
+            Assert.Equal(guestId, hn.FormDetail!.OperationalContactGuestMemberId);
+            // The mandatory regression gate: nothing about HCM moved — status, host, decision,
+            // revision, row version all byte-for-byte the same as before HN's relation-only save.
+            Assert.Equal(hcmBefore, Snapshot(hcm));
+        });
+    }
+
+    [Fact]
+    public async Task RelationOnly_whole_request_edit_registers_a_relation_only_change_for_one_sibling_and_skips_the_other()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM", visitorName: "Guest HCM")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            MarkWaitingApproval(hn, Registrant);
+            MarkWaitingApproval(hcm, Registrant);
+            await db.SaveChangesAsync();
+            var hnGuestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var hcmRevisionBefore = hcm.FormDetail!.FormRevision;
+
+            var editDto = new VisitRequestEditV2Dto(
+                r.RowVersion,
+                new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+                null,
+                new List<CampusVisitEditV2Dto>
+                {
+                    Content(hn, Campus("HN"), operationalContactGuestMemberId: hnGuestId), // relation-only
+                    Content(hcm, Campus("HCM", visitorName: "Guest HCM")),                 // byte-identical echo
+                });
+
+            await edit.ApplyPendingEditAsync(r, editDto, Registrant, Now, default);
+
+            Assert.Equal(hnGuestId, hn.FormDetail!.OperationalContactGuestMemberId);
+            // HCM's echo carried no change of any kind (content, schedule or relation) — it must be
+            // skipped exactly like before this fix, never given a spurious revision bump.
+            Assert.Equal(hcmRevisionBefore, hcm.FormDetail!.FormRevision);
+        });
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // TASK C (plan CanhIter3FixBug, this pass) — dedicated concurrency test for the relation-only
+    // mutation. Two independent DbContexts/connections race for the SAME instance row, both starting
+    // from the SAME RowVersion; exactly one must win. Written against the REAL lock the relation path
+    // already inherits (AssertCurrentInstanceVersionAsync's SELECT ... FOR UPDATE) — not a fake stand-
+    // in — by holding that row's lock in one transaction while the real ApplyInstancePendingEditAsync
+    // call races against it in a second, concurrently-running Task, matching the exact pattern
+    // ParentLifecycleCancelConcurrencyTests already uses for the same underlying guard.
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    private static readonly TimeSpan LockWait = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan Hold = TimeSpan.FromMilliseconds(600);
+
+    /// <summary>A committed (non-rollback) single-campus request, WAITING_REQUEST_APPROVAL with two
+    /// real guest rows — real commits are required here because the two racing tasks below need
+    /// INDEPENDENT connections/transactions, which a single shared, rolled-back RunAsync cannot give.</summary>
+    private static async Task<(ulong RequestId, ulong InstanceId, ulong GuestA, ulong GuestB)> SeedRaceableCampusAsync()
+    {
+        var now = DateTime.Now;
+        ulong requestId;
+        using (var db = NewContext())
+        {
+            var create = new VisitRequestV2CreateService(db);
+            var twoVisitors = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto>
+                {
+                    new("Guest A", "Việt Nam", "Guest", "GuestOrg"),
+                    new("Guest B", "Việt Nam", "Guest", "GuestOrg"),
+                },
+            };
+            var r = await create.CreateV2Async(CreateForm(twoVisitors), Registrant, "VISITOR_SUBMITTED", now, default);
+            requestId = r.VisitRequestId;
+        }
+        ulong instanceId, guestA, guestB;
+        using (var db = NewContext())
+        {
+            var r = await db.VisitRequests.Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+                .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
+                .SingleAsync(v => v.VisitRequestId == requestId);
+            var hn = r.CampusInstances.Single();
+            MarkWaitingApproval(hn, Registrant);
+            await db.SaveChangesAsync();
+            instanceId = hn.VisitInstanceId;
+            var ids = hn.GuestMemberLinks.Select(l => l.GuestMemberId).OrderBy(x => x).ToList();
+            (guestA, guestB) = (ids[0], ids[1]);
+        }
+        return (requestId, instanceId, guestA, guestB);
+    }
+
+    /// <summary>Manually acquires the SAME row lock ApplyInstancePendingEditAsync's own
+    /// AssertCurrentInstanceVersionAsync would, holds it for <paramref name="hold"/>, then performs a
+    /// REAL relation-only mutation (outside → Guest A) and commits — simulating a genuinely concurrent
+    /// writer that reaches the row first.</summary>
+    private static async Task HoldLockThenApplyRelationAsync(
+        ulong instanceId, ulong guestId, TaskCompletionSource holding, TimeSpan hold)
+    {
+        using var db = NewContext();
+        var locks = new MySqlUserMutationLockService(db);
+        await using var tx = await db.Database.BeginTransactionAsync();
+
+        await locks.LockVisitRequestCampusesAsync(new[] { instanceId }, CancellationToken.None);
+        holding.SetResult();
+        await Task.Delay(hold);
+
+        var instance = await db.VisitRequestCampuses.Include(c => c.FormDetail)
+            .SingleAsync(c => c.VisitInstanceId == instanceId);
+        instance.FormDetail!.OperationalContactGuestMemberId = guestId;
+        instance.FormDetail.FormRevision += 1;
+        instance.FormDetail.RowVersion += 1;
+        instance.RowVersion += 1;
+        await db.SaveChangesAsync();
+        await tx.CommitAsync();
+    }
+
+    [Fact]
+    public async Task RelationOnly_two_concurrent_relation_changes_from_the_same_RowVersion_exactly_one_wins()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var guestA, var guestB) = await SeedRaceableCampusAsync();
+
+            int rowVersionBefore;
+            uint formRevisionBefore;
+            using (var db = NewContext())
+            {
+                var instance = await db.VisitRequestCampuses.Include(c => c.FormDetail).AsNoTracking()
+                    .SingleAsync(c => c.VisitInstanceId == instanceId);
+                rowVersionBefore = instance.RowVersion;
+                formRevisionBefore = instance.FormDetail!.FormRevision;
+                Assert.Null(instance.FormDetail.OperationalContactGuestMemberId);
+            }
+
+            // A: holds the row lock, then applies outside → Guest A (a REAL relation-only mutation).
+            var holding = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var taskA = Task.Run(() => HoldLockThenApplyRelationAsync(instanceId, guestA, holding, Hold));
+
+            // B: the path actually under test — waits for A to be holding the lock, then races in with
+            // outside → Guest B, from the SAME original RowVersion. It must BLOCK on A's lock, then
+            // lose: by the time it reads the row, A has already committed the bump.
+            var taskB = Task.Run(async () =>
+            {
+                await holding.Task;
+                using var db = NewContext();
+                var request = await db.VisitRequests.Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+                    .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
+                    .Include(v => v.GuestMembers)
+                    .SingleAsync(v => v.VisitRequestId == requestId);
+                var instance = request.CampusInstances.Single(c => c.VisitInstanceId == instanceId);
+                var edit = new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var ex = await Record.ExceptionAsync(() => edit.ApplyInstancePendingEditAsync(
+                    request, instance, Content(instance, Campus("HN") with
+                    {
+                        Visitors = new List<VisitorDto>
+                        {
+                            new("Guest A", "Việt Nam", "Guest", "GuestOrg"),
+                            new("Guest B", "Việt Nam", "Guest", "GuestOrg"),
+                        },
+                    }, operationalContactGuestMemberId: guestB) with { ExpectedRowVersion = rowVersionBefore },
+                    Registrant, DateTime.Now, actorIsCampusLeader: false, overrideLeadTimeConfirmed: false,
+                    approveAfterSaveRequested: false, default));
+                sw.Stop();
+                return (Exception: ex, Waited: sw.Elapsed);
+            });
+
+            await taskA.WaitAsync(LockWait);
+            var (ex, waited) = await taskB.WaitAsync(LockWait);
+
+            // Proves B actually CONTENDED on A's lock rather than racing past it unlocked.
+            Assert.True(waited >= TimeSpan.FromMilliseconds(300),
+                $"B returned after only {waited.TotalMilliseconds:F0} ms — it did not contend on the row lock A held for {Hold.TotalMilliseconds:F0} ms.");
+            Assert.NotNull(ex);
+            Assert.IsType<ConflictException>(ex);
+            Assert.Equal(VisitRequestErrorCodes.InstanceVersionConflict, ((ConflictException)ex!).ErrorCode);
+
+            // Exactly one write landed — A's — and it landed exactly once.
+            using (var db = NewContext())
+            {
+                var instance = await db.VisitRequestCampuses.Include(c => c.FormDetail).Include(c => c.GuestMemberLinks)
+                    .AsNoTracking().SingleAsync(c => c.VisitInstanceId == instanceId);
+                Assert.Equal(guestA, instance.FormDetail!.OperationalContactGuestMemberId);
+                Assert.Equal(formRevisionBefore + 1, instance.FormDetail.FormRevision);
+                Assert.Equal(rowVersionBefore + 1, instance.RowVersion);
+                // No duplicate revision-history row, no lost/duplicated audit, member ids/profile untouched.
+                Assert.Equal(2, instance.GuestMemberLinks.Count);
+                Assert.Equal("Op Contact", instance.FormDetail.OperationalContactFullName);
+            }
+            using (var db = NewContext())
+            {
+                // A's stand-in mutation (HoldLockThenApplyRelationAsync) deliberately does not write a
+                // revision-history row itself — it exists only to hold the real lock a genuine
+                // concurrent writer would. What this proves is B's half: its LOST race produced no
+                // history row of its own, so the table carries none for this bump at all.
+                var historyCount = await db.VisitInstanceFormRevisionHistories
+                    .CountAsync(h => h.VisitInstanceId == instanceId && h.FormRevision == formRevisionBefore + 1);
+                Assert.Equal(0, historyCount); // B's failed attempt wrote no history row at all
+            }
+        }
+        finally { await CleanupRaceAsync(requestId); }
+    }
+
+    private static async Task CleanupRaceAsync(ulong requestId)
+    {
+        if (requestId == 0) return;
+        using var db = NewContext();
+        var id = requestId;
+        async Task Del(string sql) => await db.Database.ExecuteSqlRawAsync(sql, id);
+        await Del("DELETE FROM visit_instance_form_revision_history WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_request_revision_history WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_form_details WHERE visit_instance_id IN (SELECT visit_instance_id FROM visit_request_campuses WHERE visit_request_id = {0})");
+        await Del("DELETE FROM visit_request_campuses WHERE visit_request_id = {0}");
+        await Del("DELETE alc FROM audit_log_changes alc JOIN audit_logs al ON al.audit_log_id = alc.audit_log_id WHERE al.visit_request_id = {0}");
+        await Del("DELETE FROM audit_logs WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_requests WHERE visit_request_id = {0}");
     }
 }
