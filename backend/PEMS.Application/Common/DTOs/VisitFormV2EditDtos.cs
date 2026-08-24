@@ -51,7 +51,35 @@ public record CampusVisitEditV2Dto(
     /// key is what re-finds the same person among the new rows — without it the link falls back to
     /// comparing strings, which is the failure this whole change removes.
     /// </remarks>
-    string? OperationalContactClientMemberKey = null)
+    string? OperationalContactClientMemberKey = null,
+
+    /// <summary>
+    /// The PERSISTENT counterpart to <see cref="OperationalContactClientMemberKey"/> — plan
+    /// CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn không?" (pending-edit
+    /// lifecycle stage). Every row on an EXISTING campus already has a stable <c>GuestMemberId</c>
+    /// before this edit ever touches it, so when the member list itself is NOT being replaced this
+    /// is the only reliable way to say "the contact is now this row" — the client key is re-minted
+    /// on every page load and carries no meaning the backend can verify on its own.
+    ///
+    /// <para>
+    /// Deliberately NOT part of <see cref="ToFormDto"/>'s projection and therefore NOT part of
+    /// <c>VisitRequestV2Canonical.CanonicalContent</c> — the relationship is a fact about the
+    /// campus, not "content" in the copy-on-write sense, and change detection for it is computed
+    /// independently in <c>VisitRequestV2EditService</c> (relationChanged), never folded into
+    /// contentChanged/scheduleChanged.
+    /// </para>
+    /// <para>
+    /// Mutually exclusive with <see cref="OperationalContactClientMemberKey"/> in effect, never in
+    /// shape: both may be present on the wire (the frontend always resolves the current pick's own
+    /// id when it has one), but the service reads only ONE of them per save — the client key when
+    /// the member list changed (copy-on-write mints new ids, so only the key survives), this one
+    /// when it did not (every id is already real and directly checkable against THIS instance's own
+    /// members via <c>OperationalContactLink.EnsureGuestMemberIdEligible</c>). Null means either "no
+    /// pick" (outside the delegation) or "member list changed, use the key instead" — the service
+    /// tells the two apart from its OWN contentChanged, never by inspecting which field is null.
+    /// </para>
+    /// </summary>
+    ulong? OperationalContactGuestMemberId = null)
 {
     /// <summary>Projects the campus content into the shared create DTO shape so create/edit reuse ONE
     /// canonical recompute (<c>VisitRequestV2Canonical</c>). The host arrangement is not campus CONTENT, so it is not part of this projection — it is edited through its own endpoint.</summary>
@@ -92,3 +120,23 @@ public sealed record VisitInstancePendingEditDto(
     CampusVisitEditV2Dto Content,
     bool OverrideLeadTimeConfirmed = false,
     ApproveAfterSaveDto? ApproveAfterSave = null);
+
+/// <summary>
+/// The payload for resubmitting ONE rejected campus (plan CanhIter3FixBug FIX-G/H). SCHEDULE-ONLY: the
+/// UI offers nothing else to edit here, and the old contract — a full <see cref="CampusVisitEditV2Dto"/>
+/// snapshot, same as a full content edit — let the service silently copy-on-write every member row on a
+/// "just fix the date" resubmit, dropping <c>OrganizationPartnerId</c> (the frontend never echoed it —
+/// see the deleted fields in <c>InstanceResubmitPanel.tsx</c>) and forcing the operational-contact link
+/// to re-resolve by name/org/title fingerprint instead of staying pinned to the same row.
+///
+/// <para>
+/// <see cref="CampusId"/> is still required, not because this may change it (it may not — the service
+/// still refuses a mismatch, same as before), but because the campus-immutability guard needs something
+/// from the payload to check against; it is not optional metadata.
+/// </para>
+/// </summary>
+public sealed record InstanceResubmitScheduleDto(
+    int ExpectedRowVersion,
+    string CampusId,               // campus CODE (e.g. "HN") — must match the instance's own; never moves it
+    System.DateTime PlannedStartAt,
+    System.DateTime PlannedEndAt);

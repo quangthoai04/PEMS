@@ -98,6 +98,7 @@
     "contactPickKindSupport": "Support staff",
     "contactPickIncomplete": "{{name}} ({{kind}}) — incomplete: needs a full name, job title and organisation",
     "contactPickedNotice": "{{name}} is this campus's contact. Their name, job title and organisation come from their row above and follow it as you edit it.",
+    "contactRelationPickedNotice": "The current contact corresponds to {{name}} in the delegation list. The contact's own details (name, job title, organization, phone, email) do not change.",
     "contactPickedExistingMember": "The registrant is already in the delegation — {{name}} has been selected as the contact instead of adding a duplicate.",
     "contactEditMember": "Edit this member",
     "contactMemberBadge": "Contact",
@@ -348,7 +349,8 @@
       "remove": "Remove row",
       "needOne": "At least one guest is required.",
       "changeSummary": "Member changes: +{{added}} added · −{{removed}} removed · {{modified}} edited",
-      "noChange": "No member changes vs. the active content yet."
+      "noChange": "No member changes vs. the active content yet.",
+      "cannotRemoveContact": "Cannot remove this person — they are currently the operational contact. Pick a different contact or choose \"Not part of the delegation\" before removing them."
     },
     "submitted": "Change proposal sent for {{campus}}.",
     "errRequired": "This field is required.",
@@ -361,15 +363,18 @@
     "errInvalidVisitTime": "The proposed time slot is not valid. Check the start and end times.",
     "errValidation": "The proposal contains invalid data. Please review the fields you filled in.",
     "errPartnerNotSelectable": "The selected partner organisation is no longer valid for this request. Please choose again.",
-    "contactEmailHelper": "Contact details (name, job title, organization, phone, email) are managed in the campus's \"Edit contact\" screen — they cannot be edited here.",
-    "contactPickHint": "Choose which delegation member currently holds the contact role for this campus. Picking only decides WHO the contact is — it does not change their contact details."
+    "contactPickLabel": "Is the current contact part of the delegation list?"
   },
   "safeEdit": {
     "open": "Quick edit",
     "title": "Quick edit (applies immediately)",
     "applyNowNote": "Administrative / privacy corrections apply immediately, no approval needed.",
     "emailImmutable": "The account email cannot be changed here.",
-    "contactManagedElsewhere": "This campus's contact details are managed on the detail page's \"Edit contact\" action — they cannot be changed from Quick edit.",
+    "contactTitle": "CONTACT INFORMATION",
+    "contactTitleHint": "Quick edit only updates the current contact's own details. To hand this campus to a different person, use \"Transfer contact\".",
+    "contactEmailLockedHint": "The contact's email cannot be changed here. To hand over to a different person, use \"Transfer contact\".",
+    "contactRelationTooltip": "Pick a delegation member if the contact is also travelling with the delegation.",
+    "contactMismatchError": "The selected member's details don't match the current contact. Please review the details or pick the right person.",
     "conflict": "The data changed since you opened this. Please reload and try again.",
     "reload": "Reload",
     "appliedCount_one": "Applied {{count}} change.",
@@ -378,7 +383,9 @@
     "save": "Save changes",
     "noChanges": "You have not changed anything yet.",
     "lockedCampuses": "Quick edit is unavailable for: {{campuses}}. These campuses are under way, finished, not yet approved, or past the change deadline.",
-    "sharedLocked": "The registrant and contact details are shared by every campus, so they can only be changed while all campuses are still within their change window. You can still edit each campus's notes below."
+    "sharedLocked": "Registrant information is shared across every campus, so it cannot be edited right now. You can still update the individual details of any campus below that is still eligible.",
+    "registrantInfoHelp": "Registrant information is shared across every campus. This section can only be edited once every campus has been approved, the visit has not started, and the change window is still open.",
+    "registrantInfoHelpLeadHours": "Quick edit is currently available until at least {{hours}} hours before the earliest start."
   },
   "hostTransfer": {
     "open": "Transfer reception owner",
@@ -493,6 +500,8 @@
       "withdraw": "Withdraw proposal",
       "processError": "Could not process the proposal. Please reload and try again.",
       "emptyValue": "—",
+      "contactKeyNotInDelegation": "Not part of the delegation",
+      "contactKeyChanged": "Changed to a different delegation member",
       "fields": {
         "delegationName": "Delegation name",
         "visitType": "Visit type",
@@ -506,8 +515,10 @@
         "operationalContactEmail": "Operational contact — email",
         "membersVisitors": "Delegation members",
         "membersExternalSupport": "Support staff",
+        "operationalContactMemberKey": "Operational contact — who in the delegation",
         "plannedStartAt": "Start time",
-        "plannedEndAt": "End time"
+        "plannedEndAt": "End time",
+        "unknown": "Other change"
       }
     }
   },
@@ -671,7 +682,8 @@
       "contactPersonEmail": "Contact person email (retired field)",
       "contactEmailMasked": "Contact email (masked)",
       "identityChangeStatus": "Invitation status",
-      "operationalContactJobTitle": "Contact job title"
+      "operationalContactJobTitle": "Contact job title",
+      "operationalContactGuestMemberId": "Contact linked to delegation member"
     },
     "unknownBefore": "No historical data",
     "identityStatus": {
@@ -681,6 +693,10 @@
       "EXPIRED": "Expired",
       "CANCELLED": "Cancelled",
       "SUPERSEDED": "Superseded"
+    },
+    "relationStatus": {
+      "NOT_IN_DELEGATION": "Not part of the delegation",
+      "UNRESOLVABLE": "The contact's delegation link changed"
     }
   },
   "revision": {
@@ -720,19 +736,18 @@
     "replaceSubmit": "Update & send a new invitation",
     "transferOpen": "Transfer the contact role",
     "transferSubmit": "Send transfer invitation",
-    "transferReason": "Reason for the transfer",
     "sending": "Sending the invitation…",
     "transferEmailUnchanged": "That address already holds the contact role. Enter the email of the person taking it over.",
     "cancelTransfer": "Cancel the transfer invitation",
     "loadingTransfer": "Checking for a pending transfer…",
     "transferLoadFailed": "Could not check the transfer status. Whether an invitation is pending is currently unknown.",
     "actionFailed": "The action could not be completed. Please try again.",
-    "editOpen": "Edit the contact",
+    "editOpen": "Transfer contact",
     "saveProfile": "Save contact details",
     "saveIdentityChange": "Change the person & send a confirmation",
     "emailIdentityHint": "Keep the address: only the details are updated and no confirmation email is sent. Changing the address changes who runs this campus, and the new person has to accept.",
     "replaceReopensGate": "The address differs from the current one, so this changes who runs the campus: it will wait for the new person to confirm, and the whole request pauses at the confirmation gate until every campus has a contact.",
-    "identityChangeNotAllowed": "The contact address cannot be changed for this campus right now. Name, organization, job title and phone can still be corrected.",
+    "transferEmailSameAsCurrent": "The new email matches the current contact. If you only need to update their details, use Quick edit instead.",
     "cancelConfirmation": "Cancel the confirmation invitation",
     "noChangesHint": "Nothing has changed from the current details."
   },

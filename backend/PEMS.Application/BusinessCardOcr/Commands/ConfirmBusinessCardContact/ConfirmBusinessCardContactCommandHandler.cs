@@ -11,7 +11,6 @@ using PEMS.Application.Partners.VisitLinks.Commands.CreateOrUpdateVisitGuestPart
 using PEMS.Domain.Entities.ApiIntegrations;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.Users;
-using PEMS.Shared;
 
 namespace PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 
@@ -64,13 +63,15 @@ public sealed class ConfirmBusinessCardContactCommandHandler
 
         var now = _clock.VietnamNow;
 
-        // 7) Create the contact from the REVIEWED values (not blindly from OCR).
+        // 7) Create the contact from the REVIEWED values (not blindly from OCR). Trim-only storage —
+        // symmetric with Create/UpdatePartnerContactCommandHandler: the reviewer confirmed this exact
+        // text off the card, so it is what gets persisted, not a reformatted/lowercased version of it.
         var contact = new PartnerContact
         {
             PartnerId = partner.PartnerId,
             FullName = request.FullName.Trim(),
-            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant(),
-            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim()),
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
             JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
             DepartmentName = string.IsNullOrWhiteSpace(request.DepartmentName) ? null : request.DepartmentName.Trim(),
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),

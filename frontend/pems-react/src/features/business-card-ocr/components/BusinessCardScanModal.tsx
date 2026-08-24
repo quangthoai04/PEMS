@@ -16,14 +16,14 @@ import { partnersApi } from '../../partners/api/partnersApi';
 import type { PartnerListItem } from '../../partners/types/partners.types';
 import { PROFILE_STATUS_LABELS } from '../../partners/types/partners.types';
 import { useAuthenticatedImage } from '../../../shared/hooks/useAuthenticatedImage';
-import { isValidPhone } from '../../../shared/utils/phoneNumber';
-import { isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import {
   getApiErrorMessage,
   showLoadingToast,
   updateToastSuccess,
   updateToastMessageError,
+  dismissToast,
 } from '../../../shared/utils/toast';
+import { fieldErrorsOf, firstFieldError } from '../../visit-request/utils/visitV2Actions';
 
 function partnerInitials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
@@ -202,15 +202,12 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
   const confirm = async () => {
     const targetPartnerName = partnerSearch.trim() || organization.trim();
     if (!job || !fullName.trim() || (!partnerId && !targetPartnerName)) return;
-    if (email.trim() && !isValidEmailSyntax(email)) {
-      setEmailError('Email không đúng định dạng.');
-      return;
-    }
+    // Partner Contact is external business-card/partner-supplied data, not an identity field (plan
+    // CanhIter3FixBug "Partner Contact / Business Card Data Capture") — Email/Phone format is
+    // DELIBERATELY not checked here. The reviewer is confirming the actual text read off the card
+    // (extensions, local formats, non-ASCII OCR text are all real, legitimate values). Only length
+    // still bounds these fields, surfaced below from the backend's own field errors if exceeded.
     setEmailError(null);
-    if (phone.trim() && !isValidPhone(phone)) {
-      setPhoneError('Số điện thoại không hợp lệ. Nhập số Việt Nam dạng 0912345678 hoặc số quốc tế dạng +84912345678. Không nhập số máy lẻ.');
-      return;
-    }
     setPhoneError(null);
 
     setConfirming(true);
@@ -248,9 +245,21 @@ export function BusinessCardScanModal({ open, onClose, context, onConfirmed }: P
       updateToastSuccess(toastId, 'Đã lưu người liên hệ thành công.');
       onConfirmed?.({ partnerId: finalPartnerId, contactId: result.contactId });
     } catch (e: any) {
-      const message = getApiErrorMessage(e, 'Không thể lưu người liên hệ.');
-      setError(message);
-      updateToastMessageError(toastId, message);
+      // Field-level errors (e.g. overlong Phone/Email past the DB column limit) surface near the
+      // field, same pattern as PartnerDetail's contact form — a generic toast is reserved for
+      // network/authorization/unexpected failures, not a FluentValidation length rejection.
+      const backendFields = fieldErrorsOf(e);
+      const emailMsg = firstFieldError(backendFields, 'Email');
+      const phoneMsg = firstFieldError(backendFields, 'Phone');
+      if (emailMsg || phoneMsg) {
+        setEmailError(emailMsg ?? null);
+        setPhoneError(phoneMsg ?? null);
+        dismissToast(toastId);
+      } else {
+        const message = getApiErrorMessage(e, 'Không thể lưu người liên hệ.');
+        setError(message);
+        updateToastMessageError(toastId, message);
+      }
     } finally {
       setConfirming(false);
     }

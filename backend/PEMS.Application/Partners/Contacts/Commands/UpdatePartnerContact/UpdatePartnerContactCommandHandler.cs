@@ -7,7 +7,6 @@ using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Partners.Common;
 using PEMS.Application.Partners.Contacts.Common;
 using PEMS.Domain.Entities.Users;
-using PEMS.Shared;
 
 namespace PEMS.Application.Partners.Contacts.Commands.UpdatePartnerContact;
 
@@ -38,9 +37,10 @@ public sealed class UpdatePartnerContactCommandHandler
             _db, partner.PartnerId, request.Email, contact.ContactId, cancellationToken);
 
         var now = _clock.VietnamNow;
+        // Trim-only storage — symmetric with CreatePartnerContactCommandHandler, see its comment.
         contact.FullName = request.FullName.Trim();
-        contact.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant();
-        contact.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim());
+        contact.Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
+        contact.Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
         contact.JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim();
         contact.DepartmentName = string.IsNullOrWhiteSpace(request.DepartmentName) ? null : request.DepartmentName.Trim();
         contact.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();

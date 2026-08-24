@@ -1,8 +1,10 @@
 using FluentValidation;
-using PEMS.Application.Common.Validation;
 
 namespace PEMS.Application.BusinessCardOcr.Commands.ConfirmBusinessCardContact;
 
+/// <summary>Same relaxed policy as CreatePartnerContactCommandValidator — see its doc comment. The
+/// reviewer confirms the actual text read off the card; format-validating it here would reject real
+/// foreign phone numbers and non-standard emails the card genuinely printed.</summary>
 public sealed class ConfirmBusinessCardContactCommandValidator
     : AbstractValidator<ConfirmBusinessCardContactCommand>
 {
@@ -13,10 +15,9 @@ public sealed class ConfirmBusinessCardContactCommandValidator
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Họ tên người liên hệ là bắt buộc.")
             .MaximumLength(150);
-        RuleFor(x => x.Email)
-            .EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Email))
-            .WithMessage("Email không hợp lệ.")
-            .MaximumLength(150);
-        RuleFor(x => x.Phone).MustBeAPhoneNumber("Số điện thoại người liên hệ không hợp lệ.");
+        RuleFor(x => x.Email).MaximumLength(150);
+        RuleFor(x => x.Phone).MaximumLength(50);
+        RuleFor(x => x.JobTitle).MaximumLength(150);
+        RuleFor(x => x.DepartmentName).MaximumLength(150);
     }
 }

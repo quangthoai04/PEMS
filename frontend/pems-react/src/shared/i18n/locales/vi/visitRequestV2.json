@@ -99,6 +99,7 @@
     "contactPickIncomplete": "{{name}} ({{kind}}) — chưa hoàn tất, cần đủ họ tên, chức vụ và đơn vị",
     "contactPickHint": "Chọn một người trong danh sách khách hoặc nhân sự hỗ trợ ở trên để hệ thống biết đầu mối và người đó là cùng một người — biên bản sẽ chỉ ghi họ một lần. Khi đã chọn, họ tên / chức vụ / đơn vị lấy theo dòng thành viên đó; số điện thoại và email luôn phải tự nhập.",
     "contactPickedNotice": "Đầu mối là {{name}} trong danh sách trên. Họ tên, chức vụ và đơn vị lấy theo dòng của họ và tự cập nhật khi anh/chị sửa dòng đó.",
+    "contactRelationPickedNotice": "Đầu mối hiện tại tương ứng với {{name}} trong danh sách đoàn. Thông tin liên hệ của đầu mối (họ tên, chức vụ, đơn vị, điện thoại, email) không đổi.",
     "contactPickedExistingMember": "Người đăng ký đã có trong danh sách đoàn — em chọn luôn {{name}} làm đầu mối thay vì thêm trùng.",
     "contactEditMember": "Sửa thông tin thành viên",
     "contactMemberBadge": "Đầu mối",
@@ -348,7 +349,8 @@
       "remove": "Xóa dòng",
       "needOne": "Cần ít nhất một khách trong đoàn.",
       "changeSummary": "Thay đổi nhân sự: +{{added}} thêm · −{{removed}} bớt · {{modified}} chỉnh sửa",
-      "noChange": "Chưa thay đổi nhân sự so với nội dung đang hiệu lực."
+      "noChange": "Chưa thay đổi nhân sự so với nội dung đang hiệu lực.",
+      "cannotRemoveContact": "Không thể xóa người này vì đang là đầu mối vận hành. Hãy chọn đầu mối khác hoặc chọn \"Không nằm trong danh sách đoàn\" trước khi xóa."
     },
     "submitted": "Đã gửi đề xuất thay đổi cho {{campus}}.",
     "errRequired": "Vui lòng nhập thông tin này.",
@@ -361,15 +363,18 @@
     "errInvalidVisitTime": "Khung giờ đề xuất không hợp lệ. Vui lòng kiểm tra lại giờ bắt đầu và kết thúc.",
     "errValidation": "Dữ liệu đề xuất chưa hợp lệ. Vui lòng kiểm tra lại các trường đã nhập.",
     "errPartnerNotSelectable": "Đối tác/tổ chức đã chọn không còn hợp lệ để sử dụng trong đơn. Vui lòng chọn lại.",
-    "contactEmailHelper": "Thông tin đầu mối (họ tên, chức vụ, đơn vị, điện thoại, email) được quản lý tại mục \"Chỉnh sửa đầu mối\" của cơ sở — không sửa được ở đây.",
-    "contactPickHint": "Chọn người trong danh sách đoàn hiện đang là đầu mối của cơ sở. Việc chọn chỉ xác định AI là đầu mối, không đổi thông tin liên hệ của họ."
+    "contactPickLabel": "Đầu mối hiện tại có nằm trong danh sách đoàn không?"
   },
   "safeEdit": {
     "open": "Sửa nhanh",
     "title": "Sửa nhanh (áp dụng ngay)",
     "applyNowNote": "Các chỉnh sửa hành chính/quyền riêng tư được áp dụng ngay, không cần duyệt.",
     "emailImmutable": "Email tài khoản không thể đổi tại đây.",
-    "contactManagedElsewhere": "Thông tin đầu mối của cơ sở này được quản lý tại mục \"Chỉnh sửa đầu mối\" trên trang chi tiết — không sửa được ở Sửa nhanh.",
+    "contactTitle": "THÔNG TIN ĐẦU MỐI",
+    "contactTitleHint": "Sửa nhanh chỉ cập nhật thông tin của đầu mối hiện tại. Nếu cần chuyển sang người khác, sử dụng chức năng \"Chuyển đầu mối\".",
+    "contactEmailLockedHint": "Email đầu mối không thể đổi tại đây. Nếu cần chuyển sang người khác, dùng \"Chuyển đầu mối\".",
+    "contactRelationTooltip": "Chọn thành viên trong danh sách đoàn nếu đầu mối cũng là người tham gia chuyến thăm.",
+    "contactMismatchError": "Thông tin thành viên được chọn không khớp với đầu mối hiện tại. Hãy kiểm tra lại thông tin hoặc chọn đúng người.",
     "conflict": "Dữ liệu đã thay đổi từ lúc bạn mở. Vui lòng tải lại và thử lại.",
     "reload": "Tải lại",
     "appliedCount_one": "Đã áp dụng {{count}} thay đổi.",
@@ -378,7 +383,9 @@
     "save": "Lưu thay đổi",
     "noChanges": "Bạn chưa thay đổi thông tin nào.",
     "lockedCampuses": "Không thể sửa nhanh cho: {{campuses}}. Các cơ sở này đang diễn ra, đã kết thúc, chưa được duyệt, hoặc đã quá hạn thay đổi.",
-    "sharedLocked": "Thông tin người đăng ký và đầu mối liên hệ dùng chung cho mọi cơ sở nên chỉ sửa được khi tất cả cơ sở đều còn trong thời hạn thay đổi. Anh/chị vẫn có thể sửa ghi chú của từng cơ sở bên dưới."
+    "sharedLocked": "Thông tin Người đăng ký dùng chung cho toàn bộ cơ sở nên hiện chưa thể chỉnh sửa. Anh/chị vẫn có thể cập nhật các thông tin riêng của những cơ sở đang đủ điều kiện bên dưới.",
+    "registrantInfoHelp": "Thông tin Người đăng ký dùng chung cho toàn bộ cơ sở. Phần này chỉ có thể chỉnh sửa khi tất cả cơ sở đã được duyệt, chưa bắt đầu chuyến thăm và vẫn còn trong thời hạn cho phép chỉnh sửa.",
+    "registrantInfoHelpLeadHours": "Hiện hệ thống cho phép Sửa nhanh tối thiểu {{hours}} giờ trước giờ bắt đầu sớm nhất."
   },
   "hostTransfer": {
     "open": "Chuyển người phụ trách",
@@ -493,6 +500,8 @@
       "withdraw": "Rút đề xuất",
       "processError": "Không thể xử lý đề xuất. Vui lòng tải lại và thử lại.",
       "emptyValue": "—",
+      "contactKeyNotInDelegation": "Ngoài danh sách đoàn",
+      "contactKeyChanged": "Đã đổi người trong đoàn",
       "fields": {
         "delegationName": "Tên đoàn",
         "visitType": "Loại hình",
@@ -506,8 +515,10 @@
         "operationalContactEmail": "Đầu mối phối hợp — email",
         "membersVisitors": "Danh sách khách",
         "membersExternalSupport": "Nhân sự hỗ trợ",
+        "operationalContactMemberKey": "Đầu mối phối hợp — là ai trong đoàn",
         "plannedStartAt": "Bắt đầu",
-        "plannedEndAt": "Kết thúc"
+        "plannedEndAt": "Kết thúc",
+        "unknown": "Thay đổi khác"
       }
     }
   },
@@ -671,7 +682,8 @@
       "contactPersonEmail": "Email đầu mối liên hệ (trường đã ngừng dùng)",
       "contactEmailMasked": "Email đầu mối (đã che)",
       "identityChangeStatus": "Trạng thái lời mời",
-      "operationalContactJobTitle": "Chức vụ đầu mối"
+      "operationalContactJobTitle": "Chức vụ đầu mối",
+      "operationalContactGuestMemberId": "Liên kết đầu mối với danh sách đoàn"
     },
     "unknownBefore": "Không có dữ liệu lịch sử",
     "identityStatus": {
@@ -681,6 +693,10 @@
       "EXPIRED": "Đã hết hạn",
       "CANCELLED": "Đã hủy",
       "SUPERSEDED": "Đã bị thay thế"
+    },
+    "relationStatus": {
+      "NOT_IN_DELEGATION": "Không nằm trong danh sách đoàn",
+      "UNRESOLVABLE": "Liên kết đầu mối với danh sách đoàn đã thay đổi"
     }
   },
   "revision": {
@@ -720,19 +736,18 @@
     "replaceSubmit": "Cập nhật & gửi lời mời mới",
     "transferOpen": "Thay đổi đầu mối",
     "transferSubmit": "Gửi lời mời chuyển giao",
-    "transferReason": "Lý do chuyển giao",
     "sending": "Đang gửi lời mời…",
     "transferEmailUnchanged": "Email này đang là đầu mối hiện tại. Hãy nhập email của người sẽ nhận vai trò.",
     "cancelTransfer": "Hủy lời mời chuyển giao",
     "loadingTransfer": "Đang kiểm tra lời mời chuyển giao…",
     "transferLoadFailed": "Không kiểm tra được trạng thái chuyển giao. Chưa thể khẳng định có lời mời đang chờ hay không.",
     "actionFailed": "Không thể thực hiện thao tác. Vui lòng thử lại.",
-    "editOpen": "Chỉnh sửa đầu mối",
+    "editOpen": "Chuyển đầu mối",
     "saveProfile": "Lưu thông tin đầu mối",
     "saveIdentityChange": "Đổi người & gửi lời mời xác nhận",
     "emailIdentityHint": "Giữ nguyên email: chỉ cập nhật thông tin, không gửi email xác nhận. Đổi email nghĩa là đổi người phụ trách và người mới phải xác nhận.",
     "replaceReopensGate": "Email mới khác email hiện tại nên đây là đổi người phụ trách: cơ sở này sẽ chờ người mới xác nhận, và toàn bộ đơn tạm dừng ở cổng xác nhận cho tới khi đủ đầu mối.",
-    "identityChangeNotAllowed": "Lúc này chưa thể đổi email đầu mối của cơ sở. Anh/chị vẫn sửa được họ tên, đơn vị, chức vụ và số điện thoại.",
+    "transferEmailSameAsCurrent": "Email mới trùng với đầu mối hiện tại. Nếu chỉ cần cập nhật thông tin, hãy sử dụng Sửa nhanh.",
     "cancelConfirmation": "Hủy lời mời xác nhận",
     "noChangesHint": "Chưa có thay đổi nào so với thông tin hiện tại."
   },

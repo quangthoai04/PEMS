@@ -5,23 +5,36 @@ using PEMS.Domain.Constants;
 namespace PEMS.Application.Delegations.Services;
 
 /// <summary>
-/// THE single backend source of field classification for post-approval editing (plan §16.6). The frontend
-/// only shows predictions; every mutation route consults this table. Field paths are stable dotted
-/// identifiers used in amendment change rows and audit diffs.
+/// THE single backend source of field classification for GENERIC post-approval editing (plan §16.6). The
+/// frontend only shows predictions; every mutation route that answers to this table consults it. Field
+/// paths are stable dotted identifiers used in amendment change rows and audit diffs.
 ///
 ///   • SAFE                — applies immediately (safe-edit endpoint): registrant name/nationality/
 ///                           org/partner/job/phone, transportation note, note to FPTU, media-consent
-///                           note. The operational contact's PROFILE (name/org/job/phone/email) is not
-///                           in this list at all — "Manage the contact role" is its only door.
+///                           note.
 ///   • PRIVACY_URGENT      — <c>instance.mediaConsentStatus → DECLINED</c>: applies immediately EVEN
 ///                           inside the 24h cutoff, with HIGH/URGENT notification.
 ///   • APPROVAL_SENSITIVE  — per-campus amendment (PENDING_APPROVAL until the campus Staff Leader decides):
 ///                           delegation name, visit type(/other), purpose, working content, working
-///                           language, operational contact, guest/support member lists.
+///                           language, guest/support member lists. The operational contact's PROFILE and
+///                           relation fields are ALSO listed here, but ONLY for backward compatibility
+///                           with already-persisted amendments from before plan CanhIter3FixBug — see
+///                           the four <c>OperationalContact*</c> constants' own doc comments below.
 ///   • STRUCTURAL          — add/remove/change campus and schedule changes: routed by lifecycle
 ///                           (pending-edit / cancel+add / amendment for a decided campus's schedule).
 ///
 /// Unknown paths FAIL CLOSED — they are never silently applied anywhere.
+///
+/// <para>
+/// Same-person operational-contact metadata (FullName/Organization/JobTitle/Phone) and relation
+/// (which delegation member the contact IS) are a SEPARATE, dedicated domain mutation, applied directly
+/// by <c>VisitSafeEditService</c> — they intentionally never pass through this classifier or its
+/// SAFE/PRIVACY_URGENT gate at all (plan CanhIter3FixBug). They stay classified <c>ApprovalSensitive</c>
+/// here purely so an amendment proposed before that plan and still <c>PENDING_APPROVAL</c> remains
+/// approvable; no NEW amendment proposal writes a change row on any of these four fields any more. A
+/// genuine change of WHO the contact is (a different person, not a correction) goes through Replace or
+/// Transfer instead, neither of which consults this table at all.
+/// </para>
 /// </summary>
 public static class VisitFieldClassifier
 {
@@ -49,11 +62,12 @@ public static class VisitFieldClassifier
     public const string WorkingContent = "instance.workingContent";
     public const string WorkingLanguage = "instance.workingLanguage";
     /// <summary>
-    /// LEGACY paths only (plan PEMS_CONTACT_ONE_DOOR). Kept in the table so a proposal already sitting
-    /// in PENDING_APPROVAL from before the contact profile became single-door is still approvable — see
+    /// LEGACY paths only (plan CanhIter3FixBug). Kept in the table so a proposal already sitting in
+    /// PENDING_APPROVAL from before the contact profile moved into Safe Edit is still approvable — see
     /// the switch in <c>VisitAmendmentService.ApproveAsync</c>. <c>VisitAmendmentService.BuildChangeRows</c>
-    /// never writes a NEW row on any of these four paths any more; the only door left for the contact's
-    /// name/organisation/job title/phone is "Manage the contact role".
+    /// never writes a NEW row on any of these four paths any more; the contact's name/organisation/job
+    /// title/phone are corrected through Sửa nhanh (<c>VisitSafeEditService</c>'s dedicated contact
+    /// branch), which applies them directly and never creates an amendment.
     /// </summary>
     public const string OperationalContactFullName = "instance.operationalContact.fullName";
     public const string OperationalContactOrganization = "instance.operationalContact.organization";
@@ -66,8 +80,29 @@ public static class VisitFieldClassifier
     /// Durable "who in the delegation the operational contact IS" reference (NP-03), amendment-only.
     /// Carried alongside a member-list change so the backend can re-point the contact link at the
     /// right NEW member row after a replace, instead of falling back to a name/org/title guess.
+    ///
+    /// <para>
+    /// EPHEMERAL-identity path only: the value is a <c>ClientMemberKey</c> minted fresh by the
+    /// submitting form and never persisted, so this path only makes sense in the SAME amendment that
+    /// also replaces the member list — there is no other way to resolve a fresh key to a row. When the
+    /// member list is untouched, use <see cref="OperationalContactGuestMemberId"/> instead, which names
+    /// the target by its stable database id.
+    /// </para>
     /// </summary>
     public const string OperationalContactMemberKey = "instance.operationalContact.clientMemberKey";
+
+    /// <summary>
+    /// PERSISTENT-identity counterpart to <see cref="OperationalContactMemberKey"/> (plan
+    /// CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn không?"), amendment-only. Used
+    /// exactly when the visitor/support lists are UNCHANGED: every row already has a stable
+    /// <c>GuestMemberId</c>, so "which delegation member is the contact" is itself a real business
+    /// fact that can change on its own, independent of any member-list edit — recording it against the
+    /// ephemeral client-key path would either silently no-op (nothing else changed, so
+    /// <c>changes.Count == 0</c>) or force a pointless full member-list replace just to carry a key.
+    /// Never written in the SAME amendment as <see cref="Visitors"/>/<see cref="SupportMembers"/> —
+    /// see <c>VisitAmendmentService.BuildChangeRows</c>, which picks exactly one of the two paths.
+    /// </summary>
+    public const string OperationalContactGuestMemberId = "instance.operationalContact.guestMemberId";
 
     public const string PlannedStartAt = "instance.plannedStartAt";
     public const string PlannedEndAt = "instance.plannedEndAt";
@@ -100,6 +135,7 @@ public static class VisitFieldClassifier
         [Visitors] = AmendmentChangeClasses.ApprovalSensitive,
         [SupportMembers] = AmendmentChangeClasses.ApprovalSensitive,
         [OperationalContactMemberKey] = AmendmentChangeClasses.ApprovalSensitive,
+        [OperationalContactGuestMemberId] = AmendmentChangeClasses.ApprovalSensitive,
 
         [PlannedStartAt] = AmendmentChangeClasses.Structural,
         [PlannedEndAt] = AmendmentChangeClasses.Structural,

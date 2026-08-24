@@ -399,6 +399,18 @@ public sealed class GetVisitHistoryDetailQueryHandler
                 audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
         }
 
+        // Direct relation update via Safe Edit (plan CanhIter3FixBug) — never an amendment. The stored
+        // OldValueText/NewValueText are already human-readable names (or the neutral "Không nằm trong
+        // danh sách đoàn" phrase), resolved and written at mutation time — see VisitSafeEditService's
+        // ResolveMemberDisplayName. No live lookup here, nothing to resolve, no raw id to accidentally
+        // leak.
+        if (audit.Action == OperationalContactHistoryAudit.RelationUpdated)
+        {
+            if (!includeIdentity) throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
+            return ContactRelationUpdatedDetail(auditLogId, audit.VisitInstanceId, audit.CreatedAt,
+                audit.Changes, campusIdOf, campusOf, await NameOfAsync(audit.ActorUserId, ct));
+        }
+
         if (audit.Action == OperationalContactHistoryAudit.Replaced)
         {
             if (!includeIdentity) throw new NotFoundException("Sự kiện lịch sử", (long)auditLogId);
@@ -519,6 +531,32 @@ public sealed class GetVisitHistoryDetailQueryHandler
         return new VisitHistoryDetailDto(
             VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
             VisitHistoryEventCodes.ContactProfileUpdated,
+            createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
+            null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
+    }
+
+    /// <summary>
+    /// A relation change's before/after — which delegation member the contact IS, as human names
+    /// (plan CanhIter3FixBug, decision D). The single <c>operational_contact_relation</c>
+    /// AuditLogChange row already carries resolved display text (or the neutral "not in delegation"
+    /// phrase) written at mutation time; a missing/empty value here (should not happen for a row this
+    /// handler wrote) falls back to neutral wording rather than guessing.
+    /// </summary>
+    private static VisitHistoryDetailDto ContactRelationUpdatedDetail(
+        ulong auditLogId, ulong? visitInstanceId, DateTime createdAt,
+        List<(string FieldName, string? OldValueText, string? NewValueText)> changes,
+        Func<ulong?, long?> campusIdOf, Func<ulong?, string?> campusOf, string? actorName)
+    {
+        var change = changes.FirstOrDefault(c => c.FieldName == "operational_contact_relation");
+        var fields = new List<VisitHistoryFieldChangeDto>
+        {
+            new("contactRelation", "visitRequestV2:historyDetail.field.contactRelation",
+                change.OldValueText, change.NewValueText),
+        };
+
+        return new VisitHistoryDetailDto(
+            VisitHistoryEventSources.Build(VisitHistoryEventSources.Audit, auditLogId),
+            VisitHistoryEventCodes.ContactRelationUpdated,
             createdAt, actorName, campusIdOf(visitInstanceId), campusOf(visitInstanceId),
             null, null, null, fields, Array.Empty<VisitHistoryCollectionChangeDto>());
     }
@@ -711,6 +749,8 @@ public sealed class GetVisitHistoryDetailQueryHandler
         foreach (var (code, afterValue) in after.Fields)
         {
             var known = before.Fields.TryGetValue(code, out var beforeValue);
+            // Compared as RAW ids, never as resolved names: two different members could share a name,
+            // and the id is the actual fact that either did or did not move.
             if (known && string.Equals(beforeValue ?? string.Empty, afterValue ?? string.Empty, StringComparison.Ordinal))
                 continue;
             // The previous snapshot simply does not carry this field — an older shape, or an empty
@@ -719,8 +759,16 @@ public sealed class GetVisitHistoryDetailQueryHandler
             if (!known && string.IsNullOrEmpty(afterValue))
                 continue;
 
+            // The relation is a raw GuestMemberId in the snapshot, and MUST NEVER reach the drawer as
+            // one (plan CanhIter3FixBug §12) — resolved here, against each SIDE'S OWN member list, so a
+            // member who has since been replaced on a later edit is still named by who they were at the
+            // time, not by whoever the id happens to belong to today.
+            var (displayBefore, displayAfter) = code == RelationFieldCode
+                ? (known ? ResolveRelation(beforeValue, before.Members) : null, ResolveRelation(afterValue, after.Members))
+                : (known ? beforeValue : null, afterValue);
+
             fields.Add(new VisitHistoryFieldChangeDto(
-                code, LabelKeyFor(code), known ? beforeValue : null, afterValue, BeforeUnknown: !known));
+                code, LabelKeyFor(code), displayBefore, displayAfter, BeforeUnknown: !known));
         }
 
         // Members are only diffed when BOTH sides recorded them. A snapshot that never had a member
@@ -836,7 +884,12 @@ public sealed class GetVisitHistoryDetailQueryHandler
         return PairMembers(beforeRows, afterRows);
     }
 
-    private sealed record MemberRow(string Collection, string Name, Dictionary<string, string> Values);
+    /// <summary>
+    /// <paramref name="GuestMemberId"/> is null for a snapshot written before it was serialized per
+    /// member (plan CanhIter3FixBug) — <see cref="ResolveRelation"/> tells that apart from a genuinely
+    /// unmatched id via <c>membersCarryIds</c>, never by treating an absent id as "matches nobody".
+    /// </summary>
+    private sealed record MemberRow(string Collection, string Name, Dictionary<string, string> Values, ulong? GuestMemberId = null);
 
     private static List<MemberRow> MemberRows(JsonElement? element)
     {
@@ -874,7 +927,48 @@ public sealed class GetVisitHistoryDetailQueryHandler
             if (!string.IsNullOrWhiteSpace(value)) values[Camel(name)] = value!;
         }
         values.TryGetValue("fullName", out var fullName);
-        return new MemberRow(collection, fullName ?? string.Empty, values);
+        // Absent on a snapshot written before per-member ids existed — left null rather than defaulted
+        // to 0 (a real GuestMemberId is never 0, but treating "absent" the same as "present and zero"
+        // would still be a lie about what this row actually recorded).
+        return new MemberRow(collection, fullName ?? string.Empty, values, ReadGuestMemberId(item));
+    }
+
+    private static ulong? ReadGuestMemberId(JsonElement item)
+    {
+        if (!item.TryGetProperty("GuestMemberId", out var g) && !item.TryGetProperty("guestMemberId", out g))
+            return null;
+        return g.ValueKind == JsonValueKind.Number && g.TryGetUInt64(out var parsed) ? parsed : null;
+    }
+
+    /// <summary>
+    /// Resolves a relation's raw stored id to the name it named, using THIS snapshot's own member
+    /// list — never the current live roster, which may have since replaced the row entirely (plan
+    /// CanhIter3FixBug §12: a current-roster name re-attached to a historical id would be a guess
+    /// dressed up as a fact the moment membership has since changed).
+    ///
+    /// <para>
+    /// Returns one of three shapes, all safe for the frontend's <c>operationalContactGuestMemberId</c>
+    /// special case to render without ever printing a raw numeric id:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>null</c> raw id → the stable code <c>NOT_IN_DELEGATION</c> (a real, known answer).</item>
+    /// <item>a raw id this snapshot's members can match → the member's own name (a proper noun, shipped
+    /// as text exactly like every other member field already is).</item>
+    /// <item>a raw id this snapshot cannot match — either because it carries no per-member ids at all
+    /// (a snapshot from the transitional window between the two additions) or because nothing in the
+    /// list has that id — → the stable code <c>UNRESOLVABLE</c>, never a guess by name/position.</item>
+    /// </list>
+    /// </summary>
+    /// <summary>Camel-cased field code the relation lands on in a normalized snapshot (from
+    /// <c>d.OperationalContactGuestMemberId</c> — see <see cref="VisitFormRevisionSnapshotBuilder"/>).</summary>
+    private const string RelationFieldCode = "operationalContactGuestMemberId";
+
+    private static string ResolveRelation(string? rawId, List<MemberRow> members)
+    {
+        if (string.IsNullOrEmpty(rawId) || rawId == "null") return "NOT_IN_DELEGATION";
+        if (!ulong.TryParse(rawId, out var id)) return "UNRESOLVABLE";
+        var match = members.FirstOrDefault(m => m.GuestMemberId == id);
+        return match is { Name.Length: > 0 } ? match.Name : "UNRESOLVABLE";
     }
 
     /// <summary>

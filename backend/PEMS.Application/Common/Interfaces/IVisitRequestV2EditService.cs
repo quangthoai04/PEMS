@@ -50,9 +50,16 @@ public interface IVisitRequestV2EditService
     /// back in review and one already approved lands on PARTIALLY_APPROVED, the same value the database
     /// trigger computes for itself.
     /// </para>
+    /// <para>
+    /// SCHEDULE-ONLY (plan CanhIter3FixBug FIX-G/H): <paramref name="content"/> carries nothing but the
+    /// new dates and the campus/version guards. Content, member lists and the operational-contact link
+    /// are never touched — <c>GuestMemberId</c>s, <c>OrganizationPartnerId</c>s and
+    /// <c>visit_guest_partner_links</c> rows survive a resubmit unchanged because nothing here writes
+    /// them, not merely because a payload happened to echo the same values back.
+    /// </para>
     /// </summary>
     Task<V2EditResult> ApplyInstanceResubmitAsync(
-        VisitRequest request, VisitRequestCampus instance, CampusVisitEditV2Dto content,
+        VisitRequest request, VisitRequestCampus instance, InstanceResubmitScheduleDto content,
         ulong actorId, System.DateTime now, CancellationToken ct);
 
     /// <summary>

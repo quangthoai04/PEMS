@@ -24,6 +24,14 @@ export interface V2VisitorDto {
    * stores nothing (NP-03).
    */
   clientMemberKey?: string | null;
+  /**
+   * This row's STABLE database identity, or null/absent for a row that does not exist yet (freshly
+   * added this session, or a CREATE-flow row). Restored on an edit reload so `operationalContactGuestMemberId`
+   * (below) can name a PICK without going through the ephemeral `clientMemberKey` at all — plan
+   * CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn không?". Editing this row's own
+   * fields never changes this id; only the row being deleted does.
+   */
+  guestMemberId?: number | null;
 }
 
 export interface V2SupportMemberDto {
@@ -34,12 +42,18 @@ export interface V2SupportMemberDto {
   nationality: string;
   /** @see V2VisitorDto.clientMemberKey — support staff may hold the contact role too. */
   clientMemberKey?: string | null;
+  /** @see V2VisitorDto.guestMemberId */
+  guestMemberId?: number | null;
 }
 
 export interface V2ContactPointDto {
   fullName: string;
   organization: string;
-  phone: string;
+  /** Optional business data on the backend too (`ContactPointDto.Phone` is `string?`) — a contact who
+   * gave only an email is still a usable contact. Never coerce to `''` at the type boundary (plan
+   * CanhIter3FixBug FIX-J); each call site decides null-handling for its own context (editable input,
+   * read-only display, or a plain API replay that should keep null exactly as null). */
+  phone: string | null;
   email: string;
   /** Optional — the detail screens show it, but nothing forces it to be filled in. */
   jobTitle?: string | null;
@@ -81,6 +95,16 @@ export interface V2CampusVisitForm {
    * still in this payload.</p>
    */
   operationalContactClientMemberKey?: string | null;
+  /**
+   * The PERSISTENT counterpart to `operationalContactClientMemberKey` (plan CanhIter3FixBug "Đầu mối
+   * hiện tại có nằm trong danh sách đoàn không?") — the pick's own `guestMemberId`, resolved from
+   * whichever row `operationalContactClientMemberKey` currently names. Meaningful on an EDIT of an
+   * EXISTING campus whose member list this save does NOT also change: every row already has a real
+   * id there, so this is the only evidence the backend can verify on its own without re-linking the
+   * whole delegation just to move who the contact is. Always null on a CREATE payload — no row has an
+   * id yet — and harmless there since the backend's create path does not read this field at all.
+   */
+  operationalContactGuestMemberId?: number | null;
 }
 
 /** SELF | SELECTED | WAIT_FOR_LATER. */
@@ -734,6 +758,24 @@ export interface ResubmitInstanceResponse {
 }
 
 /**
+ * SCHEDULE-ONLY (plan CanhIter3FixBug FIX-G/H) — mirrors backend `InstanceResubmitScheduleDto`. The UI
+ * offers nothing but the two dates to edit here, and the payload now carries nothing else: no content,
+ * no member lists, no contact. The old payload echoed the whole campus snapshot back (including a
+ * `visitors`/`externalSupportMembers` shape that had already silently dropped every guest's
+ * `organizationPartnerId` — see the deleted fields this replaces), which the backend used to copy-on-
+ * write into brand new member rows on every "just fix the date" resubmit. The backend no longer reads
+ * any of that; this type just stops sending it.
+ */
+export interface ResubmitInstanceScheduleDto {
+  expectedRowVersion: number;
+  /** Campus CODE (e.g. "HN") — must match the instance's own; the backend refuses a mismatch. */
+  campusId: string;
+  /** Vietnam wall-clock "YYYY-MM-DDTHH:mm" (bare, no offset) — see `shared/utils/vietnamTime.ts`. */
+  plannedStartAt: string;
+  plannedEndAt: string;
+}
+
+/**
  * Sends ONE rejected campus back for review.
  *
  * Deliberately NOT the request-wide `/resubmit`: that endpoint requires every campus of the request to
@@ -743,7 +785,7 @@ export interface ResubmitInstanceResponse {
 export const resubmitVisitInstance = (
   visitRequestId: number,
   visitInstanceId: number,
-  content: unknown,
+  content: ResubmitInstanceScheduleDto,
 ) =>
   httpClient
     .post<ResubmitInstanceResponse>(
@@ -826,6 +868,20 @@ export const initiateOperationalContactTransfer = (
       `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact/transfer`, body)
     .then(r => r.data);
 
+/**
+ * Replace a campus's operational contact while nobody currently holds it — the explicit "Chuyển đầu
+ * mối" entry point for that case (plan CanhIter3FixBug). Unlike `saveOperationalContact`'s router,
+ * which silently treats a same-address call as a profile correction, this always means identity
+ * change: the backend rejects a same-address call outright rather than routing it anywhere else.
+ */
+export const replaceOperationalContact = (
+  visitRequestId: number, visitInstanceId: number, body: OperationalContactInput,
+) =>
+  httpClient
+    .post<OperationalContactManageResponse>(
+      `/v2/visit-requests/${visitRequestId}/instances/${visitInstanceId}/operational-contact/replace`, body)
+    .then(r => r.data);
+
 /** Close an in-flight invitation without changing who holds the campus. */
 export const cancelOperationalContactChange = (
   visitRequestId: number, visitInstanceId: number, reason?: string,
@@ -865,6 +921,21 @@ export interface SafeEditPayload {
     /** AGREED | DECLINED, or omitted when unchanged. DECLINED applies even inside the cutoff. */
     mediaConsentStatus?: string | null;
     notes?: string | null;
+    /**
+     * Same-person operational-contact correction (plan CanhIter3FixBug) — omitted entirely when this
+     * campus's contact block is untouched. `email` is always the CURRENT address (never editable
+     * client state) so the backend can prove identity is unchanged; `memberLink` is tri-state and must
+     * be OMITTED (not set to `{ guestMemberId: null }`) when the relation itself was not touched — see
+     * `SafeContactMemberLinkPatchDto` on the backend.
+     */
+    operationalContact?: {
+      fullName: string;
+      organization: string | null;
+      jobTitle: string;
+      phone: string | null;
+      email: string;
+      memberLink?: { guestMemberId: number | null };
+    } | null;
   }> | null;
 }
 
@@ -924,8 +995,21 @@ export interface AmendmentProposalPayload {
   externalSupportMembers: V2SupportMemberDto[];
   plannedStartAt: string;
   plannedEndAt: string;
-  /** @see V2CampusVisitForm.operationalContactClientMemberKey — same durable-reference convention (NP-03). */
+  /**
+   * EPHEMERAL contact-member reference — only meaningful when `visitors`/`externalSupportMembers`
+   * themselves changed (a `clientMemberKey` resolves only against rows THIS proposal is about to
+   * insert). @see V2CampusVisitForm.operationalContactClientMemberKey (NP-03).
+   */
   operationalContactClientMemberKey?: string | null;
+  /**
+   * PERSISTENT contact-member reference (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách
+   * đoàn không?") — an EXISTING member's stable `guestMemberId`, or null for "not in the delegation".
+   * Used by the backend exactly when the member lists are UNCHANGED: that is what makes "same
+   * delegation, only the relationship pick changed" a real, submittable amendment instead of always
+   * being refused as "no changes" (the member-list change rows are the only other place this fact
+   * could travel, and they are only written when a list genuinely changed).
+   */
+  operationalContactGuestMemberId?: number | null;
 }
 
 export interface AmendmentChange {

@@ -195,6 +195,38 @@ public static class OperationalContactLink
     }
 
     /// <summary>
+    /// Confirms <paramref name="candidateId"/> names exactly one ELIGIBLE member of <paramref
+    /// name="members"/> — the PERSISTENT-identity counterpart to <see cref="FindPicked"/>'s
+    /// ephemeral-key check (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn
+    /// không?"), used when the member list itself is untouched and every row already has a stable
+    /// database id to name.
+    ///
+    /// <para>
+    /// <paramref name="members"/> must already be scoped to THIS instance (e.g.
+    /// <c>V2CanonicalRefresh.MembersOf(request, instance)</c>) — the check never looks beyond what it
+    /// is given, so a sibling campus's member id is refused here exactly like one that does not exist
+    /// at all, never accepted because it happens to exist somewhere else on the same request.
+    /// </para>
+    /// <para>
+    /// Every way this can fail throws, exactly like the key-based path: a candidate naming nobody, or
+    /// naming someone not eligible for the role, is refused rather than silently accepted or silently
+    /// turned into null.
+    /// </para>
+    /// </summary>
+    public static void EnsureGuestMemberIdEligible(IReadOnlyList<VisitGuestMember> members, ulong candidateId)
+    {
+        var found = members.FirstOrDefault(m => m.GuestMemberId == candidateId);
+        if (found is null)
+            throw new BusinessRuleException(
+                OperationalContactMessages.MemberNotInDelegation,
+                OperationalContactErrorCodes.MemberNotFound);
+        if (!IsEligible(found))
+            throw new BusinessRuleException(
+                OperationalContactMessages.MemberNotEligible,
+                OperationalContactErrorCodes.MemberNotEligible);
+    }
+
+    /// <summary>
     /// The member a key names, refusing every way it can fail to name exactly one eligible person.
     ///
     /// <para>
@@ -227,5 +259,44 @@ public static class OperationalContactLink
                 OperationalContactErrorCodes.MemberNotEligible);
 
         return picked;
+    }
+
+    /// <summary>
+    /// The lifecycle window for correcting a same-person operational-contact's DETAILS — a WIDER window
+    /// than replacing/transferring or than generic Safe Edit, because nothing about authority moves.
+    /// PUBLIC (unlike <c>OperationalContactGuards</c>, which is internal to the Commands.OperationalContact
+    /// namespace) so both <c>UpdateOperationalContactProfileCommandHandler</c> (PEMS.Application) and
+    /// <c>VisitSafeEditService</c> (PEMS.Infrastructure, a different assembly) call the SAME
+    /// implementation — <c>OperationalContactGuards.EnsureProfileUpdateAllowed</c> now delegates here
+    /// rather than duplicating the rule (plan CanhIter3FixBug, decision M).
+    ///
+    /// <para>
+    /// The window is the four statuses before the visit starts, and it is a positive whitelist rather
+    /// than a list of dead ends: a campus that is already running, finished or closed has a contact
+    /// record the visit was actually received against, and rewriting the name or phone on it after the
+    /// fact edits history rather than correcting a plan. The two statuses that never had a plan to
+    /// correct — cancelled and rejected — are refused by the same rule. No clock is consulted: an
+    /// approved campus starting in six hours is precisely when a corrected phone number matters most.
+    /// </para>
+    /// </summary>
+    public static void EnsureProfileUpdateLifecycleAllowed(VisitRequest visit, VisitRequestCampus instance)
+    {
+        if (visit.Status == VisitRequestStatuses.Cancelled)
+            throw new BusinessRuleException(
+                "Đơn đã bị hủy nên không thể thay đổi đầu mối vận hành.",
+                OperationalContactErrorCodes.ChangeConflict);
+
+        if (instance.Status is
+            VisitInstanceStatuses.WaitingContactConfirmation
+            or VisitInstanceStatuses.WaitingRequestApproval
+            or VisitInstanceStatuses.Assigned
+            or VisitInstanceStatuses.BeforeVisit)
+            return;
+
+        throw new ConflictException(
+            instance.Status is VisitInstanceStatuses.Cancelled or VisitInstanceStatuses.Rejected
+                ? "Lịch thăm tại cơ sở này đã kết thúc quy trình nên không thể sửa thông tin đầu mối vận hành."
+                : "Chuyến thăm tại cơ sở này đã bắt đầu nên không thể sửa thông tin đầu mối vận hành.",
+            OperationalContactErrorCodes.ChangeConflict);
     }
 }

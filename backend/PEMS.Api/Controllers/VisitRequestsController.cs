@@ -323,7 +323,7 @@ public sealed class VisitRequestsController : ControllerBase
     public async Task<IActionResult> ResubmitInstanceFormV2(
         ulong visitRequestId,
         ulong visitInstanceId,
-        [FromBody] PEMS.Application.Common.DTOs.CampusVisitEditV2Dto content,
+        [FromBody] PEMS.Application.Common.DTOs.InstanceResubmitScheduleDto content,
         CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(
@@ -548,6 +548,28 @@ public sealed class VisitRequestsController : ControllerBase
                 visitRequestId, visitInstanceId,
                 body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email,
                 body.Reason, body.ExpectedRowVersion),
+            cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Replaces ONE campus's operational contact with a new address while nobody currently holds it —
+    /// the explicit "Chuyển đầu mối" entry point (plan CanhIter3FixBug §17.3/§33) for a campus with no
+    /// confirmed holder yet, as opposed to <see cref="SaveOperationalContact"/>'s router, which this UI
+    /// no longer calls.
+    /// </summary>
+    [HttpPost("/api/v2/visit-requests/{visitRequestId}/instances/{visitInstanceId}/operational-contact/replace")]
+    [Authorize]
+    public async Task<IActionResult> ReplaceOperationalContact(
+        ulong visitRequestId,
+        ulong visitInstanceId,
+        [FromBody] OperationalContactTransferPayload body,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(
+            new PEMS.Application.Delegations.Commands.OperationalContact.ReplaceOperationalContactCommand(
+                visitRequestId, visitInstanceId,
+                body.FullName, body.Organization, body.JobTitle, body.Phone, body.Email),
             cancellationToken);
         return Ok(result);
     }

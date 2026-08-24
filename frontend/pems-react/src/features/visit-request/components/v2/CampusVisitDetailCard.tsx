@@ -210,7 +210,6 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
               visitInstanceId={campus.visitInstanceId}
               contactConfirmed={hasConfirmedOperationalContact(campus.operationalContact.confirmationStatus)}
               contact={campus.operationalContact}
-              rowVersion={campus.rowVersion}
               allowedActions={campus.allowedActions}
               onChanged={onContactChanged}
             />

@@ -8,12 +8,14 @@ import {
   type ResolvedMember,
 } from '../api/visitRequestV2Api';
 import { AmendmentErrorCode, errorCodeOf } from '../utils/visitV2Actions';
-import { showSuccessToast } from '../../../shared/utils/toast';
+import { showSuccessToast, showMessageErrorToast } from '../../../shared/utils/toast';
 import { OrganizationCombobox } from './shared/OrganizationCombobox';
 import { CountrySelect } from './shared/CountrySelect';
+import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
 import { newClientKey } from '../utils/visitRequestV2Form';
 import { focusFirstInvalidField } from '../utils/formErrorNavigation';
 import { V2_MIN_DURATION_MINUTES as MIN_DURATION_MINUTES } from '../schema/visitRequestV2.schema';
+import { wallClockToMinutes } from './shared/visitDateTime';
 
 interface Props {
   visitRequestId: number;
@@ -27,7 +29,7 @@ const toLocalInput = (iso: string): string => (iso ? iso.slice(0, 16) : '');
 
 /** Which fields a proposal can be wrong in. Keyed so each message renders under its own input. */
 type FieldErrors = Partial<Record<
-  'delegationName' | 'visitTypeOther' | 'purpose' | 'start' | 'end' | 'visitors' | 'reason',
+  'delegationName' | 'visitTypeOther' | 'purpose' | 'workingContent' | 'start' | 'end' | 'visitors' | 'reason',
   string
 >>;
 
@@ -57,6 +59,16 @@ type MemberErrorsMap = Record<string, MemberRowErrors>;
 interface EditableMember {
   key: string;
   clientMemberKey: string;
+  /**
+   * The row's STABLE database identity, or null for a row that does not exist yet (freshly added in
+   * this session). Existing rows keep the id the read model resolved them with regardless of what the
+   * user edits on them (per NP-03, editing a member never changes WHICH person they are) — this is
+   * what lets the operational-contact picker send a PERSISTENT target
+   * (`operationalContactGuestMemberId`) instead of only the ephemeral `clientMemberKey` when the
+   * member list itself is unchanged (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách
+   * đoàn không?").
+   */
+  guestMemberId: number | null;
   fullName: string;
   jobTitle: string;
   organization: string;
@@ -69,6 +81,7 @@ const cloneMembers = (members: ResolvedMember[], prefix: string): EditableMember
   members.map((m, i) => ({
     key: `${prefix}-${i}`,
     clientMemberKey: newClientKey(),
+    guestMemberId: m.guestMemberId,
     fullName: m.fullName ?? '',
     jobTitle: m.jobTitle ?? '',
     organization: m.organization ?? '',
@@ -140,10 +153,16 @@ const MEMBER_GRID =
  * approves. Reason is required. Member edits are scoped to THIS instance (deep-cloned, stable keys).
  * Stable backend codes map to steady messages.
  *
- * The operational-CONTACT's profile (name/organization/job title/phone/email) is deliberately
- * read-only here (plan PEMS_CONTACT_ONE_DOOR): it has exactly one editable door left, "Manage the
- * contact role" on the campus detail screen. What THIS modal may still change is WHO in the delegation
- * the contact IS — a relationship, not a description — through the durable contact-member picker below.
+ * The Operational Contact — its profile AND which delegation member it corresponds to — has NO surface
+ * on this modal at all any more (plan CanhIter3FixBug §3/§27): a general "Đề xuất thay đổi" is for
+ * visit content (delegation info, schedule, purpose, members, ...), and showing the contact here —
+ * even read-only, even just the relation picker — read as "this is where you change the contact",
+ * which is a different, actual-holder-changing workflow that lives on the Operational Contact
+ * Management surface instead. The relation is still tracked and preserved INTERNALLY, silently: the
+ * `contactMemberKey` this modal opened on (read straight off `campus.operationalContact.guestMemberId`,
+ * never guessed) travels through every member edit exactly as NP-03 always required, and the delete
+ * guard below still refuses to remove whoever currently holds the role — none of that logic changed,
+ * only whether the user can see or touch it from here.
  */
 export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onClose, onSubmitted }: Props) {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest', 'validation']);
@@ -255,23 +274,18 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
 
   // The pick must not silently survive removing the row it names — clearing it here (rather than
   // falling back to a fingerprint match) is what keeps this mechanism honest per plan §16.
+  //
+  // DEFENSIVE FALLBACK ONLY (plan CanhIter3FixBug FIX-C): the normal delete flow can no longer reach
+  // this branch at all — the Trash2 button above refuses to remove the contact's own row in the first
+  // place. This still runs for whatever this invariant did not anticipate (e.g. a future code path
+  // that mutates `visitors`/`support` some other way), so it stays as the last line of defence rather
+  // than being deleted.
   useEffect(() => {
     if (!contactMemberKey) return;
     if (eligibleKeys.split('|').includes(contactMemberKey)) return;
     setContactMemberKey(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactMemberKey, eligibleKeys]);
-
-  const memberPickLabel = (m: EligibleMember): string => {
-    const kindLabel = t(m.kind === 'visitors' ? 'visitRequestV2:card.contactPickKindGuest' : 'visitRequestV2:card.contactPickKindSupport');
-    if (!m.complete) {
-      return t('visitRequestV2:card.contactPickIncomplete', {
-        name: m.fullName || t('visitRequestV2:card.contactPickUnnamed', { index: m.index + 1 }),
-        kind: kindLabel,
-      });
-    }
-    return [m.fullName, m.jobTitle, m.organization, kindLabel].filter(Boolean).join(' — ');
-  };
 
   const mapError = (err: unknown): string => {
     switch (errorCodeOf(err)) {
@@ -335,18 +349,23 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
     if (!delegationName.trim()) errors.delegationName = t('visitRequestV2:amend.errRequired');
     if (!purpose.trim()) errors.purpose = t('visitRequestV2:amend.errRequired');
     if (visitType === 'OTHER' && !visitTypeOther.trim()) errors.visitTypeOther = t('visitRequestV2:amend.errRequired');
+    // WorkingContent parity with the create/edit schema (visitRequestV2.schema.ts: required, ≤4000
+    // chars) — the amendment modal previously enforced nothing here at all (plan FIX-D).
+    if (!workingContent.trim()) errors.workingContent = t('validation:workingContentRequired');
     if (!reason.trim()) errors.reason = t('visitRequestV2:amend.errRequired');
 
     if (!start) errors.start = t('visitRequestV2:amend.errRequired');
     if (!end) errors.end = t('visitRequestV2:amend.errRequired');
     if (start && end) {
-      // Wall-clock strings, compared as wall clock: PEMS stores Vietnam local time, and putting these
-      // through the browser's timezone is how a valid slot becomes an invalid one abroad.
-      const startMs = new Date(start).getTime();
-      const endMs = new Date(end).getTime();
-      if (!Number.isNaN(startMs) && !Number.isNaN(endMs)) {
-        if (endMs <= startMs) errors.end = t('visitRequestV2:amend.errEndBeforeStart');
-        else if (endMs - startMs < MIN_DURATION_MINUTES * 60_000)
+      // Pure wall-clock minute arithmetic (plan FIX-I) — never new Date(start).getTime(), which parses
+      // a bare "YYYY-MM-DDTHH:mm" string as LOCAL time in the BROWSER's own timezone. The subtraction
+      // below happens to cancel a fixed offset out for duration, but not across a DST boundary, and the
+      // pattern is exactly the one this fix removes everywhere else in this feature.
+      const startMin = wallClockToMinutes(start);
+      const endMin = wallClockToMinutes(end);
+      if (startMin !== null && endMin !== null) {
+        if (endMin <= startMin) errors.end = t('visitRequestV2:amend.errEndBeforeStart');
+        else if (endMin - startMin < MIN_DURATION_MINUTES)
           errors.end = t('visitRequestV2:amend.errTooShort', { minutes: MIN_DURATION_MINUTES });
       }
     }
@@ -377,6 +396,15 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
     }
     setBusy(true);
     setError(null);
+    // Both durable-reference forms travel together (plan CanhIter3FixBug "Đầu mối hiện tại có nằm
+    // trong danh sách đoàn không?"): the backend picks whichever one actually applies — the EPHEMERAL
+    // key when the member list changed (a replaced row has no persistent id yet), the PERSISTENT id
+    // when it did not (so a relationship-only pick still registers as a real change instead of being
+    // silently dropped as "no changes"). The frontend does not need to replicate that decision; it
+    // just resolves the CURRENT pick's own id from whichever row it belongs to.
+    const pickedMember = contactMemberKey
+      ? [...visitors, ...support].find(m => m.clientMemberKey === contactMemberKey)
+      : undefined;
     const payload: AmendmentProposalPayload = {
       expectedInstanceRowVersion: campus.rowVersion,
       baseFormRevision: campus.formRevision,
@@ -414,6 +442,11 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       // Durable contact-member reference (NP-03) — null/absent means "outside the delegation",
       // never a fallback the backend has to guess from names.
       operationalContactClientMemberKey: contactMemberKey,
+      // Same pick, named by its STABLE database id when it has one (an existing member always does).
+      // Null for "not in the delegation" AND for a picked row that is itself brand new this session —
+      // in the latter case the ephemeral key above is what carries the pick; a new row has no
+      // persistent id to send yet.
+      operationalContactGuestMemberId: pickedMember?.guestMemberId ?? null,
     };
     try {
       await submitAmendment(visitRequestId, campus.visitInstanceId, payload);
@@ -437,8 +470,6 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
     `w-full rounded-lg border ${borderCls(hasError)} bg-white dark:bg-slate-800 p-2 text-sm`;
   const cellCls = (hasError?: boolean) =>
     `rounded-lg border ${borderCls(hasError)} bg-white dark:bg-slate-800 p-2 text-sm min-w-0`;
-  const readonlyField =
-    'truncate rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 px-3 py-2 text-sm text-slate-700 dark:text-slate-300';
 
   /** The message for one top-level field, rendered directly under the input it belongs to. */
   const fieldError = (key: keyof FieldErrors) =>
@@ -526,7 +557,6 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                     value={m.organization}
                     partnerId={m.organizationPartnerId}
                     searchMode="REQUEST_FORM"
-                    isCell
                     hasError={!!rowErr.organization}
                     placeholder={t('visitRequestV2:person.organization')}
                     onChange={(value, pickedPartnerId) => {
@@ -545,7 +575,6 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                   <CountrySelect
                     strict
                     value={m.nationality}
-                    isCell
                     hasError={!!rowErr.nationality}
                     ariaLabel={`${sectionLabel} — ${t('visitRequestV2:person.nationality')}`}
                     placeholder={t('visitRequestV2:person.nationality')}
@@ -563,6 +592,15 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                     disabled={!canEmpty && list.length <= 1}
                     className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                     onClick={() => {
+                      // The Operational Contact link (NP-03) must never be silently orphaned by a
+                      // delete — the user has to actively re-point it (pick someone else, or "not in
+                      // the delegation") before this row can go (plan CanhIter3FixBug FIX-C). The
+                      // defensive useEffect above still exists as a last-resort invariant repair, but
+                      // this guard means the normal delete flow never has to fall back on it.
+                      if (m.clientMemberKey === contactMemberKey) {
+                        showMessageErrorToast(t('visitRequestV2:amend.members.cannotRemoveContact'));
+                        return;
+                      }
                       setList(prev => prev.filter(x => x.key !== m.key));
                       dropMemberErrors(setErrors, m.key);
                     }}
@@ -581,7 +619,7 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
           onClick={() => setList(prev => [
             ...prev,
             {
-              key: nextKey(kind === 'visitors' ? 'v' : 's'), clientMemberKey: newClientKey(),
+              key: nextKey(kind === 'visitors' ? 'v' : 's'), clientMemberKey: newClientKey(), guestMemberId: null,
               fullName: '', jobTitle: '', organization: '', organizationPartnerId: null, nationality: '',
             },
           ])}
@@ -652,11 +690,11 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                   // both sides are re-checked together rather than only ever clearing on their own input.
                   setFieldErrors(prev => {
                     if (!prev.start && !prev.end) return prev;
-                    const startMs = new Date(next).getTime();
-                    const endMs = new Date(end).getTime();
-                    if (!next || Number.isNaN(startMs)) return prev;
-                    if (!end || Number.isNaN(endMs)) return { ...prev, start: undefined };
-                    if (endMs <= startMs || endMs - startMs < MIN_DURATION_MINUTES * 60_000) return prev;
+                    const startMin = wallClockToMinutes(next);
+                    const endMin = wallClockToMinutes(end);
+                    if (!next || startMin === null) return prev;
+                    if (!end || endMin === null) return { ...prev, start: undefined };
+                    if (endMin <= startMin || endMin - startMin < MIN_DURATION_MINUTES) return prev;
                     return { ...prev, start: undefined, end: undefined };
                   });
                 }}
@@ -671,11 +709,11 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
                   setEnd(next);
                   setFieldErrors(prev => {
                     if (!prev.start && !prev.end) return prev;
-                    const startMs = new Date(start).getTime();
-                    const endMs = new Date(next).getTime();
-                    if (!next || Number.isNaN(endMs)) return prev;
-                    if (!start || Number.isNaN(startMs)) return { ...prev, end: undefined };
-                    if (endMs <= startMs || endMs - startMs < MIN_DURATION_MINUTES * 60_000) return prev;
+                    const startMin = wallClockToMinutes(start);
+                    const endMin = wallClockToMinutes(next);
+                    if (!next || endMin === null) return prev;
+                    if (!start || startMin === null) return { ...prev, end: undefined };
+                    if (endMin <= startMin || endMin - startMin < MIN_DURATION_MINUTES) return prev;
                     return { ...prev, start: undefined, end: undefined };
                   });
                 }}
@@ -691,18 +729,37 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
             </label>
             <label className="text-sm sm:col-span-2" data-field-error={fieldErrors.purpose ? 'true' : undefined}>
               <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.purpose')}</span>
-              <textarea className={fieldCls(!!fieldErrors.purpose)} rows={2} value={purpose}
-                onChange={e => {
-                  setPurpose(e.target.value);
-                  if (fieldErrors.purpose && e.target.value.trim())
+              <AutoGrowTextarea
+                value={purpose}
+                minRows={3}
+                maxLength={2000}
+                hasError={!!fieldErrors.purpose}
+                counterTestId="amendment-purpose-counter"
+                onChange={value => {
+                  setPurpose(value);
+                  if (fieldErrors.purpose && value.trim())
                     setFieldErrors(prev => ({ ...prev, purpose: undefined }));
                 }}
-                aria-invalid={fieldErrors.purpose ? true : undefined} />
+                aria-invalid={fieldErrors.purpose ? true : undefined}
+              />
               {fieldError('purpose')}
             </label>
-            <label className="text-sm sm:col-span-2">
+            <label className="text-sm sm:col-span-2" data-field-error={fieldErrors.workingContent ? 'true' : undefined}>
               <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:summary.workingContent')}</span>
-              <textarea className={fieldCls()} rows={2} value={workingContent} onChange={e => setWorkingContent(e.target.value)} />
+              <AutoGrowTextarea
+                value={workingContent}
+                minRows={3}
+                maxLength={4000}
+                hasError={!!fieldErrors.workingContent}
+                counterTestId="amendment-workingcontent-counter"
+                onChange={value => {
+                  setWorkingContent(value);
+                  if (fieldErrors.workingContent && value.trim())
+                    setFieldErrors(prev => ({ ...prev, workingContent: undefined }));
+                }}
+                aria-invalid={fieldErrors.workingContent ? true : undefined}
+              />
+              {fieldError('workingContent')}
             </label>
 
             {memberEditor('visitors', visitors, setVisitors, false, visitorErrors, setVisitorErrors)}
@@ -721,56 +778,6 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
             {!hasVisitor && (
               <p className="text-xs font-normal text-red-600 sm:col-span-2">{t('visitRequestV2:amend.members.needOne')}</p>
             )}
-
-            {/* The contact's PROFILE is read-only here — it has exactly one editable door left,
-                "Manage the contact role". This modal only says WHO in the delegation the contact IS. */}
-            <div data-testid="amendment-contact-readonly" className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm sm:col-span-2 dark:border-slate-700 dark:bg-slate-800/40">
-              <span className="mb-2 block font-semibold text-slate-700">{t('visitRequestV2:summary.operationalContact')}</span>
-              <div data-testid="amendment-contact-profile-display" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:operationalContact.fullName')}</span>
-                  <p data-testid="amendment-contact-fullname-readonly" className={readonlyField}>{campus.operationalContact.fullName}</p>
-                </div>
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:operationalContact.jobTitle')}</span>
-                  <p data-testid="amendment-contact-jobtitle-readonly" className={readonlyField}>{campus.operationalContact.jobTitle}</p>
-                </div>
-                <div className="min-w-0 sm:col-span-2">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:operationalContact.organization')}</span>
-                  <p data-testid="amendment-contact-organization-readonly" className={readonlyField}>{campus.operationalContact.organization}</p>
-                </div>
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:card.phone')}</span>
-                  <p data-testid="amendment-contact-phone-readonly" className={readonlyField}>{campus.operationalContact.phone}</p>
-                </div>
-                <div className="min-w-0">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:operationalContact.email')}</span>
-                  <p data-testid="amendment-contact-email-readonly" className={readonlyField}>{campus.operationalContact.email}</p>
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-slate-500">{t('visitRequestV2:amend.contactEmailHelper')}</p>
-
-              <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-                <label htmlFor="amendment-contact-pick" className="mb-1 block text-sm font-semibold text-slate-700">
-                  {t('visitRequestV2:card.contactPickLabel')}
-                </label>
-                <select
-                  id="amendment-contact-pick"
-                  data-testid="amendment-contact-pick"
-                  value={contactMemberKey ?? ''}
-                  onChange={e => setContactMemberKey(e.target.value || null)}
-                  className={fieldCls()}
-                >
-                  <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
-                  {eligibleMembers.map(m => (
-                    <option key={m.clientMemberKey} value={m.clientMemberKey} disabled={!m.complete}>
-                      {memberPickLabel(m)}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-xs text-slate-500">{t('visitRequestV2:amend.contactPickHint')}</p>
-              </div>
-            </div>
 
             <label className="text-sm sm:col-span-2" data-field-error={fieldErrors.reason ? 'true' : undefined}>
               <span className="mb-1 block font-semibold text-slate-700">{t('visitRequestV2:amend.reason')} <span className="text-red-500">*</span></span>

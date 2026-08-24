@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using PEMS.Application.Common.DTOs;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Partners.Common;
 using PEMS.Domain.Constants;
@@ -323,6 +324,21 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 // assignment onto `detail` like the cases above.
                 case VisitFieldClassifier.OperationalContactMemberKey:
                     break;
+                // RELATIONSHIP-ONLY (plan CanhIter3FixBug): BuildChangeRows only ever writes this path
+                // when NEITHER member list changed, so this is a direct, immediate application — no
+                // staged members, no LinkMembers, no fingerprint re-resolution, and no conflict with the
+                // OperationalContactMemberKey case above (an amendment can never contain both). The
+                // candidate is re-validated against the CURRENT instance members rather than trusted
+                // from the stored row — the same defense-in-depth the ephemeral-key path already gets
+                // from OperationalContactLink.FindPicked at LinkMembers time.
+                case VisitFieldClassifier.OperationalContactGuestMemberId:
+                {
+                    var proposedRelationshipId = FromJson<ulong?>(change.NewValueJson);
+                    if (proposedRelationshipId is { } relId)
+                        OperationalContactLink.EnsureGuestMemberIdEligible(membersBefore, relId);
+                    detail.OperationalContactGuestMemberId = proposedRelationshipId;
+                    break;
+                }
                 default:
                     throw new BusinessRuleException(
                         $"Đề xuất chứa trường không được hỗ trợ: {change.FieldPath}.",
@@ -587,12 +603,18 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // naming a different existing delegation member is not the same act as redescribing this one.
         if (p.OperationalContact is { } proposedContact)
         {
+            // Phone is compared with the SAME normalization on both sides (PhoneNumber.NormalizeOrNull,
+            // which maps blank/null to null on either end symmetrically) — the two sides used to run
+            // through different rules (NormalizeOrOriginal, which turns a null DB value into "", against
+            // a null-preserving ternary on the proposal), so a campus with no phone on file always read
+            // "" != null and threw ContactProfileNotAmendable on ANY amendment, even one that never
+            // touched the contact at all (the modal always sends the profile back read-only/unchanged).
             var changed =
                 !string.Equals(Clean(detail.OperationalContactFullName), Clean(proposedContact.FullName), StringComparison.Ordinal)
                 || !string.Equals(Clean(detail.OperationalContactOrganization), Clean(proposedContact.Organization), StringComparison.Ordinal)
                 || !string.Equals(Clean(detail.OperationalContactJobTitle), Clean(proposedContact.JobTitle), StringComparison.Ordinal)
-                || !string.Equals(PhoneNumber.NormalizeOrOriginal(detail.OperationalContactPhone),
-                    proposedContact.Phone is { } ph ? PhoneNumber.NormalizeOrOriginal(ph) : null, StringComparison.Ordinal);
+                || !string.Equals(PhoneNumber.NormalizeOrNull(detail.OperationalContactPhone),
+                    PhoneNumber.NormalizeOrNull(proposedContact.Phone), StringComparison.Ordinal);
             if (changed)
                 throw new BusinessRuleException(
                     "Không thể sửa thông tin đầu mối (họ tên/tổ chức/chức danh/điện thoại) qua đề xuất thay đổi. " +
@@ -659,14 +681,43 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         var supportChanged = SupportFingerprint(current.ExternalSupportMembers) != SupportFingerprint(p.ExternalSupportMembers);
         AddMembers(VisitFieldClassifier.Visitors, current.Visitors, p.Visitors, visitorsChanged);
         AddMembers(VisitFieldClassifier.SupportMembers, current.ExternalSupportMembers, p.ExternalSupportMembers, supportChanged);
-        // Only recorded when the member lists themselves changed — an unchanged delegation needs no
-        // re-link, and the existing contact relation is left alone (plan §16: no member-list change
-        // means the current link is not touched at all).
+
+        // Two mutually exclusive ways WHO the contact is can move (plan CanhIter3FixBug "Đầu mối hiện
+        // tại có nằm trong danh sách đoàn không?") — never both in the same amendment.
         if (visitorsChanged || supportChanged)
+        {
+            // MEMBER-LIST REPLACEMENT: rows are copy-on-write on approve, so every row gets a brand new
+            // GuestMemberId — the only thing that can name the new contact row is the EPHEMERAL key the
+            // proposal minted for it (NP-03). Unconditional per the existing convention: even an
+            // unchanged pick is recorded here, because "the contact" is about to be re-resolved onto a
+            // fresh row regardless.
             AddMembers(
                 VisitFieldClassifier.OperationalContactMemberKey, null,
                 string.IsNullOrWhiteSpace(p.OperationalContactClientMemberKey) ? null : p.OperationalContactClientMemberKey,
                 true);
+        }
+        else
+        {
+            // RELATIONSHIP-ONLY: the member list is untouched, so every row already has a STABLE,
+            // PERSISTENT GuestMemberId — comparing on THAT (never the ephemeral ClientMemberKey, which
+            // the active snapshot carries as null for every existing row) is what lets "same
+            // delegation, different relationship pick" register as a real amendment change instead of
+            // silently producing zero change rows and refusing the whole proposal as AmendmentNoChanges.
+            var currentGuestMemberId = detail.OperationalContactGuestMemberId;
+            var proposedGuestMemberId = p.OperationalContactGuestMemberId;
+            var relationshipChanged = currentGuestMemberId != proposedGuestMemberId;
+            // Validated fail-closed at submit time — never trust an id from the client without checking
+            // it names an eligible member of THIS instance (never a sibling campus's member, never a
+            // deleted/non-existent one). Re-validated again at approve (see ApproveAsync) rather than
+            // relying on this check alone, the same defense-in-depth the ephemeral-key path already
+            // has via OperationalContactLink.FindPicked at LinkMembers time.
+            if (relationshipChanged && proposedGuestMemberId is { } candidateId)
+                OperationalContactLink.EnsureGuestMemberIdEligible(
+                    V2CanonicalRefresh.MembersOf(request, instance), candidateId);
+            AddMembers(
+                VisitFieldClassifier.OperationalContactGuestMemberId,
+                currentGuestMemberId, proposedGuestMemberId, relationshipChanged);
+        }
 
         return rows;
     }

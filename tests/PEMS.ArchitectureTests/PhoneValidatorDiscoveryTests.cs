@@ -40,10 +40,7 @@ public class PhoneValidatorDiscoveryTests
     private static readonly string[] GovernedByPhoneContract =
     {
         "UpdateRegistrantInfoCommandValidator",
-        "ConfirmBusinessCardContactCommandValidator",
         "CreatePartnerCommandValidator",           // InitialContact.Phone — nested, see note below
-        "UpdatePartnerContactCommandValidator",
-        "CreatePartnerContactCommandValidator",
         "ReplaceOperationalContactCommandValidator",
         "UpdateOperationalContactProfileCommandValidator",
         "SaveOperationalContactCommandValidator",
@@ -86,6 +83,19 @@ public class PhoneValidatorDiscoveryTests
         "CreateAccountCommandValidator",
         "ReplaceStaffLeaderCommandValidator",
         "UpdateProfileCommandValidator",
+
+        // Partner Contact / Business Card capture (plan CanhIter3FixBug "Partner Contact / Business Card
+        // Data Capture") — DELIBERATELY exempted, not an oversight. Partner Contact is external
+        // business-card/partner-supplied data (a foreign colleague's own printed number), never an
+        // authentication or identity field — the Visit contract's E.164-ish shape rule rejected real,
+        // legitimate values (extensions, local formats, non-ASCII digits) a card genuinely prints. These
+        // three now only MaximumLength-bound to the actual DB column (partner_contacts.phone VARCHAR(50))
+        // and store the user-confirmed raw trimmed text. Covered by
+        // PEMS.UnitTests.Validation.PartnerContactPhoneContractTests, not PhoneContractTests (a
+        // deliberately different, narrower matrix: length-only, format-permissive).
+        "CreatePartnerContactCommandValidator",
+        "UpdatePartnerContactCommandValidator",
+        "ConfirmBusinessCardContactCommandValidator",
     };
 
     private static bool HasPhoneProperty(System.Type validatedType)

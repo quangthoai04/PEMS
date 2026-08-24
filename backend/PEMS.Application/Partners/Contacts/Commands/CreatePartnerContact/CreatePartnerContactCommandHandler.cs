@@ -6,7 +6,6 @@ using PEMS.Application.Partners.Common;
 using PEMS.Application.Partners.Contacts.Common;
 using PEMS.Domain.Entities.Partners;
 using PEMS.Domain.Entities.Users;
-using PEMS.Shared;
 
 namespace PEMS.Application.Partners.Contacts.Commands.CreatePartnerContact;
 
@@ -36,9 +35,13 @@ public sealed class CreatePartnerContactCommandHandler
         var contact = new PartnerContact
         {
             PartnerId = partner.PartnerId,
+            // Trim-only storage (plan CanhIter3FixBug): Partner Contact is external business-card/partner
+            // data, not an identity field — the raw text the user confirmed is what gets persisted.
+            // EnsureEmailUniqueAsync above normalizes for COMPARISON only; nothing here lowercases or
+            // reformats what is actually stored.
             FullName = request.FullName.Trim(),
-            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim().ToLowerInvariant(),
-            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : PhoneNumber.NormalizeOrOriginal(request.Phone.Trim()),
+            Email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim(),
+            Phone = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim(),
             JobTitle = string.IsNullOrWhiteSpace(request.JobTitle) ? null : request.JobTitle.Trim(),
             DepartmentName = string.IsNullOrWhiteSpace(request.DepartmentName) ? null : request.DepartmentName.Trim(),
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),

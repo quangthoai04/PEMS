@@ -172,7 +172,8 @@ public sealed class OperationalContactManagementTests
             {
                 UpdateOperationalContactProfileCommand c => Cast<TResponse>(
                     new UpdateOperationalContactProfileCommandHandler(
-                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email), WriteOn)
+                        _db, new FakeUser(_actor), new FixedClock(), Invitations(_db, _email),
+                        new CanonicalContentRefresher(_db), WriteOn)
                         .Handle(c, ct)),
                 ReplaceOperationalContactCommand c => Cast<TResponse>(
                     new ReplaceOperationalContactCommandHandler(
@@ -1241,6 +1242,67 @@ public sealed class OperationalContactManagementTests
             var after = await CampusStateAsync(requestId);
             Assert.Equal(contactId, after.ContactUserId);
             Assert.Equal(VisitInstanceStatuses.BeforeVisit, after.Status);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// PEMS_CANH_ITER3 "Remove Lý do chuyển giao" — <c>Reason</c> was never a gate on authorization,
+    /// lifecycle, invitation, eligibility, accept/decline or handover; it is a free-text audit
+    /// breadcrumb only. The UI no longer collects it, so the frontend now calls this command with
+    /// <c>Reason: null</c> on every transfer. Pins that the handler still raises the invitation
+    /// (T5), that a null reason is a completely ordinary call shape (T4), and that the CURRENT holder
+    /// keeps every right — nothing moves — until the new person actually accepts (T6).
+    /// </summary>
+    [Fact]
+    public async Task InitiateTransfer_with_no_reason_still_succeeds_and_current_holder_keeps_rights_until_accept()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            ulong contactId;
+            string contactEmail;
+            using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var created = await CampusStateAsync(requestId);
+            var invitation = Assert.Single(await ChangesAsync(requestId));
+
+            var claimMail = new FakeEmail();
+            string acceptToken;
+            using (var db = NewContext())
+                acceptToken = await IssueInvitationAsync(db, claimMail, invitation.IdentityChangeId);
+            using (var db = NewContext())
+                await Accept(db, contactId, contactEmail, claimMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var confirmed = await CampusStateAsync(requestId);
+            var successor = "oc-no-reason-" + Guid.NewGuid().ToString("N")[..8] + "@external.example";
+
+            var handoverMail = new FakeEmail();
+            OperationalContactManageResponse result;
+            using (var db = NewContext())
+                result = await new InitiateOperationalContactTransferCommandHandler(
+                        db, new FakeUser(Registrant), new FixedClock(), Invitations(db, handoverMail), WriteOn)
+                    .Handle(
+                        new InitiateOperationalContactTransferCommand(
+                            requestId, confirmed.InstanceId, "Người nhận bàn giao", "Đơn vị mới", "Trưởng phòng",
+                            null, successor, Reason: null),
+                        CancellationToken.None);
+
+            Assert.NotNull(result); // T5 — the handler completed and raised the invitation
+            var pending = (await ChangesAsync(requestId)).Single(c => c.Status == IdentityChangeStatuses.Pending);
+            Assert.Equal(IdentityChangeKinds.Transfer, pending.ChangeKind);
+            Assert.Equal(successor, pending.NewEmailNormalized);
+            Assert.Null(pending.Reason); // the audit trail honestly reflects that none was given
+            Assert.Single(handoverMail.Sent);
+
+            // T6 — nothing moved: A is still the holder, unaffected, until they accept.
+            var after = await CampusStateAsync(requestId);
+            Assert.Equal(contactId, after.ContactUserId);
+            var snapshot = await DetailAsync(confirmed.InstanceId);
+            Assert.Equal(contactEmail, snapshot.OperationalContactEmail);
         }
         finally { await CleanupAsync(requestId); }
     }

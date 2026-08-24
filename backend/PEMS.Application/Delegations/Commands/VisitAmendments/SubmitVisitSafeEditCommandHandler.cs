@@ -82,6 +82,16 @@ public sealed class SubmitVisitSafeEditCommandHandler
         var isRegistrant = VisitRequestOwnership.IsRegistrant(visit, actorId);
         if (!isRegistrant)
         {
+            // ── Request-level Registrant fields are REGISTRANT-ONLY (plan CanhIter3FixBug, decision S).
+            //    The loop below only proves a non-registrant holds every CAMPUS named in the patch — it
+            //    says nothing about request.Patch.Registrant, so a campus's operational contact could
+            //    otherwise craft a payload naming their own campus's instance (passing the loop) plus a
+            //    populated Registrant block, and silently edit request-level fields they have no
+            //    authority over. Checked first, unconditionally — whether or not Instances is also
+            //    populated or empty. ──
+            if (request.Patch?.Registrant is not null)
+                throw new ForbiddenException("Chỉ người đăng ký mới được sửa thông tin người đăng ký.");
+
             var patched = request.Patch?.Instances ?? new List<SafeInstancePatchDto>();
             if (patched.Count == 0)
                 throw new ForbiddenException("Bạn không có quyền sửa đơn này.");
@@ -113,23 +123,36 @@ public sealed class SubmitVisitSafeEditCommandHandler
     {
         try
         {
-            var urgent = result.AppliedChanges.Any(c => c.ChangeClass == AmendmentChangeClasses.PrivacyUrgent);
-            var touchedInstanceIds = result.AppliedChanges
+            // ── Only Safe/PrivacyUrgent-classed changes are notification-worthy (plan CanhIter3FixBug,
+            //    decision E) — Contact-classed entries (same-person operational-contact metadata/relation)
+            //    are filtered out here, same precedent as the pre-existing standalone
+            //    UpdateOperationalContactProfileCommandHandler, which has always sent zero notifications
+            //    for this kind of correction. A call whose ONLY changes are contact ends up with
+            //    `notifiable.Count == 0` and returns before touching the database at all — silent. ──
+            var notifiable = result.AppliedChanges
+                .Where(c => c.ChangeClass is AmendmentChangeClasses.Safe or AmendmentChangeClasses.PrivacyUrgent)
+                .ToList();
+            if (notifiable.Count == 0) return;
+
+            var urgent = notifiable.Any(c => c.ChangeClass == AmendmentChangeClasses.PrivacyUrgent);
+            var touchedInstanceIds = notifiable
                 .Where(c => c.VisitInstanceId is not null)
                 .Select(c => c.VisitInstanceId!.Value)
                 .Distinct().ToList();
+            // Whether the call ALSO carries a request-level notifiable change (registrant fields) — a
+            // Contact entry is always instance-scoped, so this is unaffected by contact edits.
+            var hasRequestLevel = notifiable.Any(c => c.VisitInstanceId is null);
 
             var recipients = new HashSet<ulong>();
             // Exact instance target (plan continuation §17): only when the edit touched EXACTLY ONE
-            // campus is this unambiguous — every recipient below (its leaders + its Host) is being
-            // told about that one instance, so naming it lets the frontend focus that exact campus
-            // instead of falling back to the safe-but-generic request-level detail. A multi-campus
-            // save intentionally stays request-level (no VisitInstanceId): recipients differ PER
-            // campus (a HN leader is never told about a DN-only change), so there is no single
-            // instance id that would be correct for the whole batch, and guessing one is exactly what
-            // plan §17 forbids — untangling that into a genuinely one-notification-per-campus shape
-            // is a bigger behavioral change than this fix, deliberately left alone here.
-            ulong? exactInstanceId = touchedInstanceIds.Count == 1 ? touchedInstanceIds[0] : null;
+            // campus AND has no request-level component is this unambiguous — every recipient below
+            // (its leaders + its Host) is being told about that one instance, so naming it lets the
+            // frontend focus that exact campus instead of falling back to the safe-but-generic
+            // request-level detail. A request-level component present alongside instance-level ones
+            // (plan CanhIter3FixBug, decision E — request-level and instance-level scopes UNION rather
+            // than being mutually exclusive) targets the whole request instead of fabricating one
+            // instance id for a change that also touched the request as a whole.
+            ulong? exactInstanceId = !hasRequestLevel && touchedInstanceIds.Count == 1 ? touchedInstanceIds[0] : null;
             ulong? exactCampusId = null;
             if (touchedInstanceIds.Count > 0)
             {
@@ -148,9 +171,13 @@ public sealed class SubmitVisitSafeEditCommandHandler
                 foreach (var host in rows.Where(r => r.CurrentHostUserId.HasValue))
                     recipients.Add(host.CurrentHostUserId!.Value);
             }
-            else
+            // Request-level recipients (leaders of every still-active campus) are added whenever a
+            // request-level notifiable change is present — UNIONED with any instance-level recipients
+            // just computed above, deduplicated by the HashSet, rather than the two being an if/else
+            // (plan CanhIter3FixBug, decision E — a registrant-field edit alongside a Notes edit on one
+            // campus must not lose the request-wide leaders in favor of only that campus's).
+            if (hasRequestLevel)
             {
-                // Request-level-only change → the leaders of every still-active campus.
                 var campusIds = await _db.VisitRequestCampuses.AsNoTracking()
                     .Where(c => c.VisitRequestId == visitRequestId)
                     .Select(c => c.CampusId).Distinct().ToListAsync(ct);

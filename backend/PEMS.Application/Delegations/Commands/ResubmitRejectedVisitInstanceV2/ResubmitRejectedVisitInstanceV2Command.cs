@@ -16,7 +16,7 @@ namespace PEMS.Application.Delegations.Commands.ResubmitRejectedVisitInstanceV2;
 public sealed record ResubmitRejectedVisitInstanceV2Command(
     ulong VisitRequestId,
     ulong VisitInstanceId,
-    CampusVisitEditV2Dto Content) : IRequest<ResubmitRejectedVisitInstanceV2Response>;
+    InstanceResubmitScheduleDto Content) : IRequest<ResubmitRejectedVisitInstanceV2Response>;
 
 /// <param name="VisitRequestStatus">
 /// Recomputed from the campuses, never assumed — PARTIALLY_APPROVED when a sibling is already approved.

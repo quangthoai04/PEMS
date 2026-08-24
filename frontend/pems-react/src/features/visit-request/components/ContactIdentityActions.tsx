@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next';
 import {
   cancelOperationalContactChange,
   getOperationalContactState,
+  initiateOperationalContactTransfer,
   reinviteOperationalContactConfirmation,
+  replaceOperationalContact,
   resendOperationalContactConfirmation,
-  saveOperationalContact,
   type OperationalContactState,
   type ResolvedOperationalContact,
 } from '../api/visitRequestV2Api';
@@ -16,7 +17,6 @@ import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../.
 import { isSameEmailIdentity, isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import { isValidPhone } from '../../../shared/utils/phoneNumber';
 import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
-import { AutoGrowTextarea } from './shared/AutoGrowTextarea';
 import { OrganizationCombobox } from './shared/OrganizationCombobox';
 import { PhoneField } from './shared/PhoneField';
 import { focusFirstInvalidField } from '../utils/formErrorNavigation';
@@ -32,16 +32,11 @@ interface Props {
   /** True once an account actually holds this campus — decides confirmation vs transfer actions. */
   contactConfirmed: boolean;
   /**
-   * THIS campus's current contact snapshot. The form opens on it (plan §4), so a user correcting a
-   * phone number is not asked to retype the other four fields — and retyping is how an address gets
-   * "changed" by a typo and turns an ordinary correction into a confirmation email.
+   * THIS campus's current contact snapshot — used only to know the CURRENT email (to block a same-
+   * address Transfer, plan CanhIter3FixBug §17.2) and to know whether it changed after a save. The
+   * Transfer form itself never prefills from this (§17.1); metadata correction lives in Sửa nhanh now.
    */
   contact: ResolvedOperationalContact;
-  /**
-   * The campus instance's rowVersion as last read. Sent with a metadata-only save so a modal left open
-   * while somebody else edited cannot overwrite the newer values.
-   */
-  rowVersion?: number;
   /**
    * The backend's verdict for THIS campus (`campusVisit.allowedActions`). Each control is rendered ONLY
    * when its own code is present — never from role, relation or status. The codes mirror the guards in
@@ -58,11 +53,10 @@ interface ContactFormState {
   jobTitle: string;
   phone: string;
   email: string;
-  reason: string;
 }
 
 /** Mirrors the FluentValidation limits on the commands — the backend stays the authority. */
-const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email: 150, reason: 500 } as const;
+const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email: 150 } as const;
 
 /**
  * Per-field errors for the FOUR fields that are not the address (plan PEMS_VALIDATION_UX §2). Email
@@ -70,7 +64,7 @@ const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50, email:
  * refusals (account inactive, cannot be used for a visitor account) that this generic map has no
  * concept of, and merging the two would either lose that nuance or duplicate it.
  */
-type ContactFieldErrors = Partial<Record<'fullName' | 'organization' | 'jobTitle' | 'phone' | 'reason', string>>;
+type ContactFieldErrors = Partial<Record<'fullName' | 'organization' | 'jobTitle' | 'phone', string>>;
 
 /**
  * Mã lỗi ổn định của backend → câu i18n cụ thể.
@@ -119,29 +113,27 @@ const fieldCls = (hasError?: boolean) =>
     : 'border-slate-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]');
 
 /**
- * The operational-contact management workflow for ONE campus, rendered INSIDE that campus's contact
- * section on the DETAIL screen. This is the only place a contact is managed: the request-edit form
- * shows the contact read-only and offers nothing, because editing a visit request and deciding who
- * runs a campus are two different acts with two different consequences.
+ * "Chuyển đầu mối" — the operational-contact IDENTITY-change workflow for ONE campus, rendered inside
+ * that campus's contact section on the Detail screen (plan CanhIter3FixBug). Same-person metadata and
+ * relation correction no longer live here — they moved into Sửa nhanh's contact block, which shares no
+ * component with this one. This panel exists ONLY for the case where the campus's contact becomes a
+ * DIFFERENT person: the form always opens BLANK (§17.1), and email is a required field naming the new
+ * address.
  *
- * One form, five fields, one save. What the save MEANS is the server's to decide from the address:
+ * What the save means, decided from whether anyone currently holds the campus:
  *
- * - same address → the details are corrected. Nothing is emailed, nothing is invited, nobody's
- *   authority moves, and an approved campus starting tomorrow is still allowed it.
- * - different address → somebody has to accept. While nobody holds the campus yet that is a replace;
- *   once somebody does — whether or not a Staff Leader has decided the campus — a transfer, in which
- *   the current contact keeps every right until the new person says yes.
+ * - no confirmed holder yet → Replace (immediate, or an invitation if the new address is external).
+ * - a confirmed holder exists → Transfer (an invitation; the current holder keeps every right until the
+ *   new person accepts — decline/cancel/expiry leave them unchanged).
  *
- * The panel does not classify the edit itself — it cannot know the stored address for certain, and a
- * wrong guess either emails a stranger about a typo or hands over a campus silently. It only warns,
- * before the user commits, which of the two they appear to be doing.
+ * A typed address equal to the campus's CURRENT one is refused (both client-side and by the backend)
+ * with a message pointing at Sửa nhanh instead — this panel's whole purpose is a genuine identity change.
  */
 export default function ContactIdentityActions({
   visitRequestId,
   visitInstanceId,
   contactConfirmed,
   contact,
-  rowVersion,
   allowedActions,
   onChanged,
 }: Props) {
@@ -149,23 +141,25 @@ export default function ContactIdentityActions({
   const isPending = !contactConfirmed;
   const contactEmail = contact.email || null;
 
-  const can = useMemo(() => ({
-    edit: hasAction(allowedActions, VisitV2Action.UpdateContactProfile)
-      || hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
-      || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-    /** Whether changing the ADDRESS is on the table, as opposed to correcting the details only. */
-    changeIdentity: hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
-      || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-    /** Once somebody already holds the campus, a new address is a handover rather than a correction —
-     *  worth saying so, regardless of whether the campus itself has been decided yet. */
-    transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
-      && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-    resend: hasAction(allowedActions, VisitV2Action.ResendContactConfirmation),
-    /** Không còn lời mời nào sống — phải mở lời mời MỚI, không phải "gửi lại". */
-    reinvite: hasAction(allowedActions, VisitV2Action.ReinviteContactConfirmation),
-    cancelChange: hasAction(allowedActions, VisitV2Action.CancelContactChange),
-  }), [allowedActions]);
-  const hasAnyAction = can.edit || can.resend || can.reinvite || can.cancelChange;
+  const can = useMemo(() => {
+    const resend = hasAction(allowedActions, VisitV2Action.ResendContactConfirmation);
+    const reinvite = hasAction(allowedActions, VisitV2Action.ReinviteContactConfirmation);
+    const cancelChange = hasAction(allowedActions, VisitV2Action.CancelContactChange);
+    return {
+      /** Whether changing the ADDRESS is on the table — the only thing this panel ever offers now. */
+      changeIdentity: hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
+        || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+      /** Once somebody already holds the campus, a new address is a handover rather than a first pick —
+       *  worth saying so, regardless of whether the campus itself has been decided yet. */
+      transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
+        && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
+      resend,
+      /** Không còn lời mời nào sống — phải mở lời mời MỚI, không phải "gửi lại". */
+      reinvite,
+      cancelChange,
+    };
+  }, [allowedActions]);
+  const hasAnyAction = can.changeIdentity || can.resend || can.reinvite || can.cancelChange;
 
   const [state, setState] = useState<OperationalContactState | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -202,16 +196,10 @@ export default function ContactIdentityActions({
   if (!hasAnyAction) return null;
 
   const openForm = () => {
-    // Opens on what is stored (plan §4). Retyping four correct fields to fix a fifth is how a correct
-    // address acquires a typo — and a typo in the address is not a correction, it is a handover.
-    setForm({
-      fullName: contact.fullName ?? '',
-      organization: contact.organization ?? '',
-      jobTitle: contact.jobTitle ?? '',
-      phone: contact.phone ?? '',
-      email: contact.email ?? '',
-      reason: '',
-    });
+    // Genuinely blank (plan CanhIter3FixBug §17.1) — this is now the identity-change-only door, so
+    // prefilling from the current contact would invite the exact typo-becomes-a-handover mistake the
+    // split exists to prevent. Same-person correction lives in Sửa nhanh now.
+    setForm({ fullName: '', organization: '', jobTitle: '', phone: '', email: '' });
     setEmailError(null);
     setFieldErrors({});
     setShowForm(true);
@@ -242,7 +230,7 @@ export default function ContactIdentityActions({
         const backendFields = fieldErrorsOf(err);
         if (backendFields) {
           const mapped: ContactFieldErrors = {};
-          (['fullName', 'organization', 'jobTitle', 'phone', 'reason'] as const).forEach(key => {
+          (['fullName', 'organization', 'jobTitle', 'phone'] as const).forEach(key => {
             const msg = firstFieldError(backendFields, key);
             if (msg) mapped[key] = msg;
           });
@@ -253,9 +241,8 @@ export default function ContactIdentityActions({
             window.setTimeout(() => focusFirstInvalidField(), 60);
             return;
           }
-          // A validation error whose fields we cannot map (e.g. `Reason` alone with a message this
-          // component has no slot for) still falls through to the generic branches below rather than
-          // being silently swallowed.
+          // A validation error whose fields we cannot map to a control on this form still falls through
+          // to the generic branches below rather than being silently swallowed.
         }
       }
 
@@ -356,23 +343,34 @@ export default function ContactIdentityActions({
       window.setTimeout(() => focusFirstInvalidField(), 60);
       return;
     }
-    if (identityChanging && !can.changeIdentity) {
-      setEmailError(t('visitRequestV2:contact.identityChangeNotAllowed'));
+    // Client-side head-start (plan CanhIter3FixBug §17.2/§33) — the backend is the real authority and
+    // rejects a same-address Replace/Transfer outright regardless of this check. Never falls through
+    // to a profile-update route: this panel no longer has one.
+    if (!identityChanging) {
+      setEmailError(t('visitRequestV2:contact.transferEmailSameAsCurrent'));
       return;
     }
     setEmailError(null);
     setFieldErrors({});
+    // Explicit dispatch by current holder state (plan §17.3/§33) — never the ambiguous
+    // saveOperationalContact router, whose same-address branch would silently treat this as a profile
+    // correction instead of the identity change this form always means.
     void run(() =>
-      saveOperationalContact(visitRequestId, visitInstanceId, {
-        fullName: form.fullName,
-        organization: form.organization,
-        jobTitle: form.jobTitle,
-        phone: form.phone,
-        email: form.email,
-        reason: form.reason || undefined,
-        // Only meaningful on the metadata branch; the server ignores it on the other two.
-        expectedRowVersion: rowVersion,
-      }),
+      contactConfirmed
+        ? initiateOperationalContactTransfer(visitRequestId, visitInstanceId, {
+            fullName: form.fullName,
+            organization: form.organization,
+            jobTitle: form.jobTitle,
+            phone: form.phone,
+            email: form.email,
+          })
+        : replaceOperationalContact(visitRequestId, visitInstanceId, {
+            fullName: form.fullName,
+            organization: form.organization,
+            jobTitle: form.jobTitle,
+            phone: form.phone,
+            email: form.email,
+          }),
     );
   };
 
@@ -499,26 +497,6 @@ export default function ContactIdentityActions({
         {textField('phone', t('visitRequestV2:card.phone'), false)}
         {textField('email', t('visitRequestV2:card.email'), true)}
       </div>
-
-      {/* The reason travels with a handover, so it is asked for only when the address has actually
-          changed on a campus that already has a confirmed holder — which is the only branch that
-          stores it, whether or not the campus has been decided yet. */}
-      {identityChanging && can.transferOnly && (
-        <div className="mt-4 max-w-2xl" data-testid="contact-form-reason">
-          <label htmlFor="ci-reason" className={labelCls}>
-            {t('visitRequestV2:contact.transferReason')}
-          </label>
-          <div className="mt-1">
-            <AutoGrowTextarea
-              id="ci-reason"
-              minRows={2}
-              maxLength={MAX.reason}
-              value={form?.reason ?? ''}
-              onChange={value => setForm(f => (f ? { ...f, reason: value } : f))}
-            />
-          </div>
-        </div>
-      )}
 
       {identityChanging && (
         <p
@@ -668,7 +646,7 @@ export default function ContactIdentityActions({
         contactForm
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          {can.edit && (
+          {can.changeIdentity && (
             <button
               type="button"
               data-testid="contact-edit-open"

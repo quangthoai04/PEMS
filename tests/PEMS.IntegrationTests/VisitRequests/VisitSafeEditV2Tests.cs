@@ -10,7 +10,9 @@ using PEMS.Application.Common.Exceptions;
 using PEMS.Application.Common.Interfaces;
 using PEMS.Application.Common.Options;
 using PEMS.Application.Delegations.Commands.CreateVisitRequestV2;
+using PEMS.Application.Delegations.Commands.OperationalContact;
 using PEMS.Application.Delegations.Commands.VisitAmendments;
+using PEMS.Application.Delegations.Common;
 using PEMS.Application.Delegations.Services;
 using PEMS.Application.Notifications.Common;
 using PEMS.Application.Partners.Common;
@@ -54,14 +56,20 @@ public sealed class VisitSafeEditV2Tests
     private sealed class FakeUser : ICurrentUserService
     {
         private readonly ulong _id;
-        public FakeUser(ulong id) => _id = id;
+        // Optional role/subRole/campus (default: plain Visitor, matching every pre-existing call site in
+        // this file) — additive so `new FakeUser(actor)` everywhere else is unaffected. Only the GAP-E
+        // amendment-approval test needs a Staff Leader actor.
+        public FakeUser(ulong id, string role = RoleCodes.Visitor, string? subRole = null, ulong? campusId = null)
+        {
+            _id = id; RoleCode = role; SubRole = subRole; PrimaryCampusId = campusId;
+        }
         public bool IsAuthenticated => true;
         public ulong? UserId => _id;
         public string? Email => null;
         public ulong? RoleId => null;
-        public string? RoleCode => RoleCodes.Visitor;
-        public string? SubRole => null;
-        public ulong? PrimaryCampusId => null;
+        public string? RoleCode { get; }
+        public string? SubRole { get; }
+        public ulong? PrimaryCampusId { get; }
         public ulong? DepartmentId => null;
         public ulong? SessionId => null;
         public string? LoginPortal => null;
@@ -91,18 +99,36 @@ public sealed class VisitSafeEditV2Tests
 
     private static SubmitVisitSafeEditCommandHandler Handler(
         ApplicationDbContext db, ulong actor, RecordingNotifications? notifications = null)
-        => new(db, new FakeUser(actor), new FixedClock(), new VisitSafeEditService(db),
+        => new(db, new FakeUser(actor), new FixedClock(), new VisitSafeEditService(db, new NoopInvitations()),
             notifications ?? new RecordingNotifications(),
             NullLogger<SubmitVisitSafeEditCommandHandler>.Instance, ReadOn, WriteOn);
 
-    private static CampusVisitFormDto Campus(string code, DateTime start, string media = "AGREED")
+    /// <summary>
+    /// No-op <see cref="IOperationalContactInvitationService"/> for tests that don't exercise the
+    /// pending-invitation-snapshot refresh (plan CanhIter3FixBug) — "no pending invitation found" is a
+    /// legitimate, common answer, and every contact-metadata test below creates its campus with a
+    /// self-matched (already-confirmed) contact, so there is never a live invitation to refresh anyway.
+    /// </summary>
+    private sealed class NoopInvitations : IOperationalContactInvitationService
+    {
+        public Task<OperationalContactInvitationTokens?> MintInvitationTokensAsync(
+            ulong identityChangeId, CancellationToken ct) => Task.FromResult<OperationalContactInvitationTokens?>(null);
+        public Task DispatchInvitationEmailAsync(
+            ulong identityChangeId, OperationalContactInvitationTokens tokens, CancellationToken ct) => Task.CompletedTask;
+        public Task<VisitRequestIdentityChange?> LockChangeAsync(ulong identityChangeId, CancellationToken ct)
+            => Task.FromResult<VisitRequestIdentityChange?>(null);
+        public Task<VisitRequestIdentityChange?> LockPendingChangeForInstanceAsync(
+            ulong visitInstanceId, CancellationToken ct) => Task.FromResult<VisitRequestIdentityChange?>(null);
+    }
+
+    private static CampusVisitFormDto Campus(string code, DateTime start, string media = "AGREED", string? contactPhone = "+8410")
         => new(code, start, start.AddMinutes(120), "Đoàn Safe", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
             // The contact is the REGISTRANT'S own address, so the campus self-matches at submit: confirmed
             // with no invitation, and the request is past the confirmation gate from the start. This suite
             // does not test that gate, and a campus behind it can be neither decided nor moved forward.
-            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", contactPhone, V2SeedActor.Email(Registrant)),
             "EN", "Xe 16 chỗ", media, null, null);
 
     /// <summary>
@@ -783,13 +809,79 @@ public sealed class VisitSafeEditV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
-    // ── Contact profile has exactly one door now — "Manage the contact role" (PEMS_CONTACT_ONE_DOOR) ──
-    // SE-NEW-01/02/03: a handcrafted request that still tries to patch the contact's fullName,
-    // organization or phone through Safe Edit is refused outright, not silently applied or dropped —
-    // the guard trips on the block being present at all, regardless of which sub-field it carries.
+    // ── Same-person contact metadata + relation (plan CanhIter3FixBug) ──────────────────────────────
+    // Sửa nhanh now edits the operational contact's own details directly (email locked, relation to a
+    // delegation member direct — never an amendment). Campus(...) seeds the contact as the REGISTRANT'S
+    // own address, self-matched at submit, so it is already confirmed and Safe-Edit-eligible the moment
+    // the campus is decided — no separate confirmation flow needed for these tests.
+
+    private static async Task<ulong> SoleGuestMemberIdAsync(ulong requestId)
+    {
+        using var db = NewContext();
+        return await db.VisitGuestMembers.AsNoTracking()
+            .Where(m => m.VisitRequestId == requestId).Select(m => m.GuestMemberId).SingleAsync();
+    }
 
     [Fact]
-    public async Task Contact_profile_patch_is_refused_on_safe_edit()
+    public async Task Contact_metadata_only_edit_applies_without_bumping_form_revision()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            // detail.RowVersion is a SEPARATE counter from the campus's own RowVersion (instV above) —
+            // ApproveAllAsync bumps the campus one but never touches VisitInstanceFormDetail, so the two
+            // diverge across the lifecycle. Captured directly here rather than assumed in lockstep.
+            int detailRowVersionBefore;
+            using (var db = NewContext())
+                detailRowVersionBefore = await db.VisitInstanceFormDetails.AsNoTracking()
+                    .Where(d => d.VisitInstanceId == instance).Select(d => d.RowVersion).SingleAsync();
+
+            VisitRequestSafeEditResponse res;
+            using (var db = NewContext())
+            {
+                res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Tên mới", "Org mới", "Chức vụ mới", "+8499999999",
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            // Contact-classed, not Safe/PrivacyUrgent — but still names the exact instance (decision F).
+            Assert.Contains(res.AppliedChanges, c => c.VisitInstanceId == instance && c.ChangeClass == AmendmentChangeClasses.Contact);
+
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal("Tên mới", detail.OperationalContactFullName);
+                Assert.Equal("Org mới", detail.OperationalContactOrganization);
+                Assert.Equal("Chức vụ mới", detail.OperationalContactJobTitle);
+                Assert.Equal("+8499999999", detail.OperationalContactPhone);
+                Assert.Equal(1u, detail.FormRevision); // unchanged (decision B)
+                Assert.Equal(detailRowVersionBefore + 1, detail.RowVersion); // still bumped
+
+                // CREATE already wrote the FormRevision=1 baseline row — the contact-only edit must not
+                // add a second one (it would collide with the unique (VisitInstanceId, FormRevision)
+                // index anyway, since FormRevision itself never moved).
+                Assert.Equal(1, await db.VisitInstanceFormRevisionHistories.AsNoTracking()
+                    .CountAsync(r => r.VisitInstanceId == instance));
+                Assert.True(await db.AuditLogs.AsNoTracking()
+                    .AnyAsync(a => a.VisitInstanceId == instance && a.Action == "OPERATIONAL_CONTACT_PROFILE_UPDATED"));
+                Assert.False(await db.AuditLogs.AsNoTracking()
+                    .AnyAsync(a => a.VisitRequestId == requestId && a.Action == "VISIT_SAFE_FIELDS_UPDATED")); // no empty generic audit
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Contact_email_change_is_rejected_with_zero_mutation()
     {
         RequireDb();
         ulong requestId = 0;
@@ -802,24 +894,554 @@ public sealed class VisitSafeEditV2Tests
 
             using (var db = NewContext())
             {
+                var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance],
+                                new SafeContactPatchDto("Tên mới", "Org mới", "Chức vụ", null,
+                                    "khac@vidu.com", null),
+                                null, null, null),
+                        })), CancellationToken.None));
+                Assert.Equal(OperationalContactErrorCodes.ChangeConflict, ex.ErrorCode);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.NotEqual("Tên mới", detail.OperationalContactFullName);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Relation_link_and_unlink_apply_with_durable_human_readable_history()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            // null → A: link the contact to the sole guest, whose profile is made to match first.
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            (reqV, instV) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal(memberId, detail.OperationalContactGuestMemberId);
+                var relAudit = await db.AuditLogs.AsNoTracking().Include(a => a.Changes)
+                    .Where(a => a.VisitInstanceId == instance && a.Action == "OPERATIONAL_CONTACT_RELATION_UPDATED")
+                    .SingleAsync();
+                var change = relAudit.Changes.Single();
+                Assert.Equal("Không nằm trong danh sách đoàn", change.OldValueText);
+                Assert.Equal("Guest A", change.NewValueText); // human name, never a raw id
+            }
+
+            // A → null: explicit unlink.
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(null)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Null(detail.OperationalContactGuestMemberId);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Relation_mismatch_is_rejected_with_zero_mutation()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            // The contact snapshot ("Op Contact" / OpOrg / Trưởng phòng Hợp tác) does not describe
+            // "Guest A" — linking to memberId while keeping the ORIGINAL (mismatching) metadata must fail.
+            using (var db = NewContext())
+            {
                 var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
                     Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
                         new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
                         {
                             new(instance, instV[instance],
-                                new SafeContactPatchDto("Tên mới", "Org mới", null, "+8499999999"),
+                                new SafeContactPatchDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410",
+                                    V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
                                 null, null, null),
                         })), CancellationToken.None));
-                Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+                Assert.Equal(OperationalContactErrorCodes.RelationProfileMismatch, ex.ErrorCode);
             }
             using (var db = NewContext())
             {
-                // Refused means nothing applied — not even the sibling fields (nothing else was sent).
                 var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
-                Assert.NotEqual("Tên mới", detail.OperationalContactFullName);
-                Assert.NotEqual("Org mới", detail.OperationalContactOrganization);
-                Assert.NotEqual("+8499999999", detail.OperationalContactPhone);
+                Assert.Null(detail.OperationalContactGuestMemberId); // zero mutation
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Effective_relation_is_validated_even_when_memberlink_is_omitted()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            // First, link the contact to the guest (metadata already matching "Guest A").
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            (reqV, instV) = await VersionsAsync(requestId);
+
+            // Now edit ONLY the metadata into a mismatch, with MemberLink entirely OMITTED (decision N) —
+            // the existing link to memberId must still be validated against the new proposed name.
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance],
+                                new SafeContactPatchDto("Yoon Soo Jin", "Organization B", "Programme Coordinator",
+                                    null, V2SeedActor.Email(Registrant), null),
+                                null, null, null),
+                        })), CancellationToken.None));
+                Assert.Equal(OperationalContactErrorCodes.RelationProfileMismatch, ex.ErrorCode);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal(memberId, detail.OperationalContactGuestMemberId); // unchanged
+                Assert.Equal("Guest A", detail.OperationalContactFullName); // metadata NOT desynced either
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Whole_request_contact_no_op_is_rejected_but_no_op_plus_notes_succeeds()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var identicalContact = new SafeContactPatchDto(
+                "Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "+8410", V2SeedActor.Email(Registrant), null);
+
+            // Contact block identical to current, nothing else in the request → rejected.
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance], identicalContact, null, null, null),
+                        })), CancellationToken.None));
+                Assert.Equal(VisitFormV2ErrorCodes.SafeEditFieldNotAllowed, ex.ErrorCode);
+            }
+
+            // Same identical contact block, but Notes also changed → succeeds; only Notes applied.
+            VisitRequestSafeEditResponse res;
+            using (var db = NewContext())
+            {
+                res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance], identicalContact, null, null, "Ghi chú mới"),
+                    })), CancellationToken.None);
+            }
+            Assert.DoesNotContain(res.AppliedChanges, c => c.ChangeClass == AmendmentChangeClasses.Contact);
+            Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.Notes);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Contact_only_edit_sends_no_notification()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var notifications = new RecordingNotifications();
+
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Tên mới", "Org mới", "Chức vụ mới", null,
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            Assert.Empty(notifications.Sent);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Concurrent_relation_writers_same_starting_version_yield_exactly_one_winner()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var payload = new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+            {
+                new(instance, instV[instance],
+                    new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                        V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                    null, null, null),
+            });
+
+            // Both writers "load" the SAME starting instance RowVersion before either commits.
+            using var dbA = NewContext();
+            using var dbB = NewContext();
+            await Handler(dbA, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId, payload), CancellationToken.None);
+            var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+                Handler(dbB, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId, payload), CancellationToken.None));
+            Assert.Equal(VisitFormV2ErrorCodes.VisitFormConcurrencyConflict, ex.ErrorCode);
+
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal(memberId, detail.OperationalContactGuestMemberId); // writer A's result preserved
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Contact Phone is OPTIONAL (GitHub bug report, CanhIter3FixBug live-UI repro: a Safe Edit
+    // relation/name-only change on a contact with a phone on file, or with none at all, must never be
+    // rejected as "The Phone field is required." — Phone has no NotEmpty rule anywhere in this chain,
+    // see SafeContactPatchDto/SubmitVisitSafeEditCommandValidator/OperationalContactProfileMutation).
+
+    [Fact]
+    public async Task B1_Phone_on_file_survives_a_fullname_only_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: "+8412345678"));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Tên mới", "OpOrg", "Trưởng phòng Hợp tác", "+8412345678",
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, null),
+                })), CancellationToken.None);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Equal("Tên mới", detail.OperationalContactFullName);
+            Assert.Equal("+8412345678", detail.OperationalContactPhone); // preserved, not required to be resent-and-lost
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B2_Phone_on_file_survives_a_relation_only_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: "+8412345678"));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", "+8412345678",
+                            V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                        null, null, null),
+                })), CancellationToken.None);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Equal(memberId, detail.OperationalContactGuestMemberId);
+            Assert.Equal("+8412345678", detail.OperationalContactPhone); // relation-only must not touch phone
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B3_Null_phone_stays_null_through_a_fullname_only_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: null));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            var res = await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Tên mới", "OpOrg", "Trưởng phòng Hợp tác", null,
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, null),
+                })), CancellationToken.None);
+            Assert.Contains(res.AppliedChanges, c => c.VisitInstanceId == instance && c.ChangeClass == AmendmentChangeClasses.Contact);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Equal("Tên mới", detail.OperationalContactFullName);
+            Assert.Null(detail.OperationalContactPhone);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B4_Null_phone_is_accepted_on_a_relation_only_edit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: null));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                            V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                        null, null, null),
+                })), CancellationToken.None);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Equal(memberId, detail.OperationalContactGuestMemberId);
+            Assert.Null(detail.OperationalContactPhone);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B5_Clearing_an_existing_phone_persists_null_with_audit()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: "+8412345678"));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", null,
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, null),
+                })), CancellationToken.None);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Null(detail.OperationalContactPhone);
+            var audit = await db.AuditLogs.AsNoTracking().Include(a => a.Changes)
+                .Where(a => a.VisitInstanceId == instance && a.Action == "OPERATIONAL_CONTACT_PROFILE_UPDATED")
+                .SingleAsync();
+            var phoneChange = audit.Changes.Single(c => c.FieldName == "operational_contact_phone");
+            Assert.Equal("+8412345678", phoneChange.OldValueText);
+            Assert.Null(phoneChange.NewValueText);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B6_Invalid_nonblank_phone_is_rejected_by_the_command_validator()
+    {
+        // Pure FluentValidation check — no DB required, mirrors Classifier_is_table_driven_and_fails_closed
+        // above. Proves Phone is validated (format) WITHOUT being required: NotEmpty is never applied to
+        // it anywhere in this chain, only MustBeAPhoneNumber, which passes blank and rejects malformed.
+        var validator = new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitSafeEditCommandValidator();
+        var cmd = new SubmitVisitSafeEditCommand(1,
+            new VisitRequestSafeEditDto(1, null, new List<SafeInstancePatchDto>
+            {
+                new(1, 1,
+                    new SafeContactPatchDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", "123-not-a-phone",
+                        V2SeedActor.Email(Registrant), null),
+                    null, null, null),
+            }));
+        var result = await validator.ValidateAsync(cmd, CancellationToken.None);
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.PropertyName.Contains("OperationalContact") && e.PropertyName.Contains("Phone"));
+    }
+
+    [Fact]
+    public async Task B6b_Blank_or_null_contact_phone_passes_the_command_validator()
+    {
+        var validator = new PEMS.Application.Delegations.Commands.VisitAmendments.SubmitVisitSafeEditCommandValidator();
+        foreach (string? blank in new[] { null, "", "   " })
+        {
+            var cmd = new SubmitVisitSafeEditCommand(1,
+                new VisitRequestSafeEditDto(1, null, new List<SafeInstancePatchDto>
+                {
+                    new(1, 1,
+                        new SafeContactPatchDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", blank,
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, null),
+                }));
+            var result = await validator.ValidateAsync(cmd, CancellationToken.None);
+            Assert.DoesNotContain(result.Errors, e => e.PropertyName.Contains("OperationalContact") && e.PropertyName.Contains("Phone"));
+        }
+    }
+
+    [Fact]
+    public async Task B9_Relation_only_edit_leaves_email_user_and_form_revision_untouched()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20), contactPhone: "+8412345678"));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var emailBefore = await NewContext().VisitInstanceFormDetails.AsNoTracking()
+                .Where(d => d.VisitInstanceId == instance).Select(d => d.OperationalContactEmail).SingleAsync();
+            var userBefore = await NewContext().VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instance).Select(c => c.OperationalContactUserId).SingleAsync();
+
+            await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", "+8412345678",
+                            V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                        null, null, null),
+                })), CancellationToken.None);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            var userAfter = await db.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitInstanceId == instance).Select(c => c.OperationalContactUserId).SingleAsync();
+            Assert.Equal(emailBefore, detail.OperationalContactEmail);
+            Assert.Equal(userBefore, userAfter);
+            Assert.Equal(1u, detail.FormRevision);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task B10_Multi_campus_contact_edit_on_one_campus_does_not_touch_the_other()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(
+                Campus("HN", start, contactPhone: "+8412345678"),
+                Campus("HCM", start.AddDays(1), contactPhone: null));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            ulong hn, hcm;
+            using (var db = NewContext())
+            {
+                hn = await db.VisitRequestCampuses.AsNoTracking().Where(c => c.VisitRequestId == requestId)
+                    .OrderBy(c => c.CampusId).Select(c => c.VisitInstanceId).FirstAsync();
+                hcm = await db.VisitRequestCampuses.AsNoTracking().Where(c => c.VisitRequestId == requestId)
+                    .OrderBy(c => c.CampusId).Select(c => c.VisitInstanceId).Skip(1).FirstAsync();
+            }
+
+            var res = await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    // Only HN is named in the patch — a sparse payload never mentions HCM at all.
+                    new(hn, instV[hn],
+                        new SafeContactPatchDto("Tên mới HN", "OpOrg", "Trưởng phòng Hợp tác", "+8412345678",
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, null),
+                })), CancellationToken.None);
+            Assert.DoesNotContain(res.AppliedChanges, c => c.VisitInstanceId == hcm);
+
+            using var db2 = NewContext();
+            var hcmDetail = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == hcm);
+            Assert.Equal("Op Contact", hcmDetail.OperationalContactFullName); // untouched
+            Assert.Null(hcmDetail.OperationalContactPhone); // untouched, still null — no accidental patch
+            Assert.Equal(1u, hcmDetail.FormRevision);
         }
         finally { await CleanupAsync(requestId); }
     }
@@ -972,6 +1594,402 @@ public sealed class VisitSafeEditV2Tests
             using (var db = NewContext())
                 Assert.Equal("Hàn Quốc", (await db.VisitRequests.AsNoTracking()
                     .SingleAsync(v => v.VisitRequestId == requestId)).RegistrantNationality);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── Closing the 7 previously-reported acceptance gaps (plan CanhIter3FixBug §19) ────────────────
+    // Each of these was confirmed absent from this file before being added — grepped for an existing
+    // dedicated test first (none found for any of the 7), so none of these duplicate prior coverage.
+
+    private static UpdateOperationalContactProfileCommandHandler ProfileHandler(ApplicationDbContext db, ulong actor)
+        => new(db, new FakeUser(actor), new FixedClock(), new NoopInvitations(),
+            new CanonicalContentRefresher(db), WriteOn);
+
+    /// <summary>GAP A — Safe Edit's contact block uses its OWN lifecycle window (WaitingContactConfirmation/
+    /// WaitingRequestApproval/Assigned/BeforeVisit), not generic Safe Edit's (Assigned/BeforeVisit only).
+    /// A freshly-created campus here lands in WAITING_REQUEST_APPROVAL (self-matched contact, not yet
+    /// decided) — proves the contact edit succeeds there while a generic field edit is still refused.</summary>
+    [Fact]
+    public async Task GAP_A_Contact_edit_succeeds_at_WaitingRequestApproval_while_generic_fields_stay_refused()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            ulong instance;
+            using (var db = NewContext())
+            {
+                instance = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitRequestId == requestId).Select(c => c.VisitInstanceId).SingleAsync();
+                var status = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == instance).Select(c => c.Status).SingleAsync();
+                Assert.Equal(VisitInstanceStatuses.WaitingRequestApproval, status); // sanity: proves the state under test
+            }
+            var (reqV, instV) = await VersionsAsync(requestId);
+
+            // Contact-only edit succeeds at this still-pending status.
+            using (var db = NewContext())
+            {
+                var res = await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Tên mới WRA", "OpOrg", "Trưởng phòng Hợp tác", "+8410",
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+                Assert.Contains(res.AppliedChanges, c => c.ChangeClass == AmendmentChangeClasses.Contact);
+            }
+
+            // A generic field (Notes) at the SAME status is still refused — decision M's split is scoped
+            // per-field, not a blanket widening of the whole Safe Edit gate.
+            (reqV, instV) = await VersionsAsync(requestId);
+            using (var db = NewContext())
+                await Assert.ThrowsAnyAsync<Exception>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, instV[instance], null, null, null, "Ghi chú"),
+                        })), CancellationToken.None));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP B — a non-registrant (a campus's confirmed operational contact) cannot smuggle a
+    /// request-level Registrant patch through by also naming their own campus validly in Instances.</summary>
+    [Fact]
+    public async Task GAP_B_Non_registrant_cannot_handcraft_a_registrant_patch()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        const ulong nonRegistrantContact = 20; // seed visitor distinct from Registrant=8, reused elsewhere in this file
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            ulong instance;
+            using (var db = NewContext())
+            {
+                instance = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitRequestId == requestId).Select(c => c.VisitInstanceId).SingleAsync();
+                // Simulate a confirmed per-campus contact who is NOT the registrant — direct write, same
+                // shortcut OperationalContactManagementTests uses, bypassing the invitation flow entirely
+                // since only VisitRequestOwnership.IsOperationalContact's read of this column matters here.
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_request_campuses SET operational_contact_user_id = {0} WHERE visit_instance_id = {1}",
+                    nonRegistrantContact, instance);
+            }
+            var (reqV, instV) = await VersionsAsync(requestId);
+
+            using (var db = NewContext())
+            {
+                var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+                    Handler(db, nonRegistrantContact).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV,
+                            new SafeRegistrantPatchDto("Tên giả mạo", "Org", "Job", "+84900000000", "VN"),
+                            new List<SafeInstancePatchDto>
+                            {
+                                // Their OWN campus, otherwise perfectly valid — passes the instance-ownership
+                                // loop on its own; only the Registrant block must stop this.
+                                new(instance, instV[instance], null, "Xe khác", null, null),
+                            })), CancellationToken.None));
+                Assert.Contains("người đăng ký", ex.Message);
+            }
+            using (var db = NewContext())
+            {
+                var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.NotEqual("Tên giả mạo", visit.RegistrantFullName); // zero mutation
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.NotEqual("Xe khác", detail.TransportationNote);
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP C — Safe Edit commits first; a stale UpdateOperationalContactProfile call that read
+    /// the SAME starting version is rejected, not silently overwriting the Safe Edit result.</summary>
+    [Fact]
+    public async Task GAP_C1_SafeEdit_first_then_stale_UpdateProfile_is_rejected()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var startingVersion = instV[instance];
+
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, startingVersion,
+                            new SafeContactPatchDto("Từ Safe Edit", "OpOrg", "Trưởng phòng Hợp tác", null,
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+
+            using (var db = NewContext())
+                await Assert.ThrowsAnyAsync<Exception>(() =>
+                    ProfileHandler(db, Registrant).Handle(new UpdateOperationalContactProfileCommand(
+                        requestId, instance, "Từ UpdateProfile (stale)", "OpOrg", "Trưởng phòng Hợp tác", null,
+                        V2SeedActor.Email(Registrant), startingVersion), CancellationToken.None));
+
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal("Từ Safe Edit", detail.OperationalContactFullName); // Safe Edit's result preserved
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP C — reverse direction: UpdateOperationalContactProfile commits first; a stale Safe
+    /// Edit call that read the SAME starting version is rejected.</summary>
+    [Fact]
+    public async Task GAP_C2_UpdateProfile_first_then_stale_SafeEdit_is_rejected()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+            var startingVersion = instV[instance];
+
+            using (var db = NewContext())
+                await ProfileHandler(db, Registrant).Handle(new UpdateOperationalContactProfileCommand(
+                    requestId, instance, "Từ UpdateProfile", "OpOrg", "Trưởng phòng Hợp tác", null,
+                    V2SeedActor.Email(Registrant), startingVersion), CancellationToken.None);
+
+            using (var db = NewContext())
+                await Assert.ThrowsAsync<ConflictException>(() =>
+                    Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                        new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                        {
+                            new(instance, startingVersion,
+                                new SafeContactPatchDto("Từ Safe Edit (stale)", "OpOrg", "Trưởng phòng Hợp tác", null,
+                                    V2SeedActor.Email(Registrant), null),
+                                null, null, null),
+                        })), CancellationToken.None));
+
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal("Từ UpdateProfile", detail.OperationalContactFullName); // preserved
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP D — canonical equivalence: the SAME Organization edit produces the SAME
+    /// HasMixedCampusDetails verdict regardless of which of the two profile-write doors performed it.</summary>
+    [Fact]
+    public async Task GAP_D_Canonical_state_is_equivalent_regardless_of_which_door_wrote_the_same_change()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start), Campus("HCM", start.AddDays(1)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            ulong hn, hcm;
+            using (var db = NewContext())
+            {
+                hn = await db.VisitRequestCampuses.AsNoTracking().Where(c => c.VisitRequestId == requestId)
+                    .OrderBy(c => c.CampusId).Select(c => c.VisitInstanceId).FirstAsync();
+                hcm = await db.VisitRequestCampuses.AsNoTracking().Where(c => c.VisitRequestId == requestId)
+                    .OrderBy(c => c.CampusId).Select(c => c.VisitInstanceId).Skip(1).FirstAsync();
+            }
+
+            // Same NEW organization text applied to HN via Safe Edit and to HCM via UpdateProfile —
+            // both campuses end up textually identical again, so HasMixed must go back to false either way.
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(hn, instV[hn],
+                            new SafeContactPatchDto("Op Contact", "Org Đồng Nhất", "Trưởng phòng Hợp tác", "+8410",
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var hcmVersion = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(c => c.VisitInstanceId == hcm).Select(c => c.RowVersion).SingleAsync();
+                await ProfileHandler(db, Registrant).Handle(new UpdateOperationalContactProfileCommand(
+                    requestId, hcm, "Op Contact", "Org Đồng Nhất", "Trưởng phòng Hợp tác", "+8410",
+                    V2SeedActor.Email(Registrant), hcmVersion), CancellationToken.None);
+            }
+
+            using (var db = NewContext())
+            {
+                var visit = await db.VisitRequests.AsNoTracking().SingleAsync(v => v.VisitRequestId == requestId);
+                Assert.False(visit.HasMixedCampusDetails); // both doors converged to the same canonical content
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    private static SubmitVisitAmendmentCommandHandler AmendmentSubmit(ApplicationDbContext db, ulong actor)
+        => new(db, new FakeUser(actor), new FixedClock(),
+            new VisitAmendmentService(db, NullLogger<VisitAmendmentService>.Instance),
+            new RecordingNotifications(), NullLogger<SubmitVisitAmendmentCommandHandler>.Instance, WriteOn);
+
+    private static DecideVisitAmendmentCommandHandlers AmendmentDecide(ApplicationDbContext db, ulong actor, ulong campusId)
+        => new(db, new FakeUser(actor, RoleCodes.Staff, UserSubRoles.Leader, campusId), new FixedClock(),
+            new VisitAmendmentService(db, NullLogger<VisitAmendmentService>.Instance),
+            new RecordingNotifications(), NullLogger<DecideVisitAmendmentCommandHandlers>.Instance, WriteOn);
+
+    /// <summary>GAP E — an unrelated pending general amendment on an instance survives a contact-only
+    /// Safe Edit on that SAME instance (never touches FormRevision/ApprovalRevision) and stays approvable.</summary>
+    [Fact]
+    public async Task GAP_E_Pending_amendment_survives_a_contact_only_safe_edit_and_stays_approvable()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            ulong instance, leader, campusId;
+            using (var db = NewContext())
+            {
+                var c = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(x => x.VisitRequestId == requestId).SingleAsync();
+                instance = c.VisitInstanceId; leader = c.CoordinatorUserId!.Value; campusId = c.CampusId;
+            }
+            var (reqV, instV) = await VersionsAsync(requestId);
+
+            ulong amendmentId;
+            using (var db = NewContext())
+            {
+                var c = await db.VisitRequestCampuses.AsNoTracking().SingleAsync(x => x.VisitInstanceId == instance);
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                var members = await db.VisitGuestMembers.AsNoTracking()
+                    .Where(m => m.VisitRequestId == requestId).ToListAsync();
+                var proposal = new VisitAmendmentProposalDto(
+                    instV[instance], detail.FormRevision, detail.ApprovalRevision, "Đổi mục đích",
+                    detail.DelegationName, detail.VisitType ?? "MEETING", detail.VisitTypeOther,
+                    "Mục đích mới", detail.WorkingContent, detail.WorkingLanguage ?? "EN",
+                    new ContactPointDto(detail.OperationalContactFullName, detail.OperationalContactOrganization ?? "",
+                        detail.OperationalContactJobTitle, detail.OperationalContactPhone, detail.OperationalContactEmail),
+                    members.Where(m => m.MemberType == "GUEST")
+                        .Select(m => new VisitorDto(m.FullName, m.Nationality ?? "", m.JobTitle ?? "", m.Organization ?? "", m.OrganizationPartnerId))
+                        .ToList(),
+                    new List<SupportTeamMemberDto>(),
+                    c.PlannedStartAt, c.PlannedEndAt);
+                amendmentId = (await AmendmentSubmit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instance, proposal), CancellationToken.None)).AmendmentId;
+            }
+
+            // Contact-only Safe Edit on the SAME instance while the amendment is pending.
+            using (var db = NewContext())
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Tên mới trong lúc pending", "OpOrg", "Trưởng phòng Hợp tác", null,
+                                V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+
+            using (var db = NewContext())
+            {
+                var amendment = await db.VisitInstanceAmendments.AsNoTracking()
+                    .SingleAsync(a => a.AmendmentId == amendmentId);
+                Assert.Equal("PENDING_APPROVAL", amendment.Status); // untouched by the contact-only edit
+
+                var res = await AmendmentDecide(db, leader, campusId).Handle(
+                    new ApproveVisitAmendmentCommand(instance, amendmentId, "OK"), CancellationToken.None);
+                Assert.NotNull(res); // approved without AmendmentBaseRevisionConflict
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP F — a generic field AND a contact field changed in the SAME call bump FormRevision
+    /// exactly once (not twice, not once per changed group) and insert exactly one revision-history row.</summary>
+    [Fact]
+    public async Task GAP_F_Combined_generic_and_contact_edit_bumps_form_revision_exactly_once()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            var res = await Handler(NewContext(), Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                {
+                    new(instance, instV[instance],
+                        new SafeContactPatchDto("Tên mới GAP-F", "OpOrg", "Trưởng phòng Hợp tác", null,
+                            V2SeedActor.Email(Registrant), null),
+                        null, null, "Ghi chú GAP-F"),
+                })), CancellationToken.None);
+            Assert.Contains(res.AppliedChanges, c => c.ChangeClass == AmendmentChangeClasses.Contact);
+            Assert.Contains(res.AppliedChanges, c => c.FieldPath == VisitFieldClassifier.Notes);
+
+            using var db = NewContext();
+            var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Equal(2u, detail.FormRevision); // exactly one bump, not two
+            Assert.Equal(1, await db.VisitInstanceFormRevisionHistories.AsNoTracking()
+                .CountAsync(r => r.VisitInstanceId == instance && r.FormRevision == 2));
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>GAP G — a request-level Safe change (registrant phone) unioned with an instance-level
+    /// Safe change (Notes at HN only) notifies BOTH the request-wide leader set AND HN's own Host —
+    /// the pre-fix if/else would have dropped HN's Host once a request-level component was present.</summary>
+    [Fact]
+    public async Task GAP_G_Request_level_and_instance_level_notification_scopes_union()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            var start = Now.AddDays(20);
+            requestId = await CreateAsync(Campus("HN", start), Campus("HCM", start.AddDays(1)));
+            await ApproveAllAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            ulong hn; ulong hnHost;
+            using (var db = NewContext())
+            {
+                var c = await db.VisitRequestCampuses.AsNoTracking().Where(x => x.VisitRequestId == requestId)
+                    .OrderBy(x => x.CampusId).FirstAsync();
+                hn = c.VisitInstanceId; hnHost = c.CurrentHostUserId!.Value;
+            }
+
+            var notifications = new RecordingNotifications();
+            using (var db = NewContext())
+                await Handler(db, Registrant, notifications).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV,
+                        new SafeRegistrantPatchDto("Registrant", "Org", "Job", "+84900001111", "VN"), // request-level
+                        new List<SafeInstancePatchDto>
+                        {
+                            new(hn, instV[hn], null, null, null, "Ghi chú GAP-G"), // instance-level, HN only
+                        })), CancellationToken.None);
+
+            var recipientIds = notifications.Sent.Select(n => n.RecipientUserId).ToHashSet();
+            // HN's Host is a per-instance recipient that a mutually-exclusive if/else would have dropped
+            // the moment the request-level registrant change was also present — it must still be here.
+            Assert.Contains(hnHost, recipientIds);
+            // The notification also carries a request-wide target (null instance id) rather than being
+            // narrowed to HN alone, proving the request-level component fired too.
+            Assert.Contains(notifications.Sent, n => n.VisitInstanceId == null);
         }
         finally { await CleanupAsync(requestId); }
     }

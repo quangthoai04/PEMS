@@ -128,27 +128,19 @@ public sealed class InstanceResubmitAuthorizationTests
         return (await handler.Handle(new CreateVisitRequestV2Command(form), CancellationToken.None)).VisitRequestId;
     }
 
-    /// <summary>The payload that resubmits one campus: its current content with a fresh, legal schedule.</summary>
-    private static async Task<CampusVisitEditV2Dto> PayloadAsync(ulong instanceId, DateTime? start = null)
+    /// <summary>The payload that resubmits one campus: SCHEDULE-ONLY (plan FIX-G/H) — its own row
+    /// version, campus code and a fresh, legal start/end. No content, no members, no contact.</summary>
+    private static async Task<InstanceResubmitScheduleDto> PayloadAsync(ulong instanceId, DateTime? start = null)
     {
         using var db = NewContext();
         var row = await (
             from c in db.VisitRequestCampuses.AsNoTracking()
             join site in db.Campuses.AsNoTracking() on c.CampusId equals site.CampusId
             where c.VisitInstanceId == instanceId
-            select new { c.RowVersion, site.CampusCode, c.FormDetail }).FirstAsync();
+            select new { c.RowVersion, site.CampusCode }).FirstAsync();
 
-        var d = row.FormDetail!;
         var from = start ?? Now.AddDays(30);
-        return new CampusVisitEditV2Dto(
-            instanceId, row.RowVersion, row.CampusCode, from, from.AddMinutes(120),
-            d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
-            new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
-            new List<SupportTeamMemberDto>(),
-            new ContactPointDto(
-                d.OperationalContactFullName, d.OperationalContactOrganization!,
-                d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes);
+        return new InstanceResubmitScheduleDto(row.RowVersion, row.CampusCode, from, from.AddMinutes(120));
     }
 
     private sealed record CampusRow(ulong InstanceId, ulong CampusId, string Status, ulong? DecidedBy, string? DecisionNote);

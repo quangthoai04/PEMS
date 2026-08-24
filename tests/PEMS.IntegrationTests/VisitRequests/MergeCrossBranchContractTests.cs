@@ -426,27 +426,19 @@ public sealed class MergeCrossBranchContractTests
         finally { await CleanupAsync(requestId); }
     }
 
-    /// <summary>The payload that resubmits one campus: its current content with a fresh, legal schedule.</summary>
-    private static async Task<CampusVisitEditV2Dto> PayloadAsync(ulong instanceId)
+    /// <summary>The payload that resubmits one campus: SCHEDULE-ONLY (plan FIX-G/H) — its own row
+    /// version, campus code and a fresh, legal start/end.</summary>
+    private static async Task<InstanceResubmitScheduleDto> PayloadAsync(ulong instanceId)
     {
         using var db = NewContext();
         var row = await (
             from c in db.VisitRequestCampuses.AsNoTracking()
             join site in db.Campuses.AsNoTracking() on c.CampusId equals site.CampusId
             where c.VisitInstanceId == instanceId
-            select new { c.RowVersion, site.CampusCode, c.FormDetail }).FirstAsync();
+            select new { c.RowVersion, site.CampusCode }).FirstAsync();
 
-        var d = row.FormDetail!;
         var from = Now.AddDays(30);
-        return new CampusVisitEditV2Dto(
-            instanceId, row.RowVersion, row.CampusCode, from, from.AddMinutes(120),
-            d.DelegationName, d.VisitType, d.VisitTypeOther, d.Purpose, d.WorkingContent,
-            new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
-            new List<SupportTeamMemberDto>(),
-            new ContactPointDto(
-                d.OperationalContactFullName, d.OperationalContactOrganization!,
-                d.OperationalContactJobTitle, d.OperationalContactPhone, d.OperationalContactEmail),
-            d.WorkingLanguage, d.TransportationNote, d.MediaConsentStatus, d.Notes);
+        return new InstanceResubmitScheduleDto(row.RowVersion, row.CampusCode, from, from.AddMinutes(120));
     }
 
     // ── MERGE-CROSS-03 ────────────────────────────────────────────────────────────

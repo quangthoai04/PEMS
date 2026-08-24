@@ -14,8 +14,9 @@ export interface SafeEditRegistrantDraft {
 /**
  * One campus row in the safe-edit form.
  *
- * The operational-contact profile is deliberately ABSENT: it has exactly one door now — "Manage the
- * contact role" — so this form never carries it (plan PEMS_CONTACT_ONE_DOOR).
+ * Same-person operational-contact metadata + relation live here now (plan CanhIter3FixBug) — email is
+ * deliberately NOT part of this draft; it is rendered read-only from the campus's current contact and
+ * echoed straight into the payload at submit time, never held as editable state.
  */
 export interface SafeEditInstanceDraft {
   visitInstanceId: number;
@@ -25,6 +26,12 @@ export interface SafeEditInstanceDraft {
   mediaConsentStatus: string;
   /** "Ghi chú gửi FPTU" — one general remark per campus, independent of media consent. */
   notes: string;
+  contactFullName: string;
+  contactOrganization: string;
+  contactJobTitle: string;
+  contactPhone: string;
+  /** Which delegation member the contact IS, or null for "not in the delegation". */
+  contactGuestMemberId: number | null;
 }
 
 /** Trimmed text, with empty treated the same as absent — "  " and null mean the same thing here. */
@@ -51,6 +58,7 @@ export function buildChangedOnlyPayload(
   form: ResolvedVisitForm,
   registrant: SafeEditRegistrantDraft,
   instances: SafeEditInstanceDraft[],
+  canEditShared: boolean,
 ): SafeEditPayload | null {
   const payload: SafeEditPayload = {
     expectedRequestRowVersion: form.rowVersion,
@@ -61,14 +69,22 @@ export function buildChangedOnlyPayload(
   // ── Registrant. Full name is required by the backend, so once ANY registrant field changed the
   //    block carries the name too — otherwise the patch would look like a request to blank it.
   //    partnerId travels ATOMICALLY with organization — never sent independently — so the text and
-  //    the id it points at can never be applied as two separate patches. ──
+  //    the id it points at can never be applied as two separate patches.
+  //
+  //    `canEditShared` is checked HERE too, not only by the disabled fieldset the modal renders — the
+  //    request-level capability is the backend's own verdict, and this function must refuse to build a
+  //    Registrant patch on its behalf regardless of how `registrant` state got here (a disabled control
+  //    that lets a click leak through, a future field added without wiring its own disabled prop). A
+  //    diff is not even computed when the shared block is locked, so a stale/mismatched `registrant`
+  //    draft can never surface as a patch either. ──
   const registrantChanged =
-    changed(form.registrant.fullName, registrant.fullName)
-    || changed(form.registrant.nationality, registrant.nationality)
-    || changed(form.registrant.organization, registrant.organization)
-    || changed(form.registrant.jobTitle, registrant.jobTitle)
-    || changed(form.registrant.phone, registrant.phone)
-    || (form.partnerId ?? null) !== (registrant.partnerId ?? null);
+    canEditShared
+    && (changed(form.registrant.fullName, registrant.fullName)
+      || changed(form.registrant.nationality, registrant.nationality)
+      || changed(form.registrant.organization, registrant.organization)
+      || changed(form.registrant.jobTitle, registrant.jobTitle)
+      || changed(form.registrant.phone, registrant.phone)
+      || (form.partnerId ?? null) !== (registrant.partnerId ?? null));
   if (registrantChanged) {
     payload.registrant = {
       fullName: norm(registrant.fullName),
@@ -103,6 +119,30 @@ export function buildChangedOnlyPayload(
     }
     if (norm(current.mediaConsentStatus) !== norm(draft.mediaConsentStatus)) {
       patch.mediaConsentStatus = norm(draft.mediaConsentStatus);
+      touched = true;
+    }
+
+    // ── Same-person contact metadata + relation (plan CanhIter3FixBug) — a SEPARATE sparse sub-patch,
+    //    omitted entirely when neither metadata nor relation changed. Email is never read from the
+    //    draft: always echoed from `current` so the backend can prove identity is unchanged. ──
+    const metadataChanged =
+      changed(current.operationalContact.fullName, draft.contactFullName)
+      || changed(current.operationalContact.organization, draft.contactOrganization)
+      || changed(current.operationalContact.jobTitle, draft.contactJobTitle)
+      || changed(current.operationalContact.phone, draft.contactPhone);
+    const relationChanged =
+      (current.operationalContact.guestMemberId ?? null) !== (draft.contactGuestMemberId ?? null);
+    if (metadataChanged || relationChanged) {
+      patch.operationalContact = {
+        fullName: norm(draft.contactFullName),
+        organization: norm(draft.contactOrganization) || null,
+        jobTitle: norm(draft.contactJobTitle),
+        phone: norm(draft.contactPhone) || null,
+        email: current.operationalContact.email,
+        // Tri-state: the wrapper itself is OMITTED (not { guestMemberId: null }) unless the relation
+        // actually changed — "don't touch relation" must stay distinguishable from "explicit unlink".
+        ...(relationChanged ? { memberLink: { guestMemberId: draft.contactGuestMemberId ?? null } } : {}),
+      };
       touched = true;
     }
 
