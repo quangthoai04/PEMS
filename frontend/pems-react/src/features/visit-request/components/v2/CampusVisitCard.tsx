@@ -211,6 +211,14 @@ export const CampusVisitCard: React.FC<Props> = ({
   const campusName = campuses.find(c => c.campusCode === campusCode)?.campusName;
   const headerLabel = campusName ?? t('visitRequestV2:card.unselectedCampus');
 
+  // The AGREED wording is long enough that the closed native select truncates it (plan §13) — the
+  // full current label is folded into the field's own HelpTooltip so it stays reachable by hover,
+  // keyboard focus and touch, not just a bare (unreachable) `title` attribute.
+  const mediaConsentValue = watch(`${base}.mediaConsentStatus`);
+  const mediaConsentSelectedLabel = mediaConsentValue === 'DECLINED'
+    ? t('visitRequestV2:card.mediaDeclined')
+    : t('visitRequestV2:card.mediaAgreed');
+
   /**
    * Whether the header may claim this card is "Đã đủ thông tin" — answered by the SAME schema that
    * validates the submit, never by a hand-picked list of fields.
@@ -1486,9 +1494,6 @@ export const CampusVisitCard: React.FC<Props> = ({
         <fieldset data-field-error={visitorsListError ? 'true' : undefined}>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.visitors')} <span className="text-red-500">*</span>
-            <span className="text-xs font-normal text-slate-400">
-              {t('visitRequestV2:card.memberCount', { count: visitorFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
-            </span>
             <span className="ml-auto flex items-center gap-2">
               <button
                 type="button"
@@ -1504,7 +1509,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => visitorFileRef.current?.click()}
               >
-                <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
+                <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importGuests')}
               </button>
             </span>
           </legend>
@@ -1564,9 +1569,6 @@ export const CampusVisitCard: React.FC<Props> = ({
         <fieldset>
           <legend className="mb-2 flex w-full flex-wrap items-center gap-2 text-sm font-extrabold text-slate-900">
             {t('visitRequestV2:card.supportTeam')}
-            <span className="text-xs font-normal text-slate-400">
-              {t('visitRequestV2:card.memberCount', { count: supportFields.fields.length, max: V2_MAX_MEMBERS_PER_CAMPUS })}
-            </span>
             <span className="ml-auto flex items-center gap-2">
               <button
                 type="button"
@@ -1582,7 +1584,7 @@ export const CampusVisitCard: React.FC<Props> = ({
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
                 onClick={() => supportFileRef.current?.click()}
               >
-                <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importForCampus')}
+                <FileSpreadsheet className="h-3.5 w-3.5" /> {t('visitRequestV2:excel.importSupport')}
               </button>
             </span>
           </legend>
@@ -2105,7 +2107,17 @@ export const CampusVisitCard: React.FC<Props> = ({
               label={
                 <span className="inline-flex items-center gap-1">
                   {t('visitRequestV2:card.mediaConsent')}
-                  <HelpTooltip content={t('visitRequestV2:card.mediaConsentTooltip')} />
+                  <HelpTooltip
+                    testId={`campus-media-consent-help-${index}`}
+                    content={
+                      <>
+                        <p>{t('visitRequestV2:card.mediaConsentTooltip')}</p>
+                        {/* The closed select may truncate the long AGREED wording — this keeps the
+                            full current selection reachable without relying on a bare `title`. */}
+                        <p className="mt-1 font-bold">{mediaConsentSelectedLabel}</p>
+                      </>
+                    }
+                  />
                 </span>
               }
               required

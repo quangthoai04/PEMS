@@ -524,14 +524,34 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           </div>
         )}
         <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+          {/* Row 1: Họ và tên | Quốc tịch | Đơn vị công tác (4/2/6) */}
           <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
             {/* Named explicitly as well as inheriting it from the form: a Vietnamese name is the
                 first thing typed into this form and the first thing the dictionary underlines. */}
             <input data-testid="v2-registrant-fullName" spellCheck={false} {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
           </FormField>
+          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
+            <Controller
+              name="registerInfo.nationality"
+              control={form.control}
+              render={({ field }) => (
+                <CountrySelect
+                  strict
+                  value={field.value ?? ''}
+                  // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
+                  // được để trống" error immediately, including the pre-submit case where nothing
+                  // else would revalidate it (NP-02).
+                  onChange={fieldChangeHandler(form, 'registerInfo.nationality', field.onChange)}
+                  onBlur={field.onBlur}
+                  hasError={!!regErr?.nationality}
+                  placeholder={t('visitRequestV2:registrant.nationality')}
+                />
+              )}
+            />
+          </FormField>
           {/* Free-solo partner/organization search: picking a known partner links partnerId,
               typing anything else keeps the text as a manually entered organization. */}
-          <FormField className="col-span-12 lg:col-span-8" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
             <Controller
               name="registerInfo.organization"
               control={form.control}
@@ -553,29 +573,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               )}
             />
           </FormField>
-          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
+          {/* Row 2: Chức vụ | Số điện thoại | Email (4/4/4) */}
+          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
             <input data-testid="v2-registrant-jobTitle" spellCheck={false} {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
           </FormField>
-          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
-            <Controller
-              name="registerInfo.nationality"
-              control={form.control}
-              render={({ field }) => (
-                <CountrySelect
-                  strict
-                  value={field.value ?? ''}
-                  // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
-                  // được để trống" error immediately, including the pre-submit case where nothing
-                  // else would revalidate it (NP-02).
-                  onChange={fieldChangeHandler(form, 'registerInfo.nationality', field.onChange)}
-                  onBlur={field.onBlur}
-                  hasError={!!regErr?.nationality}
-                  placeholder={t('visitRequestV2:registrant.nationality')}
-                />
-              )}
-            />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-3" label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
+          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
             <PhoneField
               field={register('registerInfo.phone')}
               hasError={!!regErr?.phone}
@@ -694,12 +696,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               <span>{t('validation:fixErrorsCount', { count: vm.validationErrorCount })}</span>
             </div>
           )}
-          <div className="flex flex-col-reverse items-center justify-between gap-4 pt-2 sm:flex-row sm:pt-4">
-            <p className="text-xs font-normal text-slate-500">
-              <span className="font-bold text-red-500">*</span> {vm.minAdvanceHours > 0
-                ? t('visitRequestV2:schedule.rulesHint', { hours: vm.minAdvanceHours, minutes: 30 })
-                : t('visitRequestV2:schedule.rulesHintShortNotice', { minutes: 30 })}
-            </p>
+          {/* The standing "72h / 30 phút" hint used to live here on every render. The rule itself is
+              still enforced (schema + backend) and still explained contextually, next to the
+              schedule fields themselves (VisitDateTimeRangePicker's own HelpTooltip) — this bar no
+              longer repeats it permanently. */}
+          <div className="flex items-center justify-center gap-4 pt-2 sm:justify-end sm:pt-4">
             <button
               type="submit"
               form="visit-request-v2-form"

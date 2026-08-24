@@ -1,5 +1,5 @@
-import React from 'react';
-import { AlertTriangle, CheckCircle2, Download, Loader2, RefreshCw, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Download, Loader2, RefreshCw, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { canApplyImport, EXCEL_MAX_MEMBERS, type ExcelImportReport, type ExcelTranslator } from './excelValidator';
 import { downloadExcelErrorReport } from './excelDownload';
@@ -52,6 +52,17 @@ export const ExcelImportPanel: React.FC<Props> = ({
     ? 'visitRequestV2:excel.report.listGuests'
     : 'visitRequestV2:excel.report.listSupport');
 
+  /**
+   * A successful import is compact by default (plan §10) — one line naming the count and the list,
+   * with the full breakdown one click away. Guests and support staff each hold their OWN state (the
+   * component is instantiated once per section), so expanding one never touches the other.
+   *
+   * Collapsed again whenever a NEW report lands — re-running an import should not silently inherit
+   * whatever the previous file left expanded.
+   */
+  const [showDetails, setShowDetails] = useState(false);
+  useEffect(() => { setShowDetails(false); }, [state.report]);
+
   if (state.loadingFileName) {
     return (
       <div
@@ -71,29 +82,47 @@ export const ExcelImportPanel: React.FC<Props> = ({
   const applied = canApplyImport(report);
 
   if (applied) {
+    // Names the ACTION and the LIST. "Nhập Excel thành công" said neither, so on a card with two
+    // importers it could not be told which list had just changed, or how — kept for the expanded
+    // detail heading; the compact line above it names only the count (plan §10.2: `validRows`, the
+    // rows THIS import actually added/replaced — never `resultingCount`, which is the list's new
+    // total and would overstate what just happened whenever the list was not empty beforehand).
+    const actionTitle = t(state.applied?.phase === 'REPLACED'
+      ? 'visitRequestV2:excel.report.replacedTitle'
+      : 'visitRequestV2:excel.report.appendedTitle', { list: listLabel });
+    const compactKey = kind === 'visitors'
+      ? 'visitRequestV2:excel.report.successCompactGuests'
+      : 'visitRequestV2:excel.report.successCompactSupport';
     return (
       <div
         data-testid={`${testId}-success`}
         role="status"
         className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3"
       >
-        <div className="mb-2 flex items-center gap-2 text-sm font-extrabold text-emerald-800">
+        <div className="flex items-center gap-2 text-sm font-extrabold text-emerald-800">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          {/* Names the ACTION and the LIST. "Nhập Excel thành công" said neither, so on a card with
-              two importers it could not be told which list had just changed, or how. */}
-          {t(state.applied?.phase === 'REPLACED'
-            ? 'visitRequestV2:excel.report.replacedTitle'
-            : 'visitRequestV2:excel.report.appendedTitle', { list: listLabel })}
+          {t(compactKey, { count: report.validRows })}
+          <button
+            type="button"
+            data-testid={`${testId}-success-toggle`}
+            aria-expanded={showDetails}
+            className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+            onClick={() => setShowDetails(v => !v)}
+          >
+            {showDetails ? t('visitRequestV2:excel.report.hideDetails') : t('visitRequestV2:excel.report.showDetails')}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+          </button>
           <button
             type="button"
             aria-label={t('visitRequestV2:excel.report.dismiss')}
-            className="ml-auto rounded-lg p-1 text-emerald-700 hover:bg-emerald-100"
+            className="rounded-lg p-1 text-emerald-700 hover:bg-emerald-100"
             onClick={onDismiss}
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="space-y-1 text-sm">
+        <div hidden={!showDetails} data-testid={`${testId}-success-details`} className="mt-2 space-y-1 border-t border-emerald-200 pt-2 text-sm">
+          <p className="font-bold text-emerald-900">{actionTitle}</p>
           <Row label={t('visitRequestV2:excel.report.targetList')} value={listLabel} />
           <Row label={t('visitRequestV2:excel.report.fileName')} value={report.fileName} />
           <Row label={t('visitRequestV2:excel.report.totalRows')} value={report.totalRows} />

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface HelpTooltipProps {
@@ -22,7 +22,7 @@ interface HelpTooltipProps {
 let tooltipSeq = 0;
 
 /**
- * The `?` next to a label, holding the explanation that would otherwise be a standing paragraph
+ * The `i` next to a label, holding the explanation that would otherwise be a standing paragraph
  * under the field (UX-01).
  *
  * <p>This used to be a hover-only `<div>`: no keyboard could reach it, a tap did nothing, and the
@@ -68,7 +68,7 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '
           if (e.key === 'Escape') setOpen(false);
         }}
       >
-        <HelpCircle className="h-4 w-4" />
+        <Info className="h-4 w-4" />
       </button>
       <div
         id={id}
