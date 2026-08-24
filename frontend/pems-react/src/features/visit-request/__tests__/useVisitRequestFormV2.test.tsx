@@ -74,9 +74,11 @@ describe('useVisitRequestFormV2', () => {
   const setup = (
     mode: 'public' | 'authenticated' = 'public',
     currentUserEmail: string | null = 'reg@example.com',
+    isInternalActor = false,
   ) => {
     const onSuccess = vi.fn();
-    const view = renderHook(() => useVisitRequestFormV2(onSuccess, undefined, { mode, currentUserEmail }));
+    const view = renderHook(() =>
+      useVisitRequestFormV2(onSuccess, undefined, { mode, currentUserEmail, isInternalActor }));
     return { ...view, onSuccess };
   };
 
@@ -298,5 +300,44 @@ describe('useVisitRequestFormV2', () => {
 
     expect(createVisitRequestV2).not.toHaveBeenCalled();
     expect(result.current.firstErrorCampusIndex).toBe(0);
+  });
+
+  // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §8.2) ──
+
+  it('internal actor self-registering drops minAdvanceHours to 0', async () => {
+    const { result } = setup('authenticated', 'reg@example.com', true);
+    act(() => {
+      result.current.form.setValue('registerInfo.email', 'reg@example.com');
+    });
+    await waitFor(() => expect(result.current.minAdvanceHours).toBe(0));
+  });
+
+  it('visitor self-registration keeps the 72h floor even though the email matches', async () => {
+    const { result } = setup('authenticated', 'reg@example.com', false);
+    act(() => {
+      result.current.form.setValue('registerInfo.email', 'reg@example.com');
+    });
+    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
+  });
+
+  it('internal actor naming somebody else as registrant keeps the 72h floor', async () => {
+    const { result } = setup('authenticated', 'staff@example.com', true);
+    act(() => {
+      result.current.form.setValue('registerInfo.email', 'someone-else@example.com');
+    });
+    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
+  });
+
+  it('editing the registrant email back to self restores the short-notice floor', async () => {
+    const { result } = setup('authenticated', 'staff@example.com', true);
+    act(() => {
+      result.current.form.setValue('registerInfo.email', 'someone-else@example.com');
+    });
+    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
+
+    act(() => {
+      result.current.form.setValue('registerInfo.email', 'staff@example.com');
+    });
+    await waitFor(() => expect(result.current.minAdvanceHours).toBe(0));
   });
 });

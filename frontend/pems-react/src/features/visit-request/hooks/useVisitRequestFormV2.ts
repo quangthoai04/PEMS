@@ -281,6 +281,15 @@ export interface UseVisitRequestFormV2Options {
   currentUserEmail?: string | null;
   minAdvanceHours?: number;
   /**
+   * Authenticated mode only: is the signed-in actor internal Staff/Staff Leader? Combined with
+   * self-registration (derived below from `currentUserEmail` vs the watched registrant email), this
+   * is what may file a visit under the 72h registration floor — see the
+   * PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan. The backend re-derives and re-checks the same
+   * thing from the actor's own DB role; this only decides what the FORM offers/validates, never what
+   * the server accepts. Ignored in public mode.
+   */
+  isInternalActor?: boolean;
+  /**
    * How many campuses are open for registration right now (from the backend). Caps the campus
    * array so the limit tracks the real campus list instead of a hardcoded number.
    */
@@ -311,7 +320,15 @@ export const useVisitRequestFormV2 = (
   const mode = options?.mode ?? 'public';
   const isAuthenticatedMode = mode === 'authenticated';
   const draftNamespace = options?.draftNamespace;
-  const minAdvanceHours = options?.minAdvanceHours ?? V2_MIN_ADVANCE_HOURS_CREATE;
+  const isInternalActor = options?.isInternalActor ?? false;
+  /** The floor for everyone WITHOUT the short-notice capability — Visitor, and any delegated submit. */
+  const staticMinAdvanceHours = options?.minAdvanceHours ?? V2_MIN_ADVANCE_HOURS_CREATE;
+  /**
+   * The floor actually enforced right now — drops to 0 the moment the form is BOTH internal AND
+   * self-registered (kept in sync below, once `form` exists, via a watch on the registrant email).
+   * Starts at the static floor: nothing has proven self-registration yet on the very first render.
+   */
+  const [minAdvanceHours, setMinAdvanceHours] = useState(staticMinAdvanceHours);
 
   const { t, i18n } = useTranslation(['validation', 'toast', 'visitRequestV2']);
 
@@ -425,6 +442,26 @@ export const useVisitRequestFormV2 = (
   // React keys come from the DATA clientKey (stable across replace/drafts) — `id` here is
   // only RHF's render bookkeeping and is never persisted.
   const campusVisitFields = useFieldArray({ control: form.control, name: 'campusVisits' });
+
+  // ── Internal self-registration short-notice (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan) ──
+  // Recomputed from the LIVE registrant email: only an internal Staff/Staff Leader registering
+  // THEMSELF may file inside the 72h floor — the exact same question `isSelfRegistration` answers for
+  // the submit contract, asked again here because the schema/picker floor cannot itself watch the
+  // form (it is what the form is built FROM). Fires on every change to the email, and once more on a
+  // `form.reset` (draft hydrate, resetForm — reported as `name: undefined`), so a restored draft is
+  // not left showing the wrong floor. This only widens what the FORM offers; the backend re-derives
+  // and re-checks the actor's role from its own DB before ever accepting a short-notice schedule.
+  useEffect(() => {
+    const applyFor = (email: string | null | undefined) => {
+      const next = isInternalActor && isSelfRegistration(email) ? 0 : staticMinAdvanceHours;
+      setMinAdvanceHours(prev => (prev === next ? prev : next));
+    };
+    applyFor(form.getValues('registerInfo.email'));
+    const subscription = form.watch((values, { name }) => {
+      if (name === undefined || name === 'registerInfo.email') applyFor(values.registerInfo?.email);
+    });
+    return () => subscription.unsubscribe();
+  }, [form, isInternalActor, isSelfRegistration, staticMinAdvanceHours]);
 
   const hasErrors = Object.keys(form.formState.errors).length > 0;
   useEffect(() => {

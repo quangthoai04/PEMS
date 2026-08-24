@@ -96,6 +96,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     if (rc === 'STAFF') return sr === 'LEADER' ? 'STAFF_LEADER' : 'STAFF';
     return 'VISITOR';
   }, [user?.roleCode, user?.subRole]);
+  // Internal Staff/Staff Leader + self-registration is what may file inside the 72h floor (plan
+  // PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H) — computed here, ahead of the hook call, since it
+  // needs nothing from the form itself; the hook re-derives self-registration from its OWN watch on
+  // the registrant email.
+  const isInternalActor = creatorRole === 'STAFF' || creatorRole === 'STAFF_LEADER';
 
   // Keyed by campus CODE, so reordering or removing a card never moves a decision onto another
   // campus. Entries for campuses no longer selected are dropped at submit time, never sent.
@@ -107,6 +112,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     mode,
     draftNamespace,
     currentUserEmail: user?.email,
+    isInternalActor,
     // The ceiling is "one card per campus open for registration", read from the backend — not a
     // constant. Retiring or adding a campus changes the form with no code change.
     maxCampuses: campuses.length || undefined,
@@ -267,7 +273,7 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   // ── Registrant identity (authenticated only) ──
   // Recomputed from the WATCHED email, so editing the field flips the banner, the submit contract and
   // the campus processing panel in the same render — there is no stale "verified" state to leak.
-  const isInternalActor = creatorRole === 'STAFF' || creatorRole === 'STAFF_LEADER';
+  // (isInternalActor is computed above, ahead of the hook call — reused here for the banner.)
   const isSelfRegistrant = isAuthenticated && isSameEmailIdentity(user?.email, watchedReg?.email);
 
   const [autofillState, setAutofillState] = useState<'idle' | 'loading' | 'error'>('idle');
@@ -690,7 +696,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           )}
           <div className="flex flex-col-reverse items-center justify-between gap-4 pt-2 sm:flex-row sm:pt-4">
             <p className="text-xs font-normal text-slate-500">
-              <span className="font-bold text-red-500">*</span> {t('visitRequestV2:schedule.rulesHint', { hours: vm.minAdvanceHours, minutes: 30 })}
+              <span className="font-bold text-red-500">*</span> {vm.minAdvanceHours > 0
+                ? t('visitRequestV2:schedule.rulesHint', { hours: vm.minAdvanceHours, minutes: 30 })
+                : t('visitRequestV2:schedule.rulesHintShortNotice', { minutes: 30 })}
             </p>
             <button
               type="submit"

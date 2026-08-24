@@ -45,15 +45,24 @@ public sealed class CreateVisitRequestV2CommandTests
         Assert.True(_dbUp!.Value, "pems_pr3_test is not reachable — import the PR-2 master to run these tests.");
     }
 
+    // Seeded internal actors reused from CompleteVisitStageV2Tests: LeaderHn is the HN campus's own
+    // Staff Leader, HostHn a regular IC Staff of the same campus — both ACTIVE in pems_pr3_test.
+    private const ulong LeaderHn = 3;
+    private const ulong HostHn = 101;
+    private const ulong CampusHn = 1;
+
     private sealed class FakeUser : ICurrentUserService
     {
+        public FakeUser(ulong id = Registrant, string roleCode = RoleCodes.Visitor,
+            string? subRole = null, ulong? primaryCampusId = null)
+        { UserId = id; RoleCode = roleCode; SubRole = subRole; PrimaryCampusId = primaryCampusId; }
         public bool IsAuthenticated => true;
-        public ulong? UserId => Registrant;
+        public ulong? UserId { get; }
         public string? Email => null;
         public ulong? RoleId => null;
-        public string? RoleCode => RoleCodes.Visitor;
-        public string? SubRole => null;
-        public ulong? PrimaryCampusId => null;
+        public string? RoleCode { get; }
+        public string? SubRole { get; }
+        public ulong? PrimaryCampusId { get; }
         public ulong? DepartmentId => null;
         public ulong? SessionId => null;
         public string? LoginPortal => null;
@@ -113,8 +122,9 @@ public sealed class CreateVisitRequestV2CommandTests
     }
 
     private static CreateVisitRequestV2CommandHandler Handler(
-        ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null)
-        => new(db, new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
+        ApplicationDbContext db, bool read, bool write, INotificationService? notifications = null,
+        ICurrentUserService? user = null)
+        => new(db, user ?? new FakeUser(), new FixedClock(), new VisitRequestV2CreateService(db),
             notifications ?? new RecordingNotifications(),
             new RecordingInvitationService(), new UserProvisionService(db),
             NullLogger<CreateVisitRequestV2CommandHandler>.Instance,
@@ -123,20 +133,55 @@ public sealed class CreateVisitRequestV2CommandTests
             new ProposedHostActivationService(db, new MySqlUserMutationLockService(db)), new MySqlUserMutationLockService(db));
 
     private static VisitRequestFormDataV2 Form(string submissionId)
+        => FormFor(Registrant, Now.AddDays(20), submissionId);
+
+    /// <summary>
+    /// Same shape as <see cref="Form"/>, but for an ARBITRARY actor/start — what the short-notice tests
+    /// need to file as HostHn/LeaderHn at an offset under 72h, or as HostHn naming somebody else as
+    /// registrant. <paramref name="registrantEmail"/> defaults to the ACTOR's own verified address (self
+    /// registration); pass a different one to build a delegated-registrant payload.
+    ///
+    /// <para>
+    /// The campus contact defaults to a THIRD address, never the registrant's: an internal actor may
+    /// not appoint themself as their own campus's contact (<c>InternalRegistrantCannotBeContact</c>),
+    /// so a self-match contact would fail every internal-actor fixture before the short-notice rule is
+    /// even reached. <see cref="Form"/> keeps the old self-match shape for its Visitor fixtures, where
+    /// self-matching IS legal.
+    /// </para>
+    /// </summary>
+    private static VisitRequestFormDataV2 FormFor(
+        ulong actorUserId, DateTime start, string submissionId,
+        string? registrantEmail = null, string? contactEmail = null)
     {
-        var start = Now.AddDays(20);
+        var email = registrantEmail ?? V2SeedActor.Email(actorUserId);
         var campus = new CampusVisitFormDto(
             "HN", start, start.AddMinutes(120), "Đoàn ABC", "MEETING", null, "Thăm", "Nội dung",
             new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg") },
             new List<SupportTeamMemberDto>(),
-            // The registrant’s own verified address — the campus self-matches, so no invitation is
-            // sent and the request opens the gate immediately.
-            new ContactPointDto("Registrant", "Org", "Trưởng phòng Hợp tác", "+8491", V2SeedActor.Email(Registrant)),
+            new ContactPointDto("Op Contact", "Org", "Trưởng phòng Hợp tác", "+8491", contactEmail ?? email),
             "EN", null, "DECLINED", null, null);
         return new VisitRequestFormDataV2(
             submissionId,
-            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
+            new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", email),
             null, new List<CampusVisitFormDto> { campus });
+    }
+
+    /// <summary>Child-first delete so pems_pr3_test keeps v2_requests at its baseline count.</summary>
+    private static async Task CleanupCreatedRequestAsync(ulong id)
+    {
+        if (id == 0) return;
+        using var db = NewContext();
+        async Task Del(string sql) => await db.Database.ExecuteSqlRawAsync(sql, id);
+        await Del("DELETE FROM visit_request_identity_change_events WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_request_identity_changes WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_form_revision_history WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_request_revision_history WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_guest_members WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_instance_form_details WHERE visit_instance_id IN (SELECT visit_instance_id FROM visit_request_campuses WHERE visit_request_id = {0})");
+        await Del("DELETE FROM visit_request_campuses WHERE visit_request_id = {0}");
+        await Del("DELETE FROM audit_logs WHERE visit_request_id = {0}");
+        await Del("DELETE FROM visit_requests WHERE visit_request_id = {0}");
     }
 
     [Fact]
@@ -205,23 +250,105 @@ public sealed class CreateVisitRequestV2CommandTests
         }
         finally
         {
-            if (createdId != 0)
-            {
-                using var db = NewContext();
-                // Explicit child-first delete so pems_pr3_test keeps v2_requests = 0 (some FKs are RESTRICT).
-                var id = createdId;
-                async Task Del(string sql) => await db.Database.ExecuteSqlRawAsync(sql, id);
-                await Del("DELETE FROM visit_request_identity_change_events WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_request_identity_changes WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_instance_form_revision_history WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_request_revision_history WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_instance_guest_members WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_guest_members WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_instance_form_details WHERE visit_instance_id IN (SELECT visit_instance_id FROM visit_request_campuses WHERE visit_request_id = {0})");
-                await Del("DELETE FROM visit_request_campuses WHERE visit_request_id = {0}");
-                await Del("DELETE FROM audit_logs WHERE visit_request_id = {0}");
-                await Del("DELETE FROM visit_requests WHERE visit_request_id = {0}");
-            }
+            await CleanupCreatedRequestAsync(createdId);
         }
+    }
+
+    // ── Short-notice authorization (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §7.2) ──
+    // The Create SERVICE's own boundary matrix (CreateVisitRequestV2ServiceTests) already proves the
+    // 72h floor is correctly gated by the capability flag; these prove the HANDLER computes that flag
+    // correctly from the real actor role loaded from the DB — never from the request payload.
+
+    [Fact]
+    public async Task Staff_self_registration_may_create_inside_the_72h_floor()
+    {
+        RequireDb();
+        var submissionId = Guid.NewGuid().ToString("N");
+        ulong createdId = 0;
+        try
+        {
+            using var db = NewContext();
+            var start = Now.AddHours(24); // < 72h — only allowed for internal self-registration
+            var result = await Handler(db, read: true, write: true,
+                    user: new FakeUser(HostHn, RoleCodes.Staff, UserSubRoles.Staff, CampusHn))
+                .Handle(new CreateVisitRequestV2Command(
+                    FormFor(HostHn, start, submissionId, contactEmail: "op-contact-sn1@example.com")),
+                    CancellationToken.None);
+            createdId = result.VisitRequestId;
+            Assert.False(result.Idempotent);
+        }
+        finally
+        {
+            await CleanupCreatedRequestAsync(createdId);
+        }
+    }
+
+    [Fact]
+    public async Task Staff_leader_self_registration_may_create_inside_the_72h_floor()
+    {
+        RequireDb();
+        var submissionId = Guid.NewGuid().ToString("N");
+        ulong createdId = 0;
+        try
+        {
+            using var db = NewContext();
+            var start = Now.AddHours(24);
+            var result = await Handler(db, read: true, write: true,
+                    user: new FakeUser(LeaderHn, RoleCodes.Staff, UserSubRoles.Leader, CampusHn))
+                .Handle(new CreateVisitRequestV2Command(
+                    FormFor(LeaderHn, start, submissionId, contactEmail: "op-contact-sn2@example.com")),
+                    CancellationToken.None);
+            createdId = result.VisitRequestId;
+            Assert.False(result.Idempotent);
+        }
+        finally
+        {
+            await CleanupCreatedRequestAsync(createdId);
+        }
+    }
+
+    [Fact]
+    public async Task Visitor_self_registration_at_24h_is_still_refused()
+    {
+        RequireDb();
+        using var db = NewContext();
+        var before = await db.VisitRequests.CountAsync();
+
+        var start = Now.AddHours(24);
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            Handler(db, read: true, write: true).Handle(
+                new CreateVisitRequestV2Command(FormFor(Registrant, start, Guid.NewGuid().ToString("N"))),
+                CancellationToken.None));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+
+        var after = await db.VisitRequests.CountAsync();
+        Assert.Equal(before, after); // nothing created
+    }
+
+    /// <summary>
+    /// A Staff account naming somebody ELSE as the registrant must be refused at the self-registration
+    /// gate — same as today — before the short-notice capability is ever computed. This is the exact
+    /// bypass the plan's design exists to rule out: the capability answers "is THIS actor an internal
+    /// Staff/Staff Leader registering THEMSELF", never "is whoever is typing internal staff".
+    /// </summary>
+    [Fact]
+    public async Task Internal_actor_naming_someone_else_as_registrant_gets_no_short_notice()
+    {
+        RequireDb();
+        using var db = NewContext();
+        var before = await db.VisitRequests.CountAsync();
+
+        var start = Now.AddHours(24); // would only be legal if this were self-registration
+        var ex = await Assert.ThrowsAsync<ConflictException>(() =>
+            Handler(db, read: true, write: true,
+                    user: new FakeUser(HostHn, RoleCodes.Staff, UserSubRoles.Staff, CampusHn))
+                .Handle(new CreateVisitRequestV2Command(FormFor(
+                        HostHn, start, Guid.NewGuid().ToString("N"),
+                        registrantEmail: "someone-else@example.com")),
+                    CancellationToken.None));
+        Assert.Equal(VisitRequestErrorCodes.RegistrantEmailVerificationRequired, ex.ErrorCode);
+
+        var after = await db.VisitRequests.CountAsync();
+        Assert.Equal(before, after);
     }
 }

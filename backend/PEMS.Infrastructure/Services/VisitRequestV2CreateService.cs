@@ -51,7 +51,8 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         string createdSource,
         DateTime vietnamNow,
         CancellationToken cancellationToken = default,
-        IReadOnlyDictionary<string, CampusHostProposalSeed>? hostProposals = null)
+        IReadOnlyDictionary<string, CampusHostProposalSeed>? hostProposals = null,
+        bool allowShortNoticeCreate = false)
     {
         if (form.CampusVisits is null || form.CampusVisits.Count == 0)
             throw new BusinessRuleException("Cần ít nhất một cơ sở.", VisitRequestErrorCodes.InvalidVisitTime);
@@ -101,7 +102,15 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
         //    The minimum lead time is enforced HERE, against the server's own clock, and not merely in the
         //    form: it used to accept anything that was not already in the past, so a direct API call — or a
         //    form filled in while the deadline passed — could file a visit for tomorrow morning and leave a
-        //    Staff Leader no time to arrange it. Same floor as pending-edit and resubmit.
+        //    Staff Leader no time to arrange it. Same floor as pending-edit and resubmit — EXCEPT an
+        //    authenticated internal Staff/Staff Leader registering THEMSELVES (allowShortNoticeCreate,
+        //    proven by CreateVisitRequestV2CommandHandler before this is ever true; every other caller,
+        //    including public/OTP create, keeps the default `false`).
+        //
+        //    The future-only guard is deliberately its own `if`, ahead of and independent from the 72h
+        //    floor: exempting short-notice from "not in the past" as a side effect of exempting it from
+        //    "not within 72h" is exactly the bug this split exists to rule out — see the short-notice plan
+        //    §3.3. Every actor, short-notice or not, is held to it.
         var earliestAllowedStart = vietnamNow.AddHours(VisitMutationPolicy.MinScheduleLeadHours);
         foreach (var cv in form.CampusVisits)
         {
@@ -109,7 +118,12 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                 throw new BusinessRuleException("Thời gian kết thúc phải sau thời gian bắt đầu.", VisitRequestErrorCodes.InvalidVisitTime);
             if ((cv.PlannedEndAt - cv.PlannedStartAt).TotalMinutes < MinDurationMinutes)
                 throw new BusinessRuleException("Mỗi buổi thăm phải kéo dài tối thiểu 30 phút.", VisitRequestErrorCodes.InvalidVisitTime);
-            if (cv.PlannedStartAt < earliestAllowedStart)
+            // Strictly greater than now, not "not yet past": the few milliseconds the request spends in
+            // flight mean an exact `== now` has already slipped into the past by the time this commits.
+            if (cv.PlannedStartAt <= vietnamNow)
+                throw new BusinessRuleException(
+                    "Thời gian bắt đầu phải ở trong tương lai.", VisitRequestErrorCodes.InvalidVisitTime);
+            if (!allowShortNoticeCreate && cv.PlannedStartAt < earliestAllowedStart)
                 throw new BusinessRuleException(
                     VisitScheduleMessages.LeadTimeNotMet(earliestAllowedStart),
                     VisitRequestErrorCodes.InvalidVisitTime);

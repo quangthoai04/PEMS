@@ -230,6 +230,43 @@ describe('VisitDateTimeRangePicker', () => {
     expect(screen.getByTestId('t-start-error')).toHaveTextContent(/at least 24 hours/i);
   });
 
+  // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §8.3) ──
+  // minAdvanceHours=0 is what internal self-registration resolves to: today must stay pickable and
+  // the only live rule left is "must be in the future" — never a message claiming "at least 0 hours".
+
+  it('minAdvanceHours=0: today is selectable, not pushed out to a future floor', () => {
+    render(<Harness minAdvanceHours={0} />);
+    expect(screen.getByTestId('t-start-date')).toHaveAttribute('min', futureDate(0));
+  });
+
+  it('minAdvanceHours=0: a past time today is refused without claiming "0 hours"', () => {
+    const past = new Date(Date.now() - 30 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const at = `${past.getFullYear()}-${pad(past.getMonth() + 1)}-${pad(past.getDate())}T${pad(past.getHours())}:${pad(past.getMinutes())}`;
+
+    render(<Harness start={at} end={addMinutes(at, 60)} minAdvanceHours={0} />);
+    const err = screen.getByTestId('t-start-error');
+    expect(err).toHaveTextContent(/future/i);
+    expect(err).not.toHaveTextContent(/0\s*hours/i);
+  });
+
+  it('minAdvanceHours=0: a future time today is accepted', () => {
+    const soon = new Date(Date.now() + 30 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const at = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+
+    render(<Harness start={at} end={addMinutes(at, 60)} minAdvanceHours={0} />);
+    expect(screen.queryByTestId('t-start-error')).toBeNull();
+  });
+
+  it('minAdvanceHours=0: still keeps the 72h floor at every OTHER value (no global regression)', () => {
+    const soon = new Date(Date.now() + 30 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const at = `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}T${pad(soon.getHours())}:${pad(soon.getMinutes())}`;
+    render(<Harness start={at} end={addMinutes(at, 60)} minAdvanceHours={72} />);
+    expect(screen.getByTestId('t-start-error')).toHaveTextContent(/at least 72 hours/i);
+  });
+
   it('can be driven entirely from the keyboard', async () => {
     const date = futureDate();
     render(<Harness start={`${date}T08:00`} end={`${date}T09:00`} />);

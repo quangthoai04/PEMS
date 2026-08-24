@@ -22,6 +22,7 @@
   "startTimeRequired": "Thời gian bắt đầu không được để trống",
   "endTimeRequired": "Thời gian kết thúc không được để trống",
   "startTimeMinAdvance": "Thời gian bắt đầu phải ít nhất {{hours}} giờ so với thời điểm hiện tại",
+  "startTimeFutureOnly": "Thời gian bắt đầu phải ở trong tương lai",
   "endTimeAfterStart": "Thời gian kết thúc phải sau thời gian bắt đầu",
   "minDuration": "Thời gian tham quan tối thiểu {{hours}} giờ",
   "delegationNameRequired": "Tên đoàn không được để trống",

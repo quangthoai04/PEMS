@@ -333,7 +333,12 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
     if (start < minStart) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: t('startTimeMinAdvance', { hours: minAdvanceHours }),
+        // minAdvanceHours === 0 is the internal self-registration short-notice floor (plan
+        // PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H) — "must be in the future" is the only rule
+        // left, and saying "at least 0 hours" would be a misleading way to say that.
+        message: minAdvanceHours > 0
+          ? t('startTimeMinAdvance', { hours: minAdvanceHours })
+          : t('startTimeFutureOnly'),
         path: ['startDatetime'],
       });
     }

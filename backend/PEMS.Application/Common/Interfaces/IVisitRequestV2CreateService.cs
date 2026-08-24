@@ -34,11 +34,22 @@ public sealed record CampusHostProposalSeed(
 /// </summary>
 public interface IVisitRequestV2CreateService
 {
+    /// <param name="allowShortNoticeCreate">
+    /// Exempts every campus in this form from the 72h registration floor
+    /// (<see cref="PEMS.Domain.Policies.VisitMutationPolicy.MinScheduleLeadHours"/>) — never from the
+    /// absolute "must be in the future" guard, which every caller is held to regardless. Defaults to
+    /// <c>false</c> so every EXISTING caller (public/OTP create, every integration test) keeps the 72h
+    /// floor unless it explicitly opts in. Only
+    /// <see cref="PEMS.Application.Delegations.Commands.CreateVisitRequestV2.CreateVisitRequestV2CommandHandler"/>
+    /// may pass <c>true</c>, and only after it has proven the actor is an authenticated internal
+    /// Staff/Staff Leader registering THEMSELF — see the short-notice implementation plan.
+    /// </param>
     Task<VisitRequest> CreateV2Async(
         VisitRequestFormDataV2 form,
         ulong? registrantUserId,
         string createdSource,
         DateTime vietnamNow,
         CancellationToken cancellationToken = default,
-        IReadOnlyDictionary<string, CampusHostProposalSeed>? hostProposals = null);
+        IReadOnlyDictionary<string, CampusHostProposalSeed>? hostProposals = null,
+        bool allowShortNoticeCreate = false);
 }

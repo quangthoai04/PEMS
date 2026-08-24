@@ -117,6 +117,15 @@ public sealed class CreateVisitRequestV2CommandHandler
         // would describe two different people, with nothing having verified the second one.
         RegistrantIdentityRules.EnsureDirectCreateIsSelfRegistration(actor.Email, form.Registrant.Email);
 
+        // ── Short-notice capability (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan) ──
+        // Only reachable here, AFTER the actor's role has been loaded from the DB and self-registration
+        // has just been proven above — never from the DTO, a query param or a header. An internal
+        // Staff/Staff Leader registering themselves may file a visit under the 72h registration floor;
+        // everyone else (Visitor, and every internal actor registering somebody else via the delegated
+        // OTP flow below) keeps it. The Create Service still enforces "start must be in the future" on
+        // every actor regardless of this flag.
+        var allowShortNoticeCreate = isInternal;
+
         // An internal creator may not appoint THEMSELF as any campus's operational contact: the whole
         // point of the gate is that somebody outside FPTU confirms they will run the visit, and a
         // Staff Leader self-appointing would clear it without anyone confirming anything.
@@ -258,7 +267,8 @@ public sealed class CreateVisitRequestV2CommandHandler
                     StringComparer.OrdinalIgnoreCase);
 
                 created = await _createService.CreateV2Async(
-                    form, registrantUserId, createdSource, now, cancellationToken, seeds);
+                    form, registrantUserId, createdSource, now, cancellationToken, seeds,
+                    allowShortNoticeCreate);
 
                 // Aggregate status — single source that mirrors the SQL aggregate trigger.
                 _aggregateStatus.Apply(created);

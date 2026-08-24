@@ -160,6 +160,49 @@ describe('visitRequestV2 schema', () => {
     expect(result.success).toBe(false);
   });
 
+  // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §8.1) ──
+  // minAdvanceHours=0 is what the internal-self-registration hook computes; the ONLY rule left at
+  // that floor is "must be in the future", never "at least 0 hours advance".
+
+  it('minAdvanceHours=0 accepts a future start and rejects a past one', () => {
+    const zeroSchema = buildVisitRequestV2Schema(0, t);
+    const values = validValues();
+
+    const soon = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
+    const p = (n: number) => String(n).padStart(2, '0');
+    const fmt = (d: Date) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    values.campusVisits = [{
+      ...validCampus('HN'),
+      startDatetime: fmt(soon),
+      endDatetime: fmt(new Date(soon.getTime() + 3600 * 1000)),
+    }];
+    expect(zeroSchema.safeParse(values).success).toBe(true);
+
+    const past = new Date(Date.now() - 5 * 60 * 1000);
+    values.campusVisits = [{
+      ...validCampus('HN'),
+      startDatetime: fmt(past),
+      endDatetime: fmt(new Date(past.getTime() + 3600 * 1000)),
+    }];
+    const result = zeroSchema.safeParse(values);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Never the "{{hours}}"-style message at 0 — that would misleadingly read "at least 0 hours".
+      expect(result.error.issues.some(i => i.message === 'startTimeFutureOnly')).toBe(true);
+      expect(result.error.issues.some(i => i.message === 'startTimeMinAdvance')).toBe(false);
+    }
+  });
+
+  it('minAdvanceHours=0 still enforces the 30-minute minimum duration', () => {
+    const zeroSchema = buildVisitRequestV2Schema(0, t);
+    const values = validValues();
+    values.campusVisits = [validCampus('HN', 5 * 60 * 1000, 29 * 60 * 1000 + 59 * 1000)];
+    expect(zeroSchema.safeParse(values).success).toBe(false);
+
+    values.campusVisits = [validCampus('HN', 5 * 60 * 1000, 30 * 60 * 1000)];
+    expect(zeroSchema.safeParse(values).success).toBe(true);
+  });
+
   it('buildPendingCampusEditSchema scopes to ONE campus and never validates registerInfo', () => {
     const pendingSchema = buildPendingCampusEditSchema(0, t);
     const cv = { ...validCampus('HN'), visitInstanceId: 42 };

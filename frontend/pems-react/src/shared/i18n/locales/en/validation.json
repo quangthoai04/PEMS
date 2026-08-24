@@ -22,6 +22,7 @@
   "startTimeRequired": "Start time is required",
   "endTimeRequired": "End time is required",
   "startTimeMinAdvance": "Start time must be at least {{hours}} hours from now",
+  "startTimeFutureOnly": "Start time must be in the future",
   "endTimeAfterStart": "End time must be after the start time",
   "minDuration": "A visit must last at least {{hours}} hours",
   "delegationNameRequired": "Delegation name is required",

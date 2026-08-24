@@ -800,9 +800,11 @@
     "endAfterStart": "Thời gian kết thúc phải sau thời gian bắt đầu.",
     "minDuration": "Buổi thăm phải kéo dài tối thiểu {{minutes}} phút.",
     "minAdvance": "Thời gian bắt đầu phải cách hiện tại ít nhất {{hours}} giờ.",
+    "minAdvanceShortNotice": "Thời gian bắt đầu phải ở trong tương lai.",
     "invalidDateTime": "Ngày giờ không hợp lệ.",
     "noEndSlots": "Không còn khung giờ trong ngày — hãy bật \"Kết thúc vào ngày khác\".",
     "rulesHint": "Đăng ký trước ít nhất {{hours}} giờ, mỗi buổi tối thiểu {{minutes}} phút.",
+    "rulesHintShortNotice": "Đơn do nhân sự nội bộ tự đăng ký có thể chọn lịch dưới 72 giờ. Thời gian bắt đầu phải ở tương lai và mỗi buổi thăm tối thiểu {{minutes}} phút.",
     "readableRange": "{{from}} → {{to}}"
   },
   "otpFlow": {

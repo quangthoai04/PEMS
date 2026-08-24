@@ -329,6 +329,138 @@ public sealed class CreateVisitRequestV2ServiceTests
         }
     }
 
+    // ── Short-notice capability (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §7.1) ──
+    // allowShortNoticeCreate exempts the 72h floor ONLY — the future-only guard and every other
+    // invariant (duration, end>start) stay in force regardless of the flag.
+
+    [Theory]
+    [InlineData(1)]              // now + 1 minute
+    [InlineData(60)]             // now + 1 hour
+    [InlineData(24 * 60)]        // now + 24h
+    [InlineData(71 * 60 + 59)]   // now + 71h59m — inside the floor, refused without the capability
+    [InlineData(72 * 60)]        // now + 72h — already legal even without the capability
+    public async Task Capability_true_allows_a_start_inside_the_72h_floor(int minutesFromNow)
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var start = Now.AddMinutes(minutesFromNow);
+        var ok = await Svc(db).CreateV2Async(
+            Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start.AddHours(2) }),
+            Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+            hostProposals: null, allowShortNoticeCreate: true);
+        Assert.Single(ok.CampusInstances);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Capability_true_still_refuses_a_past_start()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var start = Now.AddMinutes(-1);
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+            Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start.AddHours(2) }),
+            Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+            hostProposals: null, allowShortNoticeCreate: true));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Capability_false_refuses_a_past_start_the_same_way()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var start = Now.AddMinutes(-1);
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+            Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start.AddHours(2) }),
+            Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+        await tx.RollbackAsync();
+    }
+
+    /// <summary>Start exactly equal to "now" is refused for every actor, capability or not (plan §BE-3).</summary>
+    [Fact]
+    public async Task Start_exactly_equal_to_now_fails_even_with_the_capability()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+            Form(Campus("HN") with { PlannedStartAt = Now, PlannedEndAt = Now.AddHours(2) }),
+            Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+            hostProposals: null, allowShortNoticeCreate: true));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitTime, ex.ErrorCode);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public async Task Capability_true_does_not_bypass_end_after_start_or_minimum_duration()
+    {
+        RequireDb();
+        var start = Now.AddHours(1);
+
+        using (var db = NewContext())
+        using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            // End == start.
+            await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+                Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start }),
+                Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+                hostProposals: null, allowShortNoticeCreate: true));
+            await tx.RollbackAsync();
+        }
+
+        using (var db = NewContext())
+        using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            // 29m59s — still one second short of the 30-minute floor.
+            await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+                Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start.AddMinutes(29).AddSeconds(59) }),
+                Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+                hostProposals: null, allowShortNoticeCreate: true));
+            await tx.RollbackAsync();
+        }
+
+        using (var db = NewContext())
+        using (var tx = await db.Database.BeginTransactionAsync())
+        {
+            // Exactly 30m passes.
+            var ok = await Svc(db).CreateV2Async(
+                Form(Campus("HN") with { PlannedStartAt = start, PlannedEndAt = start.AddMinutes(30) }),
+                Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+                hostProposals: null, allowShortNoticeCreate: true);
+            Assert.Single(ok.CampusInstances);
+            await tx.RollbackAsync();
+        }
+    }
+
+    /// <summary>MC-01: every campus under 72h and in the future succeeds together under the capability.</summary>
+    [Fact]
+    public async Task Capability_true_allows_a_multi_campus_request_with_every_campus_under_72h()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        var req = await Svc(db).CreateV2Async(
+            Form(
+                Campus("HN") with { PlannedStartAt = Now.AddHours(12), PlannedEndAt = Now.AddHours(14) },
+                Campus("HCM") with { PlannedStartAt = Now.AddHours(24), PlannedEndAt = Now.AddHours(26) }),
+            Registrant, "STAFF_CREATED", Now, CancellationToken.None,
+            hostProposals: null, allowShortNoticeCreate: true);
+
+        Assert.Equal(2, req.CampusInstances.Count);
+        await tx.RollbackAsync();
+    }
+
     [Fact]
     public async Task End_equals_start_fails()
     {

@@ -192,7 +192,9 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
     const floor = wallClockToMinutes(minStart);
     if (startMin === null) return t('visitRequestV2:schedule.invalidDateTime');
     if (floor !== null && startMin < floor) {
-      return t('visitRequestV2:schedule.minAdvance', { hours: minAdvanceHours });
+      return minAdvanceHours > 0
+        ? t('visitRequestV2:schedule.minAdvance', { hours: minAdvanceHours })
+        : t('visitRequestV2:schedule.minAdvanceShortNotice');
     }
     return undefined;
   }, [startValue, minStart, minAdvanceHours, t]);
@@ -220,7 +222,9 @@ export const VisitDateTimeRangePicker: React.FC<VisitDateTimeRangeProps> = ({
   const scheduleLabel = (
     <span className="flex items-center gap-1.5 whitespace-nowrap">
       {t('visitRequestV2:schedule.legend')} <span className="text-red-500">*</span>
-      <HelpTooltip content={t('visitRequestV2:schedule.rulesHint', { hours: minAdvanceHours, minutes: MIN_DURATION_MINUTES })} />
+      <HelpTooltip content={minAdvanceHours > 0
+        ? t('visitRequestV2:schedule.rulesHint', { hours: minAdvanceHours, minutes: MIN_DURATION_MINUTES })
+        : t('visitRequestV2:schedule.rulesHintShortNotice', { minutes: MIN_DURATION_MINUTES })} />
     </span>
   );
 
