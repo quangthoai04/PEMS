@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 vi.mock('../api/visitRequestV2Api', () => ({
   getOperationalContactState: vi.fn(),
@@ -261,14 +261,49 @@ describe('ContactIdentityActions', () => {
     expect(document.getElementById('ci-reason')).toBeNull();
   });
 
-  it('promises the current contact keeps their rights, with no reason field anywhere (Transfer, decided campus)', async () => {
+  it('no longer shows an inline transfer-rights warning (Transfer, decided campus) — that explanation now lives in the info tooltip beside "Quản lý đầu mối"', async () => {
     renderActions();
     fireEvent.click(await screen.findByTestId('contact-edit-open'));
     fillNewIdentity();
 
-    expect(screen.getByTestId('contact-identity-warning')).toBeInTheDocument();
+    expect(screen.queryByTestId('contact-identity-warning')).not.toBeInTheDocument();
     expect(screen.queryByTestId('contact-form-reason')).not.toBeInTheDocument();
     expect(document.getElementById('ci-reason')).toBeNull();
+  });
+
+  // ── Management-heading info tooltip: the single place both explanations (email-identity rule +
+  //    transfer-keeps-rights) now live, replacing the two inline paragraphs removed above. ──
+
+  it('renders an info icon beside the "Quản lý đầu mối" heading', async () => {
+    renderActions();
+    await screen.findByTestId('contact-edit-open');
+
+    const trigger = screen.getByTestId('contact-manage-tooltip-10');
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger).toHaveAccessibleName(/manage the contact role/i);
+  });
+
+  it('the management tooltip contains both the email-identity explanation and the transfer-keeps-rights explanation', async () => {
+    renderActions();
+    await screen.findByTestId('contact-edit-open');
+
+    const trigger = screen.getByTestId('contact-manage-tooltip-10');
+    fireEvent.focus(trigger);
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent(/keep the address.*only the details are updated/i);
+    expect(tooltip).toHaveTextContent(/keeps every right until the new person signs in/i);
+  });
+
+  it('no longer renders the old inline email-identity hint under the Email field', async () => {
+    renderActions();
+    fireEvent.click(await screen.findByTestId('contact-edit-open'));
+
+    // The old standalone paragraph (id="ci-email-hint", a sibling of the Email input) is gone —
+    // NOT a check that the phrase never appears anywhere, since the SAME explanation now legitimately
+    // lives inside the (closed) management tooltip. Scoped to the Email field's own container only.
+    expect(document.getElementById('ci-email-hint')).toBeNull();
+    const emailContainer = emailField().parentElement as HTMLElement;
+    expect(within(emailContainer).queryByText(/only the details are updated/i)).not.toBeInTheDocument();
   });
 
   it('submits a Transfer request without a reason field ever having existed to fill in', async () => {

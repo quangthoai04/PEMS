@@ -1010,6 +1010,13 @@ public sealed class VisitSafeEditV2Tests
         finally { await CleanupAsync(requestId); }
     }
 
+    // Operation-aware (operational-contact consistency fix): editing ONLY the shared metadata into a
+    // mismatch, with MemberLink omitted (relation itself untouched, still linked to memberId), is
+    // Case C — retyping a linked contact's identity by hand — and gets its OWN dedicated code,
+    // distinct from RelationProfileMismatch (which is reserved for actually LINKING/repointing to a
+    // mismatched member, Case F/G). Both describe "this profile disagrees with the linked member," but
+    // a different mistake needs a different fix: RelationProfileMismatch says "pick someone else";
+    // LinkedProfileRequiresMemberUpdate says "edit the member, or unlink."
     [Fact]
     public async Task Effective_relation_is_validated_even_when_memberlink_is_omitted()
     {
@@ -1050,13 +1057,137 @@ public sealed class VisitSafeEditV2Tests
                                     null, V2SeedActor.Email(Registrant), null),
                                 null, null, null),
                         })), CancellationToken.None));
-                Assert.Equal(OperationalContactErrorCodes.RelationProfileMismatch, ex.ErrorCode);
+                Assert.Equal(OperationalContactErrorCodes.LinkedProfileRequiresMemberUpdate, ex.ErrorCode);
             }
             using (var db = NewContext())
             {
                 var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
                 Assert.Equal(memberId, detail.OperationalContactGuestMemberId); // unchanged
                 Assert.Equal("Guest A", detail.OperationalContactFullName); // metadata NOT desynced either
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // Case A (operational-contact consistency fix): a legacy mismatch the save does NOT itself touch
+    // must never block — specifically, a phone-only correction on a linked contact whose shared fields
+    // have already drifted from the member (by some other historical path) must succeed.
+    [Fact]
+    public async Task Phone_only_edit_survives_a_pre_existing_legacy_shared_field_mismatch()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId);
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            // Link, then force a legacy-shaped mismatch directly (bypassing this service's own guard,
+            // simulating drift from a different historical write path — not something this save did).
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instance);
+                detail.OperationalContactJobTitle = "Senior Director (drift, không qua Safe Edit)";
+                await db.SaveChangesAsync();
+            }
+            (reqV, instV) = await VersionsAsync(requestId);
+
+            // Phone-only save: FullName/Organization/JobTitle echoed back UNCHANGED (still the drifted
+            // JobTitle) — must succeed despite the legacy mismatch this save never touches.
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Senior Director (drift, không qua Safe Edit)",
+                                "+84987654321", V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal("+84987654321", detail.OperationalContactPhone);
+                Assert.Equal(memberId, detail.OperationalContactGuestMemberId); // still linked, untouched
+            }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// Safe Edit matrix Case E: a linked contact's shared fields are retyped away from a pre-existing
+    /// legacy mismatch to EXACTLY the linked member's own values — this must succeed (relation unchanged,
+    /// <c>RelationMatchesContact</c> now true), the mirror image of Case D
+    /// (<see cref="Effective_relation_is_validated_even_when_memberlink_is_omitted"/>, which retypes to a
+    /// value that STILL mismatches and is rejected).
+    /// </summary>
+    [Fact]
+    public async Task Retyping_a_linked_contacts_shared_fields_to_exactly_match_the_member_succeeds()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var memberId = await SoleGuestMemberIdAsync(requestId); // "Guest A" / "Guest" / "GuestOrg"
+            var (reqV, instV) = await VersionsAsync(requestId);
+            var instance = instV.Keys.Single();
+
+            // Link, with a legacy-shaped mismatch on JobTitle forced directly afterwards (bypassing this
+            // service's own guard — simulating drift from a different historical write path).
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(memberId)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instance);
+                detail.OperationalContactJobTitle = "Senior Director (drift, không qua Safe Edit)";
+                await db.SaveChangesAsync();
+            }
+            (reqV, instV) = await VersionsAsync(requestId);
+
+            // Retype JobTitle back to EXACTLY the member's own value — relation untouched (MemberLink
+            // omitted), sharedFieldsChanged=true, and the new value matches the member: must succeed.
+            using (var db = NewContext())
+            {
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Guest A", "GuestOrg", "Guest",
+                                null, V2SeedActor.Email(Registrant), null),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+            using (var db = NewContext())
+            {
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                Assert.Equal("Guest", detail.OperationalContactJobTitle);
+                Assert.Equal(memberId, detail.OperationalContactGuestMemberId); // still linked
             }
         }
         finally { await CleanupAsync(requestId); }
@@ -1913,6 +2044,91 @@ public sealed class VisitSafeEditV2Tests
                     new ApproveVisitAmendmentCommand(instance, amendmentId, "OK"), CancellationToken.None);
                 Assert.NotNull(res); // approved without AmendmentBaseRevisionConflict
             }
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// CONC-03 (operational-contact consistency fix): an Amendment is submitted while Kim is the linked
+    /// contact, proposing a content change to Kim's OWN fields with real continuity evidence (so at
+    /// submit time it genuinely preserves the relation). Before Approve runs, a CONCURRENT Safe Edit
+    /// unlinks the contact on the SAME instance — the live relation Approve must re-check is no longer
+    /// what the proposal assumed. Approve must fail closed (never silently re-establish the relation from
+    /// stale submit-time evidence, never apply a content change under a false continuity assumption).
+    /// </summary>
+    [Fact]
+    public async Task Conc03_amendment_approve_re_checks_the_live_relation_against_a_concurrent_safe_edit_unlink()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            requestId = await CreateAsync(Campus("HN", Now.AddDays(20)));
+            await ApproveAllAsync(requestId);
+            var kimId = await SoleGuestMemberIdAsync(requestId);
+            ulong instance, leader, campusId;
+            using (var db = NewContext())
+            {
+                var c = await db.VisitRequestCampuses.AsNoTracking()
+                    .Where(x => x.VisitRequestId == requestId).SingleAsync();
+                instance = c.VisitInstanceId; leader = c.CoordinatorUserId!.Value; campusId = c.CampusId;
+                var detail = await db.VisitInstanceFormDetails.SingleAsync(d => d.VisitInstanceId == instance);
+                detail.OperationalContactGuestMemberId = kimId;
+                await db.SaveChangesAsync();
+            }
+
+            ulong amendmentId;
+            using (var db = NewContext())
+            {
+                var c = await db.VisitRequestCampuses.AsNoTracking().SingleAsync(x => x.VisitInstanceId == instance);
+                var detail = await db.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+                var proposal = new VisitAmendmentProposalDto(
+                    c.RowVersion, detail.FormRevision, detail.ApprovalRevision, "Đổi mục đích",
+                    detail.DelegationName, detail.VisitType ?? "MEETING", detail.VisitTypeOther,
+                    "Mục đích mới", detail.WorkingContent, detail.WorkingLanguage ?? "EN",
+                    new ContactPointDto(detail.OperationalContactFullName, detail.OperationalContactOrganization ?? "",
+                        detail.OperationalContactJobTitle, detail.OperationalContactPhone, detail.OperationalContactEmail),
+                    new List<VisitorDto> { new("Guest A", "VN", "Senior Director", "GuestOrg", null, "a-key", kimId) },
+                    new List<SupportTeamMemberDto>(),
+                    c.PlannedStartAt, c.PlannedEndAt,
+                    OperationalContactClientMemberKey: "a-key");
+                amendmentId = (await AmendmentSubmit(db, Registrant).Handle(
+                    new SubmitVisitAmendmentCommand(requestId, instance, proposal), CancellationToken.None)).AmendmentId;
+            }
+
+            // Concurrent Safe Edit: unlinks the contact on the SAME instance before Approve runs.
+            using (var db = NewContext())
+            {
+                var (reqV, instV) = await VersionsAsync(requestId);
+                await Handler(db, Registrant).Handle(new SubmitVisitSafeEditCommand(requestId,
+                    new VisitRequestSafeEditDto(reqV, null, new List<SafeInstancePatchDto>
+                    {
+                        new(instance, instV[instance],
+                            new SafeContactPatchDto("Op Contact", "OpOrg", "Trưởng phòng Hợp tác", null,
+                                V2SeedActor.Email(Registrant), new SafeContactMemberLinkPatchDto(null)),
+                            null, null, null),
+                    })), CancellationToken.None);
+            }
+
+            using (var db = NewContext())
+            {
+                // Fail-closed either way this reaches it: a stale-version conflict, or (since a
+                // contact-only Safe Edit does not bump FormRevision/ApprovalRevision, per GAP E just
+                // above) the relation-continuity re-check — never a silent last-write-wins.
+                var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                    AmendmentDecide(db, leader, campusId).Handle(
+                        new ApproveVisitAmendmentCommand(instance, amendmentId, "OK"), CancellationToken.None));
+                Assert.True(
+                    ex.ErrorCode == VisitFormV2ErrorCodes.AmendmentLegacyContactRelationRequiresResubmission
+                    || ex.ErrorCode == VisitFormV2ErrorCodes.AmendmentBaseRevisionConflict
+                    || ex.ErrorCode == VisitFormV2ErrorCodes.VisitFormConcurrencyConflict,
+                    $"Expected a fail-closed conflict code, got '{ex.ErrorCode}'.");
+            }
+
+            // Never last-write-wins: the concurrent Safe Edit's unlink is the surviving state either way.
+            using var db2 = NewContext();
+            var detailAfter = await db2.VisitInstanceFormDetails.AsNoTracking().SingleAsync(d => d.VisitInstanceId == instance);
+            Assert.Null(detailAfter.OperationalContactGuestMemberId);
         }
         finally { await CleanupAsync(requestId); }
     }

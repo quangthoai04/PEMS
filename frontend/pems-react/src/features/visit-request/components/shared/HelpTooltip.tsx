@@ -17,6 +17,15 @@ interface HelpTooltipProps {
    * in that position.
    */
   placement?: 'top' | 'bottom';
+  /**
+   * Horizontal alignment of the bubble relative to the trigger. Defaults to `'center'` (unchanged
+   * behavior for every existing caller): the bubble is centered on the icon. A trigger sitting near the
+   * LEFT edge of a narrow scrollable panel has no room to center — the bubble's own width extends
+   * further left than the panel has, clipping its first/last words against the edge. Pass `'start'` to
+   * anchor the bubble's left edge to the trigger instead (it grows rightward), or `'end'` to anchor its
+   * right edge (it grows leftward).
+   */
+  align?: 'center' | 'start' | 'end';
 }
 
 let tooltipSeq = 0;
@@ -35,12 +44,16 @@ let tooltipSeq = 0;
  * makes the text part of the field's description rather than decoration — the HTML <c>title</c>
  * attribute is deliberately not used, since it is unreachable by keyboard and unreliable on touch.</p>
  */
-export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '', label, testId, placement = 'top' }) => {
+export const HelpTooltip: React.FC<HelpTooltipProps> = ({
+  content, className = '', label, testId, placement = 'top', align = 'center',
+}) => {
   const { t } = useTranslation('common');
   const [open, setOpen] = React.useState(false);
   // Stable across renders; `useId` is React 18+, and this file is imported by tests that render
   // the component many times, so a module counter keeps the ids readable and unique either way.
   const id = React.useRef(`help-tooltip-${++tooltipSeq}`).current;
+  const bubblePositionCls = align === 'start' ? 'left-0' : align === 'end' ? 'right-0' : 'left-1/2 -translate-x-1/2';
+  const arrowPositionCls = align === 'start' ? 'left-4' : align === 'end' ? 'right-4' : 'left-1/2 -translate-x-1/2';
 
   return (
     <div className={`relative inline-flex items-center align-middle ml-1.5 ${className}`}>
@@ -75,15 +88,21 @@ export const HelpTooltip: React.FC<HelpTooltipProps> = ({ content, className = '
         role="tooltip"
         hidden={!open}
         className={
-          'pointer-events-none absolute left-1/2 z-50 w-max max-w-xs -translate-x-1/2 '
+          'pointer-events-none absolute z-50 w-max max-w-xs ' + bubblePositionCls + ' '
           + (placement === 'bottom' ? 'top-full mt-2' : 'bottom-full mb-2')
         }
       >
-        <div className="relative rounded-lg bg-slate-800 px-3 py-2 text-center text-xs leading-5 text-white shadow-xl">
+        <div
+          className={
+            'relative whitespace-pre-line rounded-lg bg-slate-800 px-3 py-2 text-[12px] font-normal leading-5 '
+            + 'text-white shadow-xl '
+            + (align === 'center' ? 'text-center' : 'text-left')
+          }
+        >
           {content}
           <div
             className={
-              'absolute left-1/2 -translate-x-1/2 border-4 border-transparent '
+              'absolute border-4 border-transparent ' + arrowPositionCls + ' '
               + (placement === 'bottom'
                 ? 'bottom-full -mb-px border-b-slate-800'
                 : 'top-full -mt-px border-t-slate-800')

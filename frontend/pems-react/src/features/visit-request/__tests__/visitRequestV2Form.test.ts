@@ -6,9 +6,11 @@ import {
   buildV2EditPayload,
   campusVisitHasUserContent,
   cloneCampusVisitContent,
+  contactSurvivesReplacement,
   createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
+  preserveTargetContact,
   resolveExactlyOne,
   resolvedFormToV2Schema,
   restoreCampusVisitFromDraft,
@@ -212,6 +214,39 @@ describe('buildV2CreatePayload', () => {
     expect(buildV2CreatePayload(v, 's').partnerId).toBeNull();
     v.partnerSelectionMode = 'EXISTING_PARTNER';
     expect(buildV2CreatePayload(v, 's').partnerId).toBe(7);
+  });
+
+  // REG-MEMBER-14 — the payload after "Thêm người đăng ký vào danh sách khách" (CanhIter3FixBug):
+  // the registrant is now ALSO a visitor row, linked as the contact, with no duplicate.
+  it('serializes a registrant added-as-visitor: new member row, linked relation, no duplicate', () => {
+    const cv = campus({
+      clientKey: 'ck-a', campus: 'HN',
+      startDatetime: '2026-08-01T09:00', endDatetime: '2026-08-01T11:30',
+      delegationName: 'Đoàn HN', purpose: 'Mục đích', workingContent: 'Nội dung',
+      visitors: [{
+        clientMemberKey: 'ck-kim', guestMemberId: null,
+        fullName: 'Kim Min Jae', jobTitle: 'Director', organization: 'SeoulTech',
+        organizationPartnerId: null, nationality: 'KR',
+      }],
+      operationalContact: {
+        fullName: 'Kim Min Jae', organization: 'SeoulTech', jobTitle: 'Director',
+        phone: '+84912345678', email: 'kim@example.com',
+      },
+      operationalContactClientMemberKey: 'ck-kim',
+      operationalContactSource: 'MEMBER',
+    });
+
+    const payload = buildV2CreatePayload(values([cv]), 'sub-add-registrant');
+    const out = payload.campusVisits[0];
+
+    expect(out.visitors).toHaveLength(1);
+    expect(out.visitors[0]).toMatchObject({ fullName: 'Kim Min Jae', clientMemberKey: 'ck-kim', guestMemberId: null });
+    expect(out.operationalContactClientMemberKey).toBe('ck-kim');
+    // No persisted guest_member_id yet — the row is new this session.
+    expect(out.operationalContactGuestMemberId).toBeNull();
+    // Contact-level phone/email are the registrant's own values, not lost by the member link.
+    expect(out.operationalContact.phone).toBe('+84912345678');
+    expect(out.operationalContact.email).toBe('kim@example.com');
   });
 });
 
@@ -551,6 +586,64 @@ describe('resolveExactlyOne (plan CanhIter3FixBug — exact-one identity)', () =
 
   it('returns null — not the first match — when the key is ambiguous', () => {
     expect(resolveExactlyOne(rows, 'b')).toBeNull();
+  });
+});
+
+describe('contactSurvivesReplacement (operational-contact consistency fix)', () => {
+  it('is trivially safe when nothing is currently linked', () => {
+    expect(contactSurvivesReplacement(null, [])).toBe(true);
+    expect(contactSurvivesReplacement(undefined, [{ guestMemberId: 5 }])).toBe(true);
+  });
+
+  it('survives when exactly one incoming row carries the linked persisted id', () => {
+    expect(contactSurvivesReplacement(100, [{ guestMemberId: 100 }, { guestMemberId: null }])).toBe(true);
+  });
+
+  it('does not survive when zero incoming rows carry the linked id', () => {
+    expect(contactSurvivesReplacement(100, [{ guestMemberId: 200 }, { guestMemberId: null }])).toBe(false);
+    expect(contactSurvivesReplacement(100, [])).toBe(false);
+  });
+
+  it('does not survive when the id appears more than once (never trust a duplicate)', () => {
+    expect(contactSurvivesReplacement(100, [{ guestMemberId: 100 }, { guestMemberId: 100 }])).toBe(false);
+  });
+});
+
+describe('preserveTargetContact (operational-contact consistency fix)', () => {
+  it('keeps the TARGET contact snapshot/relation, discarding the proposed (source-derived) ones', () => {
+    const target = filledCampus('ck-tgt', 'DN');
+    target.operationalContact = { fullName: 'Lee', organization: 'DN Org', jobTitle: 'Lead', phone: '', email: '' };
+    target.operationalContactClientMemberKey = 'lee-key';
+    target.operationalContactSource = 'MEMBER';
+
+    const proposed = cloneCampusVisitContent(filledCampus('ck-src', 'HN'), target);
+    // Sanity: cloneCampusVisitContent alone WOULD carry the source's contact onto the proposal — that
+    // is exactly the gap this helper closes.
+    expect(proposed.operationalContact.fullName).toBe('ĐM HN');
+
+    const result = preserveTargetContact(target, proposed);
+
+    expect(result.operationalContact).toEqual(target.operationalContact);
+    expect(result.operationalContactClientMemberKey).toBe('lee-key');
+    expect(result.operationalContactSource).toBe('MEMBER');
+    // Business/member content still comes from the proposed (source-derived) state.
+    expect(result.visitors[0].fullName).toBe('Khách HN');
+    expect(result.delegationName).toBe('Đoàn HN');
+  });
+
+  it('preserves an UNLINKED target as unlinked — never silently adopts the source’s relation', () => {
+    const target = filledCampus('ck-tgt', 'DN');
+    target.operationalContactClientMemberKey = null;
+    target.operationalContactSource = null;
+
+    const source = filledCampus('ck-src', 'HN');
+    source.visitors[0].clientMemberKey = 'kim-key';
+    source.operationalContactClientMemberKey = 'kim-key'; // source IS linked to Kim
+
+    const result = preserveTargetContact(target, cloneCampusVisitContent(source, target));
+
+    expect(result.operationalContactClientMemberKey).toBeNull();
+    expect(result.operationalContactSource).toBeNull();
   });
 });
 

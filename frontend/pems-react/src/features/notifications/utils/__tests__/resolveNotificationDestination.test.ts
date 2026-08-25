@@ -149,6 +149,14 @@ describe('existing role-specific rewrites keep working', () => {
     expect(link).toBe('/dashboard/visit?taskId=77&itemType=REQUEST');
   });
 
+  it('Dept leader invitation links (PARTICIPATION_INVITED) go to the visit list with itemType=INVITATION, and DeptLeadVisitTasksPage mounted there renders SharedDashboardView, which reads taskId/itemType to open the matching popover directly (plan: "mở thẳng modal chi tiết, giống bấm 1 đơn trong Bảng lịch")', () => {
+    const link = resolveNotificationDestination(
+      item({ targetUrl: '/dashboard/visit/invitations/88' }),
+      deptLeader,
+    );
+    expect(link).toBe('/dashboard/visit?taskId=88&itemType=INVITATION');
+  });
+
   it('Visitor direct process-detail links now go through the one-shot command too (plan RC-03/04)', () => {
     // Previously rewrote straight to a filtered list (`?visitRequestId=123`), bypassing current-state
     // resolution entirely. A stale direct link must be re-resolved the same as every other role's.

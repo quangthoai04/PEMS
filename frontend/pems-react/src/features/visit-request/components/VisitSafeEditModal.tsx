@@ -20,8 +20,20 @@ import { HelpTooltip } from './shared/HelpTooltip';
 
 const NOTES_MAX_LENGTH = 2000;
 const RELATION_MISMATCH_CODE = 'OPERATIONAL_CONTACT_RELATION_PROFILE_MISMATCH';
+const LINKED_PROFILE_REQUIRES_MEMBER_UPDATE_CODE = 'OPERATIONAL_CONTACT_LINKED_PROFILE_REQUIRES_MEMBER_UPDATE';
 
 const MAX = { fullName: 150, organization: 200, jobTitle: 150, phone: 50 } as const;
+
+/** A linked contact's FullName/Organization/JobTitle, shown but not editable (operational-contact
+ * consistency fix) — matches the visual style the Email field already used for "locked". */
+const readonlyContactField = (testId: string, value: string) => (
+  <p
+    data-testid={testId}
+    className="mt-1 flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700"
+  >
+    {value || '—'}
+  </p>
+);
 
 interface Props {
   form: ResolvedVisitForm;
@@ -123,6 +135,40 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     return result;
   }, [instances]);
 
+  // ── Operation-aware gate (operational-contact consistency fix): a legacy mismatch this save does
+  //    not itself touch — neither the relation nor the shared identity fields moved from what was
+  //    loaded — must never block (a phone-only correction always succeeds). Mirrors the backend's own
+  //    `relationChanged || sharedFieldsChanged` split in VisitSafeEditService.PlanContactMutation
+  //    exactly, so the frontend can never be stricter (or looser) than what the server will accept. ──
+  const originalContactOf = (visitInstanceId: number) =>
+    editableCampuses.find(c => c.visitInstanceId === visitInstanceId)?.operationalContact;
+  const relationOrProfileTouched = useMemo(() => {
+    const result: Record<number, boolean> = {};
+    for (const i of instances) {
+      const original = originalContactOf(i.visitInstanceId);
+      const relationChanged = (original?.guestMemberId ?? null) !== i.contactGuestMemberId;
+      const sharedFieldsChanged = !original
+        || i.contactFullName.trim() !== original.fullName.trim()
+        || i.contactJobTitle.trim() !== original.jobTitle.trim()
+        || i.contactOrganization.trim() !== original.organization.trim();
+      result[i.visitInstanceId] = relationChanged || sharedFieldsChanged;
+    }
+    return result;
+  }, [instances, editableCampuses]);
+
+  /** Copies the linked member's 3 shared fields into the row's own edit state ("Đồng bộ theo thành viên"). */
+  const syncContactFromLinkedMember = (visitInstanceId: number) => {
+    const i = instances.find(x => x.visitInstanceId === visitInstanceId);
+    const member = i?.members.find(m => m.guestMemberId === i.contactGuestMemberId);
+    if (!member) return;
+    setInstance(visitInstanceId, {
+      contactFullName: member.fullName,
+      contactJobTitle: member.jobTitle,
+      contactOrganization: member.organization,
+    });
+    setContactError(visitInstanceId, undefined);
+  };
+
   const save = async () => {
     setBusy(true);
     setError(null);
@@ -150,7 +196,11 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
     }
     setContactPhoneErrors({});
 
-    const mismatched = instances.filter(i => i.canEditContact && relationMismatches[i.visitInstanceId]);
+    // Operation-aware: a pre-existing legacy mismatch this save doesn't itself touch must not block
+    // (phone-only correction always succeeds) — only block when the relation or the shared fields
+    // actually moved away from what was loaded AND still disagree with the linked member.
+    const mismatched = instances.filter(i =>
+      i.canEditContact && relationMismatches[i.visitInstanceId] && relationOrProfileTouched[i.visitInstanceId]);
     if (mismatched.length > 0) {
       for (const i of mismatched) setContactError(i.visitInstanceId, t('visitRequestV2:safeEdit.contactMismatchError'));
       setBusy(false);
@@ -176,7 +226,11 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
       // Backend RelationProfileMismatch maps to the SAME inline error the client-side check shows
       // (plan CanhIter3FixBug, decision P) — never a generic toast — keeping the modal open so the
       // user can fix the mismatch right there. Frontend pre-check is UX only; backend is authority.
-      if (code === RELATION_MISMATCH_CODE) {
+      if (code === RELATION_MISMATCH_CODE || code === LINKED_PROFILE_REQUIRES_MEMBER_UPDATE_CODE) {
+        // Same inline surface for both: RelationProfileMismatch is a doomed LINK attempt (Case F/G),
+        // LinkedProfileRequiresMemberUpdate is retyping a linked contact's identity by hand (Case C) —
+        // both are "this profile disagrees with the linked member," just triggered differently
+        // (operational-contact consistency fix). Neither is a generic toast; both keep the modal open.
         const target = instances.find(i => i.canEditContact) ?? instances[0];
         if (target) setContactError(target.visitInstanceId, t('visitRequestV2:safeEdit.contactMismatchError'));
       } else if (err && (err as { response?: { status?: number } }).response?.status === 409) {
@@ -204,8 +258,6 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
             <X className="h-5 w-5" />
           </button>
         </div>
-        <p className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">{t('visitRequestV2:safeEdit.applyNowNote')}</p>
-
         {applied ? (
           <div className="space-y-2" data-testid="safe-edit-applied">
             <p className="rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800" role="status">
@@ -235,8 +287,12 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                     label={t('visitRequestV2:summary.registrant')}
                     // This trigger sits right under the modal's fixed header, with no room to open
                     // upward — the default 'top' placement clipped the bubble's first line against
-                    // the top of the viewport.
+                    // the top of the viewport. It also sits near the LEFT edge of the modal's
+                    // scrollable content: the default centered bubble extended further left than the
+                    // modal had room for, clipping its first/last words against that edge too —
+                    // align="start" anchors the bubble to the trigger and grows it rightward instead.
                     placement="bottom"
+                    align="start"
                     content={
                       <>
                         {t('visitRequestV2:safeEdit.registrantInfoHelp')}
@@ -359,40 +415,56 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                       content={t('visitRequestV2:safeEdit.contactTitleHint')}
                     />
                   </p>
+                  {/* Linked contact: FullName/Organization/JobTitle are read-only — they may only
+                      diverge from the member via "Đồng bộ theo thành viên" below, or by editing the
+                      MEMBER itself (Sửa đơn/Đề xuất thay đổi), never by hand-typing over a live link
+                      (operational-contact consistency fix). Phone stays editable either way. */}
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <label className="block text-sm">
                       <span className="mb-1 block text-xs font-semibold text-slate-600">
-                        {t('visitRequestV2:person.fullName')} <span className="text-red-500">*</span>
+                        {t('visitRequestV2:person.fullName')} {i.contactGuestMemberId == null && <span className="text-red-500">*</span>}
                       </span>
-                      <input
-                        data-testid={`safe-edit-contact-fullName-${i.visitInstanceId}`}
-                        className={field} maxLength={MAX.fullName}
-                        value={i.contactFullName}
-                        onChange={e => setInstance(i.visitInstanceId, { contactFullName: e.target.value })}
-                      />
+                      {i.contactGuestMemberId != null
+                        ? readonlyContactField(`safe-edit-contact-fullName-${i.visitInstanceId}`, i.contactFullName)
+                        : (
+                          <input
+                            data-testid={`safe-edit-contact-fullName-${i.visitInstanceId}`}
+                            className={field} maxLength={MAX.fullName}
+                            value={i.contactFullName}
+                            onChange={e => setInstance(i.visitInstanceId, { contactFullName: e.target.value })}
+                          />
+                        )}
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block text-xs font-semibold text-slate-600">
-                        {t('visitRequestV2:person.organization')} <span className="text-red-500">*</span>
+                        {t('visitRequestV2:person.organization')} {i.contactGuestMemberId == null && <span className="text-red-500">*</span>}
                       </span>
-                      <OrganizationCombobox
-                        inputId={`safe-edit-contact-org-${i.visitInstanceId}`}
-                        testId={`safe-edit-contact-organization-${i.visitInstanceId}`}
-                        ariaLabel={t('visitRequestV2:person.organization')}
-                        value={i.contactOrganization}
-                        onChange={value => setInstance(i.visitInstanceId, { contactOrganization: value })}
-                      />
+                      {i.contactGuestMemberId != null
+                        ? readonlyContactField(`safe-edit-contact-organization-${i.visitInstanceId}`, i.contactOrganization)
+                        : (
+                          <OrganizationCombobox
+                            inputId={`safe-edit-contact-org-${i.visitInstanceId}`}
+                            testId={`safe-edit-contact-organization-${i.visitInstanceId}`}
+                            ariaLabel={t('visitRequestV2:person.organization')}
+                            value={i.contactOrganization}
+                            onChange={value => setInstance(i.visitInstanceId, { contactOrganization: value })}
+                          />
+                        )}
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block text-xs font-semibold text-slate-600">
-                        {t('visitRequestV2:person.jobTitle')} <span className="text-red-500">*</span>
+                        {t('visitRequestV2:person.jobTitle')} {i.contactGuestMemberId == null && <span className="text-red-500">*</span>}
                       </span>
-                      <input
-                        data-testid={`safe-edit-contact-jobTitle-${i.visitInstanceId}`}
-                        className={field} maxLength={MAX.jobTitle}
-                        value={i.contactJobTitle}
-                        onChange={e => setInstance(i.visitInstanceId, { contactJobTitle: e.target.value })}
-                      />
+                      {i.contactGuestMemberId != null
+                        ? readonlyContactField(`safe-edit-contact-jobTitle-${i.visitInstanceId}`, i.contactJobTitle)
+                        : (
+                          <input
+                            data-testid={`safe-edit-contact-jobTitle-${i.visitInstanceId}`}
+                            className={field} maxLength={MAX.jobTitle}
+                            value={i.contactJobTitle}
+                            onChange={e => setInstance(i.visitInstanceId, { contactJobTitle: e.target.value })}
+                          />
+                        )}
                     </label>
                     <label className="block text-sm">
                       <span className="mb-1 block text-xs font-semibold text-slate-600">{t('visitRequestV2:card.phone')}</span>
@@ -445,28 +517,61 @@ export default function VisitSafeEditModal({ form, onClose, onSaved }: Props) {
                         content={t('visitRequestV2:safeEdit.contactRelationTooltip')}
                       />
                     </label>
-                    <select
-                      data-testid={`safe-edit-contact-relation-${i.visitInstanceId}`}
-                      className={field}
-                      value={i.contactGuestMemberId ?? ''}
-                      onChange={e => {
-                        setInstance(i.visitInstanceId, { contactGuestMemberId: e.target.value === '' ? null : Number(e.target.value) });
-                        setContactError(i.visitInstanceId, undefined);
-                      }}
-                    >
-                      <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
-                      {i.members.map(m => (
-                        <option key={m.guestMemberId} value={m.guestMemberId}>{m.fullName}</option>
-                      ))}
-                    </select>
+                    {(() => {
+                      // Exact-identity candidates only (operational-contact consistency fix) — the
+                      // backend rejects linking to anyone whose FullName/JobTitle/Organization does not
+                      // match the contact snapshot (RelationProfileMismatch), so offering a mismatched
+                      // member here would just be a doomed choice. The CURRENTLY-linked member always
+                      // stays in the list even if it happens to mismatch (a legacy drift), so the
+                      // dropdown never silently drops the user's existing selection out from under them.
+                      const contactKey = personIdentityKey(i.contactFullName, i.contactJobTitle, i.contactOrganization);
+                      const candidates = i.members.filter(m =>
+                        m.guestMemberId === i.contactGuestMemberId
+                        || personIdentityKey(m.fullName, m.jobTitle, m.organization) === contactKey);
+                      return (
+                        <>
+                          <select
+                            data-testid={`safe-edit-contact-relation-${i.visitInstanceId}`}
+                            className={field}
+                            value={i.contactGuestMemberId ?? ''}
+                            onChange={e => {
+                              setInstance(i.visitInstanceId, { contactGuestMemberId: e.target.value === '' ? null : Number(e.target.value) });
+                              setContactError(i.visitInstanceId, undefined);
+                            }}
+                          >
+                            <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
+                            {candidates.map(m => (
+                              <option key={m.guestMemberId} value={m.guestMemberId}>{m.fullName}</option>
+                            ))}
+                          </select>
+                          {candidates.length === 0 && i.contactGuestMemberId == null && (
+                            <p className="mt-1 text-xs font-normal text-slate-500">
+                              {t('visitRequestV2:safeEdit.contactNoExactCandidate')}
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
                     {(contactErrors[i.visitInstanceId] || relationMismatches[i.visitInstanceId]) && (
-                      <p
+                      <div
                         role="alert"
                         data-testid={`safe-edit-contact-mismatch-${i.visitInstanceId}`}
                         className="mt-2 text-xs font-normal text-red-600"
                       >
-                        {contactErrors[i.visitInstanceId] ?? t('visitRequestV2:safeEdit.contactMismatchError')}
-                      </p>
+                        <p>{contactErrors[i.visitInstanceId] ?? t('visitRequestV2:safeEdit.contactMismatchError')}</p>
+                        {/* Legacy mismatch recovery — only meaningful when actually linked; explicit
+                            unlink is already reachable via the "— none —" option above. */}
+                        {i.contactGuestMemberId != null && (
+                          <button
+                            type="button"
+                            data-testid={`safe-edit-contact-sync-from-member-${i.visitInstanceId}`}
+                            className="mt-1 font-bold text-[#004c91] hover:underline"
+                            onClick={() => syncContactFromLinkedMember(i.visitInstanceId)}
+                          >
+                            {t('visitRequestV2:safeEdit.contactSyncFromMember')}
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </fieldset>

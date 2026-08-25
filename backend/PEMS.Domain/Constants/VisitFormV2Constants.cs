@@ -162,6 +162,17 @@ public static class VisitFormV2ErrorCodes
     /// it may not redescribe the contact itself.
     /// </summary>
     public const string ContactProfileNotAmendable = "CONTACT_PROFILE_NOT_AMENDABLE";
+
+    /// <summary>
+    /// Approve found a persisted amendment proposal whose Operational Contact relation cannot be
+    /// re-validated under the current continuity rules — either an old direct relation-change row
+    /// (dropped as an amendable field by the operational-contact consistency fix) or a member-list
+    /// change whose stored JSON predates the <c>GuestMemberId</c> continuity field. Both mean the same
+    /// thing: this proposal was built before the current rules existed and must be resubmitted, never
+    /// silently applied, silently ignored, or auto-upgraded.
+    /// </summary>
+    public const string AmendmentLegacyContactRelationRequiresResubmission =
+        "AMENDMENT_LEGACY_CONTACT_RELATION_REQUIRES_RESUBMISSION";
 }
 
 /// <summary>
@@ -233,6 +244,35 @@ public static class OperationalContactErrorCodes
     /// the right campus who is simply a different person than the contact snapshot describes.
     /// </summary>
     public const string RelationProfileMismatch = "OPERATIONAL_CONTACT_RELATION_PROFILE_MISMATCH";
+
+    /// <summary>
+    /// Pending Edit received a payload that tries to touch the Operational Contact relation — introduce
+    /// one where none exists, drop an existing one, or repoint an existing one to a different persisted
+    /// member (including a disguised repoint through copy-on-write, plan operational-contact
+    /// consistency fix). Relation existence and identity change ONLY through Safe Edit (link/unlink,
+    /// exact-match) or Replace/Transfer; Pending Edit may only preserve the SAME persisted member across
+    /// a content-changing save.
+    /// </summary>
+    public const string RelationNotEditableInPendingEdit = "OPERATIONAL_CONTACT_RELATION_NOT_EDITABLE_IN_PENDING_EDIT";
+
+    /// <summary>
+    /// The contact is linked to a delegation member and the caller tried to retype the shared identity
+    /// fields (FullName/JobTitle/Organization) to something that still does not match that member.
+    /// Distinct from <see cref="RelationProfileMismatch"/> (linking/repointing to a mismatched member):
+    /// this one fires when the relation itself is untouched but the profile text is being hand-edited
+    /// away from the linked member's own values. The way out is editing the MEMBER (Pending Edit/
+    /// Amendment) or explicitly unlinking, never typing a divergent profile over a live link.
+    /// </summary>
+    public const string LinkedProfileRequiresMemberUpdate = "OPERATIONAL_CONTACT_LINKED_PROFILE_REQUIRES_MEMBER_UPDATE";
+
+    /// <summary>
+    /// A live Pending Edit/Resubmit/Amendment-Submit payload named the currently-linked member's row by
+    /// <c>ClientMemberKey</c> but that row carries no persisted <c>GuestMemberId</c> — the structural
+    /// signature of a browser tab running a pre-upgrade bundle that never serializes the id at all. Not
+    /// trusted via the key alone (that would reopen the disguised-repoint hole this whole fix closes);
+    /// the caller must reload to get a client that proves continuity properly.
+    /// </summary>
+    public const string StaleSessionRequiresReload = "OPERATIONAL_CONTACT_STALE_SESSION_REQUIRES_RELOAD";
 }
 
 /// <summary>

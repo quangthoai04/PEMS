@@ -116,14 +116,19 @@ test.describe('Real-stack: public per-campus v2 create', () => {
     const otp = await readOtpFromSink(email);
     expect(otp).toMatch(/^\d{6}$/);
     await page.getByPlaceholder('______').fill(otp);
+    const verifyResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await page.getByRole('button', { name: 'Xác nhận' }).click();
+    const verified = await verifyResponse;
 
-    // The success summary renders the backend-created request code (only produced on a real DB insert).
+    // The success summary renders (proof the create actually went through), and the backend-created
+    // request code (only produced on a real DB insert) comes back on the verify response — the
+    // receipt screen itself deliberately never surfaces it (VisitRequestV2SuccessPanel: it stays a
+    // server-side identifier the confirmation email carries, not something the receipt repeats).
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible();
-    // The receipt now states status and submitted time alongside the code, so assert the
-    // structured fields rather than one assembled sentence.
     await expect(page.getByTestId('v2-success-status')).toBeVisible();
-    await expect(page.getByTestId('v2-success-submitted-at')).toBeVisible();
+    expect((await verified.json()).requestCode).toMatch(/^VR/);
   });
 });

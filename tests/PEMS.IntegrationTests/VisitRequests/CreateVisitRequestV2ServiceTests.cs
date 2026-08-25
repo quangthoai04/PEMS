@@ -504,4 +504,45 @@ public sealed class CreateVisitRequestV2ServiceTests
         Assert.Equal("Đoàn HCM", byCampus[2UL]);
         await tx.RollbackAsync();
     }
+
+    // CREATE-GMID-01 (operational-contact consistency fix): GuestMemberId is continuity EVIDENCE for an
+    // already-persisted campus (Pending Edit/Resubmit/Amendment) — it must never be a trustable lookup key
+    // on Create, where every row is brand new. A payload that copies a real id from an unrelated request
+    // must be rejected outright, before any insert — never silently ignored, never resolved against the
+    // (nonexistent) new context.
+    [Fact]
+    public async Task Create_payload_carrying_a_client_supplied_GuestMemberId_is_rejected_with_zero_mutation()
+    {
+        RequireDb();
+        using var db = NewContext();
+        using var tx = await db.Database.BeginTransactionAsync();
+
+        // A real, persisted id from an UNRELATED request — proves this isn't merely "id doesn't exist yet".
+        var unrelated = await Svc(db).CreateV2Async(
+            Form(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None);
+        var foreignGuestMemberId = unrelated.GuestMembers.Single().GuestMemberId;
+
+        var poisoned = Campus("DN", visitors: new List<VisitorDto>
+        {
+            new("Guest A", "VN", "Guest", "GuestOrg", null, "v1", foreignGuestMemberId),
+        });
+
+        var beforeCount = await db.VisitRequestCampuses.CountAsync();
+        var ex = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+            Form(poisoned), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitScope, ex.ErrorCode);
+        // Zero mutation: the guard fires before any insert, so the rejected attempt leaves no trace.
+        Assert.Equal(beforeCount, await db.VisitRequestCampuses.CountAsync());
+
+        // The same guard applies to a support-member row, not just a visitor row.
+        var poisonedSupport = Campus("DN", support: new List<SupportTeamMemberDto>
+        {
+            new("Support A", "Trợ lý", "SupOrg", "VN", null, "s1", foreignGuestMemberId),
+        });
+        var ex2 = await Assert.ThrowsAsync<BusinessRuleException>(() => Svc(db).CreateV2Async(
+            Form(poisonedSupport), Registrant, "VISITOR_SUBMITTED", Now, CancellationToken.None));
+        Assert.Equal(VisitRequestErrorCodes.InvalidVisitScope, ex2.ErrorCode);
+
+        await tx.RollbackAsync();
+    }
 }

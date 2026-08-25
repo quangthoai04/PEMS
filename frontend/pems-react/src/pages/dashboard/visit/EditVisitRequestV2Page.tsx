@@ -18,11 +18,13 @@ import {
   type ResolvedVisitForm,
 } from '../../../features/visit-request/api/visitRequestV2Api';
 import {
-  applyContentToAllCampuses,
   buildV2EditPayload,
   cloneCampusVisitContent,
+  contactSurvivesReplacement,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
+  preserveTargetContact,
+  resolveExactlyOne,
   resolvedFormToV2Schema,
 } from '../../../features/visit-request/utils/visitRequestV2Form';
 import { CampusVisitCard } from '../../../features/visit-request/components/v2/CampusVisitCard';
@@ -34,7 +36,7 @@ import { PartnerOrgCombobox } from '../../../features/visit-request/components/s
 import { CountrySelect } from '../../../features/visit-request/components/shared/CountrySelect';
 import { FormSection } from '../../../features/visit-request/components/shared/FormSection';
 import { useRegistrationCampuses } from '../../../features/visit-request/hooks/useRegistrationCampuses';
-import { getApiErrorMessage } from '../../../shared/utils/toast';
+import { getApiErrorMessage, showMessageErrorToast } from '../../../shared/utils/toast';
 import { commitFieldValue } from '../../../shared/utils/formRevalidate';
 
 type Mode = 'edit' | 'resubmit';
@@ -174,14 +176,33 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
       return next;
     });
 
+  /**
+   * "Copy From Campus" — every campus on this page is persisted (`instanceId != null`), so the
+   * target's Operational Contact state must be PRESERVED, never inherited from the source, and a
+   * copy that would orphan a linked contact must be blocked before any mutation
+   * (operational-contact consistency fix). `cloneCampusVisitContent` alone would carry the source's
+   * `operationalContact`/`operationalContactClientMemberKey` onto the target verbatim — safe for a
+   * brand-new draft card, not for an already-persisted one with its own contact identity.
+   */
   const copyInto = (targetIndex: number, sourceIndex: number) => {
     const current = form.getValues('campusVisits');
     const source = current[sourceIndex];
     const target = current[targetIndex];
-    if (source && target && sourceIndex !== targetIndex) {
-      campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
-      bumpCardVersion(target.clientKey);
+    if (!source || !target || sourceIndex === targetIndex) return;
+
+    const proposed = preserveTargetContact(target, cloneCampusVisitContent(source, target));
+    const currentContactGuestMemberId = resolveExactlyOne(
+      [...(target.visitors ?? []), ...(target.supportTeam ?? [])],
+      target.operationalContactClientMemberKey,
+    )?.guestMemberId ?? null;
+    const incomingRows = [...(proposed.visitors ?? []), ...(proposed.supportTeam ?? [])];
+    if (!contactSurvivesReplacement(currentContactGuestMemberId, incomingRows)) {
+      showMessageErrorToast(t('visitRequestV2:card.contactReplaceBlocked'));
+      return;
     }
+
+    campusVisitFields.update(targetIndex, proposed);
+    bumpCardVersion(target.clientKey);
   };
 
   const requestApplyToAll = (sourceIndex: number) => {
@@ -238,6 +259,19 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
         if (status === 409 || code === 'VISIT_REQUEST_VERSION_CONFLICT' || code === 'VISIT_INSTANCE_VERSION_CONFLICT') {
           setConflict(true);
           setSubmitError(t('visitRequestV2:edit.conflict'));
+        } else if (code === 'OPERATIONAL_CONTACT_STALE_SESSION_REQUIRES_RELOAD') {
+          // Raised by both `mode === 'edit'` and `mode === 'resubmit'` (both run the same live-request
+          // continuity check server-side) — reuses the same reload affordance as a version conflict,
+          // since the fix genuinely is the same: reload to get a client that proves continuity
+          // correctly (operational-contact consistency fix).
+          setConflict(true);
+          setSubmitError(t('visitRequestV2:card.contactStaleSessionRequiresReload'));
+        } else if (code === 'OPERATIONAL_CONTACT_RELATION_NOT_EDITABLE_IN_PENDING_EDIT') {
+          // Pending Edit only (mode === 'edit') — Resubmit has no relationship-only branch to trip
+          // this on (verified: it always full-rewrites), so this code is not expected under
+          // mode === 'resubmit', but is still mapped defensively rather than falling through to the
+          // generic message if it ever were.
+          setSubmitError(t('visitRequestV2:card.contactRelationNotEditableInPendingEdit'));
         } else if (!applyServerErrors(err)) {
           setSubmitError(getApiErrorMessage(err, t('visitRequestV2:edit.submitFailed')));
         }
@@ -481,10 +515,44 @@ export default function EditVisitRequestV2Page({ mode }: { mode: Mode }) {
                 type="button"
                 className="rounded-lg bg-[#004c91] px-4 py-2 text-sm font-bold text-white"
                 onClick={() => {
+                  // Every card on this page is persisted, so each target's OWN Operational Contact
+                  // relation/snapshot must survive the clone, never inherit the source's, and the
+                  // whole action is atomic: one protected target that would be orphaned blocks ALL of
+                  // it, not just that one card (operational-contact consistency fix).
                   const current = form.getValues('campusVisits');
-                  campusVisitFields.replace(applyContentToAllCampuses(current, applyPrompt.sourceIndex));
+                  const sourceIndex = applyPrompt.sourceIndex;
+                  const source = current[sourceIndex];
+                  if (!source) { setApplyPrompt(null); return; }
+
+                  const proposals = current.map((cv, i) =>
+                    i === sourceIndex ? cv : preserveTargetContact(cv, cloneCampusVisitContent(source, cv)));
+
+                  const unsafeLabels = current
+                    .map((cv, i) => ({ cv, i }))
+                    .filter(({ i }) => i !== sourceIndex)
+                    .filter(({ cv, i }) => {
+                      const currentContactGuestMemberId = resolveExactlyOne(
+                        [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])],
+                        cv.operationalContactClientMemberKey,
+                      )?.guestMemberId ?? null;
+                      const incomingRows = [
+                        ...(proposals[i].visitors ?? []),
+                        ...(proposals[i].supportTeam ?? []),
+                      ];
+                      return !contactSurvivesReplacement(currentContactGuestMemberId, incomingRows);
+                    })
+                    .map(({ i }) => campusLabel(current[i], i));
+
+                  if (unsafeLabels.length > 0) {
+                    showMessageErrorToast(
+                      t('visitRequestV2:card.applyAllContactBlocked', { campuses: unsafeLabels.join(', ') }));
+                    setApplyPrompt(null);
+                    return;
+                  }
+
+                  campusVisitFields.replace(proposals);
                   current.forEach((cv, i) => {
-                    if (i !== applyPrompt.sourceIndex) bumpCardVersion(cv.clientKey);
+                    if (i !== sourceIndex) bumpCardVersion(cv.clientKey);
                   });
                   setApplyPrompt(null);
                 }}

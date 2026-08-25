@@ -134,15 +134,19 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
 
   test('Journey D — an authenticated owner opens the per-campus v2 detail through the real UI', async ({ browser, request }) => {
     const tag = `D${Date.now().toString(36)}`;
-    const { requestId } = await createMixedRequest(request, tag, `Doan HN ${tag}`, `Doan HCM ${tag}`);
+    const { requestId, instances } = await createMixedRequest(request, tag, `Doan HN ${tag}`, `Doan HCM ${tag}`);
+    const hcmInstance = instances.find(i => i.campusId === CAMPUS_HCM)!.visitInstanceId;
 
     const { context, page } = await authedPage(browser, 'visitor_owner', OWNER_USER);
     try {
       await page.goto(`/dashboard/visit/v2/${requestId}`);
-      // The v2 detail renders BOTH authorized campus cards with their OWN content (mixed request → per-campus
-      // detail, never a smallest-campus projection); the owner sees every campus of their own request.
+      // The v2 detail renders BOTH authorized campus cards, but on a multi-campus request only the
+      // FIRST is expanded by default (VisitRequestV2DetailView's openCampusIds) — the rest start
+      // collapsed, showing only their header (campus/status), never the delegation name. The owner
+      // still sees every campus of their own request; the ones after the first just need a click.
       await expect(page.getByText(`Doan HN ${tag}`)).toBeVisible({ timeout: 25_000 });
-      await expect(page.getByText(`Doan HCM ${tag}`)).toBeVisible();
+      await page.getByTestId(`campus-detail-toggle-${hcmInstance}`).click();
+      await expect(page.getByText(`Doan HCM ${tag}`)).toBeVisible({ timeout: 15_000 });
       await expect(page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}`));
     } finally {
       await context.close();
@@ -151,22 +155,35 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
 
   test('Journey G — a wrong-campus leader is denied deciding another campus at the real host', async ({ request }) => {
     const tag = `G${Date.now().toString(36)}`;
-    const { instances } = await createMixedRequest(request, tag, `GHN ${tag}`, `GHCM ${tag}`);
+    const { requestId, instances } = await createMixedRequest(request, tag, `GHN ${tag}`, `GHCM ${tag}`);
     const hnInstance = instances.find(i => i.campusId === CAMPUS_HN)!.visitInstanceId;
 
-    // The HCM leader has no authority over the HN campus: the amendment-approve endpoint 403s on the campus
-    // gate (which runs BEFORE any amendment lookup), so a fabricated amendment id is enough to prove the scope
-    // check — the browser could never surface this action, and the host refuses it directly.
+    // Amendment decisions are gated on the CURRENT HOST of the instance (DecideVisitAmendmentCommandHandlers
+    // -> AmendmentGuards.EnsureCurrentHost), not on Staff Leader scope alone -- nobody holds that authority
+    // until a campus is approved with a named host, so the HN leader must actually self-host HN first, the
+    // same optimistic-concurrency precondition every other approve call in this suite needs.
+    const detail = await (await request.get(`${API_BASE}/v2/visit-requests/${requestId}`, { headers: hdr('visitor_owner') })).json();
+    const hnRow = detail.campusVisits.find((c: any) => c.campusId === CAMPUS_HN);
+    const approve = await request.post(`${API_BASE}/delegations/${requestId}/campuses/${hnInstance}/approve`, {
+      headers: hdr('campus_leader_hn'),
+      data: { hostUserId: 3, decisionNote: 'assign', expectedInstanceRowVersion: hnRow.rowVersion },
+    });
+    expect(approve.ok(), `campus approve failed: ${approve.status()} ${await approve.text()}`).toBeTruthy();
+
+    // The HCM leader has no authority over the HN campus: the amendment-approve endpoint 403s on the host
+    // gate, so a fabricated amendment id is enough to prove the scope check — the browser could never
+    // surface this action, and the host refuses it directly.
     const wrong = await request.post(`${API_BASE}/v2/visit-instances/${hnInstance}/amendments/999999999/approve`, {
       headers: hdr('campus_leader_hcm'), data: { note: 'nope' },
     });
     expect(wrong.status()).toBe(403);
 
-    // The HN leader passes the campus gate (so it is NOT a blanket 403); the fabricated amendment then 404s.
+    // The HN leader — now HN's current Host — passes the host gate (so it is NOT a blanket 403); the
+    // fabricated amendment then 404s.
     const right = await request.post(`${API_BASE}/v2/visit-instances/${hnInstance}/amendments/999999999/approve`, {
       headers: hdr('campus_leader_hn'), data: { note: 'ok' },
     });
-    expect(right.status(), `HN leader should pass the campus gate, got ${right.status()}`).not.toBe(403);
+    expect(right.status(), `HN leader should pass the host gate, got ${right.status()}`).not.toBe(403);
     expect([400, 404, 409]).toContain(right.status());
   });
 
@@ -213,16 +230,22 @@ test.describe('Real-stack: authenticated v2 workflow journeys', () => {
     const { requestId, instances } = await createMixedRequest(request, tag, `FHN ${tag}`, `FHCM ${tag}`);
     const hnInstance = instances.find(i => i.campusId === CAMPUS_HN)!.visitInstanceId;
 
-    // Precondition: the HN leader approves the HN campus (self-host) → HN becomes ASSIGNED (amendable, >24h out).
-    const approve = await request.post(`${API_BASE}/delegations/${requestId}/campuses/${hnInstance}/approve`, {
-      headers: hdr('campus_leader_hn'), data: { hostUserId: 3, decisionNote: 'assign' },
-    });
-    expect(approve.ok(), `campus approve failed: ${approve.status()} ${await approve.text()}`).toBeTruthy();
-
     const readHn = async () => {
       const d = await (await request.get(`${API_BASE}/v2/visit-requests/${requestId}`, { headers: hdr('visitor_owner') })).json();
       return { hn: d.campusVisits.find((c: any) => c.campusId === CAMPUS_HN), hcm: d.campusVisits.find((c: any) => c.campusId === CAMPUS_HCM) };
     };
+
+    // Precondition: the HN leader approves the HN campus (self-host) → HN becomes ASSIGNED (amendable, >24h out).
+    // The approve endpoint requires the campus's current rowVersion as an optimistic-concurrency token
+    // (VISIT_INSTANCE_VERSION_REQUIRED otherwise) — read it fresh first, same as the shared `approveCampus`
+    // helper in realstackHelpers.ts does.
+    const s0 = await readHn();
+    const approve = await request.post(`${API_BASE}/delegations/${requestId}/campuses/${hnInstance}/approve`, {
+      headers: hdr('campus_leader_hn'),
+      data: { hostUserId: 3, decisionNote: 'assign', expectedInstanceRowVersion: s0.hn.rowVersion },
+    });
+    expect(approve.ok(), `campus approve failed: ${approve.status()} ${await approve.text()}`).toBeTruthy();
+
     const s1 = await readHn();
     expect(s1.hn.instanceStatus).toBe('ASSIGNED');
     const originalCount = s1.hn.visitors.length;

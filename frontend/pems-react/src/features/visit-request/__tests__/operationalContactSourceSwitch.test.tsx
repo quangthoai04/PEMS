@@ -12,9 +12,29 @@ import i18n from '../../../shared/i18n/config';
  * These pin the actual UI behaviour, not just the helper functions underneath it.</p>
  */
 
+/**
+ * `renderForm()` mounts the full public VisitRequestFormV2 — every section, every validator — and
+ * `twoMembers()` (the shared setup most tests here start from) then drives ~9 sequential act-wrapped
+ * re-renders of that tree (two full member-row fills, add-guest, two dropdown picks). None of that is
+ * async-unsafe (every mutation is awaited through `act`), it is just genuinely CPU-heavy synchronous
+ * render work. Alone the file finishes in a few seconds, but vitest runs files in parallel worker
+ * threads, so under a full suite run this file sits close enough to the default 5s budget that it
+ * intermittently loses the scheduling race — CanhIter3FixBug closure measured it: 1/1 failures across
+ * 3 full-suite runs were this same file, always a `Test timed out in 5000ms`, never an assertion
+ * failure, and it passed every time run alone. `emailHtmlSanitization.test.tsx` hit the identical
+ * cause and fix (see its own comment) — nothing here asserts speed, so the budget is raised rather
+ * than the assertions relaxed or the setup thinned out.
+ */
+vi.setConfig({ testTimeout: 20_000 });
+
 vi.mock('../hooks/useRegistrationCampuses', () => ({
   useRegistrationCampuses: () => ({
-    campuses: [{ campusCode: 'HN', campusName: 'Hòa Lạc', campusId: 1 }],
+    // A second campus so the multi-campus-isolation test below can actually add a card — with only
+    // one campus available the "add campus" button is disabled once card 0 exists.
+    campuses: [
+      { campusCode: 'HN', campusName: 'Hòa Lạc', campusId: 1 },
+      { campusCode: 'HCM', campusName: 'Hồ Chí Minh', campusId: 2 },
+    ],
     loading: false,
   }),
 }));
@@ -38,6 +58,7 @@ vi.mock('../../../shared/utils/toast', async importOriginal => {
 });
 
 import { VisitRequestFormV2 } from '../components/v2/VisitRequestFormV2';
+import { showSuccessToast, showMessageErrorToast } from '../../../shared/utils/toast';
 
 const NS = 'opcontact-source-switch-test';
 
@@ -86,6 +107,50 @@ const opJobTitle = () => screen.getAllByTestId('campus-opcontact-jobtitle')[0] a
 const orgInput = (i = 0) => within(screen.getAllByTestId('campus-opcontact-org')[i]).getByRole('combobox');
 const opPhone = (i = 0) => screen.getByTestId(`campus-opcontact-phone-${i}`) as HTMLInputElement;
 const opEmail = (i = 0) => screen.getByTestId(`campus-opcontact-email-${i}`) as HTMLInputElement;
+
+// ── Registrant-as-member UX (plan CanhIter3FixBug §3-§20) ─────────────────────────────────────
+
+const fillRegistrant = async (m: { fullName: string; phone: string; email: string; organization: string; jobTitle: string }) => {
+  await type(screen.getByTestId('v2-registrant-fullName'), m.fullName);
+  await type(screen.getByTestId('v2-registrant-phone'), m.phone);
+  await type(screen.getByTestId('v2-registrant-email'), m.email);
+  await type(screen.getByPlaceholderText(/organization\/partner|tổ chức\/đối tác/i), m.organization);
+  await type(screen.getByTestId('v2-registrant-jobTitle'), m.jobTitle);
+  // Nationality is required to add the registrant as a visitor (plan §8) — filled unconditionally
+  // here so every scenario below can reach the "add" flow, even the ones that do not assert on it.
+  await fillRegistrantNationality('Việt Nam');
+};
+
+/** The registrant's own `CountrySelect` — located by its FormField label, since (unlike a member
+ * row's nationality cell) it carries no dedicated `data-testid`. */
+const registrantNationalityCombobox = (): HTMLElement => {
+  const label = Array.from(document.querySelectorAll('label')).find(l => /Quốc tịch|Nationality/.test(l.textContent ?? ''))!;
+  const field = label.closest('div')!.parentElement as HTMLElement;
+  return within(field).getByRole('combobox');
+};
+const fillRegistrantNationality = async (name: string) => {
+  await type(registrantNationalityCombobox(), name);
+  const option = await screen.findByText(name, {}, { timeout: 3000 });
+  await act(async () => { fireEvent.click(option); });
+};
+
+const useRegistrantAsContact = () => click('campus-opcontact-use-registrant-0');
+
+const addCampus = async () => {
+  await act(async () => { fireEvent.click(screen.getByTestId('v2-add-campus')); });
+};
+
+/** Builds an .xlsx File with N distinct, valid guest rows — for tests that need the visitor list
+ * at (or near) its cap without one fireEvent per row. */
+const guestListFile = (count: number, namePrefix = 'Person'): File => {
+  const header = ['STT', 'Họ và tên', 'Chức vụ', 'Đơn vị công tác', 'Quốc tịch'];
+  const rows = Array.from({ length: count }, (_, i) => [i + 1, `${namePrefix} ${i + 1}`, 'GV', 'Org X', 'VN']);
+  const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+  const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer;
+  return new File([buf], 'khach.xlsx');
+};
 
 beforeEach(async () => {
   localStorage.clear();
@@ -197,43 +262,54 @@ describe('MEMBER → EXTERNAL', () => {
   });
 });
 
-describe('EXTERNAL → MEMBER (two independently-guarded steps)', () => {
+// REG-MEMBER-10 and the generic (non-registrant) half of plan CanhIter3FixBug §12/§13/§14: a
+// hand-typed EXTERNAL contact that is NOT the registrant never destroys anything on the radio
+// click, but also never offers "add the registrant" — it goes straight to picking a member.
+describe('EXTERNAL → MEMBER, generic contact (plan §12-§14) — never destructive, never offers "add registrant"', () => {
   it.each([
     ['only fullName', () => type(opName(), 'Ngoài Đoàn')],
     ['only organization', () => type(orgInput(), 'Tổ chức ngoài')],
     ['only jobTitle', () => type(opJobTitle(), 'Giám đốc')],
     ['only phone', () => type(opPhone(), '0987654321')],
-  ])('confirms when the EXTERNAL snapshot has %s — protects all 5 fields, not just phone/email', async (_label, fillOne) => {
+  ])('opens the member picker directly when the EXTERNAL snapshot has %s — never the old destructive confirm', async (_label, fillOne) => {
     renderForm();
     await chooseExternalSource();
     await fillOne();
 
     await chooseMemberSource();
-    expect(screen.getByTestId('campus-opcontact-source-switch-confirm-0')).toBeInTheDocument();
+    // The generic-contact case skips the add-or-choose decision (nothing to offer "add" for) and
+    // goes straight to the picker — but nothing about it is the OLD wipe-everything confirm.
+    expect(screen.queryByTestId('campus-opcontact-source-switch-confirm-0')).toBeNull();
+    expect(screen.queryByTestId('campus-opcontact-switch-decision-0')).toBeNull();
+    expect(screen.getByTestId('campus-opcontact-switch-pick-member-0')).toBeInTheDocument();
+    expect(screen.queryByTestId('campus-opcontact-switch-add-registrant-0')).toBeNull();
     // Still EXTERNAL — nothing applied yet.
     expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
   });
 
-  it('confirming the switch clears the EXTERNAL snapshot; the dropdown then applies without a second confirm', async () => {
+  it('picking a member still confirms away existing phone/email, and nothing leaks once confirmed', async () => {
     renderForm();
     await chooseExternalSource();
     await type(opName(), 'Ngoài Đoàn');
     await type(opPhone(), '0987654321');
 
     await chooseMemberSource();
-    await click('campus-opcontact-source-switch-yes-0');
-
-    // MEMBER mode now shows the dropdown, no free-text fields.
-    expect(screen.getByTestId('campus-opcontact-pick-0')).toBeInTheDocument();
-    expect(screen.queryByTestId('campus-opcontact-name')).toBeNull();
-
     await fillMember('visitors', 0, { fullName: 'A Person', jobTitle: 'PM', organization: 'ABC Univ' });
-    await pickByName('A Person');
+    const select = screen.getByTestId('campus-opcontact-switch-pick-member-select-0') as HTMLSelectElement;
+    const option = Array.from(select.querySelectorAll('option')).find(o => /A Person/.test(o.textContent ?? ''))!;
+    await act(async () => { fireEvent.change(select, { target: { value: option.value } }); });
 
-    // Nothing left to lose (the EXTERNAL snapshot was already cleared), so this applies immediately.
-    expect(screen.queryByTestId('campus-opcontact-member-switch-confirm-0')).toBeNull();
+    // Phone is at risk of being silently overwritten — confirms before committing.
+    expect(screen.getByTestId('campus-opcontact-member-switch-confirm-0')).toBeInTheDocument();
+    // Nothing applied yet: still EXTERNAL with the typed data intact.
+    expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
+    expect(opName().value).toBe('Ngoài Đoàn');
+
+    await click('campus-opcontact-member-switch-yes-0');
+
+    expect(screen.queryByTestId('campus-opcontact-switch-pick-member-0')).toBeNull();
     expect(readonlyName()).toBe('A Person');
-    // The cleared phone was never carried into the new MEMBER pick.
+    // The old EXTERNAL phone never leaked onto the newly-picked member.
     expect(opPhone().value).toBe('');
   });
 
@@ -244,14 +320,224 @@ describe('EXTERNAL → MEMBER (two independently-guarded steps)', () => {
     await type(opPhone(), '0987654321');
 
     await chooseMemberSource();
-    const cancelButton = screen.getByTestId('campus-opcontact-source-switch-confirm-0')
-      .querySelector('button:last-of-type')!;
-    await act(async () => { fireEvent.click(cancelButton); });
+    await click('campus-opcontact-switch-pick-member-cancel-0');
 
-    expect(screen.queryByTestId('campus-opcontact-source-switch-confirm-0')).toBeNull();
+    expect(screen.queryByTestId('campus-opcontact-switch-pick-member-0')).toBeNull();
     expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
     expect(opName().value).toBe('Ngoài Đoàn');
     expect(opPhone().value).toBe('0987654321');
+  });
+});
+
+// plan CanhIter3FixBug §3-§9/§11/§15-§20 — registrant-as-member UX.
+describe('EXTERNAL → MEMBER, registrant already copied in as the contact (plan §3-§9)', () => {
+  const KIM = {
+    fullName: 'Kim Min Jae', phone: '0912345678', email: 'kim@example.com',
+    organization: 'SeoulTech', jobTitle: 'Director',
+  };
+
+  const quickFillKim = async () => {
+    await fillRegistrant(KIM);
+    await useRegistrantAsContact();
+  };
+
+  // REG-MEMBER-04
+  it('opens the add-or-choose decision, with nothing applied yet', async () => {
+    renderForm();
+    await quickFillKim();
+
+    await chooseMemberSource();
+
+    expect(screen.getByTestId('campus-opcontact-switch-decision-0')).toBeInTheDocument();
+    expect(screen.getByTestId('campus-opcontact-switch-add-registrant-0')).toBeInTheDocument();
+    // Nothing committed: still EXTERNAL, still Kim's own data.
+    expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
+    expect(opName().value).toBe(KIM.fullName);
+    expect(opPhone().value).toBe(KIM.phone);
+    expect(opEmail().value).toBe(KIM.email);
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
+  // REG-MEMBER-05
+  it('cancel from the decision panel is a true no-op', async () => {
+    renderForm();
+    await quickFillKim();
+    await chooseMemberSource();
+
+    await click('campus-opcontact-switch-decision-cancel-0');
+
+    expect(screen.queryByTestId('campus-opcontact-switch-decision-0')).toBeNull();
+    expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
+    expect(opName().value).toBe(KIM.fullName);
+    expect(opPhone().value).toBe(KIM.phone);
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
+  // REG-MEMBER-06 + REG-MEMBER-07 (the campus starts with exactly one blank scaffolding row, so
+  // linking the registrant into it also proves the blank row is reused, not left behind).
+  it('adds the registrant as a visitor, reusing the blank row, and preserves phone/email', async () => {
+    renderForm();
+    await quickFillKim();
+    await chooseMemberSource();
+
+    await click('campus-opcontact-switch-add-registrant-0');
+
+    expect(screen.queryByTestId('campus-opcontact-switch-decision-0')).toBeNull();
+    expect(screen.getByTestId('campus-opcontact-picked-0')).toBeInTheDocument();
+    // Exactly one visitor row — the blank scaffolding row was populated, not appended to.
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
+    expect((memberField('visitors', 0, 'fullName') as HTMLTextAreaElement).value).toBe(KIM.fullName);
+    expect((memberField('visitors', 0, 'jobTitle') as HTMLTextAreaElement).value).toBe(KIM.jobTitle);
+    expect(readonlyName()).toBe(KIM.fullName);
+    // Phone/Email are contact-level, and the person has not changed — preserved, not cleared.
+    expect(opPhone().value).toBe(KIM.phone);
+    expect(opEmail().value).toBe(KIM.email);
+    expect(vi.mocked(showSuccessToast)).toHaveBeenCalledWith(expect.stringContaining('Đã thêm người đăng ký'));
+  });
+
+  // REG-MEMBER-08 — race safety: somebody else added the registrant to the list while the panel
+  // was open. The re-check before commit must link that row instead of duplicating it.
+  it('links an exact match that appeared after the panel opened, instead of duplicating', async () => {
+    renderForm();
+    await quickFillKim();
+    await chooseMemberSource();
+
+    // A second guest, added AFTER the decision panel is already open, exactly matches the registrant.
+    await addGuest();
+    await fillMember('visitors', 1, {
+      fullName: KIM.fullName, jobTitle: KIM.jobTitle, organization: KIM.organization,
+    });
+
+    await click('campus-opcontact-switch-add-registrant-0');
+
+    // Still 2 rows (the original blank + Kim's) — no third row was created.
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(screen.getByTestId('campus-opcontact-picked-0')).toBeInTheDocument();
+    expect(readonlyName()).toBe(KIM.fullName);
+    expect(opPhone().value).toBe(KIM.phone);
+    expect(opEmail().value).toBe(KIM.email);
+    expect(vi.mocked(showSuccessToast)).toHaveBeenCalledWith(expect.stringContaining(KIM.fullName));
+  });
+
+  // REG-MEMBER-02 style ambiguity, reached from the decision panel's "add" button.
+  it('refuses to guess when the re-check finds more than one exact match', async () => {
+    renderForm();
+    await quickFillKim();
+    await chooseMemberSource();
+
+    await addGuest();
+    await fillMember('visitors', 1, {
+      fullName: KIM.fullName, jobTitle: KIM.jobTitle, organization: KIM.organization,
+    });
+    await addGuest();
+    await fillMember('visitors', 2, {
+      fullName: KIM.fullName, jobTitle: KIM.jobTitle, organization: KIM.organization,
+    });
+
+    await click('campus-opcontact-switch-add-registrant-0');
+
+    expect(vi.mocked(showMessageErrorToast)).toHaveBeenCalledWith(expect.stringContaining('nhiều thành viên'));
+    // No mutation: still EXTERNAL, no member picked, no row added.
+    expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(3);
+  });
+
+  // REG-MEMBER-09 — choosing a DIFFERENT member instead: Kim's data must not leak onto them.
+  it('choosing another member leaves Kim untouched until confirmed, then does not leak phone/email', async () => {
+    renderForm();
+    await quickFillKim();
+    await addGuest();
+    await fillMember('visitors', 1, { fullName: 'Moon', jobTitle: 'VP', organization: 'Other Univ' });
+
+    await chooseMemberSource();
+    await click('campus-opcontact-switch-choose-other-0');
+
+    expect(screen.getByTestId('campus-opcontact-switch-pick-member-0')).toBeInTheDocument();
+    // Kim is still the (EXTERNAL) contact — nothing committed by opening the picker.
+    expect(opName().value).toBe(KIM.fullName);
+
+    const select = screen.getByTestId('campus-opcontact-switch-pick-member-select-0') as HTMLSelectElement;
+    const option = Array.from(select.querySelectorAll('option')).find(o => /Moon/.test(o.textContent ?? ''))!;
+    await act(async () => { fireEvent.change(select, { target: { value: option.value } }); });
+
+    // Kim has phone/email — picking Moon must still confirm before it overwrites them.
+    expect(screen.getByTestId('campus-opcontact-member-switch-confirm-0')).toBeInTheDocument();
+    expect(opName().value).toBe(KIM.fullName);
+
+    await click('campus-opcontact-member-switch-yes-0');
+
+    expect(readonlyName()).toBe('Moon');
+    expect(opPhone().value).toBe('');
+    expect(opEmail().value).toBe('');
+  });
+
+  // REG-MEMBER-11 — the visitor list is at the hard cap with no blank row to reuse: the operation
+  // is refused atomically, nothing is added and nothing else changes.
+  it('refuses to add the registrant when the visitor list is full, with no partial mutation', async () => {
+    const { container } = renderForm();
+    await fillRegistrant(KIM);
+
+    // Fill the visitor list to the hard cap via a bulk Excel import — 200 people, none of them Kim.
+    // The only scaffolding row is blank, so a plain import (append, dropping the blank row first)
+    // already lands exactly on the cap without needing a "replace" confirmation.
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [guestListFile(200)] } });
+      await new Promise(r => setTimeout(r, 0));
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(200));
+
+    await useRegistrantAsContact();
+    await chooseMemberSource();
+    await click('campus-opcontact-switch-add-registrant-0');
+
+    expect(vi.mocked(showMessageErrorToast)).toHaveBeenCalledWith(expect.stringContaining('200'));
+    // Still EXTERNAL, still 200 rows — nothing was added, nothing switched.
+    expect(screen.getByTestId('campus-opcontact-name')).toBeInTheDocument();
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(200);
+  }, 30_000);
+
+  // REG-MEMBER-12 — every mutation above is scoped to the campus card whose radio was clicked.
+  it('touches only the campus whose decision panel was used', async () => {
+    renderForm();
+    await quickFillKim();
+    await addCampus();
+
+    await chooseMemberSource(0);
+    await click('campus-opcontact-switch-add-registrant-0');
+
+    expect(screen.getByTestId('campus-opcontact-picked-0')).toBeInTheDocument();
+    // Campus 0's row now holds the registrant. Scoped through the campus's own <table> — each row's
+    // testid also exists a second time in that card's mobile-card rendering of the SAME row, so an
+    // unscoped `getAllByTestId` would mix the two campuses' duplicates together.
+    const visitorsTable = (campusIndex: number) => screen.getAllByTestId('v2-visitors-table')[campusIndex];
+    expect(within(visitorsTable(0)).getByTestId('visitors-0-fullName')).toHaveValue(KIM.fullName);
+    // …campus 1 never had a contact source chosen, and its own row-0 is still the blank scaffolding
+    // row it started with.
+    expect(screen.getByTestId('campus-opcontact-source-member-1')).toBeInTheDocument();
+    expect(visitorsTable(1).querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(within(visitorsTable(1)).getByTestId('visitors-0-fullName')).toHaveValue('');
+  });
+});
+
+describe('EXTERNAL → MEMBER when the registrant snapshot was hand-edited away (plan §4)', () => {
+  // The registrant-copy check re-verifies every time, never trusting a stale "quick-filled" flag.
+  it('no longer offers "add registrant" once the copied snapshot has been edited', async () => {
+    renderForm();
+    await fillRegistrant({
+      fullName: 'Kim Min Jae', phone: '0912345678', email: 'kim@example.com',
+      organization: 'SeoulTech', jobTitle: 'Director',
+    });
+    await useRegistrantAsContact();
+
+    // Edited away from the registrant after the copy.
+    await type(opName(), 'Someone Else Entirely');
+
+    await chooseMemberSource();
+
+    expect(screen.queryByTestId('campus-opcontact-switch-add-registrant-0')).toBeNull();
+    expect(screen.getByTestId('campus-opcontact-switch-pick-member-0')).toBeInTheDocument();
   });
 });
 

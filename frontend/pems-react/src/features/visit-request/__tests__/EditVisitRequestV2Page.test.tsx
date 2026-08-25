@@ -34,6 +34,15 @@ vi.mock('../hooks/useRegistrationCampuses', () => ({
   }),
 }));
 
+// Excel parsing itself is out of scope here — only what a SUCCESSFUL import report does matters for
+// the replace-block guard, so the parser is mocked to return one directly rather than exercising real
+// XLSX binary parsing.
+const mockReport = vi.fn();
+vi.mock('../components/ExcelUpload/excelValidator', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/ExcelUpload/excelValidator')>();
+  return { ...actual, validatePersonExcel: (...args: unknown[]) => mockReport(...args) };
+});
+
 import {
   getVisitRequestFormV2,
   updatePendingVisitRequestV2,
@@ -468,5 +477,196 @@ describe('EditVisitRequestV2Page', () => {
         expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Khách HN')).toBeInTheDocument();
       });
     }, 15000);
+  });
+
+  // ── Operational-contact consistency fix: Copy/Apply-To-All must never let a persisted target's OWN
+  // contact relation/snapshot be overwritten by the SOURCE campus's, and must block the whole bulk
+  // operation before any mutation when a target's linked member would be orphaned. ──
+  describe('Copy / Apply-To-All preserve each target campus’s own Operational Contact', () => {
+    /** A campus whose visitor IS the linked Operational Contact (fullName mirrors the contact's). */
+    const linkedCampus = (id: number, code: string, name: string, delegation: string, contactName: string) => {
+      const c = campus(id, code, name, id, delegation);
+      c.visitors = [{
+        guestMemberId: id * 10, memberType: 'VISITOR', fullName: contactName,
+        organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1,
+      }];
+      c.operationalContact = {
+        ...c.operationalContact, fullName: contactName, guestMemberId: id * 10,
+      } as typeof c.operationalContact & { guestMemberId: number };
+      return c;
+    };
+
+    it('"Copy content from" copies business content but leaves an UNLINKED target’s own contact untouched (COPY-FE)', async () => {
+      // The target's member list is always FULLY REPLACED by the copy (it becomes an independent clone
+      // of the source's), so a LINKED target can never safely survive a cross-campus copy at all — that
+      // is the atomicity case below. An UNLINKED target has nothing to orphan, so the copy is safe; what
+      // must still be proven is that the target's OWN free-text contact ("Lee") is not silently
+      // overwritten by the source's ("Kim") the way cloneCampusVisitContent alone would do.
+      const hn = linkedCampus(1, 'HN', 'FPTU Hà Nội', 'Đoàn HN', 'Kim');
+      const hcm = campus(2, 'HCM', 'FPTU Hồ Chí Minh', 2, 'Đoàn HCM');
+      hcm.operationalContact = {
+        ...hcm.operationalContact, fullName: 'Lee', guestMemberId: null,
+      } as typeof hcm.operationalContact & { guestMemberId: number | null };
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ visitScope: 'MULTI_CAMPUS', campusVisits: [hn, hcm] }));
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+      // Before the copy: HCM's own contact is Lee.
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-1').textContent).toBe('Lee');
+
+      const copySelect = document.querySelector('select[id^="copy-src-"]') as HTMLSelectElement;
+      fireEvent.change(copySelect, { target: { value: '0' } });
+
+      await waitFor(() => {
+        // Business content copied from HN.
+        expect(screen.getAllByTestId('campus-delegation-input')[1]).toHaveValue('Đoàn HN');
+        expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Kim')).toBeInTheDocument();
+      });
+      // The target's OWN contact snapshot survives the copy — never silently repointed at Kim.
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-1').textContent).toBe('Lee');
+    }, 15000);
+
+    it('Apply-To-All blocks the ENTIRE operation, with zero mutation, when one target’s linked member would be orphaned (APPLY-FE)', async () => {
+      const hn = linkedCampus(1, 'HN', 'FPTU Hà Nội', 'Đoàn HN', 'Kim');
+      // HCM's own linked member ("Lee") does not appear anywhere in HN's member list — copying HN's
+      // content onto HCM would orphan HCM's relation.
+      const hcm = linkedCampus(2, 'HCM', 'FPTU Hồ Chí Minh', 'Đoàn HCM', 'Lee');
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ visitScope: 'MULTI_CAMPUS', campusVisits: [hn, hcm] }));
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Apply to other campuses' })[0]);
+      fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+      // Give any (incorrect) async mutation a chance to land, then assert NOTHING changed: not HCM's
+      // business content, not its own contact — the whole operation must be atomic, never a partial
+      // "some targets updated" outcome.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(screen.getAllByTestId('campus-delegation-input')[1]).toHaveValue('Đoàn HCM');
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-1').textContent).toBe('Lee');
+      expect(within(screen.getAllByTestId('v2-visitors-table')[1]).getByDisplayValue('Lee')).toBeInTheDocument();
+    }, 15000);
+  });
+
+  // ── Persisted Excel Replace: block before mutation, never clear-and-warn (operational-contact
+  // consistency fix). A DRAFT campus still gets the softer clear+recover flow — this screen only ever
+  // renders PERSISTED campuses (contactReadOnly={instanceId != null} unconditionally), so every replace
+  // here is the strict one. ──
+  describe('Excel "Replace all" on a persisted, linked campus', () => {
+    const linkedCampus = (id: number, code: string, name: string, delegation: string, contactName: string) => {
+      const c = campus(id, code, name, id, delegation);
+      c.visitors = [{
+        guestMemberId: id * 10, memberType: 'VISITOR', fullName: contactName,
+        organization: 'ĐH X', jobTitle: 'GV', nationality: 'VN', displayOrder: 1,
+      }];
+      c.operationalContact = {
+        ...c.operationalContact, fullName: contactName, guestMemberId: id * 10,
+      } as typeof c.operationalContact & { guestMemberId: number };
+      return c;
+    };
+
+    const fireReplaceImport = (rows: { fullName: string; jobTitle: string; organization: string; nationality: string }[]) => {
+      const fileInput = document.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+      const file = new File(['x'], 'members.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      Object.defineProperty(fileInput, 'files', { value: [file], configurable: true });
+      fireEvent.change(fileInput);
+    };
+
+    it('blocks the whole replace before any mutation when it would orphan the linked contact', async () => {
+      const hn = linkedCampus(1, 'HN', 'FPTU Hà Nội', 'Đoàn HN', 'Kim');
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ campusVisits: [hn] }));
+      mockReport.mockResolvedValue({
+        fileName: 'members.xlsx', kind: 'visitors', checkedAt: '', totalRows: 1, validRows: 1,
+        errorRows: 0, duplicateRows: 0, overLimitRows: 0, remainingSlots: 10, resultingCount: 2,
+        errors: [],
+        // "Kim" (the linked contact) is NOT in the replacement set — replacing would orphan the link.
+        data: [{ fullName: 'Guest Z', jobTitle: 'GV', organization: 'ĐH Z', nationality: 'VN' }],
+      });
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+      fireReplaceImport([{ fullName: 'Guest Z', jobTitle: 'GV', organization: 'ĐH Z', nationality: 'VN' }]);
+
+      // The import itself always APPENDS first (an append never orphans anyone, so it is never
+      // blocked) — the list is [Kim, Guest Z] before "Replace all" is even clicked. What "Replace all"
+      // would do is throw this away and keep ONLY the imported rows, which is exactly what must be
+      // blocked here.
+      const table = () => screen.getByTestId('v2-visitors-table');
+      await waitFor(() => expect(within(table()).getByDisplayValue('Guest Z')).toBeInTheDocument());
+      const rowCountBeforeReplace = within(table()).getAllByRole('row').length;
+
+      fireEvent.click(await screen.findByTestId('v2-visitors-replace'));
+      fireEvent.click(await screen.findByTestId('v2-replace-confirm-yes-visitors'));
+
+      // Blocked: the replace action itself changes nothing — same row count, Kim still present, the
+      // contact snapshot untouched. (The earlier append is real content, not part of this guard.)
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(within(table()).getAllByRole('row').length).toBe(rowCountBeforeReplace);
+      expect(within(table()).getByDisplayValue('Kim')).toBeInTheDocument();
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-0').textContent).toBe('Kim');
+    });
+
+    it('an Excel row describing the same person by name is still blocked — no proven persisted identity, never trusted by name alone', async () => {
+      const hn = linkedCampus(1, 'HN', 'FPTU Hà Nội', 'Đoàn HN', 'Kim');
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ campusVisits: [hn] }));
+      mockReport.mockResolvedValue({
+        fileName: 'members.xlsx', kind: 'visitors', checkedAt: '', totalRows: 1, validRows: 1,
+        errorRows: 0, duplicateRows: 0, overLimitRows: 0, remainingSlots: 10, resultingCount: 1,
+        errors: [],
+        // A plain Excel row NEVER carries a persisted GuestMemberId (imports are always free text) —
+        // even one that happens to name "Kim" is a brand-new, unproven row, not continuity evidence.
+        data: [{ fullName: 'Kim', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
+      });
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+      fireReplaceImport([{ fullName: 'Kim', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }]);
+
+      // The append lands a SECOND "Kim" row (a name-alike, not the same proven row) — two rows now.
+      const table = () => screen.getByTestId('v2-visitors-table');
+      await waitFor(() => expect(within(table()).getAllByDisplayValue('Kim')).toHaveLength(2));
+
+      fireEvent.click(await screen.findByTestId('v2-visitors-replace'));
+      fireEvent.click(await screen.findByTestId('v2-replace-confirm-yes-visitors'));
+
+      // Still blocked, still two rows — the replace never collapsed them down to the imported one.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(within(table()).getAllByDisplayValue('Kim')).toHaveLength(2);
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-0').textContent).toBe('Kim');
+    });
+
+    it('a replace on the UNLINKED section (support team) is unaffected — the guard is scoped, not a blanket freeze', async () => {
+      const hn = linkedCampus(1, 'HN', 'FPTU Hà Nội', 'Đoàn HN', 'Kim'); // linked via VISITORS
+      hn.supportMembers = [{
+        guestMemberId: 999, memberType: 'EXTERNAL_SUPPORT', fullName: 'Old Support',
+        organization: 'ĐH X', jobTitle: '', nationality: 'VN', displayOrder: 1,
+      }];
+      vi.mocked(getVisitRequestFormV2).mockResolvedValue(form({ campusVisits: [hn] }));
+      mockReport.mockResolvedValue({
+        fileName: 'support.xlsx', kind: 'supportTeam', checkedAt: '', totalRows: 1, validRows: 1,
+        errorRows: 0, duplicateRows: 0, overLimitRows: 0, remainingSlots: 10, resultingCount: 1,
+        errors: [],
+        data: [{ fullName: 'New Support', jobTitle: '', organization: 'ĐH X', nationality: 'VN' }],
+      });
+
+      renderAt('edit');
+      await screen.findByDisplayValue('Đoàn HN');
+      // The support-team file input is the second file input on this single-campus card.
+      const fileInput = document.querySelectorAll('input[type="file"]')[1] as HTMLInputElement;
+      const file = new File(['x'], 'support.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      Object.defineProperty(fileInput, 'files', { value: [file], configurable: true });
+      fireEvent.change(fileInput);
+
+      fireEvent.click(await screen.findByTestId('v2-support-replace'));
+      fireEvent.click(await screen.findByTestId('v2-replace-confirm-yes-supportTeam'));
+
+      // Applies normally: the contact is linked to a VISITOR row, untouched by a support-only replace.
+      await waitFor(() => {
+        expect(within(screen.getByTestId('v2-supportTeam-table')).getByDisplayValue('New Support')).toBeInTheDocument();
+      });
+      expect(screen.getByTestId('campus-opcontact-readonly-fullName-0').textContent).toBe('Kim');
+      expect(within(screen.getByTestId('v2-visitors-table')).getByDisplayValue('Kim')).toBeInTheDocument();
+    });
   });
 });

@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using PEMS.Application.Common.Exceptions;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
+using PEMS.Domain.Entities.Users;
 using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Common;
@@ -185,13 +187,24 @@ public static class OperationalContactLink
     /// neither, and blanking them would delete the only way to reach the person.
     /// </para>
     /// </summary>
-    public static void ApplySnapshotFromMember(VisitInstanceFormDetail detail, VisitGuestMember member)
+    /// <returns>
+    /// Whether any of the three fields actually changed. Existing callers that only cared about the
+    /// write (Create) can keep ignoring the return value; callers that need to know whether anything
+    /// moved (the post-COW sync on Pending Edit/Resubmit/Amendment approve) read it directly instead of
+    /// re-diffing before and after themselves.
+    /// </returns>
+    public static bool ApplySnapshotFromMember(VisitInstanceFormDetail detail, VisitGuestMember member)
     {
+        var newOrganization = string.IsNullOrWhiteSpace(member.Organization) ? null : member.Organization;
+        var changed =
+            !string.Equals(detail.OperationalContactFullName, member.FullName, StringComparison.Ordinal)
+            || !string.Equals(detail.OperationalContactJobTitle, member.JobTitle, StringComparison.Ordinal)
+            || !string.Equals(detail.OperationalContactOrganization, newOrganization, StringComparison.Ordinal);
+
         detail.OperationalContactFullName = member.FullName;
         detail.OperationalContactJobTitle = member.JobTitle;
-        detail.OperationalContactOrganization = string.IsNullOrWhiteSpace(member.Organization)
-            ? null
-            : member.Organization;
+        detail.OperationalContactOrganization = newOrganization;
+        return changed;
     }
 
     /// <summary>
@@ -224,6 +237,164 @@ public static class OperationalContactLink
             throw new BusinessRuleException(
                 OperationalContactMessages.MemberNotEligible,
                 OperationalContactErrorCodes.MemberNotEligible);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="member"/>'s FullName/JobTitle/Organization describe the same person as
+    /// the proposed contact profile — the ONE identity-match primitive, reused by every caller that
+    /// needs it (Safe Edit, the standalone profile endpoint) instead of each duplicating its own
+    /// <see cref="PersonIdentity.Key"/> comparison. Deliberately a FACT, not a throwing guard: which
+    /// business error a mismatch means depends on what the CALLER was trying to do — creating a new
+    /// link to a mismatched member is <c>RelationProfileMismatch</c>, retyping a linked contact's
+    /// profile away from the member it's linked to is <c>LinkedProfileRequiresMemberUpdate</c> — and a
+    /// primitive that threw one hard-coded code could not tell those apart.
+    /// </summary>
+    public static bool RelationMatchesContact(
+        string fullName, string jobTitle, string? organization, VisitGuestMember member)
+        => string.Equals(
+            PersonIdentity.Key(fullName, jobTitle, organization),
+            PersonIdentity.Key(member.FullName, member.JobTitle, member.Organization),
+            StringComparison.Ordinal);
+
+    /// <summary>
+    /// Copies a linked member's shared fields onto the contact snapshot AND records the real old→new
+    /// audit entries, in one call — the only way callers can get this right, because the audit "before"
+    /// values must be read BEFORE <see cref="ApplySnapshotFromMember"/> mutates <paramref
+    /// name="detail"/>, and a caller that applied first and diffed after would log a no-op
+    /// (<c>"Senior Director" → "Senior Director"</c>) instead of the real change. Used by Pending Edit,
+    /// Resubmit and Amendment Approve after they re-link the same logical member across a copy-on-write
+    /// rewrite; never by Create (which has no "before" to diff) and never by Safe Edit (which mutates
+    /// the snapshot from typed input, not from a member row).
+    /// </summary>
+    /// <returns>Whether anything actually changed (mirrors <see cref="ApplySnapshotFromMember"/>).</returns>
+    public static bool SyncSnapshotFromLinkedMember(
+        AuditLog audit, VisitInstanceFormDetail detail, VisitGuestMember member, DateTime now)
+    {
+        var oldFullName = detail.OperationalContactFullName;
+        var oldJobTitle = detail.OperationalContactJobTitle;
+        var oldOrganization = detail.OperationalContactOrganization;
+
+        var changed = ApplySnapshotFromMember(detail, member);
+        if (!changed) return false;
+
+        void AddIfChanged(string field, string? oldValue, string? newValue)
+        {
+            if (string.Equals(oldValue ?? string.Empty, newValue ?? string.Empty, StringComparison.Ordinal))
+                return;
+            audit.Changes.Add(new AuditLogChange
+            {
+                FieldName = field,
+                OldValueText = oldValue,
+                NewValueText = newValue,
+                CreatedAt = now,
+            });
+        }
+
+        AddIfChanged("operational_contact_full_name", oldFullName, detail.OperationalContactFullName);
+        AddIfChanged("operational_contact_job_title", oldJobTitle, detail.OperationalContactJobTitle);
+        AddIfChanged("operational_contact_organization", oldOrganization, detail.OperationalContactOrganization);
+        return true;
+    }
+
+    /// <summary>
+    /// What a copy-on-write member-list rewrite (or a member-list-unchanged relation echo) proves, or
+    /// fails to prove, about continuity of the campus's Operational Contact relation (operational-contact
+    /// consistency fix). A FACT, not a business error — see <see cref="CheckPreservesExistingMemberRelation"/>.
+    /// </summary>
+    public enum ContactMemberContinuityResult
+    {
+        /// <summary>Nothing to protect (was unlinked, stays unlinked), or the same persisted member is
+        /// proven present under the same key (was linked, stays linked to the same person).</summary>
+        Preserved,
+        /// <summary>
+        /// The row the proposed key names exists but carries no persisted <c>GuestMemberId</c> — the
+        /// structural signature of a client built before that field existed. Only reachable when there
+        /// is no other evidence the currently-linked member is present at all; once such evidence
+        /// exists this never fires (see <see cref="RelationKeyPointsElsewhere"/>).
+        /// </summary>
+        MissingIdentityEvidence,
+        /// <summary>The currently-linked persisted member does not appear anywhere in the incoming rows.</summary>
+        CurrentMemberMissing,
+        /// <summary>More than one incoming row carries the currently-linked persisted id — never "accept the first".</summary>
+        DuplicatePersistentId,
+        /// <summary>
+        /// The currently-linked persisted member IS present, but the proposed key names something else —
+        /// null, unresolvable, a different real persisted member, or a brand-new row. A repoint attempt,
+        /// regardless of what the other key resolves to.
+        /// </summary>
+        RelationKeyPointsElsewhere,
+        /// <summary>
+        /// There is currently no linked contact (<c>currentGuestMemberId</c> is null) but a non-empty
+        /// key was proposed anyway — an attempt to ESTABLISH a link through a workflow that may only
+        /// preserve one, never create or remove one.
+        /// </summary>
+        RelationIntroduced,
+    }
+
+    /// <summary>
+    /// Proves — or refuses to assume — that <paramref name="proposedClientMemberKey"/> still names the
+    /// SAME persisted member as <paramref name="currentGuestMemberId"/>, using the member's own
+    /// persistent id as evidence rather than trusting the ephemeral key alone (operational-contact
+    /// consistency fix). <paramref name="incomingRows"/> is the full incoming Visitors+ExternalSupport
+    /// set, in any order — every row carries its own (possibly null, for a brand-new row)
+    /// <c>GuestMemberId</c> alongside its <c>ClientMemberKey</c>.
+    ///
+    /// <para>
+    /// Classification order matters and is NOT "resolve the proposed key first": a payload proving the
+    /// currently-linked member's persisted id is present must never be waved through just because the
+    /// proposed key happens to differ in some way that superficially looks like "missing evidence" — a
+    /// key naming a brand-new null-id row while the real member is ALSO present is a repoint attempt,
+    /// not a stale client, and must reject the same way an outright Kim→Moon repoint does. The
+    /// stale-client shape (<see cref="ContactMemberContinuityResult.MissingIdentityEvidence"/>) can only
+    /// be true when there is NO other evidence the current member is present — i.e. only in the
+    /// zero-current-id-matches branch.
+    /// </para>
+    /// </summary>
+    public static ContactMemberContinuityResult CheckPreservesExistingMemberRelation(
+        ulong? currentGuestMemberId,
+        IEnumerable<(ulong? GuestMemberId, string? ClientMemberKey)> incomingRows,
+        string? proposedClientMemberKey)
+    {
+        if (currentGuestMemberId is null)
+            return string.IsNullOrWhiteSpace(proposedClientMemberKey)
+                ? ContactMemberContinuityResult.Preserved
+                : ContactMemberContinuityResult.RelationIntroduced;
+
+        var rows = incomingRows as IReadOnlyList<(ulong? GuestMemberId, string? ClientMemberKey)>
+            ?? incomingRows.ToList();
+
+        var currentMatches = rows.Where(r => r.GuestMemberId == currentGuestMemberId).ToList();
+
+        if (currentMatches.Count > 1)
+            return ContactMemberContinuityResult.DuplicatePersistentId;
+
+        if (currentMatches.Count == 1)
+        {
+            // The currently-linked member IS proven present. From here, the ONLY acceptable proposed
+            // key is that exact row's own key — any other value is a repoint attempt, full stop, no
+            // matter what that other key resolves to (null, nothing, a different real member, or a
+            // brand-new row). Never re-classified as "missing evidence": evidence for the CURRENT
+            // member already exists, so that state cannot also mean "no evidence".
+            return string.Equals(
+                currentMatches[0].ClientMemberKey, proposedClientMemberKey, StringComparison.Ordinal)
+                ? ContactMemberContinuityResult.Preserved
+                : ContactMemberContinuityResult.RelationKeyPointsElsewhere;
+        }
+
+        // No row proves the current member is present at all. Only now can the stale-client shape
+        // apply: the row the OLD, key-only logic would have picked exists, but carries no id.
+        // An empty/absent proposed key never counts as "naming" a row — otherwise a brand-new row
+        // that also happens to carry a null ClientMemberKey would spuriously "match" a caller that
+        // proposed no key at all, and a genuinely removed member would be misreported as stale
+        // instead of missing.
+        var keyedMatches = string.IsNullOrWhiteSpace(proposedClientMemberKey)
+            ? new List<(ulong? GuestMemberId, string? ClientMemberKey)>()
+            : rows.Where(r => string.Equals(r.ClientMemberKey, proposedClientMemberKey, StringComparison.Ordinal))
+                .ToList();
+
+        return keyedMatches.Count == 1 && keyedMatches[0].GuestMemberId is null
+            ? ContactMemberContinuityResult.MissingIdentityEvidence
+            : ContactMemberContinuityResult.CurrentMemberMissing;
     }
 
     /// <summary>

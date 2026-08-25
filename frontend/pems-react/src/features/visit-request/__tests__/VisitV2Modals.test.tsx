@@ -824,6 +824,41 @@ describe('VisitSafeEditModal', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('TEST F: the registrant tooltip is start-aligned with readable, left-aligned, wrapping typography — not clipped against the modal edge', () => {
+    const f = form();
+    f.viewer.capabilities = [grantedSafeEditCapability];
+    render(<VisitSafeEditModal form={f} onClose={() => {}} onSaved={() => {}} />);
+    const trigger = screen.getByTestId('safe-edit-registrant-tooltip');
+
+    fireEvent.focus(trigger);
+    const tooltip = screen.getByRole('tooltip');
+    const bubble = tooltip.firstElementChild as HTMLElement;
+
+    // Anchored to the trigger's own left edge (grows rightward) rather than centered on it — centering
+    // is what pushed the bubble's left half past the modal's edge for a trigger sitting this close to
+    // it, clipping the first word(s) of the content.
+    expect(tooltip.className).toContain('left-0');
+    expect(tooltip.className).not.toContain('left-1/2');
+    expect(bubble.className).toContain('text-left');
+    expect(bubble.className).toContain('text-[12px]');
+    expect(bubble.className).toContain('font-normal');
+    expect(bubble.className).toContain('leading-5');
+
+    // The full sentence renders — not just a truncated fragment — proving normal wrapping rather than
+    // a clipped first/last word.
+    expect(tooltip).toHaveTextContent(
+      'Registrant information is shared across every campus. This section can only be edited once '
+      + 'every campus has been approved, the visit has not started, and the change window is still '
+      + 'open. Quick edit is currently available until at least 6 hours before the earliest start.',
+    );
+  });
+
+  it('no longer renders the blue "apply now" banner', () => {
+    render(<VisitSafeEditModal form={form()} onClose={() => {}} onSaved={() => {}} />);
+    expect(screen.queryByText(/administrative \/ privacy corrections apply immediately/i)).not.toBeInTheDocument();
+    expect(document.querySelector('.bg-blue-50')).toBeNull();
+  });
+
   // CONTACT (plan CanhIter3FixBug §4-§6) — same-person operational-contact metadata + relation now
   // live directly in Sửa nhanh, gated by UPDATE_OPERATIONAL_CONTACT_PROFILE independently of
   // SUBMIT_SAFE_EDIT (decision M).
@@ -896,18 +931,40 @@ describe('VisitSafeEditModal', () => {
     expect(payload.instances?.[0]?.operationalContact?.memberLink).toEqual({ guestMemberId: null });
   });
 
-  it('CONTACT-05: a mismatching relation pick blocks Save with an inline error, never a generic toast', () => {
+  // Superseded by the operational-contact consistency fix's OWN hardening: the relation picker now
+  // offers only exact-identity candidates (SAFE-FE-04) and the shared fields become read-only the
+  // moment a contact is linked (SAFE-FE-01) — so a mismatch can no longer be CAUSED through this modal
+  // at all. What remains reachable is a PRE-EXISTING (legacy) mismatch loaded from the server: the
+  // warning must still surface, but per the operation-aware contract (Case C) it must NOT block a save
+  // that never touches the relation or the shared fields — only retyping them to something that still
+  // mismatches would, and retyping is exactly what read-only removes as an option.
+  it('CONTACT-05: a pre-existing legacy mismatch shows the inline warning on load, but does not block an untouched save', async () => {
+    vi.mocked(patchSafeDetails).mockResolvedValue({
+      visitRequestId: 1, appliedChanges: [], requestRowVersion: 5, instanceRowVersions: {}, message: 'ok',
+    });
     const editable = form();
-    editable.campusVisits[0] = campusFixture({ allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE'] });
+    editable.campusVisits[0] = campusFixture({
+      allowedActions: ['UPDATE_OPERATIONAL_CONTACT_PROFILE', 'SUBMIT_SAFE_EDIT'],
+      // Linked to "Khách Một" (guestMemberId 1), but the contact's OWN stored fields still say
+      // "Đầu Mối HN" — a legacy mismatch that predates this fix, never created through this modal.
+      operationalContact: {
+        fullName: 'Đầu Mối HN', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng',
+        phone: '+84912345678', email: 'dm@x.vn',
+        confirmationStatus: 'CONFIRMED', confirmationSource: 'EMAIL_CONFIRMATION', confirmedAt: '2026-08-01T09:00:00',
+        guestMemberId: 1,
+      },
+    });
     render(<VisitSafeEditModal form={editable} onClose={() => {}} onSaved={() => {}} />);
 
-    // "Khách Một" (guestMemberId 1) does not match the contact snapshot "Đầu Mối HN".
-    const picker = screen.getByTestId('safe-edit-contact-relation-10') as HTMLSelectElement;
-    fireEvent.change(picker, { target: { value: '1' } });
+    // Informational on load — no interaction needed.
+    expect(screen.getByTestId('safe-edit-contact-mismatch-10')).toBeInTheDocument();
+
+    // An edit that touches neither the relation nor the shared fields (Notes) must still succeed —
+    // the untouched legacy mismatch is never this save's problem to fix.
+    editOneCampusNote('Xe 45 chỗ');
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
-    expect(screen.getByTestId('safe-edit-contact-mismatch-10')).toBeInTheDocument();
-    expect(patchSafeDetails).not.toHaveBeenCalled();
+    await waitFor(() => expect(patchSafeDetails).toHaveBeenCalledTimes(1));
   });
 
   it('CONTACT-06: no "Đồng bộ theo thành viên đã chọn" (sync) button exists anywhere in the modal', () => {

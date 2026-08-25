@@ -427,15 +427,23 @@ export default function VisitAmendmentSubmitModal({ visitRequestId, campus, onCl
       },
       // Member lists are part of the per-campus proposal (approval-sensitive) — the backend diffs and,
       // on approve, replaces this instance's members copy-on-write (siblings untouched).
+      // guestMemberId travels alongside clientMemberKey for every EXISTING row (null for a row added
+      // this session) — the backend's continuity proof needs the real persisted id as evidence that a
+      // proposal's member-list rewrite still contains the SAME logical person the active Operational
+      // Contact is linked to; the ephemeral key alone is not sufficient evidence any more
+      // (operational-contact consistency fix). Omitting this would make every member-list-changing
+      // amendment from THIS modal look identical to a stale pre-upgrade client to the new backend check.
       visitors: visitors.map(v => ({
         fullName: v.fullName.trim(), nationality: v.nationality.trim(),
         jobTitle: v.jobTitle.trim(), organization: v.organization.trim(),
         organizationPartnerId: v.organizationPartnerId, clientMemberKey: v.clientMemberKey,
+        guestMemberId: v.guestMemberId,
       })),
       externalSupportMembers: support.map(v => ({
         fullName: v.fullName.trim(), jobTitle: v.jobTitle.trim(),
         organization: v.organization.trim(), nationality: v.nationality.trim(),
         organizationPartnerId: v.organizationPartnerId, clientMemberKey: v.clientMemberKey,
+        guestMemberId: v.guestMemberId,
       })),
       plannedStartAt: start,
       plannedEndAt: end,

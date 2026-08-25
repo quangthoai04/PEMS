@@ -112,6 +112,10 @@
     "FACE_SCAN_QUOTA_EXCEEDED": "The monthly face-scan quota has been reached.",
     "IMMUTABLE_CONTACT_PROFILE": "Operational-contact details cannot be edited in the registration form. Use “Edit the contact” on the request detail screen.",
     "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Nothing has changed in the operational contact, so there is nothing to save.",
-    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "This invitation is missing the operational contact's organization. Please ask the registrant to update the contact's details and send a new confirmation invitation."
+    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "This invitation is missing the operational contact's organization. Please ask the registrant to update the contact's details and send a new confirmation invitation.",
+    "OPERATIONAL_CONTACT_RELATION_NOT_EDITABLE_IN_PENDING_EDIT": "The contact link cannot be changed in Pending Edit. Use Quick Edit to update the link, or Transfer Contact to hand this campus to someone else.",
+    "OPERATIONAL_CONTACT_LINKED_PROFILE_REQUIRES_MEMBER_UPDATE": "This contact is currently linked to a delegation member. Update that member's details via Pending Edit/Amendment, or unlink the contact if they are no longer part of the delegation.",
+    "OPERATIONAL_CONTACT_STALE_SESSION_REQUIRES_RELOAD": "Your editing session is out of date. Please reload the page and try again.",
+    "AMENDMENT_LEGACY_CONTACT_RELATION_REQUIRES_RESUBMISSION": "This proposal was created under an older contact-link rule set and must be resubmitted."
   }
 }

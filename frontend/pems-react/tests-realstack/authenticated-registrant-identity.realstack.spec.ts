@@ -13,41 +13,36 @@
  *   Journey E — the security case: a payload that keeps a SELF_HOST intent while naming another registrant
  *               is refused by the real host, and nothing is written.
  */
-import { test, expect, type Browser, type Page, type Locator } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { type SinkRecord, sinkAddressed } from './sinkRecord';
-import { fillSchedule, fillOperationalOrganization } from './realstackHelpers';
+import { fillSchedule, fillOperationalOrganization, authedPage, meUser } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
 const SECRET = process.env.PEMS_E2E_AUTH_SECRET ?? '';
-const API_PORT = new URL(API_BASE).port || '5299';
 const SINK = process.env.PEMS_E2E_TEST_SINK_PATH;
 
 const LEADER_HN_EMAIL = 'staff.leader.hn@fpt.edu.vn';
 
-/** Minimal AuthUser so ProtectedRoute renders before the (E2E-authenticated) /me validates it. */
-const LEADER_HN_USER = {
-  userId: '0', fullName: 'Staff Leader HN', email: LEADER_HN_EMAIL,
-  roleCode: 'STAFF', subRole: 'LEADER', campusCode: 'HN',
-  mustChangePassword: false, mustSetPassword: false,
-};
+// This file used to seed the browser identity from a hand-typed local object (LEADER_HN_USER) via
+// its own local authedPage copy, instead of the canonical realstackHelpers.authedPage + meUser()
+// every other browser-driven spec in this suite uses. Audited side by side (localStorage keys, route
+// interception, X-E2E headers, /auth/me hydration timing) -- all IDENTICAL between the two
+// authedPage implementations. The one real difference was the SEEDED USER SHAPE: the hand-typed
+// object supplied `campusCode: 'HN'` (a string) but never `primaryCampusId` (the numeric field the
+// real AuthUserDto carries), because nobody kept it in sync with the backend contract by hand.
+// `meUser()` fetches the REAL, current `/auth/me` response for the profile instead of guessing it,
+// so the local placeholder never drifts from the server-side contract again. No production auth
+// logic was touched -- this only changes which object the TEST seeds into localStorage.
 
-async function authedPage(browser: Browser, profileKey: string, user: Record<string, unknown>) {
-  const context = await browser.newContext();
-  // E2E auth headers ONLY on requests to the backend API origin — never to Vite or static assets.
-  await context.route(new RegExp(`:${API_PORT}/`), async route => {
-    await route.continue({
-      headers: { ...route.request().headers(), 'X-E2E-Profile': profileKey, 'X-E2E-Secret': SECRET },
-    });
-  });
-  const page = await context.newPage();
-  await page.addInitScript(u => {
-    localStorage.setItem('token', 'e2e-session');
-    localStorage.setItem('pems_user', JSON.stringify(u));
-    localStorage.setItem('currentUser', JSON.stringify(u));
-    localStorage.setItem('pems.language', 'vi');
-  }, user);
-  return { context, page };
+/**
+ * Dismisses the "restore your draft?" prompt if it appears (VisitRequestFormV2's own autosave --
+ * unrelated to this test's identity: it can legitimately surface for a role/route a browser has
+ * touched before). Discards rather than restores, since these journeys fill the form themselves.
+ */
+async function dismissDraftPromptIfShown(page: Page) {
+  const discard = page.getByTestId('v2-draft-discard');
+  if (await discard.isVisible({ timeout: 3_000 }).catch(() => false)) await discard.click();
 }
 
 /** The FormField (label→control wrapper) whose visible label contains `label`. */
@@ -133,11 +128,13 @@ async function completeRegistrantGaps(page: Page) {
 // keeps the internal registrant from being their own contact, something the backend refuses outright.
 
 test.describe('Real-stack: registrant identity on the authenticated create', () => {
-  test('Journey A — a Leader registering themself submits directly, with the campus processing choice', async ({ browser }) => {
-    const { context, page } = await authedPage(browser, 'campus_leader_hn', LEADER_HN_USER);
+  test('Journey A — a Leader registering themself submits directly, with the campus processing choice', async ({ browser, request }) => {
+    const leader = await meUser(request, 'campus_leader_hn');
+    const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       await page.goto('/visit/create-v2');
       await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible({ timeout: 25_000 });
+      await dismissDraftPromptIfShown(page);
 
       // "Tôi là người đăng ký" pulls the REAL profile from the API — no fixture, no mock.
       await page.getByTestId('v2-registrant-use-me').click();
@@ -162,18 +159,23 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
 
       expect(created.url()).not.toContain('/initiate');
       expect(created.status()).toBe(200);
-      await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible({ timeout: 20_000 });
+      // The success screen never shows the request code itself (VisitRequestV2SuccessPanel) — the
+      // create response body is the real proof a request now exists.
+      expect((await created.json()).requestCode).toMatch(/^VR/);
+      await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
     } finally {
       await context.close();
     }
   });
 
-  test('Journey B — registering somebody else drops the processing choice and requires their OTP', async ({ browser }) => {
-    const { context, page } = await authedPage(browser, 'campus_leader_hn', LEADER_HN_USER);
+  test('Journey B — registering somebody else drops the processing choice and requires their OTP', async ({ browser, request }) => {
+    const leader = await meUser(request, 'campus_leader_hn');
+    const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     const guestEmail = `e2e_guest_${Date.now()}@example.com`;
     try {
       await page.goto('/visit/create-v2');
       await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible({ timeout: 25_000 });
+      await dismissDraftPromptIfShown(page);
 
       // Start as self-registration so the processing panel is genuinely on screen first…
       await page.getByTestId('v2-registrant-use-me').click();
@@ -196,8 +198,16 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
       expect(otp).toMatch(/^\d{6}$/);
 
       await page.getByPlaceholder('______').fill(otp);
+      const verifyResponse = page.waitForResponse(
+        r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+        { timeout: 30_000 },
+      );
       await page.getByRole('button', { name: 'Xác nhận' }).click();
-      await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible({ timeout: 25_000 });
+      const verified = await verifyResponse;
+      // The success screen never shows the request code itself (VisitRequestV2SuccessPanel) — the
+      // verify response body is the real proof a request now exists.
+      expect((await verified.json()).requestCode).toMatch(/^VR/);
+      await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 25_000 });
 
       // Nothing was auto-hosted: the campus is still waiting for its Staff Leader to decide.
       const detail = await page.request.get(`${API_BASE}/v2/visit-requests/1`, {
@@ -233,7 +243,11 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
         campusId: 'HN', plannedStartAt: fmt(start), plannedEndAt: fmt(end),
         delegationName, visitType: 'MEETING', visitTypeOther: null,
         purpose: 'Mục đích', workingContent: 'Nội dung làm việc',
-        visitors: [], externalSupportMembers: [],
+        // A campus must carry >=1 visitor (CreateVisitRequestV2CommandValidator) — an empty list here
+        // trips that ordinary structural rule (400) before the request ever reaches the SELF_HOST
+        // forgery guard this test exists to prove (409), which is not what this test is about.
+        visitors: [{ fullName: 'Khach Bi Mao Danh', nationality: 'VN', jobTitle: 'GV', organization: 'Org' }],
+        externalSupportMembers: [],
         operationalContact: {
           fullName: 'Đầu Mối CS', organization: 'Đơn vị', jobTitle: 'Trưởng phòng Hợp tác',
           phone: '+84912345678', email: 'op@example.com',

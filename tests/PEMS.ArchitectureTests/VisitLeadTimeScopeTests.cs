@@ -94,7 +94,7 @@ public class VisitLeadTimeScopeTests
     public void The_registration_lead_time_is_referenced_only_by_the_three_submission_paths()
     {
         var strays = BackendSources()
-            .Where(p => File.ReadAllText(p).Contains(RegistrationFloor, StringComparison.Ordinal))
+            .Where(p => CodeReferenceScanner.ReferencesIdentifier(File.ReadAllText(p), RegistrationFloor))
             .Select(Path.GetFileName)
             .Where(name => !AllowedFiles.Contains(name, StringComparer.Ordinal))
             .OrderBy(n => n, StringComparer.Ordinal)
@@ -113,7 +113,7 @@ public class VisitLeadTimeScopeTests
     {
         var offenders = BackendSources()
             .Where(p => MustNotReference.Contains(Path.GetFileName(p), StringComparer.Ordinal))
-            .Where(p => File.ReadAllText(p).Contains(RegistrationFloor, StringComparison.Ordinal))
+            .Where(p => CodeReferenceScanner.ReferencesIdentifier(File.ReadAllText(p), RegistrationFloor))
             .Select(Path.GetFileName)
             .OrderBy(n => n, StringComparer.Ordinal)
             .ToList();

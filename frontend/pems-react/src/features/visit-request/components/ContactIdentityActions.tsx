@@ -13,6 +13,7 @@ import {
 } from '../api/visitRequestV2Api';
 import { errorCodeOf, fieldErrorsOf, firstFieldError, hasAction, VisitV2Action } from '../utils/visitV2Actions';
 import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
+import { HelpTooltip } from './shared/HelpTooltip';
 import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity, isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import { isValidPhone } from '../../../shared/utils/phoneNumber';
@@ -393,8 +394,9 @@ export default function ContactIdentityActions({
       }
     };
     // Phone's own hint is PhoneField's built-in, focus-conditional one (below) — nothing here needs to
-    // point at it. Email keeps its static hint id, exactly as before.
-    const ariaDescribedBy = hasError ? errorId : field === 'email' ? 'ci-email-hint' : undefined;
+    // point at it. Email's own static hint moved into the info tooltip beside "Quản lý đầu mối", so
+    // there is no longer an element for a non-error email field to point at either.
+    const ariaDescribedBy = hasError ? errorId : undefined;
     return (
     <div data-field-error={hasError ? 'true' : undefined}>
       <label htmlFor={`ci-${field}`} className={labelCls}>
@@ -464,13 +466,6 @@ export default function ContactIdentityActions({
       )}
       {/* The accepted shapes, stated up front (plan §18) — PhoneField's own hint, shown while
           focused and error-free, same copy every other Phone field in Visit V2 uses. */}
-      {/* Says what the address DOES before it is changed, not after. Once the save has gone through,
-          an invitation is already out and "did you mean to do that?" is too late to be useful. */}
-      {field === 'email' && !emailError && (
-        <p id="ci-email-hint" className="mt-1 text-xs font-normal text-slate-500">
-          {t('visitRequestV2:contact.emailIdentityHint')}
-        </p>
-      )}
       {field === 'email' && emailError && (
         <p id="ci-email-error" role="alert" className="mt-1 text-xs font-normal text-red-600">
           {emailError}
@@ -498,15 +493,17 @@ export default function ContactIdentityActions({
         {textField('email', t('visitRequestV2:card.email'), true)}
       </div>
 
-      {identityChanging && (
+      {/* Only the Replace case still gets an inline warning — it names a DIFFERENT consequence
+          (re-opening the confirmation gate for the whole request) than the Transfer case, whose
+          "current contact keeps every right" explanation now lives in the info tooltip beside
+          "Quản lý đầu mối" instead of repeating inline every time this form opens. */}
+      {identityChanging && !can.transferOnly && (
         <p
           className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-normal text-amber-800"
           role="note"
           data-testid="contact-identity-warning"
         >
-          {can.transferOnly
-            ? t('visitRequestV2:contact.transferKeepsRights')
-            : t('visitRequestV2:contact.replaceReopensGate')}
+          {t('visitRequestV2:contact.replaceReopensGate')}
         </p>
       )}
 
@@ -574,8 +571,15 @@ export default function ContactIdentityActions({
       data-testid={`contact-identity-actions-${visitInstanceId}`}
       className="mt-4 border-t border-slate-200 pt-4"
     >
-      <p className="text-xs font-bold uppercase tracking-wide text-[#004c91]">
+      <p className="flex items-center text-xs font-bold uppercase tracking-wide text-[#004c91]">
         {t('visitRequestV2:contact.manageTitle')}
+        <HelpTooltip
+          testId={`contact-manage-tooltip-${visitInstanceId}`}
+          label={t('visitRequestV2:contact.manageTitle')}
+          placement="bottom"
+          align="start"
+          content={t('visitRequestV2:contact.manageTooltip')}
+        />
       </p>
 
       {/* Offered only to the contact themselves — the server withholds `profileDifference` from

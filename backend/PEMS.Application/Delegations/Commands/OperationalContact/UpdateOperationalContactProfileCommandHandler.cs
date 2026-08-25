@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -131,6 +132,41 @@ public sealed class UpdateOperationalContactProfileCommandHandler
             throw new BusinessRuleException(
                 "Không có thay đổi nào để lưu cho đầu mối vận hành của cơ sở này.",
                 OperationalContactErrorCodes.ProfileNoChanges);
+
+        // ── Same operation-aware identity contract VisitSafeEditService enforces (operational-contact
+        //    consistency fix) — this standalone endpoint used to have NO check here at all, which meant
+        //    a client calling it directly could rewrite a linked contact's name to anything while the
+        //    Safe Edit UI would have refused the identical edit. A legacy mismatch this save does not
+        //    itself touch is never blocked (phone-only correction always succeeds); retyping the shared
+        //    fields to something that still doesn't match the linked member is refused, same as Safe
+        //    Edit's Case C. This handler never changes the relation itself, so there is no
+        //    relationChanged branch to consider — only sharedFieldsChanged. ──
+        if (detail.OperationalContactGuestMemberId is { } linkedId)
+        {
+            var sharedFieldsChanged =
+                !string.Equals(detail.OperationalContactFullName, profile.FullName, StringComparison.Ordinal)
+                || !string.Equals(detail.OperationalContactJobTitle, profile.JobTitle, StringComparison.Ordinal)
+                || !string.Equals(detail.OperationalContactOrganization, profile.Organization, StringComparison.Ordinal);
+            if (sharedFieldsChanged)
+            {
+                // No V2CanonicalRefresh here — that helper lives in PEMS.Infrastructure, and this
+                // handler is in PEMS.Application. instance.GuestMemberLinks was loaded alongside
+                // visit.GuestMembers in the SAME tracked query (includeMembersForCanonical: true above),
+                // so EF Core's change-tracker navigation fixup has already wired each link's own
+                // .GuestMember — no second query needed.
+                var members = instance.GuestMemberLinks
+                    .Select(l => l.GuestMember)
+                    .Where(m => m is not null)
+                    .ToList();
+                OperationalContactLink.EnsureGuestMemberIdEligible(members, linkedId);
+                var member = members.First(m => m.GuestMemberId == linkedId);
+                if (!OperationalContactLink.RelationMatchesContact(
+                        profile.FullName, profile.JobTitle, profile.Organization, member))
+                    throw new BusinessRuleException(
+                        "Đầu mối hiện đang liên kết với một thành viên trong đoàn. Hãy cập nhật thông tin của thành viên qua Sửa đơn/Đề xuất thay đổi, hoặc bỏ liên kết nếu đầu mối không còn nằm trong đoàn.",
+                        OperationalContactErrorCodes.LinkedProfileRequiresMemberUpdate);
+            }
+        }
 
         OperationalContactProfileMutation.Apply(detail, profile);
         // operational_contact_guest_member_id is deliberately UNTOUCHED, unlike the replace and

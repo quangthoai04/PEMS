@@ -86,9 +86,10 @@ async function fillHeader(page: Page, email: string) {
   await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
   await page.locator('input[name="registerInfo.phone"]').fill('+84912345678');
   await page.locator('input[name="registerInfo.email"]').fill(email);
-  // The button's real label (card.quickFillRegistrant). The old pattern here matched no button at
-  // all, so the click simply waited out the test timeout with nothing to point at.
-  await page.getByRole('button', { name: /Dùng người đăng ký/ }).click();
+  // Reached by testid, not the button's rendered label (visitRequestV2:card.quickFillRegistrant,
+  // currently "Đầu mối là người đăng ký") — the label has drifted from what was hand-typed here
+  // before, and every other spec that quick-fills the contact already reaches it this way.
+  await page.getByTestId('campus-opcontact-use-registrant-0').click();
 }
 
 /** Everything on the campus card except the guest list and the schedule. */
@@ -160,7 +161,6 @@ test.describe('Real-stack: Excel import, schedule and length limits', () => {
 
     await submit(page);
     await verifyOtp(page, email);
-    await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible();
   });
 
   test('journey 2 — a file with bad rows reports every one and changes nothing', async ({ page }) => {

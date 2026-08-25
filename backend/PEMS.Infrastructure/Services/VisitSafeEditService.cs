@@ -454,25 +454,39 @@ public sealed class VisitSafeEditService : IVisitSafeEditService
         };
         var profileChanged = OperationalContactProfileMutation.AddProfileChanges(profileAudit, detail, normalized, now);
 
-        // Effective-relation invariant (plan CanhIter3FixBug, decision N) — checked whenever the contact
-        // block is present, NOT only inside an "if MemberLink supplied" branch: a metadata edit that
-        // leaves the relation field untouched must still be proven consistent with whichever member the
-        // contact is CURRENTLY linked to, or a typo fix could silently desync an existing, correct link.
+        // Effective-relation invariant (plan CanhIter3FixBug, decision N; made operation-aware by the
+        // operational-contact consistency fix) — a mismatch only blocks the save when THIS save is
+        // actually touching the thing that would diverge: the relation itself, or the shared identity
+        // fields. A pre-existing legacy mismatch that neither side of this save moves (e.g. a phone-only
+        // edit on a link that has drifted from the member some other way) must never block — that was
+        // the old, too-strict behavior this fix removes.
         var effectiveRelationId = cp.MemberLink is { } link ? link.GuestMemberId : detail.OperationalContactGuestMemberId;
+        var relationChanged = effectiveRelationId != detail.OperationalContactGuestMemberId;
+        var sharedFieldsChanged =
+            !string.Equals(detail.OperationalContactFullName, normalized.FullName, StringComparison.Ordinal)
+            || !string.Equals(detail.OperationalContactJobTitle, normalized.JobTitle, StringComparison.Ordinal)
+            || !string.Equals(detail.OperationalContactOrganization, normalized.Organization, StringComparison.Ordinal);
         var members = V2CanonicalRefresh.MembersOf(request, instance);
-        if (effectiveRelationId is { } relId)
+        if (effectiveRelationId is { } relId && (relationChanged || sharedFieldsChanged))
         {
             OperationalContactLink.EnsureGuestMemberIdEligible(members, relId);
             var member = members.First(m => m.GuestMemberId == relId);
-            var proposedKey = PersonIdentity.Key(normalized.FullName, normalized.JobTitle, normalized.Organization);
-            var memberKey = PersonIdentity.Key(member.FullName, member.JobTitle, member.Organization);
-            if (!string.Equals(proposedKey, memberKey, StringComparison.Ordinal))
+            if (!OperationalContactLink.RelationMatchesContact(
+                    normalized.FullName, normalized.JobTitle, normalized.Organization, member))
+            {
+                // relationChanged → linking/repointing to somebody who isn't who the snapshot describes
+                // (Case F/G). sharedFieldsChanged only → the relation itself is untouched, but the typed
+                // profile is diverging from the member it's still linked to (Case C) — a different
+                // mistake with a different fix, so it gets its own code and message.
+                if (relationChanged)
+                    throw new BusinessRuleException(
+                        "Thông tin thành viên được chọn không khớp với đầu mối hiện tại. Hãy kiểm tra lại thông tin hoặc chọn đúng người.",
+                        OperationalContactErrorCodes.RelationProfileMismatch);
                 throw new BusinessRuleException(
-                    "Thông tin thành viên được chọn không khớp với đầu mối hiện tại. Hãy kiểm tra lại thông tin hoặc chọn đúng người.",
-                    OperationalContactErrorCodes.RelationProfileMismatch);
+                    "Đầu mối hiện đang liên kết với một thành viên trong đoàn. Hãy cập nhật thông tin của thành viên qua Sửa đơn/Đề xuất thay đổi, hoặc bỏ liên kết nếu đầu mối không còn nằm trong đoàn.",
+                    OperationalContactErrorCodes.LinkedProfileRequiresMemberUpdate);
+            }
         }
-
-        var relationChanged = effectiveRelationId != detail.OperationalContactGuestMemberId;
         AuditLog? relationAudit = null;
         if (relationChanged)
         {

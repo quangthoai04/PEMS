@@ -66,13 +66,15 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             new RegistrantInputV2("Registrant", "VN", "Org", "Job", "+8491", V2SeedActor.Email(Registrant)),
             null, campuses.ToList());
 
-    private static CampusVisitEditV2Dto Slot(VisitRequestCampus instance, CampusVisitFormDto content, ulong? overrideId = null)
+    private static CampusVisitEditV2Dto Slot(
+        VisitRequestCampus instance, CampusVisitFormDto content, ulong? overrideId = null,
+        string? operationalContactClientMemberKey = null, ulong? operationalContactGuestMemberId = null)
         => new(overrideId ?? instance.VisitInstanceId, instance.RowVersion,
             content.CampusId, content.PlannedStartAt, content.PlannedEndAt,
             content.DelegationName, content.VisitType, content.VisitTypeOther, content.Purpose, content.WorkingContent,
             content.Visitors, content.ExternalSupportMembers, content.OperationalContact,
             content.WorkingLanguage, content.TransportationNote, content.MediaConsentStatus,
-            content.Notes);
+            content.Notes, operationalContactClientMemberKey, operationalContactGuestMemberId);
 
     private static VisitRequestEditV2Dto Edit(VisitRequest request, params CampusVisitEditV2Dto[] campuses)
         => new(request.RowVersion,
@@ -457,6 +459,226 @@ public sealed class ResubmitRejectedVisitRequestV2ServiceTests
             var savedNationality = await db.VisitGuestMembers.AsNoTracking()
                 .Where(m => m.GuestMemberId == newMemberId).Select(m => m.Nationality).SingleAsync();
             Assert.Equal("Legacy Unrecognized Value", savedNationality);
+            Assert.Equal(VisitRequestStatuses.PendingApproval, r.Status);
+        });
+    }
+
+    // ── RESUBMIT-SEC-01..06 (operational-contact consistency fix): Resubmit always full-rewrites every
+    // campus's members (copy-on-write), so it goes through the SAME continuity proof Pending Edit's
+    // content-changed branch uses — the live-request table (LiveRequestRelationError), never Pending
+    // Edit's own vocabulary. ──
+
+    [Fact]
+    public async Task ResubmitSec01_introducing_a_relation_from_unlinked_is_rejected_with_zero_mutation()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            await RejectAllAsync(db, r);
+            var revisionBefore = hn.FormDetail!.FormRevision;
+
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg", null, "k-a", guestId) },
+            };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(
+                    r, Edit(r, Slot(hn, resubmitted, operationalContactClientMemberKey: "k-a")),
+                    Registrant, Now, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Null(hn.FormDetail.OperationalContactGuestMemberId);
+            Assert.Equal(revisionBefore, hn.FormDetail.FormRevision);
+            // The per-CAMPUS state this check guards is untouched (this check runs before that campus's
+            // own ApplyFormDetail/StageReplaceMembers/status flip). The PARENT request's status legitimately
+            // does flip to PENDING_APPROVAL earlier in the same call (Phase 1, required by the campus
+            // trigger's own precondition before ANY instance can leave REJECTED) — that flush is real but
+            // is not this test's concern, and is itself rolled back by the caller's transaction on throw.
+            Assert.Equal(VisitInstanceStatuses.Rejected, hn.Status);
+        });
+    }
+
+    [Fact]
+    public async Task ResubmitSec02_repointing_kim_to_moon_is_rejected()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var twoVisitors = Campus("HN") with
+            {
+                Visitors = new List<VisitorDto>
+                {
+                    new("Kim", "VN", "Director", "Org"),
+                    new("Moon", "VN", "Director", "Org"),
+                },
+            };
+            var r = await create.CreateV2Async(CreateForm(twoVisitors), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var kimId = r.GuestMembers.Single(m => m.FullName == "Kim").GuestMemberId;
+            var moonId = r.GuestMembers.Single(m => m.FullName == "Moon").GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = kimId;
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto>
+                {
+                    new("Kim", "VN", "Director", "Org", null, "k-kim", kimId),
+                    new("Moon", "VN", "Director", "Org", null, "k-moon", moonId),
+                },
+            };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(
+                    r, Edit(r, Slot(hn, resubmitted, operationalContactClientMemberKey: "k-moon")),
+                    Registrant, Now, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Equal(kimId, hn.FormDetail.OperationalContactGuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task ResubmitSec03_a_guestmemberid_from_another_request_never_satisfies_local_continuity()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var other = await create.CreateV2Async(
+                CreateForm(Campus("HN", visitorName: "Foreign Guest")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var foreignId = other.GuestMembers.Single().GuestMemberId;
+
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var localId = hn.GuestMemberLinks.Single().GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = localId;
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            // The payload's ONLY row claims the FOREIGN request's real, persisted id — never the local
+            // one — so it must never be read as "the local relation survived".
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg", null, "k-a", foreignId) },
+            };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(
+                    r, Edit(r, Slot(hn, resubmitted, operationalContactClientMemberKey: "k-a")),
+                    Registrant, Now, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Equal(localId, hn.FormDetail.OperationalContactGuestMemberId);
+            // The OTHER request's own aggregate is completely untouched.
+            Assert.Equal("Foreign Guest", (await db.VisitGuestMembers.AsNoTracking()
+                .SingleAsync(m => m.GuestMemberId == foreignId)).FullName);
+        });
+    }
+
+    [Fact]
+    public async Task ResubmitSec04_a_guestmemberid_from_a_sibling_campus_never_satisfies_local_continuity()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(
+                CreateForm(Campus("HN"), Campus("HCM", visitorName: "HCM Guest")),
+                Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var hcm = InstanceOf(r, "HCM");
+            var hnLocalId = hn.GuestMemberLinks.Single().GuestMemberId;
+            var hcmSiblingId = hcm.GuestMemberLinks.Single().GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = hnLocalId;
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            // HN's own resubmit payload claims HCM's sibling member's id — HCM is a different campus
+            // instance entirely, its members are never eligible evidence for HN's relation.
+            var hnResubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg", null, "k-a", hcmSiblingId) },
+            };
+            var hcmResubmitted = Campus("HCM", visitorName: "HCM Guest");
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(
+                    r, Edit(r,
+                        Slot(hn, hnResubmitted, operationalContactClientMemberKey: "k-a"),
+                        Slot(hcm, hcmResubmitted)),
+                    Registrant, Now, default));
+
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            Assert.Equal(hnLocalId, hn.FormDetail.OperationalContactGuestMemberId);
+            // The whole submission is one transaction — HCM's sibling row is untouched too.
+            Assert.Equal(hcmSiblingId, hcm.GuestMemberLinks.Single().GuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task ResubmitSec05_an_old_client_payload_that_omits_GuestMemberId_fails_closed_as_stale_session()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            hn.FormDetail!.OperationalContactGuestMemberId = guestId;
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            // Old-client shape: the currently-linked row is echoed back under the SAME ClientMemberKey
+            // the relation names, but its GuestMemberId is omitted (pre-upgrade wire shape) — never
+            // silently trusted via the key alone.
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto> { new("Guest A", "VN", "Guest", "GuestOrg", null, "k-a", null) },
+            };
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(() =>
+                edit.ApplyResubmitAsync(
+                    r, Edit(r, Slot(hn, resubmitted, operationalContactClientMemberKey: "k-a")),
+                    Registrant, Now, default));
+
+            Assert.Equal(OperationalContactErrorCodes.StaleSessionRequiresReload, ex.ErrorCode);
+            Assert.Equal(guestId, hn.FormDetail.OperationalContactGuestMemberId);
+        });
+    }
+
+    [Fact]
+    public async Task ResubmitSec06_valid_same_member_continuity_succeeds_and_syncs_the_contact_snapshot()
+    {
+        await RunAsync(async (db, create, edit) =>
+        {
+            var r = await create.CreateV2Async(CreateForm(Campus("HN")), Registrant, "VISITOR_SUBMITTED", Now, default);
+            var hn = InstanceOf(r, "HN");
+            var guestId = hn.GuestMemberLinks.Single().GuestMemberId;
+            // Link only — do not also rewrite the contact's own snapshot fields here:
+            // EnsureContactSnapshotUnchanged freezes the contact profile itself through this path, so
+            // whatever is stored must keep matching what `resubmitted` below echoes back (the campus
+            // default "Op Contact"/"Trưởng phòng Hợp tác"/"OpOrg" — deliberately a different person than
+            // the visitor; that pre-existing mismatch is fine, this test only checks the NEW value synced).
+            hn.FormDetail!.OperationalContactGuestMemberId = guestId;
+            await db.SaveChangesAsync();
+            await RejectAllAsync(db, r);
+
+            // Same logical member, renamed job title, echoed back with its OWN real persisted id.
+            var resubmitted = Campus("HN", delegation: "Đoàn X sửa") with
+            {
+                Visitors = new List<VisitorDto>
+                {
+                    new("Guest A", "VN", "Senior Director", "GuestOrg", null, "k-a", guestId),
+                },
+            };
+
+            await edit.ApplyResubmitAsync(
+                r, Edit(r, Slot(hn, resubmitted, operationalContactClientMemberKey: "k-a")),
+                Registrant, Now, default);
+
+            var newId = InstanceOf(r, "HN").GuestMemberLinks.Single().GuestMemberId;
+            Assert.NotEqual(guestId, newId); // COW minted a fresh persisted id
+            Assert.Equal(newId, hn.FormDetail.OperationalContactGuestMemberId); // relation followed it
+            Assert.Equal("Senior Director", hn.FormDetail.OperationalContactJobTitle); // synced from the member
             Assert.Equal(VisitRequestStatuses.PendingApproval, r.Status);
         });
     }

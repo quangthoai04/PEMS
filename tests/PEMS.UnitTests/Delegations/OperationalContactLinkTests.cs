@@ -384,4 +384,135 @@ public class OperationalContactLinkTests
         Assert.Null(paired[1].ClientMemberKey);
         Assert.Equal(2, OperationalContactLink.Pair(rows, null).Count);
     }
+
+    // ── CheckPreservesExistingMemberRelation: the continuity classifier (operational-contact
+    // consistency fix, CONT-01..10). Pure — no DB, no entities beyond the (GuestMemberId, ClientMemberKey)
+    // tuples the real call sites project their Visitors/ExternalSupportMembers rows into. Each case pins
+    // one row of the authoritative classification table from the fix plan; the order matters (see the
+    // method's own doc comment) and these are what prove that order is actually implemented, not just
+    // documented. ──
+
+    private static (ulong? GuestMemberId, string? ClientMemberKey) Row(ulong? id, string? key) => (id, key);
+
+    [Fact]
+    public void CONT01_the_same_persisted_member_under_the_same_key_is_preserved()
+    {
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-kim") },
+            proposedClientMemberKey: "k-kim");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.Preserved, result);
+    }
+
+    [Fact]
+    public void CONT02_kim_present_but_the_key_points_at_a_different_real_member_is_a_repoint()
+    {
+        // The disguised Kim(100)→Moon(200) case: both are genuinely present, but Kim's own id being
+        // provable at all means any OTHER proposed key is a repoint attempt, never a guess.
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-kim"), Row(200, "k-moon") },
+            proposedClientMemberKey: "k-moon");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere, result);
+    }
+
+    [Fact]
+    public void CONT03_the_linked_member_is_genuinely_gone_with_no_stale_signature()
+    {
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(300, "k-someone-else") },
+            proposedClientMemberKey: "k-someone-else");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.CurrentMemberMissing, result);
+    }
+
+    [Fact]
+    public void CONT04_two_incoming_rows_carrying_the_current_id_is_never_accept_the_first()
+    {
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-a"), Row(100, "k-b") },
+            proposedClientMemberKey: "k-a");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.DuplicatePersistentId, result);
+    }
+
+    [Fact]
+    public void CONT05_zero_current_matches_and_the_key_uniquely_names_a_null_id_row_is_the_stale_client_shape()
+    {
+        // The structural signature of a pre-upgrade client: the row the OLD key-only logic would have
+        // picked exists, it simply predates the GuestMemberId field.
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(null, "k-kim") },
+            proposedClientMemberKey: "k-kim");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.MissingIdentityEvidence, result);
+    }
+
+    [Fact]
+    public void CONT06_kim_present_but_no_key_at_all_is_a_repoint_not_missing_evidence()
+    {
+        // Evidence for the CURRENT member already exists (id 100 is present), so this state can never
+        // also mean "no evidence" — a null/empty proposed key here is a repoint-to-nothing, not a stale
+        // client and not a default Preserved.
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-kim") },
+            proposedClientMemberKey: null);
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere, result);
+    }
+
+    [Fact]
+    public void CONT07_kim_present_and_the_key_names_a_brand_new_null_id_row_is_still_a_repoint()
+    {
+        // Round 9's correction: a payload proving Kim(100) is present and then pointing the relation at
+        // a freshly-added, not-yet-persisted "Moon" row is a repoint attempt — NOT MissingIdentityEvidence,
+        // because that result requires zero evidence the current member is present, which is false here.
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-kim"), Row(null, "k-moon") },
+            proposedClientMemberKey: "k-moon");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere, result);
+    }
+
+    [Fact]
+    public void CONT08_kim_present_and_the_key_names_nobody_at_all_is_a_repoint()
+    {
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: 100,
+            incomingRows: new[] { Row(100, "k-kim") },
+            proposedClientMemberKey: "does-not-exist");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere, result);
+    }
+
+    [Fact]
+    public void CONT09_currently_unlinked_and_a_key_is_proposed_anyway_introduces_a_relation()
+    {
+        // Round 10's correction: relation EXISTENCE must be preserved too, not just identity — turning
+        // "not in the delegation" into "linked" is exclusively Safe Edit's (link) job.
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: null,
+            incomingRows: new[] { Row(100, "k-kim") },
+            proposedClientMemberKey: "k-kim");
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.RelationIntroduced, result);
+    }
+
+    [Fact]
+    public void CONT10_currently_unlinked_and_no_key_is_proposed_stays_preserved()
+    {
+        var result = OperationalContactLink.CheckPreservesExistingMemberRelation(
+            currentGuestMemberId: null,
+            incomingRows: new[] { Row(100, "k-kim") },
+            proposedClientMemberKey: null);
+
+        Assert.Equal(OperationalContactLink.ContactMemberContinuityResult.Preserved, result);
+    }
 }

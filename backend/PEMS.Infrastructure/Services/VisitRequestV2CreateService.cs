@@ -129,6 +129,26 @@ public sealed class VisitRequestV2CreateService : IVisitRequestV2CreateService
                     VisitRequestErrorCodes.InvalidVisitTime);
         }
 
+        // ── Trust boundary on GuestMemberId (operational-contact consistency fix): every row on a
+        //    brand-new campus is a brand-new member with no persisted identity yet. GuestMemberId only
+        //    means something as CONTINUITY EVIDENCE on an edit/resubmit/amendment of an EXISTING campus
+        //    (see OperationalContactLink.CheckPreservesExistingMemberRelation) — it is never a lookup
+        //    key, and Create must never even try to resolve one. A client that sends a non-null value
+        //    here (a stale UI state, a copy-pasted payload from an edit session, or a deliberate probe
+        //    with an id copied from an unrelated request) is refused outright rather than silently
+        //    ignored, so the mistake surfaces instead of hiding until someone notices a phantom
+        //    continuity link that was never established. ──
+        foreach (var cv in form.CampusVisits)
+        {
+            var hasClientSuppliedId =
+                (cv.Visitors ?? new List<VisitorDto>()).Any(v => v.GuestMemberId is not null)
+                || (cv.ExternalSupportMembers ?? new List<SupportTeamMemberDto>()).Any(m => m.GuestMemberId is not null);
+            if (hasClientSuppliedId)
+                throw new BusinessRuleException(
+                    "Yêu cầu đăng ký mới không được mang theo định danh thành viên đã lưu từ trước.",
+                    VisitRequestErrorCodes.InvalidVisitScope);
+        }
+
         // ── Partner (optional) resolves the registrant organisation display, same as v1 ──
         var registrantOrg = form.Registrant.Organization;
         if (form.PartnerId.HasValue)

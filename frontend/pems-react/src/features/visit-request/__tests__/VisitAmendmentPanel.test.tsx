@@ -1,10 +1,10 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../api/visitRequestV2Api', () => ({
   getActiveAmendment: vi.fn(),
   approveAmendment: vi.fn(),
-  rejectAmendment: vi.fn(),
+  rejectAmendment: vi.fn().mockResolvedValue({ message: 'ok' }),
   withdrawAmendment: vi.fn(),
 }));
 
@@ -20,7 +20,7 @@ vi.mock('../../../shared/utils/toast', () => ({
 }));
 
 import VisitAmendmentPanel from '../components/VisitAmendmentPanel';
-import { getActiveAmendment, type AmendmentDto } from '../api/visitRequestV2Api';
+import { getActiveAmendment, rejectAmendment, type AmendmentDto } from '../api/visitRequestV2Api';
 
 /**
  * Amendment review — no internal identity ever reaches the DOM (plan CanhIter3FixBug FIX-K).
@@ -183,5 +183,32 @@ describe('VisitAmendmentPanel', () => {
     await waitFor(() => expect(container.textContent).not.toBe(''));
     expect(container.textContent ?? '').not.toContain('111');
     expect(container.textContent ?? '').not.toContain('222');
+  });
+
+  // §10-reject root-cause probe: the real-stack E2E reject-confirm click produces zero observable
+  // effect (no busy state, no toast, no network call) with no diagnosable cause found live. This
+  // proves the REACT SIDE of the interaction in isolation, decoupled from browser/harness variables
+  // (Vite HMR, real network, real backend) that live debugging couldn't rule in or out.
+  it('reject: Reject -> required reason -> Confirm calls rejectAmendment exactly once with the correct ids and trimmed reason', async () => {
+    render(
+      <VisitAmendmentPanel visitRequestId={10} visitInstanceId={31} canDecide={true} canWithdraw={false} />,
+    );
+
+    const rejectToggle = await screen.findByTestId('amendment-reject-1');
+    fireEvent.click(rejectToggle);
+
+    const confirmBtn = await screen.findByTestId('amendment-reject-confirm-1');
+    expect(confirmBtn).toBeDisabled(); // no reason yet
+
+    const noteBox = document.getElementById('amendment-reject-note');
+    expect(noteBox).not.toBeNull();
+    fireEvent.change(noteBox as HTMLTextAreaElement, { target: { value: '  Khong phu hop lich  ' } });
+
+    await waitFor(() => expect(confirmBtn).toBeEnabled());
+
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => expect(rejectAmendment).toHaveBeenCalledTimes(1));
+    expect(rejectAmendment).toHaveBeenCalledWith(31, 1, 'Khong phu hop lich');
   });
 });

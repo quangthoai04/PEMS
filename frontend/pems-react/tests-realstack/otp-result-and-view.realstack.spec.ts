@@ -143,19 +143,22 @@ test.describe('Real-stack: the result of pressing Confirm', () => {
     await expect(otpInput(page)).toBeVisible({ timeout: 20_000 });
 
     const code = await readOtpFromSink(email);
+    const verifyResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await enterOtp(page, code);
+    const verified = await verifyResponse;
+    expect(verified.status()).toBe(200);
 
-    // A receipt with the facts on it, not a toast that disappears.
-    const receipt = page.getByTestId('v2-success-code');
-    await expect(receipt).toBeVisible({ timeout: 20_000 });
-    await expect(receipt).toContainText(/VR/);
+    // A receipt with the facts on it, not a toast that disappears. The success screen deliberately
+    // never surfaces the request code itself (VisitRequestV2SuccessPanel — it stays a server-side
+    // identifier the confirmation email carries), so "the receipt names a request that really
+    // exists" is proven from the verify response the receipt was built from, not from its DOM.
+    await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('v2-success-status')).toBeVisible();
-    await expect(page.getByTestId('v2-success-submitted-at')).toBeVisible();
-
-    // The request the receipt names really exists: the code it shows resolves through the REAL
-    // submission lookup to a real id.
-    const requestCode = (await receipt.textContent())?.match(/VR[\w-]+/)?.[0];
-    expect(requestCode).toBeTruthy();
+    const body = await verified.json();
+    expect(body.requestCode).toMatch(/^VR/);
 
     // The modal never closed itself — the form is gone but the confirmation is not.
     await expect(page.getByRole('button', { name: /Gửi yêu cầu & nhận mã OTP/ })).toHaveCount(0);
@@ -178,7 +181,7 @@ test.describe('Real-stack: the result of pressing Confirm', () => {
     expect(otpCodesFor(email)).toHaveLength(1);
 
     await enterOtp(page, code);
-    await expect(page.getByTestId('v2-success-code')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
   });
 
   test('journey C2 — stepping out to review the form does not spend the challenge', async ({ page }) => {
@@ -200,7 +203,7 @@ test.describe('Real-stack: the result of pressing Confirm', () => {
 
     // The SAME code still verifies — the challenge was never spent.
     await enterOtp(page, code);
-    await expect(page.getByTestId('v2-success-code')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
   });
 
   test('journey D — a verify whose reply is destroyed leaves ONE request, and the lookup finds it', async ({ page, request }) => {
@@ -225,12 +228,18 @@ test.describe('Real-stack: the result of pressing Confirm', () => {
     await expect(panel).toContainText(/Đừng gửi lại/i);
 
     await page.unroute('**/v2/visit-requests/verify');
+    const lookupResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/submissions\//.test(new URL(r.url()).pathname) && r.request().method() === 'GET',
+      { timeout: 30_000 },
+    );
     await page.getByTestId('v2-uncertain-check').click();
+    const lookedUp = await lookupResponse;
+    const lookupBody = await lookedUp.json();
 
     // The lookup finds the committed request and promotes straight to the receipt.
-    await expect(page.getByTestId('v2-success-code')).toBeVisible({ timeout: 20_000 });
-    const requestCode = (await page.getByTestId('v2-success-code').textContent())?.match(/VR[\w-]+/)?.[0];
-    expect(requestCode).toBeTruthy();
+    expect(lookupBody.state).toBe('COMPLETED');
+    expect(lookupBody.requestCode).toMatch(/^VR/);
+    await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
 
     // And exactly ONE request exists for this submission — the recovery created nothing.
     const codes = otpCodesFor(email);

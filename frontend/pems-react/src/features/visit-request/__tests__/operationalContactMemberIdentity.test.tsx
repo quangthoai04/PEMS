@@ -323,12 +323,14 @@ describe('Operational Contact UI cleanup (CanhIter3FixBug §9-§14)', () => {
 });
 
 describe('"Dùng người đăng ký"', () => {
-  it('selects the registrant\'s existing delegation row instead of adding a duplicate', async () => {
+  // REG-MEMBER-01: registrant matches exactly one existing delegation member.
+  it('selects the registrant\'s existing delegation row instead of adding a duplicate, and preserves Phone/Email', async () => {
     // §8: the same human twice — once as a member, once as a typed contact — is exactly what the
     // link exists to prevent. Matched on name + job title + organisation together; a name alone
     // would merge two different people who happen to share one.
     renderForm();
     await type(screen.getByTestId('v2-registrant-fullName'), 'Daniel Kim');
+    await type(screen.getByTestId('v2-registrant-phone'), '0912345678');
     await type(screen.getByTestId('v2-registrant-email'), 'daniel@example.com');
     const registrantOrg = screen.getByPlaceholderText(/organization\/partner|tổ chức\/đối tác/i);
     await type(registrantOrg, 'ABC University');
@@ -344,6 +346,56 @@ describe('"Dùng người đăng ký"', () => {
 
     // Picked, not typed: the contact IS the delegation row, and the list did not grow.
     expect(screen.getByTestId('campus-opcontact-picked-0')).toBeInTheDocument();
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
+    // §9/§10: a member row carries no phone/email — the registrant's own values must not be lost
+    // just because the contact was routed through the member-link path instead of a plain copy.
+    expect((screen.getByTestId('campus-opcontact-phone-0') as HTMLInputElement).value).toBe('0912345678');
+    expect((screen.getByTestId('campus-opcontact-email-0') as HTMLInputElement).value).toBe('daniel@example.com');
+  });
+
+  // REG-MEMBER-02: the registrant's details match more than one existing member.
+  it('shows the ambiguity warning instead of guessing, with no selection and no new row', async () => {
+    renderForm();
+    await type(screen.getByTestId('v2-registrant-fullName'), 'Daniel Kim');
+    await type(screen.getByTestId('v2-registrant-email'), 'daniel@example.com');
+    const registrantOrg = screen.getByPlaceholderText(/organization\/partner|tổ chức\/đối tác/i);
+    await type(registrantOrg, 'ABC University');
+    await type(screen.getByTestId('v2-registrant-jobTitle'), 'Program Manager');
+
+    await fillMember('visitors', 0, {
+      fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
+    });
+    await addGuest();
+    await fillMember('visitors', 1, {
+      fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('campus-opcontact-use-registrant-0'));
+    });
+
+    expect(showMessageErrorToast).toHaveBeenCalledWith(expect.stringContaining('nhiều thành viên'));
+    expect(screen.queryByTestId('campus-opcontact-picked-0')).toBeNull();
+    expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(2);
+  });
+
+  // REG-MEMBER-03: no matching member — quick-fill copies the registrant as an EXTERNAL contact and
+  // does not touch the delegation list.
+  it('copies the registrant as an EXTERNAL contact when nobody matches, without adding a member yet', async () => {
+    renderForm();
+    await type(screen.getByTestId('v2-registrant-fullName'), 'Daniel Kim');
+    await type(screen.getByTestId('v2-registrant-email'), 'daniel@example.com');
+    const registrantOrg = screen.getByPlaceholderText(/organization\/partner|tổ chức\/đối tác/i);
+    await type(registrantOrg, 'ABC University');
+    await type(screen.getByTestId('v2-registrant-jobTitle'), 'Program Manager');
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('campus-opcontact-use-registrant-0'));
+    });
+
+    expect((screen.getByTestId('campus-opcontact-source-external-0') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getAllByTestId('campus-opcontact-name')[0] as HTMLTextAreaElement).value).toBe('Daniel Kim');
+    // Still exactly the one scaffolding row the campus card started with.
     expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
   });
 });

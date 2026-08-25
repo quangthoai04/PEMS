@@ -40,13 +40,24 @@ namespace PEMS.Application.Common.DTOs;
 /// Null is normal — a caller that names no contact member (or an older client) simply sends none.
 /// </para>
 /// </param>
+/// <param name="GuestMemberId">
+/// The row's OWN persisted id, as read back from the server and echoed on an edit/resubmit/amendment
+/// payload for a row that already exists — never for a genuinely new row, and never trusted as a
+/// database lookup key on Create (plan CanhIter3FixBug, operational-contact consistency fix). This is
+/// what makes copy-on-write member continuity provable: <c>ClientMemberKey</c> alone is re-minted every
+/// time a form opens and proves nothing about which persisted row a payload is really describing, but
+/// this id is real and stable. Used ONLY as continuity EVIDENCE (does the currently-linked Operational
+/// Contact's persisted member still appear in this payload, under the same key) — never as a lookup
+/// target, and never on Create, where every row is new and this must be null.
+/// </param>
 public record VisitorDto(
     string FullName,
     string Nationality,
     string JobTitle,
     string Organization,
     ulong? OrganizationPartnerId = null,
-    string? ClientMemberKey = null);
+    string? ClientMemberKey = null,
+    ulong? GuestMemberId = null);
 
 /// <inheritdoc cref="VisitorDto"/>
 public record SupportTeamMemberDto(
@@ -55,7 +66,8 @@ public record SupportTeamMemberDto(
     string Organization,
     string Nationality,
     ulong? OrganizationPartnerId = null,
-    string? ClientMemberKey = null);
+    string? ClientMemberKey = null,
+    ulong? GuestMemberId = null);
 
 /// <summary>
 /// One person's contact details as typed on the form — a SNAPSHOT, never a login. Identity at

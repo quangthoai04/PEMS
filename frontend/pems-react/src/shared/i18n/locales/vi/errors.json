@@ -112,6 +112,10 @@
     "FACE_SCAN_QUOTA_EXCEEDED": "Đã hết hạn mức quét khuôn mặt trong tháng.",
     "IMMUTABLE_CONTACT_PROFILE": "Không sửa được thông tin đầu mối vận hành trong biểu mẫu đăng ký. Hãy dùng chức năng “Chỉnh sửa đầu mối” ở màn hình chi tiết đơn.",
     "OPERATIONAL_CONTACT_PROFILE_NO_CHANGES": "Chưa có thay đổi nào để lưu cho đầu mối vận hành.",
-    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "Lời mời này đang thiếu đơn vị công tác của đầu mối vận hành. Vui lòng đề nghị người đăng ký cập nhật thông tin đầu mối và gửi lại lời mời xác nhận."
+    "OPERATIONAL_CONTACT_ORGANIZATION_REQUIRED": "Lời mời này đang thiếu đơn vị công tác của đầu mối vận hành. Vui lòng đề nghị người đăng ký cập nhật thông tin đầu mối và gửi lại lời mời xác nhận.",
+    "OPERATIONAL_CONTACT_RELATION_NOT_EDITABLE_IN_PENDING_EDIT": "Liên kết đầu mối không được thay đổi trong Sửa đơn. Hãy dùng Sửa nhanh để cập nhật liên kết hoặc Chuyển đầu mối nếu đổi người phụ trách.",
+    "OPERATIONAL_CONTACT_LINKED_PROFILE_REQUIRES_MEMBER_UPDATE": "Đầu mối hiện đang liên kết với một thành viên trong đoàn. Hãy cập nhật thông tin của thành viên qua Sửa đơn/Đề xuất thay đổi, hoặc bỏ liên kết nếu đầu mối không còn nằm trong đoàn.",
+    "OPERATIONAL_CONTACT_STALE_SESSION_REQUIRES_RELOAD": "Phiên chỉnh sửa của bạn đã cũ. Vui lòng tải lại trang và thử lại.",
+    "AMENDMENT_LEGACY_CONTACT_RELATION_REQUIRES_RESUBMISSION": "Đề xuất này được tạo theo quy tắc liên kết đầu mối phiên bản cũ và cần được gửi lại."
   }
 }

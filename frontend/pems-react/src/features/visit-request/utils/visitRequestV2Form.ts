@@ -162,6 +162,47 @@ export const resolveExactlyOne = <T extends { clientMemberKey?: string | null }>
 };
 
 /**
+ * Whether a currently-linked contact's persisted member would survive a bulk member-list replacement
+ * (Excel Replace/Replace Both, Copy From Campus, Apply-To-All — operational-contact consistency fix).
+ * `currentContactGuestMemberId == null` (nothing linked) always survives trivially — but that fact
+ * alone does NOT mean the replacement is otherwise safe: see {@link preserveTargetContact} for the
+ * separate rule a persisted target also needs. Callers resolve the id themselves first, typically via
+ * `resolveExactlyOne(currentMembers, currentOperationalContactClientMemberKey)?.guestMemberId ?? null`
+ * — the write-side schema has no `operationalContact.guestMemberId` field of its own to read directly.
+ */
+export const contactSurvivesReplacement = (
+  currentContactGuestMemberId: number | null | undefined,
+  incomingRows: { guestMemberId?: number | null }[],
+): boolean => {
+  if (currentContactGuestMemberId == null) return true;
+  return incomingRows.filter(r => r.guestMemberId === currentContactGuestMemberId).length === 1;
+};
+
+/**
+ * For a PERSISTED target campus being overwritten by another campus's content (Apply-To-All, Copy
+ * From Campus), re-applies the target's OWN Operational Contact relation and snapshot on top of the
+ * proposed next state. Business/member content copies from the source; the target's contact relation
+ * and snapshot never do, whether the target was linked or unlinked.
+ *
+ * <p>Without this, {@link cloneCampusVisitContent} silently carries the SOURCE campus's
+ * `operationalContact`/`operationalContactClientMemberKey`/`operationalContactSource` onto the target
+ * (it re-mints member keys but copies the contact fields verbatim) — for an unlinked target that means
+ * "Target B, relation null" silently becomes "Target B, relation Kim (copied from Campus A)": the
+ * frontend's own version of the backend's RelationIntroduced gap. Call this AFTER
+ * {@link cloneCampusVisitContent} and BEFORE checking {@link contactSurvivesReplacement}, so the
+ * survival check runs against the target's own (preserved) relation, not the source's.</p>
+ */
+export const preserveTargetContact = (
+  target: CampusVisitSchema,
+  proposed: CampusVisitSchema,
+): CampusVisitSchema => ({
+  ...proposed,
+  operationalContact: target.operationalContact,
+  operationalContactClientMemberKey: target.operationalContactClientMemberKey,
+  operationalContactSource: target.operationalContactSource,
+});
+
+/**
  * Gives every member row of a campus card an identity, and repairs a pick that has lost its meaning.
  *
  * <p>Called when a card arrives from somewhere that did not mint keys: a draft written before this

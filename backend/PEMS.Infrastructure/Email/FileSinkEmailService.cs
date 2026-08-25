@@ -145,12 +145,21 @@ public sealed class FileSinkEmailService : IEmailService
     /// <summary>
     /// Extracts the actionable link for the E2E inbox: a claim/transfer invitation link, or the account
     /// email-confirmation link (<c>/confirm-email?token=…</c>), if present.
+    ///
+    /// <para>
+    /// <c>operational-contact-confirmation/</c> is the CURRENT path <see
+    /// cref="PEMS.Infrastructure.Services.OperationalContactInvitationService"/> builds
+    /// (<c>{FrontendBaseUrl}/operational-contact-confirmation/{token}</c>); <c>visit-contact-(claim|
+    /// transfer)/</c> are the two addresses that path replaced, kept here because a link already in
+    /// somebody's inbox outlives the code that wrote it (same reasoning as the route aliases in
+    /// App.tsx) — so a sink reading an OLDER captured email still finds its link too.
+    /// </para>
     /// </summary>
     private static string? ExtractLink(string body)
     {
         var m = Regex.Match(
             body,
-            @"https?://[^\s""'<>]*(?:visit-contact-(?:claim|transfer)/|confirm-email\?token=|public/email-actions/)[^\s""'<>]+");
+            @"https?://[^\s""'<>]*(?:operational-contact-confirmation/|visit-contact-(?:claim|transfer)/|confirm-email\?token=|public/email-actions/)[^\s""'<>]+");
         return m.Success ? m.Value : null;
     }
 

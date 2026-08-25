@@ -135,15 +135,19 @@ test.describe('Real-stack: the public receipt and the per-campus contact', () =>
 
     await submit(page);
     await expect(otpInput(page)).toBeVisible({ timeout: 20_000 });
+    const verifyResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await enterOtp(page, await readOtpFromSink(email));
+    const verified = await verifyResponse;
 
-    // THE regression: the modal is still here, with a receipt in it.
+    // THE regression: the modal is still here, with a receipt in it. The receipt itself never shows
+    // the request code (VisitRequestV2SuccessPanel deliberately omits it), so "the receipt names a
+    // request that really exists" is cross-checked API-side below instead of read off the DOM.
     await expect(page.getByTestId('v2-create-modal')).toBeVisible({ timeout: 20_000 });
-    const codeEl = page.getByTestId('v2-success-code');
-    await expect(codeEl).toBeVisible();
-    await expect(codeEl).toContainText(/VR/);
+    await expect(page.getByTestId('v2-success-title')).toBeVisible();
     await expect(page.getByTestId('v2-success-status')).toBeVisible();
-    await expect(page.getByTestId('v2-success-submitted-at')).toBeVisible();
     // No dashboard action for someone with no session to use it with.
     await expect(page.getByTestId('v2-success-view')).toHaveCount(0);
 
@@ -154,14 +158,15 @@ test.describe('Real-stack: the public receipt and the per-campus contact', () =>
     await expect(summary).toContainText('Khách Thật');
     await expect(summary).toContainText('Đơn vị đầu mối');
 
-    // One submission, one request — confirmed against the database through the real lookup.
+    // One submission, one request — confirmed against the database through the real lookup, and it
+    // is the SAME request the receipt was built from.
     expect(otpCodesFor(email)).toHaveLength(1);
     expect(submissionId).toBeTruthy();
     const lookup = await request.get(`${API_BASE}/v2/visit-requests/submissions/${submissionId}`);
     expect(lookup.ok()).toBeTruthy();
     const body = await lookup.json();
     expect(body.state).toBe('COMPLETED');
-    expect(await codeEl.textContent()).toContain(body.requestCode);
+    expect((await verified.json()).requestCode).toBe(body.requestCode);
   });
 
   test('journey B — quick-fill copies the registrant, and the combobox choice is what gets stored', async ({ page, request }) => {
@@ -196,7 +201,7 @@ test.describe('Real-stack: the public receipt and the per-campus contact', () =>
     await submit(page);
     await expect(otpInput(page)).toBeVisible({ timeout: 20_000 });
     await enterOtp(page, await readOtpFromSink(email));
-    await expect(page.getByTestId('v2-success-code')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
 
     // What the server stored is the combobox value, not the copied one.
     await page.getByTestId('v2-success-review').click();

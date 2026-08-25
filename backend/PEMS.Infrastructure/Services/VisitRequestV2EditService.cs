@@ -66,14 +66,25 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// </summary>
     private readonly ICurrentUserService? _currentUser;
 
+    /// <summary>
+    /// Nullable/optional like <see cref="_currentUser"/> below, for the same reason: dozens of existing
+    /// tests construct this service directly with just (db, aggregateStatus) and never exercise the
+    /// pending-invitation-snapshot refresh this drives (operational-contact consistency fix) — every
+    /// campus they build either has no live invitation or isn't asserting on its freshness. A null here
+    /// makes the refresh a no-op rather than forcing every call site to supply a fake.
+    /// </summary>
+    private readonly IOperationalContactInvitationService? _invitations;
+
     public VisitRequestV2EditService(
         IApplicationDbContext db,
         IVisitRequestAggregateStatusService aggregateStatus,
-        ICurrentUserService? currentUser = null)
+        ICurrentUserService? currentUser = null,
+        IOperationalContactInvitationService? invitations = null)
     {
         _db = db;
         _aggregateStatus = aggregateStatus;
         _currentUser = currentUser;
+        _invitations = invitations;
     }
 
     /// <summary>
@@ -223,18 +234,32 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                                  != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
             var scheduleChanged = instance.PlannedStartAt != content.PlannedStartAt
                                   || instance.PlannedEndAt != content.PlannedEndAt;
-            // RELATIONSHIP-ONLY (plan CanhIter3FixBug) — see the single-instance path's identical
-            // comment and CampusVisitEditV2Dto.OperationalContactGuestMemberId's doc for why this
-            // cannot be folded into contentChanged: the relation is deliberately not part of
-            // CanonicalContent, so a campus whose ONLY change this save carries is who the contact is
-            // would otherwise be silently skipped by the `continue` below — one sibling among many in
-            // this multi-campus payload, dropped with no error at all.
-            var relationChanged = !contentChanged
-                && detail.OperationalContactGuestMemberId != content.OperationalContactGuestMemberId;
-            if (relationChanged && content.OperationalContactGuestMemberId is { } proposedRelationId)
-                OperationalContactLink.EnsureGuestMemberIdEligible(
-                    V2CanonicalRefresh.MembersOf(request, instance), proposedRelationId);
-            if (!contentChanged && !scheduleChanged && !relationChanged)
+
+            // Relation validation — fail closed BEFORE any mutation to this campus (operational-contact
+            // consistency fix). Pending Edit may never change WHO the contact is or WHETHER one exists —
+            // that is Safe Edit's (link/unlink) or Replace/Transfer's job — it may only PRESERVE the same
+            // persisted member across a content-changing rewrite. See the single-instance path's
+            // identical block for the full reasoning; kept in sync deliberately rather than shared via a
+            // helper across the two very different call shapes.
+            if (!contentChanged)
+            {
+                if (content.OperationalContactGuestMemberId != detail.OperationalContactGuestMemberId)
+                    throw PendingEditRelationError(
+                        OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere);
+            }
+            else
+            {
+                var incomingRows = (content.Visitors ?? new List<VisitorDto>())
+                    .Select(v => (v.GuestMemberId, v.ClientMemberKey))
+                    .Concat((content.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                        .Select(m => (m.GuestMemberId, m.ClientMemberKey)));
+                var continuity = OperationalContactLink.CheckPreservesExistingMemberRelation(
+                    detail.OperationalContactGuestMemberId, incomingRows, content.OperationalContactClientMemberKey);
+                if (continuity != OperationalContactLink.ContactMemberContinuityResult.Preserved)
+                    throw PendingEditRelationError(continuity);
+            }
+
+            if (!contentChanged && !scheduleChanged)
                 continue; // untouched sibling: no member churn, no revision bump, no row-version bump
 
             // This campus IS about to move to revision N+1. Capture revision N first if the chain is
@@ -290,21 +315,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                 detail.UpdatedBy = actorId;
             }
 
-            // Relationship-only application — see the single-instance path's identical block for why
-            // this is a direct assignment rather than StageReplaceMembers/LinkMembers, and why it gets
-            // its own audit entry distinguishable from an actual-contact replace/transfer.
-            if (relationChanged)
-            {
-                audit.Changes.Add(new AuditLogChange
-                {
-                    FieldName = $"instance[{instance.VisitInstanceId}].operational_contact_relation",
-                    OldValueText = detail.OperationalContactGuestMemberId?.ToString() ?? "null",
-                    NewValueText = content.OperationalContactGuestMemberId?.ToString() ?? "null",
-                    CreatedAt = now,
-                });
-                detail.OperationalContactGuestMemberId = content.OperationalContactGuestMemberId;
-            }
-
             instance.RowVersion += 1;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
@@ -347,6 +357,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
                     _db, request, instance, newMembers, now, actorId,
                     VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
                 snapshotMembers = newMembers;
+                await SyncLinkedContactAfterRelinkAsync(request, instance, audit, now, ct);
             }
             else
             {
@@ -585,6 +596,24 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var staging = new List<(VisitRequestCampus Instance, List<VisitGuestMember> Members, CampusVisitEditV2Dto Content)>();
         foreach (var (content, instance) in pairs)
         {
+            // Relation continuity — fail closed BEFORE any mutation to this campus (operational-contact
+            // consistency fix). Resubmit always full-rewrites every campus's members, so it always goes
+            // through the same COW continuity proof Pending Edit's content-changed branch uses — there
+            // is no "relationship-only" concept here at all (verified: this method never reads an
+            // OperationalContactGuestMemberId off the payload as a direct pick, only the ephemeral
+            // OperationalContactClientMemberKey via LinkMembers below), so the only failure modes are
+            // the disguised-repoint case and the stale-client case, both live-request scenarios since
+            // this is a real browser session resubmitting.
+            var incomingRows = (content.Visitors ?? new List<VisitorDto>())
+                .Select(v => (v.GuestMemberId, v.ClientMemberKey))
+                .Concat((content.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                    .Select(m => (m.GuestMemberId, m.ClientMemberKey)));
+            var continuity = OperationalContactLink.CheckPreservesExistingMemberRelation(
+                instance.FormDetail!.OperationalContactGuestMemberId, incomingRows,
+                content.OperationalContactClientMemberKey);
+            if (continuity != OperationalContactLink.ContactMemberContinuityResult.Preserved)
+                throw LiveRequestRelationError(continuity);
+
             VisitRequestV2EditOps.ApplyFormDetail(instance.FormDetail!, content, now, actorId);
             var newMembers = VisitRequestV2EditOps.StageReplaceMembers(
                 _db, request, instance, content.Visitors, content.ExternalSupportMembers, now, actorId);
@@ -622,6 +651,7 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             VisitRequestV2EditOps.LinkMembers(
                 _db, request, instance, members, now, actorId,
                 VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
+            await SyncLinkedContactAfterRelinkAsync(request, instance, audit, now, ct);
             _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
             {
                 VisitRequestId = request.VisitRequestId,
@@ -734,25 +764,32 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
         var contentChanged = VisitRequestV2Canonical.CanonicalContent(CurrentContentOf(request, instance, detail))
                              != VisitRequestV2Canonical.CanonicalContent(content.ToFormDto());
 
-        // RELATIONSHIP-ONLY (plan CanhIter3FixBug "Đầu mối hiện tại có nằm trong danh sách đoàn
-        // không?", pending-edit stage). The relation is deliberately NOT part of CanonicalContent
-        // (see CampusVisitEditV2Dto.OperationalContactGuestMemberId's own doc), so a save that ONLY
-        // repoints who the contact is inside an UNCHANGED delegation would otherwise compute
-        // contentChanged=false, scheduleChanged=false, and fall straight into the "nothing to save"
-        // refusal below — silently dropping a real business change. Only meaningful when the member
-        // list itself is untouched: a content-changed save always re-links via
-        // OperationalContactClientMemberKey instead (copy-on-write mints new ids, so the persistent
-        // one the client echoed back is already stale by the time it would be read).
-        var relationChanged = !contentChanged
-            && detail.OperationalContactGuestMemberId != content.OperationalContactGuestMemberId;
-        // Fail-closed BEFORE anything is mutated: a candidate naming nobody, a deleted row, or a
-        // sibling campus's member is refused here exactly like the amendment path's own check —
-        // never silently coerced to null, never guessed by name.
-        if (relationChanged && content.OperationalContactGuestMemberId is { } proposedRelationId)
-            OperationalContactLink.EnsureGuestMemberIdEligible(
-                V2CanonicalRefresh.MembersOf(request, instance), proposedRelationId);
+        // Relation validation — fail closed BEFORE anything is mutated (operational-contact consistency
+        // fix). Pending Edit may never change WHO the contact is or WHETHER one exists — only Safe Edit
+        // (link/unlink) or Replace/Transfer may — it may only PRESERVE the same persisted member across
+        // a content-changing rewrite. See the whole-request path's identical block for the full
+        // reasoning; kept in sync deliberately rather than shared via a helper, since the two methods'
+        // surrounding control flow (single target vs. multi-campus loop) differ enough that a shared
+        // helper would need to take half its own state as parameters anyway.
+        if (!contentChanged)
+        {
+            if (content.OperationalContactGuestMemberId != detail.OperationalContactGuestMemberId)
+                throw PendingEditRelationError(
+                    OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere);
+        }
+        else
+        {
+            var incomingRows = (content.Visitors ?? new List<VisitorDto>())
+                .Select(v => (v.GuestMemberId, v.ClientMemberKey))
+                .Concat((content.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                    .Select(m => (m.GuestMemberId, m.ClientMemberKey)));
+            var continuity = OperationalContactLink.CheckPreservesExistingMemberRelation(
+                detail.OperationalContactGuestMemberId, incomingRows, content.OperationalContactClientMemberKey);
+            if (continuity != OperationalContactLink.ContactMemberContinuityResult.Preserved)
+                throw PendingEditRelationError(continuity);
+        }
 
-        if (!contentChanged && !scheduleChanged && !relationChanged)
+        if (!contentChanged && !scheduleChanged)
         {
             // "Lưu và duyệt" carries two intents — an edit and a decision — and having nothing to
             // EDIT does not mean there is nothing to DECIDE. The caller still has an approval to run
@@ -837,24 +874,6 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             instance.PlannedEndAt = content.PlannedEndAt;
         }
 
-        // Relationship-only application — a direct assignment, never StageReplaceMembers/LinkMembers:
-        // the member list is untouched (relationChanged is only ever true when contentChanged is
-        // false), so nothing about the delegation itself needs to move. Its own audit action code
-        // keeps this distinguishable from an actual-contact replace/transfer, which is a different
-        // workflow entirely (plan §24) — this never touches OperationalContactFullName/Organization/
-        // JobTitle/Phone/Email, only the relation column.
-        if (relationChanged)
-        {
-            audit.Changes.Add(new AuditLogChange
-            {
-                FieldName = $"instance[{instance.VisitInstanceId}].operational_contact_relation",
-                OldValueText = detail.OperationalContactGuestMemberId?.ToString() ?? "null",
-                NewValueText = content.OperationalContactGuestMemberId?.ToString() ?? "null",
-                CreatedAt = now,
-            });
-            detail.OperationalContactGuestMemberId = content.OperationalContactGuestMemberId;
-        }
-
         // An override is a decision somebody took, not a validation that happened to pass. It gets its
         // own audit row — actor, campus, old and new start — so "why is this visit in two days when the
         // rule says three" has an answer that does not depend on reading the code.
@@ -899,9 +918,12 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
             ? newMembers
             : V2CanonicalRefresh.MembersOf(request, instance);
         if (contentChanged)
+        {
             VisitRequestV2EditOps.LinkMembers(
                 _db, request, instance, newMembers, now, actorId,
                 VisitRequestV2EditOps.MemberKeys(content), content.OperationalContactClientMemberKey);
+            await SyncLinkedContactAfterRelinkAsync(request, instance, audit, now, ct);
+        }
         _db.VisitInstanceFormRevisionHistories.Add(new VisitInstanceFormRevisionHistory
         {
             VisitRequestId = request.VisitRequestId,
@@ -1361,6 +1383,73 @@ public sealed class VisitRequestV2EditService : IVisitRequestV2EditService
     /// was served must never trip this.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Maps a continuity check's fact to the business error Pending Edit raises for it
+    /// (operational-contact consistency fix) — shared by the whole-request and single-instance paths,
+    /// which both call <see cref="OperationalContactLink.CheckPreservesExistingMemberRelation"/> against
+    /// the same DTOs but cannot share the surrounding loop shape. Relation-STATE violations
+    /// (<c>RelationIntroduced</c>, a currently-unlinked campus being handed a relation; and
+    /// <c>RelationKeyPointsElsewhere</c>, the disguised-repoint case, including the schedule-only path's
+    /// own direct comparison) get Pending Edit's own "you tried to touch the relation here" code rather
+    /// than the generic not-found code — those two describe an attempted EDIT of the relation, not a
+    /// vanished member.
+    /// </summary>
+    private static BusinessRuleException PendingEditRelationError(
+        OperationalContactLink.ContactMemberContinuityResult result) => result switch
+    {
+        OperationalContactLink.ContactMemberContinuityResult.MissingIdentityEvidence =>
+            new BusinessRuleException(
+                "Phiên chỉnh sửa của bạn đã cũ. Vui lòng tải lại trang và thử lại.",
+                OperationalContactErrorCodes.StaleSessionRequiresReload),
+        OperationalContactLink.ContactMemberContinuityResult.RelationIntroduced or
+        OperationalContactLink.ContactMemberContinuityResult.RelationKeyPointsElsewhere =>
+            new BusinessRuleException(
+                "Liên kết đầu mối không được thay đổi trong Sửa đơn. Hãy dùng Sửa nhanh để cập nhật liên kết hoặc Chuyển đầu mối nếu đổi người phụ trách.",
+                OperationalContactErrorCodes.RelationNotEditableInPendingEdit),
+        _ => new BusinessRuleException(
+            OperationalContactMessages.MemberNotInDelegation,
+            OperationalContactErrorCodes.MemberNotFound),
+    };
+
+    /// <summary>
+    /// Same mapping, for Resubmit and any other LIVE-request caller that has no Pending-Edit-specific
+    /// code of its own: relation-state violations fall back to the generic member-not-found code rather
+    /// than <see cref="OperationalContactErrorCodes.RelationNotEditableInPendingEdit"/>, which is
+    /// Pending-Edit-only vocabulary.
+    /// </summary>
+    private static BusinessRuleException LiveRequestRelationError(
+        OperationalContactLink.ContactMemberContinuityResult result) =>
+        result == OperationalContactLink.ContactMemberContinuityResult.MissingIdentityEvidence
+            ? new BusinessRuleException(
+                "Phiên chỉnh sửa của bạn đã cũ. Vui lòng tải lại trang và thử lại.",
+                OperationalContactErrorCodes.StaleSessionRequiresReload)
+            : new BusinessRuleException(
+                OperationalContactMessages.MemberNotInDelegation,
+                OperationalContactErrorCodes.MemberNotFound);
+
+    /// <summary>
+    /// After a content-changing save re-links the campus's Operational Contact onto the fresh
+    /// copy-on-write member row (<see cref="VisitRequestV2EditOps.LinkMembers"/> already ran), sync the
+    /// three shared identity fields from that member onto the contact snapshot and refresh any live
+    /// pending invitation so it does not go stale the moment the invited person accepts
+    /// (operational-contact consistency fix). A no-op when the campus ends up unlinked.
+    /// </summary>
+    private async Task SyncLinkedContactAfterRelinkAsync(
+        VisitRequest request, VisitRequestCampus instance, AuditLog audit, DateTime now, CancellationToken ct)
+    {
+        var detail = instance.FormDetail;
+        if (detail?.OperationalContactGuestMemberId is not { } linkedId) return;
+
+        var member = V2CanonicalRefresh.MembersOf(request, instance)
+            .FirstOrDefault(m => m.GuestMemberId == linkedId);
+        if (member is null) return;
+
+        OperationalContactLink.SyncSnapshotFromLinkedMember(audit, detail, member, now);
+        if (_invitations is not null)
+            await OperationalContactProfileMutation.RefreshPendingInvitationSnapshotAsync(
+                _invitations, instance, detail, ct);
+    }
+
     private static void EnsureContactSnapshotUnchanged(
         VisitInstanceFormDetail detail, ContactPointDto incomingContact)
     {

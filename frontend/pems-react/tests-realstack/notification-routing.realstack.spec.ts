@@ -111,14 +111,19 @@ test.describe('Real-stack: notification routing -- Staff Leader (waiting approva
 
     const { context: c2, page: p2 } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
-      // ── ST-01 (+ BL-05 partial: the SAME identity is now HOST on the SAME request) — HOST_ASSIGNED
-      // must open Host Process for the exact instance, never re-open the review modal.
+      // ── ST-01 (+ BL-05 partial: the SAME identity is now HOST on the SAME request) — self-host
+      // fires NO new notification at all: CampusApprovalExecutor's own comment is "Self-host: the
+      // approver already knows — skip the 'you were assigned' notification" (guarded on
+      // `!outcome.IsSelfHost`). The bell's only entry is still the ORIGINAL WAITING_APPROVAL
+      // notification; now that the campus is approved, `reviewDue` is false, so it must downgrade
+      // to the plain safe request detail — never re-open the review modal, never Host Process.
       const n = await latestNotification(request, 'campus_leader_hn');
-      expect(n.actionType, 'HOST_ASSIGNED producer sets an explicit actionType').toBeTruthy();
+      expect(n.actionType, 'the original notification still carries an actionType').toBeTruthy();
       await p2.goto('/dashboard/visit');
       await clickBellNotification(p2, tag);
-      await expect(p2).toHaveURL(new RegExp(`/dashboard/visit/process/${hnInstance}(\\D|$)`), { timeout: 20_000 });
+      await expect(p2).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
       await expect(p2.getByText('Duyệt & phân công người phụ trách')).toHaveCount(0);
+      await expect(p2).not.toHaveURL(/\/process\//);
     } finally {
       await c2.close();
     }
@@ -310,8 +315,16 @@ test.describe('Real-stack: notification routing -- Host (assigned/stale) and Hos
 
 test.describe('Real-stack: notification routing -- Participation', () => {
   // NOTE ON SCOPE (discovered live, not previously reported): the only invite-able participant type
-  // this harness can also LOG IN AS is DEPT_SUPPORT (`dept_leader_hn` -- IC_SUPPORT/STUDENT need an
-  // IC-department/Student seed profile that does not exist yet). A Dept Leader's PARTICIPATION_INVITED
+  // this harness can also LOG IN AS is DEPT_SUPPORT (`facilities_leader_hn` -- IC_SUPPORT/STUDENT need
+  // an IC-department/Student seed profile that does not exist yet; a SECOND GENERAL department is used
+  // here rather than `dept_leader_hn` specifically because `department-leader-personnel.realstack.spec.ts`'s
+  // DL-05 deliberately and correctly revokes `dept_leader_hn`'s session as its last, documented action --
+  // "carrying the wrong sub-role is exactly what a stale session is" -- so under workers:1 sequential
+  // execution any later spec that reuses that identity hits a real, intentional SESSION_REVOKED 401.
+  // `facilities_leader_hn` is a same-shape GENERAL-department Leader (see run-realstack-e2e.mjs) that no
+  // spec in this suite ever revokes, so it stays a fresh, valid, correctly fail-closed session for the
+  // whole run -- the fix is a dedicated identity, never weakening SESSION_REVOKED handling itself, and
+  // never relying on spec file ordering as a correctness mechanism). A Dept Leader's PARTICIPATION_INVITED
   // notification does NOT reach `VisitRequestManagement`'s `VISIT_INVITATION` intent branch at all: an
   // earlier, separate rewrite in `resolveNotificationDestination.ts` (`isDeptLeader`, pre-dates this
   // initiative) intercepts any `/invitations/` link first and sends it to `/dashboard/visit?taskId=
@@ -330,11 +343,11 @@ test.describe('Real-stack: notification routing -- Participation', () => {
     await approveCampus(request, requestId, hnInstance, 'campus_leader_hn', Number(leader.userId));
     await startPreparation(request, requestId, hnInstance, 'campus_leader_hn'); // invites are setup work
 
-    const deptId = await meDepartmentId(request, 'dept_leader_hn');
+    const deptId = await meDepartmentId(request, 'facilities_leader_hn');
     await inviteDeptSupport(request, 'campus_leader_hn', hnInstance, deptId);
 
-    const deptLeader = await meUser(request, 'dept_leader_hn');
-    const { context, page } = await authedPage(browser, 'dept_leader_hn', deptLeader);
+    const deptLeader = await meUser(request, 'facilities_leader_hn');
+    const { context, page } = await authedPage(browser, 'facilities_leader_hn', deptLeader);
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tag);
@@ -354,12 +367,12 @@ test.describe('Real-stack: notification routing -- Participation', () => {
     await approveCampus(request, requestId, hnInstance, 'campus_leader_hn', Number(leader.userId));
     await startPreparation(request, requestId, hnInstance, 'campus_leader_hn');
 
-    const deptId = await meDepartmentId(request, 'dept_leader_hn');
+    const deptId = await meDepartmentId(request, 'facilities_leader_hn');
     const participantId = await inviteDeptSupport(request, 'campus_leader_hn', hnInstance, deptId);
-    await declineParticipation(request, 'dept_leader_hn', participantId);
+    await declineParticipation(request, 'facilities_leader_hn', participantId);
 
-    const deptLeader = await meUser(request, 'dept_leader_hn');
-    const { context, page } = await authedPage(browser, 'dept_leader_hn', deptLeader);
+    const deptLeader = await meUser(request, 'facilities_leader_hn');
+    const { context, page } = await authedPage(browser, 'facilities_leader_hn', deptLeader);
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tag);
@@ -372,15 +385,19 @@ test.describe('Real-stack: notification routing -- Participation', () => {
 });
 
 test.describe('Real-stack: notification routing -- multi-campus exact targeting', () => {
-  test('MC-01: HOST_ASSIGNED on a mixed HN+HCM request opens the EXACT campus instance named by the notification, never the sibling', async ({ browser, request }) => {
+  test('MC-01: on a mixed HN+HCM request, self-host approval leaves each leader on their OWN request-level detail, never the sibling campus\'s Host Process', async ({ browser, request }) => {
     const tag = `NM${Date.now().toString(36)}`;
     const { requestId, instances } = await createMixedRequest(request, tag, `Doan HN ${tag}`, `Doan HCM ${tag}`);
     const hnInstance = instances.find(i => i.campusId === CAMPUS_HN)!.visitInstanceId;
     const hcmInstance = instances.find(i => i.campusId === CAMPUS_HCM)!.visitInstanceId;
     const hnLeader = await meUser(request, 'campus_leader_hn');
     const hcmLeader = await meUser(request, 'campus_leader_hcm');
-    // Approve BOTH campuses (self-host each) -- both leaders now hold a HOST_ASSIGNED notification on
-    // the SAME multi-campus request, one per exact instance.
+    // Approve BOTH campuses (self-host each). Self-host fires NO HOST_ASSIGNED notification at all
+    // (CampusApprovalExecutor: "the approver already knows", guarded on `!outcome.IsSelfHost`) --
+    // each leader's bell still only has their own original WAITING_APPROVAL notification, now
+    // resolved. What this proves instead: the HCM leader's click still resolves against the SAME
+    // multi-campus request but never escalates into the HN campus's Host Process -- exact-instance
+    // isolation holds even though no per-instance destination is reached by either leader here.
     await approveCampus(request, requestId, hnInstance, 'campus_leader_hn', Number(hnLeader.userId));
     await approveCampus(request, requestId, hcmInstance, 'campus_leader_hcm', Number(hcmLeader.userId));
 
@@ -388,8 +405,9 @@ test.describe('Real-stack: notification routing -- multi-campus exact targeting'
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tag);
-      await expect(page).toHaveURL(new RegExp(`/dashboard/visit/process/${hcmInstance}(\\D|$)`), { timeout: 20_000 });
+      await expect(page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
       await expect(page).not.toHaveURL(new RegExp(`/process/${hnInstance}(\\D|$)`));
+      await expect(page).not.toHaveURL(new RegExp(`/process/${hcmInstance}(\\D|$)`));
     } finally {
       await context.close();
     }
@@ -446,12 +464,12 @@ test.describe('Real-stack: notification routing -- legacy unknown notifications 
     const leader = await meUser(request, 'campus_leader_hn');
     await approveCampus(request, requestId, hnInstance, 'campus_leader_hn', Number(leader.userId));
     await startPreparation(request, requestId, hnInstance, 'campus_leader_hn');
-    const deptId = await meDepartmentId(request, 'dept_leader_hn');
+    const deptId = await meDepartmentId(request, 'facilities_leader_hn');
     await inviteDeptSupport(request, 'campus_leader_hn', hnInstance, deptId);
-    const deptLeader = await meUser(request, 'dept_leader_hn');
+    const deptLeader = await meUser(request, 'facilities_leader_hn');
     insertLegacyNotification({ recipientEmail: deptLeader.email as string, visitRequestId: requestId, visitInstanceId: hnInstance, title: `Legacy C ${tag}` });
 
-    const { context, page } = await authedPage(browser, 'dept_leader_hn', deptLeader);
+    const { context, page } = await authedPage(browser, 'facilities_leader_hn', deptLeader);
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, `Legacy C ${tag}`);
@@ -565,17 +583,24 @@ test.describe('Real-stack: notification routing -- click ordering (BUG-02/BUG-03
     const leader = await meUser(request, 'campus_leader_hn');
     await approveCampus(request, a.requestId, a.instances[0].visitInstanceId, 'campus_leader_hn', Number(leader.userId));
     await approveCampus(request, b.requestId, b.instances[0].visitInstanceId, 'campus_leader_hn', Number(leader.userId));
-    const instA = a.instances[0].visitInstanceId;
-    const instB = b.instances[0].visitInstanceId;
+
+    // Self-host fires NO notification at all for either request (CampusApprovalExecutor: "the
+    // approver already knows", guarded on `!outcome.IsSelfHost`) -- each bell click still only has
+    // the ORIGINAL WAITING_APPROVAL notification for that request, now resolved, so both correctly
+    // downgrade to their own request-level detail rather than either instance's Host Process. That
+    // still gives two genuinely different destinations (different requestId), so the back/forward
+    // history-coherence invariant this test exists for is still fully exercised.
+    const targetA = new RegExp(`/dashboard/visit/v2/${a.requestId}(\\D|$)`);
+    const targetB = new RegExp(`/dashboard/visit/v2/${b.requestId}(\\D|$)`);
 
     const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tagA);
-      await expect(page).toHaveURL(new RegExp(`/process/${instA}(\\D|$)`), { timeout: 20_000 });
+      await expect(page).toHaveURL(targetA, { timeout: 20_000 });
 
       await clickBellNotification(page, tagB);
-      await expect(page).toHaveURL(new RegExp(`/process/${instB}(\\D|$)`), { timeout: 20_000 });
+      await expect(page).toHaveURL(targetB, { timeout: 20_000 });
 
       // One notification click can legitimately push MORE than one history entry (the one-shot
       // command URL, then the final destination) -- `goBack` a bounded number of times rather than
@@ -586,17 +611,17 @@ test.describe('Real-stack: notification routing -- click ordering (BUG-02/BUG-03
       for (let i = 0; i < 4 && !landedOnA; i++) {
         await page.goBack();
         await page.waitForTimeout(300);
-        if (new RegExp(`/process/${instA}(\\D|$)`).test(page.url())) landedOnA = true;
+        if (targetA.test(page.url())) landedOnA = true;
       }
       expect(landedOnA, `goBack() never reached A's page (${page.url()})`).toBe(true);
-      // URL and rendered screen agree: the process page for A is actually showing, not just the URL.
-      await expect(page).not.toHaveURL(new RegExp(`/process/${instB}(\\D|$)`));
+      // URL and rendered screen agree: A's request detail is actually showing, not just the URL.
+      await expect(page).not.toHaveURL(targetB);
 
       let landedOnB = false;
       for (let i = 0; i < 4 && !landedOnB; i++) {
         await page.goForward();
         await page.waitForTimeout(300);
-        if (new RegExp(`/process/${instB}(\\D|$)`).test(page.url())) landedOnB = true;
+        if (targetB.test(page.url())) landedOnB = true;
       }
       expect(landedOnB, `goForward() never reached B's page (${page.url()})`).toBe(true);
     } finally {

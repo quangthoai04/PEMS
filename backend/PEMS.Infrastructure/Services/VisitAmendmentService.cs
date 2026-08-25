@@ -129,6 +129,47 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             if (!activeMembers.TryTakeMatch("EXTERNAL_SUPPORT", m.FullName, m.Organization, m.JobTitle, m.Nationality, out _))
                 NationalityResolution.ResolveOrThrow(m.Nationality, "Quốc tịch nhân sự hỗ trợ không hợp lệ:");
 
+        // ── Relation continuity — fail closed BEFORE the proposal is diffed/persisted (operational-
+        //    contact consistency fix). An amendment may never change WHO the Operational Contact is or
+        //    WHETHER one exists; it may only preserve the SAME persisted member across a member-list
+        //    rewrite. Two cases, matching the two continuity mechanisms the DTOs carry — never mixed:
+        //    a member-list-changing proposal proves continuity via OperationalContactClientMemberKey +
+        //    the incoming rows' own GuestMemberId (copy-on-write mints fresh ids on approve, so only the
+        //    ephemeral key can survive that); a member-list-unchanged proposal has every row's
+        //    persistent id already real and checkable directly. Uses the SAME fingerprint comparison
+        //    BuildChangeRows itself uses below, so the two can never disagree about whether the member
+        //    list moved. ──
+        var currentForm = V2CanonicalRefresh.ToFormDto(request, instance, "X");
+        var memberListChanged =
+            VisitorsFingerprint(currentForm.Visitors) != VisitorsFingerprint(proposal.Visitors)
+            || SupportFingerprint(currentForm.ExternalSupportMembers) != SupportFingerprint(proposal.ExternalSupportMembers);
+        if (memberListChanged)
+        {
+            var incomingRows = (proposal.Visitors ?? new List<VisitorDto>())
+                .Select(v => (v.GuestMemberId, v.ClientMemberKey))
+                .Concat((proposal.ExternalSupportMembers ?? new List<SupportTeamMemberDto>())
+                    .Select(m => (m.GuestMemberId, m.ClientMemberKey)));
+            var continuity = OperationalContactLink.CheckPreservesExistingMemberRelation(
+                detail.OperationalContactGuestMemberId, incomingRows, proposal.OperationalContactClientMemberKey);
+            if (continuity != OperationalContactLink.ContactMemberContinuityResult.Preserved)
+                throw continuity == OperationalContactLink.ContactMemberContinuityResult.MissingIdentityEvidence
+                    ? new BusinessRuleException(
+                        "Phiên chỉnh sửa của bạn đã cũ. Vui lòng tải lại trang và thử lại.",
+                        OperationalContactErrorCodes.StaleSessionRequiresReload)
+                    : new BusinessRuleException(
+                        OperationalContactMessages.MemberNotInDelegation,
+                        VisitFormV2ErrorCodes.AmendmentNotEditable);
+        }
+        else if (proposal.OperationalContactGuestMemberId != detail.OperationalContactGuestMemberId)
+        {
+            // No COW rewrite is happening, so continuity is simply "did the proposal echo back the
+            // active id" — any difference (null↔id, or id↔a-different-id) is an attempted relation
+            // change and refuses the whole submission before it ever becomes a change row.
+            throw new BusinessRuleException(
+                "Đề xuất không được thay đổi liên kết đầu mối. Hãy dùng Sửa nhanh để cập nhật liên kết hoặc Chuyển đầu mối nếu đổi người phụ trách.",
+                VisitFormV2ErrorCodes.AmendmentNotEditable);
+        }
+
         // ── Diff the proposal vs the ACTIVE state → immutable change rows (fail closed via classifier) ──
         var changes = BuildChangeRows(request, instance, detail, proposal, now);
         if (changes.Count == 0)
@@ -281,6 +322,51 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         await VisitRevisionBaselineGuard.EnsureInstanceBaselineAsync(
             _db, request, instance, detail, actorId, now, ct);
 
+        // ── 1.5. Relation continuity, re-checked against the CURRENT active relation, inside this
+        //         transaction, before anything is staged (operational-contact consistency fix). Submit
+        //         already proved this once, but the active relation can move between submit and approve
+        //         (a concurrent Safe Edit unlink/relink) — never trust submit-time validation alone. Only
+        //         relevant when this proposal actually rewrites the member list; a content-only amendment
+        //         never touches the relation and has nothing to re-check. Any non-Preserved result here —
+        //         including MissingIdentityEvidence, which is exactly how a proposal STORED BEFORE the
+        //         GuestMemberId field existed shows up once deserialized under the new DTO shape — means
+        //         this proposal cannot be proven safe under the current rules and must be resubmitted;
+        //         there is no live browser session left to ask to reload, so it is never the
+        //         stale-session code, always the legacy/resubmit one. ──
+        var proposesMemberChange = amendment.Changes.Any(c =>
+            c.FieldPath == VisitFieldClassifier.Visitors || c.FieldPath == VisitFieldClassifier.SupportMembers);
+        if (proposesMemberChange)
+        {
+            var proposedVisitorsForCheck = FindMemberProposal<List<VisitorDto>>(amendment, VisitFieldClassifier.Visitors)
+                ?? V2CanonicalRefresh.ToFormDto(request, instance, "X").Visitors.ToList();
+            var proposedSupportForCheck = FindMemberProposal<List<SupportTeamMemberDto>>(amendment, VisitFieldClassifier.SupportMembers)
+                ?? V2CanonicalRefresh.ToFormDto(request, instance, "X").ExternalSupportMembers.ToList();
+            var incomingRows = proposedVisitorsForCheck.Select(v => (v.GuestMemberId, v.ClientMemberKey))
+                .Concat(proposedSupportForCheck.Select(m => (m.GuestMemberId, m.ClientMemberKey)));
+            var continuity = OperationalContactLink.CheckPreservesExistingMemberRelation(
+                detail.OperationalContactGuestMemberId, incomingRows, FindProposedContactMemberKey(amendment));
+            if (continuity != OperationalContactLink.ContactMemberContinuityResult.Preserved)
+                throw new BusinessRuleException(
+                    "Đề xuất này được tạo theo quy tắc liên kết đầu mối phiên bản cũ và cần được gửi lại.",
+                    VisitFormV2ErrorCodes.AmendmentLegacyContactRelationRequiresResubmission);
+        }
+
+        // Constructed here (rather than after the apply block, where this used to live) so the
+        // post-relink Operational Contact sync below can append its own change entries into the SAME
+        // audit row as the amendment's own field changes — one audit entry per approve action, not two.
+        var audit = new AuditLog
+        {
+            ActorUserId = actorId,
+            Action = selfApproval ? "VISIT_AMENDMENT_SELF_APPROVED" : "VISIT_AMENDMENT_APPROVED",
+            EntityType = "VisitInstanceAmendment",
+            EntityId = amendment.AmendmentId,
+            VisitRequestId = request.VisitRequestId,
+            VisitInstanceId = instance.VisitInstanceId,
+            SourceType = "AMENDMENT",
+            Reason = Clean(note),
+            CreatedAt = now,
+        };
+
         // ── 2. Apply the change rows target-only ──
         List<VisitGuestMember>? stagedMembers = null;
         // Hoisted (rather than local to the Visitors/SupportMembers case) so the durable contact-member
@@ -324,21 +410,17 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 // assignment onto `detail` like the cases above.
                 case VisitFieldClassifier.OperationalContactMemberKey:
                     break;
-                // RELATIONSHIP-ONLY (plan CanhIter3FixBug): BuildChangeRows only ever writes this path
-                // when NEITHER member list changed, so this is a direct, immediate application — no
-                // staged members, no LinkMembers, no fingerprint re-resolution, and no conflict with the
-                // OperationalContactMemberKey case above (an amendment can never contain both). The
-                // candidate is re-validated against the CURRENT instance members rather than trusted
-                // from the stored row — the same defense-in-depth the ephemeral-key path already gets
-                // from OperationalContactLink.FindPicked at LinkMembers time.
+                // LEGACY ONLY (operational-contact consistency fix): BuildChangeRows has not emitted this
+                // field path since this fix shipped — a relationship-only relation change is no longer an
+                // amendable fact at all, full stop (relation existence/identity moves only through Safe
+                // Edit or Replace/Transfer). This case exists solely so a proposal that reached
+                // PENDING_APPROVAL BEFORE this fix (when the field was still writable) fails closed with
+                // a clear, dedicated explanation instead of silently applying a relation change or falling
+                // through to the generic "field not supported" refusal. Never mutates anything.
                 case VisitFieldClassifier.OperationalContactGuestMemberId:
-                {
-                    var proposedRelationshipId = FromJson<ulong?>(change.NewValueJson);
-                    if (proposedRelationshipId is { } relId)
-                        OperationalContactLink.EnsureGuestMemberIdEligible(membersBefore, relId);
-                    detail.OperationalContactGuestMemberId = proposedRelationshipId;
-                    break;
-                }
+                    throw new BusinessRuleException(
+                        "Đề xuất này được tạo theo quy tắc liên kết đầu mối phiên bản cũ và cần được gửi lại.",
+                        VisitFormV2ErrorCodes.AmendmentLegacyContactRelationRequiresResubmission);
                 default:
                     throw new BusinessRuleException(
                         $"Đề xuất chứa trường không được hỗ trợ: {change.FieldPath}.",
@@ -375,6 +457,17 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
             var pickedKey = FindProposedContactMemberKey(amendment);
             VisitRequestV2EditOps.LinkMembers(
                 _db, request, instance, stagedMembers, now, actorId, clientMemberKeys, pickedKey);
+
+            // Sync the linked member's shared identity fields onto the contact snapshot — real old→new
+            // audit values, appended into THIS approve action's own audit row, never a second FormRevision
+            // (operational-contact consistency fix). A no-op when the campus ends up unlinked.
+            if (detail.OperationalContactGuestMemberId is { } linkedId)
+            {
+                var relinkedMember = V2CanonicalRefresh.MembersOf(request, instance)
+                    .FirstOrDefault(m => m.GuestMemberId == linkedId);
+                if (relinkedMember is not null)
+                    OperationalContactLink.SyncSnapshotFromLinkedMember(audit, detail, relinkedMember, now);
+            }
         }
 
         var membersAfter = stagedMembers ?? membersBefore;
@@ -401,18 +494,6 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // do, because the person proposing it is the person who decides it. It keeps its own audit
         // action so the timeline can say so plainly instead of showing a proposal that was approved
         // within the same second by its own author and leaving the reader to guess why.
-        var audit = new AuditLog
-        {
-            ActorUserId = actorId,
-            Action = selfApproval ? "VISIT_AMENDMENT_SELF_APPROVED" : "VISIT_AMENDMENT_APPROVED",
-            EntityType = "VisitInstanceAmendment",
-            EntityId = amendment.AmendmentId,
-            VisitRequestId = request.VisitRequestId,
-            VisitInstanceId = instance.VisitInstanceId,
-            SourceType = "AMENDMENT",
-            Reason = Clean(note),
-            CreatedAt = now,
-        };
         foreach (var change in amendment.Changes.OrderBy(c => c.DisplayOrder))
             audit.Changes.Add(new AuditLogChange
             {
@@ -650,12 +731,6 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // change (a full member-list replace, a FormRevision bump, a revision-history row) out of zero
         // real difference. A value that does not resolve to any real country falls back to its own text,
         // so it still compares stable against itself and only itself.
-        string EffectiveNationality(string? s) => CountryName.TryResolve(s, out var canonical) ? canonical! : (s ?? string.Empty);
-        string VisitorsFingerprint(IEnumerable<VisitorDto> vs) => JsonSerializer.Serialize(
-            vs.Select(v => new { v.FullName, Nationality = EffectiveNationality(v.Nationality), v.JobTitle, v.Organization, v.OrganizationPartnerId }), Json);
-        string SupportFingerprint(IEnumerable<SupportTeamMemberDto> ms) => JsonSerializer.Serialize(
-            ms.Select(m => new { m.FullName, m.JobTitle, m.Organization, Nationality = EffectiveNationality(m.Nationality), m.OrganizationPartnerId }), Json);
-
         void AddMembers(string path, object? oldValue, object? newValue, bool changed)
         {
             if (!changed) return;
@@ -682,41 +757,20 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         AddMembers(VisitFieldClassifier.Visitors, current.Visitors, p.Visitors, visitorsChanged);
         AddMembers(VisitFieldClassifier.SupportMembers, current.ExternalSupportMembers, p.ExternalSupportMembers, supportChanged);
 
-        // Two mutually exclusive ways WHO the contact is can move (plan CanhIter3FixBug "Đầu mối hiện
-        // tại có nằm trong danh sách đoàn không?") — never both in the same amendment.
+        // MEMBER-LIST REPLACEMENT ONLY (operational-contact consistency fix — `OperationalContactGuestMemberId`
+        // is no longer a proposable amendable field at all; `SubmitAsync` already refused this proposal
+        // above if it tried to change relation existence/identity, so by the time control reaches here
+        // the relation-unchanged case has nothing left to record). Rows are copy-on-write on approve, so
+        // every row gets a brand new GuestMemberId — the only thing that can name the new contact row is
+        // the EPHEMERAL key the proposal minted for it (NP-03). Unconditional per the existing
+        // convention: even an unchanged pick is recorded here, because "the contact" is about to be
+        // re-resolved onto a fresh row regardless.
         if (visitorsChanged || supportChanged)
         {
-            // MEMBER-LIST REPLACEMENT: rows are copy-on-write on approve, so every row gets a brand new
-            // GuestMemberId — the only thing that can name the new contact row is the EPHEMERAL key the
-            // proposal minted for it (NP-03). Unconditional per the existing convention: even an
-            // unchanged pick is recorded here, because "the contact" is about to be re-resolved onto a
-            // fresh row regardless.
             AddMembers(
                 VisitFieldClassifier.OperationalContactMemberKey, null,
                 string.IsNullOrWhiteSpace(p.OperationalContactClientMemberKey) ? null : p.OperationalContactClientMemberKey,
                 true);
-        }
-        else
-        {
-            // RELATIONSHIP-ONLY: the member list is untouched, so every row already has a STABLE,
-            // PERSISTENT GuestMemberId — comparing on THAT (never the ephemeral ClientMemberKey, which
-            // the active snapshot carries as null for every existing row) is what lets "same
-            // delegation, different relationship pick" register as a real amendment change instead of
-            // silently producing zero change rows and refusing the whole proposal as AmendmentNoChanges.
-            var currentGuestMemberId = detail.OperationalContactGuestMemberId;
-            var proposedGuestMemberId = p.OperationalContactGuestMemberId;
-            var relationshipChanged = currentGuestMemberId != proposedGuestMemberId;
-            // Validated fail-closed at submit time — never trust an id from the client without checking
-            // it names an eligible member of THIS instance (never a sibling campus's member, never a
-            // deleted/non-existent one). Re-validated again at approve (see ApproveAsync) rather than
-            // relying on this check alone, the same defense-in-depth the ephemeral-key path already
-            // has via OperationalContactLink.FindPicked at LinkMembers time.
-            if (relationshipChanged && proposedGuestMemberId is { } candidateId)
-                OperationalContactLink.EnsureGuestMemberIdEligible(
-                    V2CanonicalRefresh.MembersOf(request, instance), candidateId);
-            AddMembers(
-                VisitFieldClassifier.OperationalContactGuestMemberId,
-                currentGuestMemberId, proposedGuestMemberId, relationshipChanged);
         }
 
         return rows;
@@ -760,6 +814,21 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
     /// <summary>Mirrors CreateVisitRequestV2CommandValidator.ContactKeyNamesAMember.</summary>
     private static bool ContactKeyNamesAMember(VisitAmendmentProposalDto p) =>
         MemberKeysOf(p).Count(k => string.Equals(k, p.OperationalContactClientMemberKey, StringComparison.Ordinal)) == 1;
+
+    /// <summary>
+    /// Same country-normalized comparison <see cref="BuildChangeRows"/> uses to decide whether the
+    /// member lists moved — promoted to class level (operational-contact consistency fix) so
+    /// <see cref="SubmitAsync"/> can ask the SAME question before deciding which relation-continuity
+    /// branch applies, and the two can never disagree about whether the member list changed.
+    /// </summary>
+    private static string EffectiveNationality(string? s) =>
+        CountryName.TryResolve(s, out var canonical) ? canonical! : (s ?? string.Empty);
+
+    private static string VisitorsFingerprint(IEnumerable<VisitorDto> vs) => JsonSerializer.Serialize(
+        vs.Select(v => new { v.FullName, Nationality = EffectiveNationality(v.Nationality), v.JobTitle, v.Organization, v.OrganizationPartnerId }), Json);
+
+    private static string SupportFingerprint(IEnumerable<SupportTeamMemberDto> ms) => JsonSerializer.Serialize(
+        ms.Select(m => new { m.FullName, m.JobTitle, m.Organization, Nationality = EffectiveNationality(m.Nationality), m.OrganizationPartnerId }), Json);
 
     private static string? ToJson(object? value)
         => value is null ? null : JsonSerializer.Serialize(value, Json);

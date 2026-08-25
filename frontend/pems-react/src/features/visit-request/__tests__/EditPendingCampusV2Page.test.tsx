@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import EditPendingCampusV2Page from '../../../pages/dashboard/visit/EditPendingCampusV2Page';
 import type { ResolvedCampusVisit, ResolvedVisitForm } from '../api/visitRequestV2Api';
@@ -171,33 +171,13 @@ describe('EditPendingCampusV2Page', () => {
   // A relation-only change on an EXISTING campus: the contact PROFILE stays read-only and untouched,
   // but WHICH delegation member the contact corresponds to must now be settable from this screen.
 
-  it('renders the relationship picker as a SEPARATE control from the read-only contact profile', async () => {
-    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
-      campusVisits: [
-        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
-        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
-          operationalContact: {
-            fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
-            phone: '+84912345678', email: 'op@example.com',
-            confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
-            guestMemberId: null,
-          },
-        }),
-      ],
-    }));
-    renderPage();
-    await screen.findByDisplayValue('Đoàn HCM');
+  // Superseded by the operational-contact consistency fix: the relation picker this page used to
+  // offer here has been REMOVED entirely (plan B4/F2) — relation existence/identity may only move
+  // through Safe Edit's link/unlink or Replace/Transfer, never Pending Edit. What replaces it is a
+  // read-only summary, and the relation is preserved SILENTLY through a save with no control to touch
+  // it at all — mirroring TC-CONTACT-UI-01/02 on the whole-request edit page.
 
-    // The profile block: five read-only values, nothing editable.
-    expect(screen.getByTestId('campus-opcontact-readonly-fullName-0')).toHaveTextContent('OP HCM');
-    // The relation picker: a real, separate control offering "not in the delegation" plus the
-    // campus's own members — this is exactly what did not exist before this fix.
-    const picker = screen.getByTestId('campus-opcontact-relation-pick-0') as HTMLSelectElement;
-    expect(picker).toBeInTheDocument();
-    expect(within(picker).getByText(/Khách HCM/)).toBeInTheDocument();
-  });
-
-  it('initializes the picker from the persisted relation, not blank', async () => {
+  it('shows a read-only relation summary for a linked contact — no picker to change it', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
       campusVisits: [
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
@@ -214,12 +194,14 @@ describe('EditPendingCampusV2Page', () => {
     renderPage();
     await screen.findByDisplayValue('Đoàn HCM');
 
-    const picker = screen.getByTestId('campus-opcontact-relation-pick-0') as HTMLSelectElement;
-    expect(picker.value).not.toBe('');
-    expect(within(picker).getByText(/Khách HCM/)).toBeInTheDocument();
+    // The profile block: five read-only values, nothing editable.
+    expect(screen.getByTestId('campus-opcontact-readonly-fullName-0')).toHaveTextContent('OP HCM');
+    // The relation is shown read-only too — naming the linked member — with no control to change it.
+    expect(screen.getByTestId('campus-opcontact-relation-readonly-0')).toHaveTextContent(/Khách HCM/);
+    expect(screen.queryByTestId('campus-opcontact-relation-pick-0')).not.toBeInTheDocument();
   });
 
-  it('a relation-only change sends BOTH identity forms and leaves the read-only profile untouched', async () => {
+  it('shows the read-only summary as unlinked when the contact starts outside the delegation', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
       campusVisits: [
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
@@ -228,7 +210,28 @@ describe('EditPendingCampusV2Page', () => {
             fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
             phone: '+84912345678', email: 'op@example.com',
             confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
-            guestMemberId: null, // starts OUTSIDE the delegation
+            guestMemberId: null,
+          },
+        }),
+      ],
+    }));
+    renderPage();
+    await screen.findByDisplayValue('Đoàn HCM');
+
+    expect(screen.getByTestId('campus-opcontact-relation-readonly-0')).not.toHaveTextContent(/Khách HCM/);
+    expect(screen.queryByTestId('campus-opcontact-relation-pick-0')).not.toBeInTheDocument();
+  });
+
+  it('a content-changing save silently preserves an existing relation — no UI to touch it, no drop', async () => {
+    vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
+      campusVisits: [
+        campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
+        campus(2, 'HCM', 'FPTU Hồ Chí Minh', 'WAITING_REQUEST_APPROVAL', ['EDIT_PENDING_CAMPUS'], {
+          operationalContact: {
+            fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
+            phone: '+84912345678', email: 'op@example.com',
+            confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
+            guestMemberId: 20, // linked to the campus's own visitor row
           },
         }),
       ],
@@ -241,24 +244,21 @@ describe('EditPendingCampusV2Page', () => {
     renderPage();
     await screen.findByDisplayValue('Đoàn HCM');
 
-    const picker = screen.getByTestId('campus-opcontact-relation-pick-0') as HTMLSelectElement;
-    const option = within(picker).getByText(/Khách HCM/).closest('option') as HTMLOptionElement;
-    fireEvent.change(picker, { target: { value: option.value } });
     fireEvent.click(screen.getByTestId('pending-campus-save'));
 
     await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
     const body = vi.mocked(updatePendingVisitInstance).mock.calls[0][2];
-    expect(body.content.operationalContactClientMemberKey).toBeTruthy();
-    // The PERSISTENT id, resolved from the same pick — guestMemberId 20 per the fixture above.
+    // The relation travels via the row's own resolved persisted id — the client key alone is not
+    // trusted, and it is never turned into a NEW pick; the save simply echoes what was already there.
     expect(body.content.operationalContactGuestMemberId).toBe(20);
-    // Never copied onto the profile — picking a relation is not redescribing the contact.
+    // Never copied onto the profile — an unchanged relation is not redescribing the contact.
     expect(body.content.operationalContact).toEqual({
       fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
       phone: '+84912345678', email: 'op@example.com',
     });
   });
 
-  it('"not in the delegation" clears the relation without touching the profile', async () => {
+  it('a content-changing save on an unlinked contact stays unlinked — no UI can introduce a relation', async () => {
     vi.mocked(getVisitRequestFormV2).mockResolvedValue(mixedForm({
       campusVisits: [
         campus(1, 'HN', 'FPTU Hà Nội', 'ASSIGNED', ['SUBMIT_SAFE_EDIT']),
@@ -267,7 +267,7 @@ describe('EditPendingCampusV2Page', () => {
             fullName: 'OP HCM', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác',
             phone: '+84912345678', email: 'op@example.com',
             confirmationStatus: 'CONFIRMED', confirmationSource: null, confirmedAt: null,
-            guestMemberId: 20, // starts linked to the campus's own visitor row
+            guestMemberId: null,
           },
         }),
       ],
@@ -280,15 +280,11 @@ describe('EditPendingCampusV2Page', () => {
     renderPage();
     await screen.findByDisplayValue('Đoàn HCM');
 
-    const picker = screen.getByTestId('campus-opcontact-relation-pick-0') as HTMLSelectElement;
-    expect(picker.value).not.toBe('');
-    fireEvent.change(picker, { target: { value: '' } });
     fireEvent.click(screen.getByTestId('pending-campus-save'));
 
     await waitFor(() => expect(updatePendingVisitInstance).toHaveBeenCalledTimes(1));
     const body = vi.mocked(updatePendingVisitInstance).mock.calls[0][2];
-    expect(body.content.operationalContactClientMemberKey).toBeNull();
-    expect(body.content.operationalContactGuestMemberId).toBeNull();
+    expect(body.content.operationalContactGuestMemberId ?? null).toBeNull();
     expect(body.content.operationalContact.fullName).toBe('OP HCM');
   });
 

@@ -226,9 +226,14 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
   const canSafeEditRequestLevel = hasAction(viewer.allowedActions, VisitV2Action.SubmitSafeEdit);
   // ...but an individual campus can still be editable while its siblings are not, and that campus
   // must stay reachable. Opening the modal is offered when EITHER scope has something to edit;
-  // inside, each scope is gated on its own verdict.
+  // inside, each scope is gated on its own verdict. A campus is INCLUDED here when it offers EITHER
+  // generic Safe fields OR contact editing (operational-contact consistency fix) — a campus still
+  // WAITING_REQUEST_APPROVAL can have UpdateContactProfile without SubmitSafeEdit, and must still
+  // make the button reachable (VisitSafeEditModal.tsx already checks both; this button-visibility
+  // gate had been left checking only the first).
   const editableCampusCount = data.campusVisits
-    .filter(c => hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit)).length;
+    .filter(c => hasAction(c.allowedActions, VisitV2Action.SubmitSafeEdit)
+      || hasAction(c.allowedActions, VisitV2Action.UpdateContactProfile)).length;
   const canOpenSafeEdit = canSafeEditRequestLevel || editableCampusCount > 0;
   // The refused verdicts too — a missed deadline is shown as a disabled button with its reason
   // rather than as an action that silently vanished.

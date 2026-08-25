@@ -172,8 +172,12 @@ export function anotherStaffOnCampus(campusId: number, excludeUserId: number): n
 /** departmentId for a seeded GENERAL department's own Leader profile (dept_leader_hn / dept_staff_hn). */
 export async function meDepartmentId(request: APIRequestContext, profileKey: string): Promise<number> {
   const res = await request.get(`${API_BASE}/auth/me`, { headers: hdr(profileKey) });
+  expect(res.ok(), `auth/me failed for ${profileKey}: ${res.status()} ${await res.text()}`).toBeTruthy();
   const body = await res.json();
-  return Number(body.user.departmentId);
+  const id = body.user?.departmentId;
+  expect(id, `auth/me for ${profileKey} returned no departmentId: ${JSON.stringify(body.user)}`).not.toBeNull();
+  expect(id, `auth/me for ${profileKey} returned no departmentId: ${JSON.stringify(body.user)}`).not.toBeUndefined();
+  return Number(id);
 }
 
 /**

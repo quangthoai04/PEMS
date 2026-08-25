@@ -174,9 +174,16 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
 
     // Same challenge, same submission intent — no retyping and no second code.
     await page.getByTestId('v2-otp-resume-continue').click();
+    const verifyResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await enterOtp(page, code);
+    const verified = await verifyResponse;
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText(/Mã yêu cầu:\s*VR/)).toBeVisible();
+    // The request code itself is never shown on this screen (VisitRequestV2SuccessPanel) — it is
+    // still what the verify response carries, which is what proves a real request was created.
+    expect((await verified.json()).requestCode).toMatch(/^VR/);
   });
 
   test('journey C — asking for a new code keeps the form and still creates exactly one request', async ({ page }) => {
@@ -195,12 +202,17 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
     await enterOtp(page, first);
     await expect(page.getByRole('dialog').getByRole('alert').first()).toBeVisible({ timeout: 20_000 });
 
+    const verifyResponse = page.waitForResponse(
+      r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
+      { timeout: 30_000 },
+    );
     await enterOtp(page, second);
+    const verified = await verifyResponse;
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    // The receipt now states status and submitted time alongside the code, so assert the
-    // structured fields rather than one assembled sentence.
-    await expect(page.getByTestId('v2-success-code')).toContainText(/VR/);
+    // The receipt states status alongside the title; the request code is never shown on this
+    // screen (VisitRequestV2SuccessPanel) — it is proven from the verify response instead.
     await expect(page.getByTestId('v2-success-status')).toBeVisible();
+    expect((await verified.json()).requestCode).toMatch(/^VR/);
   });
 
   test('journey D — changing the registrant email invalidates the code sent to the old one', async ({ page }) => {

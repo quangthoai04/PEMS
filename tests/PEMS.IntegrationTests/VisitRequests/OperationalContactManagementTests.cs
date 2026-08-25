@@ -573,6 +573,176 @@ public sealed class OperationalContactManagementTests
         finally { await CleanupAsync(requestId); }
     }
 
+    // ── Operational-contact consistency fix: this standalone endpoint used to have NO identity check at
+    // all — a real drift bug, since it could bypass the exact same protection Safe Edit enforces. It must
+    // be operation-aware exactly like Safe Edit: a pre-existing legacy mismatch never blocks an edit that
+    // doesn't touch the shared fields (PROFILE-02), and only blocks retyping the shared fields to
+    // something that still doesn't match the linked member (PROFILE-01). ──
+
+    /// <summary>
+    /// PROFILE-01. The contact is linked to a delegation member, and their shared-field snapshot already
+    /// predates that link (never synced) — a legacy mismatch. Retyping FullName to something that STILL
+    /// doesn't describe the linked member must be refused: this door must not let the linked contact's
+    /// identity drift away from the member it claims to be, when Pending Edit/Amendment editing the
+    /// member itself is the only supported way to change it.
+    /// </summary>
+    [Fact]
+    public async Task Retyping_the_shared_fields_of_a_linked_contact_to_still_not_match_the_member_is_refused()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            await LinkContactToFirstMemberAsync(requestId, before.InstanceId); // links to "Guest A"/"Guest"/"GuestOrg"
+            var detail = await DetailAsync(before.InstanceId);
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, fullName: "Vẫn không khớp thành viên"),
+                    CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.LinkedProfileRequiresMemberUpdate, ex.ErrorCode);
+            // Zero mutation.
+            Assert.Equal(detail.OperationalContactFullName, (await DetailAsync(before.InstanceId)).OperationalContactFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// PROFILE-02. Same legacy-mismatched linked contact as above, but the save touches ONLY the phone
+    /// number — the shared identity fields (FullName/JobTitle/Organization) are echoed back unchanged.
+    /// A pre-existing mismatch that nobody is touching must never block an unrelated field's edit.
+    /// </summary>
+    [Fact]
+    public async Task Phone_only_edit_survives_a_pre_existing_legacy_mismatch_on_the_standalone_endpoint()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail));
+            var before = await CampusStateAsync(requestId);
+            await LinkContactToFirstMemberAsync(requestId, before.InstanceId); // links to "Guest A"/"Guest"/"GuestOrg"
+            var detail = await DetailAsync(before.InstanceId);
+            // The contact's own snapshot ("Đầu mối HN"/"OrgB") predates the link and does not describe
+            // the linked member ("Guest A"/"GuestOrg") — exactly the legacy-mismatch shape.
+            Assert.NotEqual("Guest A", detail.OperationalContactFullName);
+
+            using (var db = NewContext())
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, before.InstanceId, detail, phone: "+84900009999"),
+                    CancellationToken.None);
+
+            var after = await DetailAsync(before.InstanceId);
+            Assert.Equal("+84900009999", after.OperationalContactPhone);
+            // The mismatch itself is untouched — this save never claimed to fix it.
+            Assert.Equal(detail.OperationalContactFullName, after.OperationalContactFullName);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ── PROFILE-04/05 (operational-contact consistency fix): the standalone endpoint's identity check
+    // is scoped to THIS instance's own GuestMemberLinks (EnsureGuestMemberIdEligible), never a
+    // request-wide or global lookup. If OperationalContactGuestMemberId were ever corrupted to name a
+    // member that does not belong here — a sibling campus's, or another request's entirely — the lookup
+    // must fail closed as "member not found", never silently resolve through a broader scope. ──
+
+    [Fact]
+    public async Task Profile04_a_relation_pointing_at_a_sibling_campuss_member_fails_closed_as_not_found()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestId = await CreateAsync(Campus("HN", contactEmail), Campus("HCM", contactEmail));
+
+            using var db0 = NewContext();
+            var hnInstanceId = await db0.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitRequestId == requestId && c.CampusId == 1UL)
+                .Select(c => c.VisitInstanceId).SingleAsync();
+            var hcmInstanceId = await db0.VisitRequestCampuses.AsNoTracking()
+                .Where(c => c.VisitRequestId == requestId && c.CampusId == 2UL)
+                .Select(c => c.VisitInstanceId).SingleAsync();
+            var hcmMemberId = await db0.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == hcmInstanceId).Select(l => l.GuestMemberId).SingleAsync();
+
+            // Simulate legacy corruption directly (bypassing every real write path, which this fix
+            // already prevents from happening again): HN's contact relation names HCM's own member.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_instance_form_details SET operational_contact_guest_member_id = {0} "
+                    + "WHERE visit_instance_id = {1}", hcmMemberId, hnInstanceId);
+            var detail = await DetailAsync(hnInstanceId);
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestId, hnInstanceId, detail, fullName: "Tên khác hẳn"),
+                    CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    [Fact]
+    public async Task Profile05_a_relation_pointing_at_another_requests_member_fails_closed_as_not_found()
+    {
+        RequireDb();
+        ulong requestIdA = 0, requestIdB = 0;
+        try
+        {
+            string contactEmail;
+            using (var db = NewContext()) (_, contactEmail) = await VisitorUserAsync(db);
+
+            requestIdA = await CreateAsync(Campus("HN", contactEmail));
+            requestIdB = await CreateAsync(Campus("HN", contactEmail));
+            var instanceA = (await CampusStateAsync(requestIdA)).InstanceId;
+
+            ulong foreignMemberId;
+            using (var db0 = NewContext())
+                foreignMemberId = await db0.VisitGuestMembers.AsNoTracking()
+                    .Where(m => m.VisitRequestId == requestIdB).Select(m => m.GuestMemberId).SingleAsync();
+
+            // Simulate legacy corruption: request A's contact relation names a member that belongs to
+            // request B entirely.
+            using (var db = NewContext())
+                await db.Database.ExecuteSqlRawAsync(
+                    "UPDATE visit_instance_form_details SET operational_contact_guest_member_id = {0} "
+                    + "WHERE visit_instance_id = {1}", foreignMemberId, instanceA);
+            var detail = await DetailAsync(instanceA);
+
+            var ex = await Assert.ThrowsAsync<BusinessRuleException>(async () =>
+            {
+                using var db = NewContext();
+                await Save(db, Registrant, new FakeEmail()).Handle(
+                    SaveOf(requestIdA, instanceA, detail, fullName: "Tên khác hẳn"),
+                    CancellationToken.None);
+            });
+            Assert.Equal(OperationalContactErrorCodes.MemberNotFound, ex.ErrorCode);
+            // Request B's own member is completely untouched — the corruption was A→B, never a real edit.
+            var instanceB = (await CampusStateAsync(requestIdB)).InstanceId;
+            using var db1 = NewContext();
+            Assert.Equal(foreignMemberId, await db1.VisitInstanceGuestMembers.AsNoTracking()
+                .Where(l => l.VisitInstanceId == instanceB).Select(l => l.GuestMemberId).SingleAsync());
+        }
+        finally { await CleanupAsync(requestIdA); await CleanupAsync(requestIdB); }
+    }
+
     // ── Path B: changed address ───────────────────────────────────────────────────
 
     /// <summary>
@@ -1303,6 +1473,347 @@ public sealed class OperationalContactManagementTests
             Assert.Equal(contactId, after.ContactUserId);
             var snapshot = await DetailAsync(confirmed.InstanceId);
             Assert.Equal(contactEmail, snapshot.OperationalContactEmail);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+    // CONC-02 (operational-contact consistency fix, plan §16 CON-02): Pending Edit racing Contact
+    // Transfer on the SAME instance. Per InitiateOperationalContactTransferCommandHandler's own doc,
+    // "NOTHING changes here" — Initiate only raises an invitation; AcceptOperationalContactConfirmation-
+    // CommandHandler's doc says Accept is "the ONLY moment the relation moves". Accept ALSO bumps
+    // instance.RowVersion (`instance.RowVersion += 1`) — the same optimistic-concurrency column Pending
+    // Edit's own ExpectedRowVersion is checked against (AssertCurrentInstanceVersionAsync). That shared
+    // column is what actually protects a stale Pending Edit here; these tests prove it rather than
+    // assume it, and separately prove the two operations MERGE (never over-conflict) when they do not
+    // actually collide — ApplyTransfer is "Deliberately NOT gated on the campus row version", only on
+    // OperationalContactUserId == OldUserId.
+    // ═════════════════════════════════════════════════════════════════════════════════════════════
+
+    private static async Task<(PEMS.Domain.Entities.Delegations.VisitRequest Request, PEMS.Domain.Entities.Delegations.VisitRequestCampus Instance)>
+        LoadTrackedAsync(ApplicationDbContext db, ulong requestId, ulong instanceId)
+    {
+        var request = await db.VisitRequests
+            .Include(v => v.CampusInstances).ThenInclude(c => c.FormDetail)
+            .Include(v => v.CampusInstances).ThenInclude(c => c.GuestMemberLinks)
+            .Include(v => v.GuestMembers)
+            .SingleAsync(v => v.VisitRequestId == requestId);
+        var instance = request.CampusInstances.Single(c => c.VisitInstanceId == instanceId);
+        return (request, instance);
+    }
+
+    /// <summary>A content-changing Pending Edit payload built FROM the campus's current stored state.
+    /// The OperationalContact block is always echoed back byte-identical — Pending Edit's contract is
+    /// that block is immutable through this path (<c>EnsureContactSnapshotUnchanged</c>); only
+    /// <paramref name="purpose"/> and <paramref name="visitors"/> actually move.</summary>
+    private static CampusVisitEditV2Dto ContentEditDto(
+        PEMS.Domain.Entities.Delegations.VisitRequestCampus instance,
+        PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail detail,
+        string purpose, IList<VisitorDto> visitors,
+        string? operationalContactClientMemberKey = null)
+        => new(
+            instance.VisitInstanceId, instance.RowVersion,
+            "HN", instance.PlannedStartAt, instance.PlannedEndAt,
+            detail.DelegationName, detail.VisitType, detail.VisitTypeOther,
+            purpose, detail.WorkingContent,
+            visitors, new List<SupportTeamMemberDto>(),
+            new ContactPointDto(
+                detail.OperationalContactFullName, detail.OperationalContactOrganization ?? "",
+                detail.OperationalContactJobTitle, detail.OperationalContactPhone, detail.OperationalContactEmail),
+            detail.WorkingLanguage, detail.TransportationNote, detail.MediaConsentStatus, detail.Notes,
+            operationalContactClientMemberKey);
+
+    /// <summary>Confirms Kim (an ordinary active visitor) as the campus's holder through the REAL
+    /// initial-confirmation invitation the create path raises — not a shortcut write — so
+    /// instance.OperationalContactUserId, its RowVersion and its status all land exactly where a live
+    /// confirmation leaves them (WAITING_REQUEST_APPROVAL, the same window Pending Edit requires).</summary>
+    private static async Task<(ulong RequestId, ulong InstanceId, ulong ContactId, string ContactEmail)>
+        SeedConfirmedContactAsync()
+    {
+        ulong contactId; string contactEmail;
+        using (var db = NewContext()) (contactId, contactEmail) = await VisitorUserAsync(db);
+
+        var requestId = await CreateAsync(Campus("HN", contactEmail));
+        var created = await CampusStateAsync(requestId);
+        var invitation = Assert.Single(await ChangesAsync(requestId));
+
+        var mail = new FakeEmail();
+        string token;
+        using (var db = NewContext()) token = await IssueInvitationAsync(db, mail, invitation.IdentityChangeId);
+        using (var db = NewContext())
+            await Accept(db, contactId, contactEmail, mail).Handle(
+                new AcceptOperationalContactConfirmationCommand(token), CancellationToken.None);
+
+        return (requestId, created.InstanceId, contactId, contactEmail);
+    }
+
+    /// <summary>
+    /// CONC-02-A (the real race, per the plan's own correction: Pending Edit vs Contact TRANSFER ACCEPT,
+    /// not vs Initiate — Initiate alone changes nothing). Actor A opens Pending Edit while Kim holds the
+    /// campus, capturing RowVersion N. Before A saves, a Transfer Kim→Moon is initiated AND ACCEPTED —
+    /// the only moment the relation actually moves. A's Pending Edit, still carrying the stale N, must
+    /// then be refused outright: never resurrect Kim, never blend A's stale payload into Moon's
+    /// snapshot, never partially mutate anything (no relation flip, no member/content write, no revision
+    /// row, no row-version bump beyond what Accept itself already did).
+    /// </summary>
+    [Fact]
+    public async Task Conc02A_a_stale_pending_edit_cannot_resurrect_or_overwrite_a_transferred_contact()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var kimId, _) = await SeedConfirmedContactAsync();
+            ulong moonId; string moonEmail;
+            using (var db = NewContext()) (moonId, moonEmail) = await SuccessorUserAsync(db);
+
+            // A "opens" Pending Edit: captures the row version AND the contact snapshot BEFORE anything
+            // else happens — exactly what a real editor screen would have loaded.
+            int staleVersion;
+            PEMS.Domain.Entities.Delegations.VisitInstanceFormDetail preEditDetail;
+            using (var db = NewContext())
+            {
+                staleVersion = (await db.VisitRequestCampuses.AsNoTracking()
+                    .SingleAsync(c => c.VisitInstanceId == instanceId)).RowVersion;
+                preEditDetail = await db.VisitInstanceFormDetails.AsNoTracking()
+                    .SingleAsync(d => d.VisitInstanceId == instanceId);
+            }
+
+            // Transfer INITIATED Kim → Moon. Per the handler's own contract ("NOTHING changes here"),
+            // Kim remains the holder and the instance RowVersion above is still current.
+            var handoverMail = new FakeEmail();
+            ulong changeId;
+            using (var db = NewContext())
+            {
+                var result = await new InitiateOperationalContactTransferCommandHandler(
+                        db, new FakeUser(Registrant), new FixedClock(), Invitations(db, handoverMail), WriteOn)
+                    .Handle(
+                        new InitiateOperationalContactTransferCommand(
+                            requestId, instanceId, "Moon Jae Sung", "Jeju Tourism", "Protocol Officer",
+                            null, moonEmail, Reason: null),
+                        CancellationToken.None);
+                Assert.NotNull(result);
+            }
+            changeId = (await ChangesAsync(requestId)).Single(c => c.Status == IdentityChangeStatuses.Pending).IdentityChangeId;
+            var afterInitiate = await CampusStateAsync(requestId);
+            Assert.Equal(kimId, afterInitiate.ContactUserId); // Kim unaffected by Initiate alone
+            Assert.Equal(staleVersion, afterInitiate.RowVersion); // Initiate never touches instance RowVersion
+
+            // Transfer ACCEPTED by Moon — the only moment the relation moves, and it bumps RowVersion.
+            var acceptMail = new FakeEmail();
+            string acceptToken;
+            using (var db = NewContext()) acceptToken = await IssueInvitationAsync(db, acceptMail, changeId);
+            using (var db = NewContext())
+                await Accept(db, moonId, moonEmail, acceptMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var afterAccept = await CampusStateAsync(requestId);
+            Assert.Equal(moonId, afterAccept.ContactUserId);
+            Assert.NotEqual(staleVersion, afterAccept.RowVersion); // Accept bumped it
+            var moonSnapshot = await DetailAsync(instanceId);
+            Assert.Equal("Moon Jae Sung", moonSnapshot.OperationalContactFullName);
+            Assert.Equal(moonEmail, moonSnapshot.OperationalContactEmail);
+            Assert.Null(moonSnapshot.OperationalContactGuestMemberId); // cleared on transfer (ApplyTransfer)
+
+            // A now submits the Pending Edit it built from the STALE version — must be refused, never
+            // last-write-wins over what Accept just committed.
+            using (var db = NewContext())
+            {
+                var (request, instance) = await LoadTrackedAsync(db, requestId, instanceId);
+                var content = ContentEditDto(
+                    instance, preEditDetail, "Mục đích của A (đã cũ)",
+                    new List<VisitorDto> { new("Guest A đổi", "VN", "Guest", "GuestOrg") })
+                    with { ExpectedRowVersion = staleVersion };
+                var edit = new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db));
+                var ex = await Assert.ThrowsAsync<ConflictException>(() => edit.ApplyInstancePendingEditAsync(
+                    request, instance, content, Registrant, Now, actorIsCampusLeader: false,
+                    overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, CancellationToken.None));
+                Assert.Equal(VisitRequestErrorCodes.InstanceVersionConflict, ex.ErrorCode);
+            }
+
+            // Never last-write-wins: Moon's state is exactly what it was right after accept — no
+            // resurrection of Kim, no blended/partial write, no phantom row-version bump.
+            var final = await CampusStateAsync(requestId);
+            Assert.Equal(afterAccept, final);
+            var finalSnapshot = await DetailAsync(instanceId);
+            Assert.Equal(moonSnapshot.OperationalContactFullName, finalSnapshot.OperationalContactFullName);
+            Assert.Equal(moonSnapshot.OperationalContactOrganization, finalSnapshot.OperationalContactOrganization);
+            Assert.Equal(moonSnapshot.OperationalContactJobTitle, finalSnapshot.OperationalContactJobTitle);
+            Assert.Equal(moonSnapshot.OperationalContactEmail, finalSnapshot.OperationalContactEmail);
+            Assert.Equal(moonSnapshot.OperationalContactGuestMemberId, finalSnapshot.OperationalContactGuestMemberId);
+            Assert.Equal(moonSnapshot.FormRevision, finalSnapshot.FormRevision); // no revision row from the loser
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// CONC-02-B (reverse ordering, plan §16 CON-02 note: re-tested against LIVE state, not blindly
+    /// refused just because a generic row version moved). A Transfer Kim→Moon is initiated. BEFORE Moon
+    /// answers, Actor A submits a genuinely LEGITIMATE, non-stale Pending Edit that changes real content
+    /// — Kim is still the holder throughout, so nothing about the transfer's own invariant
+    /// (OperationalContactUserId == OldUserId) is disturbed. Moon then accepts: per
+    /// AcceptOperationalContactConfirmationCommandHandler.ApplyTransfer's own doc ("Deliberately NOT
+    /// gated on the campus row version... unrelated work that would brick every transfer proposed before
+    /// it"), this must SUCCEED — the two operations merge safely rather than one needlessly blocking the
+    /// other, and A's legitimate content change is never reverted by the accept that follows it.
+    /// </summary>
+    [Fact]
+    public async Task Conc02B_a_legitimate_pending_edit_survives_a_transfer_accepted_afterward()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var kimId, _) = await SeedConfirmedContactAsync();
+            ulong moonId; string moonEmail;
+            using (var db = NewContext()) (moonId, moonEmail) = await SuccessorUserAsync(db);
+
+            // Transfer initiated FIRST — Kim remains the holder, invitation now pending.
+            var handoverMail = new FakeEmail();
+            using (var db = NewContext())
+                await new InitiateOperationalContactTransferCommandHandler(
+                        db, new FakeUser(Registrant), new FixedClock(), Invitations(db, handoverMail), WriteOn)
+                    .Handle(
+                        new InitiateOperationalContactTransferCommand(
+                            requestId, instanceId, "Moon Jae Sung", "Jeju Tourism", "Protocol Officer",
+                            null, moonEmail, Reason: null),
+                        CancellationToken.None);
+            var changeId = (await ChangesAsync(requestId)).Single(c => c.Status == IdentityChangeStatuses.Pending).IdentityChangeId;
+            var acceptMail = new FakeEmail();
+            var acceptToken = await IssueInvitationAsync(NewContext(), acceptMail, changeId);
+
+            // A submits a LEGITIMATE, non-stale content edit while Kim is still the holder.
+            const string newPurpose = "Mục đích của A (hợp lệ, không cũ)";
+            using (var db = NewContext())
+            {
+                var (request, instance) = await LoadTrackedAsync(db, requestId, instanceId);
+                var detail = instance.FormDetail!;
+                var content = ContentEditDto(
+                    instance, detail, newPurpose,
+                    new List<VisitorDto> { new("Guest A đổi hợp lệ", "VN", "Guest", "GuestOrg") });
+                var edit = new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db));
+                await edit.ApplyInstancePendingEditAsync(
+                    request, instance, content, Registrant, Now, actorIsCampusLeader: false,
+                    overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, CancellationToken.None);
+            }
+            var afterEdit = await CampusStateAsync(requestId);
+            Assert.Equal(kimId, afterEdit.ContactUserId); // Pending Edit never touches the holder
+            var editedDetail = await DetailAsync(instanceId);
+            Assert.Equal(newPurpose, editedDetail.Purpose);
+
+            // Moon accepts the transfer minted BEFORE A's edit — must still succeed (holder unchanged).
+            using (var db = NewContext())
+                await Accept(db, moonId, moonEmail, acceptMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var afterAccept = await CampusStateAsync(requestId);
+            Assert.Equal(moonId, afterAccept.ContactUserId); // the transfer went through
+            Assert.NotEqual(kimId, afterAccept.ContactUserId); // Kim is not resurrected
+            var finalDetail = await DetailAsync(instanceId);
+            Assert.Equal("Moon Jae Sung", finalDetail.OperationalContactFullName);
+            // A's legitimate content change SURVIVES the accept that came after it — never reverted.
+            Assert.Equal(newPurpose, finalDetail.Purpose);
+        }
+        finally { await CleanupAsync(requestId); }
+    }
+
+    /// <summary>
+    /// CONC-02-C (plan §16 CON-02 special case: a Pending Edit that changes the LINKED member's shared
+    /// fields while a Transfer is pending). Kim's contact is linked to a delegation member. A pending
+    /// Transfer Kim→Moon exists. Actor A then runs a legitimate Pending Edit that changes that SAME
+    /// member's JobTitle — which re-syncs Kim's OWN contact snapshot from the member
+    /// (SyncLinkedContactAfterRelinkAsync). The guard under test is
+    /// OperationalContactProfileMutation.RefreshPendingInvitationSnapshotAsync's own address check
+    /// ("Only when the invitation is about THIS address... A pending TRANSFER is an invitation to a
+    /// DIFFERENT person, whose details are the transfer's own and none of this correction's business"):
+    /// Kim's re-sync must NEVER leak into Moon's pending transfer snapshot. When Moon later accepts, her
+    /// contact must be exactly what the transfer invitation always said — not Kim's freshly-synced data,
+    /// and not the original pre-edit snapshot either.
+    /// </summary>
+    [Fact]
+    public async Task Conc02C_a_linked_member_edit_during_a_pending_transfer_never_leaks_into_the_new_contacts_snapshot()
+    {
+        RequireDb();
+        ulong requestId = 0;
+        try
+        {
+            (requestId, var instanceId, var kimId, _) = await SeedConfirmedContactAsync();
+            var guestAId = await LinkContactToFirstMemberAsync(requestId, instanceId);
+            ulong moonId; string moonEmail;
+            using (var db = NewContext()) (moonId, moonEmail) = await SuccessorUserAsync(db);
+
+            // Transfer initiated Kim → Moon. Moon's proposed job title is deliberately DIFFERENT from
+            // both Kim's original snapshot AND the value the member edit below will produce, so any of
+            // the three leaking into the final result is separately detectable.
+            const string moonJobTitle = "Protocol Officer (Moon)";
+            var handoverMail = new FakeEmail();
+            using (var db = NewContext())
+                await new InitiateOperationalContactTransferCommandHandler(
+                        db, new FakeUser(Registrant), new FixedClock(), Invitations(db, handoverMail), WriteOn)
+                    .Handle(
+                        new InitiateOperationalContactTransferCommand(
+                            requestId, instanceId, "Moon Jae Sung", "Jeju Tourism", moonJobTitle,
+                            null, moonEmail, Reason: null),
+                        CancellationToken.None);
+            var changeId = (await ChangesAsync(requestId)).Single(c => c.Status == IdentityChangeStatuses.Pending).IdentityChangeId;
+            var acceptMail = new FakeEmail();
+            var acceptToken = await IssueInvitationAsync(NewContext(), acceptMail, changeId);
+
+            // A edits the LINKED member's JobTitle — content genuinely changes, continuity preserved
+            // (same GuestMemberId, no client key on either side).
+            const string syncedJobTitle = "Senior Director (synced from member)";
+            using (var db = NewContext())
+            {
+                var (request, instance) = await LoadTrackedAsync(db, requestId, instanceId);
+                var detail = instance.FormDetail!;
+                // Re-linking after copy-on-write is keyed by ClientMemberKey (OperationalContactLink.
+                // Resolve/Pair), NOT by the old GuestMemberId — the old id names a row StageReplaceMembers
+                // is about to delete. GuestMemberId is still what the PRE-flight continuity check
+                // (CheckPreservesExistingMemberRelation) matches on, so both are supplied: the old id
+                // proves continuity, the key is what re-finds the fresh row afterward.
+                var content = ContentEditDto(
+                    instance, detail, "Mục đích đổi để kích hoạt sync",
+                    new List<VisitorDto> { new("Guest A", "VN", syncedJobTitle, "GuestOrg", null, "guest-a-key", guestAId) },
+                    operationalContactClientMemberKey: "guest-a-key");
+                var edit = new VisitRequestV2EditService(db, new VisitRequestAggregateStatusService(db));
+                await edit.ApplyInstancePendingEditAsync(
+                    request, instance, content, Registrant, Now, actorIsCampusLeader: false,
+                    overrideLeadTimeConfirmed: false, approveAfterSaveRequested: false, CancellationToken.None);
+            }
+
+            // Kim's OWN snapshot re-synced from the member (still Kim's business, she is still holder).
+            var kimAfterSync = await DetailAsync(instanceId);
+            Assert.Equal(syncedJobTitle, kimAfterSync.OperationalContactJobTitle);
+
+            // The pending Transfer to Moon must be UNTOUCHED by that sync.
+            using (var db = NewContext())
+            {
+                var pending = await db.VisitRequestIdentityChanges.AsNoTracking()
+                    .SingleAsync(c => c.IdentityChangeId == changeId);
+                Assert.Contains(moonJobTitle, pending.PendingSnapshotJson);
+                Assert.DoesNotContain(syncedJobTitle, pending.PendingSnapshotJson);
+            }
+
+            // Moon accepts — her contact must be exactly the transfer's OWN data, never Kim's synced
+            // value and never the original pre-edit value.
+            using (var db = NewContext())
+                await Accept(db, moonId, moonEmail, acceptMail).Handle(
+                    new AcceptOperationalContactConfirmationCommand(acceptToken), CancellationToken.None);
+
+            var finalDetail = await DetailAsync(instanceId);
+            Assert.Equal(moonJobTitle, finalDetail.OperationalContactJobTitle);
+            Assert.NotEqual(syncedJobTitle, finalDetail.OperationalContactJobTitle);
+            Assert.Equal("Moon Jae Sung", finalDetail.OperationalContactFullName);
+            Assert.Null(finalDetail.OperationalContactGuestMemberId); // link cleared on transfer
+
+            // The member row itself genuinely changed and stays changed — the content edit was real,
+            // just never conflated with the identity change riding alongside it.
+            using (var db = NewContext())
+            {
+                var member = await db.VisitGuestMembers.AsNoTracking()
+                    .Where(m => m.VisitRequestId == requestId).OrderBy(m => m.GuestMemberId).FirstAsync();
+                Assert.Equal(syncedJobTitle, member.JobTitle);
+            }
         }
         finally { await CleanupAsync(requestId); }
     }
