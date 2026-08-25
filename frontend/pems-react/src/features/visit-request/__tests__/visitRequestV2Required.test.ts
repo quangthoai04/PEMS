@@ -32,6 +32,7 @@ const validCampus = () => ({
   operationalContact: {
     fullName: 'ĐM CS', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84911111111', email: 'op@example.com',
   },
+  operationalContactSource: 'EXTERNAL' as const,
 });
 
 const validValues = () => ({

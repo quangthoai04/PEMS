@@ -125,6 +125,43 @@ describe('useContactLinkPrompt', () => {
     expect(interrupted).toBe(false);
   });
 
+  // ── plan CanhIter3FixBug §24 — explicit MEMBER/EXTERNAL is never re-asked ─────────────────────
+  it('says nothing once the campus has an explicit MEMBER source — the user already answered', () => {
+    const { result } = setup();
+
+    let interrupted = true;
+    act(() => {
+      interrupted = result.current.prompt.interrupts(
+        values(campus({ operationalContactSource: 'MEMBER' })));
+    });
+
+    expect(interrupted).toBe(false);
+  });
+
+  it('says nothing once the campus has an explicit EXTERNAL source — the user already answered', () => {
+    const { result } = setup();
+
+    let interrupted = true;
+    act(() => {
+      interrupted = result.current.prompt.interrupts(
+        values(campus({ operationalContactSource: 'EXTERNAL' })));
+    });
+
+    expect(interrupted).toBe(false);
+  });
+
+  it('still asks for a legacy/no-source campus — the fuzzy-match question stays alive for that path', () => {
+    const { result } = setup();
+
+    let interrupted = false;
+    act(() => {
+      interrupted = result.current.prompt.interrupts(
+        values(campus({ operationalContactSource: null })));
+    });
+
+    expect(interrupted).toBe(true);
+  });
+
   it('finds a match among the SUPPORT members too', () => {
     const { result } = setup();
 

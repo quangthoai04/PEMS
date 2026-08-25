@@ -36,9 +36,12 @@ const statusKey = (status: string) => `visitRequestV2:success.status.${status}`;
  * confirmation a user sees never depends on which surface they started from. Only the ACTIONS
  * differ, driven by what the caller can actually reach.
  *
- * This is deliberately a SCREEN and not a toast. The request code is the only handle the user has
- * on what they just filed — a notification that disappears after four seconds is not somewhere to
- * put it. The toast is a companion, not the record.
+ * This is deliberately a SCREEN and not a toast — the status and the actions to take next need to
+ * stay reachable, not disappear after four seconds. The toast is a companion, not the record.
+ *
+ * The request code itself is not rendered here (nor in the submitted-summary below): it stays a
+ * server-side identifier the receipt does not need to surface for the visitor to act on what they
+ * just filed. It is still returned by the API and still what the confirmation email/log carry.
  */
 export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
   response, values, onViewRequest, onGoToList, onCreateAnother, onClose, footer,
@@ -50,7 +53,6 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
   // The lookup-recovered receipt (an uncertain result that turned out COMPLETED) knows the request
   // exists but not its campus breakdown — it answered an anonymous caller. Show what is known.
   const recovered = response.recoveredByLookup === true;
-  const code = response.requestCode;
 
   // Campuses whose own operational contact has not answered yet. Counted per campus by the server —
   // there is no request-level contact to be "pending" on.
@@ -70,12 +72,17 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
     })
     .join(', ');
 
-  // Names, not a count — "Campuses: 1" tells the reader nothing they can act on; "Hà Nội" does.
-  // Read from the submitted snapshot (always present, even on a lookup-recovered receipt) rather
-  // than the response, which carries campus IDs but not a name.
-  const campusNames = values.campusVisits
-    .map(cv => campuses.find(c => c.campusCode === cv.campus)?.campusName ?? cv.campus)
-    .join(', ');
+  // Names, from the submitted snapshot (always present, even on a lookup-recovered receipt) rather
+  // than the response, which carries campus IDs but not a name. Never "the first campus stands in
+  // for all of them" — the title below picks a single name only when there is truly one campus.
+  const campusNameList = values.campusVisits.map(
+    cv => campuses.find(c => c.campusCode === cv.campus)?.campusName ?? cv.campus,
+  );
+
+  const submittedAt = formatVietnamDateTime(response.submittedAt);
+  const title = campusNameList.length > 1
+    ? t('visitRequestV2:success.titleMultiCampus', { count: campusNameList.length, submittedAt })
+    : t('visitRequestV2:success.titleSingleCampus', { campusName: campusNameList[0] ?? '', submittedAt });
 
   const actionBtn = 'inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50';
 
@@ -85,35 +92,22 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
         <div className="flex items-center gap-3">
           <CheckCircle2 className="h-8 w-8 shrink-0 text-green-600" />
           <div className="min-w-0">
-            <h2 className="text-lg font-extrabold text-green-900">{t('visitRequestV2:success.title')}</h2>
-            <p data-testid="v2-success-code" className="text-sm text-green-800">
-              {t('visitRequestV2:success.requestCode', { code })}
-            </p>
+            {/* Names the campus (or the count, for multi-campus) and when it was sent in one line,
+                so "Cơ sở:" / "Thời gian gửi:" never have to repeat what the title already said. */}
+            <h2 data-testid="v2-success-title" className="text-lg font-extrabold text-green-900">{title}</h2>
           </div>
         </div>
 
-        <dl className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-green-900">
-          {response.status && (
+        {response.status && (
+          <dl className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-green-900">
             <div className="flex gap-2">
               <dt className="font-semibold">{t('visitRequestV2:success.statusLabel')}</dt>
               <dd data-testid="v2-success-status">
                 {t([statusKey(response.status), 'visitRequestV2:success.status.UNKNOWN'], { status: response.status })}
               </dd>
             </div>
-          )}
-          <div className="flex gap-2">
-            <dt className="font-semibold">{t('visitRequestV2:success.campusCountLabel')}</dt>
-            <dd data-testid="v2-success-campuses">
-              {campusNames}
-            </dd>
-          </div>
-          {response.submittedAt && (
-            <div className="flex gap-2">
-              <dt className="font-semibold">{t('visitRequestV2:success.submittedAtLabel')}</dt>
-              <dd data-testid="v2-success-submitted-at">{formatVietnamDateTime(response.submittedAt)}</dd>
-            </div>
-          )}
-        </dl>
+          </dl>
+        )}
 
         {response.idempotent && (
           <p className="mt-4 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
@@ -177,8 +171,8 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
                 : t('visitRequestV2:success.reviewSubmitted')}
             </button>
           )}
-          {/* No "copy the code" action: the code is on the receipt above (and in the summary and
-              the confirmation email), where it can be selected like any other text. */}
+          {/* No "copy the code" action: the code is not shown on this receipt at all — it still
+              travels in the confirmation email, where it can be selected like any other text. */}
           {onCreateAnother && (
             <button type="button" data-testid="v2-success-new" onClick={onCreateAnother} className={actionBtn}>
               <FilePlus2 className="h-4 w-4" /> {t('visitRequestV2:success.createAnother')}
@@ -195,7 +189,7 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
       </div>
 
       {/* Full per-campus summary from the immutable submitted snapshot — revealed on request rather
-          than always on, so the receipt leads with the one thing the user must not lose (the code).
+          than always on, so the receipt leads with the title and status, not a wall of detail.
           Skipped entirely for a lookup-recovered receipt: that path never received the per-campus
           response, and an empty summary would read as "no campuses" rather than "not returned here". */}
       {!recovered && showSubmitted && (

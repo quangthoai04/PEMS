@@ -9,7 +9,9 @@ import {
   createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
+  resolveExactlyOne,
   resolvedFormToV2Schema,
+  restoreCampusVisitFromDraft,
   withMemberKeys,
 } from '../utils/visitRequestV2Form';
 import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
@@ -228,6 +230,58 @@ describe('buildV2EditPayload', () => {
   });
 });
 
+
+describe('operational-contact relation payload fail-safe (plan CanhIter3FixBug §16/§18)', () => {
+  /** A fresh campus (no visitInstanceId) with a member picked and a valid, resolvable key. */
+  const freshMemberCampus = (): CampusVisitSchema => {
+    const cv = filledCampus('a', 'HN');
+    cv.visitors[0].clientMemberKey = 'valid-key';
+    cv.operationalContactClientMemberKey = 'valid-key';
+    cv.operationalContactSource = 'MEMBER';
+    return cv;
+  };
+
+  it('fresh + MEMBER + a key that resolves exactly once → serializes the relation', () => {
+    const payload = buildV2CreatePayload(values([freshMemberCampus()]), 'sub');
+    expect(payload.campusVisits[0].operationalContactClientMemberKey).toBe('valid-key');
+  });
+
+  it('fresh + EXTERNAL with a stray valid key in state → the relation is forced null, never leaked', () => {
+    const cv = freshMemberCampus();
+    cv.operationalContactSource = 'EXTERNAL'; // the key is left over from before the switch
+    const payload = buildV2CreatePayload(values([cv]), 'sub');
+    expect(payload.campusVisits[0].operationalContactClientMemberKey).toBeNull();
+    expect(payload.campusVisits[0].operationalContactGuestMemberId).toBeNull();
+  });
+
+  it('fresh + null source with a stray valid key in state → same fail-safe applies', () => {
+    const cv = freshMemberCampus();
+    cv.operationalContactSource = null;
+    const payload = buildV2CreatePayload(values([cv]), 'sub');
+    expect(payload.campusVisits[0].operationalContactClientMemberKey).toBeNull();
+  });
+
+  it('existing campus (visitInstanceId set) keeps its relation regardless of source — the edit path never loses it', () => {
+    const cv = freshMemberCampus();
+    cv.visitInstanceId = 42;
+    cv.expectedRowVersion = 3;
+    cv.visitors[0].guestMemberId = 123;
+    cv.operationalContactSource = null; // an existing campus never has an opinion on this field
+    const payload = buildV2EditPayload(values([cv]), 1);
+    expect(payload.campusVisits[0].operationalContactClientMemberKey).toBe('valid-key');
+    expect(payload.campusVisits[0].operationalContactGuestMemberId).toBe(123);
+  });
+
+  it('operationalContactSource is READ to decide the relation, but never EMITTED on either payload shape', () => {
+    const createPayload = buildV2CreatePayload(values([freshMemberCampus()]), 'sub');
+    expect(createPayload.campusVisits[0]).not.toHaveProperty('operationalContactSource');
+
+    const editCv = freshMemberCampus();
+    editCv.visitInstanceId = 42;
+    const editPayload = buildV2EditPayload(values([editCv]), 1);
+    expect(editPayload.campusVisits[0]).not.toHaveProperty('operationalContactSource');
+  });
+});
 
 describe('mapServerFieldPathToFormPath', () => {
   it('maps campus + nested member paths to the exact RHF path', () => {
@@ -472,6 +526,110 @@ describe('withMemberKeys (restoring a draft written by an older build)', () => {
   it('drops a pick that names nobody in the restored lists', () => {
     const orphaned = campus({ clientKey: 'ck', operationalContactClientMemberKey: 'deleted-row' });
     expect(withMemberKeys(orphaned).operationalContactClientMemberKey).toBeNull();
+  });
+});
+
+describe('resolveExactlyOne (plan CanhIter3FixBug — exact-one identity)', () => {
+  const rows = [
+    { clientMemberKey: 'a', name: 'A' },
+    { clientMemberKey: 'b', name: 'B' },
+    { clientMemberKey: 'b', name: 'B-duplicate' }, // should not be reachable in practice, but defensive
+  ];
+
+  it('resolves the single row that matches the key', () => {
+    expect(resolveExactlyOne(rows, 'a')).toEqual({ clientMemberKey: 'a', name: 'A' });
+  });
+
+  it('returns null for zero matches', () => {
+    expect(resolveExactlyOne(rows, 'nobody')).toBeNull();
+  });
+
+  it('returns null for a null/undefined key without scanning the rows', () => {
+    expect(resolveExactlyOne(rows, null)).toBeNull();
+    expect(resolveExactlyOne(rows, undefined)).toBeNull();
+  });
+
+  it('returns null — not the first match — when the key is ambiguous', () => {
+    expect(resolveExactlyOne(rows, 'b')).toBeNull();
+  });
+});
+
+describe('restoreCampusVisitFromDraft (plan CanhIter3FixBug — legacy draft source inference)', () => {
+  const rawVisitor = (key?: string) => ({
+    fullName: 'A', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN',
+    ...(key ? { clientMemberKey: key } : {}),
+  });
+
+  it('preserves an explicit source field exactly, including explicit null — never re-infers it', () => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor('kept-key')],
+      operationalContactClientMemberKey: 'kept-key',
+      operationalContactSource: null, // the user genuinely left it undecided under the NEW-format code
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBeNull();
+  });
+
+  it('a raw key that still resolves infers MEMBER', () => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor('m1')],
+      operationalContactClientMemberKey: 'm1',
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBe('MEMBER');
+    expect(result.operationalContactClientMemberKey).toBe('m1');
+  });
+
+  it('a raw key that no longer resolves STILL infers MEMBER (never silently EXTERNAL)', () => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor('someone-else')], // 'stale-key' names nobody here
+      operationalContactClientMemberKey: 'stale-key',
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBe('MEMBER');
+    expect(result.operationalContactClientMemberKey).toBeNull(); // repaired: key names nobody
+  });
+
+  it('a valid in-range legacy visitor index counts as member evidence', () => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor(), rawVisitor()],
+      operationalContactVisitorIndex: 1,
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBe('MEMBER');
+  });
+
+  it.each([-1, NaN, 2, 1.5])('an invalid legacy index (%s) is NOT member evidence', (legacyIndex) => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor(), rawVisitor()],
+      operationalContactVisitorIndex: legacyIndex,
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).not.toBe('MEMBER');
+  });
+
+  it('no key evidence but a filled contact snapshot infers EXTERNAL', () => {
+    const raw = {
+      clientKey: 'ck', visitors: [rawVisitor()],
+      operationalContact: { fullName: 'Ngoài đoàn', organization: '', jobTitle: '', phone: '', email: '' },
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBe('EXTERNAL');
+  });
+
+  it('no key evidence and an empty contact snapshot infers null (not decided)', () => {
+    const raw = { clientKey: 'ck', visitors: [rawVisitor()] };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.operationalContactSource).toBeNull();
+  });
+
+  it('still mints/repairs member keys like withMemberKeys did', () => {
+    const raw = {
+      clientKey: 'ck',
+      visitors: [{ fullName: 'A', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
+    };
+    const result = restoreCampusVisitFromDraft(raw as any);
+    expect(result.visitors[0].clientMemberKey).toBeTruthy();
   });
 });
 

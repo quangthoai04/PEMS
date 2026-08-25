@@ -37,7 +37,7 @@ export interface ViewProfileResponse {
   status: 'ACTIVE' | 'INACTIVE' | 'LOCKED';
 }
 
-/** UC-15 — only these four text fields are ever sent. nationality is VISITOR-only. */
+/** UC-15 — only these four text fields are ever sent. Every role may self-update nationality. */
 export interface UpdateProfileRequest {
   fullName?: string;
   gender?: GenderValue | null;

@@ -71,6 +71,12 @@ const fillPrimaryContact = async (container: HTMLElement) => {
   await type(named('contactPoint.email'), 'contact@example.com');
 };
 
+/** The explicit "Người không đi cùng đoàn" answer (plan CanhIter3FixBug) — the 5 free-text fields,
+ * including the organization combobox, only render after this. */
+const chooseExternalSource = async (i = 0) => {
+  await act(async () => { fireEvent.click(screen.getByTestId(`campus-opcontact-source-external-${i}`)); });
+};
+
 /** The organization combobox for campus card `i` — react-select, reached through its wrapper. */
 const orgCombobox = (i = 0) => screen.getAllByTestId('campus-opcontact-org')[i];
 const orgInput = (i = 0) => orgCombobox(i).querySelector('input')!;
@@ -89,8 +95,9 @@ describe('the operational organization is a searchable combobox (plan §9)', () 
     await i18n.changeLanguage('en');
   });
 
-  it('renders the shared combobox rather than a bare text input', () => {
+  it('renders the shared combobox rather than a bare text input', async () => {
     renderForm();
+    await chooseExternalSource();
     const combobox = orgCombobox();
     expect(combobox).toBeInTheDocument();
     // react-select renders its own input; a plain <input type="text"> named for the field would
@@ -103,6 +110,7 @@ describe('the operational organization is a searchable combobox (plan §9)', () 
       { partnerId: 7, displayName: 'Đại học Đối Tác', country: 'VN', city: 'Hà Nội' },
     ]);
     renderForm();
+    await chooseExternalSource();
 
     await type(orgInput(), 'Đại học');
     const option = await screen.findByText('Đại học Đối Tác', {}, { timeout: 3000 });
@@ -113,6 +121,7 @@ describe('the operational organization is a searchable combobox (plan §9)', () 
 
   it('still accepts an organization that is not on file', async () => {
     renderForm();
+    await chooseExternalSource();
 
     await type(orgInput(), 'Một Tổ Chức Hoàn Toàn Mới');
     await act(async () => { fireEvent.blur(orgInput()); });
@@ -125,6 +134,7 @@ describe('the operational organization is a searchable combobox (plan §9)', () 
       { partnerId: 7, displayName: 'Đại học Đối Tác', country: 'VN', city: 'Hà Nội' },
     ]);
     renderForm();
+    await chooseExternalSource();
 
     await type(orgInput(), 'Đại học');
     const option = await screen.findByText('Đại học Đối Tác', {}, { timeout: 3000 });
@@ -179,7 +189,9 @@ describe('quick-filling the operational contact (plan §11–§13)', () => {
     await act(async () => { fireEvent.click(screen.getByTestId('campus-opcontact-use-registrant-0')); });
 
     expect(opName(0).value).toBe('Người Đăng Ký');
-    expect(opName(1).value).toBe('');
+    // The second campus's source is still undecided — quick-fill never touched it, so it has no
+    // free-text contact field to check at all yet (only ONE such element exists in the whole form).
+    expect(screen.getAllByTestId('campus-opcontact-name')).toHaveLength(1);
   });
 
   it('is a one-time copy: editing afterwards changes neither side of it', async () => {
@@ -198,6 +210,7 @@ describe('quick-filling the operational contact (plan §11–§13)', () => {
   it('asks before replacing details that are already there', async () => {
     renderForm();
     await fillRegistrant();
+    await chooseExternalSource();
     await type(opName(), 'Đã Nhập Bằng Tay');
 
     await act(async () => { fireEvent.click(screen.getByTestId('campus-opcontact-use-registrant-0')); });

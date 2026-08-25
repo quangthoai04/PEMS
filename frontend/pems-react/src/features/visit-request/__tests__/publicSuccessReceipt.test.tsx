@@ -83,6 +83,7 @@ const publicCta = (closeV2Modal: () => void): VisitEntryCta => ({
   v2ModalOpen: true,
   closeV2Modal,
   v2Mode: 'public',
+  draftNamespace: undefined,
   isResolving: false,
 });
 
@@ -103,11 +104,11 @@ describe('the public CTA keeps the receipt on screen (plan §3, §9)', () => {
     expect(screen.getByTestId('v2-create-modal')).toBeInTheDocument();
   });
 
-  it('shows the request code as a fixed panel, not only as a toast', () => {
+  it('shows the receipt as a fixed panel, not only as a toast', () => {
     render(<VisitEntrySurfaces cta={publicCta(vi.fn())} />);
     succeed();
 
-    expect(screen.getByTestId('v2-success-code')).toHaveTextContent('VR2026072629B9DFF');
+    expect(screen.getByTestId('v2-success-title')).toHaveTextContent('FPT Hà Nội');
     expect(screen.queryByTestId('shared-v2-form')).toBeNull();
   });
 
@@ -122,14 +123,15 @@ describe('the public CTA keeps the receipt on screen (plan §3, §9)', () => {
 describe('the receipt itself (plan §4, §5, §7)', () => {
   beforeEach(async () => { vi.clearAllMocks(); await i18n.changeLanguage('en'); });
 
-  it('states the code, the status, when it was sent and how many campuses', () => {
+  it('titles the receipt with the campus and submit time, states the status, and never shows the request code', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
 
-    expect(screen.getByTestId('v2-success-code')).toHaveTextContent('VR2026072629B9DFF');
-    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
+    const title = screen.getByTestId('v2-success-title');
+    expect(title).toHaveTextContent('FPT Hà Nội');
     // Wall-clock, never shifted through the viewer's own timezone.
-    expect(screen.getByTestId('v2-success-submitted-at')).toHaveTextContent('26/07/2026 14:30');
-    expect(screen.getByTestId('v2-success-campuses')).toHaveTextContent('FPT Hà Nội');
+    expect(title).toHaveTextContent('26/07/2026 14:30');
+    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
+    expect(screen.queryByText('VR2026072629B9DFF')).toBeNull();
     // Names the registrant's own email — not a generic "check your inbox".
     expect(screen.getByText(/sign in with Google/i)).toHaveTextContent('reg@example.com');
   });
@@ -142,7 +144,7 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
   it('renders the read-only summary from the SUBMITTED snapshot, not from the server', async () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values('Đoàn Chỉ Có Trong Snapshot')} />);
 
-    // Collapsed until asked for: the code is what the user must not lose, so it leads.
+    // Collapsed until asked for: the title and status lead the receipt, not a wall of detail.
     expect(screen.queryByTestId('campus-summary-0')).toBeNull();
     await act(async () => { fireEvent.click(screen.getByTestId('v2-success-review')); });
 
@@ -153,6 +155,8 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
     // that a protected detail endpoint would accept.
     expect(getVisitRequestFormV2).not.toHaveBeenCalled();
     expect(getVisitRequestHistory).not.toHaveBeenCalled();
+    // The request code stays hidden even in the expanded summary.
+    expect(screen.queryByText('VR2026072629B9DFF')).toBeNull();
   });
 
   it('keeps showing the snapshot it was given even when the caller re-renders', async () => {
@@ -164,13 +168,12 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
     expect(screen.getByTestId('campus-summary-0')).toHaveTextContent('Đoàn Bất Biến');
   });
 
-  it('offers no "copy the code" action, and still shows the code itself', () => {
+  it('offers no "copy the code" action, and never renders the code on the receipt', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
 
     expect(screen.queryByTestId('v2-success-copy')).toBeNull();
     expect(screen.queryByTestId('v2-success-copy-status')).toBeNull();
-    // The code is the point of the receipt: it stays on screen as ordinary, selectable text.
-    expect(screen.getByTestId('v2-success-code')).toHaveTextContent('VR2026072629B9DFF');
+    expect(screen.queryByText('VR2026072629B9DFF')).toBeNull();
   });
 
   it('offers no dashboard action to a visitor who has no session to use it with', () => {
@@ -202,6 +205,8 @@ describe('the receipt itself (plan §4, §5, §7)', () => {
     await act(async () => { await i18n.changeLanguage('vi'); });
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} onClose={vi.fn()} />);
 
+    expect(screen.getByTestId('v2-success-title')).toHaveTextContent('Đã gửi yêu cầu tham quan tại FPT Hà Nội');
+    expect(screen.getByTestId('v2-success-title')).toHaveTextContent('26/07/2026 14:30');
     expect(screen.getByTestId('v2-success-review')).toHaveTextContent('Xem lại thông tin đã gửi');
     expect(screen.getByTestId('v2-success-close')).toHaveTextContent('Đóng');
     expect(screen.queryByTestId('v2-success-copy')).toBeNull();
@@ -225,7 +230,7 @@ describe('leaving the receipt (plan §6)', () => {
 
     act(() => { fireEvent.click(screen.getByTestId('v2-success-new')); });
     expect(screen.getByTestId('shared-v2-form')).toBeInTheDocument();
-    expect(screen.queryByTestId('v2-success-code')).toBeNull();
+    expect(screen.queryByTestId('v2-success-title')).toBeNull();
   });
 
   it('closes on request — and closing a finished request never prompts to save a draft', () => {

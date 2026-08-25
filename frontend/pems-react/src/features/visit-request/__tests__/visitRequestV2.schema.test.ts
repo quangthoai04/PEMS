@@ -32,6 +32,7 @@ const validCampus = (campus = 'HN', startOffsetMs = 0, durationMs = 3 * 3600 * 1
   operationalContact: {
     fullName: 'Trần B', organization: 'ĐH ABC', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84912345678', email: 'tranb@example.com',
   },
+  operationalContactSource: 'EXTERNAL' as const,
 });
 
 const validValues = (): VisitRequestV2Schema => ({
@@ -158,6 +159,87 @@ describe('visitRequestV2 schema', () => {
     cv.operationalContact = { ...cv.operationalContact, phone: '0'.repeat(51) };
     const result = campusSchema.safeParse(cv);
     expect(result.success).toBe(false);
+  });
+
+  // ── operationalContactSource: MEMBER/EXTERNAL (plan CanhIter3FixBug) ──────────────────────────
+
+  describe('operationalContactSource — NEW campus only', () => {
+    const campusSchema = buildCampusVisitSchema(72, t);
+
+    it('null source rejects a NEW campus', () => {
+      const cv = { ...validCampus('HN'), operationalContactSource: null };
+      const result = campusSchema.safeParse(cv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some(i =>
+          i.path.join('.') === 'operationalContactSource')).toBe(true);
+      }
+    });
+
+    it('MEMBER with a key that resolves to exactly one row is accepted', () => {
+      const cv = {
+        ...validCampus('HN'),
+        operationalContactSource: 'MEMBER' as const,
+        operationalContactClientMemberKey: 'm1',
+        visitors: [{ fullName: 'A', jobTitle: 'GV', organization: 'X', nationality: 'VN', clientMemberKey: 'm1' }],
+      };
+      expect(campusSchema.safeParse(cv).success).toBe(true);
+    });
+
+    it('MEMBER with a key that resolves to ZERO rows is rejected', () => {
+      const cv = {
+        ...validCampus('HN'),
+        operationalContactSource: 'MEMBER' as const,
+        operationalContactClientMemberKey: 'nobody',
+      };
+      const result = campusSchema.safeParse(cv);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.some(i =>
+          i.path.join('.') === 'operationalContactClientMemberKey')).toBe(true);
+      }
+    });
+
+    it('MEMBER with a key that resolves to MORE THAN ONE row (duplicate key) is rejected', () => {
+      const cv = {
+        ...validCampus('HN'),
+        operationalContactSource: 'MEMBER' as const,
+        operationalContactClientMemberKey: 'dup',
+        visitors: [
+          { fullName: 'A', jobTitle: 'GV', organization: 'X', nationality: 'VN', clientMemberKey: 'dup' },
+        ],
+        supportTeam: [
+          { fullName: 'B', jobTitle: 'TS', organization: 'X', nationality: 'VN', clientMemberKey: 'dup' },
+        ],
+      };
+      const result = campusSchema.safeParse(cv);
+      expect(result.success).toBe(false);
+    });
+
+    it('EXTERNAL with a null key is accepted (the ordinary case)', () => {
+      const cv = {
+        ...validCampus('HN'),
+        operationalContactSource: 'EXTERNAL' as const,
+        operationalContactClientMemberKey: null,
+      };
+      expect(campusSchema.safeParse(cv).success).toBe(true);
+    });
+
+    it('EXTERNAL with a non-null key is rejected (defensive — the UI should never produce this)', () => {
+      const cv = {
+        ...validCampus('HN'),
+        operationalContactSource: 'EXTERNAL' as const,
+        operationalContactClientMemberKey: 'stray',
+        visitors: [{ fullName: 'A', jobTitle: 'GV', organization: 'X', nationality: 'VN', clientMemberKey: 'stray' }],
+      };
+      const result = campusSchema.safeParse(cv);
+      expect(result.success).toBe(false);
+    });
+
+    it('an EXISTING campus (visitInstanceId set) is unaffected regardless of source or key', () => {
+      const cv = { ...validCampus('HN'), visitInstanceId: 42, operationalContactSource: null };
+      expect(campusSchema.safeParse(cv).success).toBe(true);
+    });
   });
 
   // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §8.1) ──

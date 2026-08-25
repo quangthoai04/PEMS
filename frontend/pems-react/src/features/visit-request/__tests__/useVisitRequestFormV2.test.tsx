@@ -49,6 +49,7 @@ const validValues = (): VisitRequestV2Schema => ({
     workingContent: 'Nội dung làm việc',
     visitors: [{ fullName: 'Khách 1', jobTitle: 'GV', organization: 'ĐH X', nationality: 'VN' }],
     operationalContact: { fullName: 'ĐM CS', organization: 'ĐH X', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84911111111', email: 'dmcs@example.com' },
+    operationalContactSource: 'EXTERNAL',
   }],
 });
 
@@ -68,8 +69,10 @@ describe('useVisitRequestFormV2', () => {
   });
 
   /**
-   * `currentUserEmail` decides the submit contract in authenticated mode, so it defaults to the
-   * registrant address in `validValues()` — i.e. self-registration unless a test says otherwise.
+   * `currentUserEmail` is compared against the registrant address as an INVARIANT ASSERTION in
+   * authenticated mode (the hook no longer routes between two submit contracts on it — authenticated
+   * create is self-registration always), so it defaults to the registrant address in `validValues()`
+   * i.e. the invariant holds unless a test deliberately breaks it.
    */
   const setup = (
     mode: 'public' | 'authenticated' = 'public',
@@ -220,18 +223,19 @@ describe('useVisitRequestFormV2', () => {
     expect(onSuccess).toHaveBeenCalledTimes(1);
   });
 
+  // ── Authenticated create is self-registration ONLY (plan CanhIter3FixBug) ──────────────────────
+  // There is no more delegated-authenticated path: the registrant block is profile-locked/read-only
+  // in the component, so the form can never legitimately carry an email other than the signed-in
+  // account's own. `onSubmit` still asserts the invariant defensively (a stale draft, a race) — and a
+  // mismatch there BLOCKS with an error rather than falling through to the public OTP flow, because
+  // the session cannot vouch for an address it does not own.
   it.each([
     ['a different mailbox', 'someone.else@fpt.edu.vn'],
     ['a plus-alias of the same mailbox', 'reg+delegated@example.com'],
     ['a dot-variant of the same mailbox', 'r.eg@example.com'],
   ])(
-    'AUTHENTICATED DELEGATED (%s): never direct-creates — it mints an OTP challenge instead',
+    'AUTHENTICATED identity mismatch (%s): blocks with an error — never falls back to OTP',
     async (_label, actorEmail) => {
-      vi.mocked(initiateVisitRequestV2).mockResolvedValue({
-        sessionToken: 'sess-deleg', message: 'ok', maskedEmail: 'r***@example.com', expiresAt: '',
-        maxAttempts: 5, resendAfterSeconds: 60,
-      } as never);
-
       const { result } = setup('authenticated', actorEmail);
       act(() => {
         result.current.form.reset(validValues());
@@ -241,39 +245,12 @@ describe('useVisitRequestFormV2', () => {
         await result.current.onSubmit();
       });
 
-      // The session cannot vouch for an address it does not own, so the direct contract is never used.
       expect(createVisitRequestV2).not.toHaveBeenCalled();
-      expect(initiateVisitRequestV2).toHaveBeenCalledTimes(1);
-      await waitFor(() => expect(result.current.sessionToken).toBe('sess-deleg'));
+      expect(initiateVisitRequestV2).not.toHaveBeenCalled();
+      expect(result.current.stage).toBe('CREATE_FAILED');
+      expect(result.current.submitError).toBeTruthy();
     },
   );
-
-  it('AUTHENTICATED DELEGATED: the created request carries no processing intent', async () => {
-    vi.mocked(initiateVisitRequestV2).mockResolvedValue({
-      sessionToken: 'sess-deleg', message: 'ok', maskedEmail: 'r***@example.com', expiresAt: '',
-      maxAttempts: 5, resendAfterSeconds: 60,
-    } as never);
-    vi.mocked(verifyAndCreateVisitRequestV2).mockResolvedValue(mockCreateResponse as never);
-
-    const { result, onSuccess } = setup('authenticated', 'someone.else@fpt.edu.vn');
-    act(() => {
-      result.current.form.reset(validValues());
-    });
-
-    await act(async () => {
-      await result.current.onSubmit();
-    });
-    await waitFor(() => expect(result.current.sessionToken).toBe('sess-deleg'));
-
-    await act(async () => {
-      await result.current.verifyOtp('123456');
-    });
-
-    const [payload] = vi.mocked(verifyAndCreateVisitRequestV2).mock.calls[0];
-    // The backend rejects a delegated payload that carries one, so it must never be built.
-    expect(payload.campusVisits[0].hostSelection).toBeNull();
-    expect(onSuccess).toHaveBeenCalledWith(mockCreateResponse, expect.anything());
-  });
 
   it('isSelfRegistration is false in public mode even when the addresses match', () => {
     const { result } = setup('public', 'reg@example.com');
@@ -302,42 +279,40 @@ describe('useVisitRequestFormV2', () => {
     expect(result.current.firstErrorCampusIndex).toBe(0);
   });
 
-  // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan §8.2) ──
+  // ── Short-notice floor (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan; 72h fix CanhIter3FixBug)
+  // Authenticated create is self-registration always, so the floor is now a plain synchronous
+  // function of (mode, isInternalActor) alone — no form state to watch, nothing to desync, nothing
+  // that needs `waitFor`. This is the fix for the reported bug: the floor used to be a `useState` kept
+  // in sync by a `form.watch('registerInfo.email')` effect, and a WHOLE-OBJECT `form.setValue
+  // ('registerInfo', {...})` (exactly what the profile autofill did) reports its `name` as
+  // `'registerInfo'`, not `'registerInfo.email'` — so the watcher's guard never matched and the floor
+  // stayed stuck at 72 until something else forced a `form.reset` (which is why a hard refresh, after
+  // a draft-restore reset ran, appeared to "fix" it).
 
-  it('internal actor self-registering drops minAdvanceHours to 0', async () => {
+  it('internal actor (Staff/Staff Leader) in authenticated mode gets minAdvanceHours 0 immediately — no interaction needed', () => {
+    const { result } = setup('authenticated', 'reg@example.com', true);
+    expect(result.current.minAdvanceHours).toBe(0);
+  });
+
+  it('Visitor in authenticated mode keeps the 72h floor', () => {
+    const { result } = setup('authenticated', 'reg@example.com', false);
+    expect(result.current.minAdvanceHours).toBe(72);
+  });
+
+  it('public mode always keeps the 72h floor, even for an internal actor', () => {
+    const { result } = setup('public', 'reg@example.com', true);
+    expect(result.current.minAdvanceHours).toBe(72);
+  });
+
+  it('a whole-object registerInfo write (the profile hydration pattern) cannot desync the floor', () => {
     const { result } = setup('authenticated', 'reg@example.com', true);
     act(() => {
-      result.current.form.setValue('registerInfo.email', 'reg@example.com');
+      result.current.form.setValue('registerInfo', {
+        fullName: 'Người ĐK', organization: 'ĐH X', jobTitle: 'TP',
+        phone: '', email: 'reg@example.com', nationality: 'VN',
+      });
     });
-    await waitFor(() => expect(result.current.minAdvanceHours).toBe(0));
-  });
-
-  it('visitor self-registration keeps the 72h floor even though the email matches', async () => {
-    const { result } = setup('authenticated', 'reg@example.com', false);
-    act(() => {
-      result.current.form.setValue('registerInfo.email', 'reg@example.com');
-    });
-    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
-  });
-
-  it('internal actor naming somebody else as registrant keeps the 72h floor', async () => {
-    const { result } = setup('authenticated', 'staff@example.com', true);
-    act(() => {
-      result.current.form.setValue('registerInfo.email', 'someone-else@example.com');
-    });
-    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
-  });
-
-  it('editing the registrant email back to self restores the short-notice floor', async () => {
-    const { result } = setup('authenticated', 'staff@example.com', true);
-    act(() => {
-      result.current.form.setValue('registerInfo.email', 'someone-else@example.com');
-    });
-    await waitFor(() => expect(result.current.minAdvanceHours).toBe(72));
-
-    act(() => {
-      result.current.form.setValue('registerInfo.email', 'staff@example.com');
-    });
-    await waitFor(() => expect(result.current.minAdvanceHours).toBe(0));
+    // The floor never depended on this field in the first place, so there is nothing left to desync.
+    expect(result.current.minAdvanceHours).toBe(0);
   });
 });

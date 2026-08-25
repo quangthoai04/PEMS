@@ -10,8 +10,10 @@ vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => mockAuth(),
 }));
 
+import { ProtectedRoute } from '../ProtectedRoute';
 import { RouteAccessGuard } from '../RouteAccessGuard';
-import { resolveEffectiveRole } from '../resolveEffectiveRole';
+import { resolveEffectiveRole, type EffectiveRole } from '../resolveEffectiveRole';
+import { VISIT_REQUEST_V2_CREATE_ROLES } from '../visitRequestV2Access';
 import type { AuthUser } from '../../../features/authentication/types/authentication.types';
 import type { DashboardRouteKey } from '../dashboardRouteAccess';
 
@@ -61,6 +63,29 @@ function renderGuarded(routeKey: DashboardRouteKey, onMount?: () => void) {
         <Route
           path="/dashboard/campus"
           element={<RouteAccessGuard routeKey={routeKey}><Page /></RouteAccessGuard>}
+        />
+        <Route path="/403" element={<div>FORBIDDEN PAGE</div>} />
+        <Route path="/invalid-account" element={<div>INVALID ACCOUNT PAGE</div>} />
+        <Route path="/change-password" element={<div>CHANGE PASSWORD PAGE</div>} />
+        <Route path="/" element={<div>LANDING PAGE</div>} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+/** Mounts a page guarded by an ad-hoc `effectiveRoles` list — the mechanism `/visit/create-v2`
+ * (and other non-dashboard routes) use directly, without a DashboardRouteKey. */
+function renderEffectiveRolesGuarded(effectiveRoles: EffectiveRole[]) {
+  function Page() {
+    return <div>VISIT CREATE PAGE</div>;
+  }
+
+  return render(
+    <MemoryRouter initialEntries={['/visit/create-v2']}>
+      <Routes>
+        <Route
+          path="/visit/create-v2"
+          element={<ProtectedRoute effectiveRoles={effectiveRoles}><Page /></ProtectedRoute>}
         />
         <Route path="/403" element={<div>FORBIDDEN PAGE</div>} />
         <Route path="/invalid-account" element={<div>INVALID ACCOUNT PAGE</div>} />
@@ -203,5 +228,45 @@ describe('RouteAccessGuard — deep links across modules', () => {
       expect(screen.getByText('FORBIDDEN PAGE')).toBeTruthy();
       expect(screen.queryByText('CAMPUS PAGE')).toBeNull();
     }
+  });
+});
+
+describe('ProtectedRoute — /visit/create-v2 root-cause fix: `effectiveRoles` gates a non-dashboard route', () => {
+  // Before this fix the route was a bare <ProtectedRoute> with no role check at all — any
+  // authenticated account (Admin, HO, Department, Student…) could type this URL and reach the
+  // authenticated create form. `effectiveRoles={VISIT_REQUEST_V2_CREATE_ROLES}` closes that gap.
+  it.each(VISIT_REQUEST_V2_CREATE_ROLES.map((r) => [r] as const))('allows %s', (role) => {
+    const roleCode = role === 'STAFF_LEADER' ? 'STAFF' : role;
+    const subRole = role === 'STAFF_LEADER' ? 'LEADER' : role === 'STAFF' ? 'STAFF' : null;
+    signedInAs(makeUser(roleCode, subRole));
+    renderEffectiveRolesGuarded([...VISIT_REQUEST_V2_CREATE_ROLES]);
+    expect(screen.getByText('VISIT CREATE PAGE')).toBeTruthy();
+  });
+
+  it.each([
+    ['ADMIN', null],
+    ['HO', null],
+    ['DEPARTMENT', 'LEADER'],
+    ['DEPARTMENT', 'STAFF'],
+    ['STUDENT', null],
+  ] as const)('denies %s/%s — /403, not the form', (roleCode, subRole) => {
+    signedInAs(makeUser(roleCode, subRole));
+    renderEffectiveRolesGuarded([...VISIT_REQUEST_V2_CREATE_ROLES]);
+    expect(screen.getByText('FORBIDDEN PAGE')).toBeTruthy();
+    expect(screen.queryByText('VISIT CREATE PAGE')).toBeNull();
+  });
+
+  it('sends an unauthenticated visitor to the landing page, not the form (ProtectedRoute\'s own convention for this route)', () => {
+    signedInAs(null);
+    renderEffectiveRolesGuarded([...VISIT_REQUEST_V2_CREATE_ROLES]);
+    expect(screen.getByText('LANDING PAGE')).toBeTruthy();
+  });
+
+  it('waits instead of deciding while auth is still bootstrapping', () => {
+    signedInAs(makeUser('VISITOR'), { isReady: false, isLoading: true });
+    renderEffectiveRolesGuarded([...VISIT_REQUEST_V2_CREATE_ROLES]);
+    expect(screen.queryByText('VISIT CREATE PAGE')).toBeNull();
+    expect(screen.queryByText('FORBIDDEN PAGE')).toBeNull();
+    expect(screen.getByText('Đang tải...')).toBeTruthy();
   });
 });

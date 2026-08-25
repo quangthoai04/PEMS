@@ -192,6 +192,7 @@ export const SCOPED_FILES = [
   'pages/auth/ResetPasswordPage.tsx',
   'pages/legal/PrivacyPolicyPage.tsx',
   'pages/legal/TermsOfServicePage.tsx',
+  'pages/visit/VisitRequestV2EntryRoute.tsx',
   'pages/visit/VisitRequestV2Page.tsx',
   'services/visit-expense.service.ts',
   'shared/api/authInterceptor.ts',
@@ -203,8 +204,10 @@ export const SCOPED_FILES = [
   'shared/auth/authStorage.ts',
   'shared/auth/dashboardRoute.ts',
   'shared/auth/permissionChecker.ts',
+  'shared/auth/ProtectedRoute.tsx',
   'shared/auth/resolveEffectiveRole.ts',
   'shared/auth/resolveHomeRoleBucket.ts',
+  'shared/auth/visitRequestV2Access.ts',
   'shared/components/files/FileAttachmentItem.tsx',
   'shared/components/files/FilePreviewModal.tsx',
   'shared/components/files/filePreviewKind.ts',
@@ -362,6 +365,15 @@ const ALLOWLIST: Record<string, Record<number, string>> = {
     227: 'formatVietnamRelative() — same deliberate VI-only legacy function.',
     229: 'formatVietnamRelative() — same deliberate VI-only legacy function.',
     231: 'formatVietnamRelative() — same deliberate VI-only legacy function.',
+  },
+  'shared/auth/ProtectedRoute.tsx': {
+    // FullScreenLoader's "Đang tải..." predates this task and every other consumer of this guard
+    // (every /dashboard route, /change-password, /notifications...). It just never entered the
+    // Guest/Visitor closure before VisitRequestV2EntryRoute started importing it for the shared
+    // loading shell. Translating this shared string is a pre-existing gap orthogonal to this
+    // task's business goal (Visit Request V2 authorization) — flagged here rather than silently
+    // widened into an unrelated i18n fix.
+    42: 'FullScreenLoader "Đang tải..." — pre-existing shared loading shell text, out of scope here.',
   },
   'features/profile/types/profile.types.ts': {
     31: "displayPosition: 'Trưởng phòng' | 'Nhân viên' | null — a TypeScript compile-time type union (Dept sub-role labels), not a runtime string ever rendered; the field itself is virtually always null for a VISITOR account (Visitor has no department/sub-role) and Profile.tsx renders it with a '—' fallback either way.",

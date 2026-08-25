@@ -127,6 +127,11 @@ const campusVisitHasContent = (visit: unknown): boolean => {
     || (filled(cv.workingLanguage) && cv.workingLanguage !== UNTOUCHED_WORKING_LANGUAGE)
     || (filled(cv.mediaConsentStatus) && cv.mediaConsentStatus !== UNTOUCHED_MEDIA_CONSENT)
     || operationalContactHasContent(cv.operationalContact)
+    // Choosing MEMBER or EXTERNAL is itself a decision worth keeping, even before anything else on
+    // the card is filled in — losing it because "nothing counts yet" would mean answering the
+    // source question and then closing the modal silently discards that answer (plan
+    // CanhIter3FixBug §14/§26).
+    || cv.operationalContactSource === 'MEMBER' || cv.operationalContactSource === 'EXTERNAL'
     || (Array.isArray(cv.visitors) && cv.visitors.some(personRowHasContent))
     || (Array.isArray(cv.supportTeam) && cv.supportTeam.some(personRowHasContent)),
   );

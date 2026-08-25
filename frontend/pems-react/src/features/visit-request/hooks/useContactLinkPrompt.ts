@@ -50,6 +50,13 @@ export function useContactLinkPrompt(
       for (let campusIndex = 0; campusIndex < campuses.length; campusIndex++) {
         const cv = campuses[campusIndex];
         if (!cv || cv.operationalContactClientMemberKey) continue;
+        // An explicit MEMBER/EXTERNAL answer (plan CanhIter3FixBug) already settles the exact
+        // question this prompt exists to ask — re-asking it would be interrogating the user about a
+        // choice they just made on screen. In practice this makes the prompt inert for every campus
+        // that went through the new selector, since submit-time schema validation already forces an
+        // explicit source before `interrupts()` can even run; the check stays here as a guard for
+        // whatever legacy/no-source path might still reach this code.
+        if (cv.operationalContactSource === 'MEMBER' || cv.operationalContactSource === 'EXTERNAL') continue;
         // A campus that already exists has a contact snapshot the backend refuses to change, so
         // there is no action behind the question and asking it would only interrupt. On the create
         // form no campus has an id, so this skips nothing there; on the edit screen it narrows the

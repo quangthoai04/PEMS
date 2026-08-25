@@ -30,6 +30,7 @@ const campus = (over: Partial<CampusVisitSchema>): CampusVisitSchema => ({
   supportTeam: [],
   operationalContact: { fullName: 'Op A', organization: 'OrgA', jobTitle: 'Trưởng phòng Hợp tác', phone: '+84900000001', email: 'op-a@example.com' },
   operationalContactClientMemberKey: null,
+  operationalContactSource: 'EXTERNAL',
   workingLanguage: 'EN',
   transportationNote: '',
   mediaConsentStatus: 'DECLINED',
@@ -81,9 +82,10 @@ describe('VisitRequestV2SubmittedSummary', () => {
     expect(within(cardB).getByText(/FPT HCM/)).toBeInTheDocument();
     expect(within(cardB).getByText('Đoàn HCM')).toBeInTheDocument();
 
-    // Request code + mixed badge at the request level.
-    expect(screen.getByText('VR-TEST-900')).toBeInTheDocument();
-    expect(screen.getByText(/Varies by campus/i)).toBeInTheDocument();
+    // Request-level: campus count is shown, the request code and the mixed/uniform badge are not.
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.queryByText('VR-TEST-900')).toBeNull();
+    expect(screen.queryByText(/Varies by campus/i)).toBeNull();
   });
 
   it('renders every campus of a multi-SAME request (never just the first as representative)', () => {
@@ -98,7 +100,9 @@ describe('VisitRequestV2SubmittedSummary', () => {
 
     expect(screen.getByTestId('campus-summary-0')).toBeInTheDocument();
     expect(screen.getByTestId('campus-summary-1')).toBeInTheDocument();
-    expect(screen.getByText(/Same across all campuses/i)).toBeInTheDocument();
+    // The uniform/mixed badge is no longer part of this receipt.
+    expect(screen.queryByText(/Same across all campuses/i)).toBeNull();
+    expect(screen.queryByText(/Varies by campus/i)).toBeNull();
   });
 
   /**
@@ -150,6 +154,23 @@ describe('VisitRequestV2SubmittedSummary', () => {
     expect(within(card).getByText(/Op Only/)).toBeInTheDocument();
     // phone still shows; email empty is fine (no crash, phone rendered).
     expect(within(card).getByText(/\+84900000009/)).toBeInTheDocument();
+  });
+
+  /**
+   * The request code is a server-side identifier, not something this receipt needs to surface —
+   * it stays out of both the request-level card and (implicitly, since nothing else in this
+   * component reads `response.requestCode`) any per-campus card.
+   */
+  it('never renders the request code, and leaves no empty request-code cell in its place', () => {
+    render(<VisitRequestV2SubmittedSummary
+      response={response([{ visitInstanceId: 11, campusId: 1, status: 'WAITING_REQUEST_APPROVAL' }], false)}
+      values={values([campus({ clientKey: 'a', campus: 'HN' })])} />);
+
+    expect(screen.queryByText('VR-TEST-900')).toBeNull();
+    expect(screen.queryByText(/^Request code$/i)).toBeNull();
+    // The request-level section still shows its other facts — no dangling label with nothing under it.
+    expect(screen.getByText(/Request status/i)).toBeInTheDocument();
+    expect(screen.getByText('Registrant', { selector: 'dt' })).toBeInTheDocument();
   });
 });
 

@@ -222,8 +222,9 @@ export function PartnersPage() {
   const tCountry = useCountryTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  // Route to the v2 form when per-campus v2 is enabled; only open the v1 popup for a real backend OFF.
-  const visitCta = useVisitEntryCta('public');
+  // Mode (public/authenticated) is resolved from sign-in state; routes to the v2 form when
+  // per-campus v2 is enabled, only opens the v1 popup for a real backend OFF.
+  const visitCta = useVisitEntryCta();
 
   const ALL_COUNTRIES_LABEL = t('partners:list.allCountries');
   const ALL_TYPES_LABEL = t('partners:list.allTypes');
@@ -657,7 +658,9 @@ export function PartnersPage() {
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
                 onClick={visitCta.trigger}
-                className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm"
+                disabled={visitCta.isResolving}
+                aria-busy={visitCta.isResolving}
+                className="inline-flex justify-center items-center gap-2 px-6 py-3 bg-[#f37021] text-white font-bold rounded-xl hover:bg-orange-600 transition-colors text-sm disabled:opacity-60 disabled:cursor-wait"
               >
                 {t('partners:list.bookVisit')} <ArrowRight className="w-4 h-4" />
               </button>

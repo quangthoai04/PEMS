@@ -48,6 +48,8 @@
   "currentPasswordRequired": "Vui lòng nhập mật khẩu hiện tại.",
   "minDurationMinutes": "Mỗi buổi thăm phải kéo dài tối thiểu {{minutes}} phút",
   "maxCampuses": "Không được vượt quá {{max}} cơ sở trong một đơn",
+  "operationalContactSourceRequired": "Vui lòng chọn loại đầu mối phối hợp (người trong đoàn hoặc người không đi cùng đoàn).",
+  "operationalContactMemberRequired": "Vui lòng chọn đúng một người trong đoàn làm đầu mối phối hợp.",
   "fields": {
     "registrantFullName": "Họ tên người đăng ký",
     "registrantOrganization": "Đơn vị công tác người đăng ký",

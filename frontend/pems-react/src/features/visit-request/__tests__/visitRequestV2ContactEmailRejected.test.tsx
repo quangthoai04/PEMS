@@ -82,6 +82,7 @@ const campus = (code: string, contactEmail: string) => ({
     fullName: 'Đầu Mối', organization: 'ĐH X', jobTitle: 'Chuyên viên',
     phone: '+84911111111', email: contactEmail,
   },
+  operationalContactSource: 'EXTERNAL' as const,
 });
 
 /** Three campuses; only the middle one names an address the server will refuse. */

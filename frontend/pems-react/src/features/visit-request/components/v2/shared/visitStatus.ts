@@ -9,13 +9,22 @@
  * to a neutral "unknown" label rather than leaking `WAITING_REQUEST_APPROVAL` at a user.
  */
 
-export type VisitStatusTone = 'neutral' | 'waiting' | 'progress' | 'success' | 'danger' | 'muted';
+export type VisitStatusTone = 'neutral' | 'waiting' | 'progress' | 'active' | 'review' | 'success' | 'danger' | 'muted';
 
-/** Tailwind classes per tone — one place, so no surface invents its own palette. */
+/**
+ * Tailwind classes per tone — one place, so no surface invents its own palette.
+ * `progress` deliberately avoids the #004c91 brand blue: campus badges render inside
+ * CampusVisitDetailCard's solid `bg-[#004c91]` header, and text-[#004c91] on that background is
+ * dark-blue-on-dark-blue — unreadable. The three in-flight tones instead reuse the distinct hues
+ * VisitRequestManagement's getCampusStatusBadgeClass already used per status, so a value keeps the
+ * same color a reader already associates with it across both screens.
+ */
 export const VISIT_STATUS_TONE_CLASSES: Record<VisitStatusTone, string> = {
   neutral: 'bg-slate-100 text-slate-700 ring-slate-200',
   waiting: 'bg-amber-50 text-amber-800 ring-amber-200',
-  progress: 'bg-[#004c91]/10 text-[#004c91] ring-[#004c91]/20',
+  progress: 'bg-blue-50 text-blue-700 ring-blue-200',
+  active: 'bg-green-50 text-green-700 ring-green-200',
+  review: 'bg-orange-50 text-orange-700 ring-orange-200',
   success: 'bg-emerald-50 text-emerald-800 ring-emerald-200',
   danger: 'bg-red-50 text-red-700 ring-red-200',
   muted: 'bg-slate-100 text-slate-500 ring-slate-200',
@@ -29,8 +38,8 @@ export const VISIT_INSTANCE_STATUS_TONES: Record<string, VisitStatusTone> = {
   WAITING_REQUEST_APPROVAL: 'waiting',
   ASSIGNED: 'success',
   BEFORE_VISIT: 'progress',
-  DURING_VISIT: 'progress',
-  AFTER_VISIT: 'progress',
+  DURING_VISIT: 'active',
+  AFTER_VISIT: 'review',
   CLOSED: 'muted',
   CANCELLED: 'muted',
   REJECTED: 'danger',

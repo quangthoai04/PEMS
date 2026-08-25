@@ -76,8 +76,6 @@ public sealed class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileC
         if (user.Status != UserStatuses.Active)
             throw new ForbiddenException("Tài khoản của bạn hiện không thể cập nhật hồ sơ.");
 
-        var isVisitor = user.Role.RoleCode == RoleCodes.Visitor;
-
         // ── full_name ── required (when provided), trimmed, non-empty, bounded ──
         if (request.FullName is not null)
         {
@@ -119,12 +117,12 @@ public sealed class UpdateProfileCommandHandler : IRequestHandler<UpdateProfileC
             }
         }
 
-        // ── nationality ── VISITOR only (spec §3.2 / §9, TC-16) ──
+        // ── nationality ── every role may self-update (Visit Request V2's registrant snapshot
+        // requires it for internal Staff/Staff Leader too, and Profile is the only place that
+        // snapshot may be corrected — spec §3.2/§9 originally read VISITOR-only; widened so an
+        // internal account is not left with a required field nothing can ever fill in) ──
         if (request.Nationality is not null)
         {
-            if (!isVisitor)
-                throw new ForbiddenException("Chỉ tài khoản Visitor được phép cập nhật quốc tịch.");
-
             var nationality = request.Nationality.Trim();
             if (nationality.Length == 0)
             {

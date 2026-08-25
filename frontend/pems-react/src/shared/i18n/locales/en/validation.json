@@ -48,6 +48,8 @@
   "currentPasswordRequired": "Please enter your current password.",
   "minDurationMinutes": "Each visit must last at least {{minutes}} minutes",
   "maxCampuses": "A request cannot include more than {{max}} campuses",
+  "operationalContactSourceRequired": "Please choose who the operational contact is (someone travelling with the delegation, or someone who isn't).",
+  "operationalContactMemberRequired": "Please pick exactly one person from the delegation as the operational contact.",
   "fields": {
     "registrantFullName": "Registrant full name",
     "registrantOrganization": "Registrant organization",

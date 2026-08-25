@@ -17,8 +17,7 @@ import {
   createEmptyCampusVisit,
   listOverwrittenCampuses,
   mapServerFieldPathToFormPath,
-  newClientKey,
-  withMemberKeys,
+  restoreCampusVisitFromDraft,
 } from '../utils/visitRequestV2Form';
 import {
   clearOtpChallengeToken,
@@ -274,19 +273,22 @@ export interface UseVisitRequestFormV2Options {
   /** Supplier of per-campus processing choices (authenticated Staff/Leader only). */
   getCampusHostSelections?: () => CampusHostSelectionChoice[];
   /**
-   * Authenticated mode only: the signed-in user's own email. It decides which submit contract the form
-   * uses — the session can only vouch for THIS mailbox, so a form naming anybody else has to prove that
-   * person's identity with an OTP instead (plan §5.3/§5.4). Leave undefined in public mode.
+   * Authenticated mode only: the signed-in user's own email. Authenticated create is
+   * self-registration ONLY (plan CanhIter3FixBug — registrant is locked to the profile of the
+   * signed-in account, with no editable/delegated path any more), so this is used to ASSERT that
+   * invariant right before submit rather than to route between two contracts. Leave undefined in
+   * public mode.
    */
   currentUserEmail?: string | null;
   minAdvanceHours?: number;
   /**
-   * Authenticated mode only: is the signed-in actor internal Staff/Staff Leader? Combined with
-   * self-registration (derived below from `currentUserEmail` vs the watched registrant email), this
-   * is what may file a visit under the 72h registration floor — see the
-   * PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan. The backend re-derives and re-checks the same
-   * thing from the actor's own DB role; this only decides what the FORM offers/validates, never what
-   * the server accepts. Ignored in public mode.
+   * Authenticated mode only: is the signed-in actor internal Staff/Staff Leader? This alone is what
+   * may file a visit under the 72h registration floor — see the
+   * PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan. Authenticated create is self-registration only
+   * (the registrant is always the signed-in account), so the floor no longer needs to watch anything
+   * on the form itself. The backend re-derives and re-checks the same thing from the actor's own DB
+   * role; this only decides what the FORM offers/validates, never what the server accepts. Ignored in
+   * public mode.
    */
   isInternalActor?: boolean;
   /**
@@ -321,14 +323,25 @@ export const useVisitRequestFormV2 = (
   const isAuthenticatedMode = mode === 'authenticated';
   const draftNamespace = options?.draftNamespace;
   const isInternalActor = options?.isInternalActor ?? false;
-  /** The floor for everyone WITHOUT the short-notice capability — Visitor, and any delegated submit. */
+  /** The floor for everyone WITHOUT the short-notice capability — Visitor, and every public submit. */
   const staticMinAdvanceHours = options?.minAdvanceHours ?? V2_MIN_ADVANCE_HOURS_CREATE;
   /**
-   * The floor actually enforced right now — drops to 0 the moment the form is BOTH internal AND
-   * self-registered (kept in sync below, once `form` exists, via a watch on the registrant email).
-   * Starts at the static floor: nothing has proven self-registration yet on the very first render.
+   * The floor actually enforced right now (plan CanhIter3FixBug — 72h fix). Authenticated create is
+   * self-registration ONLY, so "internal Staff/Staff Leader registering themself" is no longer a form
+   * STATE to derive from a watched email — it is exactly `isAuthenticatedMode && isInternalActor`, a
+   * plain synchronous value computed on every render.
+   *
+   * This used to be `useState` + a `form.watch('registerInfo.email')` effect that flipped it to 0 once
+   * the registrant email matched the signed-in account. That broke the moment the email was set via a
+   * WHOLE-OBJECT `form.setValue('registerInfo', {...})` (the profile autofill): react-hook-form reports
+   * the changed `name` as `'registerInfo'`, not `'registerInfo.email'`, so the watcher's `name ===
+   * 'registerInfo.email'` guard never matched and the floor stayed stuck at 72 — until a `form.reset`
+   * (draft hydrate, full reload) fired the watcher's `name === undefined` branch and it self-corrected,
+   * which is exactly why Ctrl+Shift+R "fixed" it. Not deriving the floor from the form at all removes
+   * the whole class of bug: nothing to desync, and the registrant email can no longer diverge from the
+   * signed-in account anyway (registerInfo is profile-locked/read-only in authenticated mode).
    */
-  const [minAdvanceHours, setMinAdvanceHours] = useState(staticMinAdvanceHours);
+  const minAdvanceHours = isAuthenticatedMode && isInternalActor ? 0 : staticMinAdvanceHours;
 
   const { t, i18n } = useTranslation(['validation', 'toast', 'visitRequestV2']);
 
@@ -443,25 +456,6 @@ export const useVisitRequestFormV2 = (
   // only RHF's render bookkeeping and is never persisted.
   const campusVisitFields = useFieldArray({ control: form.control, name: 'campusVisits' });
 
-  // ── Internal self-registration short-notice (PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H plan) ──
-  // Recomputed from the LIVE registrant email: only an internal Staff/Staff Leader registering
-  // THEMSELF may file inside the 72h floor — the exact same question `isSelfRegistration` answers for
-  // the submit contract, asked again here because the schema/picker floor cannot itself watch the
-  // form (it is what the form is built FROM). Fires on every change to the email, and once more on a
-  // `form.reset` (draft hydrate, resetForm — reported as `name: undefined`), so a restored draft is
-  // not left showing the wrong floor. This only widens what the FORM offers; the backend re-derives
-  // and re-checks the actor's role from its own DB before ever accepting a short-notice schedule.
-  useEffect(() => {
-    const applyFor = (email: string | null | undefined) => {
-      const next = isInternalActor && isSelfRegistration(email) ? 0 : staticMinAdvanceHours;
-      setMinAdvanceHours(prev => (prev === next ? prev : next));
-    };
-    applyFor(form.getValues('registerInfo.email'));
-    const subscription = form.watch((values, { name }) => {
-      if (name === undefined || name === 'registerInfo.email') applyFor(values.registerInfo?.email);
-    });
-    return () => subscription.unsubscribe();
-  }, [form, isInternalActor, isSelfRegistration, staticMinAdvanceHours]);
 
   const hasErrors = Object.keys(form.formState.errors).length > 0;
   useEffect(() => {
@@ -506,11 +500,13 @@ export const useVisitRequestFormV2 = (
       ...draft.data,
       campusVisits:
         draft.data.campusVisits && draft.data.campusVisits.length > 0
-          // `withMemberKeys` gives every restored member row its stable identity back and translates a
-          // draft written in the array-index era into a real pick. A draft saved before either field
-          // existed would otherwise resume with rows the contact picker cannot name (NP-03).
-          ? draft.data.campusVisits.map(cv =>
-            withMemberKeys({ ...createEmptyCampusVisit(cv.clientKey || newClientKey()), ...cv }))
+          // `restoreCampusVisitFromDraft` gives every restored member row its stable identity back,
+          // translates a draft written in the array-index era into a real pick, and — reading the
+          // RAW draft object before any default is merged in — infers `operationalContactSource` for
+          // a draft saved before that field existed (plan CanhIter3FixBug §12-§15). A draft saved
+          // before any of this existed would otherwise resume with rows the contact picker cannot
+          // name (NP-03).
+          ? draft.data.campusVisits.map(cv => restoreCampusVisitFromDraft(cv))
           : defaults.campusVisits,
     });
     // Restoring the TYPING without restoring the submission intent is what turns a resumed draft
@@ -882,12 +878,21 @@ export const useVisitRequestFormV2 = (
     // request, or a second OTP burnt against the same challenge. Read through the ref because this
     // callback is created once per render and would otherwise judge a stale stage.
     if (stageRef.current === 'SENDING_OTP' || stageRef.current === 'VERIFYING_OTP') return;
-    // Authenticated SELF-registration is the only case the session alone can authorise: the JWT
-    // proves this mailbox and nothing else. Naming somebody else as registrant falls through to the
-    // OTP challenge below — the same initiate/verify pair the public submit uses — so that person
-    // proves the mailbox is theirs. Sending it to direct-create instead would just earn a
-    // REGISTRANT_EMAIL_VERIFICATION_REQUIRED from the backend.
-    if (isAuthenticatedMode && isSelfRegistration(data.registerInfo.email)) {
+    // Authenticated create is SELF-registration only, always (plan CanhIter3FixBug — no delegated
+    // authenticated path exists any more: the registrant block is profile-locked/read-only, so there
+    // is no UI action that could ever produce a mismatch). This is checked anyway, once, right here —
+    // an invariant assertion rather than a routing decision: a mismatch means the form's state has
+    // drifted from the signed-in account (a stale draft that slipped past the profile overwrite, a
+    // profile reload racing the submit), and the correct response is to block and let the profile
+    // re-sync, NOT to fall through to the public OTP flow. The JWT can only ever vouch for the
+    // signed-in mailbox, so silently offering "prove it with a code" here would be offering to verify
+    // an identity the session itself says is wrong.
+    if (isAuthenticatedMode) {
+      if (!isSelfRegistration(data.registerInfo.email)) {
+        setSubmitError(t('visitRequestV2:registrant.identityMismatch'));
+        setStage('CREATE_FAILED');
+        return;
+      }
       await submitAuthenticated(data);
       return;
     }

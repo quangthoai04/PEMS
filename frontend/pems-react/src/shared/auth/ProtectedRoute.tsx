@@ -32,7 +32,9 @@ interface ProtectedRouteProps {
   portals?: LoginPortal[];
 }
 
-function FullScreenLoader() {
+/** Exported so other auth-aware, non-dashboard entry points (e.g. VisitRequestV2EntryRoute) can
+ * show the same "waiting for auth bootstrap" shell instead of inventing a second one. */
+export function FullScreenLoader() {
   return (
     <div className="min-h-dvh flex items-center justify-center bg-white">
       <div className="flex flex-col items-center gap-3">

@@ -174,16 +174,8 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-base font-extrabold text-slate-900">{t('visitRequestV2:summary.heading')}</h2>
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">
-            {response.hasMixedCampusDetails
-              ? t('visitRequestV2:summary.mixedBadge')
-              : t('visitRequestV2:summary.uniformBadge')}
-          </span>
         </div>
         <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={t('visitRequestV2:summary.requestCode')}>
-            <span className="font-bold">{response.requestCode}</span>
-          </Field>
           <Field label={t('visitRequestV2:summary.aggregateStatus')}>{t('visitRequestV2:summary.submitted')}</Field>
           <Field label={t('visitRequestV2:summary.campusCount')}>{response.instances.length}</Field>
           {/* The organization NAME the user picked, with "already in our system" as the note under
@@ -202,12 +194,6 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               </span>
             ) : t('visitRequestV2:summary.partnerNew')}
           </Field>
-          <Field label={t('visitRequestV2:summary.registrant')}>
-            {person(values.registerInfo)}
-            <div className="text-xs text-slate-500">
-              {values.registerInfo.phone} · {values.registerInfo.email}
-            </div>
-          </Field>
           {/* No request-level contact any more: each campus names its own, and the only
               request-level fact is how many of them still have to answer. */}
           <Field label={t('visitRequestV2:summary.contactConfirmation')}>
@@ -215,6 +201,16 @@ export function VisitRequestV2SubmittedSummary({ response, values }: Props) {
               ? t('visitRequestV2:summary.contactPendingCount', { count: response.pendingContactConfirmations })
               : t('visitRequestV2:summary.contactAllConfirmed')}
           </Field>
+          {/* Spans both columns: the last field in an odd-count grid, so it never leaves an empty
+              cell where the request code used to sit. */}
+          <div className="sm:col-span-2">
+            <Field label={t('visitRequestV2:summary.registrant')}>
+              {person(values.registerInfo)}
+              <div className="text-xs text-slate-500">
+                {values.registerInfo.phone} · {values.registerInfo.email}
+              </div>
+            </Field>
+          </div>
         </dl>
       </section>
 

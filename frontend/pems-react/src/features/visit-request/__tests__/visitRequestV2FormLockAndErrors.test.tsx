@@ -75,6 +75,7 @@ const validValues = (): VisitRequestV2Schema => ({
       fullName: 'Đầu Mối', organization: 'ĐH X', jobTitle: 'Chuyên viên',
       phone: '+84911111111', email: 'dm@example.com',
     },
+    operationalContactSource: 'EXTERNAL',
   }],
 });
 

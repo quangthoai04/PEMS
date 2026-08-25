@@ -465,21 +465,21 @@ export function Profile() {
                     </>
                   )}
 
-                  {/* Quốc tịch — chỉ VISITOR */}
-                  {isVisitor && (
-                    <InfoCard icon={<Globe className="h-5 w-5" />} label={tt('fields.nationality')} full>
-                      {isEditing ? (
-                        <CountrySelect
-                          value={form.nationality ?? ''}
-                          onChange={(v) => setForm({ ...form, nationality: v })}
-                          placeholder={tt('fields.nationalityPlaceholder')}
-                          storeLang="en"
-                        />
-                      ) : (
-                        <ValueText>{resolveNationalityLabel(profile.nationality, language, tt('fields.notUpdated'))}</ValueText>
-                      )}
-                    </InfoCard>
-                  )}
+                  {/* Quốc tịch — mọi role tự cập nhật được (Visit Request V2 cần trường này cho
+                      registrant, kể cả Staff/Staff Leader nội bộ — trước đây chỉ VISITOR sửa được,
+                      khiến tài khoản nội bộ có một field bắt buộc không nơi nào điền được) */}
+                  <InfoCard icon={<Globe className="h-5 w-5" />} label={tt('fields.nationality')} full>
+                    {isEditing ? (
+                      <CountrySelect
+                        value={form.nationality ?? ''}
+                        onChange={(v) => setForm({ ...form, nationality: v })}
+                        placeholder={tt('fields.nationalityPlaceholder')}
+                        storeLang="en"
+                      />
+                    ) : (
+                      <ValueText>{resolveNationalityLabel(profile.nationality, language, tt('fields.notUpdated'))}</ValueText>
+                    )}
+                  </InfoCard>
                 </div>
               </div>
             </div>

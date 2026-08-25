@@ -64,6 +64,16 @@ const type = async (el: Element, value: string) => {
 const picker = (i = 0) => screen.getByTestId(`campus-opcontact-pick-${i}`) as HTMLSelectElement;
 const options = (i = 0) => Array.from(picker(i).querySelectorAll('option'));
 
+/** The explicit "Người trong đoàn" answer (plan CanhIter3FixBug) — the dropdown only renders after this. */
+const chooseMemberSource = async (i = 0) => {
+  await act(async () => { fireEvent.click(screen.getByTestId(`campus-opcontact-source-member-${i}`)); });
+};
+
+/** The explicit "Người không đi cùng đoàn" answer — reveals the 5 free-text fields. */
+const chooseExternalSource = async (i = 0) => {
+  await act(async () => { fireEvent.click(screen.getByTestId(`campus-opcontact-source-external-${i}`)); });
+};
+
 /** One member row's field, addressed the way the card renders it (desktop table). */
 const memberField = (kind: 'visitors' | 'supportTeam', row: number, field: string) =>
   screen.getAllByTestId(`${kind}-${row}-${field}`)[0];
@@ -104,6 +114,7 @@ describe('who may be picked as the contact', () => {
     // "Khách 1 — chưa có tên". Hiding it instead would leave the user hunting for a person they had
     // definitely typed in, so it is listed and disabled, and the label says which.
     renderForm();
+    await chooseMemberSource();
 
     const blank = options().find(o => /chưa hoàn tất/i.test(o.textContent ?? ''));
     expect(blank).toBeTruthy();
@@ -121,6 +132,7 @@ describe('who may be picked as the contact', () => {
   it('offers support staff travelling with the delegation, not only guests', async () => {
     // An interpreter or a coordinator is frequently exactly who the campus rings.
     renderForm();
+    await chooseMemberSource();
     await addSupport();
     await fillMember('supportTeam', 0, {
       fullName: 'Nguyễn Văn A', jobTitle: 'Phiên dịch', organization: 'ABC University',
@@ -141,6 +153,7 @@ describe('the snapshot follows the member while the form is open', () => {
     // The bug: the copy happened once, on pick. Users pick from a half-typed row and finish it
     // afterwards, so the request was filed naming a contact with no job title.
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'PM', organization: 'ABC University',
     });
@@ -157,6 +170,7 @@ describe('the snapshot follows the member while the form is open', () => {
   it('keeps pointing at the same person when a row is added above them', async () => {
     // With an array index this is where the contact silently became the newcomer.
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -173,10 +187,14 @@ describe('the snapshot follows the member while the form is open', () => {
 
   it('does not let the snapshot be edited into a different person', async () => {
     // Bug 2: the pick was kept while the three fields stayed freely editable, so one record could
-    // describe two people. Picked → the fields are the member's, shown not typed.
+    // describe two people. Picked → the fields are the member's, shown not typed. The editable
+    // free-text fields only exist at all under EXTERNAL — proven here before switching to MEMBER.
     renderForm();
+    await chooseExternalSource();
     expect(screen.getAllByTestId('campus-opcontact-name').length).toBeGreaterThan(0);
 
+    // Nothing was typed into the EXTERNAL fields yet, so switching away has nothing to confirm.
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -190,6 +208,7 @@ describe('the snapshot follows the member while the form is open', () => {
 
   it('leaves phone and email to be typed — a member row has neither', async () => {
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -203,6 +222,7 @@ describe('the snapshot follows the member while the form is open', () => {
 describe('removing the person who holds the role', () => {
   it('is refused, with the reason, instead of silently re-aiming the contact', async () => {
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -226,6 +246,7 @@ describe('removing the person who holds the role', () => {
 
   it('marks which row holds the role so editing it is never a surprise', async () => {
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -238,6 +259,7 @@ describe('removing the person who holds the role', () => {
   it('lets an ordinary member be removed', async () => {
     // The counterweight: the guard must not have been bought by breaking deletion generally.
     renderForm();
+    await chooseMemberSource();
     await fillMember('visitors', 0, {
       fullName: 'Daniel Kim', jobTitle: 'Program Manager', organization: 'ABC University',
     });
@@ -252,6 +274,51 @@ describe('removing the person who holds the role', () => {
 
     expect(screen.getAllByTestId('v2-visitors-table')[0].querySelectorAll('tbody tr')).toHaveLength(1);
     expect(showMessageErrorToast).not.toHaveBeenCalled();
+  });
+});
+
+describe('Operational Contact UI cleanup (CanhIter3FixBug §9-§14)', () => {
+  it('the quick-fill button reads "Đầu mối là người đăng ký" — the old "Dùng người đăng ký" is gone', () => {
+    renderForm();
+
+    expect(screen.getByTestId('campus-opcontact-use-registrant-0')).toHaveTextContent('Đầu mối là người đăng ký');
+    expect(screen.queryByText('Dùng người đăng ký')).toBeNull();
+  });
+
+  it('MEMBER mode drops the redundant "Đầu mối là ai trong đoàn?" question, its info icon and helper text', async () => {
+    renderForm();
+    await chooseMemberSource();
+
+    // The dropdown itself is still there and still functional.
+    expect(picker()).toBeInTheDocument();
+
+    expect(screen.queryByText('Đầu mối là ai trong đoàn?')).toBeNull();
+    expect(screen.queryByTestId('campus-opcontact-pick-help-0')).toBeNull();
+    expect(screen.queryByText('Họ tên, chức vụ và đơn vị lấy theo thành viên được chọn.')).toBeNull();
+  });
+
+  it('MEMBER dropdown placeholder is "Chọn đầu mối trong đoàn", not the old "không nằm trong đoàn" wording', async () => {
+    renderForm();
+    await chooseMemberSource();
+
+    const blankOption = options().find(o => o.value === '')!;
+    expect(blankOption.textContent).toBe('Chọn đầu mối trong đoàn');
+    expect(picker()).toHaveAccessibleName('Chọn đầu mối trong đoàn');
+
+    // The MEMBER picker must never offer a selectable option that reads as "not in the delegation"
+    // — that contradicts the radio group's own "Người trong đoàn" answer one step above it.
+    expect(options().some(o => /không nằm trong danh sách đoàn/i.test(o.textContent ?? ''))).toBe(false);
+  });
+
+  it('Guest and Support members both still appear in the MEMBER picker', async () => {
+    renderForm();
+    await chooseMemberSource();
+    await fillMember('visitors', 0, { fullName: 'Nguyễn Văn A', jobTitle: 'GV', organization: 'ABC University' });
+    await addSupport();
+    await fillMember('supportTeam', 0, { fullName: 'Trần Thị B', jobTitle: 'NV', organization: 'ABC University' });
+
+    expect(options().some(o => /Nguyễn Văn A/.test(o.textContent ?? ''))).toBe(true);
+    expect(options().some(o => /Trần Thị B/.test(o.textContent ?? ''))).toBe(true);
   });
 });
 

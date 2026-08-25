@@ -8,6 +8,7 @@ import { Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import VisitContactInvitationPage from './pages/identity/VisitContactInvitationPage';
 import ConfirmEmailPage from './pages/account/ConfirmEmailPage';
 import VisitRequestV2Page from './pages/visit/VisitRequestV2Page';
+import VisitRequestV2EntryRoute from './pages/visit/VisitRequestV2EntryRoute';
 import VisitRequestV2DetailPage from './pages/dashboard/visit/VisitRequestV2DetailPage';
 import EditVisitRequestV2Page from './pages/dashboard/visit/EditVisitRequestV2Page';
 import EditPendingCampusV2Page from './pages/dashboard/visit/EditPendingCampusV2Page';
@@ -90,6 +91,7 @@ import { RouteAccessGuard } from './shared/auth/RouteAccessGuard';
 import { useAuth } from './shared/hooks/useAuth';
 import { ErrorBoundary } from './components/layout/ErrorBoundary';
 import { PerCampusV2CapabilityProvider } from './shared/features/perCampusV2Capability';
+import { VISIT_REQUEST_V2_CREATE_ROLES } from './shared/auth/visitRequestV2Access';
 
 
 function ScrollToTop() {
@@ -191,9 +193,21 @@ export default function App() {
           <Route path="/visit-contact-claim/:token" element={<VisitContactInvitationPage kind="claim" />} />
           <Route path="/visit-contact-transfer/:token" element={<VisitContactInvitationPage kind="transfer" />} />
 
-          {/* Per-campus form v2 (feature-flagged server-side; the v1 registration flow is untouched) */}
-          <Route path="/visit-registration/v2" element={<VisitRequestV2Page mode="public" />} />
-          <Route path="/visit/create-v2" element={<ProtectedRoute><VisitRequestV2Page mode="authenticated" /></ProtectedRoute>} />
+          {/* Per-campus form v2 (feature-flagged server-side; the v1 registration flow is untouched).
+              `/visit-registration/v2` is auth-aware in place (anonymous/allowed/forbidden all
+              resolve without leaving the URL) — see VisitRequestV2EntryRoute for why. `/visit/create-v2`
+              is authenticated-only by name, but "signed in" is not "allowed to create": effectiveRoles
+              restricts it to the same three actor types the entry route and the backend guard allow,
+              so a Department/Admin/HO/Student account typing this URL gets /403, never the form. */}
+          <Route path="/visit-registration/v2" element={<VisitRequestV2EntryRoute />} />
+          <Route
+            path="/visit/create-v2"
+            element={(
+              <ProtectedRoute effectiveRoles={[...VISIT_REQUEST_V2_CREATE_ROLES]}>
+                <VisitRequestV2Page mode="authenticated" />
+              </ProtectedRoute>
+            )}
+          />
 
           {/* Dashboard Routes.
               Every child carries a <RouteAccessGuard routeKey=...>; the policy for each key

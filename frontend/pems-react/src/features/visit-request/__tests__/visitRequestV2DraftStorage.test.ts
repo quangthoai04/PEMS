@@ -55,6 +55,27 @@ describe('visitRequestV2DraftStorage', () => {
 
 
 
+  // ── plan CanhIter3FixBug §14/§26 ────────────────────────────────────────────────────────────
+  it('a campus whose only content is a chosen operational-contact source is still meaningful', () => {
+    const data: Partial<VisitRequestV2Schema> = {
+      campusVisits: [
+        { ...createEmptyCampusVisit('ck'), operationalContactSource: 'EXTERNAL' },
+      ],
+    };
+    expect(saveVisitRequestV2Draft(data).success).toBe(true);
+
+    const memberOnly: Partial<VisitRequestV2Schema> = {
+      campusVisits: [
+        { ...createEmptyCampusVisit('ck2'), operationalContactSource: 'MEMBER' },
+      ],
+    };
+    expect(saveVisitRequestV2Draft(memberOnly).success).toBe(true);
+
+    // A fresh, still-undecided campus is genuinely empty — the baseline this guards against regressing.
+    const untouched: Partial<VisitRequestV2Schema> = { campusVisits: [createEmptyCampusVisit('ck3')] };
+    expect(saveVisitRequestV2Draft(untouched).success).toBe(false);
+  });
+
   it('sanitize strips OTP/session/file material from whatever is persisted', () => {
     const dirty = {
       ...v2Data(),

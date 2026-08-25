@@ -4,7 +4,9 @@ import type { VisitEntryCta } from './useVisitEntryCta';
 
 interface Props {
   cta: VisitEntryCta;
-  /** Per-user draft namespace (authenticated mode only). */
+  /** Per-user draft namespace override — defaults to `cta.draftNamespace` (already resolved from
+   * the signed-in account by `useVisitEntryCta`); pass this only when a caller needs a different
+   * namespace than the CTA's own auth state would give it. */
   draftNamespace?: string;
   /** Called after a successful v2 create — e.g. to refresh a dashboard list. */
   onV2Success?: () => void;
@@ -22,7 +24,7 @@ export const VisitEntrySurfaces: React.FC<Props> = ({ cta, draftNamespace, onV2S
       isOpen={cta.v2ModalOpen}
       onClose={cta.closeV2Modal}
       mode={cta.v2Mode}
-      draftNamespace={draftNamespace}
+      draftNamespace={draftNamespace ?? cta.draftNamespace}
       // Success does NOT close the modal. It used to call `cta.closeV2Modal()` here, which unmounted
       // the shell in the same tick as it rendered the receipt — so on every public CTA (hero, final
       // CTA, FAQ, Partners) the form simply vanished after the OTP and a four-second toast was the

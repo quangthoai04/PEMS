@@ -27,7 +27,15 @@ vi.mock('../hooks/useRegistrationCampuses', () => ({
   }),
 }));
 
-vi.mock('../../../shared/auth/AuthContext', () => ({ useAuthContext: () => ({ user: null }) }));
+const authUser = vi.fn(() => null as null | { userId: number; email: string; effectiveRole: string });
+vi.mock('../../../shared/auth/AuthContext', () => ({
+  useAuthContext: () => ({ user: authUser(), isReady: true, effectiveRole: authUser()?.effectiveRole ?? null }),
+}));
+
+const getMyProfile = vi.fn();
+vi.mock('../../profile/api/profileApi', () => ({
+  profileApi: { getMyProfile: (...a: unknown[]) => getMyProfile(...a) },
+}));
 
 vi.mock('../api/visitRequestApi', () => ({
   visitRequestApi: {
@@ -194,11 +202,31 @@ describe('v2 draft UX', () => {
  * mount therefore asked the wrong key: it looked in the PUBLIC draft, found nothing, and never
  * looked again — so whether the restore prompt appeared came down to whether the user had loaded
  * first. Same person, same draft, prompt some of the time.
+ *
+ * Authenticated create is self-registration ONLY (plan CanhIter3FixBug), so these tests also double
+ * as the pin for §9 — "a restored authenticated draft can never bring back somebody else's
+ * registrant identity": every seeded draft below carries a STALE registrant snapshot on purpose, and
+ * what must come back after restore is the LIVE profile, never that snapshot. Campus content (which
+ * IS legitimately the user's own typing) still restores normally — only the registrant is overridden.
  */
 describe('draft detection waits for the account namespace, then runs once per namespace', () => {
-  const seedFor = (namespace: string | undefined, fullName: string) =>
+  const U15 = { userId: 15, email: 'u15@fpt.edu.vn', effectiveRole: 'STAFF' };
+  const profileFor = (u: typeof U15, fullName: string) => ({
+    userId: u.userId, fullName, email: u.email, phone: '+84900000000', nationality: 'VN',
+    displayPosition: 'Nhân viên', displayDepartmentName: 'Phòng ABC', displayCampusName: 'Hòa Lạc',
+    department: { departmentId: 1, name: 'Phòng ABC', departmentType: 'IC' },
+  });
+
+  /** Every seeded draft's registrant is a STALE snapshot that must never survive a restore. */
+  const seedFor = (namespace: string | undefined, delegationName: string) =>
     saveVisitRequestV2Draft(
-      { registerInfo: { fullName, organization: 'ĐH Nháp', jobTitle: 'TP', phone: '', email: '', nationality: '' } } as never,
+      {
+        registerInfo: {
+          fullName: 'Người khác (nháp cũ)', organization: 'Tổ chức khác', jobTitle: 'CV',
+          phone: '', email: 'nguoikhac@example.com', nationality: 'VN',
+        },
+        campusVisits: [{ ...createEmptyCampusVisit('ck-1'), delegationName }],
+      } as never,
       undefined,
       namespace,
     );
@@ -210,10 +238,22 @@ describe('draft detection waits for the account namespace, then runs once per na
     <VisitRequestFormV2 mode="authenticated" draftNamespace={draftNamespace} onSuccess={vi.fn()} />
   );
 
-  beforeEach(() => { localStorage.clear(); vi.clearAllMocks(); });
+  const delegationNameInput = (): HTMLElement => {
+    const wrapper = screen.getByText('visitRequestV2:card.delegationName').closest('div.flex.flex-col.gap-2');
+    const control = wrapper?.querySelector('textarea, input');
+    if (!control) throw new Error('Delegation name control not found');
+    return control as HTMLElement;
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    authUser.mockReturnValue(U15);
+    getMyProfile.mockResolvedValue(profileFor(U15, 'Người U15 (hồ sơ thật)'));
+  });
 
   it('finds the account draft that only became addressable after the user loaded', async () => {
-    seedFor('u15', 'Nháp của u15');
+    seedFor('u15', 'Đoàn của u15');
     const { rerender } = renderAuthed(undefined);
 
     // AuthContext has not answered yet: nothing may be offered, because nothing is known.
@@ -223,29 +263,45 @@ describe('draft detection waits for the account namespace, then runs once per na
 
     await waitFor(() => expect(screen.getByTestId('v2-draft-prompt')).toBeTruthy());
     await act(async () => { fireEvent.click(screen.getByTestId('v2-draft-restore')); });
-    expect((screen.getByTestId('v2-registrant-fullName') as HTMLInputElement).value).toBe('Nháp của u15');
+
+    // Campus content from the draft: restored.
+    await waitFor(() => expect(delegationNameInput()).toHaveValue('Đoàn của u15'));
+    // Registrant identity: the LIVE profile always wins — never the stale draft snapshot (plan §9).
+    const summary = screen.getByTestId('v2-registrant-readonly');
+    expect(summary.textContent).toContain('Người U15 (hồ sơ thật)');
+    expect(summary.textContent).not.toContain('Người khác (nháp cũ)');
   });
 
   it('never falls back to the public draft while the account is still unknown', async () => {
-    seedFor(undefined, 'Nháp công khai');
+    saveVisitRequestV2Draft(
+      {
+        registerInfo: { fullName: 'Khách vãng lai', organization: '', jobTitle: '', phone: '', email: '', nationality: '' },
+        campusVisits: [{ ...createEmptyCampusVisit('ck-1'), delegationName: 'Đoàn công khai' }],
+      } as never,
+      undefined,
+      undefined,
+    );
     const { rerender } = renderAuthed(undefined);
 
     expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
 
     // …and the signed-in form must not write over it either, now that the account key is known.
+    // (The registrant block is read-only now, so the edit that exercises autosave is a campus field.)
     rerender(authedForm('u15'));
+    await waitFor(() => expect(screen.getByTestId('v2-registrant-readonly')).toBeTruthy());
     await act(async () => {
-      fireEvent.change(screen.getByTestId('v2-registrant-fullName'), { target: { value: 'Người đã đăng nhập' } });
+      fireEvent.change(delegationNameInput(), { target: { value: 'Đoàn của tài khoản đã đăng nhập' } });
       await new Promise(r => setTimeout(r, 900));
     });
 
     expect(screen.queryByTestId('v2-draft-prompt')).toBeNull();
-    expect(loadVisitRequestV2Draft(undefined)?.data.registerInfo?.fullName).toBe('Nháp công khai');
-    expect(loadVisitRequestV2Draft('u15')?.data.registerInfo?.fullName).toBe('Người đã đăng nhập');
+    expect(loadVisitRequestV2Draft(undefined)?.data.campusVisits?.[0]?.delegationName).toBe('Đoàn công khai');
+    expect(loadVisitRequestV2Draft('u15')?.data.campusVisits?.[0]?.delegationName)
+      .toBe('Đoàn của tài khoản đã đăng nhập');
   });
 
   it('does not re-detect on an ordinary re-render of the same namespace', async () => {
-    seedFor('u15', 'Nháp của u15');
+    seedFor('u15', 'Đoàn của u15');
     const reads = vi.spyOn(Storage.prototype, 'getItem');
     const { rerender } = renderAuthed('u15');
     await waitFor(() => expect(screen.getByTestId('v2-draft-prompt')).toBeTruthy());
@@ -262,19 +318,25 @@ describe('draft detection waits for the account namespace, then runs once per na
   });
 
   it('detects the NEW account when the namespace changes underneath a mounted form', async () => {
-    seedFor('u15', 'Nháp của u15');
-    seedFor('u16', 'Nháp của u16');
+    seedFor('u15', 'Đoàn của u15');
+    seedFor('u16', 'Đoàn của u16');
     const { rerender } = renderAuthed('u15');
     await waitFor(() => expect(screen.getByTestId('v2-draft-prompt')).toBeTruthy());
     await act(async () => { fireEvent.click(screen.getByTestId('v2-draft-discard')); });
     expect(loadVisitRequestV2Draft('u15')).toBeNull();
 
+    // (The profile itself loads once per MOUNT, not per namespace — a real account switch remounts
+    // this component entirely via a route change, so it is out of scope for this test; what matters
+    // here is purely draft-namespace isolation.)
     rerender(authedForm('u16'));
 
     await waitFor(() => expect(screen.getByTestId('v2-draft-prompt')).toBeTruthy());
     await act(async () => { fireEvent.click(screen.getByTestId('v2-draft-restore')); });
-    // u16's own answers — never the ones the previous account left in the form.
-    expect((screen.getByTestId('v2-registrant-fullName') as HTMLInputElement).value).toBe('Nháp của u16');
+    // u16's own campus content — never the previous account's.
+    await waitFor(() => expect(delegationNameInput()).toHaveValue('Đoàn của u16'));
+    // …and the registrant identity is STILL the live profile, never the stale draft snapshot either
+    // account's draft carried.
+    expect(screen.getByTestId('v2-registrant-readonly').textContent).not.toContain('Người khác (nháp cũ)');
   });
 
   it('still offers the public draft in public mode, where there is no account to wait for', () => {
@@ -323,7 +385,12 @@ describe('closing the create modal asks before it throws typed data away', () =>
     ['the registrant name', () => fireEvent.change(screen.getByTestId('v2-registrant-fullName'), { target: { value: 'N' } })],
     ['a job title alone', () => fireEvent.change(screen.getByTestId('v2-registrant-jobTitle'), { target: { value: 'Trưởng phòng' } })],
     ['the working content alone', () => fireEvent.change(controlFor('visitRequestV2:card.workingContent'), { target: { value: 'Nội dung' } })],
-    ['the operational contact alone', () => fireEvent.change(screen.getByTestId('campus-opcontact-name'), { target: { value: 'Đầu mối' } })],
+    ['the operational contact alone', () => {
+      // The free-text fields only exist once a source is chosen (plan CanhIter3FixBug) — picking one
+      // is itself the smallest possible "changed the operational contact" action now.
+      fireEvent.click(screen.getByTestId('campus-opcontact-source-external-0'));
+      fireEvent.change(screen.getByTestId('campus-opcontact-name'), { target: { value: 'Đầu mối' } });
+    }],
     ['a campus selection alone', () => fireEvent.change(controlFor('visitRequestV2:card.campus'), { target: { value: 'HN' } })],
     ['a visit type alone', () => fireEvent.change(controlFor('visitRequestV2:card.visitType'), { target: { value: 'MEETING' } })],
     ['a working language alone', () => fireEvent.change(controlFor('visitRequestV2:card.workingLanguage'), { target: { value: 'EN' } })],

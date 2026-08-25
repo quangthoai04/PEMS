@@ -1,29 +1,28 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 
 /**
- * NP-02 — an error must not outlive the problem it describes.
+ * NP-02 — an error must not outlive the problem it describes, continued under the new business rule
+ * (plan CanhIter3FixBug).
  *
- * <p>The reported sequence: a Staff Leader presses "Tôi là người đăng ký", their profile has no
- * country on it, the form immediately shows "Quốc tịch không được để trống", they pick a country —
- * and the red message stays.</p>
- *
- * <p>Two independent causes, both fixed:</p>
+ * <p>The ORIGINAL report: a Staff Leader pressed "Tôi là người đăng ký", their profile had no country
+ * on it, the form immediately showed "Quốc tịch không được để trống", they picked a country — and the
+ * red message stayed. That flow (manual autofill into an editable form) no longer exists: the
+ * registrant is now profile-locked and read-only, loaded automatically, and a profile missing a
+ * REQUIRED field is a hard block (a dedicated notice, §7/§20) rather than an editable form with a
+ * stuck error. This file now pins the two things that replaced it:</p>
  * <ol>
- *   <li>The autofill called `setValue(..., { shouldValidate: true })` unconditionally, so it accused
- *   the profile of being incomplete before the user had submitted anything.</li>
- *   <li>The form runs `mode: 'onSubmit' / reValidateMode: 'onChange'`, so before the first submit
- *   NOTHING revalidates on change — and `CountrySelect` is a custom control that only calls
- *   `field.onChange`, so not even RHF's own input handling ran. The error had nothing to clear it.</li>
+ *   <li>a COMPLETE profile auto-loads with zero inline validation errors before the user has
+ *   attempted anything — the automatic load must not validate any more than the old manual click
+ *   did;</li>
+ *   <li>an INCOMPLETE profile blocks with the dedicated notice, never a stuck error on a field that
+ *   does not even render.</li>
  * </ol>
- *
- * <p>Fixing only the first would leave a mapped server error or a manual `setError` stuck in exactly
- * the same way, which is why both are pinned here.</p>
  */
 
 const authUser = vi.fn();
 vi.mock('../../../shared/auth/AuthContext', () => ({
-  useAuthContext: () => ({ user: authUser() }),
+  useAuthContext: () => ({ user: authUser(), isReady: true, effectiveRole: authUser()?.effectiveRole ?? null }),
 }));
 
 vi.mock('../hooks/useRegistrationCampuses', () => ({
@@ -57,61 +56,60 @@ import { VisitRequestFormV2 } from '../components/v2/VisitRequestFormV2';
 
 const STAFF = {
   userId: 5, roleCode: 'STAFF', subRole: 'STAFF', campusCode: 'HN', email: 'staff.hn@fpt.edu.vn',
+  effectiveRole: 'STAFF',
 };
 
-/** A real profile with the one gap that triggered the report: no country on file. */
-const PROFILE_WITHOUT_COUNTRY = {
+const COMPLETE_PROFILE = {
   userId: 5,
   fullName: 'Nguyễn Văn A',
   email: 'staff.hn@fpt.edu.vn',
   phone: '+84912345678',
-  nationality: null,
+  nationality: 'VN',
   displayPosition: 'Nhân viên',
   displayDepartmentName: 'Phòng Hợp tác Quốc tế',
   displayCampusName: 'Hòa Lạc',
   department: { departmentId: 1, name: 'Phòng Hợp tác Quốc tế', departmentType: 'IC' },
 };
 
-/** Any inline error message currently rendered anywhere in the registrant block. */
+/** A real profile with the one gap that triggered the original report: no country on file. */
+const PROFILE_WITHOUT_COUNTRY = { ...COMPLETE_PROFILE, nationality: null };
+
+/**
+ * Any FIELD-level validation error message currently rendered — excludes the dedicated
+ * profile-incomplete NOTICE (`v2-profile-incomplete`), which legitimately says "required" as part of
+ * its own intentional UI and is a different thing from a stuck field error.
+ */
 const inlineErrors = () =>
   Array.from(document.querySelectorAll('p'))
+    .filter(p => !p.closest('[data-testid="v2-profile-incomplete"]'))
     .map(p => p.textContent ?? '')
     .filter(text => /không được để trống|required/i.test(text));
 
-describe('NP-02: autofill does not accuse the user before they submit', () => {
+describe('NP-02, continued: the automatic profile load never validates prematurely', () => {
   beforeEach(() => {
     authUser.mockReset();
     getMyProfile.mockReset();
     localStorage.clear();
     authUser.mockReturnValue(STAFF);
-    getMyProfile.mockResolvedValue(PROFILE_WITHOUT_COUNTRY);
   });
 
-  it('writes no inline error when the profile is missing a required field', async () => {
+  it('a complete profile loads with no inline error anywhere on the form', async () => {
+    getMyProfile.mockResolvedValue(COMPLETE_PROFILE);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="np02-a" onSuccess={vi.fn()} />);
 
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-
-    // The autofill DID run — the fields it could fill are filled…
     await waitFor(() =>
-      expect((screen.getByTestId('v2-registrant-fullName') as HTMLInputElement).value)
-        .toBe('Nguyễn Văn A'));
-    // …and it did NOT turn the gaps it left behind into accusations. (Reverting the autofill to
-    // `shouldValidate: true` puts "Nationality is required" here, which is the reported bug.)
+      expect(screen.getByTestId('v2-registrant-readonly').textContent).toContain('Nguyễn Văn A'));
     expect(inlineErrors()).toEqual([]);
   });
 
-  it('leaves the field itself empty rather than inventing a value', async () => {
+  it('an incomplete profile (missing nationality) blocks with the dedicated notice — not a stuck field error', async () => {
+    getMyProfile.mockResolvedValue(PROFILE_WITHOUT_COUNTRY);
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="np02-b" onSuccess={vi.fn()} />);
 
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-
-    await waitFor(() =>
-      expect((screen.getByTestId('v2-registrant-fullName') as HTMLInputElement).value)
-        .toBe('Nguyễn Văn A'));
-    // Padding the country with a placeholder would be worse than leaving it blank: the user would
-    // submit somebody's nationality without ever having been asked for it.
-    expect((screen.getByTestId('v2-registrant-jobTitle') as HTMLInputElement).value)
-      .toBe('Nhân viên');
+    await waitFor(() => expect(screen.getByTestId('v2-profile-incomplete')).toBeTruthy());
+    // The old bug's shape — a red "Quốc tịch không được để trống" surviving a fix — cannot recur:
+    // there is no field for it to be attached to any more.
+    expect(inlineErrors()).toEqual([]);
+    expect(screen.queryByTestId('v2-registrant-readonly')).toBeNull();
   });
 });

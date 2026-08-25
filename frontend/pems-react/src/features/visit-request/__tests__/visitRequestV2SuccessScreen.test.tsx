@@ -58,15 +58,33 @@ const response = (over: Partial<V2CreateResponse> = {}): V2CreateResponse => ({
 describe('the success screen (plan §8)', () => {
   beforeEach(async () => { await i18n.changeLanguage('en'); });
 
-  it('names the request, its status, when it was sent and how many campuses', () => {
+  it('titles a single-campus receipt with the campus name and the submit time, and states the status', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
 
-    expect(screen.getByTestId('v2-success-code')).toHaveTextContent('VR-MC-HN-HCM-0003');
-    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
+    const title = screen.getByTestId('v2-success-title');
+    expect(title).toHaveTextContent('FPT Hà Nội');
     // Rendered through the wall-clock formatter — never through the viewer's own timezone.
-    expect(screen.getByTestId('v2-success-submitted-at')).toHaveTextContent('31/07/2026 09:30');
-    // Campus names, not a bare count.
-    expect(screen.getByTestId('v2-success-campuses')).toHaveTextContent('FPT Hà Nội');
+    expect(title).toHaveTextContent('31/07/2026 09:30');
+    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
+    // The request code is never rendered on the receipt.
+    expect(screen.queryByText('VR-MC-HN-HCM-0003')).toBeNull();
+  });
+
+  it('titles a multi-campus receipt with the campus COUNT, never the first campus alone', () => {
+    const multi = values();
+    multi.campusVisits = [...multi.campusVisits, { ...multi.campusVisits[0], clientKey: 'ck-2' }];
+    render(<VisitRequestV2SuccessPanel response={response({ visitScope: 'MULTI_CAMPUS' })} values={multi} />);
+
+    const title = screen.getByTestId('v2-success-title');
+    expect(title).toHaveTextContent('2');
+    expect(title).toHaveTextContent(/campuses/i);
+  });
+
+  it('degrades the title gracefully when submittedAt is missing, never rendering "undefined" or "Invalid Date"', () => {
+    render(<VisitRequestV2SuccessPanel response={response({ submittedAt: '' })} values={values()} />);
+    const title = screen.getByTestId('v2-success-title');
+    expect(title.textContent).not.toMatch(/undefined|invalid date/i);
+    expect(title).toHaveTextContent('FPT Hà Nội');
   });
 
   it('renders an unmapped status as itself rather than as a blank or a raw key', () => {
@@ -139,7 +157,7 @@ describe('the success screen (plan §8)', () => {
         values={values()}
       />,
     );
-    expect(screen.getByTestId('v2-success-code')).toBeInTheDocument();
+    expect(screen.getByTestId('v2-success-title')).toBeInTheDocument();
     expect(container.querySelector('[data-testid="campus-summary-0"]')).toBeNull();
   });
 });

@@ -2,18 +2,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 /**
- * "Tôi là người đăng ký" (plan §5.1) and the identity banner it feeds.
+ * Authenticated create is self-registration ONLY (plan CanhIter3FixBug). The registrant block is
+ * profile-locked and read-only: no "Tôi là người đăng ký" button, no different-account banner, no
+ * editable textbox a user could type somebody else into. The profile loads automatically the moment
+ * auth has settled — there is no button to press and nothing renders it as an option.
  *
- * The behaviours worth pinning are the ones that cost the user real work when they regress:
- * the button must never fire on its own (that is what silently overwrites a restored draft), the
- * banner must track the email field as it is edited rather than latching, and an internal member of
- * staff must be stopped from copying themselves into the contact block — the backend rejects that
- * payload outright, so letting them fill it in only to fail on submit is wasted typing.
+ * Public stays exactly as before: fully editable Registrant, OTP round trip, no profile involved.
  */
 
 const authUser = vi.fn();
 vi.mock('../../../shared/auth/AuthContext', () => ({
-  useAuthContext: () => ({ user: authUser() }),
+  useAuthContext: () => ({ user: authUser(), isReady: true, effectiveRole: authUser()?.effectiveRole ?? null }),
 }));
 
 vi.mock('../hooks/useRegistrationCampuses', () => ({
@@ -44,16 +43,22 @@ vi.mock('../api/visitRequestV2Api', () => ({
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'vi' } }),
+  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts?.fields ? `${key}:${opts.fields}` : key), i18n: { language: 'vi' } }),
 }));
 
 import { VisitRequestFormV2 } from '../components/v2/VisitRequestFormV2';
 
 const STAFF = {
   userId: 5, roleCode: 'STAFF', subRole: 'STAFF', campusCode: 'HN', email: 'staff.hn@fpt.edu.vn',
+  effectiveRole: 'STAFF',
+};
+const STAFF_LEADER = {
+  userId: 6, roleCode: 'STAFF', subRole: 'LEADER', campusCode: 'HN', email: 'leader.hn@fpt.edu.vn',
+  effectiveRole: 'STAFF_LEADER',
 };
 const VISITOR = {
   userId: 9, roleCode: 'VISITOR', subRole: null, campusCode: null, email: 'guest@partner.example.com',
+  effectiveRole: 'VISITOR',
 };
 
 const STAFF_PROFILE = {
@@ -68,112 +73,171 @@ const STAFF_PROFILE = {
   department: { departmentId: 1, name: 'Phòng Hợp tác Quốc tế', departmentType: 'IC' },
 };
 
-const registrantEmail = () => screen.getByTestId('v2-registrant-email') as HTMLInputElement;
-const field = (name: 'fullName' | 'phone' | 'jobTitle') =>
-  screen.getByTestId(`v2-registrant-${name}`) as HTMLInputElement;
-
-describe('VisitRequestFormV2 — registrant identity', () => {
+describe('VisitRequestFormV2 — authenticated registrant is profile-locked and read-only', () => {
   beforeEach(() => {
     authUser.mockReset();
     getMyProfile.mockReset();
     localStorage.clear();
   });
 
-  it('does not fetch the profile or fill anything until the button is pressed', () => {
+  it('loads the profile automatically — no button, no click needed', async () => {
     authUser.mockReturnValue(STAFF);
     getMyProfile.mockResolvedValue(STAFF_PROFILE);
 
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
 
-    expect(getMyProfile).not.toHaveBeenCalled();
-    expect(registrantEmail().value).toBe('');
+    await waitFor(() => expect(getMyProfile).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByTestId('v2-registrant-readonly').textContent).toContain('Nguyễn Văn A'));
   });
 
-  it('fills the registrant block from the profile when pressed', async () => {
+  it('never renders the old "Tôi là người đăng ký" button or the self/delegated banner', async () => {
     authUser.mockReturnValue(STAFF);
     getMyProfile.mockResolvedValue(STAFF_PROFILE);
 
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-
-    await waitFor(() => expect(registrantEmail().value).toBe('staff.hn@fpt.edu.vn'));
-    expect(field('fullName').value).toBe('Nguyễn Văn A');
-    expect(field('phone').value).toBe('+84912345678');
-    expect(field('jobTitle').value).toBe('Nhân viên');
-  });
-
-  it('leaves fields the profile has no value for blank instead of inventing one', async () => {
-    authUser.mockReturnValue(VISITOR);
-    getMyProfile.mockResolvedValue({
-      ...STAFF_PROFILE,
-      email: VISITOR.email,
-      phone: null,
-      nationality: null,
-      displayPosition: null,          // a Visitor has no internal position
-      displayDepartmentName: null,
-      department: null,
-      displayCampusName: null,
-    });
-
-    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u9" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-
-    await waitFor(() => expect(registrantEmail().value).toBe(VISITOR.email));
-    expect(field('jobTitle').value).toBe('');
-    expect(field('phone').value).toBe('');
-  });
-
-  it('shows the no-OTP state once the email matches, and drops it the moment it is edited', async () => {
-    authUser.mockReturnValue(STAFF);
-    getMyProfile.mockResolvedValue(STAFF_PROFILE);
-
-    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
-
-    // Nothing typed yet — an empty field is nobody, so it is NOT treated as the signed-in user.
-    expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
-    await waitFor(() => expect(screen.getByTestId('v2-registrant-self')).toBeTruthy());
-
-    fireEvent.change(registrantEmail(), { target: { value: 'someone.else@partner.example.com' } });
-    expect(screen.queryByTestId('v2-registrant-self')).toBeNull();
-    expect(screen.getByTestId('v2-registrant-delegated')).toBeTruthy();
-  });
-
-  it('offers no autofill button on the public form', () => {
-    authUser.mockReturnValue(null);
-    render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('v2-registrant-readonly')).toBeTruthy());
 
     expect(screen.queryByTestId('v2-registrant-use-me')).toBeNull();
     expect(screen.queryByTestId('v2-registrant-self')).toBeNull();
     expect(screen.queryByTestId('v2-registrant-delegated')).toBeNull();
   });
 
-  // ── Primary contact copy rule (plan §7) ──────────────────────────────────────
-
-  it('keeps the copy button for a staff member who is registering somebody else', async () => {
-    // The rule is about the internal user being the CONTACT of their own delegation. Once the
-    // registrant is an external guest, copying that guest's details across is legitimate.
+  it('renders no editable registrant textbox — nothing the user could type a different person into', async () => {
     authUser.mockReturnValue(STAFF);
+    getMyProfile.mockResolvedValue(STAFF_PROFILE);
 
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
-    fireEvent.change(registrantEmail(), { target: { value: 'guest@partner.example.com' } });
+    await waitFor(() => expect(screen.getByTestId('v2-registrant-readonly')).toBeTruthy());
 
-    // The per-campus copy button follows whether the REGISTRANT block is usable — this test only
-    // sets the email, so it stays off until a name is entered too.
-    const copyButton = screen.getByTestId('campus-opcontact-use-registrant-0') as HTMLButtonElement;
-    expect(copyButton.disabled).toBe(true);
-    expect(screen.queryByText('visitRequestV2:sections.contactInternalNotAllowed')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-fullName')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-email')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-jobTitle')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-phone')).toBeNull();
   });
 
-  it('keeps the copy button for a Visitor registering themselves', async () => {
+  it('shows a loading state while the profile round trip is in flight, then the summary', async () => {
+    authUser.mockReturnValue(STAFF);
+    let resolveProfile: (value: typeof STAFF_PROFILE) => void = () => {};
+    getMyProfile.mockReturnValue(new Promise(resolve => { resolveProfile = resolve; }));
+
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+
+    expect(screen.getByTestId('v2-registrant-loading')).toBeTruthy();
+    expect(screen.queryByTestId('v2-registrant-readonly')).toBeNull();
+    expect(screen.queryByTestId('v2-submit')).toBeNull();
+
+    resolveProfile(STAFF_PROFILE);
+    await waitFor(() => expect(screen.getByTestId('v2-registrant-readonly')).toBeTruthy());
+    expect(screen.queryByTestId('v2-registrant-loading')).toBeNull();
+  });
+
+  it('maps fullName/email/phone/jobTitle/organization/nationality straight from the canonical profile fields', async () => {
+    authUser.mockReturnValue(STAFF_LEADER);
+    getMyProfile.mockResolvedValue({
+      ...STAFF_PROFILE,
+      email: STAFF_LEADER.email,
+      displayPosition: 'Trưởng phòng',
+    });
+
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u6" onSuccess={vi.fn()} />);
+
+    const summary = await waitFor(() => screen.getByTestId('v2-registrant-readonly'));
+    expect(summary.textContent).toContain('Nguyễn Văn A');
+    expect(summary.textContent).toContain('Trưởng phòng');
+    expect(summary.textContent).toContain('Phòng Hợp tác Quốc tế');
+    expect(summary.textContent).toContain(STAFF_LEADER.email);
+    expect(summary.textContent).toContain('+84912345678');
+    expect(summary.textContent).toContain('VN');
+  });
+
+  // ── Visitor exception (plan §6): org/jobTitle have no profile source, so they are NOT part of
+  // the "profile incomplete" gate and stay editable — everything else (identity) is still locked. ──
+
+  it('a Visitor with no organization/jobTitle in their profile is NOT blocked — those two stay editable instead', async () => {
     authUser.mockReturnValue(VISITOR);
-    getMyProfile.mockResolvedValue({ ...STAFF_PROFILE, email: VISITOR.email });
+    getMyProfile.mockResolvedValue({
+      ...STAFF_PROFILE,
+      email: VISITOR.email,
+      phone: null,
+      displayPosition: null,
+      displayDepartmentName: null,
+      department: null,
+      displayCampusName: null,
+    });
 
     render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u9" onSuccess={vi.fn()} />);
-    fireEvent.click(screen.getByTestId('v2-registrant-use-me'));
+    const summary = await waitFor(() => screen.getByTestId('v2-registrant-readonly'));
+    expect(summary.textContent).toContain(VISITOR.email);
+    expect(screen.queryByTestId('v2-profile-incomplete')).toBeNull();
+    // Identity is still locked — no editable name/email box…
+    expect(screen.queryByTestId('v2-registrant-fullName')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-email')).toBeNull();
+    // …but organization/jobTitle ARE editable, starting blank (never fabricated).
+    expect((screen.getByTestId('v2-registrant-jobTitle') as HTMLInputElement).value).toBe('');
+    fireEvent.change(screen.getByTestId('v2-registrant-jobTitle'), { target: { value: 'Giảng viên' } });
+    expect((screen.getByTestId('v2-registrant-jobTitle') as HTMLInputElement).value).toBe('Giảng viên');
+  });
 
-    await waitFor(() => expect(screen.getByTestId('v2-registrant-self')).toBeTruthy());
-    expect((screen.getByTestId('campus-opcontact-use-registrant-0') as HTMLButtonElement).disabled).toBe(false);
+  it('a Staff/Staff Leader profile with no organization IS blocked — org/jobTitle are a fixed HR attribute for them', async () => {
+    authUser.mockReturnValue(STAFF);
+    getMyProfile.mockResolvedValue({
+      ...STAFF_PROFILE, displayDepartmentName: null, department: null, displayCampusName: null,
+    });
+
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('v2-profile-incomplete')).toBeTruthy());
+  });
+
+  // ── Profile round trip failure states ──────────────────────────────────────────────────────────
+
+  it('shows a clear error with a Retry when the profile fails to load — never an empty editable form', async () => {
+    authUser.mockReturnValue(STAFF);
+    getMyProfile.mockRejectedValueOnce(new Error('network down'));
+
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('v2-profile-error')).toBeTruthy());
+    expect(screen.queryByTestId('v2-registrant-readonly')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-fullName')).toBeNull();
+    expect(screen.queryByTestId('v2-submit')).toBeNull();
+
+    getMyProfile.mockResolvedValueOnce(STAFF_PROFILE);
+    fireEvent.click(screen.getByTestId('v2-profile-retry'));
+
+    await waitFor(() => expect(screen.getByTestId('v2-registrant-readonly')).toBeTruthy());
+  });
+
+  it('blocks with a profile-incomplete notice — never a fabricated default — when a required field is missing', async () => {
+    authUser.mockReturnValue(STAFF);
+    getMyProfile.mockResolvedValue({ ...STAFF_PROFILE, nationality: null });
+
+    render(<VisitRequestFormV2 mode="authenticated" draftNamespace="u5" onSuccess={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('v2-profile-incomplete')).toBeTruthy());
+    expect(screen.queryByTestId('v2-registrant-readonly')).toBeNull();
+    expect(screen.queryByTestId('v2-submit')).toBeNull();
+    // No editable escape hatch for the missing field.
+    expect(screen.queryByTestId('v2-registrant-fullName')).toBeNull();
+    // `t` is mocked to echo the key (see the react-i18next mock above), so the missing-field label
+    // reads back as its own translation key rather than real Vietnamese text — still proof enough
+    // that THIS field (nationality) is the one named, and not organization/jobTitle/email.
+    expect(screen.getByTestId('v2-profile-incomplete').textContent).toContain('registrant.nationality');
+    expect(screen.getByTestId('v2-profile-goto')).toBeTruthy();
+  });
+
+  // ── Public form: unchanged ───────────────────────────────────────────────────────────────────
+
+  it('public mode stays fully editable, with no profile fetch and no read-only summary', () => {
+    authUser.mockReturnValue(null);
+    render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
+
+    expect(getMyProfile).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('v2-registrant-readonly')).toBeNull();
+    expect(screen.queryByTestId('v2-registrant-use-me')).toBeNull();
+    expect((screen.getByTestId('v2-registrant-email') as HTMLInputElement).value).toBe('');
+
+    fireEvent.change(screen.getByTestId('v2-registrant-fullName'), { target: { value: 'Ai đó' } });
+    expect((screen.getByTestId('v2-registrant-fullName') as HTMLInputElement).value).toBe('Ai đó');
   });
 });

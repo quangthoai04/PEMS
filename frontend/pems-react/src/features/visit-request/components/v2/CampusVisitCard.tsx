@@ -2,7 +2,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { Controller, useFieldArray, type FieldPath, type UseFormReturn } from 'react-hook-form';
 import { AlertCircle, ChevronDown, Copy, FileSpreadsheet, Plus, Replace, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
+import type { OperationalContactSource, VisitRequestV2Schema } from '../../schema/visitRequestV2.schema';
 import {
   buildCampusVisitSchema,
   V2_MAX_MEMBERS_PER_CAMPUS,
@@ -45,6 +45,9 @@ const VISIT_TYPES = ['CAMPUS_TOUR', 'MEETING', 'WORKSHOP', 'SIGNING_CEREMONY', '
 const QUICK_FILL_FIELDS = ['fullName', 'organization', 'jobTitle', 'phone', 'email'] as const;
 /** The only block left to copy a campus contact from: there is no request-level contact any more. */
 type QuickFillSource = 'registrant';
+
+/** Where a MEMBER (re)pick came from — drives which success toast (if any) `applyMemberChange` shows. */
+type MemberChangeReason = 'DROPDOWN' | 'REGISTRANT_QUICK_FILL';
 
 /**
  * Per-field ceilings, mirroring `buildCampusVisitSchema` and the FluentValidation rules that
@@ -194,6 +197,20 @@ export const CampusVisitCard: React.FC<Props> = ({
   /** A Replace Both that would build a list containing one person twice — nothing was applied. */
   const [replaceBothBlocked, setReplaceBothBlocked] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<string>('');
+  /**
+   * A MEMBER ↔ EXTERNAL switch waiting to be confirmed — armed only when the current 5-field
+   * snapshot has data that switching would destroy (plan CanhIter3FixBug §9). `null` = nothing
+   * pending; otherwise the source the radio was just clicked toward.
+   */
+  const [pendingSourceChange, setPendingSourceChange] = useState<OperationalContactSource>(null);
+  /**
+   * A dropdown re-pick (or quick-fill match) waiting to be confirmed — armed only when the current
+   * phone/email would be silently overwritten by the new member's (empty) values (plan
+   * CanhIter3FixBug §7/§8). `null` = nothing pending.
+   */
+  const [pendingMemberChange, setPendingMemberChange] = useState<
+    { targetKey: string; reason: MemberChangeReason } | null
+  >(null);
   /**
    * Raised the FIRST time somebody edits the member who is this campus's contact, on a campus that
    * already exists (NP-03 §10). One prompt per card, not one per keystroke: the point is to be told
@@ -461,13 +478,30 @@ export const CampusVisitCard: React.FC<Props> = ({
     return v.fullName.trim().length > 0 && v.email.trim().length > 0;
   };
 
+  /** Any of the 5 snapshot fields has data — the check for a SOURCE switch (plan §9), which risks
+   * every one of them: name/org/job are never derived from anything once the contact is EXTERNAL, and
+   * switching MEMBER→EXTERNAL abandons the member-derived name/org/job just as much as it would
+   * abandon a hand-typed phone/email. */
   const operationalContactHasData = () => {
     const oc = form.getValues(`${base}.operationalContact`);
     return QUICK_FILL_FIELDS.some(f => (oc?.[f] ?? '').trim().length > 0);
   };
 
+  /** Phone/email only — the check for a same-source MEMBER reselect (plan §7/§8), where name/org/job
+   * are about to be overwritten by the new member's own values regardless, so only phone/email (never
+   * derived from a member row) are actually at risk of silent loss. */
+  const hasContactPhoneOrEmail = () => {
+    const oc = form.getValues(`${base}.operationalContact`);
+    return !!(oc?.phone ?? '').trim() || !!(oc?.email ?? '').trim();
+  };
+
   const applyQuickFill = (kind: QuickFillSource) => {
     const v = quickFillValues(kind);
+    // The registrant becomes an EXTERNAL contact (plan CanhIter3FixBug §14.2) — never a member link:
+    // whoever they might resemble in the delegation was already handled by the "already in the
+    // delegation" branch of `requestQuickFill` before this is ever reached.
+    form.setValue(`${base}.operationalContactSource`, 'EXTERNAL', { shouldDirty: true });
+    form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
     // Per-field setValue on THIS card only — a whole-object set on a shared path would have leaked
     // into the other campus cards, which are independent snapshots by design.
     for (const f of QUICK_FILL_FIELDS) {
@@ -484,33 +518,43 @@ export const CampusVisitCard: React.FC<Props> = ({
 
   /**
    * "Dùng người đăng ký" — never overwrites silently: anything already typed here is confirmed away
-   * first (plan §13).
+   * first (plan §13), and — unlike the code this replaces — NOTHING mutates in this decision path;
+   * every mutation happens inside `applyQuickFill` / `applyMemberChange`, only once the user has
+   * actually confirmed (or there was nothing to confirm). The previous version cleared
+   * `operationalContactClientMemberKey` unconditionally here, even while a confirmation was still
+   * only being ARMED — so a MEMBER link was severed the instant the button was clicked and stayed
+   * severed even if the user then cancelled.
    *
-   * <p>If the registrant is ALREADY in the delegation, that member is selected instead of a second
-   * copy of them being typed into the contact block. Matching is on name + job title + organisation
-   * together, never on the name alone: two members of one delegation sharing a name is ordinary, and
-   * merging them would attach the visit's coordinator to a stranger. Member rows carry no email, so
-   * that is the strongest evidence available here (§8).</p>
+   * <p>If the registrant matches somebody ALREADY in the delegation, that member is selected instead
+   * of a second copy of them being typed into the contact block — routed through the same
+   * `requestMemberChange` gate a manual dropdown pick uses, so an existing MEMBER pick with real data
+   * is not silently swapped just because quick-fill found a different match. Matching is on name + job
+   * title + organisation together, never on the name alone: two members of one delegation sharing a
+   * name is ordinary, and merging them would attach the visit's coordinator to a stranger. Member rows
+   * carry no email, so that is the strongest evidence available here (§8). ALL candidates are
+   * collected — more than one match means the evidence names nobody in particular, and the previous
+   * `.find()` would have silently picked the first (§14.3).</p>
    */
   const requestQuickFill = (kind: QuickFillSource) => {
     const v = quickFillValues(kind);
     const sameHuman = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-    const already = eligibleMembers.find(m =>
+    const matches = eligibleMembers.filter(m =>
       m.complete
       && sameHuman(m.fullName, v.fullName)
       && sameHuman(m.jobTitle, v.jobTitle)
       && sameHuman(m.organization, v.organization));
 
-    if (already) {
-      pickContactFromDelegation(already.key);
-      showSuccessToast(t('visitRequestV2:card.contactPickedExistingMember', { name: already.fullName }));
+    if (matches.length > 1) {
+      showMessageErrorToast(t('visitRequestV2:card.contactRegistrantAmbiguous'));
+      return;
+    }
+    if (matches.length === 1) {
+      requestMemberChange(matches[0].key, 'REGISTRANT_QUICK_FILL');
       return;
     }
 
     if (operationalContactHasData()) setPendingQuickFill(kind);
     else applyQuickFill(kind);
-    // Copying the registrant in means the contact is NOT one of the members listed below.
-    form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
   };
 
   // ── "Đầu mối là ai trong đoàn?" (NP-03) ──────────────────────────────────────────────────────
@@ -525,6 +569,9 @@ export const CampusVisitCard: React.FC<Props> = ({
   const watchedVisitors = watch(`${base}.visitors`) ?? [];
   const watchedSupport = watch(`${base}.supportTeam`) ?? [];
   const contactMemberKey = watch(`${base}.operationalContactClientMemberKey`) ?? null;
+  /** MEMBER / EXTERNAL / not-decided-yet (plan CanhIter3FixBug) — `null` covers both "never touched"
+   * and "explicitly left undecided", which is exactly what the required-source validation catches. */
+  const contactSource: OperationalContactSource = watch(`${base}.operationalContactSource`) ?? null;
   const watchedContact = watch(`${base}.operationalContact`);
   /**
    * True when a READ-ONLY (existing) campus's contact snapshot is missing one of the fields Manage
@@ -598,7 +645,20 @@ export const CampusVisitCard: React.FC<Props> = ({
   /** Which members exist right now, as a value an effect can actually depend on. */
   const eligibleKeys = eligibleMembers.map(m => m.key).join('|');
 
-  const pickedMember = eligibleMembers.find(m => m.key === contactMemberKey) ?? null;
+  /**
+   * The one, shared definition of "does this key name exactly one row of THIS campus's delegation"
+   * (plan CanhIter3FixBug §5/§7/§19) — never `.some()` (cannot tell one match from several) or
+   * `.find()` (silently accepts the first of several). Distinct from the identically-shaped helper in
+   * `visitRequestV2Form.ts`: that one operates on raw `MemberRow[]` (`clientMemberKey`), this one on
+   * the card's own `EligibleMember[]` (`key`).
+   */
+  const resolveEligibleMember = (key: string | null | undefined): EligibleMember | null => {
+    if (!key) return null;
+    const matches = eligibleMembers.filter(m => m.key === key);
+    return matches.length === 1 ? matches[0] : null;
+  };
+
+  const pickedMember = resolveEligibleMember(contactMemberKey);
 
   // ── One person, one member row (ID-02) ────────────────────────────────────────────────────────
   // Guests and support staff are two doors into the same table, and nothing compared them: the
@@ -683,24 +743,62 @@ export const CampusVisitCard: React.FC<Props> = ({
       });
   }, [base, form]);
 
-  const pickContactFromDelegation = (key: string) => {
-    if (key === '') {
-      form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
+  /**
+   * "This is the contact" — the dropdown, and quick-fill's exact-one-match branch, both go through
+   * this ONE transaction rather than logic rolled separately in every caller (plan CanhIter3FixBug
+   * §6/§13). The target is resolved exactly once; a same-key pick is a no-op (re-selecting the person
+   * already selected changes nothing); otherwise phone/email currently holding data is the ONE thing
+   * at risk of silent loss here — name/org/job are about to be overwritten by the target's own values
+   * regardless (see `hasContactPhoneOrEmail`, vs. the all-5-field check a source SWITCH uses) — so a
+   * non-empty phone or email arms a confirmation instead of mutating immediately (plan §7/§8). Nothing
+   * mutates in THIS function; every mutation lives in `applyMemberChange`.
+   */
+  const requestMemberChange = (targetKey: string, reason: MemberChangeReason) => {
+    const target = resolveEligibleMember(targetKey);
+    if (!target || !target.complete) return;
+    if (target.key === contactMemberKey) return;
+    if (hasContactPhoneOrEmail()) {
+      setPendingMemberChange({ targetKey, reason });
       return;
     }
-    const member = eligibleMembers.find(m => m.key === key);
-    if (!member || !member.complete) return;
-    form.setValue(`${base}.operationalContactClientMemberKey`, key, { shouldDirty: true });
-    syncContactFromMember(member, { touch: true });
-    setQuickFilledFrom(null);
+    applyMemberChange(targetKey, reason);
   };
+
+  /**
+   * Applies a MEMBER pick atomically: source, key and the three member-derived fields all change
+   * together, synchronously, and phone/email are cleared here rather than left holding whoever the
+   * PREVIOUS contact's numbers were — never "set the key and let a later effect catch up" (plan §7).
+   * Re-resolves the target rather than trusting a value carried over from `requestMemberChange`: the
+   * user may have edited the delegation between arming a confirmation and clicking it.
+   */
+  const applyMemberChange = (targetKey: string, reason: MemberChangeReason) => {
+    const target = resolveEligibleMember(targetKey);
+    if (!target || !target.complete) return;
+    form.setValue(`${base}.operationalContactSource`, 'MEMBER', { shouldDirty: true });
+    form.setValue(`${base}.operationalContactClientMemberKey`, targetKey, { shouldDirty: true });
+    syncContactFromMember(target, { touch: true });
+    (['phone', 'email'] as const).forEach(field => {
+      const fieldPath = `${base}.operationalContact.${field}` as const;
+      form.setValue(fieldPath, '', { shouldDirty: true });
+      form.clearErrors(fieldPath);
+    });
+    setPendingMemberChange(null);
+    setQuickFilledFrom(null);
+    // Only the quick-fill path toasts — a manual dropdown pick already sees its own result on screen.
+    if (reason === 'REGISTRANT_QUICK_FILL') {
+      showSuccessToast(t('visitRequestV2:card.contactPickedExistingMember', { name: target.fullName }));
+    }
+  };
+
+  const cancelMemberChange = () => setPendingMemberChange(null);
 
   /**
    * RELATIONSHIP-ONLY pick, for an EXISTING campus (`contactReadOnly`) — plan CanhIter3FixBug "Đầu
    * mối hiện tại có nằm trong danh sách đoàn không?".
    *
-   * <p>Deliberately the ONLY difference from {@link pickContactFromDelegation}: no
-   * {@link syncContactFromMember} call. The contact's five snapshot fields are not just
+   * <p>Deliberately the ONLY difference from {@link applyMemberChange}: no
+   * {@link syncContactFromMember} call, no `operationalContactSource` write (an existing campus never
+   * renders that selector), no confirmation gate. The contact's five snapshot fields are not just
    * unavailable to edit here (see the `contactReadOnly` branch below) — they must never move as a
    * SIDE EFFECT of this pick either, or "which delegation member is this" would silently become
    * "replace the operational contact", which is a different, actual-contact-holder-changing
@@ -711,10 +809,48 @@ export const CampusVisitCard: React.FC<Props> = ({
       form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
       return;
     }
-    const member = eligibleMembers.find(m => m.key === key);
+    const member = resolveEligibleMember(key);
     if (!member || !member.complete) return;
     form.setValue(`${base}.operationalContactClientMemberKey`, key, { shouldDirty: true });
   };
+
+  /**
+   * "Người trong đoàn" / "Người không đi cùng đoàn" — the radio itself (plan §5/§9). A no-op when the
+   * option already selected is clicked again; otherwise confirms first whenever the current 5-field
+   * snapshot holds ANYTHING switching would discard — member-derived name/org/job just as much as
+   * hand-typed phone/email (`operationalContactHasData`, not the phone/email-only check a same-source
+   * member reselect uses). Nothing mutates here; every mutation lives in `applySourceChange`.
+   */
+  const requestSourceChange = (next: 'MEMBER' | 'EXTERNAL') => {
+    if (contactSource === next) return;
+    if (operationalContactHasData()) {
+      setPendingSourceChange(next);
+      return;
+    }
+    applySourceChange(next);
+  };
+
+  /**
+   * Applies a source switch: the new source is recorded, the member link is cleared, and every one of
+   * the 5 snapshot fields is cleared — never carried across as a different identity's data (plan
+   * §10.1/§10.2 — the recommended, contamination-free option). EXTERNAL → MEMBER only clears here; the
+   * dropdown that then appears is a SEPARATE, now-unguarded `requestMemberChange` call (nothing left
+   * to lose), rather than one combined dialog inventing a "switch AND pick" gesture this two-control
+   * UI does not actually offer.
+   */
+  const applySourceChange = (next: 'MEMBER' | 'EXTERNAL') => {
+    form.setValue(`${base}.operationalContactSource`, next, { shouldDirty: true });
+    form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
+    for (const f of QUICK_FILL_FIELDS) {
+      const fieldPath = `${base}.operationalContact.${f}` as any;
+      form.setValue(fieldPath, '', { shouldDirty: true });
+      form.clearErrors(fieldPath);
+    }
+    setPendingSourceChange(null);
+    setQuickFilledFrom(null);
+  };
+
+  const cancelSourceChange = () => setPendingSourceChange(null);
 
   /**
    * Keeps the contact snapshot on the SAME person as the member row while the form is open (NP-03).
@@ -747,11 +883,15 @@ export const CampusVisitCard: React.FC<Props> = ({
   /**
    * A pick that no longer names a row — the member was removed by something other than the guarded
    * delete button (an Excel replace, an apply-to-all). The pick is cleared rather than left dangling,
-   * because a payload carrying a key that names nobody is refused by the backend.
+   * because a payload carrying a key that names nobody is refused by the backend. `source` is
+   * DELIBERATELY untouched — the user answered "MEMBER" and nothing here contradicts that; only the
+   * specific person named is gone (plan §11/§15). The card's own `contactLostByReplace` (set
+   * elsewhere, on the Excel-replace path only) is what distinguishes "a known cause just removed the
+   * pick" from "not chosen yet" / "a stale draft" in the UI below — this effect does not set it.
    */
   React.useEffect(() => {
     if (!contactMemberKey || contactReadOnly) return;
-    if (eligibleKeys.split('|').includes(contactMemberKey)) return;
+    if (resolveEligibleMember(contactMemberKey)) return;
     form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true });
   }, [contactMemberKey, contactReadOnly, eligibleKeys, form, base]);
 
@@ -762,34 +902,6 @@ export const CampusVisitCard: React.FC<Props> = ({
       `[data-testid="${pickedMember.kind}-${pickedMember.rowIndex}-fullName"]`);
     bringIntoView(el);
     el?.focus();
-  };
-
-  /**
-   * True when a contact has been typed who matches nobody in the delegation list.
-   *
-   * <p>Not an error — coordinating a visit you are not attending is completely ordinary — so this
-   * only offers to add them, and says what adding them means. Silence would be worse: the user
-   * would not learn that this person is absent from the delegation until the biên bản.</p>
-   */
-  const contactMatchesNoVisitor =
-    contactMemberKey === null
-    && (watchedContact?.fullName ?? '').trim().length > 0
-    && !eligibleMembers.some(m =>
-      m.fullName.toLowerCase() === (watchedContact?.fullName ?? '').trim().toLowerCase());
-
-  const addContactToDelegation = () => {
-    // Born with its identity, and picked by that identity — never by "the row I just appended",
-    // which is a position and would be wrong the moment anything else changed the list.
-    const row = { ...createEmptyMember(),
-      fullName: (watchedContact?.fullName ?? '').trim(),
-      jobTitle: (watchedContact?.jobTitle ?? '').trim(),
-      organization: (watchedContact?.organization ?? '').trim(),
-      organizationPartnerId: null,
-      nationality: '' };
-    visitorFields.append(row);
-    form.setValue(`${base}.operationalContactClientMemberKey`, row.clientMemberKey ?? null,
-      { shouldDirty: true });
-    showSuccessToast(t('visitRequestV2:card.contactAddedToDelegation'));
   };
 
   const fieldError = (path: string): string | undefined => {
@@ -1880,35 +1992,153 @@ export const CampusVisitCard: React.FC<Props> = ({
             </div>
           )}
 
+          {/* ── Đầu mối phối hợp: MEMBER hay EXTERNAL? (plan CanhIter3FixBug) ─────────────────
+              An explicit, required answer BEFORE anything else below renders. `operationalContact
+              ClientMemberKey = null` used to mean "not decided yet", "deliberately external" and
+              "went stale" all at once, with nothing on screen able to tell them apart — this radio
+              is what removes the ambiguity, and it alone decides which of the two sections further
+              down (or neither, before an answer) is shown. */}
+          <div
+            className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+            data-field-error={fieldError('operationalContactSource') ? 'true' : undefined}
+          >
+            <div className="mb-1.5 flex items-center">
+              <span className="block text-xs font-bold text-slate-700">
+                {t('visitRequestV2:card.contactSourceLabel')} <span className="text-red-500">*</span>
+              </span>
+              <HelpTooltip
+                testId={`campus-opcontact-source-help-${index}`}
+                label={t('visitRequestV2:card.contactSourceLabel')}
+                content={t('visitRequestV2:card.contactSourceHint')}
+              />
+            </div>
+            <div
+              role="radiogroup"
+              aria-label={t('visitRequestV2:card.contactSourceLabel')}
+              aria-invalid={!!fieldError('operationalContactSource')}
+              className="flex flex-col gap-2 sm:flex-row sm:gap-6"
+            >
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-slate-700">
+                <input
+                  type="radio"
+                  name={`campus-opcontact-source-${index}`}
+                  data-testid={`campus-opcontact-source-member-${index}`}
+                  checked={contactSource === 'MEMBER'}
+                  onChange={() => requestSourceChange('MEMBER')}
+                  className="h-4 w-4 text-[#004c91] focus:ring-[#004c91]"
+                />
+                {t('visitRequestV2:card.contactSourceMember')}
+              </label>
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm font-medium text-slate-700">
+                <input
+                  type="radio"
+                  name={`campus-opcontact-source-${index}`}
+                  data-testid={`campus-opcontact-source-external-${index}`}
+                  checked={contactSource === 'EXTERNAL'}
+                  onChange={() => requestSourceChange('EXTERNAL')}
+                  className="h-4 w-4 text-[#004c91] focus:ring-[#004c91]"
+                />
+                {t('visitRequestV2:card.contactSourceExternal')}
+              </label>
+            </div>
+            {fieldError('operationalContactSource') && (
+              <p className="mt-1.5 text-xs font-normal text-red-600">
+                {fieldError('operationalContactSource')}
+              </p>
+            )}
+          </div>
+
+          {/* Source-switch confirm (plan §9/§10) — armed only when the current 5-field snapshot has
+              data the switch would discard; Cancel is zero mutation. */}
+          {pendingSourceChange && (
+            <div
+              role="alertdialog"
+              data-testid={`campus-opcontact-source-switch-confirm-${index}`}
+              className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+            >
+              <p className="text-sm font-bold text-amber-900">
+                {t(pendingSourceChange === 'MEMBER'
+                  ? 'visitRequestV2:card.contactSwitchToMemberConfirmTitle'
+                  : 'visitRequestV2:card.contactSwitchToExternalConfirmTitle')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-source-switch-yes-${index}`}
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                  onClick={() => applySourceChange(pendingSourceChange)}
+                >
+                  {t('visitRequestV2:card.quickFillReplaceYes')}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                  onClick={cancelSourceChange}
+                >
+                  {t('visitRequestV2:common.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Member-reselect confirm (plan §7/§8) — armed only when phone/email currently hold data
+              that a different member's (empty) values would silently overwrite; Cancel is zero
+              mutation. */}
+          {pendingMemberChange && (
+            <div
+              role="alertdialog"
+              data-testid={`campus-opcontact-member-switch-confirm-${index}`}
+              className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3"
+            >
+              <p className="text-sm font-bold text-amber-900">
+                {t('visitRequestV2:card.contactChangeMemberConfirmTitle')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid={`campus-opcontact-member-switch-yes-${index}`}
+                  className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
+                  onClick={() => applyMemberChange(pendingMemberChange.targetKey, pendingMemberChange.reason)}
+                >
+                  {t('visitRequestV2:card.quickFillReplaceYes')}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                  onClick={cancelMemberChange}
+                >
+                  {t('visitRequestV2:common.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {contactSource === 'MEMBER' && (
+          <>
           {/* ── Đầu mối là ai trong đoàn? (NP-03) ────────────────────────────────────────────
               Picking here is what gives the contact a real identity instead of a name that has to
               be string-matched later. Everything below still edits freely — the pick fills the
-              three shared fields and records WHO, it does not lock anything. */}
-          <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-            {/* The long explanation moved into the `?` (UX-01). It was four lines of standing text
-                under the dropdown — read once, scrolled past on every campus of every visit after
-                that — and it pushed the field it was explaining off the first screenful. */}
-            <div className="mb-1.5 flex items-center">
-              <label
-                htmlFor={`campus-opcontact-pick-${index}`}
-                className="block text-xs font-bold text-slate-700"
-              >
-                {t('visitRequestV2:card.contactPickLabel')}
-              </label>
-              <HelpTooltip
-                testId={`campus-opcontact-pick-help-${index}`}
-                label={t('visitRequestV2:card.contactPickLabel')}
-                content={t('visitRequestV2:card.contactPickHint')}
-              />
-            </div>
+              three shared fields and records WHO, it does not lock anything.
+              No standing label/tooltip/microcopy here (UI cleanup, CanhIter3FixBug): the radio
+              group above already asked "Đầu mối phối hợp" and answered "Người trong đoàn" — a
+              second question above this same dropdown was redundant. The dropdown's own
+              placeholder option now carries the instruction, and `aria-label` keeps it named for
+              assistive tech without a visible label element. */}
+          <div
+            className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+            data-field-error={fieldError('operationalContactClientMemberKey') ? 'true' : undefined}
+          >
             <select
               id={`campus-opcontact-pick-${index}`}
               data-testid={`campus-opcontact-pick-${index}`}
+              aria-label={t('visitRequestV2:card.contactPickPlaceholder')}
               value={contactMemberKey ?? ''}
-              onChange={e => pickContactFromDelegation(e.target.value)}
-              className={inputCls(false, contactMemberKey !== null, false)}
+              onChange={e => (e.target.value === ''
+                ? form.setValue(`${base}.operationalContactClientMemberKey`, null, { shouldDirty: true })
+                : requestMemberChange(e.target.value, 'DROPDOWN'))}
+              className={inputCls(!!fieldError('operationalContactClientMemberKey'), contactMemberKey !== null, false)}
             >
-              <option value="">{t('visitRequestV2:card.contactPickNone')}</option>
+              <option value="">{t('visitRequestV2:card.contactPickPlaceholder')}</option>
               {/* An unfinished row is LISTED but not selectable: hiding it would leave the user
                   looking for somebody they had definitely typed in, and enabling it would let the
                   campus's contact be a person with no name. The label says which it is. */}
@@ -1922,11 +2152,24 @@ export const CampusVisitCard: React.FC<Props> = ({
                 </option>
               ))}
             </select>
-            {/* What is left under the control is the one consequence the user needs at the moment of
-                choosing; the rest is in the `?` above. */}
-            <p className="mt-1.5 text-xs text-slate-500">
-              {t('visitRequestV2:card.contactPickMicrocopy')}
-            </p>
+            {fieldError('operationalContactClientMemberKey') && (
+              <p className="mt-1.5 text-xs font-normal text-red-600">
+                {fieldError('operationalContactClientMemberKey')}
+              </p>
+            )}
+            {/* Only when a KNOWN cause (currently: Excel replace) just severed the pick this session
+                — never for "just switched to MEMBER, haven't chosen yet" or a stale draft restored
+                straight into this state, neither of which is evidence anything was "lost" (plan
+                CanhIter3FixBug §10). Those two get the plain required-field message above instead. */}
+            {!contactMemberKey && contactLostByReplace && (
+              <p
+                data-testid={`campus-opcontact-member-lost-${index}`}
+                role="status"
+                className="mt-1.5 text-xs font-normal text-amber-700"
+              >
+                {t('visitRequestV2:card.contactMemberLost')}
+              </p>
+            )}
 
             {/* What picking somebody MEANS, said where the consequence is visible: the three shared
                 fields below stop being editable here and follow that person's row instead. Without
@@ -1949,43 +2192,59 @@ export const CampusVisitCard: React.FC<Props> = ({
                 </button>
               </div>
             )}
-
-            {contactMatchesNoVisitor && (
-              <div
-                data-testid={`campus-opcontact-not-in-delegation-${index}`}
-                className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3"
-              >
-                <p className="text-xs font-normal text-amber-900">
-                  {t('visitRequestV2:card.contactNotInDelegation')}
-                </p>
-                <button
-                  type="button"
-                  data-testid={`campus-opcontact-add-to-delegation-${index}`}
-                  onClick={addContactToDelegation}
-                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-700"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {t('visitRequestV2:card.contactAddToDelegation')}
-                </button>
-              </div>
-            )}
           </div>
 
-          <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
-            {/* ── The three fields a delegation row already answers ──────────────────────────
-                Editable while the contact is somebody outside the delegation; READ-ONLY the moment a
-                member is picked, because then the member row is the source and this is its copy.
-                Leaving them editable is what let the form hold "Daniel Kim's id" beside a different
-                person's name and job title — one record describing two people, with nothing to say
-                which half was true. Correcting them is still possible, at the row itself, through
-                "Sửa thông tin thành viên" above. */}
-            {pickedMember ? (
+          {/* The three fields a delegation row already answers, shown READ-ONLY the moment a member
+              is picked — the member row is the source and this is its copy. Nothing renders here
+              before a pick: MEMBER mode has no free-text fallback (that is EXTERNAL's job now), so an
+              unpicked dropdown is followed by nothing until it names somebody. Correcting these values
+              is still possible, at the row itself, through "Sửa thông tin thành viên" above. */}
+          {pickedMember && (
+            <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
               <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required showValidIcon={false}>
                 <p data-testid="campus-opcontact-name-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
                   {watchedContact?.fullName || '—'}
                 </p>
               </FormField>
-            ) : (
+              <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required showValidIcon={false}>
+                <p data-testid="campus-opcontact-org-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
+                  {watchedContact?.organization || '—'}
+                </p>
+              </FormField>
+              <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required showValidIcon={false}>
+                <p data-testid="campus-opcontact-jobtitle-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
+                  {watchedContact?.jobTitle || '—'}
+                </p>
+              </FormField>
+              <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
+                <PhoneField
+                  field={register(`${base}.operationalContact.phone`)}
+                  hasError={!!fieldError('operationalContact.phone')}
+                  error={fieldError('operationalContact.phone')}
+                  testId={`campus-opcontact-phone-${index}`}
+                />
+              </FormField>
+              <FormField
+                className="col-span-12 lg:col-span-3 xl:col-span-3"
+                label={t('visitRequestV2:card.email')}
+                required
+                error={fieldError('operationalContact.email')}
+                showValidIcon={false}
+              >
+                <input
+                  type="email"
+                  data-testid={`campus-opcontact-email-${index}`}
+                  {...register(`${base}.operationalContact.email`)}
+                  className={inputCls(!!fieldError('operationalContact.email'), false, false)}
+                />
+              </FormField>
+            </div>
+          )}
+          </>
+          )}
+
+          {contactSource === 'EXTERNAL' && (
+          <div className="grid grid-cols-12 gap-x-3 xl:gap-x-4 gap-y-5">
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.fullName')} required error={fieldError('operationalContact.fullName')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.fullName`}
@@ -2003,20 +2262,10 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            )}
             {/* The same searchable organization control the guest rows use. The stored value is
                 still plain text — this contact is a snapshot and the schema has no relation to a
                 partner record, so picking a known organization links nothing and the request's own
-                partner selection is untouched. When a member holds the role their organisation (and
-                the partner behind it) is theirs, so this shows it rather than offering a second,
-                contradictable copy. */}
-            {pickedMember ? (
-              <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required showValidIcon={false}>
-                <p data-testid="campus-opcontact-org-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
-                  {watchedContact?.organization || '—'}
-                </p>
-              </FormField>
-            ) : (
+                partner selection is untouched. */}
             <FormField className="col-span-12 lg:col-span-3 xl:col-span-3" label={t('visitRequestV2:person.organization')} required error={fieldError('operationalContact.organization')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.organization`}
@@ -2034,19 +2283,8 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            )}
             {/* Required, like fullName/organization/email — Phone (right below) is the one exception
-                in this block and stays optional. Job title tells the campus whether the person on the
-                other end of the phone can settle a schedule or has to go and ask; every detail screen
-                has always had a row for it, and the row was blank on every request because this field
-                did not exist. */}
-            {pickedMember ? (
-              <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required showValidIcon={false}>
-                <p data-testid="campus-opcontact-jobtitle-readonly" className="break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-normal text-slate-900">
-                  {watchedContact?.jobTitle || '—'}
-                </p>
-              </FormField>
-            ) : (
+                in this block and stays optional. */}
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:person.jobTitle')} required error={fieldError('operationalContact.jobTitle')} showValidIcon={false}>
               <Controller
                 name={`${base}.operationalContact.jobTitle`}
@@ -2064,7 +2302,6 @@ export const CampusVisitCard: React.FC<Props> = ({
                 )}
               />
             </FormField>
-            )}
             <FormField className="col-span-12 lg:col-span-2 xl:col-span-2" label={t('visitRequestV2:card.phone')} error={fieldError('operationalContact.phone')} showValidIcon={false}>
               <PhoneField
                 field={register(`${base}.operationalContact.phone`)}
@@ -2088,6 +2325,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               />
             </FormField>
           </div>
+          )}
           </>
           )}
         </fieldset>

@@ -15,9 +15,10 @@ import { useVisitEntryCta } from '../../shared/features/useVisitEntryCta';
 export function HeroSection() {
   const { t } = useTranslation(['home']);
   const navigate = useNavigate();
-  // Shared entry decision: v2 route when enabled, v1 popup only for a real backend OFF, and an
-  // error+retry (never a silent v1 fallback) when the capability fetch fails.
-  const visitCta = useVisitEntryCta('public');
+  // Shared entry decision: mode (public/authenticated) is resolved from sign-in state, v2 route
+  // opens when the capability is enabled, v1 popup only for a real backend OFF, and an error+retry
+  // (never a silent v1 fallback) when the capability fetch fails.
+  const visitCta = useVisitEntryCta();
   const capabilityResolving = visitCta.isResolving;
   const handlePrimaryCta = visitCta.trigger;
 

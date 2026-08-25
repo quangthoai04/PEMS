@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Controller } from 'react-hook-form';
-import { AlertCircle, BadgeCheck, Loader2, Plus, Send, ShieldCheck, UserRound } from 'lucide-react';
+import { AlertCircle, BadgeCheck, Globe, Loader2, Mail, Phone, Plus, RefreshCw, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -21,7 +21,6 @@ import { CampusVisitCard } from './CampusVisitCard';
 import { FormField, inputCls } from '../shared/FormField';
 import { PhoneField } from '../shared/PhoneField';
 import { CountrySelect } from '../shared/CountrySelect';
-import { OrganizationCombobox } from '../shared/OrganizationCombobox';
 import { PartnerOrgCombobox } from '../shared/PartnerOrgCombobox';
 import { FormSection } from '../shared/FormSection';
 import { OtpVerificationModal } from '../OtpVerificationModal';
@@ -29,6 +28,7 @@ import type { CreatorRole } from '../../schema/visitRequestV2.schema';
 import type { CampusHostSelectionChoice } from '../../api/visitRequestApi';
 import { useAuthContext } from '../../../../shared/auth/AuthContext';
 import { profileApi } from '../../../profile/api/profileApi';
+import type { ViewProfileResponse } from '../../../profile/types/profile.types';
 import { getApiErrorMessage } from '../../../../shared/utils/toast';
 import { isSameEmailIdentity } from '../../../../shared/utils/emailIdentity';
 import { commitFieldValue, fieldChangeHandler } from '../../../../shared/utils/formRevalidate';
@@ -87,20 +87,61 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const formRef = useRef<HTMLFormElement>(null);
 
   // ── Authenticated create: who processes each campus (backend re-authorizes everything). ──
-  const { user } = useAuthContext();
+  const { user, isReady: authReady, effectiveRole } = useAuthContext();
   const isAuthenticated = mode === 'authenticated';
+  // A full navigation (not `useNavigate`) deliberately: this form is mounted both inside a modal and
+  // on a standalone route, and a client-side navigate from inside the modal would leave the overlay
+  // stuck open over the Profile page underneath it. A full page load closes everything and lands the
+  // user cleanly on Profile — appropriate for what is already a rare, blocking edge case.
+  const goToProfile = () => { window.location.href = '/dashboard/profile'; };
 
+  // Derived from `effectiveRole` — the canonical role AuthContext resolves from the profile — rather
+  // than re-deriving Staff/Leader from raw roleCode/subRole a second time (naming-conventions/BA
+  // conventions aside, this project treats effectiveRole as the one source authorization decisions
+  // should read). Only Visitor/Staff/Staff Leader are ever offered authenticated create, so anything
+  // else (ADMIN/HO/DEPARTMENT*/STUDENT, or `null` while auth has not resolved yet) falls back to the
+  // least-privileged shape — harmless, because nothing renders off it until `authReady`.
   const creatorRole: CreatorRole = React.useMemo(() => {
-    const rc = (user?.roleCode || '').toUpperCase();
-    const sr = (user?.subRole || '').toUpperCase();
-    if (rc === 'STAFF') return sr === 'LEADER' ? 'STAFF_LEADER' : 'STAFF';
+    if (effectiveRole === 'STAFF_LEADER') return 'STAFF_LEADER';
+    if (effectiveRole === 'STAFF') return 'STAFF';
     return 'VISITOR';
-  }, [user?.roleCode, user?.subRole]);
-  // Internal Staff/Staff Leader + self-registration is what may file inside the 72h floor (plan
-  // PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H) — computed here, ahead of the hook call, since it
-  // needs nothing from the form itself; the hook re-derives self-registration from its OWN watch on
-  // the registrant email.
+  }, [effectiveRole]);
+  // Internal Staff/Staff Leader is what may file inside the 72h floor (plan
+  // PEMS_INTERNAL_SELF_CREATE_SHORT_NOTICE_72H) — self-registration is no longer a separate question:
+  // authenticated create IS self-registration, always (plan CanhIter3FixBug), so the floor now follows
+  // the role alone.
   const isInternalActor = creatorRole === 'STAFF' || creatorRole === 'STAFF_LEADER';
+
+  // ── Authenticated registrant = the signed-in account's own profile, always (plan CanhIter3FixBug)
+  //    ────────────────────────────────────────────────────────────────────────────────────────────
+  // No "Tôi là người đăng ký" button, no delegated-OTP path: the profile loads automatically the
+  // moment auth has settled, and Registrant renders read-only from it. If the profile is missing a
+  // field this form requires, the fix is the Profile page, never a text box on this one.
+  type ProfileLoadState = 'idle' | 'loading' | 'ready' | 'error';
+  const [profileState, setProfileState] = useState<ProfileLoadState>('idle');
+  const [profile, setProfile] = useState<ViewProfileResponse | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  const loadProfile = useCallback(async () => {
+    setProfileState('loading');
+    setProfileError(null);
+    try {
+      const me = await profileApi.getMyProfile();
+      setProfile(me);
+      setProfileState('ready');
+    } catch (err) {
+      setProfileState('error');
+      setProfileError(getApiErrorMessage(err, t('visitRequestV2:registrant.autofillFailed')));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authReady) return;
+    void loadProfile();
+    // Deliberately NOT depending on `loadProfile` (it is stable across `t` changes we do not care
+    // about here) — this must fire exactly once per (auth-ready) mount, not on every locale switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authReady]);
 
   // Keyed by campus CODE, so reordering or removing a card never moves a decision onto another
   // campus. Entries for campuses no longer selected are dropped at submit time, never sent.
@@ -156,6 +197,103 @@ export const VisitRequestFormV2: React.FC<Props> = ({
     detectedNamespaceRef.current = namespaceKey;
     detectDraft();
   }, [isAuthenticated, draftNamespace, detectDraft]);
+
+  /**
+   * Canonical profile → registerInfo mapping (plan CanhIter3FixBug §6). Every value here is a
+   * profile field that already exists — nothing is invented: `displayPosition` IS the job title
+   * ("Trưởng phòng"/"Nhân viên"), `displayDepartmentName` (falling back to `department.name`, then
+   * `displayCampusName` for a Visitor with neither) IS the organization the account belongs to.
+   *
+   * organization/jobTitle are only meaningful here for an INTERNAL account — a Visitor's profile has
+   * no such fields at all (there is no account-level "organization" for an external guest whose
+   * sponsoring org legitimately changes visit to visit), so both come back empty for one and the
+   * caller must not treat that as "the profile is missing data" the way it would for Staff.
+   */
+  const mapProfileToRegisterInfo = (me: ViewProfileResponse): VisitRequestV2Schema['registerInfo'] => ({
+    fullName: me.fullName ?? '',
+    email: me.email ?? '',
+    phone: me.phone ?? '',
+    nationality: me.nationality ?? '',
+    jobTitle: me.displayPosition ?? '',
+    organization: me.displayDepartmentName ?? me.department?.name ?? me.displayCampusName ?? '',
+  });
+
+  /**
+   * Overwrites `registerInfo` with the LIVE profile once the draft decision has been made (plan
+   * §9 — "Draft — cực kỳ quan trọng"). Ordering is the whole point: `vm.draftHydrated` only becomes
+   * true after a restore/discard has already run (or immediately, when there was no draft to ask
+   * about), so this always runs AFTER any stale/delegated registrant a pre-rule draft might carry —
+   * never before, which would just have the draft's own `form.reset` overwrite this again a moment
+   * later with somebody else's snapshot.
+   *
+   * A Visitor's organization/jobTitle are the one exception (plan §6 Visitor org/title exception):
+   * they are per-VISIT information the account model has no field for, so they are left exactly as
+   * they already are on the form — whatever the user just typed, or whatever a legitimately restored
+   * draft carried — rather than being blanked out by a profile that was never their source.
+   *
+   * `form.reset` (not a per-field `setValue`) so the new registrant becomes the DIRTY-tracking
+   * baseline too: this is not an edit the user made, and a close-prompt firing the instant the
+   * profile loads — with nothing yet typed — would be exactly the false positive `isDirty` already
+   * had to be rescued from once (see `isFormDirty` below). Safe to re-run on every dependency change
+   * (a draft restored after the profile was already ready, a profile reload from Retry): applying
+   * the same values twice is a no-op, and there is no risk of a loop since none of the dependencies
+   * are touched by this effect's own action.
+   *
+   * `useLayoutEffect`, not `useEffect`: this must land BEFORE the browser paints the commit that made
+   * `canInteractWithForm` true, or the registrant summary would flash empty for one frame before this
+   * runs — exactly the kind of "right for a frame, then flips" the auth-readiness gate (plan §4)
+   * exists to rule out for the 72h floor, and the same standard applies to the identity it is shown
+   * next to.
+   */
+  useLayoutEffect(() => {
+    if (!isAuthenticated || !vm.draftHydrated || profileState !== 'ready' || !profile) return;
+    const mapped = mapProfileToRegisterInfo(profile);
+    const current = form.getValues();
+    const registerInfo = isInternalActor
+      ? mapped
+      : { ...mapped, organization: current.registerInfo?.organization ?? '', jobTitle: current.registerInfo?.jobTitle ?? '' };
+    form.reset({ ...current, registerInfo });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, vm.draftHydrated, profileState, profile, form, isInternalActor]);
+
+  /**
+   * Registrant fields Visit Request V2 requires that the profile left blank. Phone is always
+   * optional; organization/jobTitle are only checked for an INTERNAL account — a Visitor's profile
+   * never carries them (the Visitor org/title exception above), so an empty value there is not an
+   * incomplete profile, it is simply "not filled in on the form yet", which the schema (not this
+   * blocking notice) already asks for.
+   */
+  const missingProfileFields = useMemo(() => {
+    if (!isAuthenticated || profileState !== 'ready' || !profile) return [] as string[];
+    const reg = mapProfileToRegisterInfo(profile);
+    const required: Array<[keyof typeof reg, string]> = [
+      ['fullName', t('visitRequestV2:registrant.fullName')],
+      ['nationality', t('visitRequestV2:registrant.nationality')],
+      ['email', t('visitRequestV2:card.email')],
+    ];
+    if (isInternalActor) {
+      required.push(
+        ['organization', t('visitRequestV2:registrant.organization')],
+        ['jobTitle', t('visitRequestV2:registrant.jobTitle')],
+      );
+    }
+    return required.filter(([key]) => !reg[key]?.trim()).map(([, label]) => label);
+  }, [isAuthenticated, profileState, profile, t, isInternalActor]);
+
+  /**
+   * Whether the interactive form (registrant summary, campus cards, submit) may render at all.
+   * Gates on auth bootstrap, the profile round trip, AND the draft decision together, so nothing
+   * ever shows a picker — or a registrant identity — built from a role/profile that has not fully
+   * settled yet and then flips under the user (plan §4 — "auth readiness"): a Staff Leader must
+   * never see the 72h floor for even one frame before it drops to 0, and the registrant summary must
+   * never render off the pre-profile empty defaults before the profile has actually been applied
+   * (the profile-apply effect above waits on the SAME `vm.draftHydrated` condition).
+   */
+  const isRegistrantReady = !isAuthenticated || (authReady && profileState === 'ready' && vm.draftHydrated);
+  const isProfileIncomplete = isAuthenticated && profileState === 'ready' && missingProfileFields.length > 0;
+  const canInteractWithForm = isRegistrantReady && !isProfileIncomplete;
+  const isProfileBootstrapping = isAuthenticated && (!authReady || profileState === 'idle' || profileState === 'loading' || !vm.draftHydrated);
+  const isProfileError = isAuthenticated && authReady && profileState === 'error';
 
   // First card open by default; keep the set in sync when cards are added/removed.
   useEffect(() => {
@@ -270,56 +408,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
   const watchedReg = form.watch('registerInfo');
   const isRegInfoEmpty = !watchedReg?.fullName?.trim() && !watchedReg?.organization?.trim() && !watchedReg?.phone?.trim() && !watchedReg?.email?.trim();
 
-  // ── Registrant identity (authenticated only) ──
-  // Recomputed from the WATCHED email, so editing the field flips the banner, the submit contract and
-  // the campus processing panel in the same render — there is no stale "verified" state to leak.
-  // (isInternalActor is computed above, ahead of the hook call — reused here for the banner.)
-  const isSelfRegistrant = isAuthenticated && isSameEmailIdentity(user?.email, watchedReg?.email);
-
-  const [autofillState, setAutofillState] = useState<'idle' | 'loading' | 'error'>('idle');
-
-  /**
-   * Fills the registrant block from the signed-in user's own profile. Explicitly user-triggered:
-   * pre-filling on mount would silently overwrite a restored draft, which is exactly the behaviour
-   * that loses typed work. Fields the profile has no value for are left blank for the user to add
-   * rather than being padded with a role label.
-   */
-  const fillRegistrantFromProfile = async () => {
-    setAutofillState('loading');
-    try {
-      const me = await profileApi.getMyProfile();
-      form.setValue('registerInfo', {
-        fullName: me.fullName ?? '',
-        email: me.email ?? '',
-        phone: me.phone ?? '',
-        nationality: me.nationality ?? '',
-        jobTitle: me.displayPosition ?? '',
-        organization: me.displayDepartmentName ?? me.department?.name ?? me.displayCampusName ?? '',
-        // `shouldValidate` follows the SUBMIT state, and that is the whole fix (NP-02).
-        //
-        // The form runs `mode: 'onSubmit' / reValidateMode: 'onChange'`, so before the first submit
-        // nothing revalidates as the user types. Validating unconditionally here therefore did two
-        // wrong things at once: it accused a profile of being incomplete before the user had asked
-        // for anything, and — because no revalidation was armed yet — the error it wrote STAYED on
-        // screen after they picked a valid value. Once the form HAS been submitted the errors are
-        // real and live, so we keep validating then.
-      }, { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
-      setAutofillState('idle');
-    } catch (err) {
-      setAutofillState('error');
-      vm.setSubmitError(getApiErrorMessage(err, t('visitRequestV2:registrant.autofillFailed')));
-    }
-  };
-
-  // Choices made while the form named the signed-in user must not survive that name changing:
-  // once this is a delegated submission the whole payload would be rejected for carrying them.
-  const wasSelfRegistrantRef = useRef(isSelfRegistrant);
-  useEffect(() => {
-    if (wasSelfRegistrantRef.current && !isSelfRegistrant) {
-      setCampusHostSelection(prev => (Object.keys(prev).length === 0 ? prev : {}));
-    }
-    wasSelfRegistrantRef.current = isSelfRegistrant;
-  }, [isSelfRegistrant]);
+  // Authenticated create is self-registration ALWAYS (plan CanhIter3FixBug) — there is no more
+  // delegated state for the campus processing panel to disappear under, so the effect that used to
+  // clear `campusHostSelections` when the registrant email stopped matching the account is gone: that
+  // transition cannot happen any more (registerInfo is profile-locked/read-only once the form is
+  // interactive at all).
 
   return (
     // `spellCheck={false}` is set HERE, on the form, and inherited by every control inside it (the
@@ -399,6 +492,61 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         />
       )}
 
+      {/* ── Auth bootstrap / profile round trip (authenticated mode only, plan §4/§5) ──
+          Nothing role-dependent renders until BOTH auth has settled and the profile has loaded: a
+          picker built off the wrong role for one frame and then flipped is exactly what "Ctrl+Shift+R
+          fixes it" used to look like, and this is what removes that frame entirely. */}
+      {isProfileBootstrapping && (
+        <div data-testid="v2-registrant-loading" className="animate-pulse space-y-4" aria-busy="true">
+          <div className="h-24 rounded-xl bg-slate-100" />
+          <div className="h-40 rounded-xl bg-slate-100" />
+        </div>
+      )}
+
+      {isProfileError && (
+        <div
+          role="alert"
+          data-testid="v2-profile-error"
+          className="flex flex-col items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <div className="flex items-start gap-2">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>{profileError}</span>
+          </div>
+          <button
+            type="button"
+            data-testid="v2-profile-retry"
+            onClick={() => void loadProfile()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-100"
+          >
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+            {t('visitRequestV2:registrant.profileRetry')}
+          </button>
+        </div>
+      )}
+
+      {isProfileIncomplete && (
+        <div
+          role="alert"
+          data-testid="v2-profile-incomplete"
+          className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"
+        >
+          <p className="font-bold">{t('visitRequestV2:registrant.profileIncompleteTitle')}</p>
+          <p className="mt-1">{t('visitRequestV2:registrant.profileIncompleteDesc')}</p>
+          <p className="mt-2 font-semibold">
+            {t('visitRequestV2:registrant.profileIncompleteMissing', { fields: missingProfileFields.join(', ') })}
+          </p>
+          <button
+            type="button"
+            data-testid="v2-profile-goto"
+            onClick={goToProfile}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-[#004c91] px-3 py-1.5 text-sm font-bold text-white hover:bg-[#013565]"
+          >
+            {t('visitRequestV2:registrant.goToProfile')}
+          </button>
+        </div>
+      )}
+
       {/* ── Everything the user can change, locked as ONE unit while a submit is in flight ──
           A native `disabled` fieldset, not pointer-events or an overlay: it disables every control
           it contains — inputs, textareas, selects, comboboxes, date/time pickers, add/remove campus,
@@ -408,7 +556,11 @@ export const VisitRequestFormV2: React.FC<Props> = ({
           never claiming to hold data that is not what was sent. `vm.isSubmitting` is the SAME state
           the submit button reads (stage === 'SENDING_OTP'), so the lock cannot outlive the request
           or lift before it: a failure puts the stage back and every field is editable again with
-          the user's typing untouched. */}
+          the user's typing untouched.
+          Rendered only once the form is actually interactive — bootstrapping/error/incomplete render
+          their own panels above instead (plan §4/§5/§20: no registrant controls, no submit, until the
+          profile round trip has actually settled). */}
+      {canInteractWithForm && (
       <fieldset
         disabled={vm.isSubmitting}
         // `disabled` covers everything the browser recognises as a control. `inert` covers the rest:
@@ -482,113 +634,146 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         </div>
       )}
 
-      {/* ── Request-level: registrant ── */}
-      <FormSection
-        id="v2-registrant"
-        title={t('visitRequestV2:sections.registrant')}
-        headerRight={isAuthenticated ? (
-          <button
-            type="button"
-            data-testid="v2-registrant-use-me"
-            disabled={autofillState === 'loading'}
-            onClick={() => void fillRegistrantFromProfile()}
-            className="inline-flex items-center gap-1.5 rounded-xl border-2 border-[#004c91]/20 px-4 py-2 text-sm font-semibold text-[#004c91] transition-colors hover:bg-[#004c91]/5 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {autofillState === 'loading'
-              ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              : <UserRound className="h-4 w-4" aria-hidden />}
-            {t('visitRequestV2:registrant.useMyProfile')}
-          </button>
-        ) : undefined}
-      >
-        {/* Which submit contract this form is on, in the user's words — shown BEFORE they submit so the
-            OTP round-trip is never a surprise. Driven by the watched email, so it flips as they type. */}
-        {isAuthenticated && (
-          <div
-            role="status"
-            data-testid={isSelfRegistrant ? 'v2-registrant-self' : 'v2-registrant-delegated'}
-            className={`mb-4 flex items-start gap-2 rounded-xl border p-3 text-sm font-normal ${
-              isSelfRegistrant
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                : 'border-amber-200 bg-amber-50 text-amber-800'
-            }`}
-          >
-            {isSelfRegistrant
-              ? <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-              : <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />}
-            <span>
-              {isSelfRegistrant
-                ? t('visitRequestV2:registrant.matchesAccount')
-                : t('visitRequestV2:registrant.requiresOtp')}
-            </span>
+      {/* ── Request-level: registrant ──
+          Authenticated Staff/Staff Leader: fully read-only, profile-backed summary — organization and
+          job title ARE a fixed HR attribute for an internal account, so both come from the profile
+          like everything else. No "Tôi là người đăng ký" button, no delegated-OTP banner.
+          Authenticated Visitor: identity (name/email/phone/nationality) is locked to the profile the
+          same way, but organization/jobTitle stay EDITABLE — a Visitor's organization is per-VISIT
+          information (a professor represents University A today, Ministry B next month), not a fixed
+          account attribute the way it is for Staff, and the account model has no field for it at all
+          (plan CanhIter3FixBug — Visitor org/title exception). Public: unchanged, fully editable + OTP. */}
+      <FormSection id="v2-registrant" title={t('visitRequestV2:sections.registrant')}>
+        {isAuthenticated ? (
+          <div>
+            <div data-testid="v2-registrant-readonly" className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-base font-bold text-slate-900">{watchedReg?.fullName}</p>
+              {isInternalActor && (
+                <p className="mt-0.5 text-sm font-normal text-slate-600">
+                  {[watchedReg?.jobTitle, watchedReg?.organization].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm font-normal text-slate-700">
+                <span className="inline-flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                  {watchedReg?.email}
+                </span>
+                {!!watchedReg?.phone?.trim() && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                    {watchedReg.phone}
+                  </span>
+                )}
+                {!!watchedReg?.nationality?.trim() && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Globe className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+                    {watchedReg.nationality}
+                  </span>
+                )}
+              </div>
+              <p className="mt-3 flex items-start gap-1.5 text-xs font-normal text-slate-500">
+                <BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                {t(isInternalActor
+                  ? 'visitRequestV2:registrant.readOnlyNotice'
+                  : 'visitRequestV2:registrant.readOnlyNoticeIdentityOnly')}
+              </p>
+            </div>
+            {!isInternalActor && (
+              <div className="mt-4 grid grid-cols-12 gap-x-6 gap-y-5">
+                <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
+                  <input data-testid="v2-registrant-jobTitle" spellCheck={false} {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
+                </FormField>
+                <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
+                  <Controller
+                    name="registerInfo.organization"
+                    control={form.control}
+                    render={({ field }) => (
+                      <PartnerOrgCombobox
+                        organization={field.value ?? ''}
+                        partnerId={form.watch('partnerId') ?? null}
+                        hasError={!!regErr?.organization}
+                        onBlur={field.onBlur}
+                        onChange={next => {
+                          commitFieldValue(
+                            form, 'registerInfo.organization', next.organization, field.onChange);
+                          form.setValue('partnerId', next.partnerId, { shouldDirty: true });
+                          form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
+                        }}
+                      />
+                    )}
+                  />
+                </FormField>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-12 gap-x-6 gap-y-5">
+            {/* Row 1: Họ và tên | Quốc tịch | Đơn vị công tác (4/2/6) */}
+            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
+              {/* Named explicitly as well as inheriting it from the form: a Vietnamese name is the
+                  first thing typed into this form and the first thing the dictionary underlines. */}
+              <input data-testid="v2-registrant-fullName" spellCheck={false} {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
+            </FormField>
+            <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
+              <Controller
+                name="registerInfo.nationality"
+                control={form.control}
+                render={({ field }) => (
+                  <CountrySelect
+                    strict
+                    value={field.value ?? ''}
+                    // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
+                    // được để trống" error immediately, including the pre-submit case where nothing
+                    // else would revalidate it (NP-02).
+                    onChange={fieldChangeHandler(form, 'registerInfo.nationality', field.onChange)}
+                    onBlur={field.onBlur}
+                    hasError={!!regErr?.nationality}
+                    placeholder={t('visitRequestV2:registrant.nationality')}
+                  />
+                )}
+              />
+            </FormField>
+            {/* Free-solo partner/organization search: picking a known partner links partnerId,
+                typing anything else keeps the text as a manually entered organization. */}
+            <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
+              <Controller
+                name="registerInfo.organization"
+                control={form.control}
+                render={({ field }) => (
+                  <PartnerOrgCombobox
+                    organization={field.value ?? ''}
+                    partnerId={form.watch('partnerId') ?? null}
+                    hasError={!!regErr?.organization}
+                    onBlur={field.onBlur}
+                    onChange={next => {
+                      // Same revalidation contract as the country select: choosing/typing a real
+                      // organization clears its required-error at once (NP-02).
+                      commitFieldValue(
+                        form, 'registerInfo.organization', next.organization, field.onChange);
+                      form.setValue('partnerId', next.partnerId, { shouldDirty: true });
+                      form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
+                    }}
+                  />
+                )}
+              />
+            </FormField>
+            {/* Row 2: Chức vụ | Số điện thoại | Email (4/4/4) */}
+            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
+              <input data-testid="v2-registrant-jobTitle" spellCheck={false} {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
+            </FormField>
+            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
+              <PhoneField
+                field={register('registerInfo.phone')}
+                hasError={!!regErr?.phone}
+                error={regErr?.phone?.message}
+                testId="v2-registrant-phone"
+              />
+            </FormField>
+            <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
+              <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
+            </FormField>
           </div>
         )}
-        <div className="grid grid-cols-12 gap-x-6 gap-y-5">
-          {/* Row 1: Họ và tên | Quốc tịch | Đơn vị công tác (4/2/6) */}
-          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.fullName')} required error={regErr?.fullName?.message} showValidIcon={false}>
-            {/* Named explicitly as well as inheriting it from the form: a Vietnamese name is the
-                first thing typed into this form and the first thing the dictionary underlines. */}
-            <input data-testid="v2-registrant-fullName" spellCheck={false} {...register('registerInfo.fullName')} className={inputCls(!!regErr?.fullName, false, false)} />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-2" label={t('visitRequestV2:registrant.nationality')} required error={regErr?.nationality?.message} showValidIcon={false}>
-            <Controller
-              name="registerInfo.nationality"
-              control={form.control}
-              render={({ field }) => (
-                <CountrySelect
-                  strict
-                  value={field.value ?? ''}
-                  // Via commitFieldValue: picking a valid country must clear the "Quốc tịch không
-                  // được để trống" error immediately, including the pre-submit case where nothing
-                  // else would revalidate it (NP-02).
-                  onChange={fieldChangeHandler(form, 'registerInfo.nationality', field.onChange)}
-                  onBlur={field.onBlur}
-                  hasError={!!regErr?.nationality}
-                  placeholder={t('visitRequestV2:registrant.nationality')}
-                />
-              )}
-            />
-          </FormField>
-          {/* Free-solo partner/organization search: picking a known partner links partnerId,
-              typing anything else keeps the text as a manually entered organization. */}
-          <FormField className="col-span-12 lg:col-span-6" label={t('visitRequestV2:registrant.organization')} required error={regErr?.organization?.message} showValidIcon={false}>
-            <Controller
-              name="registerInfo.organization"
-              control={form.control}
-              render={({ field }) => (
-                <PartnerOrgCombobox
-                  organization={field.value ?? ''}
-                  partnerId={form.watch('partnerId') ?? null}
-                  hasError={!!regErr?.organization}
-                  onBlur={field.onBlur}
-                  onChange={next => {
-                    // Same revalidation contract as the country select: choosing/typing a real
-                    // organization clears its required-error at once (NP-02).
-                    commitFieldValue(
-                      form, 'registerInfo.organization', next.organization, field.onChange);
-                    form.setValue('partnerId', next.partnerId, { shouldDirty: true });
-                    form.setValue('partnerSelectionMode', next.mode, { shouldDirty: true });
-                  }}
-                />
-              )}
-            />
-          </FormField>
-          {/* Row 2: Chức vụ | Số điện thoại | Email (4/4/4) */}
-          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:registrant.jobTitle')} required error={regErr?.jobTitle?.message} showValidIcon={false}>
-            <input data-testid="v2-registrant-jobTitle" spellCheck={false} {...register('registerInfo.jobTitle')} className={inputCls(!!regErr?.jobTitle, false, false)} />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.phone')} error={regErr?.phone?.message} showValidIcon={false}>
-            <PhoneField
-              field={register('registerInfo.phone')}
-              hasError={!!regErr?.phone}
-              error={regErr?.phone?.message}
-              testId="v2-registrant-phone"
-            />
-          </FormField>
-          <FormField className="col-span-12 lg:col-span-4" label={t('visitRequestV2:card.email')} required error={regErr?.email?.message} showValidIcon={false}>
-            <input type="email" data-testid="v2-registrant-email" {...register('registerInfo.email')} className={inputCls(!!regErr?.email, false, false)} />
-          </FormField>
-        </div>
       </FormSection>
 
 
@@ -638,10 +823,10 @@ export const VisitRequestFormV2: React.FC<Props> = ({
                   canRemove={campusVisitFields.fields.length > 1}
                   showErrors={showErrors}
                   minAdvanceHours={vm.minAdvanceHours}
-                  // Only a SELF-registration may state how a campus is processed: on a delegated
-                  // submission the OTP verifies the registrant, not the person typing, so every campus
-                  // routes to its Staff Leader and the backend rejects any intent to the contrary.
-                  processing={isAuthenticated && isSelfRegistrant ? {
+                  // Authenticated create is self-registration always, so the processing panel is
+                  // simply "does this form belong to an authenticated account" — there is no more
+                  // delegated state where a campus routes to its Staff Leader by default instead.
+                  processing={isAuthenticated ? {
                     role: creatorRole,
                     ownCampusCode: user?.campusCode,
                     values: campusHostSelections,
@@ -670,12 +855,15 @@ export const VisitRequestFormV2: React.FC<Props> = ({
         </button>
       </FormSection>
       </fieldset>
+      )}
 
       {/* ── Submit ──
           When the host supplies a footer node (the modal shell), the actions are portalled into
           it so they can be sticky while the body scrolls. The portal keeps them inside THIS
-          <form>, so type="submit" still works and there is no second form implementation. */}
-      {submitBar(
+          <form>, so type="submit" still works and there is no second form implementation.
+          Withheld entirely while the authenticated form is not yet interactive (auth bootstrapping,
+          profile loading/error, profile incomplete) — plan §4/§5/§20: "không cho submit". */}
+      {canInteractWithForm && submitBar(
         <>
           {vm.submitError && (
             <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-normal text-red-700">
@@ -709,9 +897,9 @@ export const VisitRequestFormV2: React.FC<Props> = ({
               className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#f37021] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-orange-500/20 transition-colors hover:bg-[#e0631a] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             >
               {vm.isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {/* The label states the contract the form is actually on: a delegated submission ends in
-                  an OTP round-trip, so it must not promise an immediate create. */}
-              {isAuthenticated && isSelfRegistrant
+              {/* The label states the contract the form is actually on: authenticated always creates
+                  directly, public always ends in an OTP round-trip. */}
+              {isAuthenticated
                 ? t('visitRequestV2:submit.authenticated')
                 : t('visitRequestV2:submit.public')}
             </button>

@@ -1,6 +1,10 @@
 import { normalizePhone } from '../../../shared/utils/phoneNumber';
 
-import type { CampusVisitSchema, VisitRequestV2Schema } from '../schema/visitRequestV2.schema';
+import type {
+  CampusVisitSchema,
+  OperationalContactSource,
+  VisitRequestV2Schema,
+} from '../schema/visitRequestV2.schema';
 import type {
   V2CampusVisitForm,
   V2CampusVisitEdit,
@@ -28,8 +32,8 @@ type MemberRow = CampusVisitSchema['visitors'][number];
  *
  * <p>Minted here, at the one moment a row comes into existence, and never again: a key regenerated on
  * re-render would be exactly as useless as the array index it replaced. Every place that adds a row —
- * the "thêm khách" buttons, an Excel import, "thêm đầu mối vào đoàn" — goes through this, so there is
- * no way to create a row the contact picker cannot name.</p>
+ * the "thêm khách" buttons, an Excel import — goes through this, so there is no way to create a row
+ * the contact picker cannot name.</p>
  */
 export const createEmptyMember = (): MemberRow => ({
   clientMemberKey: newClientKey(),
@@ -58,6 +62,9 @@ export const createEmptyCampusVisit = (clientKey: string = newClientKey()): Camp
   operationalContact: { fullName: '', organization: '', jobTitle: '', phone: '', email: '' },
   // Nobody has been picked from the delegation list yet (NP-03).
   operationalContactClientMemberKey: null,
+  // Not decided yet — MEMBER vs EXTERNAL is an explicit choice the user has to make, never a guess
+  // this form starts with (plan CanhIter3FixBug).
+  operationalContactSource: null,
   workingLanguage: 'VI',
   transportationNote: '',
   /**
@@ -139,6 +146,22 @@ const remintMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
 };
 
 /**
+ * The one, shared definition of "does this key name exactly one row" (plan CanhIter3FixBug §5/§7/
+ * §19/§21). Zero matches (nothing picked, or the pick went stale) and more than one match (a
+ * duplicate key — should not be reachable, but must not be trusted) are both treated as "no valid
+ * identity" — callers must never fall back to `.some()` (which cannot tell 1 match from many) or
+ * `.find()` (which silently accepts the first of many).
+ */
+export const resolveExactlyOne = <T extends { clientMemberKey?: string | null }>(
+  rows: T[],
+  key: string | null | undefined,
+): T | null => {
+  if (!key) return null;
+  const matches = rows.filter(r => !!r.clientMemberKey && r.clientMemberKey === key);
+  return matches.length === 1 ? matches[0] : null;
+};
+
+/**
  * Gives every member row of a campus card an identity, and repairs a pick that has lost its meaning.
  *
  * <p>Called when a card arrives from somewhere that did not mint keys: a draft written before this
@@ -149,6 +172,11 @@ const remintMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
  * <p>A draft from the ARRAY-INDEX era carries `operationalContactVisitorIndex` instead. It is read
  * once, here, and translated into the key of whichever row it happens to point at now — the last time
  * that number is trusted anywhere.</p>
+ *
+ * <p>This function ONLY mints/repairs keys — it never touches `operationalContactSource`. Inferring
+ * that field for a legacy draft is `restoreCampusVisitFromDraft`'s job, not this one's: by the time a
+ * `CampusVisitSchema` reaches here it may already carry a real (possibly explicitly `null`) source
+ * value that must not be reinterpreted.</p>
  */
 export const withMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
   const keyed = (rows: MemberRow[] | undefined): MemberRow[] =>
@@ -158,13 +186,16 @@ export const withMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
   const supportTeam = keyed(cv.supportTeam);
 
   const legacyIndex = (cv as { operationalContactVisitorIndex?: unknown }).operationalContactVisitorIndex;
+  // Number.isInteger guards against a fractional index passing the range check and then indexing the
+  // array at a position that does not exist (`visitors[1.5]` reads back `undefined`).
   const fromLegacyIndex =
-    typeof legacyIndex === 'number' && legacyIndex >= 0 && legacyIndex < visitors.length
+    typeof legacyIndex === 'number' && Number.isInteger(legacyIndex)
+      && legacyIndex >= 0 && legacyIndex < visitors.length
       ? visitors[legacyIndex].clientMemberKey ?? null
       : null;
 
   const picked = cv.operationalContactClientMemberKey ?? fromLegacyIndex;
-  const stillPresent = [...visitors, ...supportTeam].some(m => m.clientMemberKey === picked);
+  const stillPresent = !!resolveExactlyOne([...visitors, ...supportTeam], picked);
 
   return {
     ...cv,
@@ -172,6 +203,47 @@ export const withMemberKeys = (cv: CampusVisitSchema): CampusVisitSchema => {
     supportTeam,
     operationalContactClientMemberKey: picked && stillPresent ? picked : null,
   };
+};
+
+/**
+ * Restores ONE campus card from a stored draft, migrating the pre-`operationalContactSource` shape
+ * safely (plan CanhIter3FixBug §12-§15).
+ *
+ * <p>The subtlety this exists for: `withMemberKeys({ ...createEmptyCampusVisit(), ...rawCv })` would
+ * merge the "not decided yet" default (`operationalContactSource: null`) into a LEGACY draft — one
+ * saved before this field existed — before anything downstream could tell "never had the field" apart
+ * from "the user explicitly left it undecided". Inference has to run on the RAW object, before that
+ * merge, which is why this checks `hasOwnProperty` rather than `=== undefined` on the merged result.</p>
+ *
+ * <p>Evidence a legacy draft once had a member picked — a real key string, or an in-range integer
+ * legacy index — infers `'MEMBER'` even if that key no longer resolves to anyone after repair: a stale
+ * key is still evidence of the user's original choice and must not be silently reread as EXTERNAL.</p>
+ */
+export const restoreCampusVisitFromDraft = (
+  rawCv: Partial<CampusVisitSchema> & Record<string, unknown>,
+): CampusVisitSchema => {
+  const hadSourceField = Object.prototype.hasOwnProperty.call(rawCv, 'operationalContactSource');
+  const defaults = createEmptyCampusVisit((rawCv.clientKey as string) || newClientKey());
+  const repaired = withMemberKeys({ ...defaults, ...rawCv } as CampusVisitSchema);
+  // New-format draft: whatever it recorded — including an explicit `null` — stands as the user's own
+  // answer, not evidence to be reinterpreted.
+  if (hadSourceField) return repaired;
+
+  const rawKey = rawCv.operationalContactClientMemberKey;
+  const rawKeyPresent = typeof rawKey === 'string' && rawKey.trim().length > 0;
+  const legacyIndex = (rawCv as { operationalContactVisitorIndex?: unknown }).operationalContactVisitorIndex;
+  const rawVisitors = Array.isArray(rawCv.visitors) ? rawCv.visitors : [];
+  const legacyIndexValid =
+    typeof legacyIndex === 'number' && Number.isInteger(legacyIndex)
+      && legacyIndex >= 0 && legacyIndex < rawVisitors.length;
+  const rawMemberEvidence = rawKeyPresent || legacyIndexValid;
+
+  const rawContact = rawCv.operationalContact as Record<string, unknown> | undefined;
+  const contactHasData = !!rawContact && (['fullName', 'organization', 'jobTitle', 'phone', 'email'] as const)
+    .some(f => typeof rawContact[f] === 'string' && (rawContact[f] as string).trim().length > 0);
+
+  const inferred: OperationalContactSource = rawMemberEvidence ? 'MEMBER' : contactHasData ? 'EXTERNAL' : null;
+  return { ...repaired, operationalContactSource: inferred };
 };
 
 /**
@@ -223,77 +295,92 @@ const trimOrNull = (v: string | undefined | null): string | null => {
 const toApiCampusVisit = (
   cv: CampusVisitSchema,
   hostChoice: CampusHostSelectionChoice | undefined,
-): V2CampusVisitForm => ({
-  campusId: (cv.campus ?? '').trim().toUpperCase(),
-  plannedStartAt: cv.startDatetime,
-  plannedEndAt: cv.endDatetime,
-  delegationName: (cv.delegationName ?? '').trim(),
-  visitType: cv.visitType,
-  visitTypeOther: cv.visitType === 'OTHER' ? trimOrNull(cv.visitTypeOther) : null,
-  purpose: (cv.purpose ?? '').trim(),
-  workingContent: trimOrNull(cv.workingContent),
-  // `organizationPartnerId` rides along with the organization text: the text is what the request
-  // will display, the id is which partner profile it actually IS (PART-01).
-  visitors: (cv.visitors ?? []).map(v => ({
-    fullName: (v.fullName ?? '').trim(),
-    jobTitle: (v.jobTitle ?? '').trim(),
-    organization: (v.organization ?? '').trim(),
-    organizationPartnerId: v.organizationPartnerId ?? null,
-    nationality: (v.nationality ?? '').trim(),
-    clientMemberKey: v.clientMemberKey ?? null,
-    guestMemberId: v.guestMemberId ?? null,
-  })),
-  externalSupportMembers: (cv.supportTeam ?? []).map(s => ({
-    fullName: (s.fullName ?? '').trim(),
-    jobTitle: (s.jobTitle ?? '').trim(),
-    organization: (s.organization ?? '').trim(),
-    organizationPartnerId: s.organizationPartnerId ?? null,
-    nationality: (s.nationality ?? '').trim(),
-    clientMemberKey: s.clientMemberKey ?? null,
-    guestMemberId: s.guestMemberId ?? null,
-  })),
-  operationalContact: {
-    fullName: (cv.operationalContact?.fullName ?? '').trim(),
-    organization: (cv.operationalContact?.organization ?? '').trim(),
-    phone: normalizePhone(cv.operationalContact?.phone) ?? (cv.operationalContact?.phone ?? '').trim(),
-    jobTitle: (cv.operationalContact?.jobTitle ?? '').trim(),
-    email: (cv.operationalContact?.email ?? '').trim(),
-  },
-  // Only sent when it still names a row that is actually in this payload. A key naming nobody is
-  // REFUSED by the backend — deleting the person who is the contact has to be told, not absorbed —
-  // so sending a stale one would turn a form the user has already fixed into a failed submit. Both
-  // lists are searched: support staff travelling with the delegation may hold the role (NP-03).
-  operationalContactClientMemberKey:
-    cv.operationalContactClientMemberKey
-      && [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])]
-        .some(m => m.clientMemberKey === cv.operationalContactClientMemberKey)
-      ? cv.operationalContactClientMemberKey
+): V2CampusVisitForm => {
+  // Exact-one, resolved ONCE and shared by both relation fields below — never `.some()` (cannot tell
+  // one match from several) or `.find()` (silently accepts the first of several).
+  const exactMember = resolveExactlyOne(
+    [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])],
+    cv.operationalContactClientMemberKey,
+  );
+  // Fresh campus (no visitInstanceId): the relation may only serialize when the user explicitly chose
+  // MEMBER, even if a stray valid key happens to sit in form state under EXTERNAL/null — that state
+  // should not be reachable once the schema validates, but this builder must not trust that and leak
+  // a member link into a payload the user declared EXTERNAL (plan CanhIter3FixBug §16/§18).
+  //
+  // Existing campus (visitInstanceId set): never renders the new selector at all, so `source` carries
+  // no meaning there — the relation keeps deriving from the exact-one key match alone, exactly as
+  // before this change, so the edit path never loses a legitimate relation.
+  const isNewCampus = cv.visitInstanceId == null;
+  const allowRelation = isNewCampus ? cv.operationalContactSource === 'MEMBER' : true;
+  const relationKey = allowRelation && exactMember ? exactMember.clientMemberKey ?? null : null;
+  const relationGuestMemberId = allowRelation && exactMember ? exactMember.guestMemberId ?? null : null;
+
+  return {
+    campusId: (cv.campus ?? '').trim().toUpperCase(),
+    plannedStartAt: cv.startDatetime,
+    plannedEndAt: cv.endDatetime,
+    delegationName: (cv.delegationName ?? '').trim(),
+    visitType: cv.visitType,
+    visitTypeOther: cv.visitType === 'OTHER' ? trimOrNull(cv.visitTypeOther) : null,
+    purpose: (cv.purpose ?? '').trim(),
+    workingContent: trimOrNull(cv.workingContent),
+    // `organizationPartnerId` rides along with the organization text: the text is what the request
+    // will display, the id is which partner profile it actually IS (PART-01).
+    visitors: (cv.visitors ?? []).map(v => ({
+      fullName: (v.fullName ?? '').trim(),
+      jobTitle: (v.jobTitle ?? '').trim(),
+      organization: (v.organization ?? '').trim(),
+      organizationPartnerId: v.organizationPartnerId ?? null,
+      nationality: (v.nationality ?? '').trim(),
+      clientMemberKey: v.clientMemberKey ?? null,
+      guestMemberId: v.guestMemberId ?? null,
+    })),
+    externalSupportMembers: (cv.supportTeam ?? []).map(s => ({
+      fullName: (s.fullName ?? '').trim(),
+      jobTitle: (s.jobTitle ?? '').trim(),
+      organization: (s.organization ?? '').trim(),
+      organizationPartnerId: s.organizationPartnerId ?? null,
+      nationality: (s.nationality ?? '').trim(),
+      clientMemberKey: s.clientMemberKey ?? null,
+      guestMemberId: s.guestMemberId ?? null,
+    })),
+    operationalContact: {
+      fullName: (cv.operationalContact?.fullName ?? '').trim(),
+      organization: (cv.operationalContact?.organization ?? '').trim(),
+      phone: normalizePhone(cv.operationalContact?.phone) ?? (cv.operationalContact?.phone ?? '').trim(),
+      jobTitle: (cv.operationalContact?.jobTitle ?? '').trim(),
+      email: (cv.operationalContact?.email ?? '').trim(),
+    },
+    // Only sent when it still names a row that is actually in this payload AND (for a fresh campus)
+    // the user explicitly chose MEMBER. A key naming nobody is REFUSED by the backend — deleting the
+    // person who is the contact has to be told, not absorbed — so sending a stale one would turn a
+    // form the user has already fixed into a failed submit. Both lists are searched: support staff
+    // travelling with the delegation may hold the role (NP-03). `operationalContactSource` is read
+    // above to decide this, but — like every other field on `cv` this function reads without echoing
+    // verbatim — it is never itself a property of the object this function returns.
+    operationalContactClientMemberKey: relationKey,
+    // The same pick, named by its PERSISTENT id when the row that holds it has one (plan
+    // CanhIter3FixBug). Derived from the SAME source of truth as the key above — there is no separate
+    // "relation" state to keep in sync — so null here means either "not in the delegation" or "the
+    // picked row is itself brand new this session"; the backend tells the two apart from its own
+    // contentChanged, never from which of these two fields is null.
+    operationalContactGuestMemberId: relationGuestMemberId,
+    workingLanguage: cv.workingLanguage,
+    transportationNote: trimOrNull(cv.transportationNote),
+    mediaConsentStatus: cv.mediaConsentStatus,
+    notes: trimOrNull(cv.notes),
+    // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
+    // external submit that names anybody, so sending a placeholder would fail the whole request.
+    hostSelection: hostChoice
+      ? {
+        mode: hostChoice.mode,
+        proposedHostUserId:
+          hostChoice.mode === 'SELECTED' ? hostChoice.proposedHostUserId ?? null : null,
+        confirmedHostConflict: hostChoice.confirmedHostConflict ?? false,
+      }
       : null,
-  // The same pick, named by its PERSISTENT id when the row that holds it has one (plan
-  // CanhIter3FixBug). Derived from the SAME source of truth as the key above — there is no separate
-  // "relation" state to keep in sync — so null here means either "not in the delegation" or "the
-  // picked row is itself brand new this session"; the backend tells the two apart from its own
-  // contentChanged, never from which of these two fields is null.
-  operationalContactGuestMemberId:
-    cv.operationalContactClientMemberKey
-      ? [...(cv.visitors ?? []), ...(cv.supportTeam ?? [])]
-        .find(m => m.clientMemberKey === cv.operationalContactClientMemberKey)?.guestMemberId ?? null
-      : null,
-  workingLanguage: cv.workingLanguage,
-  transportationNote: trimOrNull(cv.transportationNote),
-  mediaConsentStatus: cv.mediaConsentStatus,
-  notes: trimOrNull(cv.notes),
-  // Omitted entirely when the caller has no host rights: the backend REFUSES a payload from an
-  // external submit that names anybody, so sending a placeholder would fail the whole request.
-  hostSelection: hostChoice
-    ? {
-      mode: hostChoice.mode,
-      proposedHostUserId:
-        hostChoice.mode === 'SELECTED' ? hostChoice.proposedHostUserId ?? null : null,
-      confirmedHostConflict: hostChoice.confirmedHostConflict ?? false,
-    }
-    : null,
-});
+  };
+};
 
 /**
  * Builds the REAL v2 create contract (`VisitRequestFormDataV2`): every campus is a fully
@@ -461,6 +548,10 @@ export const resolvedFormToV2Schema = (
         cv.operationalContact.guestMemberId == null
           ? null
           : keyByGuestMemberId.get(cv.operationalContact.guestMemberId) ?? null,
+      // An EXISTING campus never renders the MEMBER/EXTERNAL selector, so this has no meaning for it
+      // — `toApiCampusVisit` treats a campus with a `visitInstanceId` as always allowed to carry its
+      // relation regardless of this value (plan CanhIter3FixBug §18/§20).
+      operationalContactSource: null,
       workingLanguage: cv.workingLanguage === 'VI' ? 'VI' : 'EN',
       transportationNote: cv.transportationNote ?? '',
       mediaConsentStatus: cv.mediaConsentStatus === 'AGREED' ? 'AGREED' : 'DECLINED',

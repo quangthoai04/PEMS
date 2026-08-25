@@ -6,6 +6,15 @@ import { parseApiDate } from '../../../shared/utils/vietnamTime';
 export type ValidationTranslator = (key: string, options?: Record<string, unknown>) => string;
 export type CreatorRole = 'VISITOR' | 'STAFF' | 'STAFF_LEADER';
 /**
+ * Explicit, form-only answer to "is the operational contact somebody travelling with this
+ * delegation, or somebody who isn't?" (plan CanhIter3FixBug, MEMBER/EXTERNAL). Never sent to the
+ * backend — the existing `operationalContactClientMemberKey` (linked) vs `operationalContact`
+ * snapshot (unlinked) contract already carries the real distinction; this only tells the FORM
+ * which of the two the user has committed to, so `key = null` stops doing double duty for
+ * "not decided yet" and "deliberately external".
+ */
+export type OperationalContactSource = 'MEMBER' | 'EXTERNAL' | null;
+/**
  * Per-campus form v2 schema (plan §5): the form is `registrant`
  * request-level, plus `campusVisits[]` where EVERY element is a complete, independent
  * snapshot (schedule + content + people + operational contact + requirements).
@@ -243,6 +252,14 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
      */
     operationalContactClientMemberKey: z.string().nullable().optional(),
 
+    /**
+     * Explicit MEMBER/EXTERNAL answer for THIS campus (plan CanhIter3FixBug). `null` means "not
+     * decided yet" and is only ever valid before submit — see the `isNewCampus` branch below,
+     * which is the only place this is required at all (an existing campus never renders the
+     * selector and never needs an opinion here).
+     */
+    operationalContactSource: z.enum(['MEMBER', 'EXTERNAL']).nullable().optional().default(null),
+
     workingLanguage: z.enum(['EN', 'VI']),
     transportationNote: bounded(z.string(), 2000, t('fields.transportationNote'), t)
       .refine(noHtml(t), { message: t('noHtmlChars') })
@@ -319,6 +336,39 @@ export const buildCampusVisitSchema = (minAdvanceHours: number, t: ValidationTra
           code: z.ZodIssueCode.custom,
           path: ['operationalContact', 'email'],
           message: maxLenMessage(t, t('fields.operationalEmail'), 150),
+        });
+      }
+
+      // Explicit MEMBER/EXTERNAL (plan CanhIter3FixBug) — a NEW-write bar, same reasoning as the
+      // completeness checks just above: an existing campus never renders the selector and is never
+      // required to have an opinion here.
+      if (data.operationalContactSource == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContactSource'],
+          message: t('operationalContactSourceRequired'),
+        });
+      } else if (data.operationalContactSource === 'MEMBER') {
+        // Exact-one, never .some()/.find(): 0 matches (nothing picked, or the pick went stale) and
+        // >1 matches (a duplicate key, which should not be reachable but must not be trusted) are
+        // both invalid — a member relation must name exactly one row.
+        const key = data.operationalContactClientMemberKey;
+        const matches = [...data.visitors, ...data.supportTeam]
+          .filter(m => !!m.clientMemberKey && m.clientMemberKey === key);
+        if (matches.length !== 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['operationalContactClientMemberKey'],
+            message: t('operationalContactMemberRequired'),
+          });
+        }
+      } else if (data.operationalContactSource === 'EXTERNAL' && data.operationalContactClientMemberKey) {
+        // Defensive only — the UI never leaves a key set while EXTERNAL is selected — but the schema
+        // must not trust that and let an inconsistent state slip through validation.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['operationalContactClientMemberKey'],
+          message: t('operationalContactMemberRequired'),
         });
       }
     }
