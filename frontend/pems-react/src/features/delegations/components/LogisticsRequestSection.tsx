@@ -1273,7 +1273,7 @@ function ResourceCard({
             )}
 
             {/* Dòng 1: Số lượng (110px), Thời gian bắt đầu (1fr), Thời gian kết thúc (1fr) */}
-            <div className="grid grid-cols-1 sm:grid-cols-[110px_1fr_1fr] gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)] gap-3">
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">Số lượng <span className="font-normal text-gray-400">(dự kiến)</span></label>
                 <input type="text" inputMode="numeric" disabled={isFormDisabled} value={form.quantity} onChange={(e) => handleQuantityChange(e.target.value)}
@@ -1611,7 +1611,7 @@ function CategoryCard({
 
   return (
     <div>
-      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-2 pl-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,230px)_minmax(0,370px)_minmax(0,1fr)] gap-y-2.5 gap-x-4 mb-2 pl-5">
         {([
           ['none', `Không cần ${label}`],
           ['system', `Cần ${label} — gửi yêu cầu qua hệ thống`],
@@ -1670,7 +1670,7 @@ function OtherCard({
 
   return (
     <div>
-      <div className="grid grid-cols-1 lg:grid-cols-[230px_370px_1fr] gap-y-2.5 gap-x-4 mb-3 pl-5">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,230px)_minmax(0,370px)_minmax(0,1fr)] gap-y-2.5 gap-x-4 mb-3 pl-5">
         {shouldHideNone ? (
           <>
             <div className="hidden lg:block"></div>

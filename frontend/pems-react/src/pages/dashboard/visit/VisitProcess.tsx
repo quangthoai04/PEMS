@@ -1575,7 +1575,7 @@ export function VisitProcess() {
                                               } else {
                                                 /* Spans across midnight (different start & end dates) */
                                                 return (
-                                                  <div className="grid grid-cols-[14px_1fr] items-center gap-x-2 gap-y-1">
+                                                  <div className="grid grid-cols-[14px_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
                                                     <span />
                                                     <input
                                                       type="datetime-local"
