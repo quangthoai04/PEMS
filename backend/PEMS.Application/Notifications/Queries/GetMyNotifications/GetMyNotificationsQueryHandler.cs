@@ -35,6 +35,28 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
             query = query.Where(n => n.IsRead == request.IsRead.Value);
         }
 
+        // Category/action filters must be part of the database query BEFORE Count/Skip/Take.
+        // Filtering after pagination creates sparse pages (for example pageSize=10 but only 1-5
+        // matching rows are rendered) while totalPages still describes the unfiltered dataset.
+        if (request.Categories is { Count: > 0 })
+        {
+            var categories = request.Categories
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c.Trim().ToUpperInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            if (categories.Length > 0)
+            {
+                query = query.Where(n => categories.Contains(n.Category));
+            }
+        }
+
+        if (request.IsActionRequired.HasValue)
+        {
+            query = query.Where(n => n.IsActionRequired == request.IsActionRequired.Value);
+        }
+
         var totalItems = await query.CountAsync(cancellationToken);
 
         var page = request.Page < 1 ? 1 : request.Page;
