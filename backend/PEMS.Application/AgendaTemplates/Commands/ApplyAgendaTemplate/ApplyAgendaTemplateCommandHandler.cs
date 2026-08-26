@@ -80,6 +80,29 @@ public sealed class ApplyAgendaTemplateCommandHandler
 
         var now = _clock.VietnamNow;
         var plannedStart = instance.PlannedStartAt;
+        var plannedEnd = instance.PlannedEndAt;
+
+        // The template's stored minutes are a relative baseline, not absolute elapsed time: they get
+        // scaled proportionally onto the instance's real planned window so a template authored for a
+        // 120-minute visit still fits a shorter or longer one. See AgendaTemplateTimelineScaler.
+        if (plannedEnd <= plannedStart)
+            throw new ConflictException(
+                "Cơ sở này chưa có khoảng thời gian dự kiến hợp lệ (giờ kết thúc phải sau giờ bắt đầu) nên không thể áp dụng mẫu lịch trình.",
+                "AGENDA_TEMPLATE_INVALID_VISIT_RANGE");
+
+        var orderedTemplateItems = template.Items
+            .OrderBy(i => i.StartOffsetMinutes).ThenBy(i => i.DisplayOrder)
+            .ToList();
+
+        var templateSpanMinutes = AgendaTemplateTimelineScaler.ComputeTemplateSpanMinutes(
+            orderedTemplateItems.Select(i => ((int)i.StartOffsetMinutes, (int)i.DurationMinutes)).ToList());
+        if (templateSpanMinutes <= 0)
+            throw new ConflictException(
+                "Mẫu agenda không có khoảng thời gian hợp lệ để áp dụng.", "AGENDA_TEMPLATE_INVALID_SPAN");
+
+        var scaledBoundaries = AgendaTemplateTimelineScaler.Scale(
+            plannedStart, plannedEnd, templateSpanMinutes,
+            orderedTemplateItems.Select(i => ((int)i.StartOffsetMinutes, (int)i.DurationMinutes)).ToList());
 
         await using var tx = await _db.BeginTransactionAsync(cancellationToken);
 
@@ -93,19 +116,18 @@ public sealed class ApplyAgendaTemplateCommandHandler
 
         var seq = 1;
         var created = new List<VisitAgenda>();
-        foreach (var item in template.Items
-                     .OrderBy(i => i.StartOffsetMinutes).ThenBy(i => i.DisplayOrder))
+        for (var i = 0; i < orderedTemplateItems.Count; i++)
         {
-            var start = plannedStart.AddMinutes(item.StartOffsetMinutes);
-            var end = start.AddMinutes(item.DurationMinutes);
+            var item = orderedTemplateItems[i];
+            var boundary = scaledBoundaries[i];
             var entity = new VisitAgenda
             {
                 VisitInstanceId = instance.VisitInstanceId,
                 SequenceOrder = seq++,
                 Title = item.Title,
                 Description = item.Description,
-                StartTime = start,
-                EndTime = end,
+                StartTime = boundary.Start,
+                EndTime = boundary.End,
                 Location = item.Location,
                 ResponsibleName = null,
                 SourceTemplateItemId = item.AgendaTemplateItemId,

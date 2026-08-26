@@ -4,9 +4,10 @@ namespace PEMS.Application.AgendaTemplates.Commands.ApplyAgendaTemplate;
 
 /// <summary>
 /// Materialise an agenda template into the concrete <c>visit_agendas</c> of a campus instance.
-/// Each item's absolute time = visit_request_campuses.planned_start_at + start_offset_minutes
-/// (end = start + duration_minutes). visit_request_campuses is never written — the source template
-/// is traced only via visit_agendas.source_template_item_id.
+/// Each item's StartOffsetMinutes/DurationMinutes is a relative baseline, proportionally scaled onto
+/// [planned_start_at, planned_end_at] — see <see cref="PEMS.Application.AgendaTemplates.Common.AgendaTemplateTimelineScaler"/>.
+/// visit_request_campuses is never written — the source template is traced only via
+/// visit_agendas.source_template_item_id.
 /// </summary>
 public class ApplyAgendaTemplateCommand : IRequest<ApplyAgendaTemplateResponse>
 {

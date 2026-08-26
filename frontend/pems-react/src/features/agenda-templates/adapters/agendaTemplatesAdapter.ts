@@ -5,10 +5,25 @@ import type {
 } from '../types/agendaTemplates.types';
 import { formatVietnamTime } from '../../../shared/utils/vietnamTime';
 
+/** Minimal shape needed to scale one template item's relative timeline. */
+export interface TemplateBoundaryInput {
+  startOffsetMinutes: number;
+  durationMinutes: number;
+}
+
+/** One item's [start, end) boundary after proportional scaling onto a real visit window. */
+export interface ScaledAgendaBoundary {
+  start: Date;
+  end: Date;
+}
+
 /**
  * Helpers to map between the editor model and API payloads, and to preview the absolute clock
- * time of a template item relative to a base datetime (offset arithmetic mirrors the backend:
- * start = base + startOffsetMinutes, end = start + durationMinutes).
+ * time of a template's items once applied to a real visit.
+ *
+ * `scaleTemplateItems` mirrors the backend's AgendaTemplateTimelineScaler ONE-FOR-ONE (same ratio
+ * formula, same minute rounding, same last-item-pinned-to-plannedEnd rule) so the setup preview the
+ * host sees is exactly what Apply will persist — never two formulas that can silently drift apart.
  */
 export const agendaTemplatesAdapter = {
   /** "+0′", "+1h30′" style offset label. */
@@ -38,6 +53,58 @@ export const agendaTemplatesAdapter = {
     const end = new Date(start.getTime() + durationMinutes * 60_000);
     // Hiển thị theo giờ Việt Nam cố định, không phụ thuộc timezone browser.
     return `${formatVietnamTime(start)} – ${formatVietnamTime(end)}`;
+  },
+
+  /**
+   * templateSpanMinutes = max(startOffsetMinutes + durationMinutes) across all items — the furthest
+   * endpoint any item reaches, NOT sum(durationMinutes) (a template can have gaps/overlaps between
+   * items). Mirrors AgendaTemplateTimelineScaler.ComputeTemplateSpanMinutes on the backend.
+   */
+  computeTemplateSpanMinutes(items: TemplateBoundaryInput[]): number {
+    if (items.length === 0) return 0;
+    return Math.max(...items.map((i) => i.startOffsetMinutes + i.durationMinutes));
+  },
+
+  /**
+   * Proportionally scales every item's template-relative [start, end) onto the visit's real
+   * [plannedStartIso, plannedEndIso] window, in the SAME order as `items`. Each boundary is computed
+   * independently from plannedStart (never chained off a previous item's computed end), so per-item
+   * minute rounding cannot accumulate into drift. The item(s) whose template-relative end equals the
+   * template span are pinned exactly to plannedEnd rather than recomputed through the ratio.
+   *
+   * Returns [] when the inputs cannot produce a valid timeline (missing/invalid dates, an end not
+   * after start, or an empty/zero-span template) — the caller shows its own "not previewable" state
+   * rather than rendering a broken timeline.
+   */
+  scaleTemplateItems(
+    plannedStartIso: string | null | undefined,
+    plannedEndIso: string | null | undefined,
+    items: TemplateBoundaryInput[],
+  ): ScaledAgendaBoundary[] {
+    if (!plannedStartIso || !plannedEndIso || items.length === 0) return [];
+    const plannedStart = new Date(plannedStartIso);
+    const plannedEnd = new Date(plannedEndIso);
+    if (Number.isNaN(plannedStart.getTime()) || Number.isNaN(plannedEnd.getTime())) return [];
+
+    const visitSpanMs = plannedEnd.getTime() - plannedStart.getTime();
+    if (visitSpanMs <= 0) return [];
+
+    const templateSpanMinutes = agendaTemplatesAdapter.computeTemplateSpanMinutes(items);
+    if (templateSpanMinutes <= 0) return [];
+
+    const scaleBoundary = (templateMinuteOffset: number): Date => {
+      const ratio = templateMinuteOffset / templateSpanMinutes;
+      const scaledMinutes = Math.round((visitSpanMs / 60_000) * ratio);
+      return new Date(plannedStart.getTime() + scaledMinutes * 60_000);
+    };
+
+    return items.map((item) => {
+      const templateEnd = item.startOffsetMinutes + item.durationMinutes;
+      const start = scaleBoundary(item.startOffsetMinutes);
+      let end = templateEnd >= templateSpanMinutes ? plannedEnd : scaleBoundary(templateEnd);
+      if (end.getTime() <= start.getTime()) end = new Date(start.getTime() + 60_000);
+      return { start, end };
+    });
   },
 
   /** Map API items (with id) down to the input shape used by the editor / create+update payloads. */

@@ -455,7 +455,8 @@ export function AgendaTemplateManagement() {
                     </div>
 
                     <div className="mt-8">
-                      <h3 className="text-lg font-bold text-gray-800 mb-4 border-b border-gray-100 pb-2">Chi tiết lịch trình</h3>
+                      <h3 className="text-lg font-bold text-gray-800 mb-1 border-b border-gray-100 pb-2">Chi tiết lịch trình</h3>
+                      <p className="text-xs text-gray-400 mb-4">Các mốc thời gian dưới đây là tỷ lệ nền của mẫu — khi áp dụng cho một chuyến thăm cụ thể, hệ thống sẽ co giãn tương ứng theo tổng thời gian thực tế của chuyến, không giữ nguyên số phút tuyệt đối.</p>
                       <div className="space-y-4">
                         {[...detail.items].sort((a, b) => a.startOffsetMinutes - b.startOffsetMinutes || a.displayOrder - b.displayOrder).map((item) => (
                           <div key={item.agendaTemplateItemId} className="flex gap-4 p-4 rounded-xl border border-gray-100 bg-gray-50">
@@ -577,7 +578,7 @@ function AgendaEditor({ editor, campuses, saving, onPatch, onPatchItem, onAddIte
                 <Plus className="w-4 h-4" /> Thêm mục
               </button>
             </div>
-            <p className="text-xs text-gray-400 mb-4">“Bắt đầu sau” là số phút tính từ giờ bắt đầu dự kiến của chuyến. “Thời lượng” phải lớn hơn 0. Khi áp dụng mẫu vào chuyến thật, hệ thống sẽ tự tính giờ bắt đầu và giờ kết thúc.</p>
+            <p className="text-xs text-gray-400 mb-4">“Bắt đầu sau” là số phút tính từ giờ bắt đầu dự kiến của chuyến. “Thời lượng” phải lớn hơn 0. Thời gian trong mẫu dùng để xác định tỷ lệ tương đối — khi áp dụng, lịch trình sẽ tự co giãn theo tổng thời gian thực tế của chuyến thăm, không giữ nguyên số phút tuyệt đối.</p>
 
             <div className="space-y-3">
               {editor.items.map((item, idx) => (

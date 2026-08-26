@@ -1,8 +1,10 @@
 /**
  * AgendaSetupPanel
  * Host-facing setup for a campus instance: auto-selects the default agenda template
- * (campus scope → GLOBAL fallback), lets the host pick another, previews the template that
- * WILL be applied (absolute time = planned_start_at + offsets) and applies it into visit_agendas.
+ * (campus scope → GLOBAL fallback), lets the host pick another, previews the template that WILL be
+ * applied — its relative minutes proportionally scaled onto [plannedStartAt, plannedEndAt], the exact
+ * same formula the backend's Apply uses (see agendaTemplatesAdapter.scaleTemplateItems) — and applies
+ * it into visit_agendas.
  *
  * The FIRST time an instance has no agenda yet, the default template is applied automatically —
  * the registrant already chose a visit type on the public form, so the matching default is exactly
@@ -19,6 +21,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Wand2, Clock, MapPin, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import agendaTemplatesApi from '../api/agendaTemplatesApi';
+import { agendaTemplatesAdapter } from '../adapters/agendaTemplatesAdapter';
 import { VISIT_TYPE_LABELS } from '../types/agendaTemplates.types';
 import type { AgendaSetupForInstance } from '../types/agendaTemplates.types';
 import { toVietnamDateTimeLocalInput, formatVietnamTime } from '../../../shared/utils/vietnamTime';
@@ -195,7 +198,6 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
   }
 
   const planned = setup.plannedStartAt;
-  const base = new Date(planned);
   const disabled = !setup.canApply || applying;
   const selectedTemplate = setup.selectableTemplates.find((t) => t.agendaTemplateId === selectedId) ?? null;
   const applyLabel = applying
@@ -205,6 +207,11 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
   const previewItems = selectedTemplate
     ? [...selectedTemplate.items].sort((a, b) => a.startOffsetMinutes - b.startOffsetMinutes || a.displayOrder - b.displayOrder)
     : [];
+  // Same ratio formula as the backend's Apply (AgendaTemplateTimelineScaler) — the template's minutes
+  // are a relative baseline, scaled onto the visit's real [plannedStartAt, plannedEndAt] window, so
+  // this preview is exactly what gets persisted, not the template's raw baseline timeline.
+  const scaledPreviewBoundaries = agendaTemplatesAdapter.scaleTemplateItems(
+    setup.plannedStartAt, setup.plannedEndAt, previewItems);
 
   const scopeLabel = (campusId?: number | null) => (campusId == null ? 'GLOBAL' : `Cơ sở #${campusId}`);
 
@@ -283,12 +290,16 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
           {/* Preview of the template that WILL be applied (not the saved agenda below) */}
           <div className="mt-5">
             <h4 className="text-sm font-bold text-slate-700">Xem trước mẫu sẽ áp dụng</h4>
-            <p className="text-xs font-normal text-slate-400">Tính theo giờ bắt đầu dự kiến: {fmtDateTime(planned)}</p>
+            <p className="text-xs font-normal text-slate-400">
+              Lịch trình mẫu sẽ tự co giãn theo tổng thời gian dự kiến của chuyến: {fmtDateTime(planned)} – {fmtDateTime(setup.plannedEndAt)}
+            </p>
 
             {selectedId == null ? (
               <p className="mt-3 text-xs text-slate-400">Chọn một mẫu để xem trước lịch trình.</p>
             ) : previewItems.length === 0 ? (
               <p className="mt-3 text-xs text-slate-400">Mẫu này chưa có mục lịch trình.</p>
+            ) : scaledPreviewBoundaries.length === 0 ? (
+              <p className="mt-3 text-xs text-slate-400">Chưa xem trước được — khoảng thời gian dự kiến của chuyến chưa hợp lệ.</p>
             ) : (
               <div className="mt-3 rounded-xl border border-slate-200 bg-white overflow-hidden">
                 <div className="hidden sm:grid grid-cols-[130px_minmax(0,1fr)_170px] border-b border-slate-100 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
@@ -296,16 +307,15 @@ export function AgendaSetupPanel({ visitInstanceId, onApplied, notify: propNotif
                   <span>Nội dung</span>
                   <span>Địa điểm</span>
                 </div>
-                {previewItems.map((it) => {
-                  const start = new Date(base.getTime() + it.startOffsetMinutes * 60_000);
-                  const end = new Date(start.getTime() + it.durationMinutes * 60_000);
+                {previewItems.map((it, idx) => {
+                  const boundary = scaledPreviewBoundaries[idx];
                   return (
                     <div
                       key={it.agendaTemplateItemId}
                       className="grid grid-cols-1 sm:grid-cols-[130px_minmax(0,1fr)_170px] gap-0.5 sm:gap-4 px-4 py-2.5 text-sm border-b border-slate-50 last:border-0"
                     >
                       <span className="font-normal text-[#f37021] sm:text-slate-700 inline-flex items-center gap-1">
-                        <Clock className="h-3.5 w-3.5 shrink-0" /> {hhmm(start)} – {hhmm(end)}
+                        <Clock className="h-3.5 w-3.5 shrink-0" /> {hhmm(boundary.start)} – {hhmm(boundary.end)}
                       </span>
                       <span className="min-w-0 font-normal text-slate-800">{it.title}</span>
                       <span className="min-w-0 truncate text-slate-500 inline-flex items-center gap-1" title={it.location || undefined}>
