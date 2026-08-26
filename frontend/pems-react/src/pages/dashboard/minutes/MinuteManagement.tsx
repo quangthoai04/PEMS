@@ -124,11 +124,6 @@ export function MinuteManagement() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-bold text-[#004c91]">Quản lý biên bản</h1>
-            {user?.campusName && (
-              <span className="inline-flex px-3 py-1 text-sm font-bold rounded-full bg-[#004c91]/10 text-[#004c91]">
-                Campus: {user.campusName}
-              </span>
-            )}
           </div>
         </div>
       </div>
