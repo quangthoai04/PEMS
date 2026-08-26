@@ -1,7 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { CampusVisitDetailCard } from '../components/v2/CampusVisitDetailCard';
 import { campusFixture } from './fixtures';
+import { formatVietnamDateTime } from '../../../shared/utils/vietnamTime';
+
+// Only exercised by the profile-mismatch-icon describe block below (visitRequestId set): every other
+// test in this file renders read-only (no visitRequestId), so ContactIdentityActions never mounts and
+// never calls these. A full replacement, like ContactIdentityActions.test.tsx's own mock, since no test
+// here opens the identity-change form and needs the real request/response shapes.
+vi.mock('../api/visitRequestV2Api', () => ({
+  getOperationalContactState: vi.fn(),
+  resendOperationalContactConfirmation: vi.fn(),
+  reinviteOperationalContactConfirmation: vi.fn(),
+  replaceOperationalContact: vi.fn(),
+  initiateOperationalContactTransfer: vi.fn(),
+  cancelOperationalContactChange: vi.fn(),
+  syncOwnAccountProfile: vi.fn(),
+}));
+
+import { getOperationalContactState } from '../api/visitRequestV2Api';
 
 // jsdom's navigator.language is en-US → the i18n config initializes in EN; assertions
 // below use the EN strings (plus structural roles/aria, which are language-free).
@@ -128,5 +146,139 @@ describe('CampusVisitDetailCard — media consent and the general note are separ
     })} />);
 
     expect(screen.getByText('Cần phiên dịch Anh - Việt buổi chiều.')).toBeInTheDocument();
+  });
+});
+
+// ── Reception host and approval share one card ───────────────────────────────
+/**
+ * These two used to be two separate bordered blocks. They are now one card with a divider between
+ * a "who is hosting" section and a "what was decided" section — see CampusVisitDetailCard.tsx.
+ */
+describe('CampusVisitDetailCard — reception host and approval info share one card', () => {
+  it('renders both sections inside a single card, separated by one divider', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+
+    // getByTestId throws on more than one match, so this alone proves there is exactly one
+    // container for the id — the old two-card layout had no single element that could hold both.
+    const card = screen.getByTestId('campus-host-approval-10');
+
+    expect(within(card).getByText('Reception Host')).toBeInTheDocument();
+    expect(within(card).getByText('Approval information')).toBeInTheDocument();
+    expect(card.querySelectorAll('hr')).toHaveLength(1);
+  });
+
+  it('renders the reception host fields inside the merged card', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+    const card = screen.getByTestId('campus-host-approval-10');
+
+    expect(within(card).getByTestId('reception-host-10-current-name')).toHaveTextContent('Host Hà Nội');
+    expect(within(card).getByTestId('reception-host-10-current-department')).toHaveTextContent('Phòng Hợp tác Quốc tế');
+    expect(within(card).getByTestId('reception-host-10-current-phone')).toHaveTextContent('+84900000005');
+    expect(within(card).getByTestId('reception-host-10-current-email')).toHaveTextContent('host.hn@fptu.edu.vn');
+  });
+
+  it('renders the approval fields inside the merged card', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+    const card = screen.getByTestId('campus-host-approval-10');
+
+    expect(within(card).getByText('Leader HN')).toBeInTheDocument();
+    expect(within(card).getByText(formatVietnamDateTime('2026-07-20T10:00:00'))).toBeInTheDocument();
+    expect(within(card).getByText('OK')).toBeInTheDocument();
+  });
+
+  it('keeps the content-status headline and its qualifier as separate lines, not glued together', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+
+    const headline = screen.getByText('Content version 2 is in force');
+    const revisionCell = headline.closest('dd');
+    expect(revisionCell).not.toBeNull();
+    // The qualifier is its own child element, so the two never concatenate into one run-on string.
+    const qualifier = within(revisionCell as HTMLElement).getByText('Approved at round 1');
+    expect(qualifier.tagName).toBe('SPAN');
+  });
+
+  it('keeps the host and approval sections in their own grids, so each can go 1-column on mobile', () => {
+    render(<CampusVisitDetailCard campus={campusFixture()} />);
+    const card = screen.getByTestId('campus-host-approval-10');
+
+    const grids = card.querySelectorAll('dl.grid');
+    expect(grids).toHaveLength(2);
+    grids.forEach(grid => {
+      expect(grid.className).toContain('grid-cols-1');
+      expect(grid.className).toContain('sm:grid-cols-2');
+    });
+  });
+
+  it('omits the divider when the campus has no host and no active proposal', () => {
+    render(<CampusVisitDetailCard campus={campusFixture({ currentHost: null, proposedHost: null })} />);
+    const card = screen.getByTestId('campus-host-approval-10');
+
+    expect(card.querySelectorAll('hr')).toHaveLength(0);
+    expect(within(card).getByText('Approval information')).toBeInTheDocument();
+  });
+});
+
+// ── Profile-mismatch offer: a small icon in the contact card's title row, not a standing banner ─────
+/**
+ * `ContactIdentityActions` fetches the signed-in contact's `profileDifference` and reports it up
+ * through `onProfileDifferenceChange`; this card is what turns that into the icon sitting right after
+ * "Guest Delegation Coordination Contact at Campus" — the header row `OperationalContactReadOnly`
+ * already reserves via `titleTrailing`. Clicking it opens the popover (question + diff + actions);
+ * there is no third step.
+ */
+describe('CampusVisitDetailCard — profile-mismatch icon in the contact title row', () => {
+  const CONTACT_TRANSFER_ACTIONS = ['VIEW', 'UPDATE_OPERATIONAL_CONTACT_PROFILE', 'INITIATE_OPERATIONAL_CONTACT_TRANSFER'];
+
+  const stateWithDifference = {
+    visitRequestId: 1, visitInstanceId: 10, campusStatus: 'ASSIGNED',
+    contactConfirmed: true, confirmedEmailMasked: 'd***@x.vn', confirmedAt: '2026-08-01T09:00:00',
+    confirmationSource: 'EMAIL_CONFIRMATION',
+    pendingChangeKind: null, pendingChangeStatus: null, pendingEmailMasked: null,
+    expiresAt: null, resendCount: 0, tokenVersion: 1,
+    profileDifference: {
+      fullNameDiffers: true, phoneDiffers: false,
+      accountFullName: 'Nguyen Van A', accountPhone: null,
+      snapshotFullName: 'Đầu Mối HN', snapshotPhone: null,
+    },
+  };
+
+  it('shows the icon right after the contact title, and opens the popover on click', async () => {
+    vi.mocked(getOperationalContactState).mockResolvedValue(stateWithDifference);
+
+    render(
+      <CampusVisitDetailCard
+        campus={campusFixture({ allowedActions: CONTACT_TRANSFER_ACTIONS })}
+        visitRequestId={1}
+      />,
+    );
+
+    const trigger = await screen.findByTestId('profile-sync-trigger-10');
+    // Same row as the title, immediately after it — not the far end of the card, not a standing block.
+    const title = screen.getByText('Guest Delegation Coordination Contact at Campus');
+    expect(title.parentElement?.contains(trigger)).toBe(true);
+    // The profile/attention glyph, not the Info/help one it used to be.
+    expect(trigger.querySelector('svg.lucide-badge-alert')).not.toBeNull();
+    expect(trigger.querySelector('svg.lucide-info')).toBeNull();
+    expect(screen.queryByTestId('profile-sync-popover-10')).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
+
+    expect(screen.getByTestId('profile-sync-popover-10')).toBeInTheDocument();
+    expect(screen.getByTestId('profile-sync-fullname')).toHaveTextContent('Nguyen Van A');
+    expect(screen.getByTestId('profile-sync-fullname')).toHaveTextContent('Đầu Mối HN');
+  });
+
+  it('renders no icon once there is nothing to reconcile', async () => {
+    vi.mocked(getOperationalContactState).mockResolvedValue({ ...stateWithDifference, profileDifference: null });
+
+    render(
+      <CampusVisitDetailCard
+        campus={campusFixture({ allowedActions: CONTACT_TRANSFER_ACTIONS })}
+        visitRequestId={1}
+      />,
+    );
+
+    await screen.findByText('Guest Delegation Coordination Contact at Campus');
+    expect(screen.queryByTestId('profile-sync-trigger-10')).not.toBeInTheDocument();
   });
 });

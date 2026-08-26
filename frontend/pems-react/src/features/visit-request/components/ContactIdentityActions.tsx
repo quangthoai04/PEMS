@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { AlertCircle, ChevronDown, ChevronUp, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   cancelOperationalContactChange,
@@ -8,12 +8,11 @@ import {
   reinviteOperationalContactConfirmation,
   replaceOperationalContact,
   resendOperationalContactConfirmation,
+  type OperationalContactProfileDifference,
   type OperationalContactState,
   type ResolvedOperationalContact,
 } from '../api/visitRequestV2Api';
 import { errorCodeOf, fieldErrorsOf, firstFieldError, hasAction, VisitV2Action } from '../utils/visitV2Actions';
-import ContactProfileSyncPrompt from './ContactProfileSyncPrompt';
-import { HelpTooltip } from './shared/HelpTooltip';
 import { showErrorToast, showMessageErrorToast, showSuccessToast } from '../../../shared/utils/toast';
 import { isSameEmailIdentity, isValidEmailSyntax } from '../../../shared/utils/emailIdentity';
 import { isValidPhone } from '../../../shared/utils/phoneNumber';
@@ -46,6 +45,28 @@ interface Props {
    */
   allowedActions: string[] | undefined;
   onChanged?: () => void;
+  /**
+   * True when the primary "Chuyển đầu mối" trigger is rendered elsewhere (the header row beside the
+   * section title, via `ContactChangeTriggerButton`) instead of inline in this panel's own body.
+   * The panel still owns opening the form — the external trigger calls it through the ref handle.
+   */
+  hidePrimaryTrigger?: boolean;
+  /** Notifies a caller that renders the trigger externally when the form opens/closes, so it can hide
+   *  its own button while the form (with its own Submit/Cancel) is already in view. */
+  onFormOpenChange?: (open: boolean) => void;
+  /**
+   * Notifies a caller that renders the profile-mismatch icon externally (in the contact card's title
+   * row, next to "Đầu mối đoàn khách phối hợp tại cơ sở") of the current offer, or `null` once there
+   * is nothing left to reconcile. Fires on every state load/refresh, mirroring `onFormOpenChange`.
+   */
+  onProfileDifferenceChange?: (difference: OperationalContactProfileDifference | null) => void;
+}
+
+/** Imperative handle for a caller that renders the primary trigger outside this panel's own body. */
+export interface ContactIdentityActionsHandle {
+  openForm: () => void;
+  /** Lets the externally-rendered profile-sync popover re-read state after it applies a change. */
+  refreshState: () => Promise<void>;
 }
 
 interface ContactFormState {
@@ -114,8 +135,9 @@ const fieldCls = (hasError?: boolean) =>
     : 'border-slate-300 focus:border-[#004c91] focus:ring-1 focus:ring-[#004c91]');
 
 /**
- * "Chuyển đầu mối" — the operational-contact IDENTITY-change workflow for ONE campus, rendered inside
- * that campus's contact section on the Detail screen (plan CanhIter3FixBug). Same-person metadata and
+ * "Thay đầu mối" / "Chuyển đầu mối" — the operational-contact IDENTITY-change workflow for ONE campus,
+ * rendered inside that campus's contact card on the Detail screen (plan CanhIter3FixBug). Same-person
+ * metadata and
  * relation correction no longer live here — they moved into Sửa nhanh's contact block, which shares no
  * component with this one. This panel exists ONLY for the case where the campus's contact becomes a
  * DIFFERENT person: the form always opens BLANK (§17.1), and email is a required field naming the new
@@ -130,37 +152,53 @@ const fieldCls = (hasError?: boolean) =>
  * A typed address equal to the campus's CURRENT one is refused (both client-side and by the backend)
  * with a message pointing at Sửa nhanh instead — this panel's whole purpose is a genuine identity change.
  */
-export default function ContactIdentityActions({
-  visitRequestId,
-  visitInstanceId,
-  contactConfirmed,
-  contact,
-  allowedActions,
-  onChanged,
-}: Props) {
+const ContactIdentityActions = forwardRef<ContactIdentityActionsHandle, Props>(function ContactIdentityActions(
+  {
+    visitRequestId,
+    visitInstanceId,
+    contactConfirmed,
+    contact,
+    allowedActions,
+    onChanged,
+    hidePrimaryTrigger = false,
+    onFormOpenChange,
+    onProfileDifferenceChange,
+  }: Props,
+  ref,
+) {
   const { t } = useTranslation(['visitRequestV2', 'validation', 'errors']);
   const isPending = !contactConfirmed;
   const contactEmail = contact.email || null;
 
   const can = useMemo(() => {
-    const resend = hasAction(allowedActions, VisitV2Action.ResendContactConfirmation);
-    const reinvite = hasAction(allowedActions, VisitV2Action.ReinviteContactConfirmation);
-    const cancelChange = hasAction(allowedActions, VisitV2Action.CancelContactChange);
+    /**
+     * The two identity-change codes are never both granted at once — `VisitFormReadService` gates
+     * REPLACE on nobody holding the campus yet and TRANSFER on somebody already holding it, so they
+     * are structurally exclusive. Kept as two separate booleans (not one merged "changeIdentity") so
+     * the trigger button can pick the label that names the actual workflow — "Thay đầu mối" replaces
+     * a person nobody has confirmed yet, "Chuyển đầu mối" hands the role off from whoever holds it —
+     * rather than one generic word for two different consequences.
+     */
+    const canReplace = hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact);
+    const canTransfer = hasAction(allowedActions, VisitV2Action.InitiateContactTransfer);
     return {
-      /** Whether changing the ADDRESS is on the table — the only thing this panel ever offers now. */
-      changeIdentity: hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
-        || hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-      /** Once somebody already holds the campus, a new address is a handover rather than a first pick —
-       *  worth saying so, regardless of whether the campus itself has been decided yet. */
-      transferOnly: !hasAction(allowedActions, VisitV2Action.ReplaceOperationalContact)
-        && hasAction(allowedActions, VisitV2Action.InitiateContactTransfer),
-      resend,
+      canReplace,
+      canTransfer,
+      /** Either identity-change action is on the table — used only where it truly does not matter
+       *  which (e.g. "is there any such action at all"). Anything that renders a LABEL must branch on
+       *  `canReplace`/`canTransfer` individually instead. */
+      changeIdentity: canReplace || canTransfer,
+      resend: hasAction(allowedActions, VisitV2Action.ResendContactConfirmation),
       /** Không còn lời mời nào sống — phải mở lời mời MỚI, không phải "gửi lại". */
-      reinvite,
-      cancelChange,
+      reinvite: hasAction(allowedActions, VisitV2Action.ReinviteContactConfirmation),
+      cancelChange: hasAction(allowedActions, VisitV2Action.CancelContactChange),
     };
   }, [allowedActions]);
   const hasAnyAction = can.changeIdentity || can.resend || can.reinvite || can.cancelChange;
+  /** Which trigger the inline/header button renders — `null` when neither is granted. Exclusive by
+   *  construction (see `can` above), so this is never an arbitrary tie-break. */
+  const triggerKind: 'replace' | 'transfer' | null =
+    can.canReplace ? 'replace' : can.canTransfer ? 'transfer' : null;
 
   const [state, setState] = useState<OperationalContactState | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -173,6 +211,9 @@ export default function ContactIdentityActions({
   // Hủy lời mời có HẬU QUẢ khác nhau tùy loại lời mời, và không hoàn tác được — nên hỏi trước,
   // với đúng câu mô tả hậu quả của loại đang chờ (approval-gate: không auto-pick im lặng).
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // "Xem chi tiết" cho người đang được mời trong một transfer đang chờ — mặc định đóng, KHÔNG persist,
+  // vì đây là chi tiết phụ (summary đã đủ để quyết định resend/cancel).
+  const [showPendingDetails, setShowPendingDetails] = useState(false);
 
   const refreshState = useCallback(async () => {
     if (!hasAnyAction) return;
@@ -194,8 +235,6 @@ export default function ContactIdentityActions({
     void refreshState();
   }, [refreshState]);
 
-  if (!hasAnyAction) return null;
-
   const openForm = () => {
     // Genuinely blank (plan CanhIter3FixBug §17.1) — this is now the identity-change-only door, so
     // prefilling from the current contact would invite the exact typo-becomes-a-handover mistake the
@@ -213,6 +252,44 @@ export default function ContactIdentityActions({
     setEmailError(null);
     setFieldErrors({});
   };
+
+  // Lets a caller that renders the trigger externally (header row) open this panel's form, or ask it
+  // to re-read state after an external action (the profile-sync popover's own apply), without this
+  // panel handing its state up — the ref is the only thing that crosses that boundary.
+  useImperativeHandle(ref, () => ({ openForm, refreshState }), [openForm, refreshState]);
+
+  useEffect(() => {
+    onFormOpenChange?.(showForm);
+  }, [showForm, onFormOpenChange]);
+
+  useEffect(() => {
+    onProfileDifferenceChange?.(state?.profileDifference ?? null);
+  }, [state?.profileDifference, onProfileDifferenceChange]);
+
+  const pendingTransfer = state?.pendingChangeKind === 'TRANSFER';
+  const pendingLive = state?.pendingChangeStatus === 'PENDING';
+
+  /**
+   * Identifies WHICH invitation is live, so "Xem chi tiết" resets to collapsed only when it should.
+   *
+   * Kind + masked address is enough to tell one invitation from another without a dedicated id: a
+   * RESEND keeps the same kind and address (only `tokenVersion`/`expiresAt` move, plan §19 — the panel
+   * must stay expanded through that), while a cancel-then-new-transfer, an accept, or simply no pending
+   * left all change this key (the last two to `null`), which is exactly when a stale "expanded" from a
+   * different invitation must not carry over.
+   */
+  const pendingIdentityKey = pendingTransfer && pendingLive
+    ? `${state?.pendingChangeKind ?? ''}:${state?.pendingEmailMasked ?? ''}`
+    : null;
+  const pendingIdentityKeyRef = useRef(pendingIdentityKey);
+  useEffect(() => {
+    if (pendingIdentityKeyRef.current !== pendingIdentityKey) {
+      pendingIdentityKeyRef.current = pendingIdentityKey;
+      setShowPendingDetails(false);
+    }
+  }, [pendingIdentityKey]);
+
+  if (!hasAnyAction) return null;
 
   const run = async (fn: () => Promise<{ message: string }>) => {
     if (busy) return; // a second click while the first is in flight would send the invitation twice
@@ -394,8 +471,8 @@ export default function ContactIdentityActions({
       }
     };
     // Phone's own hint is PhoneField's built-in, focus-conditional one (below) — nothing here needs to
-    // point at it. Email's own static hint moved into the info tooltip beside "Quản lý đầu mối", so
-    // there is no longer an element for a non-error email field to point at either.
+    // point at it. Email has no static hint of its own either — just the error message below when the
+    // typed address is rejected.
     const ariaDescribedBy = hasError ? errorId : undefined;
     return (
     <div data-field-error={hasError ? 'true' : undefined}>
@@ -493,11 +570,11 @@ export default function ContactIdentityActions({
         {textField('email', t('visitRequestV2:card.email'), true)}
       </div>
 
-      {/* Only the Replace case still gets an inline warning — it names a DIFFERENT consequence
-          (re-opening the confirmation gate for the whole request) than the Transfer case, whose
-          "current contact keeps every right" explanation now lives in the info tooltip beside
-          "Quản lý đầu mối" instead of repeating inline every time this form opens. */}
-      {identityChanging && !can.transferOnly && (
+      {/* Only the Replace case still gets an inline warning — it names a consequence (re-opening the
+          confirmation gate for the whole request) that the Transfer case does not have: the current
+          contact there keeps every right until the new person accepts, so there is nothing to warn
+          about. */}
+      {identityChanging && !can.canTransfer && (
         <p
           className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-normal text-amber-800"
           role="note"
@@ -537,9 +614,6 @@ export default function ContactIdentityActions({
     </form>
   );
 
-  const pendingTransfer = state?.pendingChangeKind === 'TRANSFER';
-  const pendingLive = state?.pendingChangeStatus === 'PENDING';
-
   /**
    * WHICH invitation is in flight, so the cancel button says what it cancels.
    *
@@ -566,33 +640,24 @@ export default function ContactIdentityActions({
   const noActiveInvitation =
     !contactConfirmed && !loadError && state != null && !pendingLive;
 
+  // The inline trigger only exists when nobody else is rendering it (default / standalone use); once
+  // a caller takes it over via `hidePrimaryTrigger`, this panel contributes nothing to that row.
+  const showInlineTrigger = triggerKind !== null && !hidePrimaryTrigger;
+  const showSecondaryActions = can.resend || can.reinvite || can.cancelChange;
+  // Nothing left to say once the header owns the trigger and the contact is simply confirmed with no
+  // invitation in flight — rendering the border/padding wrapper then would be a divider around an
+  // empty box. The profile-mismatch offer no longer counts here: it now renders as an icon in the
+  // contact card's title row (via `onProfileDifferenceChange`), not inside this panel's own body.
+  const showBody =
+    loading || loadError || isPending
+    || (pendingTransfer && pendingLive) || showForm || showInlineTrigger || showSecondaryActions;
+  if (!showBody) return null;
+
   return (
     <div
       data-testid={`contact-identity-actions-${visitInstanceId}`}
       className="mt-4 border-t border-slate-200 pt-4"
     >
-      <p className="flex items-center text-xs font-bold uppercase tracking-wide text-[#004c91]">
-        {t('visitRequestV2:contact.manageTitle')}
-        <HelpTooltip
-          testId={`contact-manage-tooltip-${visitInstanceId}`}
-          label={t('visitRequestV2:contact.manageTitle')}
-          placement="bottom"
-          align="start"
-          content={t('visitRequestV2:contact.manageTooltip')}
-        />
-      </p>
-
-      {/* Offered only to the contact themselves — the server withholds `profileDifference` from
-          everybody else, so this cannot appear on a registrant's screen. */}
-      {state?.profileDifference && (
-        <div className="mt-3">
-          <ContactProfileSyncPrompt
-            difference={state.profileDifference}
-            onSynced={() => void refreshState()}
-          />
-        </div>
-      )}
-
       {loading && (
         <p role="status" className="mt-2 flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> {t('visitRequestV2:contact.loadingTransfer')}
@@ -642,22 +707,30 @@ export default function ContactIdentityActions({
         </p>
       )}
 
-      {!isPending && !pendingTransfer && !loadError && (
-        <p className="mt-2 text-sm text-slate-600">{t('visitRequestV2:contact.activeNotice')}</p>
-      )}
-
       {showForm ? (
         contactForm
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
-          {can.changeIdentity && (
+          {showInlineTrigger && triggerKind && (
+            <ContactChangeTriggerButton kind={triggerKind} onClick={openForm} />
+          )}
+          {/* A light disclosure, not another CTA (plan: giữ card gọn — summary/resend/cancel đã đủ để
+              quyết định, chi tiết người được mời chỉ cần khi thật sự muốn xem). */}
+          {pendingTransfer && pendingLive && (
             <button
               type="button"
-              data-testid="contact-edit-open"
-              className="rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"
-              onClick={openForm}
+              aria-expanded={showPendingDetails}
+              aria-controls={`pending-contact-detail-${visitInstanceId}`}
+              data-testid="contact-pending-details-toggle"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-[#004c91] hover:bg-slate-50"
+              onClick={() => setShowPendingDetails(v => !v)}
             >
-              {t('visitRequestV2:contact.editOpen')}
+              {showPendingDetails
+                ? t('visitRequestV2:contact.pendingDetailsCollapse')
+                : t('visitRequestV2:contact.pendingDetailsExpand')}
+              {showPendingDetails
+                ? <ChevronUp className="h-4 w-4" aria-hidden />
+                : <ChevronDown className="h-4 w-4" aria-hidden />}
             </button>
           )}
           {can.resend && (
@@ -692,6 +765,54 @@ export default function ContactIdentityActions({
             >
               {cancelLabel}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* Collapsed by default (plan: card gọn) — the summary above already names the address and the
+          expiry; this is only the rest of what the invitation snapshot says about that person, for
+          whoever wants it. Never the current contact: this person holds nothing until they accept. */}
+      {pendingTransfer && pendingLive && showPendingDetails && (
+        <div
+          id={`pending-contact-detail-${visitInstanceId}`}
+          data-testid="contact-pending-details"
+          className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+        >
+          <p className="mb-2 text-xs font-semibold text-slate-500">
+            {t('visitRequestV2:contact.pendingContactHeading')}
+          </p>
+          {state?.pendingContact ? (
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
+              <PendingContactField
+                label={t('visitRequestV2:person.fullName')}
+                value={state.pendingContact.fullName}
+                testId={`contact-pending-full-name-${visitInstanceId}`}
+              />
+              <PendingContactField
+                label={t('visitRequestV2:person.organization')}
+                value={state.pendingContact.organization}
+                testId={`contact-pending-organization-${visitInstanceId}`}
+              />
+              <PendingContactField
+                label={t('visitRequestV2:person.jobTitle')}
+                value={state.pendingContact.jobTitle}
+                testId={`contact-pending-job-title-${visitInstanceId}`}
+              />
+              <PendingContactField
+                label={t('visitRequestV2:card.phone')}
+                value={state.pendingContact.phone}
+                testId={`contact-pending-phone-${visitInstanceId}`}
+              />
+              <PendingContactField
+                label={t('visitRequestV2:card.email')}
+                value={state.pendingContact.emailMasked}
+                testId={`contact-pending-email-${visitInstanceId}`}
+              />
+            </dl>
+          ) : (
+            <p className="text-sm text-slate-500" data-testid="contact-pending-details-unavailable">
+              {t('visitRequestV2:contact.pendingContactUnavailable')}
+            </p>
           )}
         </div>
       )}
@@ -737,6 +858,64 @@ export default function ContactIdentityActions({
           </div>
         </div>
       )}
+    </div>
+  );
+});
+
+export default ContactIdentityActions;
+
+/**
+ * The single primary identity-change trigger — rendered either inline by `ContactIdentityActions`
+ * itself (default) or, when `hidePrimaryTrigger` is set, by a caller that places it in the section
+ * header next to the title and drives it through the ref handle. Exported so both call sites share
+ * the exact same markup/test id instead of two copies drifting apart.
+ *
+ * `kind` picks the label that names what actually happens — never a generic "change contact" word for
+ * two different consequences: REPLACE swaps a person nobody has confirmed yet (no authority moves),
+ * TRANSFER hands the role off from whoever currently holds it (an invitation, current holder keeps
+ * every right until accepted). The caller decides `kind` from the same `allowedActions` codes this
+ * component would use itself — see `ContactIdentityActions`'s own `can.canReplace`/`can.canTransfer`.
+ */
+export function ContactChangeTriggerButton({
+  kind,
+  onClick,
+}: {
+  kind: 'replace' | 'transfer';
+  onClick: () => void;
+}) {
+  const { t } = useTranslation(['visitRequestV2']);
+  return (
+    <button
+      type="button"
+      data-testid="contact-edit-open"
+      className="rounded-lg border border-[#004c91] px-3 py-1.5 text-sm font-bold text-[#004c91] hover:bg-[#004c91]/5"
+      onClick={onClick}
+    >
+      {kind === 'replace'
+        ? t('visitRequestV2:contact.replaceContactAction')
+        : t('visitRequestV2:contact.transferContactAction')}
+    </button>
+  );
+}
+
+/** One label/value pair inside the pending-contact detail panel — same visual language as the read-only
+ *  contact card (`OperationalContactReadOnly`'s own `Field`), kept local since this is the only other
+ *  place that needs it. */
+function PendingContactField({
+  label,
+  value,
+  testId,
+}: {
+  label: string;
+  value: string | null | undefined;
+  testId: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dd className="break-words text-sm text-slate-900" data-testid={testId}>
+        {value && value.trim().length > 0 ? value : '—'}
+      </dd>
     </div>
   );
 }

@@ -1,8 +1,12 @@
 import React from 'react';
 import { Building2, ChevronDown, Clock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { ResolvedCampusVisit } from '../../api/visitRequestV2Api';
-import ContactIdentityActions from '../ContactIdentityActions';
+import type { OperationalContactProfileDifference, ResolvedCampusVisit } from '../../api/visitRequestV2Api';
+import ContactIdentityActions, {
+  ContactChangeTriggerButton,
+  type ContactIdentityActionsHandle,
+} from '../ContactIdentityActions';
+import ContactProfileSyncPrompt from '../ContactProfileSyncPrompt';
 import InstanceResubmitPanel from '../InstanceResubmitPanel';
 import OperationalContactReadOnly from './OperationalContactReadOnly';
 import ReceptionHostReadOnly from './ReceptionHostReadOnly';
@@ -11,7 +15,7 @@ import { VisitStatusBadge } from './shared/VisitStatusBadge';
 import { ReadOnlyInfoGrid, type InfoRow } from './shared/ReadOnlyInfoGrid';
 import { PersonListTable } from './shared/PersonListTable';
 import { resolveCampusRevisionState } from './shared/campusRevisionState';
-import { hasConfirmedOperationalContact } from '../../utils/visitV2Actions';
+import { hasAction, hasConfirmedOperationalContact, VisitV2Action } from '../../utils/visitV2Actions';
 
 interface Props {
   campus: ResolvedCampusVisit;
@@ -48,6 +52,31 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
   campus, visitRequestId, onContactChanged, collapsible = false, expanded = true, onToggle, children,
 }) => {
   const { t } = useTranslation(['visitRequestV2', 'visitRequest']);
+
+  // The primary identity-change trigger sits in the contact section's header row rather than in
+  // ContactIdentityActions's own body — see that component for why the ref/callback wiring exists.
+  // Whether it CAN show is the exact same backend verdict ContactIdentityActions itself checks
+  // (`hasAction`, never role/status); whether it currently SHOULD (the form isn't already open) is
+  // reported back by the panel that owns that state.
+  const contactActionsRef = React.useRef<ContactIdentityActionsHandle>(null);
+  const [contactFormOpen, setContactFormOpen] = React.useState(false);
+  /**
+   * The signed-in contact's profile-vs-snapshot offer, reported up by `ContactIdentityActions` (the
+   * component that actually fetches it) so the icon that opens it can sit in the title row above,
+   * next to "Đầu mối đoàn khách phối hợp tại cơ sở" — a two-level disclosure (icon → popover), not the
+   * standing banner this used to be.
+   */
+  const [profileDifference, setProfileDifference] = React.useState<OperationalContactProfileDifference | null>(null);
+  /**
+   * Two separate codes, never both granted at once (`VisitFormReadService`: REPLACE only while nobody
+   * holds the campus, TRANSFER only once somebody does) — kept apart here rather than merged into one
+   * boolean so the header button can pick the label that names what actually happens: "Thay đầu mối"
+   * swaps a person nobody has confirmed yet, "Chuyển đầu mối" hands the role off from whoever holds it.
+   */
+  const canReplacePendingContact = hasAction(campus.allowedActions, VisitV2Action.ReplaceOperationalContact);
+  const canInitiateContactTransfer = hasAction(campus.allowedActions, VisitV2Action.InitiateContactTransfer);
+  const contactTriggerKind: 'replace' | 'transfer' | null =
+    canReplacePendingContact ? 'replace' : canInitiateContactTransfer ? 'transfer' : null;
   // A non-collapsible card is always open; there is no state in which its body is hidden.
   const bodyShown = !collapsible || expanded;
   const bodyId = `campus-detail-body-${campus.visitInstanceId}`;
@@ -73,6 +102,12 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
     campus.instanceStatus === 'REJECTED' ? t('visitRequestV2:detail.decisionNoteRejected')
       : campus.instanceStatus === 'CANCELLED' ? t('visitRequestV2:detail.decisionNoteCancelled')
         : t('visitRequestV2:detail.decisionNoteApproved');
+
+  // Mirrors ReceptionHostReadOnly's own render condition, so the divider only appears when that
+  // section actually rendered something above it.
+  const hostSectionVisible =
+    Boolean(campus.currentHost)
+    || Boolean(campus.proposedHost && campus.proposedHost.selectionMode !== 'WAIT_FOR_LATER');
 
   const rows: InfoRow[] = [
     { label: t('visitRequestV2:card.delegationName'), value: campus.delegationName },
@@ -199,25 +234,50 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             contact={campus.operationalContact}
             visitInstanceId={campus.visitInstanceId}
             showSource
-          />
-          {/* The resend / replace / transfer workflow belongs to THIS campus's contact, so it lives
-              in this card rather than in a request-level panel — which is exactly how one campus's
-              contact used to acquire rights over its siblings. Which actions exist is the backend's
-              call, passed straight through; the panel renders nothing when none were granted. */}
-          {visitRequestId != null && (
-            <ContactIdentityActions
-              visitRequestId={visitRequestId}
-              visitInstanceId={campus.visitInstanceId}
-              contactConfirmed={hasConfirmedOperationalContact(campus.operationalContact.confirmationStatus)}
-              contact={campus.operationalContact}
-              allowedActions={campus.allowedActions}
-              onChanged={onContactChanged}
-            />
-          )}
+            titleTrailing={
+              profileDifference ? (
+                <ContactProfileSyncPrompt
+                  visitInstanceId={campus.visitInstanceId}
+                  difference={profileDifference}
+                  onSynced={() => void contactActionsRef.current?.refreshState()}
+                />
+              ) : null
+            }
+            headerAction={
+              visitRequestId != null && contactTriggerKind && !contactFormOpen ? (
+                <ContactChangeTriggerButton
+                  kind={contactTriggerKind}
+                  onClick={() => contactActionsRef.current?.openForm()}
+                />
+              ) : null
+            }
+          >
+            {/* The resend / replace / transfer workflow belongs to THIS campus's contact, so it renders
+                INSIDE the same card as the contact info — one bordered box, one divider, not a second
+                block floating outside it. Which actions exist is still entirely the backend's call,
+                passed straight through; the panel renders nothing when none were granted. The primary
+                trigger is rendered in the header above instead (`hidePrimaryTrigger`), so it sits beside
+                the section title; this still owns opening the form and every other workflow state. */}
+            {visitRequestId != null && (
+              <ContactIdentityActions
+                ref={contactActionsRef}
+                visitRequestId={visitRequestId}
+                visitInstanceId={campus.visitInstanceId}
+                contactConfirmed={hasConfirmedOperationalContact(campus.operationalContact.confirmationStatus)}
+                contact={campus.operationalContact}
+                allowedActions={campus.allowedActions}
+                onChanged={onContactChanged}
+                hidePrimaryTrigger
+                onFormOpenChange={setContactFormOpen}
+                onProfileDifferenceChange={setProfileDifference}
+              />
+            )}
+          </OperationalContactReadOnly>
 
           {/* A refused campus can be sent back for review from here, by whoever the backend says may
               do it. Instance-scoped on purpose: the request-wide resubmit would drag an approved
-              sibling back into review along with it. */}
+              sibling back into review along with it. A different workflow from the contact one above,
+              so it stays its own block rather than joining that card. */}
           {visitRequestId != null && (
             <InstanceResubmitPanel
               visitRequestId={visitRequestId}
@@ -226,39 +286,51 @@ export const CampusVisitDetailCard: React.FC<Props> = ({
             />
           )}
         </div>
-        <ReceptionHostReadOnly
-          currentHost={campus.currentHost}
-          proposedHost={campus.proposedHost}
-          visitInstanceId={campus.visitInstanceId}
-        />
-
-        {/* Decision / revision — who decided what, in plain language. The technical decision_source
-            is deliberately not surfaced: it is an audit discriminator, not something a reader of
-            this screen can act on. The host lives in its own block above. */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <ReadOnlyInfoGrid
-            rows={[
-              { label: t('visitRequestV2:detail.decidedBy'), value: campus.decidedByName },
-              {
-                label: t('visitRequestV2:detail.decidedAt'),
-                value: campus.decidedAt ? formatVietnamDateTime(campus.decidedAt) : null,
-              },
-              { label: decisionNoteLabel, value: campus.decisionNote },
-              {
-                label: t('visitRequestV2:revision.title'),
-                value: (
-                  <>
-                    {t(revisionState.headlineKey, revisionState.values)}
-                    {revisionState.noteKey && (
-                      <span className="mt-0.5 block text-xs font-normal text-slate-500">
-                        {t(revisionState.noteKey, revisionState.values)}
-                      </span>
-                    )}
-                  </>
-                ),
-              },
-            ]}
+        {/* Host + approval — one card, two sections. Who is running the campus and what was decided
+            about it are different questions, but they are both "status of this campus" facts a
+            reader scans together, so they now share one bordered block instead of two floating
+            ones. The technical decision_source is deliberately not surfaced in the approval
+            section: it is an audit discriminator, not something a reader of this screen can act on. */}
+        <div
+          className="rounded-lg border border-slate-200 bg-white p-4"
+          data-testid={`campus-host-approval-${campus.visitInstanceId}`}
+        >
+          <ReceptionHostReadOnly
+            currentHost={campus.currentHost}
+            proposedHost={campus.proposedHost}
+            visitInstanceId={campus.visitInstanceId}
           />
+
+          {hostSectionVisible && <hr className="my-4 border-t border-slate-200" />}
+
+          <div>
+            <h4 className="mb-3 text-sm font-bold text-slate-800">
+              {t('visitRequestV2:detail.approvalSectionTitle')}
+            </h4>
+            <ReadOnlyInfoGrid
+              rows={[
+                { label: t('visitRequestV2:detail.decidedBy'), value: campus.decidedByName },
+                {
+                  label: t('visitRequestV2:detail.decidedAt'),
+                  value: campus.decidedAt ? formatVietnamDateTime(campus.decidedAt) : null,
+                },
+                { label: decisionNoteLabel, value: campus.decisionNote },
+                {
+                  label: t('visitRequestV2:revision.title'),
+                  value: (
+                    <>
+                      {t(revisionState.headlineKey, revisionState.values)}
+                      {revisionState.noteKey && (
+                        <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                          {t(revisionState.noteKey, revisionState.values)}
+                        </span>
+                      )}
+                    </>
+                  ),
+                },
+              ]}
+            />
+          </div>
         </div>
 
         {children}

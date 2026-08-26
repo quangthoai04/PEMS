@@ -1,5 +1,6 @@
+import { createRef } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 vi.mock('../api/visitRequestV2Api', () => ({
   getOperationalContactState: vi.fn(),
@@ -28,7 +29,9 @@ vi.mock('../../../shared/utils/toast', () => ({
   showMessageErrorToast: (...a: unknown[]) => showMessageErrorToast(...a),
 }));
 
-import ContactIdentityActions from '../components/ContactIdentityActions';
+import ContactIdentityActions, {
+  type ContactIdentityActionsHandle,
+} from '../components/ContactIdentityActions';
 import {
   getOperationalContactState,
   resendOperationalContactConfirmation,
@@ -73,6 +76,21 @@ const DECIDED_ACTIONS = [
 const PENDING_TRANSFER_ACTIONS = [
   'VIEW', 'UPDATE_OPERATIONAL_CONTACT_PROFILE',
   'RESEND_OPERATIONAL_CONTACT_CONFIRMATION', 'CANCEL_OPERATIONAL_CONTACT_CHANGE',
+];
+// The REAL combination `VisitFormReadService` emits for an INITIAL_CONFIRMATION pending invitation
+// (no confirmed holder yet): REPLACE is granted regardless of the pending row, and once `pending is
+// not null` cancel is ALWAYS added alongside resend (see backend §4, line ~843-847) — unlike
+// `UNDECIDED_ACTIONS` above, which omits cancel and so is not a state that occurs for real.
+const INITIAL_CONFIRMATION_PENDING_ACTIONS = [
+  'VIEW', 'UPDATE_OPERATIONAL_CONTACT_PROFILE', 'REPLACE_OPERATIONAL_CONTACT',
+  'RESEND_OPERATIONAL_CONTACT_CONFIRMATION', 'CANCEL_OPERATIONAL_CONTACT_CHANGE',
+];
+// No confirmed holder, no invitation in flight (the state a cancel leaves behind): REPLACE stays
+// offered and REINVITE opens a fresh one — resend/cancel are never granted here since `pending is
+// null` returns before either is added.
+const NO_ACTIVE_INVITATION_ACTIONS = [
+  'VIEW', 'UPDATE_OPERATIONAL_CONTACT_PROFILE', 'REPLACE_OPERATIONAL_CONTACT',
+  'REINVITE_OPERATIONAL_CONTACT_CONFIRMATION',
 ];
 
 const renderActions = (props: Partial<React.ComponentProps<typeof ContactIdentityActions>> = {}) =>
@@ -127,8 +145,18 @@ describe('ContactIdentityActions', () => {
     expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
   });
 
-  it('offers the transfer-contact action whenever the backend granted an identity-change action', async () => {
+  // ── The trigger's LABEL names the actual workflow (Replace vs Transfer), never one generic word for
+  //    two different consequences (plan: "Thay đầu mối" replaces an unconfirmed person, "Chuyển đầu
+  //    mối" hands the role off from whoever holds it). ──
+
+  it('labels the trigger "Replace contact" when only REPLACE_OPERATIONAL_CONTACT was granted', async () => {
     renderActions({ allowedActions: UNDECIDED_ACTIONS });
+    expect(await screen.findByTestId('contact-edit-open')).toBeInTheDocument();
+    expect(screen.getByTestId('contact-edit-open')).toHaveTextContent(/replace contact/i);
+  });
+
+  it('labels the trigger "Transfer contact" when only INITIATE_OPERATIONAL_CONTACT_TRANSFER was granted', async () => {
+    renderActions({ allowedActions: DECIDED_ACTIONS });
     expect(await screen.findByTestId('contact-edit-open')).toBeInTheDocument();
     expect(screen.getByTestId('contact-edit-open')).toHaveTextContent(/transfer contact/i);
   });
@@ -261,7 +289,7 @@ describe('ContactIdentityActions', () => {
     expect(document.getElementById('ci-reason')).toBeNull();
   });
 
-  it('no longer shows an inline transfer-rights warning (Transfer, decided campus) — that explanation now lives in the info tooltip beside "Quản lý đầu mối"', async () => {
+  it('no longer shows an inline transfer-rights warning (Transfer, decided campus)', async () => {
     renderActions();
     fireEvent.click(await screen.findByTestId('contact-edit-open'));
     fillNewIdentity();
@@ -271,36 +299,12 @@ describe('ContactIdentityActions', () => {
     expect(document.getElementById('ci-reason')).toBeNull();
   });
 
-  // ── Management-heading info tooltip: the single place both explanations (email-identity rule +
-  //    transfer-keeps-rights) now live, replacing the two inline paragraphs removed above. ──
-
-  it('renders an info icon beside the "Quản lý đầu mối" heading', async () => {
-    renderActions();
-    await screen.findByTestId('contact-edit-open');
-
-    const trigger = screen.getByTestId('contact-manage-tooltip-10');
-    expect(trigger.tagName).toBe('BUTTON');
-    expect(trigger).toHaveAccessibleName(/manage the contact role/i);
-  });
-
-  it('the management tooltip contains both the email-identity explanation and the transfer-keeps-rights explanation', async () => {
-    renderActions();
-    await screen.findByTestId('contact-edit-open');
-
-    const trigger = screen.getByTestId('contact-manage-tooltip-10');
-    fireEvent.focus(trigger);
-    const tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent(/keep the address.*only the details are updated/i);
-    expect(tooltip).toHaveTextContent(/keeps every right until the new person signs in/i);
-  });
-
   it('no longer renders the old inline email-identity hint under the Email field', async () => {
     renderActions();
     fireEvent.click(await screen.findByTestId('contact-edit-open'));
 
-    // The old standalone paragraph (id="ci-email-hint", a sibling of the Email input) is gone —
-    // NOT a check that the phrase never appears anywhere, since the SAME explanation now legitimately
-    // lives inside the (closed) management tooltip. Scoped to the Email field's own container only.
+    // The old standalone paragraph (id="ci-email-hint", a sibling of the Email input) is gone, and so
+    // is the explanation it carried — nothing replaces it.
     expect(document.getElementById('ci-email-hint')).toBeNull();
     const emailContainer = emailField().parentElement as HTMLElement;
     expect(within(emailContainer).queryByText(/only the details are updated/i)).not.toBeInTheDocument();
@@ -555,5 +559,360 @@ describe('ContactIdentityActions', () => {
     expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
     expect(screen.queryByTestId('contact-resend-claim')).not.toBeInTheDocument();
     expect(screen.queryByTestId('contact-reinvite')).not.toBeInTheDocument();
+  });
+
+  // ── Pending transfer — "Xem chi tiết" collapsible detail (keeps the card short by default) ──────
+
+  describe('pending transfer — Xem chi tiết (collapsible detail)', () => {
+    const pendingTransferState = {
+      ...noPending,
+      pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING',
+      pendingEmailMasked: 's***@s.ss', expiresAt: '2026-08-27T23:06:00',
+      pendingContact: {
+        fullName: 'Sarah Smith',
+        organization: 'ABC University',
+        jobTitle: 'International Coordinator',
+        phone: '+84987654321',
+        emailMasked: 's***@s.ss',
+      },
+    };
+
+    // Test 1 — default collapsed.
+    it('starts collapsed: summary + toggle + resend/cancel visible, pending person fields are not', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue(pendingTransferState);
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      expect(await screen.findByTestId('contact-transfer-pending')).toBeInTheDocument();
+      const toggle = screen.getByTestId('contact-pending-details-toggle');
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle).toHaveTextContent(/view details/i);
+      expect(screen.queryByTestId('contact-pending-details')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sarah Smith')).not.toBeInTheDocument();
+      // The main actions of a pending transfer are not gated behind the disclosure.
+      expect(screen.getByTestId('contact-resend-claim')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-cancel-transfer')).toBeInTheDocument();
+    });
+
+    // Test 2 — expand.
+    it('expands to show the pending person on click, with aria-expanded/aria-controls wired', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue(pendingTransferState);
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      fireEvent.click(await screen.findByTestId('contact-pending-details-toggle'));
+
+      const toggle = screen.getByTestId('contact-pending-details-toggle');
+      expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      expect(toggle).toHaveTextContent(/collapse/i);
+      const panel = screen.getByTestId('contact-pending-details');
+      expect(toggle.getAttribute('aria-controls')).toBe(panel.id);
+      expect(within(panel).getByTestId('contact-pending-full-name-10')).toHaveTextContent('Sarah Smith');
+      expect(within(panel).getByTestId('contact-pending-organization-10')).toHaveTextContent('ABC University');
+      expect(within(panel).getByTestId('contact-pending-job-title-10'))
+        .toHaveTextContent('International Coordinator');
+      expect(within(panel).getByTestId('contact-pending-phone-10')).toHaveTextContent('+84987654321');
+      expect(within(panel).getByTestId('contact-pending-email-10')).toHaveTextContent('s***@s.ss');
+    });
+
+    // Test 3 — collapse again.
+    it('collapses again on a second click, keeping the summary and actions visible', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue(pendingTransferState);
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      const toggle = await screen.findByTestId('contact-pending-details-toggle');
+      fireEvent.click(toggle);
+      expect(screen.getByTestId('contact-pending-details')).toBeInTheDocument();
+
+      fireEvent.click(toggle);
+
+      expect(screen.queryByTestId('contact-pending-details')).not.toBeInTheDocument();
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(screen.getByTestId('contact-transfer-pending')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-resend-claim')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-cancel-transfer')).toBeInTheDocument();
+    });
+
+    // Test 4 — no pending.
+    it('offers no toggle or detail panel outside a pending transfer', async () => {
+      renderActions({ allowedActions: DECIDED_ACTIONS }); // beforeEach mocks getOperationalContactState → noPending
+
+      expect(await screen.findByTestId('contact-edit-open')).toBeInTheDocument();
+      expect(screen.queryByTestId('contact-pending-details-toggle')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contact-pending-details')).not.toBeInTheDocument();
+    });
+
+    // Test 5 — cancel pending.
+    it('drops the summary, toggle and detail once the transfer is cancelled', async () => {
+      vi.mocked(getOperationalContactState)
+        .mockResolvedValueOnce(pendingTransferState)
+        .mockResolvedValueOnce(noPending);
+      vi.mocked(cancelOperationalContactChange).mockResolvedValue({
+        ...noPending, requestStatus: 'PENDING_APPROVAL', pendingChangeStatus: 'CANCELLED',
+        message: 'Đã hủy lời mời chuyển giao.',
+      });
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      fireEvent.click(await screen.findByTestId('contact-pending-details-toggle'));
+      expect(screen.getByTestId('contact-pending-details')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('contact-cancel-transfer'));
+      fireEvent.click(await screen.findByTestId('contact-cancel-confirm-submit'));
+
+      await waitFor(() => expect(showSuccessToast).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByTestId('contact-transfer-pending')).not.toBeInTheDocument());
+      expect(screen.queryByTestId('contact-pending-details')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contact-pending-details-toggle')).not.toBeInTheDocument();
+    });
+
+    // Test 6 (resend leg) — a RESEND bumps tokenVersion/expiresAt on the SAME invitation (plan §19); the
+    // expanded state must survive it rather than reset as if a different invitation had appeared.
+    it('keeps the detail expanded through a resend of the same invitation', async () => {
+      vi.mocked(getOperationalContactState)
+        .mockResolvedValueOnce(pendingTransferState)
+        .mockResolvedValueOnce({
+          ...pendingTransferState, tokenVersion: 2, resendCount: 1, expiresAt: '2026-08-28T00:00:00',
+        });
+      vi.mocked(resendOperationalContactConfirmation).mockResolvedValue({
+        ...noPending, requestStatus: 'PENDING_APPROVAL', message: 'Đã gửi lại lời mời.',
+      });
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      fireEvent.click(await screen.findByTestId('contact-pending-details-toggle'));
+      expect(screen.getByTestId('contact-pending-details')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId('contact-resend-claim'));
+      await waitFor(() => expect(showSuccessToast).toHaveBeenCalled());
+
+      expect(screen.getByTestId('contact-pending-details')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-pending-details-toggle')).toHaveAttribute('aria-expanded', 'true');
+    });
+
+    it('falls back to a plain notice when the snapshot has no pending-contact detail (legacy/redacted row)', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({
+        ...pendingTransferState, pendingContact: null,
+      });
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      fireEvent.click(await screen.findByTestId('contact-pending-details-toggle'));
+
+      expect(screen.getByTestId('contact-pending-details-unavailable')).toBeInTheDocument();
+      expect(screen.queryByTestId('contact-pending-full-name-10')).not.toBeInTheDocument();
+    });
+  });
+
+  // ── State matrix (A1-A6): the exact allowedActions combinations VisitFormReadService emits for
+  //    each business state, and the label/action set each one must produce. ──────────────────────
+
+  describe('state matrix', () => {
+    it('A1 — initial-confirmation pending: Thay đầu mối (not Chuyển đầu mối), resend, cancel confirmation', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({
+        ...noPending, contactConfirmed: false,
+        pendingChangeKind: 'INITIAL_CONFIRMATION', pendingChangeStatus: 'PENDING',
+        pendingEmailMasked: 'ad***@gsd.gh', expiresAt: '2026-08-01T09:00:00',
+      });
+      renderActions({ contactConfirmed: false, allowedActions: INITIAL_CONFIRMATION_PENDING_ACTIONS });
+
+      const trigger = await screen.findByTestId('contact-edit-open');
+      expect(trigger).toHaveTextContent(/replace contact/i);
+      expect(trigger).not.toHaveTextContent(/^transfer contact$/i);
+      expect(screen.getByTestId('contact-resend-claim')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-cancel-transfer')).toHaveTextContent(/cancel the confirmation invitation/i);
+    });
+
+    it('A2 — confirmed idle: Chuyển đầu mối only, no resend/cancel/pending summary', async () => {
+      renderActions({ allowedActions: DECIDED_ACTIONS }); // beforeEach: getOperationalContactState → noPending
+
+      const trigger = await screen.findByTestId('contact-edit-open');
+      expect(trigger).toHaveTextContent(/transfer contact/i);
+      expect(screen.queryByTestId('contact-resend-claim')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contact-cancel-transfer')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contact-transfer-pending')).not.toBeInTheDocument();
+    });
+
+    it('A3 — transfer pending: no Chuyển đầu mối, has Xem chi tiết, resend, cancel transfer', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({
+        ...noPending, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING',
+        pendingEmailMasked: 'c***@x.vn', expiresAt: '2026-08-27T23:43:00',
+      });
+      renderActions({ allowedActions: PENDING_TRANSFER_ACTIONS });
+
+      await screen.findByTestId('contact-transfer-pending');
+      expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
+      expect(screen.getByTestId('contact-pending-details-toggle')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-resend-claim')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-cancel-transfer')).toHaveTextContent(/cancel the transfer invitation/i);
+    });
+
+    // A4 (expand/collapse the pending-person detail) is covered in full by the
+    // "pending transfer — Xem chi tiết" describe block above; not duplicated here.
+
+    it('A5 — no active invitation: Thay đầu mối + Mời lại, no resend/cancel (pending is null)', async () => {
+      renderActions({ contactConfirmed: false, allowedActions: NO_ACTIVE_INVITATION_ACTIONS });
+
+      const trigger = await screen.findByTestId('contact-edit-open');
+      expect(trigger).toHaveTextContent(/replace contact/i);
+      expect(screen.getByTestId('contact-reinvite')).toBeInTheDocument();
+      expect(screen.queryByTestId('contact-resend-claim')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contact-cancel-transfer')).not.toBeInTheDocument();
+    });
+
+    // A6 — backend-contract check: VisitFormReadService only ever adds InitiateOperationalContactTransfer
+    // when `pending is null` (VisitFormReadService.cs line ~819), so a TRANSFER_PENDING state carrying
+    // that action code is a combination the real backend cannot produce — audited during this task, not
+    // found. This test documents what the frontend does if that invariant is ever broken: it trusts
+    // `allowedActions` as the authority and does NOT defensively hide the trigger, so a future regression
+    // would be visible on screen (a spurious "Chuyển đầu mối" beside an active transfer) rather than
+    // silently normalized away.
+    it('A6 — trusts allowedActions rather than hiding it if the backend ever granted transfer during a pending transfer', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({
+        ...noPending, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING',
+        pendingEmailMasked: 'c***@x.vn', expiresAt: '2026-08-27T23:43:00',
+      });
+      renderActions({ allowedActions: [...PENDING_TRANSFER_ACTIONS, 'INITIATE_OPERATIONAL_CONTACT_TRANSFER'] });
+
+      await screen.findByTestId('contact-transfer-pending');
+      expect(screen.getByTestId('contact-edit-open')).toHaveTextContent(/transfer contact/i);
+    });
+  });
+
+  // ── External trigger (CampusVisitDetailCard renders "Chuyển đầu mối" in the section header and
+  //    drives this panel through the ref instead of its own inline button) ────────────────────────
+
+  describe('external trigger (hidePrimaryTrigger)', () => {
+    it('hides its own inline button but still opens the form through the ref', async () => {
+      const ref = createRef<ContactIdentityActionsHandle>();
+      render(
+        <ContactIdentityActions
+          ref={ref}
+          visitRequestId={1}
+          visitInstanceId={10}
+          contactConfirmed
+          contact={contact}
+          allowedActions={DECIDED_ACTIONS}
+          hidePrimaryTrigger
+        />,
+      );
+      await waitFor(() => expect(getOperationalContactState).toHaveBeenCalled());
+
+      expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
+      act(() => ref.current?.openForm());
+      expect(await screen.findByTestId('contact-form')).toBeInTheDocument();
+    });
+
+    it('renders nothing once the header owns the trigger and the contact is simply confirmed', async () => {
+      const { container } = render(
+        <ContactIdentityActions
+          visitRequestId={1}
+          visitInstanceId={10}
+          contactConfirmed
+          contact={contact}
+          allowedActions={DECIDED_ACTIONS}
+          hidePrimaryTrigger
+        />,
+      );
+      await waitFor(() => expect(getOperationalContactState).toHaveBeenCalled());
+      await waitFor(() => expect(container).toBeEmptyDOMElement());
+    });
+
+    it('still renders its pending/secondary-action state even with the trigger hidden', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({
+        ...noPending, pendingChangeKind: 'TRANSFER', pendingChangeStatus: 'PENDING',
+        pendingEmailMasked: 'n***@x.vn', expiresAt: '2026-08-01T09:00:00',
+      });
+      render(
+        <ContactIdentityActions
+          visitRequestId={1}
+          visitInstanceId={10}
+          contactConfirmed
+          contact={contact}
+          allowedActions={PENDING_TRANSFER_ACTIONS}
+          hidePrimaryTrigger
+        />,
+      );
+
+      expect(await screen.findByTestId('contact-transfer-pending')).toBeInTheDocument();
+      expect(screen.getByTestId('contact-cancel-transfer')).toBeInTheDocument();
+      expect(screen.queryByTestId('contact-edit-open')).not.toBeInTheDocument();
+    });
+
+    it('reports form open/close through onFormOpenChange', async () => {
+      const ref = createRef<ContactIdentityActionsHandle>();
+      const onFormOpenChange = vi.fn();
+      render(
+        <ContactIdentityActions
+          ref={ref}
+          visitRequestId={1}
+          visitInstanceId={10}
+          contactConfirmed
+          contact={contact}
+          allowedActions={DECIDED_ACTIONS}
+          hidePrimaryTrigger
+          onFormOpenChange={onFormOpenChange}
+        />,
+      );
+      await waitFor(() => expect(onFormOpenChange).toHaveBeenCalledWith(false));
+      onFormOpenChange.mockClear();
+
+      act(() => ref.current?.openForm());
+      await waitFor(() => expect(onFormOpenChange).toHaveBeenCalledWith(true));
+    });
+  });
+
+  // ── Profile-mismatch offer now lives in the contact card's title row (icon → popover), not inside
+  // this panel's own body — this panel only reports the difference up through a callback + exposes
+  // refreshState so the externally-rendered popover can ask it to re-read state after applying. ──
+  describe('profile-mismatch offer (reported up, not rendered inline)', () => {
+    const bothDiffer = {
+      fullNameDiffers: true,
+      phoneDiffers: true,
+      accountFullName: 'Nguyen Van A',
+      accountPhone: '+84912345678',
+      snapshotFullName: 'Nguyễn Văn A (Trưởng đoàn)',
+      snapshotPhone: '+84900000111',
+    };
+
+    it('reports the difference through onProfileDifferenceChange once state loads', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({ ...noPending, profileDifference: bothDiffer });
+      const onProfileDifferenceChange = vi.fn();
+      renderActions({ onProfileDifferenceChange });
+
+      await waitFor(() => expect(onProfileDifferenceChange).toHaveBeenCalledWith(bothDiffer));
+    });
+
+    it('reports null when there is nothing to reconcile', async () => {
+      const onProfileDifferenceChange = vi.fn();
+      renderActions({ onProfileDifferenceChange }); // beforeEach mocks getOperationalContactState → noPending
+
+      await waitFor(() => expect(onProfileDifferenceChange).toHaveBeenCalledWith(null));
+    });
+
+    it('never renders the old inline banner/popover itself, even when there is a difference', async () => {
+      vi.mocked(getOperationalContactState).mockResolvedValue({ ...noPending, profileDifference: bothDiffer });
+      renderActions();
+
+      await waitFor(() => expect(getOperationalContactState).toHaveBeenCalled());
+      expect(screen.queryByTestId('contact-profile-sync-prompt')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('profile-sync-trigger-10')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('profile-sync-popover-10')).not.toBeInTheDocument();
+    });
+
+    it('exposes refreshState via the ref, so the externally-rendered popover can re-read state after it applies', async () => {
+      const ref = createRef<ContactIdentityActionsHandle>();
+      render(
+        <ContactIdentityActions
+          ref={ref}
+          visitRequestId={1}
+          visitInstanceId={10}
+          contactConfirmed
+          contact={contact}
+          allowedActions={DECIDED_ACTIONS}
+        />,
+      );
+      await waitFor(() => expect(getOperationalContactState).toHaveBeenCalledTimes(1));
+
+      await act(async () => {
+        await ref.current?.refreshState();
+      });
+      expect(getOperationalContactState).toHaveBeenCalledTimes(2);
+    });
   });
 });

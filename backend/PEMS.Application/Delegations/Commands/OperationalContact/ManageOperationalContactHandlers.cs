@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -59,6 +60,7 @@ public sealed class GetOperationalContactStateQueryHandler
             .Select(c => new
             {
                 c.ChangeKind, c.NewEmailMasked, c.ExpiresAt, c.ResendCount, c.TokenVersion,
+                c.PendingSnapshotJson,
             })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -85,8 +87,42 @@ public sealed class GetOperationalContactStateQueryHandler
             instance.OperationalContactConfirmedAt,
             instance.OperationalContactConfirmationSource,
             pending.ChangeKind, effective, pending.NewEmailMasked,
-            pending.ExpiresAt, pending.ResendCount, pending.TokenVersion, profileDifference);
+            pending.ExpiresAt, pending.ResendCount, pending.TokenVersion, profileDifference,
+            PendingContactSummaryOf(pending.PendingSnapshotJson, pending.NewEmailMasked));
     }
+
+    private static readonly JsonSerializerOptions SnapshotJsonOptions =
+        new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>
+    /// The non-address fields of who a pending invitation names — same snapshot every accept/decline
+    /// already reads, just surfaced here too. The address itself is never taken from the snapshot (it is
+    /// raw there): <paramref name="emailMasked"/> is always the same masked value already on the response.
+    /// </summary>
+    private static OperationalContactPendingSummary? PendingContactSummaryOf(
+        string? snapshotJson, string? emailMasked)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotJson)) return null; // legacy row, or redacted after retention
+        try
+        {
+            var snapshot = JsonSerializer.Deserialize<PendingContactSnapshot>(snapshotJson, SnapshotJsonOptions);
+            if (snapshot is null) return null;
+            return new OperationalContactPendingSummary(
+                snapshot.FullName, snapshot.Organization, snapshot.JobTitle, snapshot.Phone, emailMasked);
+        }
+        catch (JsonException)
+        {
+            // The summary is a nice-to-have on top of the state, not the state itself — a malformed
+            // snapshot should not turn this whole read into a 500.
+            return null;
+        }
+    }
+
+    /// <summary>Shape written by Replace/InitiateTransfer into <c>pending_snapshot_json</c>. Only the four
+    /// fields this handler actually surfaces are declared — <c>email</c> is skipped on purpose, since the
+    /// masked address the response already carries is what may leave this API, never the raw one.</summary>
+    private sealed record PendingContactSnapshot(
+        string? FullName, string? Organization, string? JobTitle, string? Phone);
 
     /// <summary>
     /// Offers a profile reconciliation to the ONE person entitled to it: the signed-in account that this

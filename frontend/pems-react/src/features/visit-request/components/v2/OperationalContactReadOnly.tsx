@@ -11,6 +11,26 @@ interface Props {
   /** Show the confirmation SOURCE (self-match / email / transfer). Off for guest-facing screens. */
   showSource?: boolean;
   className?: string;
+  /**
+   * Rendered immediately after the title text, same line, tight gap (e.g. the profile-mismatch
+   * indicator icon). Kept separate from `headerAction` so a caller can put something right next to
+   * the words "Đầu mối đoàn khách phối hợp tại cơ sở" while a second, unrelated action (the identity-
+   * change trigger) still lands on the far right of the row via `headerAction`.
+   */
+  titleTrailing?: React.ReactNode;
+  /**
+   * Rendered beside the title, on the same row (e.g. the "Thay đầu mối" / "Chuyển đầu mối" trigger).
+   * The caller owns whatever it puts here — this component only reserves the row and wraps it so a
+   * narrow viewport drops the action to its own line instead of overflowing.
+   */
+  headerAction?: React.ReactNode;
+  /**
+   * Rendered inside this SAME bordered card, below the read-only fields (e.g. `ContactIdentityActions`'
+   * pending-invitation summary and resend/cancel actions). Kept as a slot rather than a second card so
+   * the whole contact workflow — info, status, in-flight action — reads as one block instead of a card
+   * with a loose panel floating below it.
+   */
+  children?: React.ReactNode;
 }
 
 /**
@@ -30,6 +50,9 @@ export function OperationalContactReadOnly({
   visitInstanceId,
   showSource = false,
   className = '',
+  titleTrailing,
+  headerAction,
+  children,
 }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
   const tid = (suffix: string) => `operational-contact-${visitInstanceId}-${suffix}`;
@@ -43,9 +66,17 @@ export function OperationalContactReadOnly({
       data-testid={tid('block')}
       data-visit-instance-id={visitInstanceId}
     >
-      <h4 className="mb-3 text-sm font-bold text-slate-800">
-        {t('visitRequestV2:operationalContact.title')}
-      </h4>
+      {/* flex-wrap + justify-between: title and action share the row on desktop; on a narrow
+          viewport the action drops to its own line under the title instead of overflowing. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <h4 className="text-sm font-bold text-slate-800">
+            {t('visitRequestV2:operationalContact.title')}
+          </h4>
+          {titleTrailing}
+        </div>
+        {headerAction}
+      </div>
 
       {!hasAnything ? (
         <p className="text-sm text-slate-500" data-testid={tid('empty')}>
@@ -99,6 +130,8 @@ export function OperationalContactReadOnly({
           ) : null}
         </dl>
       )}
+
+      {children}
     </section>
   );
 }

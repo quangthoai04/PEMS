@@ -612,6 +612,20 @@ export interface OperationalContactProfileDifference {
   snapshotPhone: string | null;
 }
 
+/**
+ * A light summary of who a PENDING invitation names — for a caller that wants to show more than the
+ * masked address already in `pendingEmailMasked`. Never authority: this person does not hold the
+ * campus until they accept. `emailMasked` is the same masked value as `pendingEmailMasked`, repeated
+ * here so the field is self-contained if read on its own.
+ */
+export interface OperationalContactPendingSummary {
+  fullName: string | null;
+  organization: string | null;
+  jobTitle: string | null;
+  phone: string | null;
+  emailMasked: string | null;
+}
+
 export interface OperationalContactState {
   visitRequestId: number;
   visitInstanceId: number;
@@ -632,6 +646,12 @@ export interface OperationalContactState {
    * rather than a parse error.
    */
   profileDifference?: OperationalContactProfileDifference | null;
+  /**
+   * Null whenever there is no pending row, or its snapshot could not be read (redacted after 90-day
+   * retention, or a legacy row). Optional for the same reason as `profileDifference` — an older server
+   * that omits it entirely is still a valid response.
+   */
+  pendingContact?: OperationalContactPendingSummary | null;
 }
 
 export interface OperationalContactManageResponse extends OperationalContactState {

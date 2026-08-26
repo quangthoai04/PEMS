@@ -38,10 +38,15 @@ export function ReceptionHostReadOnly({
 
   // Assigned wins outright. Once the job is real, the proposal that led to it is history and
   // showing it again beside the assignment reads as two different people.
+  //
+  // No own border/background here: this renders as the top section of the merged host+approval
+  // card in CampusVisitDetailCard, which already supplies the card chrome. Only the "needs
+  // reselection" state below keeps its own tinted box, because that is a real alert rather than
+  // plain informational grouping.
   if (currentHost) {
     return (
-      <section
-        className={`rounded-lg border border-slate-200 bg-white p-4 ${className}`}
+      <div
+        className={className}
         data-testid={tid('current-block')}
         data-visit-instance-id={visitInstanceId}
       >
@@ -70,7 +75,7 @@ export function ReceptionHostReadOnly({
             testId={tid('current-email')}
           />
         </dl>
-      </section>
+      </div>
     );
   }
 
@@ -79,10 +84,8 @@ export function ReceptionHostReadOnly({
   const needsReselection = proposedHost.proposalStatus === 'NEEDS_RESELECTION';
 
   return (
-    <section
-      className={`rounded-lg border p-4 ${
-        needsReselection ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'
-      } ${className}`}
+    <div
+      className={`${needsReselection ? 'rounded-lg border border-amber-300 bg-amber-50 p-3' : ''} ${className}`}
       data-testid={tid('proposed-block')}
       data-visit-instance-id={visitInstanceId}
     >
@@ -110,7 +113,7 @@ export function ReceptionHostReadOnly({
           testId={tid('proposed-status')}
         />
       </dl>
-    </section>
+    </div>
   );
 }
 

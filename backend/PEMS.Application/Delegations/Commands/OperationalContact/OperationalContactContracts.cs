@@ -328,7 +328,28 @@ public sealed record OperationalContactStateResponse(
     /// action turns into an edit of somebody else's identity.
     /// </para>
     /// </summary>
-    OperationalContactProfileDifference? ProfileDifference = null);
+    OperationalContactProfileDifference? ProfileDifference = null,
+
+    /// <summary>
+    /// Who the in-flight invitation names, for a caller that wants to show more than the masked address
+    /// already in <see cref="PendingEmailMasked"/>. Parsed from the pending row's own snapshot — same
+    /// authority as the rest of this response, nothing new is exposed. Null whenever there is no pending
+    /// row, or its snapshot has been redacted (90-day retention) or does not parse; a caller with no use
+    /// for the detail can keep ignoring it exactly as before.
+    /// </summary>
+    OperationalContactPendingSummary? PendingContact = null);
+
+/// <summary>
+/// A light summary of the person a PENDING invitation names — never authority, only enough to show who
+/// is being asked. Email stays masked, the same as <see cref="OperationalContactStateResponse.PendingEmailMasked"/>:
+/// this is not a new disclosure, just the rest of the snapshot already stored for that same invitation.
+/// </summary>
+public sealed record OperationalContactPendingSummary(
+    string? FullName,
+    string? Organization,
+    string? JobTitle,
+    string? Phone,
+    string? EmailMasked);
 
 /// <summary>
 /// What the signed-in contact's PEMS profile says versus what this visit's snapshot says about them.
