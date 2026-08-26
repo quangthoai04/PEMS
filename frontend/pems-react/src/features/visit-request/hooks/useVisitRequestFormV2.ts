@@ -700,6 +700,12 @@ export const useVisitRequestFormV2 = (
       if (!source || !target || sourceIndex === targetIndex) return;
       campusVisitFields.update(targetIndex, cloneCampusVisitContent(source, target));
       bumpCardVersion(target.clientKey);
+      // Same reasoning as `removeCampusVisit`: `update()` patches the values correctly, but a
+      // programmatic write is not a field `onChange`, so nothing reruns the resolver for this card on
+      // its own — the OLD error tree (computed against the PRE-copy values) would otherwise keep
+      // showing "required" on fields the copy just filled in. Re-validating only this card's scope
+      // leaves every other campus's error state untouched.
+      if (form.formState.isSubmitted) void form.trigger(`campusVisits.${targetIndex}`);
       showSuccessToast(t('visitRequestV2:card.copySuccess'));
     },
     [form, campusVisitFields, t, bumpCardVersion],
@@ -727,6 +733,11 @@ export const useVisitRequestFormV2 = (
     current.forEach((cv, i) => {
       if (i !== applyToAllPrompt.sourceIndex) bumpCardVersion(cv.clientKey);
     });
+    // Same reasoning as `copyContentIntoCampus`/`removeCampusVisit`: `replace()` is a programmatic
+    // write, not a field `onChange`, so every target card's error tree would otherwise keep showing
+    // its PRE-apply errors even though the values just became valid. Every campus but the source was
+    // just overwritten, so the whole array is re-validated in one call.
+    if (form.formState.isSubmitted) void form.trigger('campusVisits');
     setApplyToAllPrompt(null);
     showSuccessToast(t('visitRequestV2:card.applyAllSuccess'));
   }, [applyToAllPrompt, form, campusVisitFields, t, bumpCardVersion]);

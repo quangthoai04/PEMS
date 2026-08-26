@@ -46,7 +46,22 @@ import {
  * the shared `data-variant` value (which alone matches both and is a strict-mode violation). -- and
  * clicks the item whose rendered text contains `snippet` (the exact delegation tag / request code the
  * test itself set on the fixture -- never guessed from producer source text). */
+/** Dismisses the "overdue logistics response" reminder (`ForcedResponseGate`, mounted globally at
+ * `DashboardLayout` for any Dept Leader/Staff) if it's covering the screen. This is a REAL, backend-driven
+ * queue of genuinely overdue seeded logistics items for the actor's own department, not test fixture noise
+ * -- it fully covers the page (backdrop + centered modal) and blocks the bell underneath from ever
+ * receiving a click. Loops because dismissing one item can reveal another still-overdue one in the queue. */
+async function dismissOverdueGateIfShown(page: Page) {
+  const dismiss = page.getByRole('button', { name: 'Đóng' });
+  for (let i = 0; i < 5; i++) {
+    if (!(await dismiss.isVisible().catch(() => false))) return;
+    await dismiss.click();
+    await dismiss.waitFor({ state: 'hidden', timeout: 3_000 }).catch(() => {});
+  }
+}
+
 async function clickBellNotification(page: Page, snippet: string) {
+  await dismissOverdueGateIfShown(page);
   const bell = page.locator('div.absolute.top-3.right-6 button[data-variant="dashboard"]');
   await bell.click();
   const item = page.locator('button').filter({ hasText: snippet }).first();
@@ -93,10 +108,13 @@ test.describe('Real-stack: notification routing -- Staff Leader (waiting approva
     const leader = await meUser(request, 'campus_leader_hn');
     const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
-      // ── BL-01: VISIT_REQUEST_WAITING_APPROVAL, campus still pending -- must open the review+assign modal.
+      // ── BL-01: VISIT_REQUEST_WAITING_APPROVAL, campus still pending -- must open the request
+      // detail (never auto-open the review+assign modal; the reviewer decides Duyệt/Từ chối from
+      // the detail screen's own controls).
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tag);
-      await expect(page.getByText('Duyệt & phân công người phụ trách').first()).toBeVisible({ timeout: 20_000 });
+      await expect(page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
+      await expect(page.getByText('Duyệt & phân công người phụ trách')).toHaveCount(0);
       await expect(page.getByText(`Doan HN ${tag}`).first()).toBeVisible();
       // MUST NOT have opened Host Process or the invitation route for this click.
       await expect(page).not.toHaveURL(/\/process\//);
@@ -514,24 +532,23 @@ test.describe('Real-stack: notification routing -- MC-02 edge fixture (campus ev
 test.describe('Real-stack: notification routing -- click ordering (BUG-02/BUG-03 + rapid-click race + back/forward)', () => {
   test('BUG-02: clicking the SAME notification a second time still opens it (not silently a no-op)', async ({ browser, request }) => {
     const tag = `NC${Date.now().toString(36)}`;
-    await createSingleHn(request, tag);
+    const { requestId } = await createSingleHn(request, tag);
     const leader = await meUser(request, 'campus_leader_hn');
 
     const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       await page.goto('/dashboard/visit');
       await clickBellNotification(page, tag);
-      await expect(page.getByText('Duyệt & phân công người phụ trách').first()).toBeVisible({ timeout: 20_000 });
-      // Close without deciding, then come back to the same list fresh -- the notification itself
-      // is unchanged (still there, now marked read), so the SECOND click below is the real repro of
-      // BUG-02 ("click notification -> open -> close -> click same notification again -> nothing").
-      await page.getByTestId('assign-host-modal-close').click();
-      await expect(page.getByText('Duyệt & phân công người phụ trách')).toHaveCount(0, { timeout: 10_000 });
+      await expect(page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
+
+      // Navigate away, then come back to the same list fresh -- the notification itself is unchanged
+      // (still there, now marked read), so the SECOND click below is the real repro of BUG-02 ("click
+      // notification -> navigate away -> click the SAME notification again -> nothing").
       await page.goto('/dashboard/visit');
 
-      // Click the SAME notification again.
+      // Click the SAME notification again -- must navigate to the detail again, not silently no-op.
       await clickBellNotification(page, tag);
-      await expect(page.getByText('Duyệt & phân công người phụ trách').first()).toBeVisible({ timeout: 20_000 });
+      await expect(page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
     } finally {
       await context.close();
     }
@@ -633,26 +650,28 @@ test.describe('Real-stack: notification routing -- click ordering (BUG-02/BUG-03
 test.describe('Real-stack: notification routing -- cross-surface parity', () => {
   test('Bell and NotificationsPage resolve the SAME destination for the same real notification', async ({ browser, request }) => {
     const tag = `NX${Date.now().toString(36)}`;
-    await createSingleHn(request, tag);
+    const { requestId } = await createSingleHn(request, tag);
     const leader = await meUser(request, 'campus_leader_hn');
 
     const bellCtx = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       await bellCtx.page.goto('/dashboard/visit');
       await clickBellNotification(bellCtx.page, tag);
-      await expect(bellCtx.page.getByText('Duyệt & phân công người phụ trách').first()).toBeVisible({ timeout: 20_000 });
+      await expect(bellCtx.page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId}$`), { timeout: 20_000 });
+      await expect(bellCtx.page.getByText('Duyệt & phân công người phụ trách')).toHaveCount(0);
     } finally {
       await bellCtx.context.close();
     }
 
     // A second, equivalent notification (same eventKey/producer) clicked from the FULL PAGE surface.
     const tag2 = `NX2${Date.now().toString(36)}`;
-    await createSingleHn(request, tag2);
+    const { requestId: requestId2 } = await createSingleHn(request, tag2);
     const pageCtx = await authedPage(browser, 'campus_leader_hn', leader);
     try {
       await pageCtx.page.goto('/dashboard/visit');
       await clickNotificationsPageItem(pageCtx.page, tag2);
-      await expect(pageCtx.page.getByText('Duyệt & phân công người phụ trách').first()).toBeVisible({ timeout: 20_000 });
+      await expect(pageCtx.page).toHaveURL(new RegExp(`/dashboard/visit/v2/${requestId2}$`), { timeout: 20_000 });
+      await expect(pageCtx.page.getByText('Duyệt & phân công người phụ trách')).toHaveCount(0);
     } finally {
       await pageCtx.context.close();
     }

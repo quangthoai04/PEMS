@@ -108,6 +108,24 @@ describe('the counter on screen', () => {
     expect(screen.queryByTestId('counter')).toBeNull();
   });
 
+  // Plan CanhIter3FixBug §10 — a real mouse click on a control right below this field sends
+  // pointerdown/mousedown (blurring the field) before its own mouseup; if the counter's layout slot
+  // disappeared on blur, whatever sat below it moved between mousedown and mouseup and the click
+  // landed on empty space. The slot itself must never unmount, only its content.
+  it('keeps the same layout slot mounted across focus and blur — only its content toggles', async () => {
+    render(<Harness />);
+    const box = screen.getByLabelText('Purpose');
+    const slot = box.nextElementSibling;
+    expect(slot).not.toBeNull();
+
+    await act(async () => { fireEvent.focus(box); });
+    expect(box.nextElementSibling).toBe(slot);
+
+    await act(async () => { fireEvent.blur(box); });
+    expect(box.nextElementSibling).toBe(slot); // same node — nothing below it could have shifted
+    expect(screen.queryByTestId('counter')).toBeNull(); // only the counter's own content is gone
+  });
+
   it('stays put after blur once the value is near the limit', async () => {
     render(<Harness initial={'x'.repeat(1900)} />);
     const box = screen.getByLabelText('Purpose');

@@ -1195,42 +1195,12 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
       const iid = target.visitInstanceId;
       const contexts = target.relationContexts || [];
 
-      // GATED BY INTENT (plan §7/§45): the notification's own eventKey sets the MAXIMUM interaction
-      // level this click may open — current pending state may only ever downgrade it, never upgrade
-      // it into this approve control. `VISIT_REVIEW` is the ONLY intent that may escalate, and only
-      // when the resolver's own fresh relation contexts (never a merged/aggregated row) still show a
-      // pending review AT THIS EXACT INSTANCE. Re-fetches the caller's own "responsible" population
-      // for the rich Row shape the modal needs (display fields, rowVersion) — safe because a genuine
-      // CAMPUS_REVIEWER relation always surfaces as its own direct instance row there, never folded
-      // into a multi-campus summary (that folding only ever happens on Visitor/HO request-level rows).
-      const reviewDue = contexts.some(c => c.relation === 'CAMPUS_REVIEWER'
-        && c.entryContext === 'CAMPUS_REVIEW' && c.requiresAction && c.visitInstanceId === iid);
-      if (intent === 'VISIT_REVIEW' && reviewDue) {
-        const list = await delegationsApi.getVisitRequestManagementList({
-          tab: 'responsible', visitRequestId: requestId, page: 1, pageSize: 20,
-          sortBy: 'plannedStartAt', sortOrder: 'desc',
-        });
-        if (version !== notificationTargetVersionRef.current) return; // superseded by a later click
-        const items: VisitRequestManagementItem[] = list?.items || [];
-        const matched = items.find((it) => it.visitInstanceId === iid);
-        if (matched && matched.primaryEntryContext === 'CAMPUS_REVIEW'
-          && (matched.allowedActions || []).includes('APPROVE_AND_ASSIGN_HOST')) {
-          const row: Row = {
-            ...matched,
-            id: matched.visitInstanceId || matched.visitRequestId,
-            name: matched.delegationName || tt('visitRequestV2:list.row.untitledDelegation'),
-            org: matched.partnerName || '-',
-            campus: matched.campusName || '-',
-            host: matched.hostName || '',
-            sender: matched.visitorName || '',
-            time: formatDateTimeShort(matched.plannedStartAt),
-            statusText: matched.statusLabel || getVietnameseStatus(matched.requestStatus, matched.campusStatus),
-          };
-          setAssign({ open: true, row, mode: 'approve' });
-          return;
-        }
-        // Someone else already decided it between the resolver call and now — fall through to safe.
-      }
+      // `VISIT_REVIEW` ("Có yêu cầu tiếp khách cần duyệt" / HOST_REASSIGNMENT_REQUIRED) deliberately
+      // does NOT auto-open the live approve/assign-host control anymore — it only ever lands on the
+      // request detail page below (same `openSafeDetail()` fallback every other intent uses), so the
+      // reviewer sees full context before choosing Duyệt/Từ chối themselves from the detail screen's
+      // own controls (`VisitRequestV2DetailView`'s canApproveCampus/canRejectCampus buttons). Falls
+      // through intentionally — no special-cased branch needed for this intent.
 
       // "Có thay đổi, hãy xem lại" (VISIT_HISTORY) always lands on the full request detail with its
       // change-history section in view — never the entry-context shortcut, which for a still-pending

@@ -21,9 +21,17 @@ public class NotificationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetMyNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] bool? isRead = null)
+    public async Task<IActionResult> GetMyNotifications(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] bool? isRead = null,
+        [FromQuery] string? categories = null,
+        [FromQuery] bool? isActionRequired = null)
     {
-        var result = await _mediator.Send(new GetMyNotificationsQuery(page, pageSize, isRead));
+        var categoryList = string.IsNullOrWhiteSpace(categories)
+            ? null
+            : categories.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var result = await _mediator.Send(new GetMyNotificationsQuery(page, pageSize, isRead, categoryList, isActionRequired));
         return Ok(result);
     }
 

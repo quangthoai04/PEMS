@@ -1637,6 +1637,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               control={control}
               render={({ field }) => (
                 <AutoGrowTextarea
+                  data-testid="campus-purpose-input"
                   value={field.value ?? ''}
                   onChange={revalidatingChange(field)}
                   onBlur={field.onBlur}
@@ -1653,6 +1654,7 @@ export const CampusVisitCard: React.FC<Props> = ({
               control={control}
               render={({ field }) => (
                 <AutoGrowTextarea
+                  data-testid="campus-workingcontent-input"
                   value={field.value ?? ''}
                   onChange={revalidatingChange(field)}
                   onBlur={field.onBlur}

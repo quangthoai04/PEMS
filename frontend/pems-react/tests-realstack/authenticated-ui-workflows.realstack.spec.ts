@@ -178,8 +178,41 @@ test.describe('Real-stack FULL-DOM: v2 mutation & search workflows', () => {
       // A guest row requires ALL fields (backend validator) — fill the freshly-added row completely.
       await dialog.getByTestId('amendment-visitors-fullname').last().fill(`Khach moi ${tag}`);
       await dialog.getByTestId('amendment-visitors-jobtitle').last().fill('Chuyen vien');
-      await dialog.getByTestId('amendment-visitors-organization').last().fill('Org E2E');
-      await dialog.getByTestId('amendment-visitors-nationality').last().fill('VN');
+
+      // Organization (OrganizationCombobox, Creatable — free text allowed). Its data-testid lives on the
+      // row-scoped WRAPPER div (`amendment-${kind}-organization-${rowKey}`), not the input itself, and the
+      // row key is client-generated/unknown to this test — match the wrapper by testid prefix and take the
+      // last (newest) row. The `visitors` segment of the testid already disambiguates from the support
+      // section's own `amendment-support-organization-*` wrappers, so no extra scoping is needed.
+      const orgWrapper = dialog.getByTestId(/^amendment-visitors-organization-/).last();
+      const orgInput = orgWrapper.getByRole('combobox');
+      await orgInput.click();
+      await orgInput.fill('Org E2E');
+      // OrganizationCombobox's `onInputChange` already commits free text on every keystroke — 'Org E2E'
+      // is in the amendment's React state the instant `.fill()` fires. Its async search never offers a
+      // matching/"create new" option for a genuinely novel string (proven live: the menu settles on the
+      // plain "no options" placeholder, not a create row), so the value is committed by typing alone —
+      // the visible control just needs to CLOSE afterward, which moving focus to the next field does via
+      // OrganizationCombobox's own onBlur (re-commits the trimmed text, closes the menu).
+
+      // Nationality (CountrySelect, strict — no free text, no testid at all). Only its accessible name
+      // (aria-label = "<section> — <field>") locates it, and the support section renders the SAME field
+      // label — matching the FULL "<visitors section> — Nationality" name (both languages) disambiguates
+      // without needing any fieldset scoping. react-select's open menu is portaled to document.body, so
+      // the option is NOT a descendant of the dialog and must be looked up page-wide.
+      const nationalityInput = dialog.getByRole('combobox', {
+        name: /danh sách khách.*quốc tịch|guest list.*nationality/i,
+      }).last();
+      await nationalityInput.click(); // also blurs + closes the Organization field above
+      await expect(orgWrapper).toContainText('Org E2E'); // organization value really committed, not just typed
+      await nationalityInput.fill('Việt Nam');
+      const vnOption = page.getByRole('option', { name: 'Việt Nam', exact: true });
+      await expect(vnOption).toBeVisible();
+      await vnOption.click();
+      // The pre-seeded HN visitor's own nationality ("VN") never resolves to a real option and renders
+      // as the raw fallback text "VN" — only a genuinely committed pick renders the full label "Việt Nam".
+      await expect(dialog).toContainText('Việt Nam');
+
       await dialog.getByTestId('amendment-reason').fill('Bo sung mot khach');
       await expect(page.getByTestId('amendment-submit')).toBeEnabled();
       await clickAndWait(page, page.getByTestId('amendment-submit'), `/v2/visit-requests/${requestId}/instances/${hnInstance}/amendments`, 'POST');

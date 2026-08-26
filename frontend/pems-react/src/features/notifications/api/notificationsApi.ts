@@ -14,10 +14,13 @@ export const notificationsApi = {
     page?: number;
     pageSize?: number;
     isRead?: boolean;
-    category?: string;
+    categories?: string[];
     isActionRequired?: boolean;
   }) => {
-    const response = await httpClient.get<PaginatedResult<NotificationItem>>('/notifications', { params });
+    const { categories, ...rest } = params || {};
+    const response = await httpClient.get<PaginatedResult<NotificationItem>>('/notifications', {
+      params: { ...rest, categories: categories?.length ? categories.join(',') : undefined },
+    });
     return response.data;
   },
 

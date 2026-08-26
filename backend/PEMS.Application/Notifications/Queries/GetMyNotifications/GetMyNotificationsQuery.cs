@@ -7,4 +7,6 @@ namespace PEMS.Application.Notifications.Queries.GetMyNotifications;
 public sealed record GetMyNotificationsQuery(
     int Page,
     int PageSize,
-    bool? IsRead) : IRequest<PaginatedResult<NotificationDto>>;
+    bool? IsRead,
+    IReadOnlyList<string>? Categories = null,
+    bool? IsActionRequired = null) : IRequest<PaginatedResult<NotificationDto>>;

@@ -88,13 +88,18 @@ export const AutoGrowTextarea: React.FC<Props> = ({
         } ${className}`}
         {...rest}
       />
-      {showCounter && (
-        <p
-          data-testid={counterTestId}
-          className={`mt-1 text-right text-xs ${over ? 'font-normal text-red-600' : 'text-slate-400'}`}
-        >
-          {t('validation:characterCount', { current: value.length, max: maxLength })}
-        </p>
+      {/* Slot always reserved when maxLength is set — a size-0 counter toggling on blur used to shift whatever sits below it out from under an in-flight mouse click (proven via a real-stack pointer trace). */}
+      {maxLength !== undefined && (
+        <div className="mt-1 min-h-4 text-right text-xs">
+          {showCounter && (
+            <span
+              data-testid={counterTestId}
+              className={over ? 'font-normal text-red-600' : 'text-slate-400'}
+            >
+              {t('validation:characterCount', { current: value.length, max: maxLength })}
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
