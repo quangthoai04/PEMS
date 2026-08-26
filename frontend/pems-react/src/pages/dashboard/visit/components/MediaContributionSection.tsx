@@ -51,28 +51,30 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
   if (!canView) return null;
 
   const isStudent = relation === 'STUDENT_RELATED';
+  const mediaStatusLabel = data.isRequirementSatisfied
+    ? 'Đạt yêu cầu'
+    : `${data.uploadedCount} / tối thiểu ${data.requiredMinimumCount} file`;
 
   return (
-    <div className="py-5">
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
       {!isStudent && (
         <>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
-              <ImageIcon className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <h2 className="text-base font-black text-[#004c91]">Ảnh / Media</h2>
-              <p className="text-xs font-normal text-slate-500">
-                {data.uploadedCount} / tối thiểu {data.requiredMinimumCount} file
-              </p>
-            </div>
-            {data.isRequirementSatisfied && (
-              <span className="inline-flex px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 text-[11px] font-bold">
-                Đạt yêu cầu
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="w-8 h-8 rounded-lg bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
+                <ImageIcon className="w-4 h-4" />
               </span>
-            )}
+              <h2 className="text-sm sm:text-base font-semibold text-[#004c91]">Ảnh / Media</h2>
+            </div>
+            <span className={
+              data.isRequirementSatisfied
+                ? 'inline-flex px-2.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold shrink-0'
+                : 'text-xs font-bold text-slate-500 shrink-0 pt-1'
+            }>
+              {mediaStatusLabel}
+            </span>
           </div>
-          <div className="space-y-4">
+          <div className="mt-3 space-y-3">
             {data.items.length === 0 ? (
               <p className="text-sm font-normal text-slate-400">Chưa có file media nào được tải lên.</p>
             ) : (
@@ -120,10 +122,16 @@ export function MediaContributionSection({ visitInstanceId, data, canView, insta
 
       {/* Ảnh đoàn khách (Student) — lưu Drive VR-{request}/{campus}, bảng visit_photos */}
       {showStudentPhotos && (
-        <div className={!isStudent ? "pt-4 mt-4 border-t border-slate-100" : ""}>
-          <div className="flex items-center gap-2 mb-3">
-            <Camera className="w-4 h-4 text-[#f37021]" />
-            <h3 className="text-sm font-black text-[#004c91]">Ảnh đoàn khách</h3>
+        <div className={!isStudent ? "pt-3 mt-3 border-t border-slate-100" : ""}>
+          <div className="flex items-center gap-2.5 mb-3">
+            {isStudent ? (
+              <span className="w-8 h-8 rounded-lg bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
+                <Camera className="w-4 h-4" />
+              </span>
+            ) : (
+              <Camera className="w-4 h-4 text-[#f37021]" />
+            )}
+            <h3 className={isStudent ? "text-sm sm:text-base font-semibold text-[#004c91]" : "text-sm font-bold text-[#004c91]"}>Ảnh đoàn khách</h3>
           </div>
           <VisitPhotoPanel
             visitInstanceId={visitInstanceId}

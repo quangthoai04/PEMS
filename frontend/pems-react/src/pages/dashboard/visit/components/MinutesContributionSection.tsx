@@ -33,31 +33,32 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
     onChanged();
   };
 
+  const statusLabel = data.status === 'COMPLETED' ? 'Hoàn tất' : data.hasMinutes ? 'Đã khởi tạo' : 'Chưa có biên bản';
+
   return (
-    <div className="py-5">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-9 h-9 rounded-xl bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
-          <FileText className="w-5 h-5" />
-        </div>
-        <div className="flex-1">
-          <h2 className="text-base font-black text-[#004c91]">Biên bản</h2>
-          <p className="text-xs font-normal text-slate-500">
-            {data.hasMinutes ? 'Đã khởi tạo' : 'Chưa có biên bản'}
-          </p>
-        </div>
-        {data.status === 'COMPLETED' && (
-          <span className="inline-flex px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 text-[11px] font-bold">
-            Hoàn tất
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="w-8 h-8 rounded-lg bg-orange-50 text-[#f37021] flex items-center justify-center shrink-0">
+            <FileText className="w-4 h-4" />
           </span>
-        )}
+          <h2 className="text-sm sm:text-base font-semibold text-[#004c91]">Biên bản</h2>
+        </div>
+        <span className={
+          data.status === 'COMPLETED'
+            ? 'inline-flex px-2.5 py-0.5 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold shrink-0'
+            : 'text-xs font-bold text-slate-500 shrink-0 pt-1'
+        }>
+          {statusLabel}
+        </span>
       </div>
 
-      <div className="space-y-4">
+      <div className="mt-3 space-y-3">
         {data.content ? (
           // ql-editor (không phải "prose" — chưa cài @tailwindcss/typography) để bullet/số thứ
           // tự/indent hiện đúng như lúc gõ trong RichTextEditor, dùng chung CSS Quill.
           <div
-            className="ql-editor !h-auto !min-h-0 w-full rounded-xl border border-slate-200 bg-slate-50/60 !px-4 !py-3 text-sm text-slate-700"
+            className="ql-editor !h-auto !min-h-0 w-full rounded-lg border border-slate-200 bg-slate-50/60 !px-4 !py-3 text-sm text-slate-700"
             dangerouslySetInnerHTML={{ __html: sanitizeHtml(data.content) }}
           />
         ) : (
@@ -65,14 +66,14 @@ export function MinutesContributionSection({ visitInstanceId, data, canView, onC
         )}
 
         {data.lockedByName && (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-normal text-amber-700">
+          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-normal text-amber-700">
             <Lock className="w-4 h-4 shrink-0" />
             Đang được chỉnh sửa bởi {data.lockedByName}
           </div>
         )}
 
         {data.canCurrentUserEdit && !isReadOnly && (
-          <div className="pt-2 flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => setModalOpen(true)}

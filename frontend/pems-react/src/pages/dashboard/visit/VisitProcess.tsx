@@ -1316,9 +1316,9 @@ export function VisitProcess() {
                               so "Lịch trình hiện tại" is the focus once an agenda exists. */}
                           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2">
-                                <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                                1. Agenda
+                              <h3 className="flex items-center gap-2 text-base font-bold text-slate-800">
+                                <span className="text-[#f37021]">1.</span>
+                                Agenda
                               </h3>
                               {/* Planned visit window (visit_request_campuses.planned_start_at/end_at).
                                   Editable here; takes effect together with the agenda on "Lưu lịch trình". */}
@@ -1659,9 +1659,9 @@ export function VisitProcess() {
 
                         {/* 2. Thành phần tham gia — mời thật + trạng thái lấy từ DB (không fake phản hồi) */}
                         <div className="p-6 border-b border-gray-100">
-                          <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-6">
-                            <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                            2. Thành phần tham gia
+                          <h3 className="flex items-center gap-2 text-base font-bold text-slate-800 mb-6">
+                            <span className="text-[#f37021]">2.</span>
+                            Thành phần tham gia
                           </h3>
                           {perm && detail ? (
                             <ParticipantInvitationSection
@@ -1688,9 +1688,9 @@ export function VisitProcess() {
 
             {/* 3. Cảnh báo nhắc nhở trước thời gian tiếp khách */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
-              <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-4">
-                <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                3. Cảnh báo nhắc nhở trước thời gian tiếp khách
+              <h3 className="flex items-center gap-2 text-base font-bold text-slate-800 mb-4">
+                <span className="text-[#f37021]">3.</span>
+                Cảnh báo nhắc nhở trước thời gian tiếp khách
               </h3>
 
               {canConfigurePrep && remindersLoadFailed && (
@@ -1752,9 +1752,9 @@ export function VisitProcess() {
 
             {/* 3.5 Ghi chú */}
                         <div className="p-6">
-                          <h3 className="text-base font-bold text-orange-900 bg-orange-50 w-max px-3 py-1.5 rounded-lg border border-orange-100 flex items-center gap-2 mb-3">
-                            <span className="w-1.5 h-4 bg-[#f37021] rounded-full"></span>
-                            4. Ghi chú chung
+                          <h3 className="flex items-center gap-2 text-base font-bold text-slate-800 mb-3">
+                            <span className="text-[#f37021]">4.</span>
+                            Ghi chú chung
                           </h3>
                           <textarea
                             ref={(el) => {

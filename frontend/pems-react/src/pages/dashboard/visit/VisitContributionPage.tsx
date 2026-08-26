@@ -11,13 +11,14 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User, ScrollText,
+  Lock, ArrowLeft, FileText, Users, Clock, Building2, AlertCircle, User,
   Loader2, CalendarDays, MapPin, ClipboardList
 } from 'lucide-react';
 import { delegationsApi } from '../../../features/delegations/api/delegationsApi';
 import { MinutesContributionSection } from './components/MinutesContributionSection';
 import { MediaContributionSection } from './components/MediaContributionSection';
 import { NewsContributionSection } from './components/NewsContributionSection';
+import { VISIT_TYPE_LABELS, WORKING_LANG_LABELS } from '../../../features/delegations/components/RequestInfoReadOnly';
 import type {
   ContributionPage, ContributionLogisticsItem,
 } from '../../../features/delegations/types/delegations.types';
@@ -69,15 +70,15 @@ const fmtDateTime = (v?: string | null) => {
   return `${local.slice(11, 16)} ${local.slice(8, 10)}/${local.slice(5, 7)}/${local.slice(0, 4)}`;
 };
 
-/** Section phẳng: header nhỏ + divider mỏng, không card/ô icon lớn */
+/** Section Level-2 (thông tin tham khảo): header nhỏ, muted — phân biệt với heading Level-1. */
 function Section({ icon, title, badge, children }: {
   icon: React.ReactNode; title: string; badge?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
     <section className="px-4 sm:px-5 py-4">
       <div className="flex flex-wrap items-center gap-2 mb-2">
-        <span className="text-[#004c91]">{icon}</span>
-        <h2 className="text-sm font-black text-[#004c91] flex-1">{title}</h2>
+        <span className="text-slate-400">{icon}</span>
+        <h3 className="text-[15px] font-bold text-slate-600 flex-1">{title}</h3>
         {badge}
       </div>
       {children}
@@ -85,10 +86,15 @@ function Section({ icon, title, badge, children }: {
   );
 }
 
+/** Heading Level-1 (nhóm lớn: "Đóng góp của bạn" / "Thông tin chuyến thăm"). */
+function GroupHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-base sm:text-lg font-black text-[#004c91]">{children}</h2>;
+}
+
 function Field({ label, value }: { label: string; value?: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="text-sm font-normal text-slate-800 break-words">{value || '—'}</p>
     </div>
   );
@@ -205,9 +211,20 @@ export function VisitContributionPage() {
 
   const { permissions: perm, summary, workspace } = data;
   const req = summary.request;
-  const visitType = req?.visitType === 'OTHER' ? (req?.visitTypeOther || 'Khác') : req?.visitType;
+  // Presentation labels only — same canonical map RequestInfoReadOnly uses for this exact
+  // VisitProcessRequestSummary type, reused here instead of duplicated.
+  const visitTypeLabel = req?.visitType === 'OTHER'
+    ? (req?.visitTypeOther?.trim() || VISIT_TYPE_LABELS.OTHER)
+    : req?.visitType ? (VISIT_TYPE_LABELS[req.visitType] || req.visitType) : undefined;
+  const workingLanguageLabel = req?.workingLanguage
+    ? (WORKING_LANG_LABELS[req.workingLanguage] || req.workingLanguage)
+    : undefined;
 
   const scopedLogistics: ContributionLogisticsItem[] = summary.logistics || [];
+  // Contribution chỉ cần người thực sự tham gia — ẩn INVITED (chưa xác nhận)/DECLINED/REMOVED.
+  const visibleParticipants = summary.participants.filter(
+    (p) => p.status === 'ACCEPTED' || p.status === 'ASSIGNED'
+  );
 
   const userStr = typeof window !== 'undefined' ? localStorage.getItem('currentUser') : null;
   const currentUser = userStr ? JSON.parse(userStr) : null;
@@ -223,8 +240,8 @@ export function VisitContributionPage() {
         <div className="px-4 sm:px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <h1 className="text-lg md:text-xl font-black text-[#004c91]">Đóng góp kết quả chuyến thăm</h1>
-              <p className="text-sm font-bold text-slate-800 mt-0.5">{summary.delegationName}</p>
+              <h1 className="text-xl md:text-2xl font-black text-[#004c91]">Đóng góp kết quả chuyến thăm</h1>
+              <p className="text-base md:text-lg font-semibold text-slate-800 mt-0.5">{summary.delegationName}</p>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className={`inline-flex px-2.5 py-0.5 rounded-full border text-[11px] font-black ${INSTANCE_STATUS_CLASS[summary.instanceStatus] || 'bg-gray-100 text-gray-700 border-gray-200'
@@ -253,22 +270,63 @@ export function VisitContributionPage() {
           </div>
 
           {isReadOnlyContribution && (
-            <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-normal text-slate-500">
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-normal text-slate-500">
               <Lock className="w-3.5 h-3.5 shrink-0" />
               {isDeptRole ? 'Phòng ban / Nhân sự phòng ban chỉ có quyền xem thông tin đóng góp.' : 'Chuyến thăm đã đóng/hủy — trang ở chế độ chỉ xem.'}
-            </p>
+            </div>
           )}
         </div>
 
-        {/* ── Nhóm A: Summary read-only ── */}
+        {/* ── Nhóm B: Workspace đóng góp — ngay dưới header, xếp dọc full-width ── */}
+        <div className="px-4 sm:px-5 py-4">
+          <GroupHeading>Đóng góp của bạn</GroupHeading>
+          <div className="mt-3 flex flex-col gap-4">
+            {perm.canViewMinutes && workspace.minutes && (
+              <MinutesContributionSection
+                visitInstanceId={visitInstanceId}
+                data={workspace.minutes}
+                canView={perm.canViewMinutes}
+                instanceStatus={summary.instanceStatus}
+                onChanged={loadData}
+                isReadOnly={isReadOnlyContribution}
+              />
+            )}
+            {perm.canViewMedia && workspace.media && (
+              <MediaContributionSection
+                visitInstanceId={visitInstanceId}
+                data={workspace.media}
+                canView={perm.canViewMedia}
+                instanceStatus={summary.instanceStatus}
+                onChanged={loadData}
+                relation={perm.relation}
+                isReadOnly={isReadOnlyContribution}
+              />
+            )}
+            {perm.canViewNews && workspace.news && (
+              <NewsContributionSection
+                visitInstanceId={visitInstanceId}
+                data={workspace.news}
+                canView={perm.canViewNews}
+                instanceStatus={summary.instanceStatus}
+                onChanged={loadData}
+                isReadOnly={isReadOnlyContribution}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* ── Nhóm A: Thông tin chuyến thăm (tham khảo, read-only) ── */}
+        <div className="px-4 sm:px-5 py-3">
+          <GroupHeading>Thông tin chuyến thăm</GroupHeading>
+        </div>
         {perm.canViewRequestSummary && req && (
           <Section icon={<FileText className="w-4 h-4" />} title="Thông tin yêu cầu">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
               <Field label="Tên đoàn" value={req.delegationName} />
               <Field label="Tổ chức/đơn vị" value={req.registrantOrganization} />
-              <Field label="Loại chuyến thăm" value={visitType} />
+              <Field label="Loại chuyến thăm" value={visitTypeLabel} />
+              <Field label="Ngôn ngữ làm việc" value={workingLanguageLabel} />
               <Field label="Mục đích" value={req.purpose} />
-              <Field label="Ngôn ngữ làm việc" value={req.workingLanguage} />
             </div>
             {/* Working content, transport identification and the guest's remark to FPTU are all part
                 of the request a contributor is being asked to prepare against, and the backend has
@@ -313,12 +371,23 @@ export function VisitContributionPage() {
                     </div>
                     <div className="min-w-0 border-l-2 border-slate-100 pl-3">
                       <p className="text-sm font-normal text-slate-800">{a.title}</p>
-                      {(a.location || a.responsibleName || a.templateResponsibleRoleLabel) && (
-                        <p className="text-xs text-slate-500 font-normal mt-0.5">
-                          {a.location && <span className="inline-flex items-center gap-1 mr-3"><MapPin className="w-3 h-3" /> {a.location}</span>}
-                          {(a.responsibleName || a.templateResponsibleRoleLabel) && <>Phụ trách: {a.responsibleName || a.templateResponsibleRoleLabel}</>}
+                      {a.location && (
+                        <p className="mt-0.5 flex items-center gap-1 text-xs font-normal text-slate-500">
+                          <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                          <span>{a.location}</span>
                         </p>
                       )}
+                      {/* responsibleName = actual assigned person; templateResponsibleRoleLabel is only a
+                          role hint from the agenda template and must never stand in for a person's name. */}
+                      <p className="mt-0.5 flex items-center gap-1 text-xs font-normal text-slate-500">
+                        <User className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                        <span>
+                          Người phụ trách:{' '}
+                          {a.responsibleName
+                            ? <span className="text-slate-600">{a.responsibleName}</span>
+                            : <span className="italic text-slate-400">Chưa phân công</span>}
+                        </span>
+                      </p>
                     </div>
                   </li>
                 ))}
@@ -329,12 +398,12 @@ export function VisitContributionPage() {
 
         {perm.canViewParticipantSummary && (
           <Section icon={<Users className="w-4 h-4" />} title="Thành phần tham gia"
-            badge={<span className="text-[11px] font-bold text-slate-400">{summary.participants.length} người</span>}>
-            {summary.participants.length === 0 ? (
+            badge={<span className="text-[11px] font-bold text-slate-400">{visibleParticipants.length} người</span>}>
+            {visibleParticipants.length === 0 ? (
               <p className="text-xs font-normal text-slate-400">Chưa có dữ liệu cho phần này.</p>
             ) : (
               <div className="divide-y divide-slate-100">
-                {summary.participants.map((p) => (
+                {visibleParticipants.map((p) => (
                   <div key={p.participantId} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                     <div className="min-w-0">
                       <p className="text-sm font-bold text-slate-800">
@@ -383,43 +452,6 @@ export function VisitContributionPage() {
             )}
           </Section>
         )}
-
-        {/* ── Nhóm B: Workspace đóng góp ── */}
-        <Section icon={<ScrollText className="w-4 h-4 text-[#f37021]" />} title="Đóng góp kết quả">
-          <div className="divide-y divide-slate-100">
-            {perm.canViewMinutes && workspace.minutes && (
-              <MinutesContributionSection
-                visitInstanceId={visitInstanceId}
-                data={workspace.minutes}
-                canView={perm.canViewMinutes}
-                instanceStatus={summary.instanceStatus}
-                onChanged={loadData}
-                isReadOnly={isReadOnlyContribution}
-              />
-            )}
-            {perm.canViewMedia && workspace.media && (
-              <MediaContributionSection
-                visitInstanceId={visitInstanceId}
-                data={workspace.media}
-                canView={perm.canViewMedia}
-                instanceStatus={summary.instanceStatus}
-                onChanged={loadData}
-                relation={perm.relation}
-                isReadOnly={isReadOnlyContribution}
-              />
-            )}
-            {perm.canViewNews && workspace.news && (
-              <NewsContributionSection
-                visitInstanceId={visitInstanceId}
-                data={workspace.news}
-                canView={perm.canViewNews}
-                instanceStatus={summary.instanceStatus}
-                onChanged={loadData}
-                isReadOnly={isReadOnlyContribution}
-              />
-            )}
-          </div>
-        </Section>
       </div>
     </div>
   );

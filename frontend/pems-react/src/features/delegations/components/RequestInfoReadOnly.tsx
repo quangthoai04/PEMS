@@ -10,12 +10,15 @@ import type { VisitProcessRequestSummary, VisitProcessGuestMember } from '../typ
 const EMPTY = 'Chưa có thông tin';
 
 const VISIT_SCOPE_LABELS: Record<string, string> = { SINGLE_CAMPUS: 'Một cơ sở', MULTI_CAMPUS: 'Liên cơ sở' };
-const VISIT_TYPE_LABELS: Record<string, string> = {
+/** Canonical visitType labels for VisitProcessRequestSummary — reused by VisitContributionPage
+ * (and any other screen rendering this same summary type) so the mapping has one home. */
+export const VISIT_TYPE_LABELS: Record<string, string> = {
   CAMPUS_TOUR: 'Tham quan cơ sở (Campus tour)', MEETING: 'Họp trao đổi', WORKSHOP: 'Hội thảo',
   SIGNING_CEREMONY: 'Lễ ký kết', EXCHANGE: 'Giao lưu', OTHER: 'Khác',
 };
 const MEDIA_CONSENT_LABELS: Record<string, string> = { AGREED: 'Đồng ý', DECLINED: 'Không đồng ý' };
-const WORKING_LANG_LABELS: Record<string, string> = { VI: 'Tiếng Việt', EN: 'Tiếng Anh' };
+/** Canonical workingLanguage labels for VisitProcessRequestSummary — same reuse rationale. */
+export const WORKING_LANG_LABELS: Record<string, string> = { VI: 'Tiếng Việt', EN: 'Tiếng Anh' };
 
 /** "YYYY-MM-DD[ T]HH:mm[:ss]" → "DD/MM/YYYY HH:mm" via pure string slicing (no Date / no TZ shift). */
 function fmtDateTime(value?: string | null): string {

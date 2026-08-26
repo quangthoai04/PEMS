@@ -37,9 +37,17 @@ interface Props {
   createBlocked?: boolean;
   /** Thông báo khi danh sách rỗng. */
   emptyText?: string;
+  /**
+   * Ẩn khối empty-state chung khi danh sách rỗng — dùng khi nơi gọi đã tự hiển thị 1 lý do rõ ràng
+   * (vd. khách không đồng ý truyền thông) nên empty-state generic sẽ bị trùng ý. Không ảnh hưởng khi
+   * danh sách có bài viết. Default false — không đổi hành vi các nơi gọi hiện tại.
+   */
+  hideEmptyState?: boolean;
+  /** Empty-state gọn hơn cho trang Đóng góp (padding/icon nhỏ hơn). Default false — giữ nguyên UI cũ. */
+  compact?: boolean;
 }
 
-export function VisitNewsPostList({ visitInstanceId, createBlocked = false, emptyText }: Props) {
+export function VisitNewsPostList({ visitInstanceId, createBlocked = false, emptyText, hideEmptyState = false, compact = false }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = encodeURIComponent(location.pathname + location.search);
@@ -116,10 +124,12 @@ export function VisitNewsPostList({ visitInstanceId, createBlocked = false, empt
       {loading ? (
         <div className="py-8 text-center text-slate-500 font-normal">Đang tải tin tức...</div>
       ) : items.length === 0 ? (
-        <div className="py-8 text-center">
-          <Newspaper className="w-10 h-10 mx-auto text-slate-300 mb-3" />
-          <p className="text-slate-600 font-normal">{emptyText ?? 'Chưa có bài tin tức nào cho chuyến thăm này.'}</p>
-        </div>
+        hideEmptyState ? null : (
+          <div className={compact ? 'py-6 text-center' : 'py-8 text-center'}>
+            <Newspaper className={compact ? 'w-8 h-8 mx-auto text-slate-300 mb-2' : 'w-10 h-10 mx-auto text-slate-300 mb-3'} />
+            <p className="text-slate-600 font-normal">{emptyText ?? 'Chưa có bài tin tức nào cho chuyến thăm này.'}</p>
+          </div>
+        )
       ) : (
         <div className="space-y-3">
           {items.map((n) => {
