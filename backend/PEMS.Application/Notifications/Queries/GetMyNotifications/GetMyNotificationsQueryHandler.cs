@@ -70,31 +70,44 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
-        var items = dbItems.Select(n => new NotificationDto
+        var items = dbItems.Select(n =>
         {
-            NotificationId = n.NotificationId,
-            Title = n.Title,
-            Message = n.Message,
-            NotificationType = n.NotificationType,
-            Category = n.Category,
-            Priority = n.Priority.ToString(),
-            IsActionRequired = n.IsActionRequired,
-            RelatedType = n.RelatedType,
-            RelatedId = n.RelatedId,
-            VisitRequestId = n.VisitRequestId,
-            VisitInstanceId = n.VisitInstanceId,
-            CampusId = n.CampusId,
-            ActionType = n.ActionType,
-            IsRead = n.IsRead,
-            ReadAt = n.ReadAt,
-            CreatedAt = n.CreatedAt,
-            TimeAgoText = ComputeTimeAgo(n.CreatedAt),
-            MetadataJson = n.MetadataJson,
-            TargetUrl = n.ActionUrl,
-            CanOpen = !string.IsNullOrEmpty(n.ActionUrl),
-            DisabledReason = string.IsNullOrEmpty(n.ActionUrl)
-                ? "Thông báo này không có đường dẫn chi tiết."
-                : null
+            // Approval-required visit notifications used to point at the Visit list. The shared
+            // frontend semantic resolver then interpreted OPEN_CAMPUS_REVIEW as a one-shot
+            // VISIT_REVIEW command and immediately opened the approve+assign-host modal. The desired
+            // notification behavior is safer and clearer: first open the submitted request detail;
+            // the reviewer can inspect the request and explicitly choose the approval action there.
+            // This compatibility rewrite also fixes notification rows already stored with the old URL.
+            var targetUrl = n.ActionType == NotificationActionTypes.OpenCampusReview && n.VisitRequestId.HasValue
+                ? $"/dashboard/visit/v2/{n.VisitRequestId.Value}"
+                : n.ActionUrl;
+
+            return new NotificationDto
+            {
+                NotificationId = n.NotificationId,
+                Title = n.Title,
+                Message = n.Message,
+                NotificationType = n.NotificationType,
+                Category = n.Category,
+                Priority = n.Priority.ToString(),
+                IsActionRequired = n.IsActionRequired,
+                RelatedType = n.RelatedType,
+                RelatedId = n.RelatedId,
+                VisitRequestId = n.VisitRequestId,
+                VisitInstanceId = n.VisitInstanceId,
+                CampusId = n.CampusId,
+                ActionType = n.ActionType,
+                IsRead = n.IsRead,
+                ReadAt = n.ReadAt,
+                CreatedAt = n.CreatedAt,
+                TimeAgoText = ComputeTimeAgo(n.CreatedAt),
+                MetadataJson = n.MetadataJson,
+                TargetUrl = targetUrl,
+                CanOpen = !string.IsNullOrEmpty(targetUrl),
+                DisabledReason = string.IsNullOrEmpty(targetUrl)
+                    ? "Thông báo này không có đường dẫn chi tiết."
+                    : null
+            };
         }).ToList();
 
         return PaginatedResult<NotificationDto>.Create(items, page, pageSize, totalItems);
