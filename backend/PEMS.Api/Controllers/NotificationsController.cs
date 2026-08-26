@@ -21,9 +21,31 @@ public class NotificationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetMyNotifications([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] bool? isRead = null)
+    public async Task<IActionResult> GetMyNotifications(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] bool? isRead = null,
+        [FromQuery] string? category = null,
+        [FromQuery] bool? isActionRequired = null)
     {
-        var result = await _mediator.Send(new GetMyNotificationsQuery(page, pageSize, isRead));
+        // `category` accepts one category (e.g. INVITATION) or a comma-separated group
+        // (e.g. VISIT,REMINDER). Filtering must happen in the database BEFORE Count/Skip/Take;
+        // otherwise the frontend receives a 10-row mixed page, removes non-matching rows locally,
+        // and can display only 1-5 items while pagination still says "10 / page" and "1 / 14".
+        var categories = string.IsNullOrWhiteSpace(category)
+            ? null
+            : category
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(c => c.ToUpperInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+        var result = await _mediator.Send(new GetMyNotificationsQuery(
+            page,
+            pageSize,
+            isRead,
+            categories,
+            isActionRequired));
         return Ok(result);
     }
 
