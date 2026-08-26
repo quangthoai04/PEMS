@@ -79,20 +79,15 @@ export function NotificationsPage() {
     else if (filter === 'actionRequired') params.isActionRequired = true;
     else if (filter !== 'all') {
       const categories = NOTIFICATION_FILTER_CATEGORY_MAP[filter];
-      if (categories?.length === 1) params.category = categories[0];
+      // IMPORTANT: grouped tabs (VISIT+REMINDER, LOGISTICS+HANDOVER, SYSTEM+ACCOUNT+GENERAL)
+      // must be filtered on the server before Count/Skip/Take. Sending the full group as a
+      // comma-separated query keeps `items`, `totalItems` and `totalPages` on the same dataset.
+      if (categories?.length) params.category = categories.join(',');
     }
 
     notificationsApi.getNotifications(params)
       .then((data) => {
         if (cancelled) return;
-        // Lớp filter client-side dự phòng cho nhãn multi-category (visit/system) hoặc nếu
-        // backend bỏ qua param category lạ — đảm bảo danh sách hiển thị luôn đúng.
-        if (filter !== 'all' && filter !== 'unread' && filter !== 'actionRequired') {
-          const categories = NOTIFICATION_FILTER_CATEGORY_MAP[filter];
-          if (categories) {
-            data.items = data.items.filter((it) => categories.includes(it.category));
-          }
-        }
         setResult(data);
       })
       .catch(() => setResult(null))
