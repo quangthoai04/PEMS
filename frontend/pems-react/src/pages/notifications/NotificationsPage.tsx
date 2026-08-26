@@ -71,29 +71,25 @@ export function NotificationsPage() {
     let cancelled = false;
     setLoading(true);
 
-    const params: { page: number; pageSize: number; isRead?: boolean; isActionRequired?: boolean; category?: string } = {
+    const params: { page: number; pageSize: number; isRead?: boolean; isActionRequired?: boolean; categories?: string[] } = {
       page: currentPage,
       pageSize,
     };
     if (filter === 'unread') params.isRead = false;
     else if (filter === 'actionRequired') params.isActionRequired = true;
     else if (filter !== 'all') {
-      const categories = NOTIFICATION_FILTER_CATEGORY_MAP[filter];
-      if (categories?.length === 1) params.category = categories[0];
+      params.categories = NOTIFICATION_FILTER_CATEGORY_MAP[filter];
     }
 
     notificationsApi.getNotifications(params)
       .then((data) => {
         if (cancelled) return;
-        // Lớp filter client-side dự phòng cho nhãn multi-category (visit/system) hoặc nếu
-        // backend bỏ qua param category lạ — đảm bảo danh sách hiển thị luôn đúng.
-        if (filter !== 'all' && filter !== 'unread' && filter !== 'actionRequired') {
-          const categories = NOTIFICATION_FILTER_CATEGORY_MAP[filter];
-          if (categories) {
-            data.items = data.items.filter((it) => categories.includes(it.category));
-          }
-        }
         setResult(data);
+        // Trang hiện tại có thể vượt quá totalPages mới (đổi pageSize/dữ liệu đổi giữa 2 lần fetch) —
+        // tự lùi về trang cuối hợp lệ thay vì render màn hình trắng.
+        if (data.totalPages > 0 && currentPage > data.totalPages) {
+          setCurrentPage(data.totalPages);
+        }
       })
       .catch(() => setResult(null))
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -249,6 +245,7 @@ export function NotificationsPage() {
           <div className="flex items-center gap-2 text-sm text-slate-500 font-normal">
             <span>{t('notifications:pagination.showing')}</span>
             <select
+              data-testid="notifications-page-size"
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
               className="px-2 py-1 bg-white border border-slate-200 rounded-lg outline-none cursor-pointer focus:border-[#004c91] transition-colors"
@@ -262,16 +259,18 @@ export function NotificationsPage() {
 
           <div className="flex items-center gap-2">
             <button
+              data-testid="notifications-page-prev"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="cursor-pointer p-1 text-slate-500 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <div className="text-sm font-normal text-slate-700">
+            <div className="text-sm font-normal text-slate-700" data-testid="notifications-page-indicator" data-current-page={currentPage}>
               {t('notifications:pagination.page')} {currentPage} {t('notifications:pagination.of')} {Math.max(1, result?.totalPages || 1)}
             </div>
             <button
+              data-testid="notifications-page-next"
               onClick={() => setCurrentPage((p) => p + 1)}
               disabled={currentPage >= (result?.totalPages || 1)}
               className="cursor-pointer p-1 text-slate-500 hover:bg-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

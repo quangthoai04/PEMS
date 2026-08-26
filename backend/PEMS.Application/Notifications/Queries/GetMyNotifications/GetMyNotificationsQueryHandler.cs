@@ -35,6 +35,16 @@ public class GetMyNotificationsQueryHandler : IRequestHandler<GetMyNotifications
             query = query.Where(n => n.IsRead == request.IsRead.Value);
         }
 
+        if (request.Categories is { Count: > 0 } categories)
+        {
+            query = query.Where(n => categories.Contains(n.Category));
+        }
+
+        if (request.IsActionRequired.HasValue)
+        {
+            query = query.Where(n => n.IsActionRequired == request.IsActionRequired.Value);
+        }
+
         var totalItems = await query.CountAsync(cancellationToken);
 
         var page = request.Page < 1 ? 1 : request.Page;

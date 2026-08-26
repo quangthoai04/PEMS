@@ -114,6 +114,91 @@ describe('VisitRequestFormV2 — copy / apply-to-all actually reach the screen',
     expect(campusSelects()[1]).toHaveValue('');
   }, 15000);
 
+  // Pins the OTHER real regression this file's header does not yet cover: a copy/apply-to-all
+  // done AFTER a failed submit must clear the errors on the fields it actually overwrote, without a
+  // second submit — `campusVisitFields.update()`/`.replace()` write the new values but, being a
+  // programmatic array write rather than a field `onChange`, nothing reruns the resolver for that
+  // card on its own (`useVisitRequestFormV2.ts`'s `copyContentIntoCampus`/`confirmApplyToAll` were
+  // missing the same `form.trigger(...)` call `removeCampusVisit` already has). The fields the copy
+  // deliberately does NOT touch (`campus`, schedule) must keep their own error, proving the fix
+  // re-validates the new values rather than blindly clearing every error on the card.
+  const hasFieldError = (el: Element) => !!el.closest('[data-field-error="true"]');
+
+  it('"Sao chép nội dung từ" after a failed submit clears the COPIED fields\' errors immediately, but leaves the campus selection (never copied) still in error', async () => {
+    render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
+
+    // Card 1 (copy source): only the CONTENT fields the copy is about to carry over.
+    fireEvent.change(delegationInputs()[0], { target: { value: 'Đoàn A' } });
+    fireEvent.change(screen.getAllByTestId('campus-purpose-input')[0], { target: { value: 'Trao đổi hợp tác' } });
+    fireEvent.change(screen.getAllByTestId('campus-workingcontent-input')[0], { target: { value: 'Tham quan phòng lab' } });
+
+    // Card 2 (copy target): left completely blank.
+    fireEvent.click(addCampusButton());
+
+    fireEvent.click(screen.getByTestId('v2-submit'));
+
+    await waitFor(() => {
+      expect(hasFieldError(delegationInputs()[1])).toBe(true);
+      expect(hasFieldError(screen.getAllByTestId('campus-purpose-input')[1])).toBe(true);
+      expect(hasFieldError(screen.getAllByTestId('campus-workingcontent-input')[1])).toBe(true);
+      expect(screen.getByTestId('v2-error-summary')).toBeInTheDocument();
+    });
+
+    const copySelect = document.querySelector('select[id^="copy-src-"]') as HTMLSelectElement;
+    expect(copySelect).toBeTruthy();
+    fireEvent.change(copySelect, { target: { value: '0' } });
+
+    // No second submit anywhere below this line.
+    await waitFor(() => {
+      expect(delegationInputs()[1]).toHaveValue('Đoàn A');
+      expect(hasFieldError(delegationInputs()[1])).toBe(false);
+      expect(hasFieldError(screen.getAllByTestId('campus-purpose-input')[1])).toBe(false);
+      expect(hasFieldError(screen.getAllByTestId('campus-workingcontent-input')[1])).toBe(false);
+    });
+
+    // The card's own identity is deliberately preserved, not copied — its error must survive.
+    expect(campusSelects()[1]).toHaveValue('');
+    expect(hasFieldError(campusSelects()[1])).toBe(true);
+    expect(screen.getByTestId('v2-error-summary')).toBeInTheDocument();
+  }, 15000);
+
+  it('"Áp dụng cho cơ sở khác" (confirmed) after a failed submit clears every target\'s copied-field errors immediately, without a second submit', async () => {
+    render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
+
+    fireEvent.change(delegationInputs()[0], { target: { value: 'Đoàn A' } });
+    fireEvent.change(screen.getAllByTestId('campus-purpose-input')[0], { target: { value: 'Trao đổi hợp tác' } });
+    fireEvent.change(screen.getAllByTestId('campus-workingcontent-input')[0], { target: { value: 'Tham quan phòng lab' } });
+
+    fireEvent.click(addCampusButton());
+    fireEvent.click(addCampusButton());
+
+    fireEvent.click(screen.getByTestId('v2-submit'));
+
+    await waitFor(() => {
+      expect(hasFieldError(delegationInputs()[1])).toBe(true);
+      expect(hasFieldError(delegationInputs()[2])).toBe(true);
+      expect(screen.getByTestId('v2-error-summary')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'visitRequestV2:card.applyToAll' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'visitRequestV2:applyAll.confirm' }));
+
+    await waitFor(() => {
+      const inputs = delegationInputs();
+      expect(inputs[1]).toHaveValue('Đoàn A');
+      expect(inputs[2]).toHaveValue('Đoàn A');
+      expect(hasFieldError(inputs[1])).toBe(false);
+      expect(hasFieldError(inputs[2])).toBe(false);
+      expect(hasFieldError(screen.getAllByTestId('campus-purpose-input')[1])).toBe(false);
+      expect(hasFieldError(screen.getAllByTestId('campus-purpose-input')[2])).toBe(false);
+    });
+
+    // Neither target's own campus identity was touched by the apply-to-all — still in error.
+    expect(hasFieldError(campusSelects()[1])).toBe(true);
+    expect(hasFieldError(campusSelects()[2])).toBe(true);
+    expect(screen.getByTestId('v2-error-summary')).toBeInTheDocument();
+  }, 15000);
+
   it('"Áp dụng cho cơ sở khác" (confirmed) reaches every other card on screen, not just form state', async () => {
     render(<VisitRequestFormV2 mode="public" onSuccess={vi.fn()} />);
 

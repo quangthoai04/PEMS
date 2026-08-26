@@ -1,26 +1,28 @@
 ﻿/**
- * REAL-STACK E2E — registrant identity on the authenticated create (plan §32 journeys A, B and E).
+ * REAL-STACK E2E — registrant identity on the authenticated create (plan §32 journeys A and E).
  *
  * real Chromium → real React (Vite) → real .NET API (Testing, flags ON, fail-closed E2E auth) → disposable
- * MySQL, with the OTP read from the Testing-only FileSink inbox. NO network mocking, so what is proved here
- * is the whole chain and not a stubbed approximation of it:
+ * MySQL. NO network mocking, so what is proved here is the whole chain and not a stubbed approximation:
  *
  *   Journey A — a Staff Leader registering THEMSELF: no OTP, the campus processing choice is offered, and
  *               the request is created directly by the session.
- *   Journey B — the same Leader registering SOMEBODY ELSE: the processing choice disappears, an OTP goes to
- *               the entered registrant's mailbox, and only a correct code creates the request — with NO host
- *               and every campus left for its Staff Leader.
  *   Journey E — the security case: a payload that keeps a SELF_HOST intent while naming another registrant
  *               is refused by the real host, and nothing is written.
+ *
+ * Journey B ("the same Leader registering somebody else, an OTP goes to their mailbox") was DELETED — the
+ * capability it tested no longer exists in the UI for an authenticated session. `VisitRequestFormV2.tsx`'s
+ * own comment states the current contract plainly: "Authenticated create IS self-registration, always
+ * (plan CanhIter3FixBug)... No 'Tôi là người đăng ký' button, no delegated-OTP path." The registrant email
+ * input Journey B retyped to become a guest's address does not render at all for an authenticated Staff/
+ * Staff Leader actor any more (only the public/unauthenticated branch still has one) — confirmed live and
+ * by source. This was a deliberate product change (commit c140d73e, "unify authenticated creation..."),
+ * not a regression, so the test was removed rather than adapted.
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { type SinkRecord, sinkAddressed } from './sinkRecord';
 import { fillSchedule, fillOperationalOrganization, authedPage, meUser } from './realstackHelpers';
 
 const API_BASE = process.env.PEMS_E2E_API_BASE ?? 'http://localhost:5299/api';
 const SECRET = process.env.PEMS_E2E_AUTH_SECRET ?? '';
-const SINK = process.env.PEMS_E2E_TEST_SINK_PATH;
 
 const LEADER_HN_EMAIL = 'staff.leader.hn@fpt.edu.vn';
 
@@ -58,26 +60,6 @@ async function fillReactSelect(scope: Locator, text: string) {
   await scope.page().keyboard.press('Enter');
 }
 
-/** Latest OTP the backend wrote to the sink for `email` (polled — the write is async post-initiate). */
-async function readOtpFromSink(email: string): Promise<string> {
-  if (!SINK) throw new Error('PEMS_E2E_TEST_SINK_PATH is not set — the real-stack harness must provide it.');
-  const target = email.trim().toLowerCase();
-  for (let attempt = 0; attempt < 40; attempt++) {
-    let lines: string[] = [];
-    try {
-      lines = readFileSync(SINK, 'utf8').split('\n').filter(Boolean);
-    } catch { /* file may not exist yet */ }
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const rec = JSON.parse(lines[i]) as SinkRecord;
-        if (rec.kind === 'VISIT_REQUEST_OTP' && sinkAddressed(rec, target) && rec.code) return rec.code;
-      } catch { /* skip malformed */ }
-    }
-    await new Promise(r => setTimeout(r, 250));
-  }
-  throw new Error(`No VISIT_REQUEST_OTP captured for ${email} in the sink within timeout.`);
-}
-
 async function fillCampus0(page: Page, delegation: string) {
   const start = new Date();
   start.setDate(start.getDate() + 12);
@@ -97,35 +79,17 @@ async function fillCampus0(page: Page, delegation: string) {
   await fillReactSelect(vRow.locator('td').nth(3), 'ĐH Đối Tác');
   await fillReactSelect(vRow.locator('td').nth(4), 'Việt Nam');
 
+  // Operational contact source (MEMBER vs EXTERNAL) starts genuinely undecided — `null`, never a
+  // default guess — so the free-text contact fields below do not exist until EXTERNAL is explicitly
+  // chosen (CampusVisitCard.tsx). The form is fresh here (no contact data yet), so the choice applies
+  // immediately with no confirmation step.
+  await page.getByTestId('campus-opcontact-source-external-0').click();
   await page.getByTestId('campus-opcontact-name').fill('Đầu Mối CS');
   await fillOperationalOrganization(page, 0, 'Đơn vị đầu mối');
   await page.getByTestId('campus-opcontact-jobtitle').fill('Trưởng phòng Hợp tác');
   await page.locator('input[name="campusVisits.0.operationalContact.phone"]').fill('+84912345678');
   await page.locator('input[name="campusVisits.0.operationalContact.email"]').fill('opcontact@example.com');
 }
-
-/**
- * Completes the registrant fields the autofill deliberately leaves blank.
- *
- * An internal account has no nationality on record (and may have no department), and the plan is explicit
- * that a missing profile value is left empty for the user to supply rather than padded with a role label.
- * So this is what the real Leader does next, not a workaround for a broken autofill.
- */
-async function completeRegistrantGaps(page: Page) {
-  await fillReactSelect(formField(page, 'Quốc tịch'), 'Việt Nam');
-  const jobTitle = page.getByTestId('v2-registrant-jobTitle');
-  if (!(await jobTitle.inputValue())) await jobTitle.fill('Trưởng phòng Hợp tác Quốc tế');
-  const org = page.getByPlaceholder('Nhập hoặc tìm tổ chức/đối tác...');
-  if (!(await org.inputValue())) await org.fill('Đại học FPT');
-  const phone = page.getByTestId('v2-registrant-phone');
-  if (!(await phone.inputValue())) await phone.fill('+84912345678');
-  const fullName = page.getByTestId('v2-registrant-fullName');
-  if (!(await fullName.inputValue())) await fullName.fill('Staff Leader HN');
-}
-
-// There is no request-level contact to fill any more. The guest-side contact is per campus, and
-// fillCampus0 above already supplies it (campusVisits.0.operationalContact.*) — which is also what
-// keeps the internal registrant from being their own contact, something the backend refuses outright.
 
 test.describe('Real-stack: registrant identity on the authenticated create', () => {
   test('Journey A — a Leader registering themself submits directly, with the campus processing choice', async ({ browser, request }) => {
@@ -136,13 +100,14 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
       await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible({ timeout: 25_000 });
       await dismissDraftPromptIfShown(page);
 
-      // "Tôi là người đăng ký" pulls the REAL profile from the API — no fixture, no mock.
-      await page.getByTestId('v2-registrant-use-me').click();
-      await expect(page.getByTestId('v2-registrant-email')).toHaveValue(LEADER_HN_EMAIL, { timeout: 15_000 });
-
-      // Identity matches the session → the no-OTP state, and the campus choice becomes available.
-      await expect(page.getByTestId('v2-registrant-self')).toBeVisible();
-      await completeRegistrantGaps(page);
+      // An authenticated internal actor (Staff/Staff Leader) gets the registrant panel auto-applied
+      // from their profile, fully READ-ONLY — no "Tôi là người đăng ký" button and no editable gaps to
+      // fill exist any more for this actor (VisitRequestFormV2.tsx's `isInternalActor` branch, shipped
+      // in c140d73e "unify authenticated creation..."). The real profile round-trip is still what
+      // proves this, just via the summary card instead of a click + hydrated input.
+      const registrantSummary = page.getByTestId('v2-registrant-readonly');
+      await expect(registrantSummary).toBeVisible({ timeout: 15_000 });
+      await expect(registrantSummary).toContainText(LEADER_HN_EMAIL);
       await fillCampus0(page, 'Đoàn Chính Chủ E2E');
       // Per-campus host PROPOSAL, not the old request-level SELF_HOST/ASSIGN_HOST processing choice:
       // nothing here names a Current Host, it only records what this campus intends.
@@ -163,57 +128,6 @@ test.describe('Real-stack: registrant identity on the authenticated create', () 
       // create response body is the real proof a request now exists.
       expect((await created.json()).requestCode).toMatch(/^VR/);
       await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 20_000 });
-    } finally {
-      await context.close();
-    }
-  });
-
-  test('Journey B — registering somebody else drops the processing choice and requires their OTP', async ({ browser, request }) => {
-    const leader = await meUser(request, 'campus_leader_hn');
-    const { context, page } = await authedPage(browser, 'campus_leader_hn', leader);
-    const guestEmail = `e2e_guest_${Date.now()}@example.com`;
-    try {
-      await page.goto('/visit/create-v2');
-      await expect(page.getByRole('heading', { name: /theo từng cơ sở/i })).toBeVisible({ timeout: 25_000 });
-      await dismissDraftPromptIfShown(page);
-
-      // Start as self-registration so the processing panel is genuinely on screen first…
-      await page.getByTestId('v2-registrant-use-me').click();
-      await expect(page.getByTestId('v2-registrant-email')).toHaveValue(LEADER_HN_EMAIL, { timeout: 15_000 });
-      await completeRegistrantGaps(page);
-      await fillCampus0(page, 'Đoàn Tạo Hộ E2E');
-      await expect(page.getByTestId('campus-host-selection-SELF-HN')).toBeVisible();
-
-      // …then retype the registrant as an external guest. The choice must vanish, not merely be ignored:
-      // proposing a host is an internal act, so the whole panel goes with the internal registrant.
-      await page.getByTestId('v2-registrant-email').fill(guestEmail);
-      await expect(page.getByTestId('v2-registrant-delegated')).toBeVisible();
-      await expect(page.getByTestId('campus-host-selection-SELF-HN')).toHaveCount(0);
-      await expect(page.getByTestId('campus-host-selection-SELECTED-HN')).toHaveCount(0);
-      await expect(page.getByTestId('campus-host-selection-WAIT_FOR_LATER-HN')).toHaveCount(0);
-
-      // Submit → OTP challenge addressed to the GUEST, not to the signed-in Leader.
-      await page.getByTestId('v2-submit').click();
-      const otp = await readOtpFromSink(guestEmail);
-      expect(otp).toMatch(/^\d{6}$/);
-
-      await page.getByPlaceholder('______').fill(otp);
-      const verifyResponse = page.waitForResponse(
-        r => /\/v2\/visit-requests\/verify$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
-        { timeout: 30_000 },
-      );
-      await page.getByRole('button', { name: 'Xác nhận' }).click();
-      const verified = await verifyResponse;
-      // The success screen never shows the request code itself (VisitRequestV2SuccessPanel) — the
-      // verify response body is the real proof a request now exists.
-      expect((await verified.json()).requestCode).toMatch(/^VR/);
-      await expect(page.getByTestId('v2-success-title')).toBeVisible({ timeout: 25_000 });
-
-      // Nothing was auto-hosted: the campus is still waiting for its Staff Leader to decide.
-      const detail = await page.request.get(`${API_BASE}/v2/visit-requests/1`, {
-        headers: { 'X-E2E-Profile': 'campus_leader_hn', 'X-E2E-Secret': SECRET },
-      });
-      expect([200, 403, 404]).toContain(detail.status()); // scope is the backend's call, not this test's
     } finally {
       await context.close();
     }

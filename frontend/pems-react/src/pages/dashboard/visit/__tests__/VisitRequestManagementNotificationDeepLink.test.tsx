@@ -244,12 +244,14 @@ beforeEach(() => {
 // ── Consuming the command exactly once ──────────────────────────────────────────────────────────
 
 describe('a notification deep link is consumed exactly once', () => {
-  it('opens the live approve flow for a campus still WAITING_REQUEST_APPROVAL, given an explicit VISIT_REVIEW intent', async () => {
+  it('opens the request detail (never the approve modal) for a campus still WAITING_REQUEST_APPROVAL, given an explicit VISIT_REVIEW intent', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
 
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-request', String(REQUEST_ID));
-    expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
     expect(resolveTargetMock).toHaveBeenCalledWith(
       expect.objectContaining({ visitRequestId: REQUEST_ID, visitInstanceId: INSTANCE_ID }),
     );
@@ -280,7 +282,10 @@ describe('a notification deep link is consumed exactly once', () => {
 
   it('resolves regardless of the current tab/filter — it is not a list filter', async () => {
     renderAt(`?tab=all&status=CLOSED&openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
   });
 
   it('keeps every persistent filter across the consume', async () => {
@@ -288,7 +293,10 @@ describe('a notification deep link is consumed exactly once', () => {
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`
       + '&tab=all&keyword=ha&page=2',
     );
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
 
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
     expect(params().get('tab')).toBe('all');
@@ -312,28 +320,32 @@ describe('a notification deep link is consumed exactly once', () => {
 // ── No path back to a replay ────────────────────────────────────────────────────────────────────
 
 describe('the target does not come back on its own', () => {
-  it('stays closed after the user closes it and then searches', async () => {
+  it('does not resolve or navigate again after the user later searches', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
-
-    await userEvent.click(screen.getByTestId('assign-close'));
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    navigateMock.mockClear();
 
     await searchFor('ha');
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
     expect(params().get('openVisitRequestId')).toBeNull();
   });
 
   it('never carries the command forward through a filter/search URL update', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW&tab=all`);
-    await screen.findByTestId('assign-host-modal');
-    await userEvent.click(screen.getByTestId('assign-close'));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    navigateMock.mockClear();
 
     await searchFor('ha');
     expect(params().get('openVisitRequestId')).toBeNull();
     expect(params().get('openVisitInstanceId')).toBeNull();
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 
@@ -354,29 +366,6 @@ describe('current backend state decides what opens, never the notification snaps
           campusName: CAMPUS_NAME, entryContext: 'HOST_PROCESS', requiresAction: true, priority: 2,
         }],
       }),
-    );
-
-    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
-      expect.anything(),
-    ));
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
-  });
-
-  it('reports safe detail if the caller races into the modal but the row was decided between the resolver call and the list re-fetch', async () => {
-    // The resolver said "still pending" (reviewDue) — but by the time the secondary list fetch lands,
-    // the row itself is no longer CAMPUS_REVIEW/approvable. Must fall through to safe detail, never
-    // open the modal on stale data.
-    resolveTargetMock.mockResolvedValue(baseTarget());
-    listMock.mockResolvedValue({
-      items: [baseRow({ primaryEntryContext: 'HOST_PROCESS', allowedActions: ['VIEW_DETAIL', 'OPEN_HOST_PROCESS'] })],
-      totalItems: 1,
-    });
-    render(
-      <MemoryRouter initialEntries={[`/dashboard/visit?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`]}>
-        <UrlProbe />
-        <VisitRequestManagement />
-      </MemoryRouter>,
     );
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
@@ -420,11 +409,13 @@ describe('current backend state decides what opens, never the notification snaps
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('never auto-runs a mutation — opening the approve flow still requires an explicit submit inside it', async () => {
+  it('never auto-runs a mutation — VISIT_REVIEW only ever navigates to the request detail, never submits anything', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`);
-    await screen.findByTestId('assign-host-modal');
-    // The mocked modal exposes no submit action reachable from the notification click itself — the
-    // resolver's job stops at OPEN, and any decision is a separate, explicit act inside the modal.
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
     expect(showSuccessToastMock).not.toHaveBeenCalled();
   });
 });
@@ -463,13 +454,18 @@ describe('a target the caller can no longer resolve', () => {
 // ── Multi-campus exact targeting ────────────────────────────────────────────────────────────────
 
 describe('multi-campus exact instance targeting', () => {
-  it('opens the named instance — the resolver, not a frontend search, is the source of exact scope', async () => {
+  it('resolves the named instance via the resolver, not a frontend search, before landing on request detail', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
     );
 
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
+    await waitFor(() => expect(resolveTargetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ visitRequestId: REQUEST_ID, visitInstanceId: INSTANCE_ID }),
+    ));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
   });
 });
 
@@ -488,7 +484,7 @@ describe('a visit list opened without the command', () => {
 // ── BUG 1 (plan §3/§56 DL-01): the SAME notification clicked a second time must open again ─────────
 
 describe('the exact same notification clicked a second time still opens (second-click regression)', () => {
-  it('re-opens the approve flow when the identical command reappears on an already-consumed instance', async () => {
+  it('re-navigates to the request detail when the identical command reappears on an already-consumed instance', async () => {
     resolveTargetMock.mockResolvedValue(baseTarget());
     listMock.mockResolvedValue({ items: [baseRow()], totalItems: 1 });
     render(
@@ -499,25 +495,22 @@ describe('the exact same notification clicked a second time still opens (second-
       </MemoryRouter>,
     );
 
-    // Nothing open yet — the page was not entered via a notification link.
+    // Nothing resolved yet — the page was not entered via a notification link.
     await waitFor(() => expect(listMock).toHaveBeenCalled());
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
+    expect(navigateMock).not.toHaveBeenCalled();
 
-    // CLICK 1 (simulated): the command lands on the URL, the modal opens, the command is stripped.
+    // CLICK 1 (simulated): the command lands on the URL, the page navigates to the detail, the
+    // command is stripped.
     await userEvent.click(screen.getByTestId('replay-command'));
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
-
-    // User closes it.
-    await userEvent.click(screen.getByTestId('assign-close'));
-    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
 
     // CLICK 2 (simulated): the exact SAME requestId/instanceId reappears — a real second click on
     // the identical Bell notification. Before the fix, `consumedNotificationCommandRef` was still
     // holding this same commandKey from CLICK 1 and this second, perfectly ordinary user action was
     // silently dropped as if it were a StrictMode duplicate.
     await userEvent.click(screen.getByTestId('replay-command'));
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(params().get('openVisitRequestId')).toBeNull());
   });
 });
@@ -534,7 +527,7 @@ describe('the exact same notification clicked a second time still opens (second-
 // state mutation (and again after the secondary list fetch the VISIT_REVIEW escalation makes).
 
 describe('rapid-click race: a slower earlier notification click must never overwrite a faster later one', () => {
-  it('B (fast) stays open after A (slow) finally resolves', async () => {
+  it('B (fast) navigates and A (slow) is dropped once it finally resolves', async () => {
     const OTHER_REQUEST_ID = 4002;
     const OTHER_INSTANCE_ID = 5002;
     let resolveSlowCall: (value: NotificationVisitTarget) => void = () => {};
@@ -552,15 +545,6 @@ describe('rapid-click race: a slower earlier notification click must never overw
         }],
       }));
     });
-    listMock.mockImplementation((query: Record<string, unknown> | undefined) => {
-      if (query?.visitRequestId === OTHER_REQUEST_ID) {
-        return Promise.resolve({
-          items: [baseRow({ visitRequestId: OTHER_REQUEST_ID, visitInstanceId: OTHER_INSTANCE_ID })],
-          totalItems: 1,
-        });
-      }
-      return Promise.resolve({ items: [baseRow()], totalItems: 1 });
-    });
 
     render(
       <MemoryRouter initialEntries={['/dashboard/visit']}>
@@ -576,13 +560,16 @@ describe('rapid-click race: a slower earlier notification click must never overw
     await waitFor(() => expect(resolveTargetMock).toHaveBeenCalledTimes(1));
 
     await userEvent.click(screen.getByTestId('trigger-b')); // fires resolver call #2 (fast, resolves immediately)
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-request', String(OTHER_REQUEST_ID));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${OTHER_REQUEST_ID}`),
+      expect.anything(),
+    ));
 
-    // A's delayed response finally lands — it must NOT clobber B's already-open modal.
+    // A's delayed response finally lands — the stale-response guard must drop it, never navigating again.
+    navigateMock.mockClear();
     resolveSlowCall(baseTarget());
-    await waitFor(() => expect(screen.getByTestId('assign-host-modal'))
-      .toHaveAttribute('data-request', String(OTHER_REQUEST_ID)));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });
 
@@ -615,12 +602,15 @@ describe('notificationIntent gates whether the notification may escalate to the 
     expect(params().get('openVisitInstanceId')).toBeNull();
   });
 
-  it('VISIT_REVIEW still opens the approve flow for a genuinely pending campus (unchanged from before)', async () => {
+  it('VISIT_REVIEW now opens the request detail instead of the approve modal, for a genuinely pending campus', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
     );
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-request', String(REQUEST_ID));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`),
+      expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
   // T-08 (plan §13/§21): a malformed/unrecognized intent parses to `null` (the same URL-parsing guard
@@ -979,13 +969,15 @@ describe('canonical multi-relation collision matrix: same request, same user, di
     expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
-  it('C. VISIT_REQUEST_WAITING_APPROVAL -> REVIEW (this IS the reviewer and it is genuinely pending)', async () => {
+  it('C. VISIT_REQUEST_WAITING_APPROVAL -> request detail (never the approve modal), even though this IS the reviewer and it is genuinely pending', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
       baseTarget({ participantId: 8899, relationContexts: [...multiRelationContexts] }),
     );
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`), expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 
   it('D. HOST_ASSIGNED -> HOST PROCESS (still current Host of this instance)', async () => {
@@ -1029,7 +1021,7 @@ describe('canonical multi-relation collision matrix: same request, same user, di
 //    elsewhere -> an HN-specific event must resolve to HN, never a different campus/relation ────────
 
 describe('MC-03: multi-campus exact resolution is unaffected by an unrelated relation on another campus', () => {
-  it('a review notification naming the HN instance opens HN, never a DN-scoped relation the resolver also returned', async () => {
+  it('a review notification naming the HN instance resolves against HN, never a DN-scoped relation the resolver also returned', async () => {
     renderAt(
       `?openVisitRequestId=${REQUEST_ID}&openVisitInstanceId=${INSTANCE_ID}&notificationIntent=VISIT_REVIEW`,
       baseTarget({
@@ -1039,9 +1031,14 @@ describe('MC-03: multi-campus exact resolution is unaffected by an unrelated rel
       }),
     );
 
-    const modal = await screen.findByTestId('assign-host-modal');
-    expect(modal).toHaveAttribute('data-instance', String(INSTANCE_ID));
+    await waitFor(() => expect(resolveTargetMock).toHaveBeenCalledWith(
+      expect.objectContaining({ visitRequestId: REQUEST_ID, visitInstanceId: INSTANCE_ID }),
+    ));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`), expect.anything(),
+    ));
     expect(navigateMock).not.toHaveBeenCalledWith(expect.stringContaining('/invitations/'), expect.anything());
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 });
 
@@ -1071,7 +1068,10 @@ describe('a campus-specific notification with no exact instance id never guesses
 
   it('still resolves unambiguously when the resolver names the exact instance', async () => {
     renderAt(`?openVisitRequestId=${REQUEST_ID}&notificationIntent=VISIT_REVIEW`);
-    await screen.findByTestId('assign-host-modal');
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
+      expect.stringContaining(`/dashboard/visit/v2/${REQUEST_ID}`), expect.anything(),
+    ));
+    expect(screen.queryByTestId('assign-host-modal')).toBeNull();
   });
 });
 

@@ -242,6 +242,27 @@ const seedDepartmentHeads = (profiles) => {
   console.log(`[e2e] seated ${heads.length} department head(s)`);
 };
 
+/**
+ * Give every INTERNAL E2E identity a nationality on their profile.
+ *
+ * The canonical seed leaves `users.nationality` NULL for every non-VISITOR account (nationality used
+ * to be editable only from a Visitor's own registration form). `VisitRequestFormV2`'s profile-completeness
+ * gate (`isProfileIncomplete`/`missingProfileFields`) now requires it for EVERY authenticated registrant,
+ * INTERNAL accounts included, and blocks the create-v2 form entirely (`v2-profile-incomplete`) until it is
+ * set on the profile — Profile.tsx's own nationality field was opened to every role for exactly this reason.
+ * A real account reaches that screen with a complete profile already; the disposable fixture never does,
+ * so any journey that self-registers via `v2-registrant-use-me` hangs on a screen these specs never expect.
+ * `storeLang="en"` is the profile module's own stored-value convention (see Profile.tsx/CountrySelect.tsx).
+ */
+const seedProfileNationalities = (profiles) => {
+  const internal = profiles.filter(p => p.roleCode !== 'VISITOR');
+  const ids = internal.map(p => p.userId).join(',');
+  if (!ids) return;
+  const r = mysql(`UPDATE users SET nationality = 'Vietnam' WHERE user_id IN (${ids}) AND nationality IS NULL`, DB);
+  if (r.status !== 0) throw new Error(`profile nationality seed failed: ${r.stderr}`);
+  console.log(`[e2e] seeded nationality for ${internal.length} internal profile(s)`);
+};
+
 const waitHealthy = async (url, timeoutMs) => {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -287,7 +308,9 @@ try {
   assertTargetPopulated();
 
   console.log('[e2e] write server-side auth profiles from actual seeded IDs');
-  seedDepartmentHeads(writeAuthProfiles());
+  const authProfiles = writeAuthProfiles();
+  seedDepartmentHeads(authProfiles);
+  seedProfileNationalities(authProfiles);
 
   console.log('[e2e] publish backend');
   // Build intermediates to a temp BaseOutputPath so a running dev server holding the repo bin/ lock never
