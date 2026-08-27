@@ -35,7 +35,7 @@ import {
   notifyCapabilityDisabled,
   dismissCapabilityToasts,
 } from '../../../shared/features/useVisitEntryCta';
-import { resolveVisitRowRoutes } from '../../../features/visit-request/utils/visitVersionRouting';
+import { resolveVisitRowRoutes, v2CampusDetailPath } from '../../../features/visit-request/utils/visitVersionRouting';
 import { VISIT_COMMAND_INTENTS, type NotificationNavigationIntent } from '../../../features/notifications/utils/resolveNotificationDestination';
 import { visitDraftNamespace } from '../../../features/visit-request/utils/visitRequestV2DraftStorage';
 import { AssignHostModal } from '../../../components/modals/AssignHostModal';
@@ -2352,9 +2352,14 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
   };
 
   // ── Multi-campus accordion (Phương án A): per-campus progress + actions ──
-  const openCampusRequestForm = (row: Row, _item?: CampusProgressItem) => {
+  const openCampusRequestForm = (row: Row, item?: CampusProgressItem) => {
     // Pure V2: the flat modal cannot represent per-campus content — always open the scoped v2 detail.
-    navTo(resolveVisitRowRoutes(row.visitRequestId).detailRoute);
+    // Opened FROM a campus row, it opens scoped to that campus: the reader asked about TP.HCM, so
+    // section ② is TP.HCM and not the whole request. Without an instance (a request-level entry) the
+    // plain detail route still shows every campus.
+    navTo(item?.visitInstanceId != null
+      ? v2CampusDetailPath(row.visitRequestId, item.visitInstanceId)
+      : resolveVisitRowRoutes(row.visitRequestId).detailRoute);
   };
 
   const openCampusDetail = (row: Row, item: CampusProgressItem) => {

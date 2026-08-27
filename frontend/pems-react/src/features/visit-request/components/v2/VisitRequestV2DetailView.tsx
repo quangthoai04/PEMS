@@ -28,6 +28,18 @@ import { VisitOutcomeSummary } from './shared/VisitOutcomeSummary';
 
 interface Props {
   visitRequestId: number;
+  /**
+   * Read ONE campus of the request (`?campus={visitInstanceId}`), set when the reader arrived from
+   * that campus's row in the list. Section ② then carries that campus alone — the question was
+   * about TP.HCM, so Hà Nội is not part of the answer.
+   *
+   * Only section ② narrows. The request's identity, its registrant, its contact and its history
+   * belong to the whole request and are shown in full either way.
+   *
+   * An id the payload does not contain (no longer authorized, a stale link) is IGNORED and the full
+   * request is shown: an empty section ② would read as "this request has no campuses".
+   */
+  focusInstanceId?: number | null;
 }
 
 /**
@@ -41,7 +53,7 @@ interface Props {
  * numbers, the shared person table), so moving between reading and processing a request does not
  * feel like moving between two products.
  */
-export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
+export default function VisitRequestV2DetailView({ visitRequestId, focusInstanceId = null }: Props) {
   const { t } = useTranslation(['visitRequestV2']);
   // Nothing on this screen is decided from the signed-in role any more. Whether a change is applied
   // straight away is a per-campus fact — requester side AND that campus's Host — and the backend says
@@ -71,11 +83,12 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
    * a second campus silently shut the first — on a multi-campus request the reader had to keep
    * re-opening the card they had just been reading in order to compare it with another.
    *
-   * `undefined` still means "the reader has not chosen yet", so the default (first campus open) can
-   * be resolved during RENDER rather than written in by an effect — the first paint already shows
-   * campus 1 open instead of flashing every card shut. An empty set is a real choice ("I closed them
-   * all") and is therefore distinct from `undefined`. Because this is state rather than something
-   * recomputed from `data`, a background reload cannot pull the reader off what they were reading.
+   * `undefined` means "the reader has not chosen yet" and resolves to every card CLOSED: a
+   * multi-campus request opens as a list of campus headers, so the reader picks the campus they came
+   * for instead of scrolling past a campus that happened to be first. It stays distinct from an
+   * empty set (the same picture, arrived at deliberately) because only `undefined` may be replaced
+   * by a default later. Because this is state rather than something recomputed from `data`, a
+   * background reload cannot pull the reader off what they were reading.
    */
   const [campusChoice, setCampusChoice] = useState<Set<number> | undefined>(undefined);
 
@@ -132,22 +145,35 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, navigate, visitRequestId]);
 
-  // Which campuses are open right now: the reader's own set if they have touched anything,
-  // otherwise the default of the FIRST campus alone — and only on a request that HAS more than one,
-  // since a lone card is never collapsible. Computed, not stored, so it is right on the first paint.
-  const multipleCampuses = (data?.campusVisits.length ?? 0) > 1;
+  /**
+   * The campuses section ② is about: the one the reader asked for, or all of them.
+   *
+   * Falls back to the full list when the focused id is not in the payload — the reader's authorized
+   * scope decides what exists here, and a URL cannot conjure a campus into it or take the request
+   * away when it names one that is gone.
+   */
+  const campusesInView = useMemo(() => {
+    const all = data?.campusVisits ?? [];
+    if (focusInstanceId == null) return all;
+    const focused = all.filter(c => c.visitInstanceId === focusInstanceId);
+    return focused.length > 0 ? focused : all;
+  }, [data, focusInstanceId]);
+
+  // Which campuses are open right now: the reader's own set if they have touched anything, otherwise
+  // none — a multi-campus request opens collapsed. `multipleCampuses` counts what section ② actually
+  // shows, so a request read one campus at a time renders that campus as a plain open card with no
+  // chevron, exactly like a genuinely single-campus request. Computed, not stored, so it is right on
+  // the first paint.
+  const multipleCampuses = campusesInView.length > 1;
   const openCampusIds = useMemo<Set<number>>(() => {
-    if (campusChoice !== undefined) {
-      // A campus that has vanished from the authorized payload is pruned rather than kept in the
-      // set, so a reload that removes one cannot leave a stale id behind for a future campus id to
-      // collide with.
-      if (!data) return campusChoice;
-      const visible = new Set(data.campusVisits.map(c => c.visitInstanceId));
-      const pruned = new Set([...campusChoice].filter(id => visible.has(id)));
-      return pruned.size === campusChoice.size ? campusChoice : pruned;
-    }
-    return multipleCampuses ? new Set([data!.campusVisits[0].visitInstanceId]) : new Set<number>();
-  }, [campusChoice, data, multipleCampuses]);
+    if (campusChoice === undefined) return new Set<number>();
+    // A campus that has vanished from the authorized payload (or fell outside the focused scope) is
+    // pruned rather than kept in the set, so a reload that removes one cannot leave a stale id
+    // behind for a future campus id to collide with.
+    const visible = new Set(campusesInView.map(c => c.visitInstanceId));
+    const pruned = new Set([...campusChoice].filter(id => visible.has(id)));
+    return pruned.size === campusChoice.size ? campusChoice : pruned;
+  }, [campusChoice, campusesInView]);
 
   /** Flip ONE campus, leaving every other card exactly as the reader left it. */
   const toggleCampus = useCallback((visitInstanceId: number) => {
@@ -176,13 +202,13 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
     const match = /^contact-(\d+)$/.exec(anchor);
     const targetInstanceId = match ? Number(match[1]) : null;
     if (targetInstanceId != null && multipleCampuses
-        && data.campusVisits.some(c => c.visitInstanceId === targetInstanceId)
+        && campusesInView.some(c => c.visitInstanceId === targetInstanceId)
         && !openCampusIds.has(targetInstanceId)) {
       setCampusChoice(prev => new Set(prev ?? openCampusIds).add(targetInstanceId));
       return; // the element appears on the next render; this effect re-runs and scrolls then
     }
     document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [data, location.hash, multipleCampuses, openCampusIds]);
+  }, [data, location.hash, multipleCampuses, openCampusIds, campusesInView]);
 
   if (loading) {
     return (
@@ -343,25 +369,27 @@ export default function VisitRequestV2DetailView({ visitRequestId }: Props) {
         />
       </VisitSectionCard>
 
-      {/* ── ② Per-campus cards: ONLY the campuses the backend returned for this caller ──
+      {/* ── ② Per-campus cards: ONLY the campuses the backend returned for this caller, narrowed
+          further to the ONE campus the reader asked for when they came from its row ──
           Each card carries its OWN operational contact in full — name, organisation, job title,
           email, phone, confirmation state and who/when decided — which is what the removed
-          request-level roll-up was counting. */}
+          request-level roll-up was counting. The count in the header names what this section shows,
+          not what the request holds; the request's own total stays in the overview badge above. */}
       <VisitSectionCard
         step={2}
         title={t('visitRequestV2:sections.campuses')}
         headerExtra={
           <span className="rounded-md bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
-            {t('visitRequestV2:detail.campusTotal', { count: data.campusVisits.length })}
+            {t('visitRequestV2:detail.campusTotal', { count: campusesInView.length })}
           </span>
         }
         data-testid="section-campuses"
       >
-        {data.campusVisits.length === 0 ? (
+        {campusesInView.length === 0 ? (
           <p className="text-sm italic text-slate-400">{t('visitRequestV2:detail.noCampusInScope')}</p>
         ) : (
           <div className="space-y-4">
-            {data.campusVisits.map(cv => {
+            {campusesInView.map(cv => {
               // Only a request with more than one campus gets the accordion. One campus has nothing
               // to collapse against, and putting its single card behind a chevron would add a click
               // to reach the only thing on the page.
