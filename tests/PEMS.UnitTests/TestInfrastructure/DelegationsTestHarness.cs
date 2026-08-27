@@ -501,6 +501,8 @@ public sealed class DelegationsHandlerMocks
             .Returns((ulong id) => $"https://pems.test/dashboard/visit?taskId={id}&itemType=REQUEST");
         Tokens.Setup(t => t.BuildHostVisitProcessUrl(It.IsAny<ulong>()))
             .Returns((ulong id) => $"https://pems.test/visit/process/{id}");
+        Tokens.Setup(t => t.BuildVisitContributionUrl(It.IsAny<ulong>()))
+            .Returns((ulong id) => $"https://pems.test/visit/contribution/{id}");
 
         Normalizer.Setup(n => n.NormalizeHtmlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string html, CancellationToken _) => html);

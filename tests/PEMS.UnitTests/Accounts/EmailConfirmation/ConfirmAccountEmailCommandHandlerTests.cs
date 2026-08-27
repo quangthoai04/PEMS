@@ -29,6 +29,7 @@ public class ConfirmAccountEmailCommandHandlerTests
         public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId) => "http://x";
         public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "http://x";
         public string BuildHostVisitProcessUrl(ulong visitInstanceId) => "http://x";
+        public string BuildVisitContributionUrl(ulong visitInstanceId) => "http://x";
     }
 
     private const ulong UserId = 700;

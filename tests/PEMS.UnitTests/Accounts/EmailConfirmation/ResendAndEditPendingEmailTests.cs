@@ -753,6 +753,7 @@ public class PendingEmailEditTokenLifecycleTests
         public string BuildDepartmentStaffLogisticsTaskUrl(ulong logisticsItemId) => "http://x/logistics-staff";
         public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "http://x/logistics-leader";
         public string BuildHostVisitProcessUrl(ulong visitInstanceId) => "http://x/visit";
+        public string BuildVisitContributionUrl(ulong visitInstanceId) => "http://x/contribution";
     }
 
     /// <summary>

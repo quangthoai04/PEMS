@@ -6,6 +6,7 @@ using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Enums;
+using PEMS.Shared;
 using PEMS.UnitTests.TestInfrastructure;
 
 namespace PEMS.UnitTests.Delegations.Reminders;
@@ -49,6 +50,8 @@ public class VisitReminderDispatchServiceTests
         var mocks = new DelegationsHandlerMocks();
         mocks.Tokens.Setup(t => t.BuildHostVisitProcessUrl(It.IsAny<ulong>()))
             .Returns((ulong inst) => $"https://pems.test/dashboard/visit/process/{inst}");
+        mocks.Tokens.Setup(t => t.BuildVisitContributionUrl(It.IsAny<ulong>()))
+            .Returns((ulong inst) => $"https://pems.test/dashboard/visit/contribution/{inst}");
 
         var dispatcher = mocks.DispatcherFor(db);
         var service = new VisitReminderDispatchService(
@@ -434,5 +437,175 @@ public class VisitReminderDispatchServiceTests
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.DispatchOneAsync(orphan, default));
         Assert.Empty(dispatcher.Requests);
+    }
+
+    // ── Layer 2 eligibility: the instance must still be BEFORE_VISIT when the reminder actually
+    // fires, not merely when it was configured. A row Layer 1 (VisitReminderLifecycleSync, called from
+    // the lifecycle commands) did not catch must still refuse to send here. ──
+
+    [Theory]
+    [InlineData(VisitInstanceStatus.Cancelled)]
+    [InlineData(VisitInstanceStatus.Rejected)]
+    [InlineData(VisitInstanceStatus.DuringVisit)]
+    [InlineData(VisitInstanceStatus.AfterVisit)]
+    [InlineData(VisitInstanceStatus.Closed)]
+    [InlineData(VisitInstanceStatus.Assigned)]
+    [InlineData(VisitInstanceStatus.WaitingRequestApproval)]
+    public async Task A_reminder_due_after_the_instance_left_BEFORE_VISIT_is_cancelled_not_sent(string status)
+    {
+        var (db, service, _, dispatcher) = CreateSut();
+        db.VisitRequestCampuses.Single(c => c.VisitInstanceId == DelegationsTestData.VisitInstanceId).Status = status;
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS), default);
+
+        Assert.True(outcome.Cancelled);
+        Assert.Equal(ReminderCancelReasons.VisitNoLongerEligible, outcome.CancelReasonCode);
+        Assert.Empty(dispatcher.Requests);
+    }
+
+    [Fact]
+    public async Task A_reminder_for_a_BEFORE_VISIT_instance_is_sent_normally()
+    {
+        var (_, service, _, dispatcher) = CreateSut(); // SeedBase defaults to BEFORE_VISIT
+
+        var outcome = await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.HOST), default);
+
+        Assert.True(outcome.Succeeded);
+        Assert.False(outcome.Cancelled);
+        Assert.Single(dispatcher.Requests);
+    }
+
+    // ── IN_APP identity is the UserId alone; it must never be filtered or deduped by email ──
+
+    [Fact]
+    public async Task IN_APP_still_notifies_a_host_with_no_usable_email_address()
+    {
+        var (db, service, mocks, _) = CreateSut();
+        db.Users.Single(u => u.UserId == DelegationsTestData.HostUserId).Email = "   ";
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.HOST, VisitReminderChannel.IN_APP), default);
+
+        Assert.True(outcome.Succeeded);
+        Assert.False(outcome.Cancelled);
+        mocks.Notifications.Verify(
+            n => n.CreateManyAsync(
+                It.Is<IReadOnlyList<CreateNotificationRequest>>(list =>
+                    list.Count == 1 && list.Single().RecipientUserId == DelegationsTestData.HostUserId),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task IN_APP_still_notifies_a_participant_with_no_usable_email_address()
+    {
+        var (db, service, mocks, _) = CreateSut();
+        db.Users.Single(u => u.UserId == ParticipantAId).Email = "   ";
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.PARTICIPANTS, VisitReminderChannel.IN_APP), default);
+
+        Assert.True(outcome.Succeeded);
+        mocks.Notifications.Verify(
+            n => n.CreateManyAsync(
+                It.Is<IReadOnlyList<CreateNotificationRequest>>(list =>
+                    list.Any(r => r.RecipientUserId == ParticipantAId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task IN_APP_notifies_two_different_accounts_sharing_one_mailbox_separately()
+    {
+        var (db, service, mocks, _) = CreateSut();
+        // Two accounts, one real mailbox — EMAIL would dedupe this to one message (see
+        // One_mailbox_is_never_reminded_twice_for_the_same_reminder); IN_APP's identity is the
+        // UserId, so it must not.
+        var shared = db.Users.Single(u => u.UserId == ParticipantBId);
+        shared.Email = $"user{ParticipantAId}@test.local";
+        db.SaveChanges();
+
+        var outcome = await service.DispatchOneAsync(
+            Reminder(VisitReminderTargetGroup.PARTICIPANTS, VisitReminderChannel.IN_APP), default);
+
+        Assert.True(outcome.Succeeded);
+        mocks.Notifications.Verify(
+            n => n.CreateManyAsync(
+                It.Is<IReadOnlyList<CreateNotificationRequest>>(list =>
+                    list.Count == 2
+                    && list.Any(r => r.RecipientUserId == ParticipantAId)
+                    && list.Any(r => r.RecipientUserId == ParticipantBId)),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // ── Email routing: a participant's email must never carry the Host-only process URL ──
+
+    [Fact]
+    public async Task Host_email_links_to_the_Host_Process_screen()
+    {
+        var (_, service, _, dispatcher) = CreateSut();
+
+        await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.HOST), default);
+
+        var only = Assert.Single(dispatcher.Requests);
+        Assert.Contains($"/dashboard/visit/process/{DelegationsTestData.VisitInstanceId}",
+            only.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
+    }
+
+    [Fact]
+    public async Task Participant_email_links_to_the_contribution_screen_never_the_Host_Process_screen()
+    {
+        var (_, service, _, dispatcher) = CreateSut();
+
+        await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.PARTICIPANTS), default);
+
+        Assert.Equal(2, dispatcher.Requests.Count);
+        Assert.All(dispatcher.Requests, r =>
+        {
+            var actionBlock = r.TrustedBlocks![EmailTrustedBlocks.ActionBlock];
+            Assert.Contains($"/dashboard/visit/contribution/{DelegationsTestData.VisitInstanceId}", actionBlock);
+            Assert.DoesNotContain("/dashboard/visit/process/", actionBlock);
+        });
+    }
+
+    [Fact]
+    public async Task A_host_who_is_also_a_participant_gets_the_Host_Process_link_not_contribution()
+    {
+        var (db, service, _, dispatcher) = CreateSut();
+        db.VisitParticipants.Add(DelegationsTestData.CreateParticipant(
+            804, DelegationsTestData.HostUserId, ParticipantRoles.IcSupport, ParticipantStatuses.Accepted));
+        db.SaveChanges();
+
+        await service.DispatchOneAsync(Reminder(VisitReminderTargetGroup.HOST_AND_PARTICIPANTS), default);
+
+        var hostAddress = $"user{DelegationsTestData.HostUserId}@test.local";
+        var hostRequest = dispatcher.Requests.Single(r => r.To.Email == hostAddress);
+        Assert.Contains($"/dashboard/visit/process/{DelegationsTestData.VisitInstanceId}",
+            hostRequest.TrustedBlocks![EmailTrustedBlocks.ActionBlock]);
+    }
+
+    // ── New reason codes read the same way the existing one does ────────────
+
+    [Fact]
+    public void The_visit_no_longer_eligible_reason_is_recorded_as_a_code_followed_by_a_readable_sentence()
+    {
+        var recorded = ReminderCancelReasons.Record(ReminderCancelReasons.VisitNoLongerEligible);
+
+        Assert.StartsWith("VISIT_NO_LONGER_ELIGIBLE:", recorded);
+        Assert.Contains("không còn ở giai đoạn chuẩn bị", recorded);
+    }
+
+    [Fact]
+    public void The_schedule_no_longer_valid_reason_is_recorded_as_a_code_followed_by_a_readable_sentence()
+    {
+        var recorded = ReminderCancelReasons.Record(ReminderCancelReasons.ScheduleNoLongerValid);
+
+        Assert.StartsWith("SCHEDULE_NO_LONGER_VALID:", recorded);
+        Assert.Contains("thời gian chuyến thăm đã đổi", recorded);
     }
 }

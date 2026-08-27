@@ -51,4 +51,7 @@ public sealed class EmailActionTokenService : IEmailActionTokenService
 
     public string BuildHostVisitProcessUrl(ulong visitInstanceId)
         => $"{_frontendBaseUrl}/dashboard/visit/process/{visitInstanceId}";
+
+    public string BuildVisitContributionUrl(ulong visitInstanceId)
+        => $"{_frontendBaseUrl}/dashboard/visit/contribution/{visitInstanceId}";
 }

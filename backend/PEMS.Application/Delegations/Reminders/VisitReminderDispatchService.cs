@@ -11,6 +11,7 @@ using PEMS.Application.Notifications.Common;
 using PEMS.Domain.Constants;
 using PEMS.Domain.Entities.Delegations;
 using PEMS.Domain.Enums;
+using PEMS.Shared;
 
 namespace PEMS.Application.Delegations.Reminders;
 
@@ -48,10 +49,31 @@ public static class ReminderCancelReasons
     public const string NoEligibleRecipientsMessageEn =
         "The reminder was cancelled because no eligible recipients remained.";
 
+    /// <summary>
+    /// The instance is no longer BEFORE_VISIT at the moment this reminder came due — cancelled,
+    /// rejected, or already advanced to during/after/closed. A "chuyến thăm sắp diễn ra" reminder has
+    /// nothing left to say once that is true, however it got that way.
+    /// </summary>
+    public const string VisitNoLongerEligible = "VISIT_NO_LONGER_ELIGIBLE";
+
+    public const string VisitNoLongerEligibleMessageVi =
+        "Đã hủy nhắc lịch vì chuyến thăm không còn ở giai đoạn chuẩn bị.";
+
+    /// <summary>
+    /// The instance's planned start moved after this reminder was scheduled, and the offset against
+    /// the NEW start has already passed. See <see cref="VisitReminderLifecycleSync"/>.
+    /// </summary>
+    public const string ScheduleNoLongerValid = "SCHEDULE_NO_LONGER_VALID";
+
+    public const string ScheduleNoLongerValidMessageVi =
+        "Đã hủy nhắc lịch vì thời gian chuyến thăm đã đổi và mốc nhắc mới đã qua.";
+
     /// <summary>What the row stores: <c>CODE: message</c>, so an operator and a parser both read it.</summary>
     public static string Record(string code) => code switch
     {
         NoEligibleRecipients => $"{NoEligibleRecipients}: {NoEligibleRecipientsMessageVi}",
+        VisitNoLongerEligible => $"{VisitNoLongerEligible}: {VisitNoLongerEligibleMessageVi}",
+        ScheduleNoLongerValid => $"{ScheduleNoLongerValid}: {ScheduleNoLongerValidMessageVi}",
         _ => code,
     };
 }
@@ -72,6 +94,9 @@ public sealed record ReminderDispatchOutcome(int Messages, string? SafeError, st
 
     public static readonly ReminderDispatchOutcome NoEligibleRecipients =
         new(0, null, ReminderCancelReasons.NoEligibleRecipients);
+
+    public static readonly ReminderDispatchOutcome VisitNoLongerEligible =
+        new(0, null, ReminderCancelReasons.VisitNoLongerEligible);
 }
 
 /// <inheritdoc />
@@ -115,6 +140,13 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             .OrderBy(r => r.ScheduledAt)
             .Take(BatchSize)
             .ToListAsync(cancellationToken);
+
+        // Oldest-first with a bounded batch means no reminder starves — a backlog bigger than one
+        // batch is worked off across successive ticks, in the same order, never left behind. This is
+        // only a visibility signal for an operator, not a correctness concern.
+        if (due.Count == BatchSize)
+            _logger?.LogWarning(
+                "Visit reminder backlog at capacity ({BatchSize}) this tick; more may still be due.", BatchSize);
 
         var dispatched = 0;
 
@@ -169,12 +201,24 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
     /// real person. A missed reminder is recoverable by a human; a duplicate is not recallable, and the
     /// schema has no state that would let us tell the two apart afterwards.
     /// </para>
+    ///
+    /// <para>
+    /// <c>r.ScheduledAt &lt;= now</c> is repeated here on purpose, even though the caller's own SELECT
+    /// already filtered on it: this UPDATE's WHERE is evaluated against the row's CURRENT state at the
+    /// database, not against the in-memory copy the SELECT returned a moment earlier. Without it, a
+    /// concurrent Save that pushed this same row's schedule into the future (Host reschedules while the
+    /// tick is mid-flight) would still satisfy "id + PENDING" and the claim would win — sending the
+    /// STALE reminder for a time the row no longer represents. Re-checking the live schedule here means
+    /// that race loses the claim instead: the reminder is left PENDING for a later tick to pick up
+    /// against whatever schedule actually stands by then.
+    /// </para>
     /// </summary>
     private async Task<bool> ClaimAsync(ulong reminderSettingId, DateTime now, CancellationToken ct)
     {
         var claimed = await _db.VisitInstanceReminderSettings
             .Where(r => r.ReminderSettingId == reminderSettingId
-                        && r.Status == VisitReminderStatus.PENDING)
+                        && r.Status == VisitReminderStatus.PENDING
+                        && r.ScheduledAt <= now)
             .ExecuteUpdateAsync(
                 s => s
                     .SetProperty(r => r.Status, VisitReminderStatus.SENT)
@@ -236,7 +280,16 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             .FirstOrDefaultAsync(c => c.VisitInstanceId == reminder.VisitInstanceId, cancellationToken)
             ?? throw new InvalidOperationException($"Visit instance {reminder.VisitInstanceId} not found.");
 
-        var recipients = await ResolveRecipientsAsync(instance, reminder.TargetGroup, cancellationToken);
+        // Layer 2 of the eligibility defence (Layer 1 is VisitReminderLifecycleSync, called from the
+        // lifecycle commands themselves). The row is claimed already, so this is the last chance to
+        // refuse to send: a PENDING row that Layer 1 did not catch — a write path added later, a direct
+        // DB edit, a status change that landed between the claim and here — must still never fire once
+        // the instance is no longer BEFORE_VISIT. "Chuyến thăm sắp diễn ra" has nothing to say to a
+        // cancelled, rejected, or already-under-way visit, however it got that way.
+        if (instance.Status != VisitInstanceStatus.BeforeVisit)
+            return ReminderDispatchOutcome.VisitNoLongerEligible;
+
+        var recipients = await ResolveRecipientsAsync(instance, reminder.TargetGroup, reminder.Channel, cancellationToken);
         // Nobody left to remind — the Host was cleared, the participants withdrew, or none of them has
         // a usable address. The provider is never called and no sent_emails row is written, because
         // there was no send attempt to record; the caller moves the row to CANCELLED with the reason.
@@ -302,19 +355,26 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
         VisitRequestCampus instance, IReadOnlyList<ReminderRecipient> recipients,
         string delegationName, string campusName, CancellationToken ct)
     {
-        var detailBlock = new Dictionary<string, string>
-        {
-            [EmailTrustedBlocks.ActionBlock] = EmailComposition.VisitDetailBlock(
-                _urls.BuildHostVisitProcessUrl(instance.VisitInstanceId)),
-        };
-
         var plannedStart = Moment(instance.PlannedStartAt);
         var plannedEnd = Moment(instance.PlannedEndAt);
 
         var failures = 0;
+        var skipped = 0;
 
         foreach (var r in recipients)
         {
+            // Per-recipient, not built once outside the loop: a Host and a participant read the same
+            // reminder template family but must land on their OWN screen — the Host on the operational
+            // Host Process page, everyone else on their own contribution page. One shared URL here used
+            // to silently walk every participant into the Host-only screen.
+            var detailBlock = new Dictionary<string, string>
+            {
+                [EmailTrustedBlocks.ActionBlock] = EmailComposition.VisitDetailBlock(
+                    r.IsHost
+                        ? _urls.BuildHostVisitProcessUrl(instance.VisitInstanceId)
+                        : _urls.BuildVisitContributionUrl(instance.VisitInstanceId)),
+            };
+
             var result = await _dispatcher.SendAsync(
                 new SystemEmailRequest(
                     r.IsHost
@@ -348,7 +408,18 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
             // Skipped is SMTP being off outside production. It is neither success nor failure, and it
             // must not turn a whole reminder into FAILED — nothing went wrong.
             if (result.Delivery.Status == EmailDeliveryStatus.Failed) failures++;
+            else if (result.Delivery.Status == EmailDeliveryStatus.Skipped) skipped++;
         }
+
+        // The reminder row still ends SENT below when nothing FAILED — that is unchanged production
+        // behaviour (Skipped is not a failure and must not be reported as one). This log is the only
+        // place the distinction survives: without it, a SENT row after a local run with SMTP disabled
+        // reads identically to a real delivery, and nothing else records that no message actually left
+        // the process.
+        if (skipped > 0)
+            _logger?.LogInformation(
+                "{Skipped}/{Total} visit reminder emails were SKIPPED (SMTP disabled) for instance {VisitInstanceId} — recorded as SENT per existing policy, but no message was actually delivered.",
+                skipped, recipients.Count, instance.VisitInstanceId);
 
         // Partial failure has no state of its own: the schema knows PENDING/SENT/CANCELLED/FAILED and
         // nothing else. A reminder where some messages failed is reported FAILED so an operator sees it,
@@ -364,22 +435,37 @@ public sealed class VisitReminderDispatchService : IVisitReminderDispatchService
     public const string ReminderRelatedType = "VISIT_INSTANCE";
 
     private async Task<List<ReminderRecipient>> ResolveRecipientsAsync(
-        VisitRequestCampus instance, VisitReminderTargetGroup targetGroup, CancellationToken ct)
+        VisitRequestCampus instance, VisitReminderTargetGroup targetGroup, VisitReminderChannel channel,
+        CancellationToken ct)
     {
         var result = new List<ReminderRecipient>();
+        // One notification/email per USER regardless of channel — a Host who is also an accepted
+        // participant is reminded once, as the Host.
         var seenUsers = new HashSet<ulong>();
-        // …and mailboxes, not just user ids: two accounts can share one address, and the person behind
-        // it should not get the same reminder twice because of how the system models them.
+        // Mailbox dedupe is an EMAIL-only concern: two different accounts sharing one address must each
+        // still get their OWN in-app notification (their identity is the UserId, not the mailbox), but
+        // must not receive the same email twice — the person behind the shared inbox reads it once.
         var seenMailboxes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         bool Add(ulong userId, string? email, string fullName, bool isHost)
         {
-            if (string.IsNullOrWhiteSpace(email)) return false;
-            var address = email!.Trim();
             if (!seenUsers.Add(userId)) return false;
-            if (!seenMailboxes.Add(address)) return false;
 
-            result.Add(new ReminderRecipient(userId, address, fullName, isHost));
+            if (channel == VisitReminderChannel.EMAIL)
+            {
+                // IN_APP never reaches this branch, so an EMAIL reminder still correctly requires a
+                // usable address and still dedupes by mailbox — unchanged from before this split.
+                if (string.IsNullOrWhiteSpace(email)) return false;
+                var address = email!.Trim();
+                if (!seenMailboxes.Add(address)) return false;
+                result.Add(new ReminderRecipient(userId, address, fullName, isHost));
+                return true;
+            }
+
+            // IN_APP identity is the UserId alone. SendInAppAsync never reads ReminderRecipient.Email,
+            // so a missing address is not a reason to skip this person — an account with no email on
+            // file (or one it shares with another account) must still see the notification.
+            result.Add(new ReminderRecipient(userId, email?.Trim() ?? string.Empty, fullName, isHost));
             return true;
         }
 

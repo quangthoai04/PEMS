@@ -639,8 +639,11 @@ export function VisitProcess() {
       setReminders((prev) => {
         const next = { ...prev };
         for (const group of REMINDER_TARGET_GROUPS) {
-          const inApp = rows.find((i) => i.channel === 'IN_APP' && i.targetGroup === group.key && i.status !== 'CANCELLED');
-          const email = rows.find((i) => i.channel === 'EMAIL' && i.targetGroup === group.key && i.status !== 'CANCELLED');
+          // PENDING only: a checkbox reflects the CURRENT/future schedule, not a historical result.
+          // SENT and FAILED are both outcomes of a schedule that already fired (or tried to) — showing
+          // either as "on" would claim a reminder is still coming when nothing is scheduled any more.
+          const inApp = rows.find((i) => i.channel === 'IN_APP' && i.targetGroup === group.key && i.status === 'PENDING');
+          const email = rows.find((i) => i.channel === 'EMAIL' && i.targetGroup === group.key && i.status === 'PENDING');
           // The UI now has ONE "Nhắc trước" control per card, but the two channels are still saved as
           // independent rows — a save made before this change (or a save where the two happened to
           // diverge) can hold two different offsets. There is nothing to display two of, so the sooner

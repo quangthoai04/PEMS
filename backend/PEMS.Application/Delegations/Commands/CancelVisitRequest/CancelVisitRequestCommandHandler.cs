@@ -368,6 +368,13 @@ public sealed class CancelVisitRequestCommandHandler
         var cancelled = new List<CancelledCampusDto>();
         foreach (var instance in targets)
         {
+            // Only a BEFORE_VISIT instance can hold a PENDING reminder, but this is called for every
+            // cancellable status uniformly — a no-op query for WaitingRequestApproval/Assigned, and the
+            // real Layer-1 cancel for BeforeVisit (Layer 2 is the dispatch service's own status check).
+            if (instance.Status == VisitInstanceStatus.BeforeVisit)
+                await PEMS.Application.Delegations.Reminders.VisitReminderLifecycleSync
+                    .CancelPendingForIneligibleStatusAsync(_db, instance.VisitInstanceId, now, cancellationToken);
+
             instance.Status = VisitInstanceStatus.Cancelled;
             instance.CancelledBy = actorId;
             instance.CancelledAt = now;

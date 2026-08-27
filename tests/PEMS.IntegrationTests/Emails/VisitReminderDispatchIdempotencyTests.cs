@@ -172,6 +172,77 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
     }
 
     /// <summary>
+    /// Race A (VisitReminderDispatchService.ClaimAsync fix). Before this fix, ClaimAsync's UPDATE only
+    /// checked <c>id + PENDING</c> — a reschedule landing between the tick's SELECT and its claim would
+    /// still be claimed and sent at the STALE (old) time. The fix adds <c>scheduled_at &lt;= now</c> to
+    /// the claim's own WHERE, which MySQL evaluates against the row's CURRENT (committed) state, not the
+    /// in-memory copy the SELECT returned a moment earlier.
+    ///
+    /// <para>
+    /// This is proven with a real row lock rather than hoped-for timing: a separate connection opens a
+    /// transaction, updates <c>scheduled_at</c> to 3 hours out and does NOT commit — holding MySQL's
+    /// exclusive row lock. The dispatch tick's own SELECT still sees the row as due (a plain read is a
+    /// consistent snapshot and is never blocked by another transaction's uncommitted write), so it
+    /// correctly enters the claim step — but the claim's UPDATE is a locking write and must wait for the
+    /// lock. Only once the reschedule is committed does the claim's UPDATE proceed, and by then MySQL
+    /// re-evaluates <c>scheduled_at &lt;= now</c> against the NEW committed value and finds no match. The
+    /// outcome is correct regardless of exactly how long the tick takes to reach that UPDATE — the delay
+    /// below only makes it likely the lock wait is actually exercised, not required for correctness.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task A_reminder_rescheduled_into_the_future_while_a_claim_is_in_flight_is_never_sent_with_the_stale_time()
+    {
+        EmailEvidenceHarness.RequireDb();
+        try
+        {
+            await SeedAsync(VisitReminderTargetGroup.HOST);
+            await AssertReadyToDispatchAsync(_hostUserId);
+
+            var rescheduledTo = DateTime.Now.AddHours(3);
+
+            using var holder = EmailEvidenceHarness.NewContext();
+            await using var tx = await holder.Database.BeginTransactionAsync();
+            // Acquire the row's exclusive lock BEFORE the dispatch tick starts — its claim UPDATE is
+            // then guaranteed to serialise against this transaction rather than racing to get there
+            // first, the same guarantee production relies on (InnoDB serialises concurrent UPDATEs of
+            // one row; the WHERE is re-checked once the lock is granted).
+            await holder.Database.ExecuteSqlRawAsync(
+                "UPDATE visit_instance_reminder_settings SET scheduled_at = {0} WHERE reminder_setting_id = {1}",
+                rescheduledTo, _reminderId);
+
+            using var dispatchDb = EmailEvidenceHarness.NewContext();
+            var dispatchTask = Task.Run(() => Service(dispatchDb).DispatchDueAsync());
+
+            // Give the tick time to run its SELECT and reach the blocking claim UPDATE before the lock
+            // releases.
+            await Task.Delay(800);
+            await tx.CommitAsync();
+
+            // Not asserted against 0: DispatchDueAsync's return value counts the WHOLE batch it swept
+            // this tick (up to 50 due reminders globally on the shared test database), not only this
+            // fixture's row — the same reason Two_workers_racing_the_same_reminder_produce_one_set_of_messages
+            // above checks THIS reminder's own row and message count rather than the raw total. What
+            // matters here is scoped to _reminderId and _visitInstanceId below.
+            await dispatchTask;
+
+            using var verify = EmailEvidenceHarness.NewContext();
+            var after = await verify.VisitInstanceReminderSettings.AsNoTracking()
+                .SingleAsync(r => r.ReminderSettingId == _reminderId);
+            // The row reflects the WINNING (committed) reschedule — the claim's UPDATE matched zero
+            // rows because scheduled_at was no longer <= now by the time it was allowed to run.
+            Assert.Equal(VisitReminderStatus.PENDING, after.Status);
+            Assert.Equal(rescheduledTo, after.ScheduledAt, TimeSpan.FromSeconds(2));
+            Assert.Null(after.LastDispatchedAt);
+
+            Assert.Empty(await verify.SentEmails
+                .Where(e => e.RelatedType == "VISIT_INSTANCE" && e.RelatedId == _visitInstanceId)
+                .ToListAsync());
+        }
+        finally { await CleanupAsync(); }
+    }
+
+    /// <summary>
     /// The suite writes nothing to a row it did not create.
     ///
     /// <para>
@@ -784,6 +855,8 @@ public sealed class VisitReminderDispatchIdempotencyTests : IDisposable
         public string BuildDepartmentLeaderLogisticsTaskUrl(ulong logisticsItemId) => "https://pems.test/logistics-leader";
         public string BuildHostVisitProcessUrl(ulong visitInstanceId)
             => $"https://pems.test/dashboard/visit/process/{visitInstanceId}";
+        public string BuildVisitContributionUrl(ulong visitInstanceId)
+            => $"https://pems.test/dashboard/visit/contribution/{visitInstanceId}";
     }
 
     private sealed class NoNotifications : INotificationService

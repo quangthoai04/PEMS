@@ -69,10 +69,19 @@ public sealed class SaveVisitAgendaCommandHandler
         // effect together with this same save.
         if (instance.PlannedStartAt != request.PlannedStartAt || instance.PlannedEndAt != request.PlannedEndAt)
         {
+            var startMoved = instance.PlannedStartAt != request.PlannedStartAt;
             instance.PlannedStartAt = request.PlannedStartAt;
             instance.PlannedEndAt = request.PlannedEndAt;
             instance.UpdatedAt = now;
             instance.UpdatedBy = actorId;
+
+            // A PENDING reminder was scheduled as "offset before the OLD start" — moving the start
+            // without recomputing it would leave it firing at a moment that no longer means "N before
+            // this visit". BEFORE_VISIT is guaranteed here (VisitPreparationGate above), the only stage
+            // a configured reminder can exist in.
+            if (startMoved)
+                await PEMS.Application.Delegations.Reminders.VisitReminderLifecycleSync
+                    .RescheduleForPlannedStartChangeAsync(_db, instance.VisitInstanceId, request.PlannedStartAt, now, cancellationToken);
         }
 
         var existing = await _db.VisitAgendas

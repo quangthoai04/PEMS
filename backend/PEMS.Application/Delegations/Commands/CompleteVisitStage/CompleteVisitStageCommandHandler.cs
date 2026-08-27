@@ -238,6 +238,13 @@ public sealed class CompleteVisitStageCommandHandler
         instance.UpdatedBy = actorId;
         instance.RowVersion += 1;
 
+        // Leaving BEFORE_VISIT retires every PENDING "chuẩn bị trước chuyến thăm" reminder — the only
+        // stage that reminder means anything in. Layer 1 of the eligibility defence; the dispatch
+        // service's own status check (Layer 2) is the backstop if a row somehow survives this.
+        if (oldStatus == VisitInstanceStatus.BeforeVisit)
+            await PEMS.Application.Delegations.Reminders.VisitReminderLifecycleSync
+                .CancelPendingForIneligibleStatusAsync(_db, instance.VisitInstanceId, now, cancellationToken);
+
         // Fully scoped, like every other decision/contact audit row (Commit 2/3) — previously this
         // row carried only ActorUserId/Action/EntityType/EntityId, so a reader filtering AuditLogs by
         // VisitInstanceId (the pattern every other history section already uses) could never find it.

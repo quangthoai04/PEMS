@@ -341,6 +341,33 @@ describe('Existing configuration — load without losing data', () => {
     expect((card.getByRole('checkbox', { name: /Thông báo hệ thống/ }) as HTMLInputElement).checked).toBe(false);
   });
 
+  it('a SENT row is not shown as an active/checked channel — it is history, not a pending schedule', async () => {
+    getReminderSettings.mockResolvedValue({
+      items: [
+        { reminderSettingId: 1, channel: 'EMAIL', targetGroup: 'HOST', offsetMinutes: 120, scheduledAt: '2026-08-19T21:00:00', status: 'SENT' },
+      ],
+    });
+
+    await renderReady();
+    const card = hostCard();
+    // No PENDING row exists for this instance, so the card stays inactive: unchecked, and no
+    // validation error nags the user even though the offset input still holds its own default.
+    await waitFor(() => expect((card.getByRole('checkbox', { name: /Email/ }) as HTMLInputElement).checked).toBe(false));
+    expect(card.queryByText(/Vui lòng nhập|phải lớn hơn 0|phải là số nguyên/)).toBeNull();
+  });
+
+  it('a FAILED row is not shown as an active/checked channel — it never claims a schedule that no longer exists', async () => {
+    getReminderSettings.mockResolvedValue({
+      items: [
+        { reminderSettingId: 1, channel: 'IN_APP', targetGroup: 'PARTICIPANTS', offsetMinutes: 60, scheduledAt: '2026-08-19T21:00:00', status: 'FAILED' },
+      ],
+    });
+
+    await renderReady();
+    const card = participantsCard();
+    await waitFor(() => expect((card.getByRole('checkbox', { name: /Thông báo hệ thống/ }) as HTMLInputElement).checked).toBe(false));
+  });
+
   it('a value that does not divide evenly into a bigger unit stays in phút (no lossy rounding)', async () => {
     getReminderSettings.mockResolvedValue({
       items: [

@@ -373,6 +373,9 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
         // reference below can zip them against `stagedMembers` in the same order they were staged in.
         List<VisitorDto>? proposedVisitors = null;
         List<SupportTeamMemberDto>? proposedSupport = null;
+        // Set when this approval actually moves PlannedStartAt, so any PENDING reminder configured
+        // against the OLD start can be recomputed against the new one after the loop (see below).
+        var plannedStartChanged = false;
         foreach (var change in amendment.Changes.OrderBy(c => c.DisplayOrder))
         {
             switch (change.FieldPath)
@@ -391,7 +394,10 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                 // already sitting in PENDING_APPROVAL still has to be applicable or withdrawable.
                 // Nothing writes new rows with this path any more (see BuildChangeRows).
                 case VisitFieldClassifier.OperationalContactEmail: detail.OperationalContactEmail = FromJson<string>(change.NewValueJson); break;
-                case VisitFieldClassifier.PlannedStartAt: instance.PlannedStartAt = FromJson<DateTime>(change.NewValueJson); break;
+                case VisitFieldClassifier.PlannedStartAt:
+                    instance.PlannedStartAt = FromJson<DateTime>(change.NewValueJson);
+                    plannedStartChanged = true;
+                    break;
                 case VisitFieldClassifier.PlannedEndAt: instance.PlannedEndAt = FromJson<DateTime>(change.NewValueJson); break;
                 case VisitFieldClassifier.Visitors:
                 case VisitFieldClassifier.SupportMembers:
@@ -427,6 +433,14 @@ public sealed class VisitAmendmentService : IVisitAmendmentService
                         VisitFormV2ErrorCodes.AmendmentNotEditable);
             }
         }
+
+        // A PENDING reminder was scheduled as "offset before the OLD start"; leaving it there once the
+        // approved proposal moves the start would fire it at a moment that no longer means "N before
+        // this visit". Safe to call even when the instance is only ASSIGNED (not yet BEFORE_VISIT): no
+        // reminder can exist there, so this is a no-op query in that case.
+        if (plannedStartChanged)
+            await PEMS.Application.Delegations.Reminders.VisitReminderLifecycleSync
+                .RescheduleForPlannedStartChangeAsync(_db, instance.VisitInstanceId, instance.PlannedStartAt, now, ct);
 
         detail.FormRevision += 1;
         detail.ApprovalRevision += 1;

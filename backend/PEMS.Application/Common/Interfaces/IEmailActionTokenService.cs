@@ -44,4 +44,12 @@ public interface IEmailActionTokenService
     /// reminders, and the now-detail-only logistics-proposal email.
     /// </summary>
     string BuildHostVisitProcessUrl(ulong visitInstanceId);
+
+    /// <summary>
+    /// Internal, login-required URL to a campus visit instance's contribution screen — the route
+    /// (<c>/dashboard/visit/contribution/:id</c>) a non-Host recipient (participant) lands on. Used
+    /// wherever a reminder or notification addresses someone who is not the current Host: they must
+    /// never be sent to <see cref="BuildHostVisitProcessUrl"/>, which is a Host-only operational screen.
+    /// </summary>
+    string BuildVisitContributionUrl(ulong visitInstanceId);
 }
