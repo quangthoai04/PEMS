@@ -9,6 +9,15 @@ public sealed class RespondVisitParticipantInvitationCommandValidator
     {
         RuleFor(x => x.ParticipantId).GreaterThan(0UL);
 
+        // Accept's note is optional — only bounded so it can't blow past the shared note column's
+        // practical limit (same 1000-char ceiling the decline reason enforces below).
+        When(x => x.Accept, () =>
+        {
+            RuleFor(x => x.Note)
+                .MaximumLength(1000)
+                .WithMessage("Ghi chú không được vượt quá 1000 ký tự.");
+        });
+
         // A decline must carry a reason; an accept must not be blocked by a missing one.
         // Validate the TRIMMED reason so whitespace-only input fails and the 5–1000 bounds are real.
         When(x => !x.Accept, () =>

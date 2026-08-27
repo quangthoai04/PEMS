@@ -49,6 +49,8 @@ export function VisitParticipantInvitationDetail() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [acceptOpen, setAcceptOpen] = useState(false);
+  const [acceptNote, setAcceptNote] = useState('');
   const [requestFormOpen, setRequestFormOpen] = useState(false);
 
   const fetchInvitation = async () => {
@@ -93,12 +95,17 @@ export function VisitParticipantInvitationDetail() {
           : null;
   const canSubmitDecline = trimmedReason.length >= 5 && rejectReason.length <= 1000;
 
-  const handleAccept = async () => {
+  const handleAccept = async (note?: string) => {
     if (!participantId) return;
     setSubmitting(true);
     setActionError(null);
     try {
-      await delegationsApi.respondInvitation(participantId, { accept: true });
+      const trimmedNote = note?.trim();
+      await delegationsApi.respondInvitation(participantId, {
+        accept: true,
+        note: trimmedNote ? trimmedNote : undefined,
+      });
+      setAcceptOpen(false);
       await fetchInvitation();
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.response?.data?.title || e?.message || 'Lỗi không xác định';
@@ -256,6 +263,13 @@ export function VisitParticipantInvitationDetail() {
               </div>
             )}
 
+            {invitation.status === 'ACCEPTED' && invitation.note && (
+              <div className="bg-green-50 rounded-xl p-4 border border-green-100">
+                <span className="text-xs font-bold text-green-600 uppercase tracking-wide block mb-1">Ghi chú khi xác nhận</span>
+                <p className="text-sm font-normal text-green-950 italic">"{invitation.note}"</p>
+              </div>
+            )}
+
             {actionError && <p className="text-red-500 text-sm font-normal"><AlertCircle className="w-4 h-4 inline-block mr-1" />{actionError}</p>}
           </div>
 
@@ -265,9 +279,9 @@ export function VisitParticipantInvitationDetail() {
                 className="flex-1 py-3 rounded-xl border-2 border-[#F37021] text-[#F37021] font-bold hover:bg-[#F37021] hover:text-white transition-colors outline-none disabled:opacity-50">
                 Từ chối
               </button>
-              <button type="button" disabled={submitting} onClick={handleAccept}
+              <button type="button" disabled={submitting} onClick={() => { setAcceptNote(''); setAcceptOpen(true); }}
                 className="flex-1 py-3 rounded-xl bg-[#004c91] text-white font-bold hover:bg-[#003b70] shadow-sm transition-colors outline-none disabled:opacity-50">
-                {submitting ? 'Đang xử lý...' : 'Xác nhận tham gia'}
+                Xác nhận tham gia
               </button>
             </div>
           ) : invitation.allowedActions.includes('ASSIGN_TO_DEPARTMENT_STAFF') ? (
@@ -361,6 +375,31 @@ export function VisitParticipantInvitationDetail() {
             <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
               <button type="button" disabled={submitting} onClick={() => setRejectOpen(false)} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm">Hủy bỏ</button>
               <button type="button" disabled={!canSubmitDecline || submitting} onClick={handleDecline} className="px-6 py-2 rounded-xl font-bold text-white bg-[#F37021] hover:bg-orange-600 shadow-sm transition-all outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? 'Đang xử lý...' : 'Xác nhận từ chối'}</button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Accept modal */}
+      {acceptOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 bg-[#004c91] flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2"><CheckCircle2 className="w-5 h-5 bg-white/20 rounded-full p-0.5" /> Xác nhận tham gia</h3>
+              <button type="button" disabled={submitting} onClick={() => setAcceptOpen(false)} className="text-white/85 hover:text-white hover:bg-white/10 rounded-full p-1.5"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-500 mb-3">Bạn có thể để lại ghi chú thêm cho người phụ trách tiếp đón (không bắt buộc).</p>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Ghi chú thêm (không bắt buộc)</label>
+              <textarea value={acceptNote} onChange={(e) => setAcceptNote(e.target.value)} placeholder="Ví dụ: Tôi sẽ có mặt sớm 15 phút..." disabled={submitting} maxLength={1000}
+                className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:border-[#004c91] focus:ring-4 focus:ring-[#004c91]/10 outline-none transition-all text-sm min-h-[120px] resize-none bg-gray-50/50 focus:bg-white" />
+              <div className="mt-1.5 flex items-center justify-end">
+                <span className="text-xs text-gray-400">{acceptNote.length}/1000</span>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 flex items-center justify-end gap-3 border-t border-gray-100">
+              <button type="button" disabled={submitting} onClick={() => setAcceptOpen(false)} className="px-5 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors outline-none text-sm">Hủy bỏ</button>
+              <button type="button" disabled={submitting} onClick={() => handleAccept(acceptNote)} className="px-6 py-2 rounded-xl font-bold text-white bg-[#004c91] hover:bg-[#003b70] shadow-sm transition-all outline-none text-sm disabled:opacity-50 disabled:cursor-not-allowed">{submitting ? 'Đang xử lý...' : 'Xác nhận tham gia'}</button>
             </div>
           </motion.div>
         </div>
