@@ -147,7 +147,7 @@ test.describe('Real-stack: the public receipt and the per-campus contact', () =>
     // request that really exists" is cross-checked API-side below instead of read off the DOM.
     await expect(page.getByTestId('v2-create-modal')).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId('v2-success-title')).toBeVisible();
-    await expect(page.getByTestId('v2-success-status')).toBeVisible();
+    await expect(page.getByTestId('v2-success-note')).toBeVisible();
     // No dashboard action for someone with no session to use it with.
     await expect(page.getByTestId('v2-success-view')).toHaveCount(0);
 

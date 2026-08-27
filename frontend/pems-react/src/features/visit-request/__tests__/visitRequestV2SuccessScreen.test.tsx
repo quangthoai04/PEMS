@@ -58,16 +58,21 @@ const response = (over: Partial<V2CreateResponse> = {}): V2CreateResponse => ({
 describe('the success screen (plan §8)', () => {
   beforeEach(async () => { await i18n.changeLanguage('en'); });
 
-  it('titles a single-campus receipt with the campus name and the submit time, and states the status', () => {
+  it('titles a single-campus receipt with the campus name and the submit time', () => {
     render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
 
     const title = screen.getByTestId('v2-success-title');
     expect(title).toHaveTextContent('FPT Hà Nội');
     // Rendered through the wall-clock formatter — never through the viewer's own timezone.
     expect(title).toHaveTextContent('31/07/2026 09:30');
-    expect(screen.getByTestId('v2-success-status')).toHaveTextContent(/Waiting for the Staff Leader/i);
     // The request code is never rendered on the receipt.
     expect(screen.queryByText('VR-MC-HN-HCM-0003')).toBeNull();
+  });
+
+  it('states no status line at all — the receipt says what was sent, not where it sits in the queue', () => {
+    render(<VisitRequestV2SuccessPanel response={response()} values={values()} />);
+    expect(screen.queryByTestId('v2-success-status')).toBeNull();
+    expect(screen.queryByText(/Waiting for the Staff Leader/i)).toBeNull();
   });
 
   it('titles a multi-campus receipt with the campus COUNT, never the first campus alone', () => {
@@ -85,13 +90,6 @@ describe('the success screen (plan §8)', () => {
     const title = screen.getByTestId('v2-success-title');
     expect(title.textContent).not.toMatch(/undefined|invalid date/i);
     expect(title).toHaveTextContent('FPT Hà Nội');
-  });
-
-  it('renders an unmapped status as itself rather than as a blank or a raw key', () => {
-    render(<VisitRequestV2SuccessPanel response={response({ status: 'SOME_NEW_STATUS' })} values={values()} />);
-    const status = screen.getByTestId('v2-success-status');
-    expect(status).toHaveTextContent('SOME_NEW_STATUS');
-    expect(status.textContent).not.toContain('visitRequestV2:');
   });
 
   it('offers the three actions, and opens the request that was just created', () => {

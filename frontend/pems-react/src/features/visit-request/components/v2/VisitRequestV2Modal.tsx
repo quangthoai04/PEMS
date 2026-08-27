@@ -234,8 +234,11 @@ export const VisitRequestV2Modal: React.FC<Props> = ({
                 // in the public flow, the whole point of completing OTP. Nothing auto-closes: the
                 // user decides when they are done reading.
                 setResult({ response, values });
+                // No request code in the toast: there is no lookup by code, the receipt behind this
+                // toast does not show one either, and this same modal serves a signed-in visitor
+                // booking their own visit — "authenticated" is not "staff".
                 showSuccessToast(
-                  t('visitRequestV2:success.toast', { code: response.requestCode }),
+                  t('visitRequestV2:success.toast'),
                   `v2-created-${response.visitRequestId}`,
                 );
                 onSuccess(response, values);

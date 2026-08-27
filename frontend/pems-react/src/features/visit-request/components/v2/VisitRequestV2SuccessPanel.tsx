@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, ExternalLink, FilePlus2, Info, List, X } from 'lucide-react';
+import { CheckCircle2, ExternalLink, FilePlus2, List, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { VisitRequestV2SubmittedSummary } from './VisitRequestV2SubmittedSummary';
 import { formatVietnamDateTime } from '../../../../shared/utils/vietnamTime';
@@ -29,14 +29,12 @@ interface Props {
   footer?: React.ReactNode;
 }
 
-const statusKey = (status: string) => `visitRequestV2:success.status.${status}`;
-
 /**
  * Post-submit receipt for a v2 create, shared by the standalone route and the modal shell so the
  * confirmation a user sees never depends on which surface they started from. Only the ACTIONS
  * differ, driven by what the caller can actually reach.
  *
- * This is deliberately a SCREEN and not a toast — the status and the actions to take next need to
+ * This is deliberately a SCREEN and not a toast — what happens next and the actions to take need to
  * stay reachable, not disappear after four seconds. The toast is a companion, not the record.
  *
  * The request code itself is not rendered here (nor in the submitted-summary below): it stays a
@@ -89,54 +87,46 @@ export const VisitRequestV2SuccessPanel: React.FC<Props> = ({
   return (
     <>
       <div className="rounded-2xl border border-green-200 bg-green-50 p-6">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           <CheckCircle2 className="h-8 w-8 shrink-0 text-green-600" />
           <div className="min-w-0">
             {/* Names the campus (or the count, for multi-campus) and when it was sent in one line,
                 so "Cơ sở:" / "Thời gian gửi:" never have to repeat what the title already said. */}
             <h2 data-testid="v2-success-title" className="text-lg font-extrabold text-green-900">{title}</h2>
+
+            {/* Guidance reads as a subtitle under the title — plain italic prose, not a boxed
+                callout: nothing here is a warning, it is simply what happens next. It sits where
+                the request code used to, which the receipt no longer shows at all.
+
+                "How do I track this?" is a question on every receipt, so that line is always
+                present. The pending line is prepended when it applies, and the track line's own
+                wording adapts ("Đồng thời…" only makes sense after a first line) rather than
+                always assuming something precedes it.
+
+                The pending line counts CAMPUSES, not a single request-level contact: each campus
+                has its own operational contact, and the confirmation gate stays shut until every
+                one of them has answered. */}
+            <div className="mt-1 space-y-1 text-sm font-normal italic text-green-800" role="status">
+              {contactsPending > 0 && (
+                <p data-testid="v2-success-claim-pending">
+                  {t('visitRequestV2:success.claimPending', { campusContacts: pendingCampusContacts })}
+                </p>
+              )}
+              <p data-testid="v2-success-note">
+                {t(
+                  contactsPending > 0
+                    ? 'visitRequestV2:success.trackStatusAlso'
+                    : 'visitRequestV2:success.trackStatus',
+                  { email: values.registerInfo.email },
+                )}
+              </p>
+            </div>
           </div>
         </div>
-
-        {response.status && (
-          <dl className="mt-4 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-green-900">
-            <div className="flex gap-2">
-              <dt className="font-semibold">{t('visitRequestV2:success.statusLabel')}</dt>
-              <dd data-testid="v2-success-status">
-                {t([statusKey(response.status), 'visitRequestV2:success.status.UNKNOWN'], { status: response.status })}
-              </dd>
-            </div>
-          </dl>
-        )}
 
         {response.idempotent && (
           <p className="mt-4 text-sm text-green-800">{t('visitRequestV2:success.idempotentReplay')}</p>
         )}
-
-        {/* Always shown — "how do I track this?" is a question on every receipt, not only when a
-            campus is still waiting on its operational contact. The pending bullet is prepended when
-            it applies; the track-status bullet's own wording adapts ("Đồng thời…" only makes sense
-            after a first bullet) rather than always assuming something precedes it.
-
-            The pending bullet counts CAMPUSES, not a single request-level contact: each campus has
-            its own operational contact, and the confirmation gate stays shut until every one of
-            them has answered. */}
-        <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800" role="status">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          <ul className="list-disc space-y-1 pl-4">
-            {contactsPending > 0 && (
-              <li>{t('visitRequestV2:success.claimPending', { campusContacts: pendingCampusContacts })}</li>
-            )}
-            <li>
-              {t(
-                contactsPending > 0
-                  ? 'visitRequestV2:success.trackStatusAlso'
-                  : 'visitRequestV2:success.trackStatus',
-                { email: values.registerInfo.email },
-              )}
-            </li>
-          </ul>
-        </div>
 
         <div className="mt-6 flex flex-wrap gap-2">
           {onViewRequest && (

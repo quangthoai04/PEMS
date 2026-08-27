@@ -209,9 +209,9 @@ test.describe('Real-stack: the draft survives the OTP round trip', () => {
     await enterOtp(page, second);
     const verified = await verifyResponse;
     await expect(page.getByText('Đã gửi yêu cầu tham quan')).toBeVisible({ timeout: 20_000 });
-    // The receipt states status alongside the title; the request code is never shown on this
-    // screen (VisitRequestV2SuccessPanel) — it is proven from the verify response instead.
-    await expect(page.getByTestId('v2-success-status')).toBeVisible();
+    // The receipt carries its tracking note under the title; the request code is never shown on
+    // this screen (VisitRequestV2SuccessPanel) — it is proven from the verify response instead.
+    await expect(page.getByTestId('v2-success-note')).toBeVisible();
     expect((await verified.json()).requestCode).toMatch(/^VR/);
   });
 

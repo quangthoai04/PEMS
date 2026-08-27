@@ -290,8 +290,10 @@ export function VisitRequestManagement({ isEmbedded = false }: { isEmbedded?: bo
     if (flash?.kind !== 'v2-created' || !flash.requestCode) return;
     if (consumedFlashRef.current === flash.requestCode) return;
     consumedFlashRef.current = flash.requestCode;
+    // The code still keys the one-shot (that is what makes it one-shot), but it is no longer said
+    // out loud — the toast wording matches every other create surface.
     showSuccessToast(
-      tt('visitRequestV2:success.toast', { code: flash.requestCode }),
+      tt('visitRequestV2:success.toast'),
       `v2-created-${flash.requestCode}`,
     );
     navigate(location.pathname + location.search, { replace: true, state: null });
