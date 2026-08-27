@@ -1,5 +1,4 @@
 using System;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,7 +65,6 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
         {
             var channel = Enum.Parse<VisitReminderChannel>(item.Channel.Trim(), ignoreCase: true);
             var targetGroup = Enum.Parse<VisitReminderTargetGroup>(item.TargetGroup.Trim(), ignoreCase: true);
-            var reminderTime = ParseTime(item.ReminderTime);
 
             var existing = existingRows.FirstOrDefault(r => r.Channel == channel && r.TargetGroup == targetGroup);
 
@@ -82,8 +80,9 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
                 continue;
             }
 
-            // scheduled_at = DATE(planned_start_at - days_before days) + reminder_time
-            var scheduledAt = instance.PlannedStartAt.Date.AddDays(-item.DaysBefore).Add(reminderTime);
+            // scheduled_at = planned_start_at - offset_minutes (a real duration subtraction, so
+            // "1 ngày trước" is always the same time of day as the visit itself).
+            var scheduledAt = instance.PlannedStartAt.AddMinutes(-item.OffsetMinutes);
 
             if (scheduledAt >= instance.PlannedStartAt)
                 throw new ValidationException(
@@ -100,8 +99,7 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
                     VisitInstanceId = instance.VisitInstanceId,
                     Channel = channel,
                     TargetGroup = targetGroup,
-                    DaysBefore = item.DaysBefore,
-                    ReminderTime = reminderTime,
+                    OffsetMinutes = item.OffsetMinutes,
                     ScheduledAt = scheduledAt,
                     Status = VisitReminderStatus.PENDING,
                     CreatedAt = now,
@@ -113,8 +111,7 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
             else if (existing.Status != VisitReminderStatus.SENT)
             {
                 // Re-arm/update a PENDING/CANCELLED/FAILED row. Never modify a SENT row.
-                existing.DaysBefore = item.DaysBefore;
-                existing.ReminderTime = reminderTime;
+                existing.OffsetMinutes = item.OffsetMinutes;
                 existing.ScheduledAt = scheduledAt;
                 existing.Status = VisitReminderStatus.PENDING;
                 existing.ErrorMessage = null;
@@ -147,15 +144,11 @@ public sealed class SaveVisitInstanceReminderSettingsCommandHandler
                 ReminderSettingId = r.ReminderSettingId,
                 Channel = r.Channel.ToString(),
                 TargetGroup = r.TargetGroup.ToString(),
-                DaysBefore = r.DaysBefore,
-                ReminderTime = $"{r.ReminderTime.Hours:D2}:{r.ReminderTime.Minutes:D2}",
+                OffsetMinutes = r.OffsetMinutes,
                 ScheduledAt = r.ScheduledAt.ToString("yyyy-MM-ddTHH:mm:ss"),
                 Status = r.Status.ToString(),
             }).ToList(),
             Message = "Đã lưu cấu hình cảnh báo.",
         };
     }
-
-    private static TimeSpan ParseTime(string hhmm)
-        => TimeSpan.ParseExact(hhmm.Trim(), @"hh\:mm", CultureInfo.InvariantCulture);
 }

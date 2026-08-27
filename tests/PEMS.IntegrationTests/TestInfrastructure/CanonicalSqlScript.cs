@@ -764,8 +764,16 @@ public static class CanonicalSqlScript
     // triggers and foreign keys are unchanged. An already-imported database is brought up by
     // docs/database/scripts/patches/2026-08-21_email_hidden_prose_and_contact_expiry.sql (additive,
     // idempotent — see that file for the exact REPLACE-based updates).
+    //
+    // 2026-08-27: visit_instance_reminder_settings.days_before + reminder_time replaced by a single
+    // offset_minutes column, so scheduled_at = planned_start_at - offset_minutes (a real duration
+    // subtraction) instead of "N calendar days before, at an unrelated fixed time of day" — the old
+    // formula could not represent sub-day offsets (10/30 min, 1h, 2h) at all. Seed data updated to
+    // match. An already-imported database is brought up by
+    // docs/database/scripts/patches/2026-08-27_visit_reminder_offset_minutes.sql (additive backfill
+    // from the existing scheduled_at, then drops the two retired columns).
     public const string ExpectedSha256 =
-        "bcd170b34350787b028e80637ce09bde29f9193ecfcd28199657e4165163f8ac";
+        "30010c006508d7f15a3d4f3a9c7e4fc170243fd7bb7577dbc89d6f9172b315c0";
 
     /// <summary>The database name the canonical script targets by default — never usable from tests.</summary>
     private const string ForbiddenTargetDatabase = "pems_db";

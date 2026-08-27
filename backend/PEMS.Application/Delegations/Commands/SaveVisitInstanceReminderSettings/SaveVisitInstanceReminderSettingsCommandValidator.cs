@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Text.RegularExpressions;
 using FluentValidation;
 using PEMS.Domain.Enums;
 
@@ -8,7 +7,8 @@ namespace PEMS.Application.Delegations.Commands.SaveVisitInstanceReminderSetting
 public sealed class SaveVisitInstanceReminderSettingsCommandValidator
     : AbstractValidator<SaveVisitInstanceReminderSettingsCommand>
 {
-    private static readonly Regex TimeRegex = new(@"^([01]\d|2[0-3]):[0-5]\d$", RegexOptions.Compiled);
+    /// <summary>Same ceiling the old days_before field allowed (31 days), expressed in minutes.</summary>
+    private const int MaxOffsetMinutes = 31 * 24 * 60;
 
     public SaveVisitInstanceReminderSettingsCommandValidator()
     {
@@ -34,13 +34,9 @@ public sealed class SaveVisitInstanceReminderSettingsCommandValidator
                 .Must(t => System.Enum.TryParse<VisitReminderTargetGroup>((t ?? string.Empty).Trim(), out _))
                 .WithMessage("Nhóm người nhận không hợp lệ.");
 
-            item.RuleFor(i => i.DaysBefore)
-                .InclusiveBetween(0, 31)
-                .WithMessage("Số ngày trước phải nằm trong khoảng 0 đến 31.");
-
-            item.RuleFor(i => i.ReminderTime)
-                .Must(t => t != null && TimeRegex.IsMatch(t.Trim()))
-                .WithMessage("Giờ gửi phải đúng định dạng HH:mm.");
+            item.RuleFor(i => i.OffsetMinutes)
+                .InclusiveBetween(1, MaxOffsetMinutes)
+                .WithMessage($"Thời gian nhắc trước phải từ 1 phút đến {MaxOffsetMinutes / (24 * 60)} ngày.");
         });
     }
 }

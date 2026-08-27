@@ -3712,11 +3712,8 @@ CREATE TABLE visit_instance_reminder_settings (
   target_group ENUM('HOST','PARTICIPANTS','HOST_AND_PARTICIPANTS') NOT NULL
     COMMENT 'Nhóm người nhận cảnh báo',
 
-  days_before INT UNSIGNED NOT NULL DEFAULT 0
-    COMMENT 'Số ngày trước planned_start_at',
-
-  reminder_time TIME NOT NULL
-    COMMENT 'Giờ gửi trong ngày',
+  offset_minutes INT UNSIGNED NOT NULL
+    COMMENT 'Số phút nhắc trước planned_start_at (Nhắc trước bao lâu)',
 
   scheduled_at DATETIME NOT NULL
     COMMENT 'Thời điểm hệ thống sẽ gửi nhắc',
@@ -5600,12 +5597,13 @@ INSERT INTO calendar_event_reminders (calendar_event_reminder_id, calendar_event
   (5, 5, 'IN_APP', 15, '2026-06-27 13:45:00', NULL, 'PENDING', '2026-06-21 09:00:00');
 
 -- VisitProcess reminder settings seed. These rows schedule future/past in-app and email reminders by channel + target group.
-INSERT INTO visit_instance_reminder_settings (reminder_setting_id, visit_instance_id, channel, target_group, days_before, reminder_time, scheduled_at, status, last_dispatched_at, error_message, created_at, created_by, updated_at, updated_by) VALUES
-  (1, 3005, 'IN_APP', 'HOST_AND_PARTICIPANTS', 1, '08:00:00', '2026-06-22 08:00:00', 'SENT', '2026-06-22 08:00:00', NULL, '2026-06-20 09:00:00', 4, '2026-06-22 08:00:00', 4),
-  (2, 3005, 'EMAIL', 'HOST', 1, '09:00:00', '2026-06-22 09:00:00', 'SENT', '2026-06-22 09:00:00', NULL, '2026-06-20 09:05:00', 4, '2026-06-22 09:00:00', 4),
-  (3, 3110, 'IN_APP', 'HOST_AND_PARTICIPANTS', 1, '08:30:00', '2026-06-30 08:30:00', 'PENDING', NULL, NULL, '2026-06-20 09:40:00', 10, NULL, NULL),
-  (4, 3110, 'EMAIL', 'HOST_AND_PARTICIPANTS', 1, '09:00:00', '2026-06-30 09:00:00', 'PENDING', NULL, NULL, '2026-06-20 09:45:00', 10, NULL, NULL),
-  (5, 3004, 'IN_APP', 'PARTICIPANTS', 1, '16:00:00', '2026-06-27 16:00:00', 'CANCELLED', NULL, 'Host đã tắt cảnh báo trước khi tới lịch gửi.', '2026-06-18 10:30:00', 4, '2026-06-18 11:00:00', 4);
+-- offset_minutes = minutes before planned_start_at (replaces the old days_before + reminder_time pair).
+INSERT INTO visit_instance_reminder_settings (reminder_setting_id, visit_instance_id, channel, target_group, offset_minutes, scheduled_at, status, last_dispatched_at, error_message, created_at, created_by, updated_at, updated_by) VALUES
+  (1, 3005, 'IN_APP', 'HOST_AND_PARTICIPANTS', 1920, '2026-06-22 08:00:00', 'SENT', '2026-06-22 08:00:00', NULL, '2026-06-20 09:00:00', 4, '2026-06-22 08:00:00', 4),
+  (2, 3005, 'EMAIL', 'HOST', 1980, '2026-06-22 09:00:00', 'SENT', '2026-06-22 09:00:00', NULL, '2026-06-20 09:05:00', 4, '2026-06-22 09:00:00', 4),
+  (3, 3110, 'IN_APP', 'HOST_AND_PARTICIPANTS', 1950, '2026-06-30 08:30:00', 'PENDING', NULL, NULL, '2026-06-20 09:40:00', 10, NULL, NULL),
+  (4, 3110, 'EMAIL', 'HOST_AND_PARTICIPANTS', 1980, '2026-06-30 09:00:00', 'PENDING', NULL, NULL, '2026-06-20 09:45:00', 10, NULL, NULL),
+  (5, 3004, 'IN_APP', 'PARTICIPANTS', 2400, '2026-06-27 16:00:00', 'CANCELLED', NULL, 'Host đã tắt cảnh báo trước khi tới lịch gửi.', '2026-06-18 10:30:00', 4, '2026-06-18 11:00:00', 4);
 
 INSERT INTO api_configurations (
   api_config_id,

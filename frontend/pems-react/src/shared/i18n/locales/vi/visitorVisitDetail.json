@@ -46,7 +46,21 @@
     "empty": "Lịch trình chi tiết đang được nhà trường cập nhật.",
     "time": "Thời gian",
     "content": "Nội dung",
-    "location": "Địa điểm"
+    "location": "Địa điểm",
+    "responsible": "Người phụ trách",
+    "responsibleUnassigned": "Chưa phân công"
+  },
+  "visitType": {
+    "CAMPUS_TOUR": "Tham quan cơ sở (Campus tour)",
+    "MEETING": "Họp trao đổi",
+    "WORKSHOP": "Hội thảo",
+    "SIGNING_CEREMONY": "Lễ ký kết",
+    "EXCHANGE": "Giao lưu",
+    "OTHER": "Khác"
+  },
+  "workingLanguage": {
+    "VI": "Tiếng Việt",
+    "EN": "Tiếng Anh"
   },
   "requestInfo": {
     "title": "Thông tin đăng ký đã gửi",
@@ -112,6 +126,7 @@
   },
   "publicNews": {
     "title": "Bản tin chuyến thăm",
+    "empty": "Chưa có bài tin nào được công khai cho chuyến thăm này.",
     "viewDetail": "Xem chi tiết"
   }
 }

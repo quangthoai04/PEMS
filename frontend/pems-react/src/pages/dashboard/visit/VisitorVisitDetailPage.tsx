@@ -6,7 +6,7 @@ import {
   Building, Globe, Briefcase, Car, Users, MessageSquare, ShieldCheck, CheckCircle2,
   CalendarCheck2, Info, ChevronRight, XCircle, Bell, Newspaper
 } from 'lucide-react';
-import { VisitorNotification, VisitorPublicNewsListItem } from '../../../features/delegations/types/delegations.types';
+import { VisitorNotification, VisitorPublicNewsListItem, VisitAgendaItem } from '../../../features/delegations/types/delegations.types';
 import { VisitProcessDetail, VisitProcessPermission } from '../../../features/delegations/types/delegations.types';
 import { format } from 'date-fns';
 import { vi, enUS } from 'date-fns/locale';
@@ -18,6 +18,26 @@ import type { UiLanguage } from '../../../shared/utils/vietnamTime';
 function useDateLocale() {
   const { i18n } = useTranslation();
   return i18n.language?.startsWith('en') ? enUS : vi;
+}
+
+type TFn = (key: string, options?: Record<string, unknown>) => string;
+
+/** Human-readable visit type label. Enum set (CAMPUS_TOUR/MEETING/WORKSHOP/SIGNING_CEREMONY/
+ * EXCHANGE/OTHER) and VI wording mirror the canonical VISIT_TYPE_LABELS already established in
+ * RequestInfoReadOnly.tsx (reused by VisitContributionPage) — routed through i18n here instead of
+ * that map's hardcoded-VI constant because this page is bilingual. OTHER prefers the guest's own
+ * free-text visitTypeOther, matching that same canonical OTHER-handling rule. */
+function resolveVisitTypeLabel(t: TFn, visitType?: string | null, visitTypeOther?: string | null): string | null {
+  if (!visitType) return null;
+  if (visitType === 'OTHER') {
+    return visitTypeOther?.trim() || t('visitType.OTHER');
+  }
+  return t(`visitType.${visitType}`, { defaultValue: visitType });
+}
+
+function resolveWorkingLanguageLabel(t: TFn, workingLanguage?: string | null): string | null {
+  if (!workingLanguage) return null;
+  return t(`workingLanguage.${workingLanguage}`, { defaultValue: workingLanguage });
 }
 
 interface VisitorVisitDetailPageProps {
@@ -112,13 +132,12 @@ export function VisitorVisitDetailPage({ perm, detail }: VisitorVisitDetailPageP
           <VisitorNotificationsSection notifications={detail.notifications} />
         )}
 
-        {/* 11. Bản tin chuyến thăm */}
-        {detail.publicNews && detail.publicNews.length > 0 && (
-          <VisitorPublicNewsSection 
-            news={detail.publicNews} 
-            onOpenDetail={(item) => navigate(`/news/${item.newsId}`, { state: { returnTo: window.location.pathname } })} 
-          />
-        )}
+        {/* 11. Bản tin chuyến thăm — always shown, even with zero PUBLISHED items (renders its own
+            empty state), so the section isn't mistaken for "not supported on this visit". */}
+        <VisitorPublicNewsSection
+          news={detail.publicNews ?? []}
+          onOpenDetail={(item) => navigate(`/news/${item.newsId}`, { state: { returnTo: window.location.pathname } })}
+        />
 
         {/* 12. Lý do hủy nếu CANCELLED */}
         {isCancelled && <VisitorCancelledBanner />}
@@ -170,6 +189,7 @@ function VisitorBreadcrumb() {
 function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
   const { t } = useTranslation('visitorVisitDetail');
   const statusText = t(`status.${detail.instanceStatus}`, { defaultValue: detail.instanceStatus });
+  const visitTypeLabel = resolveVisitTypeLabel(t, detail.requestSummary?.visitType, detail.requestSummary?.visitTypeOther);
 
   return (
     <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -177,9 +197,9 @@ function VisitorVisitHero({ detail }: { detail: VisitProcessDetail }) {
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-100 text-[11px] font-bold uppercase tracking-wider text-[#004c91]">
           <Info className="w-3.5 h-3.5" /> {statusText}
         </span>
-        {detail.requestSummary?.visitType && (
+        {visitTypeLabel && (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600">
-            {detail.requestSummary.visitType}
+            {visitTypeLabel}
           </span>
         )}
       </div>
@@ -247,7 +267,7 @@ function VisitorNextStepCard({ detail }: { detail: VisitProcessDetail }) {
   );
 }
 
-function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
+function VisitorAgendaTimeline({ agenda }: { agenda: VisitAgendaItem[] }) {
   const { t } = useTranslation('visitorVisitDetail');
   const formatTime = (iso?: string | null) => {
     if (!iso) return '';
@@ -278,6 +298,18 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
                   <td className="px-3 py-2 align-top">
                     <p className="font-normal text-slate-800">{it.title}</p>
                     {it.description && <p className="text-slate-500 mt-1 whitespace-pre-wrap">{it.description}</p>}
+                    {/* responsibleName = the actual assigned person; templateResponsibleRoleLabel is only a
+                        role hint from the agenda template and must never stand in for a person's name
+                        (see VisitAgendaItem doc comment / VisitContributionPage's same read-only pattern). */}
+                    <p className="mt-1.5 flex items-center gap-1 text-xs font-normal text-slate-500">
+                      <User className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                      <span>
+                        {t('agenda.responsible')}:{' '}
+                        {it.responsibleName
+                          ? <span className="text-slate-600">{it.responsibleName}</span>
+                          : <span className="italic text-slate-400">{t('agenda.responsibleUnassigned')}</span>}
+                      </span>
+                    </p>
                   </td>
                   <td className="px-3 py-2 text-slate-600 align-top">{it.location || '-'}</td>
                 </tr>
@@ -292,6 +324,8 @@ function VisitorAgendaTimeline({ agenda }: { agenda: any[] }) {
 
 function VisitorRequestInfoSection({ summary }: { summary: any }) {
   const { t } = useTranslation('visitorVisitDetail');
+  const visitTypeLabel = resolveVisitTypeLabel(t, summary.visitType, summary.visitTypeOther);
+  const workingLanguageLabel = resolveWorkingLanguageLabel(t, summary.workingLanguage);
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
       <SectionTitle>{t('requestInfo.title')}</SectionTitle>
@@ -327,8 +361,8 @@ function VisitorRequestInfoSection({ summary }: { summary: any }) {
         <div>
           <h4 className="text-[13px] font-bold text-[#f37021] mb-2 uppercase">{t('requestInfo.additionalInfo')}</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10">
-            <KV label={t('requestInfo.visitType')} value={summary.visitType} />
-            <KV label={t('requestInfo.workingLanguage')} value={summary.workingLanguage} />
+            <KV label={t('requestInfo.visitType')} value={visitTypeLabel} />
+            <KV label={t('requestInfo.workingLanguage')} value={workingLanguageLabel} />
             <KV label={t('requestInfo.transportation')} value={summary.transportationNote || null} />
             {/* The stored value is AGREED, not AGREE — the old comparison never matched, so a guest
                 who had agreed was shown as having declined on their own submitted form. */}
@@ -567,7 +601,7 @@ function VisitorPublicNewsSection({
 }) {
   const { t } = useTranslation('visitorVisitDetail');
   const dateLocale = useDateLocale();
-  if (!news || news.length === 0) return null;
+  const items = news ?? [];
 
   const formatDateTime = (iso?: string | null) => {
     if (!iso) return '';
@@ -581,48 +615,55 @@ function VisitorPublicNewsSection({
   return (
     <section className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
       <SectionTitle>{t('publicNews.title')}</SectionTitle>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {news.map((item) => (
-          <article
-            key={item.newsId}
-            className="rounded-lg border border-slate-200 bg-white overflow-hidden hover:shadow-sm transition-shadow flex flex-col"
-          >
-            {item.thumbnailUrl && (
-              <img
-                src={item.thumbnailUrl}
-                alt={item.title}
-                className="h-32 w-full object-cover"
-              />
-            )}
-            <div className="p-3 flex flex-col flex-1">
-              <h3 className="text-[13px] font-bold text-slate-900 line-clamp-2">
-                {item.title}
-              </h3>
-              {item.summary && (
-                <p className="mt-1 text-[12px] text-slate-600 line-clamp-2">
-                  {item.summary}
-                </p>
+      {items.length === 0 ? (
+        <div className="flex items-center gap-2 py-4 text-[13px] text-slate-500">
+          <Newspaper className="w-4 h-4 shrink-0 text-slate-400" />
+          <span>{t('publicNews.empty')}</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {items.map((item) => (
+            <article
+              key={item.newsId}
+              className="rounded-lg border border-slate-200 bg-white overflow-hidden hover:shadow-sm transition-shadow flex flex-col"
+            >
+              {item.thumbnailUrl && (
+                <img
+                  src={item.thumbnailUrl}
+                  alt={item.title}
+                  className="h-32 w-full object-cover"
+                />
               )}
-              <div className="mt-2 text-[11px] font-normal text-slate-400 mt-auto pt-2">
-                {item.publishedAt ? formatDateTime(item.publishedAt) : ''}
-                {item.authorName ? ` · ${item.authorName}` : ''}
-              </div>
-              {onOpenDetail && (
-                <div className="mt-3 pt-3 border-t border-slate-100">
-                  <button 
-                    type="button" 
-                    onClick={() => onOpenDetail(item)}
-                    className="text-[12px] font-bold text-[#004c91] hover:underline flex items-center gap-1 group"
-                  >
-                    {t('publicNews.viewDetail')}
-                    <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </button>
+              <div className="p-3 flex flex-col flex-1">
+                <h3 className="text-[13px] font-bold text-slate-900 line-clamp-2">
+                  {item.title}
+                </h3>
+                {item.summary && (
+                  <p className="mt-1 text-[12px] text-slate-600 line-clamp-2">
+                    {item.summary}
+                  </p>
+                )}
+                <div className="mt-2 text-[11px] font-normal text-slate-400 mt-auto pt-2">
+                  {item.publishedAt ? formatDateTime(item.publishedAt) : ''}
+                  {item.authorName ? ` · ${item.authorName}` : ''}
                 </div>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
+                {onOpenDetail && (
+                  <div className="mt-3 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => onOpenDetail(item)}
+                      className="text-[12px] font-bold text-[#004c91] hover:underline flex items-center gap-1 group"
+                    >
+                      {t('publicNews.viewDetail')}
+                      <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

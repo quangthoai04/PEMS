@@ -12,11 +12,10 @@ public sealed record SaveVisitInstanceReminderSettingsCommand(
     ulong VisitInstanceId,
     List<SaveVisitReminderSettingItem> Items) : IRequest<SaveVisitInstanceReminderSettingsResponse>;
 
-/// <summary>One desired reminder configuration. channel/targetGroup are SQL ENUM strings; reminderTime
-/// is "HH:mm"; enabled=false cancels the row.</summary>
+/// <summary>One desired reminder configuration. channel/targetGroup are SQL ENUM strings; offsetMinutes
+/// is minutes before the visit's planned start; enabled=false cancels the row.</summary>
 public sealed record SaveVisitReminderSettingItem(
     string Channel,
     string TargetGroup,
-    int DaysBefore,
-    string ReminderTime,
+    int OffsetMinutes,
     bool Enabled);

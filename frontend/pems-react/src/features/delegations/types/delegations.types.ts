@@ -1783,7 +1783,8 @@ export interface GetSentEmailsResult {
   items: SentEmailHistoryItem[];
 }
 
-// ── VisitProcess scheduled reminders (visit_instance_reminder_settings), SQL v10. ──
+// ── VisitProcess scheduled reminders (visit_instance_reminder_settings). offsetMinutes (2026-08-27)
+// replaced daysBefore + reminderTime: scheduled_at = planned_start_at - offsetMinutes. ──
 export type VisitReminderChannel = 'IN_APP' | 'EMAIL';
 export type VisitReminderTargetGroup = 'HOST' | 'PARTICIPANTS' | 'HOST_AND_PARTICIPANTS';
 export type VisitReminderStatus = 'PENDING' | 'SENT' | 'CANCELLED' | 'FAILED';
@@ -1793,8 +1794,7 @@ export interface VisitReminderSetting {
   reminderSettingId: number;
   channel: VisitReminderChannel;
   targetGroup: VisitReminderTargetGroup;
-  daysBefore: number;
-  reminderTime: string;   // "HH:mm"
+  offsetMinutes: number;   // minutes before the visit's planned start
   scheduledAt: string;    // "yyyy-MM-ddTHH:mm:ss" wall-clock
   status: VisitReminderStatus;
 }
@@ -1807,8 +1807,7 @@ export interface GetVisitReminderSettingsResult {
 export interface SaveVisitReminderSettingItem {
   channel: VisitReminderChannel;
   targetGroup: VisitReminderTargetGroup;
-  daysBefore: number;
-  reminderTime: string;   // "HH:mm"
+  offsetMinutes: number;   // minutes before the visit's planned start
   enabled: boolean;
 }
 

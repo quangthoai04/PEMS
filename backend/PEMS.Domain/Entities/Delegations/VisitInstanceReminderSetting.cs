@@ -26,11 +26,9 @@ public class VisitInstanceReminderSetting
     [Column("target_group")]
     public VisitReminderTargetGroup TargetGroup { get; set; }
 
-    [Column("days_before")]
-    public int DaysBefore { get; set; }
-
-    [Column("reminder_time")]
-    public TimeSpan ReminderTime { get; set; }
+    /// <summary>Minutes before <see cref="VisitRequestCampus.PlannedStartAt"/> this reminder fires.</summary>
+    [Column("offset_minutes")]
+    public int OffsetMinutes { get; set; }
 
     [Column("scheduled_at")]
     public DateTime ScheduledAt { get; set; }

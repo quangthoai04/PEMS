@@ -14,8 +14,7 @@ public sealed class VisitReminderSettingDto
     public ulong ReminderSettingId { get; set; }
     public string Channel { get; set; } = default!;          // IN_APP | EMAIL
     public string TargetGroup { get; set; } = default!;      // HOST | PARTICIPANTS | HOST_AND_PARTICIPANTS
-    public int DaysBefore { get; set; }
-    public string ReminderTime { get; set; } = default!;     // "HH:mm"
+    public int OffsetMinutes { get; set; }                   // minutes before the visit's planned start
     public string ScheduledAt { get; set; } = default!;      // "yyyy-MM-ddTHH:mm:ss" wall-clock
     public string Status { get; set; } = default!;           // PENDING | SENT | CANCELLED | FAILED
 

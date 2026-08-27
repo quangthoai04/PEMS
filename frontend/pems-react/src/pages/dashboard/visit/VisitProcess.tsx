@@ -46,15 +46,72 @@ import { canSubmitReminders } from './visitProcessGuards';
 // Lightweight in-page toast (top-right) — cùng pattern với CampusManagement/VisitRequestManagement.
 type ProcessToast = { id: number; type: 'success' | 'error' | 'warning' | 'info'; msg: string };
 
-// ── "Cảnh báo & Thông báo" (Part C): 4 independent configs = channel × target group. ──
-const REMINDER_CONFIGS = [
-  { key: 'sysHost', channel: 'IN_APP', targetGroup: 'HOST', title: 'Thông báo hệ thống cho người phụ trách', desc: 'Thông báo trên hệ thống tới người phụ trách tiếp đón' },
-  { key: 'emailHost', channel: 'EMAIL', targetGroup: 'HOST', title: 'Email nhắc người phụ trách', desc: 'Gửi email nhắc nhở người phụ trách tiếp đón' },
-  { key: 'sysParticipants', channel: 'IN_APP', targetGroup: 'PARTICIPANTS', title: 'Thông báo hệ thống cho thành phần tham gia', desc: 'Thông báo trên hệ thống tới thành phần tham gia' },
-  { key: 'emailParticipants', channel: 'EMAIL', targetGroup: 'PARTICIPANTS', title: 'Email nhắc thành phần tham gia', desc: 'Gửi email nhắc nhở thành phần tham gia' },
+// ── "Nhắc nhở chuyến thăm" (Part C): 2 audience card (Host / Thành phần tham gia). Mỗi card có
+// ĐÚNG 1 mốc "Nhắc trước" dùng chung cho cả 2 kênh gửi (IN_APP + EMAIL) — kiểu Google Calendar.
+// Trước 2026-08-27, mỗi kênh có mốc riêng (4 config độc lập); gộp lại là thay đổi có chủ đích: xem
+// PEMS_VISIT_REMINDER_UX_GOOGLE_CALENDAR_STYLE_AUDIT_AND_REDESIGN cho lý do.
+const REMINDER_TARGET_GROUPS = [
+  { key: 'HOST', title: 'Người phụ trách' },
+  { key: 'PARTICIPANTS', title: 'Thành phần tham gia' },
 ] as const;
-type ReminderKey = typeof REMINDER_CONFIGS[number]['key'];
-type ReminderRow = { enabled: boolean; days: number; time: string };
+type ReminderTargetGroupKey = typeof REMINDER_TARGET_GROUPS[number]['key'];
+type ReminderChannelKey = 'IN_APP' | 'EMAIL';
+const REMINDER_CHANNELS: { key: ReminderChannelKey; label: string }[] = [
+  { key: 'IN_APP', label: 'Thông báo hệ thống' },
+  { key: 'EMAIL', label: 'Email' },
+];
+
+// 2026-08-28: bỏ hẳn dropdown preset ("1 ngày ▼" / "Tùy chỉnh...") — "Nhắc trước" giờ LUÔN là 2
+// control cùng hiện: numeric input (nguyên dương, không thập phân) + select đơn vị. Không còn khái
+// niệm "chế độ tùy chỉnh" — 2 ô đó là cách nhập DUY NHẤT, không ẩn/hiện theo lựa chọn nào khác.
+type ReminderCustomUnit = 'MINUTE' | 'HOUR' | 'DAY' | 'WEEK';
+const REMINDER_UNIT_MINUTES: Record<ReminderCustomUnit, number> = { MINUTE: 1, HOUR: 60, DAY: 1440, WEEK: 10080 };
+const REMINDER_UNIT_OPTIONS: { key: ReminderCustomUnit; label: string }[] = [
+  { key: 'MINUTE', label: 'phút' }, { key: 'HOUR', label: 'giờ' }, { key: 'DAY', label: 'ngày' }, { key: 'WEEK', label: 'tuần' },
+];
+
+type ReminderCardState = {
+  /** Raw text của numeric input — giữ dạng string (không parseInt ngay) để phát hiện đúng "1.5" /
+   * "abc" / rỗng cho validation, thay vì âm thầm cắt về 1 qua parseInt. */
+  offsetValue: string;
+  offsetUnit: ReminderCustomUnit;
+  channels: Record<ReminderChannelKey, boolean>;
+};
+
+// Flat shape on purpose, not a discriminated union: this project's tsconfig has no strictNullChecks,
+// so TS cannot narrow `valid: true | false` branches — `if (!v.valid) v.message` would not compile.
+// `value`/`message` simply sit unused on the branch that doesn't need them.
+type ReminderOffsetValidation = { valid: boolean; value: number; message: string };
+
+/** Số nguyên dương duy nhất — không thập phân, không âm, không rỗng (Mục 7/8 của spec). */
+function validateReminderOffsetValue(raw: string): ReminderOffsetValidation {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { valid: false, value: 0, message: 'Vui lòng nhập thời gian nhắc trước.' };
+  if (!/^-?\d+$/.test(trimmed)) return { valid: false, value: 0, message: 'Thời gian nhắc trước phải là số nguyên.' };
+  const value = parseInt(trimmed, 10);
+  if (value <= 0) return { valid: false, value: 0, message: 'Thời gian nhắc trước phải lớn hơn 0.' };
+  return { valid: true, value, message: '' };
+}
+
+/** "Nhắc trước" thật sự sẽ gửi lên API, tính bằng phút. Input không hợp lệ → null (caller quyết định
+ * fallback: chặn Save nếu card đang active, bỏ qua nếu card đang tắt cả 2 kênh). */
+function reminderCardOffsetMinutes(card: ReminderCardState): number | null {
+  const result = validateReminderOffsetValue(card.offsetValue);
+  return result.valid ? result.value * REMINDER_UNIT_MINUTES[card.offsetUnit] : null;
+}
+
+/** Nạp 1 giá trị phút đã lưu (canonical, luôn là phút) vào form: chọn đơn vị lớn nhất CHIA HẾT hết
+ * để hiển thị gọn (vd 120 phút → "2 giờ") — phép chia hết tuyệt đối, không làm tròn/ước lượng, nên
+ * không có ambiguity; không chia hết thì giữ nguyên đơn vị phút (không mất dữ liệu, không đoán). */
+function reminderMinutesToCard(minutes: number): Pick<ReminderCardState, 'offsetValue' | 'offsetUnit'> {
+  if (minutes > 0 && minutes % REMINDER_UNIT_MINUTES.WEEK === 0)
+    return { offsetValue: String(minutes / REMINDER_UNIT_MINUTES.WEEK), offsetUnit: 'WEEK' };
+  if (minutes > 0 && minutes % REMINDER_UNIT_MINUTES.DAY === 0)
+    return { offsetValue: String(minutes / REMINDER_UNIT_MINUTES.DAY), offsetUnit: 'DAY' };
+  if (minutes > 0 && minutes % REMINDER_UNIT_MINUTES.HOUR === 0)
+    return { offsetValue: String(minutes / REMINDER_UNIT_MINUTES.HOUR), offsetUnit: 'HOUR' };
+  return { offsetValue: String(Math.max(1, minutes)), offsetUnit: 'MINUTE' };
+}
 
 /**
  * What each stage transition asks, and — the part that matters — what it COSTS (NP-05).
@@ -573,7 +630,7 @@ export function VisitProcess() {
   }, [perm?.visitRequestId, perm?.visitInstanceId]);
   useEffect(() => { void loadDetail(); }, [loadDetail]);
 
-  // ── "Cảnh báo & Thông báo": load saved reminder schedule and map onto the two UI rows ──
+  // ── "Nhắc nhở chuyến thăm": load saved reminder schedule and map onto the 2 audience cards ──
   const loadReminders = React.useCallback(async () => {
     if (!perm) return;
     try {
@@ -581,11 +638,20 @@ export function VisitProcess() {
       const rows = res.items || [];
       setReminders((prev) => {
         const next = { ...prev };
-        for (const cfg of REMINDER_CONFIGS) {
-          const row = rows.find((i) => i.channel === cfg.channel && i.targetGroup === cfg.targetGroup && i.status !== 'CANCELLED');
-          next[cfg.key] = row
-            ? { enabled: true, days: row.daysBefore, time: row.reminderTime }
-            : { ...prev[cfg.key], enabled: false };
+        for (const group of REMINDER_TARGET_GROUPS) {
+          const inApp = rows.find((i) => i.channel === 'IN_APP' && i.targetGroup === group.key && i.status !== 'CANCELLED');
+          const email = rows.find((i) => i.channel === 'EMAIL' && i.targetGroup === group.key && i.status !== 'CANCELLED');
+          // The UI now has ONE "Nhắc trước" control per card, but the two channels are still saved as
+          // independent rows — a save made before this change (or a save where the two happened to
+          // diverge) can hold two different offsets. There is nothing to display two of, so the sooner
+          // (smaller) offset wins; the next Save then re-writes both rows to the single value shown.
+          const source = inApp && email
+            ? (inApp.offsetMinutes <= email.offsetMinutes ? inApp : email)
+            : inApp || email;
+          next[group.key] = {
+            ...(source ? reminderMinutesToCard(source.offsetMinutes) : { offsetValue: prev[group.key].offsetValue, offsetUnit: prev[group.key].offsetUnit }),
+            channels: { IN_APP: !!inApp, EMAIL: !!email },
+          };
         }
         return next;
       });
@@ -643,15 +709,30 @@ export function VisitProcess() {
     if (!perm) return;
     // Refuse to save when the saved schedule failed to load — the request would clobber it with defaults.
     if (remindersLoadFailed) { pushToast('error', 'Chưa tải được lịch cảnh báo đã lưu. Vui lòng thử lại trước khi lưu.'); return; }
+
+    // A card with no channel checked is "off" and does not need a valid offset (Mục 7); a card with
+    // at least one channel checked does, and Save must refuse rather than send an unparsable value.
+    for (const group of REMINDER_TARGET_GROUPS) {
+      const card = reminders[group.key];
+      if (!card.channels.IN_APP && !card.channels.EMAIL) continue;
+      const validation = validateReminderOffsetValue(card.offsetValue);
+      if (!validation.valid) { pushToast('error', validation.message); return; }
+    }
+
     setSavingReminders(true);
     try {
-      const items = REMINDER_CONFIGS.map((cfg) => ({
-        channel: cfg.channel,
-        targetGroup: cfg.targetGroup,
-        daysBefore: reminders[cfg.key].days,
-        reminderTime: reminders[cfg.key].time,
-        enabled: reminders[cfg.key].enabled,
-      }));
+      const items = REMINDER_TARGET_GROUPS.flatMap((group) => {
+        const card = reminders[group.key];
+        // Already validated above for any card with a checked channel; an all-off card's offset is
+        // never read by the backend (both items go out with enabled=false), so 1 is a safe filler.
+        const offsetMinutes = reminderCardOffsetMinutes(card) ?? 1;
+        return REMINDER_CHANNELS.map((ch) => ({
+          channel: ch.key,
+          targetGroup: group.key,
+          offsetMinutes,
+          enabled: card.channels[ch.key],
+        }));
+      });
       const res = await delegationsApi.saveReminderSettings(perm.visitInstanceId, items);
       pushToast('success', res.message || 'Đã lưu cấu hình cảnh báo.');
       await loadReminders();
@@ -671,7 +752,8 @@ export function VisitProcess() {
       pushToast('success', res.message || 'Đã hủy lịch gửi cảnh báo.');
       setReminders((prev) => {
         const next = { ...prev };
-        for (const cfg of REMINDER_CONFIGS) next[cfg.key] = { ...prev[cfg.key], enabled: false };
+        for (const group of REMINDER_TARGET_GROUPS)
+          next[group.key] = { ...prev[group.key], channels: { IN_APP: false, EMAIL: false } };
         return next;
       });
       await loadReminders();
@@ -895,15 +977,16 @@ export function VisitProcess() {
   const [addedStudents, setAddedStudents] = useState<string[]>(['Sinh viên 123 - Trịnh Thăng Bình']);
   const [showStudentNoAccountError, setShowStudentNoAccountError] = useState(false);
 
-  // 4 reminder rows keyed by config; loaded from reminder-settings (enabled=false → no/CANCELLED row).
-  const [reminders, setReminders] = useState<Record<ReminderKey, ReminderRow>>({
-    sysHost: { enabled: false, days: 1, time: '09:00' },
-    emailHost: { enabled: false, days: 2, time: '08:00' },
-    sysParticipants: { enabled: false, days: 1, time: '09:00' },
-    emailParticipants: { enabled: false, days: 2, time: '08:00' },
+  // 2 audience card (Host / Thành phần tham gia); mỗi card 1 mốc "Nhắc trước" dùng chung cho cả
+  // IN_APP + EMAIL. Loaded from reminder-settings (channel tắt = không/CANCELLED row cho kênh đó).
+  const [reminders, setReminders] = useState<Record<ReminderTargetGroupKey, ReminderCardState>>({
+    HOST: { offsetValue: '1', offsetUnit: 'DAY', channels: { IN_APP: false, EMAIL: false } },
+    PARTICIPANTS: { offsetValue: '1', offsetUnit: 'DAY', channels: { IN_APP: false, EMAIL: false } },
   });
-  const setReminder = (key: ReminderKey, patch: Partial<ReminderRow>) =>
+  const setReminderCard = (key: ReminderTargetGroupKey, patch: Partial<ReminderCardState>) =>
     setReminders((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  const setReminderChannel = (key: ReminderTargetGroupKey, channel: ReminderChannelKey, checked: boolean) =>
+    setReminders((prev) => ({ ...prev, [key]: { ...prev[key], channels: { ...prev[key].channels, [channel]: checked } } }));
   const [savingReminders, setSavingReminders] = useState(false);
   // Host's "Ghi chú chung" (visit_request_campuses.preparation_note): editable draft + saved baseline (Part G).
   const [preparationNote, setPreparationNote] = useState('');
@@ -1686,46 +1769,65 @@ export function VisitProcess() {
                           )}
                         </div>
 
-            {/* 3. Cảnh báo nhắc nhở trước thời gian tiếp khách */}
+            {/* 3. Nhắc nhở chuyến thăm */}
             <div className="p-6 border-b border-gray-100 bg-slate-50/50">
-              <h3 className="flex items-center gap-2 text-base font-bold text-slate-800 mb-4">
+              <h3 className="flex items-center gap-2 text-base font-bold text-slate-800 mb-1">
                 <span className="text-[#f37021]">3.</span>
-                Cảnh báo nhắc nhở trước thời gian tiếp khách
+                Nhắc nhở chuyến thăm
               </h3>
+              <p className="text-xs text-slate-400 mb-4 pl-5">Mốc nhắc được tính trước thời gian bắt đầu chuyến thăm.</p>
 
               {canConfigurePrep && remindersLoadFailed && (
                 <StaleDataBanner onRetry={() => { void loadReminders(); }} className="mb-4" />
               )}
 
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-4">
-                {REMINDER_CONFIGS.map((cfg) => {
-                  const row = reminders[cfg.key];
-                  const isEmail = cfg.channel === 'EMAIL';
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {REMINDER_TARGET_GROUPS.map((group) => {
+                  const card = reminders[group.key];
+                  const hasActiveChannel = card.channels.IN_APP || card.channels.EMAIL;
+                  const offsetValidation = validateReminderOffsetValue(card.offsetValue);
+                  const offsetError = hasActiveChannel && !offsetValidation.valid ? offsetValidation.message : null;
                   return (
-                    <div key={cfg.key} className={`bg-white border rounded-xl p-3.5 shadow-sm flex flex-col justify-between ${isEmail ? 'border-orange-100' : 'border-blue-100'}`}>
+                    <div key={group.key} data-testid={`reminder-card-${group.key}`} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
+                      {/* A <div>, not a heading: this label duplicates the exact wording of the "2.
+                          Thành phần tham gia" section heading above, and a second same-named heading
+                          role on the page breaks accessible-name lookups that assume one. */}
+                      <div className="text-sm font-bold text-gray-800">{group.title}</div>
+
                       <div>
-                        <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-2.5 leading-snug">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isEmail ? 'bg-orange-100 text-[#f37021]' : 'bg-blue-100 text-[#004c91]'}`}>
-                            {isEmail ? <Mail className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
-                          </div>
-                          <span>{cfg.title}</span>
-                        </h4>
-                        <label className="flex items-center gap-2 mb-3 pl-1.5 text-xs font-semibold text-gray-700 select-none cursor-pointer">
-                          <input disabled={!canConfigurePrep} type="checkbox" checked={row.enabled}
-                            onChange={(e) => setReminder(cfg.key, { enabled: e.target.checked })} />
-                          Bật cảnh báo này
-                        </label>
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Nhắc trước</label>
+                        {/* Numeric input + unit select are the ONLY input mode — always both shown,
+                            never a preset dropdown and never a "custom" toggle to reveal them. */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input disabled={!canConfigurePrep} type="number" min="1" step="1" inputMode="numeric"
+                            aria-invalid={!!offsetError}
+                            className="w-[100px] px-2 py-1.5 text-center text-xs font-normal rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
+                            value={card.offsetValue}
+                            onChange={(e) => setReminderCard(group.key, { offsetValue: e.target.value })} />
+                          <select disabled={!canConfigurePrep}
+                            className="w-[140px] px-2 py-1.5 border border-gray-200 rounded-lg text-xs outline-none bg-white disabled:opacity-50 font-normal text-gray-800"
+                            value={card.offsetUnit}
+                            onChange={(e) => setReminderCard(group.key, { offsetUnit: e.target.value as ReminderCustomUnit })}>
+                            {REMINDER_UNIT_OPTIONS.map((u) => (
+                              <option key={u.key} value={u.key}>{u.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {offsetError && <p className="text-[11px] text-red-600 mt-1">{offsetError}</p>}
                       </div>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600 font-normal pt-2 border-t border-gray-100">
-                        <input disabled={!canConfigurePrep || !row.enabled} type="number" min="0" max="31"
-                          className="w-12 px-1.5 py-1.5 text-center text-xs font-normal rounded-lg border border-gray-200 outline-none bg-gray-50 disabled:opacity-50"
-                          value={row.days}
-                          onChange={(e) => setReminder(cfg.key, { days: Math.max(0, Math.min(31, parseInt(e.target.value) || 0)) })} />
-                        <span>ngày trước, vào lúc</span>
-                        <input disabled={!canConfigurePrep || !row.enabled} type="time"
-                          className="px-1.5 py-1.5 border border-gray-200 rounded-lg text-xs outline-none bg-white disabled:opacity-50 font-normal text-gray-800"
-                          value={row.time}
-                          onChange={(e) => setReminder(cfg.key, { time: e.target.value })} />
+
+                      <div className="pt-2 border-t border-gray-100">
+                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Kênh gửi</label>
+                        <div className="flex flex-col gap-1.5">
+                          {REMINDER_CHANNELS.map((ch) => (
+                            <label key={ch.key} className="flex items-center gap-2 text-xs font-semibold text-gray-700 select-none cursor-pointer">
+                              <input disabled={!canConfigurePrep} type="checkbox" checked={card.channels[ch.key]}
+                                onChange={(e) => setReminderChannel(group.key, ch.key, e.target.checked)} />
+                              {ch.key === 'EMAIL' ? <Mail className="w-3.5 h-3.5 text-gray-400" /> : <Bell className="w-3.5 h-3.5 text-gray-400" />}
+                              {ch.label}
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   );
@@ -1737,7 +1839,7 @@ export function VisitProcess() {
                 return (
                 <div className="flex flex-wrap justify-end gap-3 mt-5">
                   <button type="button" onClick={handleCancelReminders} disabled={!remindersActionEnabled}
-                    className="px-5 py-2.5 rounded-xl font-bold text-sm text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors shadow-sm outline-none disabled:opacity-60">
+                    className="px-5 py-2.5 rounded-xl font-semibold text-sm text-gray-600 bg-white border border-gray-200 hover:bg-gray-50 transition-colors outline-none disabled:opacity-60">
                     Tắt tất cả cảnh báo
                   </button>
                   <button type="button" onClick={handleSaveReminders} disabled={!remindersActionEnabled}

@@ -46,7 +46,21 @@
     "empty": "The detailed itinerary is still being prepared by FPT University.",
     "time": "Time",
     "content": "Activity",
-    "location": "Location"
+    "location": "Location",
+    "responsible": "Responsible person",
+    "responsibleUnassigned": "Not assigned"
+  },
+  "visitType": {
+    "CAMPUS_TOUR": "Campus tour",
+    "MEETING": "Meeting / Discussion",
+    "WORKSHOP": "Workshop",
+    "SIGNING_CEREMONY": "Signing ceremony",
+    "EXCHANGE": "Exchange",
+    "OTHER": "Other"
+  },
+  "workingLanguage": {
+    "VI": "Vietnamese",
+    "EN": "English"
   },
   "requestInfo": {
     "title": "Submitted registration information",
@@ -112,6 +126,7 @@
   },
   "publicNews": {
     "title": "Visit news",
+    "empty": "No news articles have been published for this visit yet.",
     "viewDetail": "View details"
   }
 }
